@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,7 +17,8 @@ import {
   Plus, Send, Clock, CheckCircle2, AlertCircle, FileText,
   Pencil, Trash2, MessageSquare, Users, Phone, Zap, Calendar,
   GitBranch, Image, Video, Music, FileIcon, BarChart2, Eye,
-  AtSign, Upload, Download, X,
+  AtSign, Upload, Download, X, Settings2, Sunrise, Sunset, Moon,
+  Variable, Link2,
 } from 'lucide-react';
 import { format, parseISO, isBefore } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -43,10 +44,22 @@ interface FunnelMessage {
   poll_selectable_count?: number;
   link_preview: boolean;
   mention_everyone: boolean;
+  send_header_image: boolean;
   status: MessageStatus;
   sent_at?: string;
   error_message?: string;
   created_at: string;
+}
+
+interface FunnelConfig {
+  id?: string;
+  funnel_name: string;
+  grupo_1_id: string;
+  grupo_2_id: string;
+  imagem_manha: string;
+  imagem_tarde: string;
+  imagem_noite: string;
+  variaveis: Record<string, string>;
 }
 
 interface MsgForm {
@@ -64,6 +77,7 @@ interface MsgForm {
   poll_selectable_count: number;
   link_preview: boolean;
   mention_everyone: boolean;
+  send_header_image: boolean;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -88,20 +102,31 @@ const BULK_TEMPLATE = JSON.stringify(
   {
     funil: 'Nome do Funil',
     data_inicio: '2025-01-15',
-    destinatario_padrao: '5511999999999@g.us',
+    destinatario_padrao: '{{grupo_1}}',
     mensagens: [
-      { dia: 1, horario: '09:00', tipo: 'texto', mensagem: 'Bom dia! 🎉 Bem-vindos!', marcar_todos: true, preview_link: false },
+      { dia: 1, horario: '09:00', tipo: 'texto', mensagem: 'Bom dia! 🎉\n\nAcesse a aula aqui: {{link_aula_1}}', marcar_todos: true, preview_link: false },
       { dia: 1, horario: '14:00', tipo: 'imagem', url_midia: 'https://exemplo.com/banner.jpg', mensagem: 'Confira o banner!', marcar_todos: false },
       { dia: 2, horario: '10:00', tipo: 'enquete', titulo: 'O que você quer aprender?', opcoes: ['Opção A', 'Opção B', 'Opção C'], multipla_escolha: false, marcar_todos: true },
-      { dia: 2, horario: '19:00', tipo: 'video', url_midia: 'https://exemplo.com/video.mp4', mensagem: 'Assista esta aula!' },
-      { dia: 3, horario: '09:00', tipo: 'texto', mensagem: '🔗 Acesse agora: https://seusite.com', preview_link: true },
+      { dia: 2, horario: '19:00', tipo: 'video', url_midia: '{{link_video_1}}', mensagem: 'Assista esta aula!' },
+      { dia: 3, horario: '09:00', tipo: 'texto', mensagem: '🔗 Acesse agora: {{link_aula_2}}', preview_link: true },
       { dia: 3, horario: '11:00', tipo: 'audio', url_midia: 'https://exemplo.com/audio.mp3' },
       { dia: 4, horario: '08:00', tipo: 'documento', url_midia: 'https://exemplo.com/arquivo.pdf', mensagem: 'Material exclusivo!' },
     ],
+    _dica: 'Use {{grupo_1}}, {{grupo_2}}, {{link_aula_1}}, {{link_video_1}} etc. como variáveis. Preencha os valores reais em Configurações do Funil.',
   },
   null,
   2,
 );
+
+const EMPTY_CONFIG = (name: string): FunnelConfig => ({
+  funnel_name: name,
+  grupo_1_id: '',
+  grupo_2_id: '',
+  imagem_manha: '',
+  imagem_tarde: '',
+  imagem_noite: '',
+  variaveis: {},
+});
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
 
@@ -122,7 +147,7 @@ const EMPTY_FORM: MsgForm = {
   recipient_type: 'group', recipient_id: '',
   message_type: 'text', message_text: '', media_url: '',
   poll_name: '', poll_options: ['', ''], poll_selectable_count: 1,
-  link_preview: false, mention_everyone: false,
+  link_preview: false, mention_everyone: false, send_header_image: true,
 };
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -140,6 +165,8 @@ export function FunilLancamento() {
   const [form,         setForm]         = useState<MsgForm>(EMPTY_FORM);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [bulkOpen,     setBulkOpen]     = useState(false);
+  const [configOpen,   setConfigOpen]   = useState(false);
+  const [configs,      setConfigs]      = useState<Record<string, FunnelConfig>>({});
 
   // Quick send state
   const [qType,    setQType]    = useState<RecipientType>('group');
@@ -176,17 +203,38 @@ export function FunilLancamento() {
     setLoading(false);
   }, [selected]);
 
+  const loadConfig = useCallback(async (name: string) => {
+    if (!name || configs[name]) return;
+    const { data } = await supabase
+      .from('funnel_configs').select('*').eq('funnel_name', name).maybeSingle();
+    setConfigs(prev => ({
+      ...prev,
+      [name]: data
+        ? { ...data, variaveis: (data.variaveis as Record<string, string>) || {} }
+        : EMPTY_CONFIG(name),
+    }));
+  }, [configs]);
+
   useEffect(() => { loadFunnels(); }, []);
   useEffect(() => { loadMessages(); }, [selected]);
+  useEffect(() => { if (selected) loadConfig(selected); }, [selected]);
 
   useEffect(() => {
-    const ch = supabase.channel('funil_lancamento_v2')
+    const ch = supabase.channel('funil_lancamento_v3')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'funnel_messages' }, () => loadMessages())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [loadMessages]);
 
   // ── Derived ──────────────────────────────────────────────────────────────
+
+  const currentConfig = configs[selected] ?? EMPTY_CONFIG(selected);
+
+  const allVarNames = useMemo(() => {
+    const fixed = ['grupo_1', 'grupo_2'];
+    const custom = Object.keys(currentConfig.variaveis || {});
+    return [...fixed, ...custom];
+  }, [currentConfig]);
 
   const byDay = useMemo(() => {
     const map = new Map<number, FunnelMessage[]>();
@@ -208,12 +256,16 @@ export function FunilLancamento() {
 
   const progress = stats.total > 0 ? Math.round((stats.sent / stats.total) * 100) : 0;
 
+  const hasHeaderImages = !!(currentConfig.imagem_manha || currentConfig.imagem_tarde || currentConfig.imagem_noite);
+
   // ── Handlers ─────────────────────────────────────────────────────────────
 
   function openCreate(day?: number) {
     const nextDay = day ?? (byDay.length > 0 ? byDay[byDay.length - 1][0] + 1 : 1);
+    const cfg = configs[selected];
+    const defaultRecip = cfg?.grupo_1_id ? '{{grupo_1}}' : '';
     setEditingId(null);
-    setForm({ ...EMPTY_FORM, funnel_name: selected, day_number: nextDay });
+    setForm({ ...EMPTY_FORM, funnel_name: selected, day_number: nextDay, recipient_id: defaultRecip });
     setModalOpen(true);
   }
 
@@ -235,6 +287,7 @@ export function FunilLancamento() {
       poll_selectable_count: msg.poll_selectable_count ?? 1,
       link_preview:          msg.link_preview     ?? false,
       mention_everyone:      msg.mention_everyone ?? false,
+      send_header_image:     msg.send_header_image ?? true,
     });
     setModalOpen(true);
   }
@@ -254,6 +307,7 @@ export function FunilLancamento() {
       poll_selectable_count: f.poll_selectable_count,
       link_preview:          f.link_preview,
       mention_everyone:      f.mention_everyone,
+      send_header_image:     f.send_header_image,
       status,
     };
   }
@@ -410,7 +464,46 @@ export function FunilLancamento() {
                 <Plus className="h-3.5 w-3.5" />
               </Button>
             </div>
+            {selected && (
+              <Button
+                variant="outline" size="sm"
+                className="h-8 gap-1.5 ml-auto border-amber-200 text-amber-700 hover:bg-amber-50"
+                onClick={() => setConfigOpen(true)}
+              >
+                <Settings2 className="h-3.5 w-3.5" /> Configurar funil
+              </Button>
+            )}
           </div>
+
+          {/* Config summary strip */}
+          {selected && (currentConfig.grupo_1_id || hasHeaderImages || Object.keys(currentConfig.variaveis).length > 0) && (
+            <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-100 text-xs">
+              <Variable className="h-3.5 w-3.5 text-amber-600 flex-shrink-0" />
+              {currentConfig.grupo_1_id && (
+                <span className="text-amber-800">
+                  <span className="font-mono bg-amber-100 px-1 rounded">{'{{grupo_1}}'}</span>
+                  {' '}→ {currentConfig.grupo_1_id.slice(0, 20)}{currentConfig.grupo_1_id.length > 20 ? '…' : ''}
+                </span>
+              )}
+              {currentConfig.grupo_2_id && (
+                <span className="text-amber-800">
+                  <span className="font-mono bg-amber-100 px-1 rounded">{'{{grupo_2}}'}</span>
+                  {' '}→ {currentConfig.grupo_2_id.slice(0, 20)}{currentConfig.grupo_2_id.length > 20 ? '…' : ''}
+                </span>
+              )}
+              {Object.entries(currentConfig.variaveis).map(([k, v]) => (
+                <span key={k} className="text-amber-800">
+                  <span className="font-mono bg-amber-100 px-1 rounded">{`{{${k}}}`}</span>
+                  {v ? ` → ${v.slice(0, 20)}${v.length > 20 ? '…' : ''}` : <span className="text-red-500"> não preenchido</span>}
+                </span>
+              ))}
+              {hasHeaderImages && (
+                <span className="text-amber-700 flex items-center gap-1">
+                  <Image className="h-3 w-3" /> Imagens de cabeçalho configuradas
+                </span>
+              )}
+            </div>
+          )}
 
           {selected ? (
             <>
@@ -541,11 +634,6 @@ export function FunilLancamento() {
                     placeholder={qType === 'group' ? '5511999999999@g.us' : '5511999999999'}
                     value={qRecip} onChange={e => setQRecip(e.target.value)}
                   />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {qType === 'group'
-                      ? 'JID completo ou número do grupo · ex: 5511999999999@g.us'
-                      : 'DDI+DDD+número · ex: 5511999999999 (DDI 55 adicionado se ausente)'}
-                  </p>
                 </div>
 
                 {/* Type content */}
@@ -554,25 +642,34 @@ export function FunilLancamento() {
                   url={qUrl} onUrl={setQUrl} caption={qCaption} onCaption={setQCaption}
                   pollName={qPollName} onPollName={setQPollName}
                   pollOpts={qPollOpts} onPollOpts={setQPollOpts}
+                  varNames={[]}
                 />
 
-                {/* Feature toggles */}
-                <div className="flex gap-2 flex-wrap">
-                  {qMsgType === 'text' && (
-                    <FeatureToggle
-                      icon={<Eye className="h-3.5 w-3.5" />}
+                {/* Feature toggles — always visible, large and clear */}
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-3 space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                    Opções de envio
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <BigToggle
+                      icon={<Eye className="h-4 w-4" />}
                       label="Preview do link"
-                      value={qLinkPrev} onChange={setQLinkPrev}
+                      desc="Mostrar card de pré-visualização"
+                      value={qLinkPrev}
+                      onChange={setQLinkPrev}
+                      disabled={qMsgType !== 'text'}
+                      color="blue"
                     />
-                  )}
-                  {qType === 'group' && qMsgType !== 'poll' && (
-                    <FeatureToggle
-                      icon={<AtSign className="h-3.5 w-3.5" />}
+                    <BigToggle
+                      icon={<AtSign className="h-4 w-4" />}
                       label="Marcar @todos"
-                      value={qMention} onChange={setQMention}
-                      accent="amber"
+                      desc="Notifica todos os membros"
+                      value={qMention}
+                      onChange={setQMention}
+                      disabled={qType !== 'group' || qMsgType === 'poll'}
+                      color="amber"
                     />
-                  )}
+                  </div>
                 </div>
 
                 <Button
@@ -608,6 +705,8 @@ export function FunilLancamento() {
         open={modalOpen} onClose={() => setModalOpen(false)}
         form={form} setForm={setForm} funnelNames={funnelNames}
         isEditing={!!editingId} saving={saving}
+        varNames={allVarNames}
+        hasHeaderImages={hasHeaderImages}
         onDraft={() => handleSave('draft')}
         onSchedule={() => handleSave('scheduled')}
         onSendNow={handleSendNow}
@@ -619,7 +718,59 @@ export function FunilLancamento() {
         currentFunnel={selected}
         onImported={() => { loadMessages(); loadFunnels(); }}
       />
+
+      {/* Funnel config modal */}
+      <FunnelConfigModal
+        open={configOpen}
+        onClose={() => setConfigOpen(false)}
+        funnelName={selected}
+        initialConfig={currentConfig}
+        onSaved={cfg => {
+          setConfigs(prev => ({ ...prev, [selected]: cfg }));
+          setConfigOpen(false);
+          toast.success('Configurações salvas!');
+        }}
+      />
     </div>
+  );
+}
+
+// ── BigToggle — opções de envio visíveis e clicáveis ──────────────────────────
+
+function BigToggle({
+  icon, label, desc, value, onChange, disabled, color,
+}: {
+  icon: React.ReactNode; label: string; desc: string;
+  value: boolean; onChange: (v: boolean) => void;
+  disabled?: boolean; color: 'blue' | 'amber';
+}) {
+  const colorMap = {
+    blue:  { on: 'border-blue-400 bg-blue-50 text-blue-700',  off: 'border-border bg-background text-muted-foreground' },
+    amber: { on: 'border-amber-400 bg-amber-50 text-amber-700', off: 'border-border bg-background text-muted-foreground' },
+  };
+  const cls = disabled
+    ? 'border-border/40 bg-muted/20 text-muted-foreground/40 cursor-not-allowed'
+    : value ? colorMap[color].on : colorMap[color].off;
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => !disabled && onChange(!value)}
+      className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border-2 text-sm font-medium transition-all select-none flex-1 min-w-[160px] ${cls}`}
+    >
+      <span className="flex-shrink-0">{icon}</span>
+      <div className="text-left flex-1">
+        <div className="font-semibold text-sm leading-none mb-0.5">{label}</div>
+        <div className="text-[11px] opacity-70 leading-none">{desc}</div>
+      </div>
+      <Switch
+        checked={value && !disabled}
+        onCheckedChange={v => !disabled && onChange(v)}
+        className="pointer-events-none flex-shrink-0"
+        onClick={e => e.stopPropagation()}
+      />
+    </button>
   );
 }
 
@@ -627,7 +778,7 @@ export function FunilLancamento() {
 
 function TypeContent({
   msgType, text, onText, url, onUrl, caption, onCaption,
-  pollName, onPollName, pollOpts, onPollOpts,
+  pollName, onPollName, pollOpts, onPollOpts, varNames,
 }: {
   msgType: MessageType;
   text: string; onText: (v: string) => void;
@@ -635,12 +786,49 @@ function TypeContent({
   caption: string; onCaption: (v: string) => void;
   pollName: string; onPollName: (v: string) => void;
   pollOpts: string[]; onPollOpts: (v: string[]) => void;
+  varNames: string[];
 }) {
+  const textRef = useRef<HTMLTextAreaElement>(null);
+
+  function insertVar(name: string, setter: (v: string) => void, current: string) {
+    const el = textRef.current;
+    const tag = `{{${name}}}`;
+    if (el) {
+      const start = el.selectionStart ?? current.length;
+      const end   = el.selectionEnd   ?? current.length;
+      const next  = current.slice(0, start) + tag + current.slice(end);
+      setter(next);
+      setTimeout(() => { el.selectionStart = el.selectionEnd = start + tag.length; el.focus(); }, 0);
+    } else {
+      setter(current + tag);
+    }
+  }
+
   if (msgType === 'text') {
     return (
       <div>
         <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Mensagem</label>
-        <Textarea placeholder="Digite sua mensagem…" value={text} onChange={e => onText(e.target.value)} rows={5} />
+        {varNames.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-2">
+            {varNames.map(v => (
+              <button
+                key={v} type="button"
+                onClick={() => insertVar(v, onText, text)}
+                className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors"
+                title={`Inserir {{${v}}}`}
+              >
+                {`{{${v}}}`}
+              </button>
+            ))}
+          </div>
+        )}
+        <Textarea
+          ref={textRef}
+          placeholder="Digite sua mensagem…"
+          value={text}
+          onChange={e => onText(e.target.value)}
+          rows={5}
+        />
         <p className="text-xs text-muted-foreground mt-1 text-right">{text.length} chars</p>
       </div>
     );
@@ -649,9 +837,7 @@ function TypeContent({
     return (
       <div className="space-y-3">
         <div>
-          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-            Título da enquete
-          </label>
+          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Título da enquete</label>
           <Input placeholder="Ex: Qual sua maior dificuldade?" value={pollName} onChange={e => onPollName(e.target.value)} />
         </div>
         <div>
@@ -687,16 +873,25 @@ function TypeContent({
         <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
           URL {labels[msgType] ? `da ${labels[msgType]}` : 'da mídia'}
         </label>
+        {varNames.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-2">
+            {varNames.map(v => (
+              <button
+                key={v} type="button"
+                onClick={() => { /* for url field we just set the whole value */ onUrl(`{{${v}}}`); }}
+                className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors"
+              >
+                {`{{${v}}}`}
+              </button>
+            ))}
+          </div>
+        )}
         <Input placeholder="https://exemplo.com/arquivo" value={url} onChange={e => onUrl(e.target.value)} />
-        <p className="text-xs text-muted-foreground mt-1">
-          URL pública acessível pela Evolution API
-        </p>
+        <p className="text-xs text-muted-foreground mt-1">URL pública acessível pela Evolution API</p>
       </div>
       {msgType !== 'audio' && (
         <div>
-          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-            Legenda (opcional)
-          </label>
+          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Legenda (opcional)</label>
           <Textarea placeholder="Legenda da mídia…" value={caption} onChange={e => onCaption(e.target.value)} rows={3} />
         </div>
       )}
@@ -736,34 +931,6 @@ function RecipBtn({ active, icon, label, onClick }: {
   );
 }
 
-function FeatureToggle({
-  icon, label, value, onChange, accent = 'primary',
-}: {
-  icon: React.ReactNode; label: string; value: boolean;
-  onChange: (v: boolean) => void; accent?: 'primary' | 'amber';
-}) {
-  const on  = accent === 'amber'
-    ? 'bg-amber-50 border-amber-300 text-amber-700'
-    : 'bg-primary/5 border-primary/30 text-primary';
-  const off = 'border-border/60 text-muted-foreground';
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!value)}
-      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all select-none ${value ? on : off}`}
-    >
-      {icon}
-      <span>{label}</span>
-      <Switch
-        checked={value}
-        onCheckedChange={onChange}
-        className="scale-75 pointer-events-none"
-        onClick={e => e.stopPropagation()}
-      />
-    </button>
-  );
-}
-
 // ── Message Card ───────────────────────────────────────────────────────────────
 
 function MsgCard({ msg, onEdit, onDelete }: {
@@ -774,10 +941,10 @@ function MsgCard({ msg, onEdit, onDelete }: {
   const SI  = sc.icon;
   const TI  = tc.icon;
   const preview =
-    msg.message_type === 'poll'     ? `📊 ${msg.poll_name || ''}` :
-    msg.message_type === 'audio'    ? '🎵 Mensagem de áudio' :
-    msg.message_text                ? msg.message_text :
-    msg.media_url                   ? msg.media_url : '—';
+    msg.message_type === 'poll'  ? `📊 ${msg.poll_name || ''}` :
+    msg.message_type === 'audio' ? '🎵 Mensagem de áudio' :
+    msg.message_text             ? msg.message_text :
+    msg.media_url                ? msg.media_url : '—';
 
   return (
     <Card className="hover:shadow-sm transition-shadow group cursor-pointer" onClick={onEdit}>
@@ -798,9 +965,15 @@ function MsgCard({ msg, onEdit, onDelete }: {
         {/* Preview */}
         <p className="text-sm text-foreground line-clamp-2 mb-2 min-h-[2.5rem]">{preview}</p>
 
-        {/* Feature badges */}
-        {(msg.link_preview || msg.mention_everyone || (msg.message_type === 'poll' && msg.poll_options)) && (
+        {/* Feature + header badges */}
+        {(msg.link_preview || msg.mention_everyone || msg.send_header_image ||
+          (msg.message_type === 'poll' && msg.poll_options)) && (
           <div className="flex items-center gap-1 mb-2 flex-wrap">
+            {msg.send_header_image && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 border border-purple-100 flex items-center gap-0.5">
+                <Image className="h-2.5 w-2.5" /> header
+              </span>
+            )}
             {msg.link_preview && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-100 flex items-center gap-0.5">
                 <Eye className="h-2.5 w-2.5" /> preview
@@ -854,14 +1027,19 @@ interface MsgModalProps {
   open: boolean; onClose: () => void;
   form: MsgForm; setForm: (f: MsgForm) => void;
   funnelNames: string[]; isEditing: boolean; saving: boolean;
+  varNames: string[]; hasHeaderImages: boolean;
   onDraft: () => void; onSchedule: () => void; onSendNow: () => void;
 }
 
 function MsgModal({
   open, onClose, form, setForm, funnelNames,
-  isEditing, saving, onDraft, onSchedule, onSendNow,
+  isEditing, saving, varNames, hasHeaderImages,
+  onDraft, onSchedule, onSendNow,
 }: MsgModalProps) {
   const set = <K extends keyof MsgForm>(k: K, v: MsgForm[K]) => setForm({ ...form, [k]: v });
+
+  const showLinkPreview = form.message_type === 'text';
+  const showMention    = form.recipient_type === 'group' && form.message_type !== 'poll';
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
@@ -873,9 +1051,7 @@ function MsgModal({
         <div className="space-y-5 py-1">
           {/* ─ Message type ─ */}
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-2 block">
-              Tipo de mensagem
-            </label>
+            <label className="text-xs font-medium text-muted-foreground mb-2 block">Tipo de mensagem</label>
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
               {(Object.entries(TYPE_CFG) as [MessageType, typeof TYPE_CFG[MessageType]][]).map(([t, cfg]) => {
                 const Icon = cfg.icon;
@@ -930,9 +1106,7 @@ function MsgModal({
 
           {/* ─ Recipient ─ */}
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-              Destinatário
-            </label>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Destinatário</label>
             <div className="flex gap-2 mb-2">
               <RecipBtn active={form.recipient_type === 'group'} icon={<Users className="h-3.5 w-3.5" />}
                 label="Grupo" onClick={() => set('recipient_type', 'group')} />
@@ -940,23 +1114,38 @@ function MsgModal({
                 label="Número" onClick={() => set('recipient_type', 'number')} />
             </div>
             <Input
-              placeholder={form.recipient_type === 'group' ? '5511999999999@g.us' : '5511999999999'}
-              value={form.recipient_id} onChange={e => set('recipient_id', e.target.value)}
+              placeholder={form.recipient_type === 'group' ? '{{grupo_1}} ou 5511999999999@g.us' : '5511999999999'}
+              value={form.recipient_id}
+              onChange={e => set('recipient_id', e.target.value)}
             />
+            {form.recipient_type === 'group' && varNames.filter(v => v.startsWith('grupo')).length > 0 && (
+              <div className="flex gap-1 mt-1.5">
+                {varNames.filter(v => v.startsWith('grupo')).map(v => (
+                  <button
+                    key={v} type="button"
+                    onClick={() => set('recipient_id', `{{${v}}}`)}
+                    className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors"
+                  >
+                    {`{{${v}}}`}
+                  </button>
+                ))}
+              </div>
+            )}
             <p className="text-xs text-muted-foreground mt-1">
-              {form.recipient_type === 'group'
-                ? 'JID do grupo (ex: 5511999999999@g.us) ou número do grupo'
-                : 'DDI+DDD+número · DDI 55 adicionado automaticamente se ausente'}
+              Use <code className="text-[10px] bg-muted px-1 rounded">{'{{grupo_1}}'}</code> ou{' '}
+              <code className="text-[10px] bg-muted px-1 rounded">{'{{grupo_2}}'}</code> para grupos configurados no funil
             </p>
           </div>
 
           {/* ─ Content by type ─ */}
           {form.message_type === 'text' && (
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-                Mensagem
-              </label>
-              <Textarea placeholder="Digite a mensagem…" value={form.message_text}
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Mensagem</label>
+              {varNames.length > 0 && (
+                <VarChips names={varNames} onInsert={tag => set('message_text', form.message_text + tag)} />
+              )}
+              <Textarea placeholder="Digite a mensagem… use {{link_aula_1}} para inserir variáveis"
+                value={form.message_text}
                 onChange={e => set('message_text', e.target.value)} rows={6} />
               <p className="text-xs text-muted-foreground mt-1 text-right">
                 {form.message_text.length} caracteres
@@ -972,17 +1161,16 @@ function MsgModal({
                           form.message_type === 'video' ? 'vídeo' :
                           form.message_type === 'audio' ? 'áudio' : 'documento'}
                 </label>
-                <Input placeholder="https://exemplo.com/arquivo" value={form.media_url}
+                {varNames.length > 0 && (
+                  <VarChips names={varNames} onInsert={tag => set('media_url', tag)} />
+                )}
+                <Input placeholder="https://exemplo.com/arquivo ou {{link_video_1}}"
+                  value={form.media_url}
                   onChange={e => set('media_url', e.target.value)} />
-                <p className="text-xs text-muted-foreground mt-1">
-                  URL pública e acessível pela Evolution API
-                </p>
               </div>
               {form.message_type !== 'audio' && (
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-                    Legenda (opcional)
-                  </label>
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Legenda (opcional)</label>
                   <Textarea placeholder="Legenda da mídia…" value={form.message_text}
                     onChange={e => set('message_text', e.target.value)} rows={3} />
                 </div>
@@ -993,33 +1181,21 @@ function MsgModal({
           {form.message_type === 'poll' && (
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-                  Título da enquete
-                </label>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Título da enquete</label>
                 <Input placeholder="Ex: Qual é sua maior dificuldade?" value={form.poll_name}
                   onChange={e => set('poll_name', e.target.value)} />
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-                  Opções{' '}
-                  <span className="text-muted-foreground/60">
-                    ({form.poll_options.length}/12)
-                  </span>
+                  Opções <span className="text-muted-foreground/60">({form.poll_options.length}/12)</span>
                 </label>
                 {form.poll_options.map((opt, i) => (
                   <div key={i} className="flex items-center gap-1.5 mb-1.5">
-                    <span className="w-5 text-center text-xs text-muted-foreground flex-shrink-0">
-                      {i + 1}
-                    </span>
-                    <Input
-                      placeholder={`Opção ${i + 1}`}
-                      value={opt}
+                    <span className="w-5 text-center text-xs text-muted-foreground flex-shrink-0">{i + 1}</span>
+                    <Input placeholder={`Opção ${i + 1}`} value={opt}
                       onChange={e => {
-                        const n = [...form.poll_options];
-                        n[i] = e.target.value;
-                        set('poll_options', n);
-                      }}
-                    />
+                        const n = [...form.poll_options]; n[i] = e.target.value; set('poll_options', n);
+                      }} />
                     {form.poll_options.length > 2 && (
                       <Button size="icon" variant="ghost" className="h-9 w-9 flex-shrink-0"
                         onClick={() => set('poll_options', form.poll_options.filter((_, j) => j !== i))}>
@@ -1036,53 +1212,70 @@ function MsgModal({
                 )}
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-                  Respostas permitidas
-                </label>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Respostas</label>
                 <div className="flex gap-2">
                   <button type="button" onClick={() => set('poll_selectable_count', 1)}
                     className={`flex-1 py-2 rounded-lg border text-sm transition-all ${
                       form.poll_selectable_count === 1
                         ? 'bg-primary text-white border-primary'
                         : 'border-border text-foreground/70 hover:border-primary/40'
-                    }`}>
-                    Única
-                  </button>
+                    }`}>Única</button>
                   <button type="button"
                     onClick={() => set('poll_selectable_count', Math.max(2, form.poll_options.filter(Boolean).length))}
                     className={`flex-1 py-2 rounded-lg border text-sm transition-all ${
                       form.poll_selectable_count > 1
                         ? 'bg-primary text-white border-primary'
                         : 'border-border text-foreground/70 hover:border-primary/40'
-                    }`}>
-                    Múltipla
-                  </button>
+                    }`}>Múltipla</button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* ─ Feature toggles ─ */}
-          <div className="flex gap-2 flex-wrap pt-1 border-t border-border/40">
-            {form.message_type === 'text' && (
-              <FeatureToggle
-                icon={<Eye className="h-3.5 w-3.5" />}
+          {/* ─ Opções de envio — seção destacada e sempre visível ─ */}
+          <div className="rounded-xl border-2 border-border/60 bg-muted/10 p-4 space-y-3">
+            <p className="text-xs font-bold text-foreground uppercase tracking-wide flex items-center gap-1.5">
+              <Settings2 className="h-3.5 w-3.5 text-muted-foreground" /> Opções de envio
+            </p>
+
+            <div className="grid gap-2">
+              <BigToggle
+                icon={<Eye className="h-4 w-4" />}
                 label="Preview do link"
-                value={form.link_preview} onChange={v => set('link_preview', v)}
+                desc="WhatsApp mostra card de pré-visualização do link"
+                value={form.link_preview}
+                onChange={v => set('link_preview', v)}
+                disabled={!showLinkPreview}
+                color="blue"
               />
-            )}
-            {form.recipient_type === 'group' && form.message_type !== 'poll' && (
-              <FeatureToggle
-                icon={<AtSign className="h-3.5 w-3.5" />}
+              <BigToggle
+                icon={<AtSign className="h-4 w-4" />}
                 label="Marcar @todos no grupo"
-                value={form.mention_everyone} onChange={v => set('mention_everyone', v)}
-                accent="amber"
+                desc="Todos os membros recebem notificação"
+                value={form.mention_everyone}
+                onChange={v => set('mention_everyone', v)}
+                disabled={!showMention}
+                color="amber"
               />
+              <BigToggle
+                icon={<Image className="h-4 w-4" />}
+                label="Imagem de cabeçalho"
+                desc={hasHeaderImages ? 'Envia imagem manhã/tarde/noite antes desta mensagem' : 'Configure as imagens em "Configurar funil"'}
+                value={form.send_header_image}
+                onChange={v => set('send_header_image', v)}
+                disabled={!hasHeaderImages}
+                color="blue"
+              />
+            </div>
+
+            {!showLinkPreview && (
+              <p className="text-[11px] text-muted-foreground">
+                Preview de link disponível apenas para mensagens de texto
+              </p>
             )}
-            {(form.link_preview || form.mention_everyone) && (
-              <p className="w-full text-xs text-muted-foreground mt-1">
-                {form.link_preview && '📎 Link preview ativado — WhatsApp mostrará card de pré-visualização. '}
-                {form.mention_everyone && '🔔 @todos ativado — todos os membros serão notificados.'}
+            {!showMention && (
+              <p className="text-[11px] text-muted-foreground">
+                @todos disponível apenas para grupos (exceto enquetes)
               </p>
             )}
           </div>
@@ -1096,6 +1289,230 @@ function MsgModal({
           <Button onClick={onSchedule} disabled={saving} className="bg-primary hover:bg-primary/90 gap-2">
             {saving ? <Spinner small /> : <Calendar className="h-4 w-4" />}
             Agendar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── VarChips ─────────────────────────────────────────────────────────────────
+
+function VarChips({ names, onInsert }: { names: string[]; onInsert: (tag: string) => void }) {
+  if (!names.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1 mb-2">
+      <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+        <Variable className="h-2.5 w-2.5" /> Inserir:
+      </span>
+      {names.map(v => (
+        <button
+          key={v} type="button"
+          onClick={() => onInsert(`{{${v}}}`)}
+          className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors"
+          title={`Inserir {{${v}}}`}
+        >
+          {`{{${v}}}`}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── Funnel Config Modal ────────────────────────────────────────────────────────
+
+function FunnelConfigModal({
+  open, onClose, funnelName, initialConfig, onSaved,
+}: {
+  open: boolean; onClose: () => void;
+  funnelName: string;
+  initialConfig: FunnelConfig;
+  onSaved: (cfg: FunnelConfig) => void;
+}) {
+  const [cfg,     setCfg]     = useState<FunnelConfig>(initialConfig);
+  const [saving,  setSaving]  = useState(false);
+  const [newVarK, setNewVarK] = useState('');
+  const [newVarV, setNewVarV] = useState('');
+
+  useEffect(() => { setCfg(initialConfig); }, [initialConfig, open]);
+
+  const setField = <K extends keyof FunnelConfig>(k: K, v: FunnelConfig[K]) =>
+    setCfg(prev => ({ ...prev, [k]: v }));
+
+  function addVar() {
+    const k = newVarK.trim().replace(/\s+/g, '_').toLowerCase();
+    if (!k) return;
+    setCfg(prev => ({ ...prev, variaveis: { ...prev.variaveis, [k]: newVarV.trim() } }));
+    setNewVarK(''); setNewVarV('');
+  }
+
+  function removeVar(k: string) {
+    setCfg(prev => {
+      const v = { ...prev.variaveis };
+      delete v[k];
+      return { ...prev, variaveis: v };
+    });
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    const payload = {
+      funnel_name:   funnelName,
+      grupo_1_id:    cfg.grupo_1_id,
+      grupo_2_id:    cfg.grupo_2_id,
+      imagem_manha:  cfg.imagem_manha,
+      imagem_tarde:  cfg.imagem_tarde,
+      imagem_noite:  cfg.imagem_noite,
+      variaveis:     cfg.variaveis,
+    };
+    const { error } = await supabase
+      .from('funnel_configs')
+      .upsert(payload, { onConflict: 'funnel_name' });
+    setSaving(false);
+    if (error) { toast.error(`Erro: ${error.message}`); return; }
+    onSaved(cfg);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-xl max-h-[92vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Settings2 className="h-4 w-4" /> Configurações: {funnelName}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-6 py-1">
+          {/* Grupos */}
+          <div>
+            <p className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+              <Users className="h-4 w-4 text-primary" /> Grupos WhatsApp
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                  Grupo 1 <code className="text-amber-600 bg-amber-50 px-1 rounded text-[10px]">{'{{grupo_1}}'}</code>
+                </label>
+                <Input
+                  placeholder="5511999999999@g.us"
+                  value={cfg.grupo_1_id}
+                  onChange={e => setField('grupo_1_id', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                  Grupo 2 <code className="text-amber-600 bg-amber-50 px-1 rounded text-[10px]">{'{{grupo_2}}'}</code>
+                </label>
+                <Input
+                  placeholder="5511999999999@g.us (opcional)"
+                  value={cfg.grupo_2_id}
+                  onChange={e => setField('grupo_2_id', e.target.value)}
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Use <code className="bg-muted px-1 rounded text-[10px]">{'{{grupo_1}}'}</code> como destinatário nas mensagens
+            </p>
+          </div>
+
+          {/* Imagens de cabeçalho */}
+          <div>
+            <p className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+              <Image className="h-4 w-4 text-primary" /> Imagens de cabeçalho
+            </p>
+            <p className="text-xs text-muted-foreground mb-3">
+              Quando ativado na mensagem, o sistema envia a imagem correspondente ao turno <em>antes</em> da mensagem principal.
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                  <Sunrise className="h-3.5 w-3.5 text-yellow-500" /> Manhã (6h–12h)
+                </label>
+                <Input placeholder="https://..." value={cfg.imagem_manha}
+                  onChange={e => setField('imagem_manha', e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                  <Sunset className="h-3.5 w-3.5 text-orange-500" /> Tarde (12h–18h)
+                </label>
+                <Input placeholder="https://..." value={cfg.imagem_tarde}
+                  onChange={e => setField('imagem_tarde', e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                  <Moon className="h-3.5 w-3.5 text-indigo-500" /> Noite (18h–24h)
+                </label>
+                <Input placeholder="https://..." value={cfg.imagem_noite}
+                  onChange={e => setField('imagem_noite', e.target.value)} />
+              </div>
+            </div>
+          </div>
+
+          {/* Variáveis customizadas */}
+          <div>
+            <p className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+              <Link2 className="h-4 w-4 text-primary" /> Links e variáveis
+            </p>
+            <p className="text-xs text-muted-foreground mb-3">
+              Adicione links das aulas, vídeos ou qualquer valor que vá mudar por lançamento.
+              Use <code className="bg-muted px-1 rounded text-[10px]">{'{{nome_da_variavel}}'}</code> nas mensagens.
+            </p>
+
+            {Object.entries(cfg.variaveis).length > 0 && (
+              <div className="rounded-lg border divide-y mb-3">
+                {Object.entries(cfg.variaveis).map(([k, v]) => (
+                  <div key={k} className="flex items-center gap-2 px-3 py-2">
+                    <code className="text-[11px] font-mono text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded min-w-[100px] flex-shrink-0">
+                      {`{{${k}}}`}
+                    </code>
+                    <Input
+                      className="h-7 text-xs flex-1"
+                      placeholder="Valor / URL"
+                      value={v}
+                      onChange={e => setCfg(prev => ({
+                        ...prev,
+                        variaveis: { ...prev.variaveis, [k]: e.target.value },
+                      }))}
+                    />
+                    <button type="button" onClick={() => removeVar(k)}
+                      className="p-1 rounded hover:text-red-600 text-muted-foreground flex-shrink-0">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Input
+                className="h-8 text-xs w-40"
+                placeholder="nome_da_var (ex: link_aula_1)"
+                value={newVarK}
+                onChange={e => setNewVarK(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addVar()}
+              />
+              <Input
+                className="h-8 text-xs flex-1"
+                placeholder="Valor / URL"
+                value={newVarV}
+                onChange={e => setNewVarV(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addVar()}
+              />
+              <Button size="sm" variant="outline" className="h-8 px-2 flex-shrink-0" onClick={addVar}>
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Pode deixar o valor em branco agora e preencher depois — a mensagem não será agendada enquanto tiver variáveis vazias.
+            </p>
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2 pt-4 border-t">
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button onClick={handleSave} disabled={saving} className="bg-primary hover:bg-primary/90 gap-2">
+            {saving ? <Spinner small /> : null}
+            Salvar configurações
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1127,7 +1544,7 @@ function BulkImportModal({ open, onClose, currentFunnel, onImported }: {
     try {
       const data = JSON.parse(jsonText);
       const startDate    = new Date(data.data_inicio || new Date());
-      const defaultRecip = (data.destinatario_padrao as string) || '';
+      const defaultRecip = (data.destinatario_padrao as string) || '{{grupo_1}}';
       const msgs = ((data.mensagens || []) as Record<string, unknown>[]).map(m => {
         const date = new Date(startDate);
         date.setDate(date.getDate() + ((m.dia as number || 1) - 1));
@@ -1145,7 +1562,7 @@ function BulkImportModal({ open, onClose, currentFunnel, onImported }: {
           funnel_name:           (data.funil as string) || currentFunnel || 'Funil',
           day_number:            (m.dia as number) || 1,
           scheduled_at:          date.toISOString(),
-          recipient_type:        recip.includes('@g.us') ? 'group' : 'number',
+          recipient_type:        recip.includes('@g.us') || recip.includes('{{grupo') ? 'group' : 'number',
           recipient_id:          recip,
           message_type,
           message_text:          (m.mensagem as string) || (m.legenda as string) || '',
@@ -1155,6 +1572,7 @@ function BulkImportModal({ open, onClose, currentFunnel, onImported }: {
           poll_selectable_count: m.multipla_escolha ? ((m.opcoes as unknown[])?.length || 2) : 1,
           link_preview:          !!(m.preview_link),
           mention_everyone:      !!(m.marcar_todos),
+          send_header_image:     m.imagem_cabecalho !== false,
           status:                'draft',
         };
       });
@@ -1186,17 +1604,16 @@ function BulkImportModal({ open, onClose, currentFunnel, onImported }: {
         <div className="space-y-4 flex-1 overflow-y-auto py-1 pr-1">
           {/* Info */}
           <div className="p-3 rounded-lg bg-muted/30 border text-sm space-y-1.5">
-            <p className="font-medium text-foreground text-sm">Formato JSON — tipos suportados:</p>
+            <p className="font-medium text-foreground text-sm">Tipos suportados:</p>
             <div className="flex flex-wrap gap-1.5">
               {(['texto','imagem','video','audio','documento','enquete'] as string[]).map(t => (
                 <code key={t} className="text-xs bg-background border rounded px-1.5 py-0.5">{t}</code>
               ))}
             </div>
             <p className="text-xs text-muted-foreground">
-              Cada item pode ter: <code className="text-xs">marcar_todos</code>,{' '}
-              <code className="text-xs">preview_link</code>,{' '}
-              <code className="text-xs">destinatario</code> próprio.
-              Enquetes precisam de <code className="text-xs">titulo</code> e <code className="text-xs">opcoes</code>.
+              Use variáveis como <code className="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-1 rounded">{'{{grupo_1}}'}</code>,{' '}
+              <code className="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-1 rounded">{'{{link_aula_1}}'}</code>{' '}
+              — os valores reais são configurados em "Configurar funil".
             </p>
           </div>
 
@@ -1205,9 +1622,7 @@ function BulkImportModal({ open, onClose, currentFunnel, onImported }: {
           </Button>
 
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-              Cole seu JSON aqui
-            </label>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Cole seu JSON aqui</label>
             <Textarea
               placeholder={BULK_TEMPLATE}
               value={jsonText}
@@ -1231,7 +1646,7 @@ function BulkImportModal({ open, onClose, currentFunnel, onImported }: {
                 <table className="w-full text-xs">
                   <thead className="bg-muted/20">
                     <tr>
-                      {['#','Dia','Hora','Tipo','Prévia','Flags'].map(h => (
+                      {['#','Dia','Hora','Tipo','Destinatário','Prévia','Flags'].map(h => (
                         <th key={h} className="px-3 py-2 text-left font-medium text-muted-foreground">{h}</th>
                       ))}
                     </tr>
@@ -1251,16 +1666,22 @@ function BulkImportModal({ open, onClose, currentFunnel, onImported }: {
                               <TI className="h-3 w-3" /> {tc.label}
                             </span>
                           </td>
-                          <td className="px-3 py-1.5 max-w-[160px] truncate text-foreground/80">
+                          <td className="px-3 py-1.5 max-w-[80px] truncate text-muted-foreground font-mono text-[10px]">
+                            {m.recipient_id as string}
+                          </td>
+                          <td className="px-3 py-1.5 max-w-[140px] truncate text-foreground/80">
                             {(m.poll_name || m.message_text || m.media_url || '—') as string}
                           </td>
                           <td className="px-3 py-1.5">
-                            <div className="flex gap-1">
+                            <div className="flex gap-1 flex-wrap">
                               {m.mention_everyone && (
-                                <span className="text-[10px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded border border-amber-100">@todos</span>
+                                <span className="text-[10px] bg-amber-50 text-amber-700 px-1 py-0.5 rounded border border-amber-100">@todos</span>
                               )}
                               {m.link_preview && (
-                                <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100">preview</span>
+                                <span className="text-[10px] bg-blue-50 text-blue-600 px-1 py-0.5 rounded border border-blue-100">preview</span>
+                              )}
+                              {m.send_header_image && (
+                                <span className="text-[10px] bg-purple-50 text-purple-600 px-1 py-0.5 rounded border border-purple-100">header</span>
                               )}
                             </div>
                           </td>
