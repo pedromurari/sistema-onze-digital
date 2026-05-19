@@ -1520,6 +1520,89 @@ function FunnelConfigModal({
   );
 }
 
+// ── Native format helpers ──────────────────────────────────────────────────────
+
+function parseNativeDate(dataStr: string): Date {
+  const match = dataStr.match(/(\d{1,2})\/(\d{2})/);
+  if (!match) return new Date();
+  const day   = parseInt(match[1]);
+  const month = parseInt(match[2]) - 1;
+  const now   = new Date();
+  const d     = new Date(now.getFullYear(), month, day);
+  if (d.getTime() < now.getTime() - 180 * 24 * 60 * 60 * 1000) d.setFullYear(now.getFullYear() + 1);
+  return d;
+}
+
+function parseNativeHorario(horario: string): { h: number; m: number } {
+  const match = horario.match(/(\d+)h(\d*)/);
+  if (!match) return { h: 9, m: 0 };
+  return { h: parseInt(match[1]), m: match[2] ? parseInt(match[2]) : 0 };
+}
+
+function parseNativeMessages(items: Record<string, unknown>[], funnelName: string): Record<string, unknown>[] {
+  const dateBases = items.map(item => {
+    const d = parseNativeDate((item.data as string) || '');
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
+  const minTs  = Math.min(...dateBases.map(d => d.getTime()));
+  const result: Record<string, unknown>[] = [];
+
+  items.forEach((item, idx) => {
+    const msgDate         = parseNativeDate((item.data as string) || '');
+    const { h, m }        = parseNativeHorario((item.horario as string) || '');
+    msgDate.setHours(h, m, 0, 0);
+    const dayNumber       = Math.round((dateBases[idx].getTime() - minTs) / 86400000) + 1;
+    const tipo            = (item.tipo as string) || 'manha';
+    const grupo           = (item.grupo as string) || '{{grupo_1}}';
+    const recType         = grupo.includes('@g.us') || grupo.startsWith('{{') ? 'group' : 'number';
+    const isMain          = ['manha', 'noite', 'enquete', 'audio'].includes(tipo);
+
+    const base = {
+      funnel_name: funnelName || 'Funil',
+      day_number: dayNumber,
+      recipient_type: recType,
+      recipient_id: grupo,
+      link_preview: false,
+      mention_everyone: true,
+      send_header_image: isMain,
+      status: 'draft',
+    };
+
+    if (tipo === 'enquete') {
+      const enquete = (item.enquete as { titulo?: string; opcoes?: string[] }) ?? {};
+      if (item.textoPrincipal) {
+        result.push({ ...base, scheduled_at: msgDate.toISOString(),
+          message_type: 'text', message_text: item.textoPrincipal,
+          media_url: null, poll_name: null, poll_options: null, poll_selectable_count: 1 });
+      }
+      const pollTime = new Date(msgDate.getTime() + 3 * 60 * 1000);
+      result.push({ ...base, scheduled_at: pollTime.toISOString(), send_header_image: false,
+        message_type: 'poll', message_text: '', media_url: null,
+        poll_name: enquete.titulo || '', poll_options: enquete.opcoes || [],
+        poll_selectable_count: 1 });
+    } else if (tipo === 'audio' && !item.url_midia) {
+      if (item.texto) {
+        result.push({ ...base, scheduled_at: msgDate.toISOString(),
+          message_type: 'text', message_text: item.texto,
+          media_url: null, poll_name: null, poll_options: null, poll_selectable_count: 1 });
+      }
+      const audioTime = item.texto ? new Date(msgDate.getTime() + 3 * 60 * 1000) : msgDate;
+      result.push({ ...base, scheduled_at: audioTime.toISOString(), send_header_image: false,
+        message_type: 'audio', message_text: '', media_url: '{{audio_rodrygo_1}}',
+        poll_name: null, poll_options: null, poll_selectable_count: 1 });
+    } else {
+      result.push({ ...base, scheduled_at: msgDate.toISOString(),
+        message_type: tipo === 'audio' ? 'audio' : 'text',
+        message_text: (item.texto as string) || '',
+        media_url: (item.url_midia as string) || null,
+        poll_name: null, poll_options: null, poll_selectable_count: 1 });
+    }
+  });
+
+  return result;
+}
+
 // ── Bulk Import Modal ──────────────────────────────────────────────────────────
 
 function BulkImportModal({ open, onClose, currentFunnel, onImported }: {
@@ -1542,7 +1625,16 @@ function BulkImportModal({ open, onClose, currentFunnel, onImported }: {
   function parseBulk() {
     setParseErr(''); setPreview([]);
     try {
-      const data = JSON.parse(jsonText);
+      const raw = JSON.parse(jsonText);
+
+      // Formato nativo: array de objetos com data/horario/tipo
+      if (Array.isArray(raw)) {
+        setPreview(parseNativeMessages(raw, currentFunnel));
+        return;
+      }
+
+      // Formato padrão: { funil, data_inicio, destinatario_padrao, mensagens: [] }
+      const data         = raw;
       const startDate    = new Date(data.data_inicio || new Date());
       const defaultRecip = (data.destinatario_padrao as string) || '{{grupo_1}}';
       const msgs = ((data.mensagens || []) as Record<string, unknown>[]).map(m => {
