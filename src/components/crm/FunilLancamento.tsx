@@ -1613,6 +1613,7 @@ function BulkImportModal({ open, onClose, currentFunnel, onImported }: {
   const [preview,   setPreview]   = useState<Record<string, unknown>[]>([]);
   const [parseErr,  setParseErr]  = useState('');
   const [importing, setImporting] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   function downloadTemplate() {
     const blob = new Blob([BULK_TEMPLATE], { type: 'application/json' });
@@ -1624,12 +1625,20 @@ function BulkImportModal({ open, onClose, currentFunnel, onImported }: {
 
   function parseBulk() {
     setParseErr(''); setPreview([]);
+    // Lê diretamente do DOM como fallback caso o estado React não tenha atualizado
+    const text = jsonText.trim() || textareaRef.current?.value?.trim() || '';
+    if (!text) { toast.error('Cole o JSON antes de visualizar'); return; }
+
     try {
-      const raw = JSON.parse(jsonText);
+      const raw = JSON.parse(text);
 
       // Formato nativo: array de objetos com data/horario/tipo
       if (Array.isArray(raw)) {
-        setPreview(parseNativeMessages(raw, currentFunnel));
+        if (raw.length === 0) { toast.error('Array vazio — adicione mensagens ao JSON'); return; }
+        const msgs = parseNativeMessages(raw, currentFunnel);
+        if (msgs.length === 0) { toast.error('Nenhuma mensagem reconhecida no JSON'); return; }
+        setPreview(msgs);
+        toast.success(`${msgs.length} mensagens detectadas — revise e clique em Importar`);
         return;
       }
 
@@ -1669,8 +1678,11 @@ function BulkImportModal({ open, onClose, currentFunnel, onImported }: {
         };
       });
       setPreview(msgs);
+      if (msgs.length > 0) toast.success(`${msgs.length} mensagens detectadas`);
     } catch (e: unknown) {
-      setParseErr(`JSON inválido: ${(e as Error).message}`);
+      const msg = `JSON inválido: ${(e as Error).message}`;
+      setParseErr(msg);
+      toast.error(msg);
     }
   }
 
@@ -1716,16 +1728,28 @@ function BulkImportModal({ open, onClose, currentFunnel, onImported }: {
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Cole seu JSON aqui</label>
             <Textarea
+              ref={textareaRef}
               placeholder={BULK_TEMPLATE}
               value={jsonText}
               onChange={e => { setJsonText(e.target.value); setPreview([]); setParseErr(''); }}
+              onPaste={e => {
+                const pasted = e.clipboardData.getData('text');
+                if (pasted) { setJsonText(pasted); setPreview([]); setParseErr(''); e.preventDefault(); }
+              }}
               rows={9}
               className="font-mono text-xs"
             />
-            {parseErr && <p className="text-xs text-red-600 mt-1">{parseErr}</p>}
+            <div className="flex items-center justify-between mt-1">
+              {parseErr
+                ? <p className="text-xs text-red-600">{parseErr}</p>
+                : <span className="text-xs text-muted-foreground">
+                    {jsonText.length > 0 ? `${jsonText.length} chars · pronto para visualizar` : 'Cole o JSON aqui'}
+                  </span>
+              }
+            </div>
           </div>
 
-          <Button variant="outline" className="w-full gap-2" onClick={parseBulk} disabled={!jsonText.trim()}>
+          <Button variant="outline" className="w-full gap-2" onClick={parseBulk}>
             <Eye className="h-4 w-4" /> Visualizar {preview.length > 0 ? `(${preview.length} mensagens)` : 'mensagens'}
           </Button>
 
