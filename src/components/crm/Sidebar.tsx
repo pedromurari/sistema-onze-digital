@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Kanban, Settings, UserCog, FileSpreadsheet,
   MessageCircle, Rocket, BarChart3, CheckSquare, ChevronDown,
   ChevronLeft, ChevronRight, Plus, Brain, ListTodo, Scale,
-  GraduationCap, GripVertical, Pencil, Check, MessageSquare, TrendingUp,
+  GraduationCap, GripVertical, Pencil, Check, MessageSquare, TrendingUp, GitBranch,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,7 +39,8 @@ const BASE_MENU: MenuItem[] = [
   { key: 'financeiro', label: 'Financeiro', icon: BarChart3 },
   { key: 'financeiro_cfo', label: 'Análise CFO', icon: TrendingUp },
   { key: 'balanco', label: 'Balanco', icon: Scale },
-  { key: 'cobranca', label: 'Cobrança', icon: MessageSquare },
+  { key: 'cobranca',         label: 'Cobrança',           icon: MessageSquare },
+  { key: 'funil_lancamento', label: 'Funil de Lançamento', icon: GitBranch },
   { key: 'team', label: 'Equipe', icon: UserCog, adminOnly: true },
   {
     group: 'operacoes',
