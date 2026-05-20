@@ -356,6 +356,16 @@ export function Financeiro() {
       return canAccessFinanceiroTurma(permissions, t.id);
     });
   }, [turmas, activeTab, permissions, isAdmin]);
+
+  // Tabs visíveis conforme turmas acessíveis
+  const visibleTabs = useMemo<ProdutoTab[]>(() => {
+    if (isAdmin) return ['psicanalise', 'numerologia'];
+    const tabs: ProdutoTab[] = (['psicanalise', 'numerologia'] as ProdutoTab[]).filter(tab =>
+      turmas.some(t => (t.tipo || t.produto) === tab && permissions && canAccessFinanceiroTurma(permissions, t.id))
+    );
+    return tabs.length > 0 ? tabs : ['psicanalise'];
+  }, [turmas, permissions, isAdmin]);
+
   const filteredPagamentos = useMemo(() => pagamentos.filter(p => p.produto === activeTab), [pagamentos, activeTab]);
   const pagamentosPorAluno = useMemo(() => {
     const map: Record<string, Pagamento[]> = {};
@@ -1213,16 +1223,18 @@ export function Financeiro() {
         <button onClick={() => setSubView('turmas')} className={`px-4 py-1.5 rounded-t text-sm font-medium transition-colors ${subView === 'turmas' ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'}`}>
           <Building2 className="h-3.5 w-3.5 inline mr-1" />Turmas
         </button>
-        <button onClick={() => setSubView('responsaveis')} className={`px-4 py-1.5 rounded-t text-sm font-medium transition-colors ${subView === 'responsaveis' ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'}`}>
-          <Users className="h-3.5 w-3.5 inline mr-1" />Por Responsavel
-          {responsaveis.length > 0 && <span className="ml-1.5 bg-primary/20 text-primary rounded-full text-[10px] px-1.5 py-0.5">{responsaveis.length}</span>}
-        </button>
+        {isAdmin && (
+          <button onClick={() => setSubView('responsaveis')} className={`px-4 py-1.5 rounded-t text-sm font-medium transition-colors ${subView === 'responsaveis' ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'}`}>
+            <Users className="h-3.5 w-3.5 inline mr-1" />Por Responsavel
+            {responsaveis.length > 0 && <span className="ml-1.5 bg-primary/20 text-primary rounded-full text-[10px] px-1.5 py-0.5">{responsaveis.length}</span>}
+          </button>
+        )}
       </div>
 
       {subView === 'alunos' && (
         <>
-          {/* Banner alunos sem turma */}
-          {alunosSemTurma.length > 0 && (
+          {/* Banner alunos sem turma — apenas admin */}
+          {isAdmin && alunosSemTurma.length > 0 && (
             <div className="flex items-center gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg">
               <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
               <div className="flex-1 min-w-0">
@@ -1435,7 +1447,7 @@ export function Financeiro() {
             <Card className="p-12 text-center">
               <Users className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
               <p className="text-muted-foreground">Nenhum aluno cadastrado</p>
-              <Button onClick={() => setShowAlunoDialog(true)} className="mt-3 bg-primary text-white"><Plus className="h-4 w-4 mr-1" />Adicionar Aluno</Button>
+              {isAdmin && <Button onClick={() => setShowAlunoDialog(true)} className="mt-3 bg-primary text-white"><Plus className="h-4 w-4 mr-1" />Adicionar Aluno</Button>}
             </Card>
           ) : (
             <div className="space-y-4">
@@ -1750,9 +1762,11 @@ export function Financeiro() {
 
       {subView === 'turmas' && (
         <div className="space-y-4">
-          <div className="flex justify-end">
-            <Button onClick={() => setShowTurmaDialog(true)} variant="outline"><Plus className="h-4 w-4 mr-1" />Nova Turma</Button>
-          </div>
+          {isAdmin && (
+            <div className="flex justify-end">
+              <Button onClick={() => setShowTurmaDialog(true)} variant="outline"><Plus className="h-4 w-4 mr-1" />Nova Turma</Button>
+            </div>
+          )}
           {filteredTurmas.length === 0 ? (
             <Card className="p-12 text-center">
               <Building2 className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
@@ -1847,19 +1861,23 @@ export function Financeiro() {
             <h1 className="text-2xl font-bold">Financeiro</h1>
             <p className="text-sm text-muted-foreground">Gestao completa de turmas e pagamentos</p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setShowTurmaDialog(true)}><Plus className="h-4 w-4 mr-1" />Nova Turma</Button>
-            <Button onClick={() => setShowAlunoDialog(true)} className="bg-primary text-white"><Plus className="h-4 w-4 mr-1" />Adicionar Aluno</Button>
-          </div>
+          {isAdmin && (
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setShowTurmaDialog(true)}><Plus className="h-4 w-4 mr-1" />Nova Turma</Button>
+              <Button onClick={() => setShowAlunoDialog(true)} className="bg-primary text-white"><Plus className="h-4 w-4 mr-1" />Adicionar Aluno</Button>
+            </div>
+          )}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 lg:p-6">
         <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as ProdutoTab); setSubView('alunos'); setSelectedTurmaId('todas'); }}>
-          <TabsList className="grid w-full max-w-xs grid-cols-2 mb-4">
-            <TabsTrigger value="psicanalise">Psicanalise</TabsTrigger>
-            <TabsTrigger value="numerologia">Numerologia</TabsTrigger>
-          </TabsList>
+          {visibleTabs.length > 1 && (
+            <TabsList className={`grid w-full max-w-xs mb-4`} style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, 1fr)` }}>
+              {visibleTabs.includes('psicanalise') && <TabsTrigger value="psicanalise">Psicanalise</TabsTrigger>}
+              {visibleTabs.includes('numerologia') && <TabsTrigger value="numerologia">Numerologia</TabsTrigger>}
+            </TabsList>
+          )}
           <TabsContent value="psicanalise"><ProdutoContent /></TabsContent>
           <TabsContent value="numerologia"><ProdutoContent /></TabsContent>
         </Tabs>
