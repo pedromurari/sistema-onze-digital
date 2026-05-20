@@ -15,7 +15,7 @@ import {
 import {
   Plus, Search, AlertCircle, Users, Target, DollarSign,
   Loader2, Power, Trash2, Pencil, TrendingUp, BarChart2,
-  ChevronUp, ChevronDown, Upload, FileText, UserCheck,
+  ChevronUp, ChevronDown, Upload, FileText, UserCheck, Globe, Copy,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useKanbanColunas } from './kanban/useKanbanColunas';
@@ -42,6 +42,8 @@ interface Launch {
   meta_campaign_id?: string;
   meta_ad_account_id?: string;
   meta_access_token?: string;
+  grupo_lancamento_jid?: string;
+  grupo_oferta_jid?: string;
 }
 
 interface LaunchLead {
@@ -704,6 +706,12 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
   const [syncingGrupo, setSyncingGrupo] = useState(false);
   const [syncGrupoResult, setSyncGrupoResult] = useState<{ updated: number; notFound: number } | null>(null);
 
+  // Webhook groups config
+  const [showWebhookModal, setShowWebhookModal] = useState(false);
+  const [webhookForm, setWebhookForm] = useState({ grupoLancamentoJid: '', grupoOfertaJid: '' });
+  const [savingWebhook, setSavingWebhook] = useState(false);
+  const WEBHOOK_URL = 'https://usqiyekfmwwnvkmkdlej.supabase.co/functions/v1/webhook-grupo';
+
   // Column management
   const [renamingColuna, setRenamingColuna] = useState<KanbanColuna | null>(null);
   const [deletingColuna, setDeletingColuna] = useState<KanbanColuna | null>(null);
@@ -775,6 +783,10 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
           localStorage.removeItem(lsKey);
         }
         setLancamento(merged as Launch);
+        setWebhookForm({
+          grupoLancamentoJid: (merged as Launch).grupo_lancamento_jid ?? '',
+          grupoOfertaJid:     (merged as Launch).grupo_oferta_jid      ?? '',
+        });
       }
 
       let loadedLeads = (await fetchAllLeads(lancamentoId)) as LaunchLead[];
@@ -1089,6 +1101,27 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
     navigate('/dashboard');
   };
 
+  // ── Save webhook group config ───────────────────────────────────────────────
+  const handleSaveWebhook = async () => {
+    setSavingWebhook(true);
+    const { error } = await supabase
+      .from('lancamentos')
+      .update({
+        grupo_lancamento_jid: webhookForm.grupoLancamentoJid.trim() || null,
+        grupo_oferta_jid:     webhookForm.grupoOfertaJid.trim()     || null,
+      })
+      .eq('id', lancamentoId);
+    setSavingWebhook(false);
+    if (error) { toast.error('Erro ao salvar: ' + error.message); return; }
+    setLancamento(prev => prev ? {
+      ...prev,
+      grupo_lancamento_jid: webhookForm.grupoLancamentoJid.trim() || undefined,
+      grupo_oferta_jid:     webhookForm.grupoOfertaJid.trim()     || undefined,
+    } : prev);
+    toast.success('Configuração de webhook salva!');
+    setShowWebhookModal(false);
+  };
+
   // ── Delete lead ─────────────────────────────────────────────────────────────
   const handleDeleteLead = async () => {
     if (!leadToDelete) return;
@@ -1213,6 +1246,18 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
           )}
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline" size="sm"
+            onClick={() => setShowWebhookModal(true)}
+            className="gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50"
+            title="Configurar webhook de grupo WhatsApp"
+          >
+            <Globe className="h-4 w-4" />
+            Webhook Grupos
+            {(lancamento.grupo_lancamento_jid || lancamento.grupo_oferta_jid) && (
+              <span className="w-2 h-2 rounded-full bg-green-500 ml-0.5" />
+            )}
+          </Button>
           <Button variant="destructive" size="sm" onClick={() => setShowDeleteModal(true)} className="gap-2">
             <Trash2 className="h-4 w-4" />
             Apagar
@@ -1801,6 +1846,94 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
               <Button variant="outline" onClick={() => setEditingLead(null)}>Cancelar</Button>
               <Button onClick={handleSaveEditLead}>Salvar</Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Webhook Grupos Modal ── */}
+      <Dialog open={showWebhookModal} onOpenChange={setShowWebhookModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Globe className="h-5 w-5 text-blue-600" />
+              Webhook — Entrada no Grupo WhatsApp
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-5 py-1">
+            {/* URL do webhook */}
+            <div className="space-y-1.5">
+              <p className="text-sm font-medium text-foreground">URL do Webhook (copie para a Evolution API)</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 px-3 py-2 rounded-md bg-muted text-xs font-mono text-foreground break-all select-all">
+                  {WEBHOOK_URL}
+                </code>
+                <Button
+                  size="sm" variant="outline"
+                  onClick={() => { navigator.clipboard.writeText(WEBHOOK_URL); toast.success('URL copiada!'); }}
+                  className="shrink-0 gap-1.5"
+                >
+                  <Copy className="h-3.5 w-3.5" /> Copiar
+                </Button>
+              </div>
+            </div>
+
+            {/* Instruções */}
+            <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-xs text-blue-800 space-y-1">
+              <p className="font-semibold">Como configurar na Evolution API:</p>
+              <ol className="list-decimal list-inside space-y-0.5 text-blue-700">
+                <li>Acesse sua instância → <strong>Webhook</strong></li>
+                <li>Cole a URL acima e marque o evento <strong>GROUP_PARTICIPANTS_UPDATE</strong></li>
+                <li>Salve e ative o webhook</li>
+                <li>Cole os JIDs dos grupos abaixo (encontre em <em>Grupos → ID do grupo</em>)</li>
+              </ol>
+            </div>
+
+            {/* JID Grupo Lançamento */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">
+                JID do Grupo de Lançamento
+                {lancamento?.grupo_lancamento_jid && (
+                  <span className="ml-2 text-xs font-normal text-green-600">● configurado</span>
+                )}
+              </label>
+              <input
+                className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="120363XXXXXXXXXX@g.us"
+                value={webhookForm.grupoLancamentoJid}
+                onChange={e => setWebhookForm(f => ({ ...f, grupoLancamentoJid: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">
+                Quando alguém entrar neste grupo: marca <code className="bg-muted px-1 rounded">no_grupo = true</code> e move o lead para a coluna <em>Grupo Lançamento</em>.
+              </p>
+            </div>
+
+            {/* JID Grupo Oferta */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">
+                JID do Grupo de Oferta
+                {lancamento?.grupo_oferta_jid && (
+                  <span className="ml-2 text-xs font-normal text-green-600">● configurado</span>
+                )}
+              </label>
+              <input
+                className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="120363YYYYYYYYYY@g.us"
+                value={webhookForm.grupoOfertaJid}
+                onChange={e => setWebhookForm(f => ({ ...f, grupoOfertaJid: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">
+                Quando alguém entrar neste grupo: marca <code className="bg-muted px-1 rounded">grupo_oferta = true</code> e move para <em>Grupo Oferta</em>.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setShowWebhookModal(false)}>Cancelar</Button>
+            <Button onClick={handleSaveWebhook} disabled={savingWebhook} className="gap-2">
+              {savingWebhook ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe className="h-4 w-4" />}
+              Salvar configuração
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
