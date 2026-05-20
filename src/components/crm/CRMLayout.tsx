@@ -24,6 +24,7 @@ const Balanco          = lazy(() => import('./Balanco').then(m => ({ default: m.
 const FinanceiroCFO    = lazy(() => import('./FinanceiroCFO').then(m => ({ default: m.FinanceiroCFO })));
 const Cobranca         = lazy(() => import('./Cobranca').then(m => ({ default: m.Cobranca })));
 const FunilLancamento  = lazy(() => import('./FunilLancamento').then(m => ({ default: m.FunilLancamento })));
+const DisparoPlanilha  = lazy(() => import('./DisparoPlanilha'));
 const Rodrygo          = lazy(() => import('./Rodrygo').then(m => ({ default: m.Rodrygo })));
 const Pedagogico       = lazy(() => import('../pedagogico/Pedagogico').then(m => ({ default: m.Pedagogico })));
 const LancamentoKanban = lazy(() => import('./LancamentoKanban').then(m => ({ default: m.LancamentoKanban })));
@@ -223,6 +224,7 @@ export function CRMLayout() {
       case 'balanco': return <Balanco />;
       case 'cobranca':         return permissions.canViewCobranca || isAdmin ? <Cobranca /> : <RestrictedView />;
       case 'funil_lancamento': return permissions.canViewCobranca || isAdmin ? <FunilLancamento /> : <RestrictedView />;
+      case 'disparo_planilha': return permissions.canViewCobranca || isAdmin ? <DisparoPlanilha /> : <RestrictedView />;
       case 'rodrygo': return <Rodrygo />;
       case 'team': return user?.tipo === 'admin' || permissions.canViewTeam ? <TeamManagement /> : <RestrictedView />;
       case 'settings': return permissions.canViewSettings || isAdmin ? <Settings /> : <RestrictedView />;
