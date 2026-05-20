@@ -40,8 +40,9 @@ const MODULE_PERMISSIONS: Array<{ key: keyof AccessPermissions; label: string; e
   { key: 'canViewAulaSecreta', label: 'Aula secreta',   emoji: '🔒' },
   { key: 'canViewChat',        label: 'Chat',           emoji: '💬' },
   { key: 'canViewSheets',      label: 'Leads Sheets',   emoji: '📋' },
-  { key: 'canViewFinanceiro',  label: 'Financeiro',     emoji: '💰' },
-  { key: 'canViewBalanco',     label: 'Balanço',        emoji: '📈' },
+  { key: 'canViewFinanceiro',    label: 'Financeiro',     emoji: '💰' },
+  { key: 'canViewFinanceiroCfo', label: 'Análise CFO',   emoji: '📉' },
+  { key: 'canViewBalanco',       label: 'Balanço',        emoji: '📈' },
   { key: 'canViewCobranca',    label: 'Cobrança',       emoji: '📲' },
   { key: 'canViewOperacoes',   label: 'Operações',      emoji: '🗓️' },
   { key: 'canViewMapaMental',  label: 'Mapa mental',    emoji: '🧠' },
@@ -133,7 +134,7 @@ export function TeamManagement() {
     setPermissions(prev => {
       const next = { ...prev, [key]: checked };
       if (key === 'canViewLancamentos' && !checked) { next.canViewAllLancamentos = false; next.allowedLancamentoIds = []; }
-      if (key === 'canViewFinanceiro' && !checked) { next.canViewAllFinanceiroTurmas = false; next.allowedFinanceiroTurmaIds = []; }
+      if (key === 'canViewFinanceiro' && !checked) { next.canViewFinanceiroCfo = false; next.canViewAllFinanceiroTurmas = false; next.allowedFinanceiroTurmaIds = []; }
       if (key === 'canViewPedagogico' && !checked) { next.canViewAllTurmas = false; next.allowedTurmaIds = []; }
       if (key === 'canViewAllLancamentos' && checked) next.allowedLancamentoIds = [];
       if (key === 'canViewAllFinanceiroTurmas' && checked) next.allowedFinanceiroTurmaIds = [];

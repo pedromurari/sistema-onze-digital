@@ -352,7 +352,7 @@ export function Financeiro() {
     return turmas.filter(t => {
       if ((t.tipo || t.produto) !== activeTab) return false;
       if (isAdmin) return true;
-      if (!permissions) return true;
+      if (!permissions) return false;
       return canAccessFinanceiroTurma(permissions, t.id);
     });
   }, [turmas, activeTab, permissions, isAdmin]);

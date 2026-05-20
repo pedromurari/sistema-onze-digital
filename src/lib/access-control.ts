@@ -9,6 +9,7 @@ export interface AccessPermissions {
   canViewChat: boolean;
   canViewSheets: boolean;
   canViewFinanceiro: boolean;
+  canViewFinanceiroCfo: boolean;
   canViewAllFinanceiroTurmas: boolean;
   allowedFinanceiroTurmaIds: string[];
   canViewBalanco: boolean;
@@ -41,6 +42,7 @@ export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
   canViewChat: true,
   canViewSheets: true,
   canViewFinanceiro: true,
+  canViewFinanceiroCfo: false,
   canViewAllFinanceiroTurmas: true,
   allowedFinanceiroTurmaIds: [],
   canViewBalanco: true,
@@ -82,6 +84,7 @@ export function normalizePermissionsRow(row: any, role?: string): AccessPermissi
     canViewChat: row.can_view_chat ?? defaults.canViewChat,
     canViewSheets: row.can_view_sheets ?? defaults.canViewSheets,
     canViewFinanceiro: row.can_view_financeiro ?? defaults.canViewFinanceiro,
+    canViewFinanceiroCfo: row.can_view_financeiro_cfo ?? defaults.canViewFinanceiroCfo,
     canViewAllFinanceiroTurmas: row.can_view_all_financeiro_turmas ?? defaults.canViewAllFinanceiroTurmas,
     allowedFinanceiroTurmaIds: Array.isArray(row.allowed_financeiro_turma_ids) ? row.allowed_financeiro_turma_ids.filter(Boolean) : defaults.allowedFinanceiroTurmaIds,
     canViewBalanco: row.can_view_balanco ?? defaults.canViewBalanco,
@@ -109,6 +112,7 @@ export function permissionsToRow(permissions: AccessPermissions) {
     can_view_chat: permissions.canViewChat,
     can_view_sheets: permissions.canViewSheets,
     can_view_financeiro: permissions.canViewFinanceiro,
+    can_view_financeiro_cfo: permissions.canViewFinanceiroCfo,
     can_view_all_financeiro_turmas: permissions.canViewAllFinanceiroTurmas,
     allowed_financeiro_turma_ids: permissions.allowedFinanceiroTurmaIds,
     can_view_balanco: permissions.canViewBalanco,
@@ -163,7 +167,7 @@ export function canAccessView(view: string, permissions: AccessPermissions, isAd
     chat: permissions.canViewChat,
     sheets: permissions.canViewSheets,
     financeiro: permissions.canViewFinanceiro,
-    financeiro_cfo: permissions.canViewFinanceiro,
+    financeiro_cfo: permissions.canViewFinanceiroCfo,
     balanco: permissions.canViewBalanco,
     cobranca:         permissions.canViewCobranca,
     funil_lancamento: permissions.canViewCobranca,
