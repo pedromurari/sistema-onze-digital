@@ -163,11 +163,21 @@ async function processMessage(
 
   // ── Imagem de cabeçalho ───────────────────────────────────────────────────
   if (p.send_header_image !== false && funnelCfg) {
-    const hour = hourOf((p.scheduled_at as string) ?? new Date().toISOString());
+    const imagens = (funnelCfg.imagens as Record<string, string>) ?? {};
+    const subtipo = (p.subtipo as string) ?? '';
     let headerUrl = '';
-    if      (hour >= 6  && hour < 12) headerUrl = (funnelCfg.imagem_manha as string) ?? '';
-    else if (hour >= 12 && hour < 18) headerUrl = (funnelCfg.imagem_tarde as string) ?? '';
-    else                              headerUrl = (funnelCfg.imagem_noite as string) ?? '';
+
+    if (subtipo && imagens[subtipo]) {
+      // Seleção por subtipo (manha, tarde, noite, aula_manha, aula_tarde,
+      // contagem_3h/2h/1h, live, provocacao, aula_1/2/3)
+      headerUrl = imagens[subtipo];
+    } else {
+      // Fallback: seleção por horário
+      const hour = hourOf((p.scheduled_at as string) ?? new Date().toISOString());
+      if      (hour >= 6  && hour < 12) headerUrl = imagens['manha'] || (funnelCfg.imagem_manha as string) || '';
+      else if (hour >= 12 && hour < 18) headerUrl = imagens['tarde'] || (funnelCfg.imagem_tarde as string) || '';
+      else                              headerUrl = imagens['noite'] || (funnelCfg.imagem_noite as string) || '';
+    }
 
     if (headerUrl) {
       await sendEvolution(`${base}/message/sendMedia/${instance}`, {
@@ -176,7 +186,6 @@ async function processMessage(
         media: headerUrl,
         delay: 1200,
       }, apikey);
-      // Pausa entre header e conteúdo
       await new Promise(r => setTimeout(r, 2000));
     }
   }

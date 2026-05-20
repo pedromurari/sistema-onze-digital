@@ -17,7 +17,7 @@ import {
   Plus, Send, Clock, CheckCircle2, AlertCircle, FileText,
   Pencil, Trash2, MessageSquare, Users, Phone, Zap, Calendar,
   GitBranch, Image, Video, Music, FileIcon, BarChart2, Eye,
-  AtSign, Upload, Download, X, Settings2, Sunrise, Sunset, Moon,
+  AtSign, Upload, Download, X, Settings2,
   Variable, Link2,
 } from 'lucide-react';
 import { format, parseISO, isBefore } from 'date-fns';
@@ -60,6 +60,7 @@ interface FunnelConfig {
   imagem_tarde: string;
   imagem_noite: string;
   variaveis: Record<string, string>;
+  imagens: Record<string, string>;
 }
 
 interface MsgForm {
@@ -98,6 +99,32 @@ const TYPE_CFG: Record<MessageType, { label: string; icon: React.ElementType; co
   poll:     { label: 'Enquete',  icon: BarChart2,     color: 'text-indigo-600' },
 };
 
+// ── Drive image helpers & slots ───────────────────────────────────────────────
+
+const DRIVE_THUMB = (id: string) => `https://lh3.googleusercontent.com/d/${id}=w300`;
+const DRIVE_URL   = (id: string) => `https://drive.google.com/uc?export=view&id=${id}`;
+
+interface ImageSlot { key: string; label: string; driveId: string; hint: string; group: string; }
+
+const IMAGE_SLOTS: ImageSlot[] = [
+  { key: 'manha',       label: 'Manhã',       driveId: '1SkxuYbunOvbAcXZsu8rTRJFdeogbnyxI', hint: 'Bom dia', group: 'Dias normais' },
+  { key: 'tarde',       label: 'Tarde',        driveId: '1ezvELlgl9AIpaTFbKLx9-nlbZOT61JxA', hint: 'Conteúdo feito pra você', group: 'Dias normais' },
+  { key: 'noite',       label: 'Noite',        driveId: '1ov483G9T4c9hCAr9_-_vka8z2lMpQPkY', hint: 'Contagem noturna', group: 'Dias normais' },
+  { key: 'aula_manha',  label: 'Aula — Manhã', driveId: '1EpDy5feYWIpm9OO7_lqsP5RWL2fL-YwH', hint: 'Manhã em dias de aula', group: 'Dias das aulas' },
+  { key: 'aula_tarde',  label: 'Aula — Tarde', driveId: '1cdKhi7pNFburRVPYnWm1eIh0zMZelNKS', hint: 'Tarde em dias de aula', group: 'Dias das aulas' },
+  { key: 'contagem_3h', label: 'Faltam 3h',    driveId: '1lOEPLjQuEO9CuYaQFkkYz9LjqaKmMBwi', hint: 'Contagem regressiva 3 horas', group: 'Contagem' },
+  { key: 'contagem_2h', label: 'Faltam 2h',    driveId: '1uxNhpaBdK7y6y7oXX8tPlJLTcSMqDq3G', hint: 'Contagem regressiva 2 horas', group: 'Contagem' },
+  { key: 'contagem_1h', label: 'Falta 1h',     driveId: '1J6GZQ3m-Ar8qRoA-S8nuPVAF8zWKjINW', hint: 'Contagem regressiva 1 hora', group: 'Contagem' },
+  { key: 'live',        label: 'Ao vivo',       driveId: '1xkrnWTiry6A0zCWa3lB7tr6l4SR2b4Fp', hint: 'Transmissões ao vivo', group: 'Eventos' },
+  { key: 'provocacao',  label: 'Provocação',    driveId: '1qEVmFI2yf2pwPdMYLcw1FtALVflDFUzR', hint: 'Mensagens de provocação', group: 'Eventos' },
+  { key: 'aula_1',      label: 'Aula 1',        driveId: '1ZOEJkNGG58iDKfadw322QnMAZ-BppyDn', hint: 'Dia da Aula 1', group: 'Aulas específicas' },
+  { key: 'aula_2',      label: 'Aula 2',        driveId: '1ev8X5j8lFl4X5W5cNkr0_-rAWP3-c1yv', hint: 'Dia da Aula 2', group: 'Aulas específicas' },
+  { key: 'aula_3',      label: 'Aula 3',        driveId: '1Eh9-0a0OkopBMVA_afWKAdEsRUQSNQUk', hint: 'Dia da Aula 3', group: 'Aulas específicas' },
+];
+
+const SLOT_GROUPS = [...new Set(IMAGE_SLOTS.map(s => s.group))];
+const PRESET_DRIVE_URLS = Object.fromEntries(IMAGE_SLOTS.map(s => [s.key, DRIVE_URL(s.driveId)])) as Record<string, string>;
+
 const BULK_TEMPLATE = JSON.stringify(
   {
     funil: 'Nome do Funil',
@@ -126,6 +153,7 @@ const EMPTY_CONFIG = (name: string): FunnelConfig => ({
   imagem_tarde: '',
   imagem_noite: '',
   variaveis: {},
+  imagens: {},
 });
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
@@ -210,7 +238,11 @@ export function FunilLancamento() {
     setConfigs(prev => ({
       ...prev,
       [name]: data
-        ? { ...data, variaveis: (data.variaveis as Record<string, string>) || {} }
+        ? {
+            ...data,
+            variaveis: (data.variaveis as Record<string, string>) || {},
+            imagens:   (data.imagens   as Record<string, string>) || {},
+          }
         : EMPTY_CONFIG(name),
     }));
   }, [configs]);
@@ -256,7 +288,10 @@ export function FunilLancamento() {
 
   const progress = stats.total > 0 ? Math.round((stats.sent / stats.total) * 100) : 0;
 
-  const hasHeaderImages = !!(currentConfig.imagem_manha || currentConfig.imagem_tarde || currentConfig.imagem_noite);
+  const hasHeaderImages = !!(
+    currentConfig.imagem_manha || currentConfig.imagem_tarde || currentConfig.imagem_noite ||
+    Object.values(currentConfig.imagens || {}).some(Boolean)
+  );
 
   // ── Handlers ─────────────────────────────────────────────────────────────
 
@@ -1354,23 +1389,33 @@ function FunnelConfigModal({
     });
   }
 
+  function applyPresets() {
+    setCfg(prev => ({ ...prev, imagens: { ...PRESET_DRIVE_URLS } }));
+    toast.success('Presets do Drive aplicados! Salve para confirmar.');
+  }
+
+  function setImagem(key: string, url: string) {
+    setCfg(prev => ({ ...prev, imagens: { ...prev.imagens, [key]: url } }));
+  }
+
   async function handleSave() {
     setSaving(true);
     const payload = {
       funnel_name:   funnelName,
       grupo_1_id:    cfg.grupo_1_id,
       grupo_2_id:    cfg.grupo_2_id,
-      imagem_manha:  cfg.imagem_manha,
-      imagem_tarde:  cfg.imagem_tarde,
-      imagem_noite:  cfg.imagem_noite,
+      imagem_manha:  cfg.imagens['manha'] || cfg.imagem_manha,
+      imagem_tarde:  cfg.imagens['tarde'] || cfg.imagem_tarde,
+      imagem_noite:  cfg.imagens['noite'] || cfg.imagem_noite,
       variaveis:     cfg.variaveis,
+      imagens:       cfg.imagens,
     };
     const { error } = await supabase
       .from('funnel_configs')
       .upsert(payload, { onConflict: 'funnel_name' });
     setSaving(false);
     if (error) { toast.error(`Erro: ${error.message}`); return; }
-    onSaved(cfg);
+    onSaved({ ...cfg, imagem_manha: payload.imagem_manha, imagem_tarde: payload.imagem_tarde, imagem_noite: payload.imagem_noite });
   }
 
   return (
@@ -1417,35 +1462,59 @@ function FunnelConfigModal({
 
           {/* Imagens de cabeçalho */}
           <div>
-            <p className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-              <Image className="h-4 w-4 text-primary" /> Imagens de cabeçalho
-            </p>
-            <p className="text-xs text-muted-foreground mb-3">
-              Quando ativado na mensagem, o sistema envia a imagem correspondente ao turno <em>antes</em> da mensagem principal.
-            </p>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
-                  <Sunrise className="h-3.5 w-3.5 text-yellow-500" /> Manhã (6h–12h)
-                </label>
-                <Input placeholder="https://..." value={cfg.imagem_manha}
-                  onChange={e => setField('imagem_manha', e.target.value)} />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
-                  <Sunset className="h-3.5 w-3.5 text-orange-500" /> Tarde (12h–18h)
-                </label>
-                <Input placeholder="https://..." value={cfg.imagem_tarde}
-                  onChange={e => setField('imagem_tarde', e.target.value)} />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
-                  <Moon className="h-3.5 w-3.5 text-indigo-500" /> Noite (18h–24h)
-                </label>
-                <Input placeholder="https://..." value={cfg.imagem_noite}
-                  onChange={e => setField('imagem_noite', e.target.value)} />
-              </div>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Image className="h-4 w-4 text-primary" /> Imagens de cabeçalho
+              </p>
+              <Button size="sm" variant="outline"
+                className="h-7 text-xs gap-1.5 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                onClick={applyPresets}>
+                <Download className="h-3 w-3" /> Aplicar presets Drive
+              </Button>
             </div>
+            <p className="text-xs text-muted-foreground mb-4">
+              O sistema envia a imagem correspondente ao <em>subtipo</em> da mensagem antes do conteúdo principal.
+              Clique em <strong>Aplicar presets</strong> para preencher automaticamente com as peças do Drive.
+            </p>
+
+            {SLOT_GROUPS.map(group => (
+              <div key={group} className="mb-5">
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">{group}</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {IMAGE_SLOTS.filter(s => s.group === group).map(slot => {
+                    const currentUrl = cfg.imagens?.[slot.key] || '';
+                    const thumbSrc   = currentUrl || DRIVE_THUMB(slot.driveId);
+                    return (
+                      <div key={slot.key} className="rounded-lg border overflow-hidden bg-muted/10">
+                        <div className="relative aspect-video bg-muted/30 overflow-hidden">
+                          <img
+                            src={thumbSrc}
+                            alt={slot.label}
+                            className="w-full h-full object-cover"
+                            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                          />
+                          {currentUrl && (
+                            <span className="absolute top-1 right-1 bg-emerald-500 text-white text-[9px] px-1.5 py-0.5 rounded font-bold">
+                              OK
+                            </span>
+                          )}
+                        </div>
+                        <div className="p-2">
+                          <p className="text-[11px] font-semibold text-foreground mb-1">{slot.label}</p>
+                          <p className="text-[10px] text-muted-foreground mb-1.5">{slot.hint}</p>
+                          <Input
+                            className="h-6 text-[10px] px-1.5"
+                            placeholder="URL ou deixe vazio para preset"
+                            value={currentUrl}
+                            onChange={e => setImagem(slot.key, e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
 
           {/* Variáveis customizadas */}
@@ -1539,6 +1608,20 @@ function parseNativeHorario(horario: string): { h: number; m: number } {
   return { h: parseInt(match[1]), m: match[2] ? parseInt(match[2]) : 0 };
 }
 
+function getNativeSubtipo(tipo: string, label: string): string {
+  const l = label.toLowerCase();
+  if (tipo === 'contagem') {
+    if (l.includes('3')) return 'contagem_3h';
+    if (l.includes('2')) return 'contagem_2h';
+    return 'contagem_1h';
+  }
+  if (tipo === 'manha') return l.includes('aula') ? 'aula_manha' : 'manha';
+  if (tipo === 'tarde') return l.includes('aula') ? 'aula_tarde' : 'tarde';
+  if (tipo === 'live') return 'live';
+  if (tipo === 'provocacao') return 'provocacao';
+  return tipo;
+}
+
 function parseNativeMessages(items: Record<string, unknown>[], funnelName: string): Record<string, unknown>[] {
   const dateBases = items.map(item => {
     const d = parseNativeDate((item.data as string) || '');
@@ -1554,9 +1637,10 @@ function parseNativeMessages(items: Record<string, unknown>[], funnelName: strin
     msgDate.setHours(h, m, 0, 0);
     const dayNumber       = Math.round((dateBases[idx].getTime() - minTs) / 86400000) + 1;
     const tipo            = (item.tipo as string) || 'manha';
+    const label           = (item.label as string) || '';
     const grupo           = (item.grupo as string) || '{{grupo_1}}';
     const recType         = grupo.includes('@g.us') || grupo.startsWith('{{') ? 'group' : 'number';
-    const isMain          = ['manha', 'noite', 'enquete', 'audio'].includes(tipo);
+    const subtipo         = getNativeSubtipo(tipo, label);
 
     const base = {
       funnel_name: funnelName || 'Funil',
@@ -1565,7 +1649,8 @@ function parseNativeMessages(items: Record<string, unknown>[], funnelName: strin
       recipient_id: grupo,
       link_preview: false,
       mention_everyone: true,
-      send_header_image: isMain,
+      send_header_image: true,
+      subtipo,
       status: 'draft',
     };
 
@@ -1577,7 +1662,7 @@ function parseNativeMessages(items: Record<string, unknown>[], funnelName: strin
           media_url: null, poll_name: null, poll_options: null, poll_selectable_count: 1 });
       }
       const pollTime = new Date(msgDate.getTime() + 3 * 60 * 1000);
-      result.push({ ...base, scheduled_at: pollTime.toISOString(), send_header_image: false,
+      result.push({ ...base, scheduled_at: pollTime.toISOString(), send_header_image: false, subtipo: 'enquete',
         message_type: 'poll', message_text: '', media_url: null,
         poll_name: enquete.titulo || '', poll_options: enquete.opcoes || [],
         poll_selectable_count: 1 });
@@ -1588,7 +1673,7 @@ function parseNativeMessages(items: Record<string, unknown>[], funnelName: strin
           media_url: null, poll_name: null, poll_options: null, poll_selectable_count: 1 });
       }
       const audioTime = item.texto ? new Date(msgDate.getTime() + 3 * 60 * 1000) : msgDate;
-      result.push({ ...base, scheduled_at: audioTime.toISOString(), send_header_image: false,
+      result.push({ ...base, scheduled_at: audioTime.toISOString(), send_header_image: false, subtipo: 'audio',
         message_type: 'audio', message_text: '', media_url: '{{audio_rodrygo_1}}',
         poll_name: null, poll_options: null, poll_selectable_count: 1 });
     } else {
