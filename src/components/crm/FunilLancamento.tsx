@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -475,7 +475,14 @@ export function FunilLancamento() {
           <Button variant="outline" onClick={() => setBulkOpen(true)} className="gap-2">
             <Upload className="h-4 w-4" /> Importar em lote
           </Button>
-          <Button onClick={() => openCreate()} className="gap-2 bg-primary hover:bg-primary/90">
+          <Button
+            onClick={() => {
+              const target = [...expandedFunnels][0] ?? funnelNames[0];
+              if (target) openCreate(target);
+              else toast.error('Crie um funil primeiro');
+            }}
+            className="gap-2 bg-primary hover:bg-primary/90"
+          >
             <Plus className="h-4 w-4" /> Nova Mensagem
           </Button>
         </div>
