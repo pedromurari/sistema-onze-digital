@@ -38,7 +38,7 @@ function useEvolutionInstances() {
   useEffect(() => { load(); }, [load]);
 
   const save = async (inst: Omit<EvolutionInstance, 'id'>) => {
-    const { error } = await supabase.from('evolution_config').insert(inst);
+    const { error } = await supabase.from('evolution_config').insert({ id: crypto.randomUUID(), ...inst });
     if (error) { toast({ variant: 'destructive', title: 'Erro', description: error.message }); return false; }
     await load();
     return true;
