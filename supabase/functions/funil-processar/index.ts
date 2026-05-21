@@ -54,6 +54,7 @@ serve(async (req) => {
     const { data: evoCfg } = await supabase
       .from('evolution_config')
       .select('api_url, api_key, instance_name')
+      .eq('ativo', true)
       .limit(1)
       .maybeSingle();
 
@@ -71,10 +72,25 @@ serve(async (req) => {
 
     // ── Quick send (envio imediato pelo UI) ───────────────────────────────────
     if (body.quick_send) {
-      await processMessage(body, base, instance, apikey, supabase, null);
-      return new Response(JSON.stringify({ ok: true }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      try {
+        // Carrega config do funil para substituição de variáveis
+        const { data: funnelCfg } = await supabase
+          .from('funnel_configs')
+          .select('*')
+          .eq('funnel_name', body.funnel_name ?? '')
+          .maybeSingle();
+
+        await processMessage(body, base, instance, apikey, supabase, funnelCfg);
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } catch (e: unknown) {
+        // Retorna 200 com erro no body para que o cliente veja a mensagem real
+        return new Response(JSON.stringify({ ok: false, error: (e as Error).message }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     // ── Scheduled batch (chamado pelo pg_cron ou cron externo) ────────────────
