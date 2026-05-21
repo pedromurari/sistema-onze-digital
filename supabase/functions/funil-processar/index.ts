@@ -150,6 +150,44 @@ serve(async (req) => {
   }
 });
 
+// ── updateGroupPicture ────────────────────────────────────────────────────────
+
+async function updateGroupPicture(
+  base: string,
+  instance: string,
+  apikey: string,
+  groupJid: string,
+  imageUrl: string,
+) {
+  try {
+    // Busca a imagem e converte para base64
+    const imgRes = await fetch(imageUrl, { redirect: 'follow' });
+    if (!imgRes.ok) {
+      console.warn(`updateGroupPicture: falha ao buscar imagem (${imgRes.status})`);
+      return;
+    }
+    const buffer = await imgRes.arrayBuffer();
+    const bytes  = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+    const base64 = btoa(binary);
+    const mime   = (imgRes.headers.get('content-type') ?? 'image/jpeg').split(';')[0];
+
+    const res = await fetch(`${base}/group/updateGroupPicture/${instance}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', apikey },
+      body: JSON.stringify({ groupJid, image: `data:${mime};base64,${base64}` }),
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      console.warn(`updateGroupPicture: Evolution ${res.status} — ${txt.slice(0, 200)}`);
+    }
+  } catch (e: unknown) {
+    // Não deixa erro de foto do grupo quebrar o envio da mensagem
+    console.warn('updateGroupPicture falhou:', (e as Error).message);
+  }
+}
+
 // ── processMessage ─────────────────────────────────────────────────────────────
 
 async function processMessage(
@@ -196,6 +234,11 @@ async function processMessage(
     }
 
     if (headerUrl) {
+      // Atualiza foto do grupo antes de enviar a mensagem
+      if (number.endsWith('@g.us')) {
+        await updateGroupPicture(base, instance, apikey, number, headerUrl);
+      }
+
       await sendEvolution(`${base}/message/sendMedia/${instance}`, {
         number,
         mediatype: 'image',
