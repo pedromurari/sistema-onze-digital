@@ -44,9 +44,11 @@ function useEvolutionInstances() {
     return true;
   };
 
-  const toggle = async (id: string, ativo: boolean) => {
-    await supabase.from('evolution_config').update({ ativo }).eq('id', id);
-    setInstances(prev => prev.map(i => i.id === id ? { ...i, ativo } : i));
+  const toggle = async (id: string) => {
+    // Desativa todas, ativa só a selecionada
+    await supabase.from('evolution_config').update({ ativo: false }).neq('id', 'none');
+    await supabase.from('evolution_config').update({ ativo: true }).eq('id', id);
+    setInstances(prev => prev.map(i => ({ ...i, ativo: i.id === id })));
   };
 
   const remove = async (id: string) => {
@@ -167,7 +169,7 @@ function EvolutionTab() {
                 <p className="text-xs text-muted-foreground truncate">{inst.api_url}</p>
               </div>
               <ConnStateBadge state={states[inst.id] ?? 'loading'} />
-              <Switch checked={inst.ativo} onCheckedChange={v => toggle(inst.id, v)} title={inst.ativo ? 'Ativo' : 'Inativo'} />
+              <Switch checked={inst.ativo} onCheckedChange={() => toggle(inst.id)} title={inst.ativo ? 'Instância ativa' : 'Clique para usar esta'} />
               <Button size="sm" variant="outline" className="gap-1 shrink-0" onClick={() => handleReconnect(inst)}>
                 <QrCode className="h-3.5 w-3.5" />Reconectar
               </Button>
