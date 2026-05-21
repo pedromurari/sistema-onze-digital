@@ -1070,84 +1070,36 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
     setSyncGrupoResult({ updated, notFound: Math.max(0, notFound) });
   };
 
-  // ── Sync group participants live from Evolution API ─────────────────────────
+  // ── Sync group participants live from Evolution API (server-side) ─────────────
   const handleSyncFromEvolution = async (tipo: 'lancamento' | 'oferta' = 'lancamento') => {
-    const jid = tipo === 'lancamento' ? lancamento?.grupo_lancamento_jid : lancamento?.grupo_oferta_jid;
-    if (!jid) { toast.error('JID do grupo não configurado'); return; }
-
     setSyncingFromEvo(true);
     try {
-      // Fetch active Evolution instance
-      const { data: instances } = await (supabase as any)
-        .from('evolution_config')
-        .select('instance_name, api_url, api_key')
-        .eq('ativo', true)
-        .limit(1);
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-      if (!instances?.length) {
-        toast.error('Nenhuma instância Evolution API ativa encontrada. Configure em Disparo → Instâncias.');
+      const res = await fetch(`${supabaseUrl}/functions/v1/sync-grupo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
+        body: JSON.stringify({ lancamentoId, tipo }),
+      });
+
+      const result = await res.json();
+
+      if (!res.ok || result.error) {
+        toast.error(result.error ?? 'Erro ao sincronizar grupo');
         return;
       }
 
-      const { instance_name, api_url, api_key } = instances[0];
+      setSyncGrupoResult({ updated: result.updated, notFound: result.notFound });
 
-      // Try Evolution API v2 endpoint first, fall back to v1
-      let participants: string[] = [];
-      const headers = { 'apikey': api_key, 'Content-Type': 'application/json' };
-
-      for (const endpoint of [
-        `${api_url}/group/findParticipants/${instance_name}?groupJid=${encodeURIComponent(jid)}`,
-        `${api_url}/group/participants/${instance_name}?groupJid=${encodeURIComponent(jid)}`,
-      ]) {
-        let res: Response;
-        try { res = await fetch(endpoint, { headers }); } catch { continue; }
-        if (!res.ok) continue;
-        const json = await res.json();
-        // Response may be array or { participants: [] }
-        const raw: unknown[] = Array.isArray(json) ? json : (json?.participants ?? json?.data ?? []);
-        participants = raw.map((p: any) => String(p?.id ?? p?.phone ?? p?.phoneNumber ?? ''))
-          .filter(s => /\d{8,}/.test(s));
-        if (participants.length) break;
+      // Reload leads so kanban reflects the updates
+      if (result.updated > 0) {
+        const fresh = await fetchAllLeads(lancamentoId);
+        const normalized = await normalizeLeadsToCurrentColunas(fresh as LaunchLead[]);
+        setLeads(normalized);
       }
-
-      if (!participants.length) {
-        toast.error('Nenhum participante retornado. Verifique a instância e o JID do grupo.');
-        return;
-      }
-
-      // Find "Grupo Lançamento" column ID to move leads
-      const grupoColId = tipo === 'lancamento'
-        ? findColunaIdByName(colunas, n => n.includes('grupol') || (n.includes('grupo') && n.includes('lancamento')))
-        : findColunaIdByName(colunas, n => n.includes('grupoo') || (n.includes('grupo') && n.includes('oferta')));
-
-      const normalizePhone = (raw: string) => {
-        const digits = raw.replace(/\D/g, '');
-        if ((digits.length === 13 || digits.length === 12) && digits.startsWith('55')) return digits.slice(2);
-        return digits.slice(-11);
-      };
-      const groupSuffix8 = new Set(participants.map(p => normalizePhone(p).slice(-8)));
-      const matchedLeads = leads.filter(l => groupSuffix8.has(normalizePhone(l.whatsapp).slice(-8)));
-      const notFound = participants.length - matchedLeads.length;
-
-      const fieldName = tipo === 'lancamento' ? 'no_grupo' : 'grupo_oferta';
-      const updates: Record<string, unknown> = { [fieldName]: true };
-      if (grupoColId) updates.fase = grupoColId;
-
-      const BATCH = 100;
-      let updated = 0;
-      for (let i = 0; i < matchedLeads.length; i += BATCH) {
-        const ids = matchedLeads.slice(i, i + BATCH).map(l => l.id);
-        const { error } = await supabase.from('lancamento_leads').update(updates).in('id', ids);
-        if (!error) {
-          updated += ids.length;
-          setLeads(prev => prev.map(l => ids.includes(l.id) ? { ...l, ...updates as Partial<LaunchLead> } : l));
-        }
-      }
-
-      setSyncGrupoResult({ updated, notFound: Math.max(0, notFound) });
-      toast.success(`${updated} lead(s) marcado(s) como no grupo!`);
     } catch (e: unknown) {
-      toast.error('Erro ao buscar participantes: ' + (e as Error).message);
+      toast.error('Erro ao sincronizar: ' + (e as Error).message);
     } finally {
       setSyncingFromEvo(false);
     }
