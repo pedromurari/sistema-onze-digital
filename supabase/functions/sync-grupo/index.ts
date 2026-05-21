@@ -88,7 +88,8 @@ serve(async (req) => {
       if (!res.ok) { console.warn(`${endpoint} → ${res.status}`); continue; }
 
       const json = await res.json();
-      console.log('Evolution API response sample:', JSON.stringify(json).slice(0, 300));
+      const rawSample = JSON.stringify(json).slice(0, 500);
+      console.log('Evolution API raw response:', rawSample);
 
       // Handle various response shapes
       let raw: unknown[] = [];
@@ -153,6 +154,13 @@ serve(async (req) => {
       notFound: participants.length - matched.length,
       total: leads.length,
       participants: participants.length,
+      // debug: compare formats
+      _debug: {
+        sampleParticipants: participants.slice(0, 5),
+        sampleLeadPhones: leads.slice(0, 5).map(l => l.whatsapp),
+        sampleParticipantSuffix8: participants.slice(0, 5).map(p => suffix8(p)),
+        sampleLeadSuffix8: leads.slice(0, 5).map(l => l.whatsapp ? suffix8(l.whatsapp) : 'null'),
+      },
     });
 
   } catch (e: unknown) {

@@ -706,6 +706,7 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
   const [syncingGrupo, setSyncingGrupo] = useState(false);
   const [syncGrupoResult, setSyncGrupoResult] = useState<{ updated: number; notFound: number } | null>(null);
   const [syncingFromEvo, setSyncingFromEvo] = useState(false);
+  const [syncDebug, setSyncDebug] = useState<Record<string, unknown> | null>(null);
 
   // Webhook groups config
   const [showWebhookModal, setShowWebhookModal] = useState(false);
@@ -1091,6 +1092,16 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
       }
 
       setSyncGrupoResult({ updated: result.updated, notFound: result.notFound });
+
+      if (result._debug) {
+        setSyncDebug(result._debug);
+        console.group('sync-grupo debug');
+        console.log('Participants (Evolution API):', result._debug.sampleParticipants);
+        console.log('Participant suffix8:', result._debug.sampleParticipantSuffix8);
+        console.log('Lead phones (DB):', result._debug.sampleLeadPhones);
+        console.log('Lead suffix8:', result._debug.sampleLeadSuffix8);
+        console.groupEnd();
+      }
 
       // Reload leads so kanban reflects the updates
       if (result.updated > 0) {
@@ -1792,14 +1803,27 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
             </div>
           ) : (
             <div className="space-y-4 text-center py-6">
-              <div className="text-4xl">✅</div>
+              <div className="text-4xl">{syncGrupoResult.updated > 0 ? '✅' : '⚠️'}</div>
               <div>
                 <p className="text-lg font-semibold">{syncGrupoResult.updated} lead(s) marcado(s) como no grupo!</p>
                 {syncGrupoResult.notFound > 0 && (
                   <p className="text-sm text-muted-foreground mt-1">{syncGrupoResult.notFound} número(s) do grupo não encontrado(s) na planilha.</p>
                 )}
               </div>
-              <Button onClick={() => setShowSyncGrupoModal(false)}>Fechar</Button>
+              {syncGrupoResult.updated === 0 && syncDebug && (
+                <div className="text-left bg-muted rounded-lg p-3 text-xs font-mono space-y-1 max-h-48 overflow-y-auto">
+                  <p className="font-semibold text-foreground mb-1">Debug — formato dos números:</p>
+                  <p className="text-muted-foreground">Evolution API (participantes):</p>
+                  {(syncDebug.sampleParticipants as string[]).map((p, i) => (
+                    <p key={i} className="text-green-700">{p} → suffix8: {(syncDebug.sampleParticipantSuffix8 as string[])[i]}</p>
+                  ))}
+                  <p className="text-muted-foreground mt-1">Leads no banco:</p>
+                  {(syncDebug.sampleLeadPhones as string[]).map((p, i) => (
+                    <p key={i} className="text-blue-700">{p} → suffix8: {(syncDebug.sampleLeadSuffix8 as string[])[i]}</p>
+                  ))}
+                </div>
+              )}
+              <Button onClick={() => { setShowSyncGrupoModal(false); setSyncDebug(null); }}>Fechar</Button>
             </div>
           )}
         </DialogContent>
