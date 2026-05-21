@@ -7,9 +7,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Users, TrendingUp, DollarSign, AlertTriangle, BarChart3, Clock,
-  AlertCircle, Zap, TrendingDown, CheckCircle2,
+  AlertCircle, Zap, TrendingDown, CheckCircle2, CalendarDays, Rocket, Target,
 } from 'lucide-react';
-import { isPast, format, differenceInDays } from 'date-fns';
+import { isPast, format, differenceInDays, isToday, isTomorrow } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -151,6 +152,7 @@ export function Dashboard() {
   const [allLancLeads, setAllLancLeads] = useState<any[]>([]);  // all, for cross-lancamento dedup
   const [npaEventos, setNpaEventos]   = useState<any[]>([]);
   const [npaLeads, setNpaLeads]       = useState<any[]>([]);
+  const [eventosCalendario, setEventosCalendario] = useState<{id: string; titulo: string; data_inicio: string; cor: string}[]>([]);
   const [selLancId, setSelLancId]     = useState('');
   const [selNpaId, setSelNpaId]       = useState('');
   const [loading, setLoading]         = useState(true);
@@ -163,19 +165,22 @@ export function Dashboard() {
     const load = async (showLoading = false) => {
       if (showLoading) setLoading(true);
 
-      const [alunosRes, pagRes, tasksRes, turmasRes, lancRes, npaEvtRes] = await Promise.all([
+      const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+      const [alunosRes, pagRes, tasksRes, turmasRes, lancRes, npaEvtRes, evtCalRes] = await Promise.all([
         supabase.from('alunos').select('id, nome, produto, status, turma_id, data_inicio, created_at, valor_mensalidade, mensalidades_pagas, total_mensalidades').limit(500),
         supabase.from('pagamentos').select('id, aluno_id, valor, mes_referencia, status, data_pagamento, data_vencimento, created_at').order('created_at', { ascending: false }).limit(2000),
         supabase.from('tarefas').select('id, titulo, status, prioridade, responsavel_id, responsaveis, prazo, categoria, pagina, created_at').order('prazo').limit(50),
         supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades, data_inicio, data_fim, status'),
-        supabase.from('lancamentos').select('id, nome, ativo, created_at').order('created_at', { ascending: false }).limit(20),
-        supabase.from('npa_eventos').select('id, nome, ativo').order('created_at', { ascending: false }).limit(20),
+        supabase.from('lancamentos').select('id, nome, ativo, created_at, data_inicio').order('created_at', { ascending: false }).limit(20),
+        supabase.from('npa_eventos').select('id, nome, ativo, data_inicio').order('created_at', { ascending: false }).limit(20),
+        supabase.from('eventos_calendario').select('id, titulo, data_inicio, cor').gte('data_inicio', hoje.toISOString()).order('data_inicio').limit(20),
       ]);
 
       if (alunosRes.data) setAlunos(alunosRes.data as Aluno[]);
       if (pagRes.data) setPagamentos(pagRes.data as Pagamento[]);
       if (tasksRes.data) setTasks(tasksRes.data as Task[]);
       if (turmasRes.data) setTurmas(turmasRes.data as Turma[]);
+      if (evtCalRes.data) setEventosCalendario(evtCalRes.data as any);
 
       const lancList = lancRes.data || [];
       const npaList  = npaEvtRes.data || [];
@@ -367,6 +372,29 @@ export function Dashboard() {
   };
 
   const tarefasCriticas = tasks.filter(t => t.status !== 'concluido' && t.prazo && isPast(new Date(t.prazo))).slice(0, 4);
+
+  // ── Próximas datas ─────────────────────────────────────────────────────────
+
+  const proximosEventos = useMemo(() => {
+    const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+    type ProxEvento = { id: string; titulo: string; data: Date; tipo: 'evento' | 'lancamento' | 'npa' | 'tarefa'; cor: string };
+    const items: ProxEvento[] = [];
+
+    eventosCalendario.forEach(e => {
+      items.push({ id: `evt-${e.id}`, titulo: e.titulo, data: new Date(e.data_inicio), tipo: 'evento', cor: e.cor });
+    });
+    lancamentos.filter(l => (l as any).data_inicio && new Date((l as any).data_inicio) >= hoje).forEach(l => {
+      items.push({ id: `lanc-${l.id}`, titulo: l.nome, data: new Date((l as any).data_inicio), tipo: 'lancamento', cor: '#EA580C' });
+    });
+    (npaEventos as any[]).filter(n => n.data_inicio && new Date(n.data_inicio) >= hoje).forEach(n => {
+      items.push({ id: `npa-${n.id}`, titulo: n.nome, data: new Date(n.data_inicio), tipo: 'npa', cor: '#7C3AED' });
+    });
+    tasks.filter(t => t.status !== 'concluido' && t.prazo && new Date(t.prazo) >= hoje).forEach(t => {
+      items.push({ id: `tar-${t.id}`, titulo: t.titulo, data: new Date(t.prazo!), tipo: 'tarefa', cor: '#ef4444' });
+    });
+
+    return items.sort((a, b) => a.data.getTime() - b.data.getTime()).slice(0, 10);
+  }, [eventosCalendario, lancamentos, npaEventos, tasks]);
 
   // ── Financial health by product ───────────────────────────────────────────
 
@@ -615,6 +643,48 @@ export function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ── Próximas datas importantes ────────────────────────────────────── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <CalendarDays size={15} className="text-muted-foreground" /> Próximas datas importantes
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {proximosEventos.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">Nenhum evento futuro cadastrado no calendário</p>
+          ) : (
+            <div className="space-y-2">
+              {proximosEventos.map(ev => {
+                const isHoje   = isToday(ev.data);
+                const isAmanha = isTomorrow(ev.data);
+                const diasStr  = isHoje ? 'Hoje' : isAmanha ? 'Amanhã' : format(ev.data, "dd 'de' MMM", { locale: ptBR });
+                const tipoIcon: Record<string, React.ElementType> = {
+                  evento: CalendarDays, lancamento: Rocket, npa: Target, tarefa: CheckCircle2,
+                };
+                const TipoIcon = tipoIcon[ev.tipo] ?? CalendarDays;
+                const tipoLabel: Record<string, string> = {
+                  evento: 'Evento', lancamento: 'Lançamento', npa: 'NPA', tarefa: 'Tarefa',
+                };
+                return (
+                  <div key={ev.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors ${isHoje ? 'bg-amber-50 border-amber-200' : 'bg-muted/20 border-border hover:bg-muted/40'}`}>
+                    <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: ev.cor }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{ev.titulo}</p>
+                      <p className="text-xs text-muted-foreground capitalize">{tipoLabel[ev.tipo]}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <TipoIcon size={13} className="text-muted-foreground" />
+                      <span className={`text-xs font-semibold ${isHoje ? 'text-amber-600' : 'text-muted-foreground'}`}>{diasStr}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

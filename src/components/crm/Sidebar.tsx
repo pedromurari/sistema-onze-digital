@@ -8,8 +8,8 @@ import { toast } from 'sonner';
 import {
   LayoutDashboard, Kanban, Settings, UserCog, FileSpreadsheet,
   MessageCircle, Rocket, BarChart3, CheckSquare, ChevronDown,
-  ChevronLeft, ChevronRight, Plus, Brain, ListTodo, Scale,
-  GraduationCap, GripVertical, Pencil, Check, MessageSquare, TrendingUp, GitBranch, Zap,
+  ChevronLeft, ChevronRight, Plus, Brain, Scale,
+  GraduationCap, GripVertical, Pencil, Check, MessageSquare, TrendingUp, GitBranch, Zap, CalendarDays,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -43,16 +43,7 @@ const BASE_MENU: MenuItem[] = [
   { key: 'funil_lancamento', label: 'Funil de Lançamento', icon: GitBranch },
   { key: 'disparo_planilha', label: 'Disparo de Planilha', icon: Zap },
   { key: 'team', label: 'Equipe', icon: UserCog, adminOnly: true },
-  {
-    group: 'operacoes',
-    label: 'Operacoes',
-    icon: ListTodo,
-    children: [
-      { key: 'operacoes_tarefas', label: 'Tarefas' },
-      { key: 'operacoes_calendario_geral', label: 'Calendario Geral' },
-      { key: 'operacoes_calendario_conteudo', label: 'Calendario de Conteudo' },
-    ],
-  },
+  { key: 'operacoes_calendario_geral', label: 'Calendário', icon: CalendarDays },
   { key: 'mapa_mental', label: 'Mapa Mental', icon: Brain },
   { key: 'rodrygo', label: 'Tarefas Rodrygo', icon: CheckSquare },
   { key: 'pedagogico', label: 'Pedagogico', icon: GraduationCap },
@@ -87,7 +78,6 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
     lancamentos_legado: true,
     npa_dinamico: true,
     aula_secreta: true,
-    operacoes: false,
   });
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
@@ -515,10 +505,10 @@ export function MobileNav({ currentView, onViewChange }: MobileNavProps) {
   const allMobileItems: { key: View; label: string; icon: React.ElementType }[] = [
     { key: 'dashboard',          label: 'Início',    icon: LayoutDashboard },
     { key: 'pipeline',           label: 'Leads',     icon: Kanban },
-    { key: 'financeiro',         label: 'Financeiro', icon: BarChart3 },
-    { key: 'cobranca',           label: 'Cobrança',  icon: MessageSquare },
-    { key: 'operacoes_tarefas',  label: 'Tarefas',   icon: CheckSquare },
-    { key: 'chat',               label: 'Chat',      icon: MessageCircle },
+    { key: 'financeiro',                  label: 'Financeiro', icon: BarChart3 },
+    { key: 'cobranca',                    label: 'Cobrança',   icon: MessageSquare },
+    { key: 'operacoes_calendario_geral',  label: 'Calendário', icon: CalendarDays },
+    { key: 'chat',                        label: 'Chat',       icon: MessageCircle },
     { key: 'settings',           label: 'Config',    icon: Settings },
   ];
 
