@@ -79,7 +79,7 @@ function applyOrder(menu: MenuItem[], order: string[]): MenuItem[] {
 function SectionDivider({ label }: { label: string }) {
   return (
     <div className="px-3 pt-5 pb-1.5">
-      <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40 select-none">{label}</p>
+      <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-zinc-700 select-none">{label}</p>
     </div>
   );
 }
@@ -292,28 +292,28 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
   return (
     <aside
       className={cn(
-        'bg-white border-r border-border min-h-[calc(100vh-4rem)] hidden lg:flex flex-col overflow-y-auto transition-all duration-300 relative flex-shrink-0',
-        collapsed ? 'w-16' : 'w-64',
+        'bg-[#0A0A0C] border-r border-zinc-800/50 min-h-[calc(100vh-3.5rem)] hidden lg:flex flex-col overflow-y-auto transition-all duration-300 relative flex-shrink-0',
+        collapsed ? 'w-[52px]' : 'w-[220px]',
       )}
     >
       <button
         onClick={toggleSidebar}
-        className="absolute -right-3 top-4 z-10 bg-white border border-border rounded-full p-0.5 shadow-sm hover:bg-primary/5 hover:border-primary transition-colors"
+        className="absolute -right-3 top-4 z-10 bg-zinc-900 border border-zinc-700/50 rounded-full p-0.5 shadow-sm hover:bg-zinc-800 transition-colors"
         title={collapsed ? 'Expandir menu' : 'Minimizar menu'}
       >
         {collapsed
-          ? <ChevronRight className="h-3.5 w-3.5 text-foreground/60" />
-          : <ChevronLeft className="h-3.5 w-3.5 text-foreground/60" />}
+          ? <ChevronRight className="h-3.5 w-3.5 text-zinc-400" />
+          : <ChevronLeft className="h-3.5 w-3.5 text-zinc-400" />}
       </button>
 
-      <nav className={cn('space-y-0.5 flex-1 pt-2', collapsed ? 'px-2' : 'px-3')}>
+      <nav className={cn('space-y-0.5 flex-1 pt-2', collapsed ? 'px-1.5' : 'px-2')}>
         {!collapsed && (
           <div className="flex justify-end mb-1">
             <button
               onClick={() => setEditMode(e => !e)}
               className={cn(
                 'flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors',
-                editMode ? 'bg-primary text-white' : 'text-muted-foreground hover:text-primary hover:bg-primary/5',
+                editMode ? 'bg-primary text-white' : 'text-zinc-600 hover:text-zinc-300 hover:bg-white/5',
               )}
               title={editMode ? 'Salvar ordem' : 'Editar ordem do menu'}
             >
@@ -342,6 +342,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
             if (renderedChildren.length === 0 && item.group !== 'operacoes' && !isAdmin) return null;
 
             const isOpen = !editMode && !collapsed && expanded[item.group];
+            const groupActive = isGroupActive(renderedChildren);
 
             const groupSection = SECTION_BEFORE[item.group];
             return (
@@ -359,34 +360,41 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
                   onClick={() => { if (editMode) return; collapsed ? toggleSidebar() : toggle(item.group); }}
                   title={collapsed ? item.label : undefined}
                   className={cn(
-                    'w-full flex items-center rounded transition-all duration-300 text-left text-sm font-600',
+                    'relative overflow-visible w-full flex items-center rounded transition-all duration-200 text-left text-sm font-medium',
                     collapsed ? 'justify-center px-2 py-2.5' : 'gap-2.5 px-3 py-2.5',
                     editMode ? 'cursor-grab active:cursor-grabbing' : '',
-                    isGroupActive(renderedChildren) ? 'text-primary bg-primary/8' : 'text-foreground hover:bg-primary/5 hover:text-primary',
+                    groupActive
+                      ? 'text-white bg-white/8'
+                      : 'text-zinc-400 hover:text-zinc-100 hover:bg-white/5',
                   )}
                 >
-                  {editMode && !collapsed && <GripVertical className="h-3.5 w-3.5 text-foreground/30 flex-shrink-0" />}
-                  <item.icon className={cn('h-4.5 w-4.5 transition-colors duration-300 flex-shrink-0', isGroupActive(renderedChildren) ? 'text-primary' : 'text-foreground/60')} />
+                  {groupActive && !collapsed && (
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[2px] rounded-r-full bg-primary" />
+                  )}
+                  {editMode && !collapsed && <GripVertical className="h-3.5 w-3.5 text-zinc-600 flex-shrink-0" />}
+                  <item.icon className={cn('h-4 w-4 transition-colors duration-200 flex-shrink-0', groupActive ? 'text-white' : 'text-zinc-500')} />
                   {!collapsed && (
                     <>
                       <span className="flex-1">{item.label}</span>
-                      {!editMode && <ChevronDown className={cn('h-3.5 w-3.5 transition-all duration-300 flex-shrink-0', isOpen ? 'rotate-180 text-primary' : 'text-foreground/40')} />}
+                      {!editMode && <ChevronDown className={cn('h-3.5 w-3.5 transition-all duration-200 flex-shrink-0', isOpen ? 'rotate-180 text-zinc-300' : 'text-zinc-600')} />}
                     </>
                   )}
                 </button>
 
                 {isOpen && !collapsed && (
-                  <div className="ml-0 mt-1 space-y-0.5 pl-3 border-l-2 border-primary/15">
+                  <div className="ml-0 mt-1 space-y-0.5 pl-3 border-l border-zinc-800">
                     {renderedChildren.map((child) => (
                       <button
                         key={child.key}
                         onClick={() => onViewChange(child.key)}
                         className={cn(
-                          'w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs transition-all duration-300',
-                          currentView === child.key ? 'bg-primary/12 text-primary font-600' : 'text-foreground/70 hover:text-primary hover:bg-primary/5',
+                          'w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs transition-all duration-200',
+                          currentView === child.key
+                            ? 'bg-white/10 text-white font-medium'
+                            : 'text-zinc-500 hover:text-zinc-200 hover:bg-white/5',
                         )}
                       >
-                        <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', currentView === child.key ? 'bg-primary' : 'bg-foreground/30')} />
+                        <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', currentView === child.key ? 'bg-primary' : 'bg-zinc-700')} />
                         <span className="truncate">{child.label}</span>
                       </button>
                     ))}
@@ -394,7 +402,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
                     {item.group === 'lancamentos_legado' && isAdmin && (
                       <Dialog open={isLancamentoDialogOpen} onOpenChange={setIsLancamentoDialogOpen}>
                         <DialogTrigger asChild>
-                          <button className="w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs text-primary hover:bg-primary/10 mt-1 font-600">
+                          <button className="w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs text-zinc-500 hover:text-zinc-200 hover:bg-white/5 mt-1 transition-colors duration-200">
                             <Plus className="h-4 w-4" /> Novo Lancamento
                           </button>
                         </DialogTrigger>
@@ -420,7 +428,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
                     {item.group === 'npa_dinamico' && isAdmin && (
                       <Dialog open={isNpaDialogOpen} onOpenChange={setIsNpaDialogOpen}>
                         <DialogTrigger asChild>
-                          <button className="w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs text-primary hover:bg-primary/10 mt-1 font-600">
+                          <button className="w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs text-zinc-500 hover:text-zinc-200 hover:bg-white/5 mt-1 transition-colors duration-200">
                             <Plus className="h-4 w-4" /> Novo NPA
                           </button>
                         </DialogTrigger>
@@ -446,7 +454,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
                     {item.group === 'aula_secreta' && isAdmin && (
                       <Dialog open={isAulaSecretaDialogOpen} onOpenChange={setIsAulaSecretaDialogOpen}>
                         <DialogTrigger asChild>
-                          <button className="w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs text-primary hover:bg-primary/10 mt-1 font-600">
+                          <button className="w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs text-zinc-500 hover:text-zinc-200 hover:bg-white/5 mt-1 transition-colors duration-200">
                             <Plus className="h-4 w-4" /> Nova Aula Secreta
                           </button>
                         </DialogTrigger>
@@ -477,6 +485,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
 
           const mi = item as { key: View; label: string; icon: React.ElementType };
           const keySection = SECTION_BEFORE[mi.key];
+          const isActive = currentView === mi.key;
           return (
             <React.Fragment key={mi.key}>
               {keySection && !collapsed && !editMode && <SectionDivider label={keySection} />}
@@ -492,15 +501,20 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
                 onClick={() => { if (!editMode) onViewChange(mi.key); }}
                 title={collapsed ? mi.label : undefined}
                 className={cn(
-                  'w-full flex items-center rounded transition-all duration-300 text-left text-sm font-600',
+                  'relative overflow-visible w-full flex items-center rounded transition-all duration-200 text-left text-sm font-medium',
                   collapsed ? 'justify-center px-2 py-2.5' : 'gap-2.5 px-3 py-2.5',
                   editMode ? 'cursor-grab active:cursor-grabbing' : '',
-                  currentView === mi.key ? 'bg-primary/8 text-primary' : 'text-foreground hover:bg-primary/5 hover:text-primary',
+                  isActive
+                    ? 'text-white bg-white/8'
+                    : 'text-zinc-400 hover:text-zinc-100 hover:bg-white/5',
                 )}
               >
-                {editMode && !collapsed && <GripVertical className="h-3.5 w-3.5 text-foreground/30 flex-shrink-0" />}
+                {isActive && !collapsed && (
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[2px] rounded-r-full bg-primary" />
+                )}
+                {editMode && !collapsed && <GripVertical className="h-3.5 w-3.5 text-zinc-600 flex-shrink-0" />}
                 <div className="relative flex-shrink-0">
-                  <mi.icon className={cn('h-4.5 w-4.5 transition-colors duration-300', currentView === mi.key ? 'text-primary' : 'text-foreground/60')} />
+                  <mi.icon className={cn('h-4 w-4 transition-colors duration-200', isActive ? 'text-white' : 'text-zinc-500')} />
                   {collapsed && mi.key === 'financeiro' && vencimentosHoje > 0 && (
                     <span className="absolute -top-1 -right-1 bg-red-500 rounded-full w-2 h-2" />
                   )}

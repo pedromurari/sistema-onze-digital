@@ -5,9 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { cn } from '@/lib/utils';
 import {
   Users, TrendingUp, DollarSign, AlertTriangle, BarChart3, Clock,
-  AlertCircle, Zap, TrendingDown, CheckCircle2, CalendarDays, Rocket, Target,
+  AlertCircle, Zap, TrendingDown, CheckCircle2, CalendarDays, Rocket, Target, ChevronDown,
 } from 'lucide-react';
 import { isPast, format, differenceInDays, isToday, isTomorrow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -87,28 +88,49 @@ function KpiCard({
   icon: React.ElementType; accent?: 'blue' | 'green' | 'red' | 'purple' | 'amber';
 }) {
   const c = {
-    blue:   { border: 'border-l-blue-500',   icon: 'text-blue-500',   bg: 'bg-blue-50' },
-    green:  { border: 'border-l-emerald-500', icon: 'text-emerald-500',bg: 'bg-emerald-50' },
-    red:    { border: 'border-l-red-500',     icon: 'text-red-500',    bg: 'bg-red-50' },
-    purple: { border: 'border-l-purple-500',  icon: 'text-purple-500', bg: 'bg-purple-50' },
-    amber:  { border: 'border-l-amber-500',   icon: 'text-amber-500',  bg: 'bg-amber-50' },
+    blue:   { icon: 'text-blue-500',    bg: 'bg-blue-500/10' },
+    green:  { icon: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+    red:    { icon: 'text-red-500',     bg: 'bg-red-500/10' },
+    purple: { icon: 'text-purple-500',  bg: 'bg-purple-500/10' },
+    amber:  { icon: 'text-amber-500',   bg: 'bg-amber-500/10' },
   }[accent];
 
   return (
-    <Card className={`border-l-4 ${c.border} shadow-sm hover:shadow-md transition-shadow`}>
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-2">
+    <Card className="border border-border/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.06)] transition-shadow bg-white">
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{label}</p>
-            <p className="text-2xl font-bold text-foreground mt-1 leading-none">{value}</p>
-            {sub && <p className="text-xs text-muted-foreground mt-1.5 leading-snug">{sub}</p>}
+            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">{label}</p>
+            <p className="text-[28px] font-bold text-foreground mt-1.5 leading-none tabular-nums">{value}</p>
+            {sub && <p className="text-xs text-muted-foreground mt-2 leading-snug">{sub}</p>}
           </div>
-          <div className={`w-9 h-9 rounded-xl ${c.bg} flex items-center justify-center flex-shrink-0`}>
+          <div className={`w-10 h-10 rounded-xl ${c.bg} flex items-center justify-center flex-shrink-0`}>
             <Icon size={18} className={c.icon} />
           </div>
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// ─── CollapsibleSection ───────────────────────────────────────────────────────
+
+function CollapsibleSection({ title, icon: Icon, children }: {
+  title: string; icon: React.ElementType; children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-2 px-1 py-2 text-sm font-semibold text-foreground/80 hover:text-foreground transition-colors group"
+      >
+        <Icon size={14} className="text-muted-foreground" />
+        <span className="flex-1 text-left">{title}</span>
+        <ChevronDown size={14} className={cn('text-muted-foreground transition-transform duration-200', open && 'rotate-180')} />
+      </button>
+      {open && <div className="space-y-4 mt-2">{children}</div>}
+    </div>
   );
 }
 
@@ -434,7 +456,7 @@ export function Dashboard() {
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Dashboard</h1>
           <p className="text-sm text-muted-foreground">{isAdmin ? 'Visão executiva · dados em tempo real' : 'Minha área'}</p>
         </div>
       </div>
@@ -471,181 +493,8 @@ export function Dashboard() {
         />
       </div>
 
-      {/* ── Funnels ──────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-
-        {/* Lancamento */}
-        <Card>
-          <CardHeader className="pb-3">
-            <Select value={selLancId} onValueChange={setSelLancId}>
-              <SelectTrigger className="h-8 text-sm font-semibold border-0 shadow-none px-0 focus:ring-0">
-                <SelectValue placeholder="Selecionar lançamento" />
-              </SelectTrigger>
-              <SelectContent>{lancamentos.map(l => <SelectItem key={l.id} value={l.id}>{l.nome}</SelectItem>)}</SelectContent>
-            </Select>
-            <div className="flex items-center gap-2 mt-1">
-              <Badge variant="outline" className="text-xs">{lancTotal} leads únicos</Badge>
-              {lancConv > 0 && <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">{lancConv}% conversão</Badge>}
-              {totalMatriculasLanc > 0 && <Badge className="bg-primary/10 text-primary border-primary/20 text-xs">{totalMatriculasLanc} matrículas (todos)</Badge>}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-2.5">
-            {[['Planilha','planilha'],['Grupo Lançamento','grupoLancamento'],['Grupo Oferta','grupoOferta'],['Follow-up 01','followUp01'],['Follow-up 02','followUp02'],['Follow-up 03','followUp03'],['Matrícula','matricula']].map(([label, key], i, arr) => (
-              <FunnelBar key={key} label={label} count={(funilLanc as any)[key] ?? 0} total={lancTotal} isLast={i === arr.length - 1} accent="#8b5cf6" />
-            ))}
-          </CardContent>
-        </Card>
-
-        {/* NPA */}
-        <Card>
-          <CardHeader className="pb-3">
-            <Select value={selNpaId} onValueChange={setSelNpaId}>
-              <SelectTrigger className="h-8 text-sm font-semibold border-0 shadow-none px-0 focus:ring-0">
-                <SelectValue placeholder="Selecionar NPA" />
-              </SelectTrigger>
-              <SelectContent>{npaEventos.map(n => <SelectItem key={n.id} value={n.id}>{n.nome}</SelectItem>)}</SelectContent>
-            </Select>
-            <div className="flex items-center gap-2 mt-1">
-              <Badge variant="outline" className="text-xs">{npaTotal} leads únicos</Badge>
-              {npaConv > 0 && <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">{npaConv}% conversão</Badge>}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-2.5">
-            {[['Novo','novo'],['Ingresso Pago','ingressoPago'],['No Grupo','noGrupo'],['Confirmado','confirmado'],['Evento','evento'],['Closer','closer'],['Follow-up 01','followUp01'],['Follow-up 02','followUp02'],['Follow-up 03','followUp03'],['Matrícula','matricula']].map(([label, key], i, arr) => (
-              <FunnelBar key={key} label={label} count={(funilNpa as any)[key] ?? 0} total={npaTotal} isLast={i === arr.length - 1} accent="#f59e0b" />
-            ))}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ── Team + Financial ──────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-
-        {/* Team */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Users size={15} className="text-muted-foreground" /> Performance do Time
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {users.filter(u => u.ativo).map(u => {
-              const stats = getColabStats(u.id);
-              return (
-                <div key={u.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border bg-muted/20 hover:bg-muted/40 transition-colors">
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0" style={{ backgroundColor: u.cor }}>
-                    {u.nome.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate">{u.nome}</p>
-                    <p className="text-xs text-muted-foreground capitalize">{u.tipo}</p>
-                  </div>
-                  <div className="flex items-center gap-3 text-right shrink-0">
-                    <div><p className="text-sm font-bold text-amber-600">{stats.tarefasPendentes}</p><p className="text-xs text-muted-foreground">A fazer</p></div>
-                    <div><p className="text-sm font-bold text-orange-500">{stats.tarefasEmAndamento}</p><p className="text-xs text-muted-foreground">Andamento</p></div>
-                    {stats.proximaTarefa && (
-                      <div className="max-w-[90px] text-right">
-                        <p className="text-xs font-medium truncate">{stats.proximaTarefa.titulo}</p>
-                        <p className="text-xs text-muted-foreground">{stats.proximaTarefa.prazo ? format(new Date(stats.proximaTarefa.prazo), 'dd/MM') : '—'}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-            {tarefasCriticas.length > 0 && (
-              <div className="mt-3 pt-3 border-t border-red-100">
-                <p className="text-xs font-semibold text-red-600 mb-2 uppercase tracking-wide flex items-center gap-1"><AlertCircle size={11}/> Tarefas atrasadas</p>
-                <div className="space-y-1.5">
-                  {tarefasCriticas.map(t => (
-                    <div key={t.id} className="flex items-center justify-between px-3 py-2 bg-red-50 rounded-lg border border-red-100">
-                      <p className="text-sm truncate flex-1">{t.titulo}</p>
-                      <div className="flex items-center gap-2 ml-2 shrink-0">
-                        {t.prazo && <p className="text-xs text-red-500 font-medium">{format(new Date(t.prazo), 'dd/MM')}</p>}
-                        <Badge variant="destructive" className="text-xs px-1.5">{t.prioridade}</Badge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Financial health */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <BarChart3 size={15} className="text-muted-foreground" /> Saúde Financeira
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Tabs defaultValue="psicanalise">
-              <TabsList className="grid w-full grid-cols-2 mb-4">
-                <TabsTrigger value="psicanalise">Psicanálise</TabsTrigger>
-                <TabsTrigger value="numerologia">Numerologia</TabsTrigger>
-              </TabsList>
-              {(['psicanalise', 'numerologia'] as const).map(prod => {
-                const s = getSaude(prod);
-                return (
-                  <TabsContent key={prod} value={prod} className="space-y-3 mt-0">
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="text-center p-3 rounded-xl bg-blue-50 border border-blue-100">
-                        <p className="text-2xl font-bold text-blue-700">{s.ativos}</p>
-                        <p className="text-xs text-blue-600 mt-0.5">Ativos</p>
-                      </div>
-                      <div className="text-center p-3 rounded-xl bg-emerald-50 border border-emerald-100">
-                        <p className="text-sm font-bold text-emerald-700 leading-tight mt-1">{fmtK(s.mrr)}</p>
-                        <p className="text-xs text-emerald-600 mt-0.5">MRR</p>
-                      </div>
-                      <div className={`text-center p-3 rounded-xl border ${s.inadimp > 0 ? 'bg-red-50 border-red-100' : 'bg-muted border-border'}`}>
-                        <p className={`text-2xl font-bold ${s.inadimp > 0 ? 'text-red-700' : 'text-muted-foreground'}`}>{s.inadimp}</p>
-                        <p className={`text-xs mt-0.5 ${s.inadimp > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>Inadimp.</p>
-                      </div>
-                    </div>
-                    {s.ativos > 0 && (
-                      <div>
-                        <div className="flex justify-between mb-1.5">
-                          <span className="text-xs text-muted-foreground">Coleta {mesAtual}</span>
-                          <span className={`text-xs font-semibold ${s.mrr > 0 && (s.recebido / s.mrr) >= 0.8 ? 'text-emerald-600' : 'text-amber-600'}`}>
-                            {fmtK(s.recebido)} / {fmtK(s.mrr)}
-                          </span>
-                        </div>
-                        <div className="h-2 bg-muted rounded-full overflow-hidden">
-                          <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${Math.min(s.mrr > 0 ? (s.recebido / s.mrr) * 100 : 0, 100)}%` }} />
-                        </div>
-                        {s.txInad > 0 && (
-                          <div className="mt-2">
-                            <div className="flex justify-between mb-1">
-                              <span className="text-xs text-muted-foreground">Inadimplência</span>
-                              <span className={`text-xs font-semibold ${s.txInad > 10 ? 'text-red-600' : 'text-amber-600'}`}>{s.txInad}%</span>
-                            </div>
-                            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                              <div className={`h-full rounded-full ${s.txInad > 10 ? 'bg-red-500' : 'bg-amber-500'}`} style={{ width: `${Math.min(s.txInad, 100)}%` }} />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {s.proxTurma && (
-                      <div className="flex items-center gap-3 p-3 rounded-xl bg-purple-50 border border-purple-100">
-                        <Zap size={14} className="text-purple-600 shrink-0" />
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold text-purple-700 truncate">{s.proxTurma.nome}</p>
-                          <p className="text-xs text-purple-500">{s.proxTurma.data_inicio ? format(new Date(s.proxTurma.data_inicio), 'dd/MM/yyyy') : 'A definir'}</p>
-                        </div>
-                      </div>
-                    )}
-                  </TabsContent>
-                );
-              })}
-            </Tabs>
-          </CardContent>
-        </Card>
-      </div>
-
       {/* ── Próximas datas importantes ────────────────────────────────────── */}
-      <Card>
+      <Card className="border border-border/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] bg-white">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
             <CalendarDays size={15} className="text-muted-foreground" /> Próximas datas importantes
@@ -668,7 +517,15 @@ export function Dashboard() {
                   evento: 'Evento', lancamento: 'Lançamento', npa: 'NPA', tarefa: 'Tarefa',
                 };
                 return (
-                  <div key={ev.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors ${isHoje ? 'bg-amber-50 border-amber-200' : 'bg-muted/20 border-border hover:bg-muted/40'}`}>
+                  <div
+                    key={ev.id}
+                    className={cn(
+                      'flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors',
+                      isHoje
+                        ? 'bg-amber-50/70 border-amber-200/70'
+                        : 'bg-white border border-border/40 hover:border-border',
+                    )}
+                  >
                     <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: ev.cor }} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{ev.titulo}</p>
@@ -676,7 +533,7 @@ export function Dashboard() {
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <TipoIcon size={13} className="text-muted-foreground" />
-                      <span className={`text-xs font-semibold ${isHoje ? 'text-amber-600' : 'text-muted-foreground'}`}>{diasStr}</span>
+                      <span className={`text-xs font-semibold tabular-nums ${isHoje ? 'text-amber-600' : 'text-muted-foreground'}`}>{diasStr}</span>
                     </div>
                   </div>
                 );
@@ -685,6 +542,184 @@ export function Dashboard() {
           )}
         </CardContent>
       </Card>
+
+      {/* ── Funnels (collapsible) ─────────────────────────────────────────── */}
+      <CollapsibleSection title="Funis de Vendas" icon={BarChart3}>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+          {/* Lancamento */}
+          <Card>
+            <CardHeader className="pb-3">
+              <Select value={selLancId} onValueChange={setSelLancId}>
+                <SelectTrigger className="h-8 text-sm font-semibold border-0 shadow-none px-0 focus:ring-0">
+                  <SelectValue placeholder="Selecionar lançamento" />
+                </SelectTrigger>
+                <SelectContent>{lancamentos.map(l => <SelectItem key={l.id} value={l.id}>{l.nome}</SelectItem>)}</SelectContent>
+              </Select>
+              <div className="flex items-center gap-2 mt-1">
+                <Badge variant="outline" className="text-xs">{lancTotal} leads únicos</Badge>
+                {lancConv > 0 && <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">{lancConv}% conversão</Badge>}
+                {totalMatriculasLanc > 0 && <Badge className="bg-primary/10 text-primary border-primary/20 text-xs">{totalMatriculasLanc} matrículas (todos)</Badge>}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2.5">
+              {[['Planilha','planilha'],['Grupo Lançamento','grupoLancamento'],['Grupo Oferta','grupoOferta'],['Follow-up 01','followUp01'],['Follow-up 02','followUp02'],['Follow-up 03','followUp03'],['Matrícula','matricula']].map(([label, key], i, arr) => (
+                <FunnelBar key={key} label={label} count={(funilLanc as any)[key] ?? 0} total={lancTotal} isLast={i === arr.length - 1} accent="#8b5cf6" />
+              ))}
+            </CardContent>
+          </Card>
+
+          {/* NPA */}
+          <Card>
+            <CardHeader className="pb-3">
+              <Select value={selNpaId} onValueChange={setSelNpaId}>
+                <SelectTrigger className="h-8 text-sm font-semibold border-0 shadow-none px-0 focus:ring-0">
+                  <SelectValue placeholder="Selecionar NPA" />
+                </SelectTrigger>
+                <SelectContent>{npaEventos.map(n => <SelectItem key={n.id} value={n.id}>{n.nome}</SelectItem>)}</SelectContent>
+              </Select>
+              <div className="flex items-center gap-2 mt-1">
+                <Badge variant="outline" className="text-xs">{npaTotal} leads únicos</Badge>
+                {npaConv > 0 && <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">{npaConv}% conversão</Badge>}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2.5">
+              {[['Novo','novo'],['Ingresso Pago','ingressoPago'],['No Grupo','noGrupo'],['Confirmado','confirmado'],['Evento','evento'],['Closer','closer'],['Follow-up 01','followUp01'],['Follow-up 02','followUp02'],['Follow-up 03','followUp03'],['Matrícula','matricula']].map(([label, key], i, arr) => (
+                <FunnelBar key={key} label={label} count={(funilNpa as any)[key] ?? 0} total={npaTotal} isLast={i === arr.length - 1} accent="#f59e0b" />
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      </CollapsibleSection>
+
+      {/* ── Team + Financial (collapsible) ────────────────────────────────── */}
+      <CollapsibleSection title="Time & Financeiro" icon={Users}>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+          {/* Team */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Users size={15} className="text-muted-foreground" /> Performance do Time
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {users.filter(u => u.ativo).map(u => {
+                const stats = getColabStats(u.id);
+                return (
+                  <div key={u.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border bg-muted/20 hover:bg-muted/40 transition-colors">
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0" style={{ backgroundColor: u.cor }}>
+                      {u.nome.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate">{u.nome}</p>
+                      <p className="text-xs text-muted-foreground capitalize">{u.tipo}</p>
+                    </div>
+                    <div className="flex items-center gap-3 text-right shrink-0">
+                      <div><p className="text-sm font-bold text-amber-600">{stats.tarefasPendentes}</p><p className="text-xs text-muted-foreground">A fazer</p></div>
+                      <div><p className="text-sm font-bold text-orange-500">{stats.tarefasEmAndamento}</p><p className="text-xs text-muted-foreground">Andamento</p></div>
+                      {stats.proximaTarefa && (
+                        <div className="max-w-[90px] text-right">
+                          <p className="text-xs font-medium truncate">{stats.proximaTarefa.titulo}</p>
+                          <p className="text-xs text-muted-foreground">{stats.proximaTarefa.prazo ? format(new Date(stats.proximaTarefa.prazo), 'dd/MM') : '—'}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {tarefasCriticas.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-red-100">
+                  <p className="text-xs font-semibold text-red-600 mb-2 uppercase tracking-wide flex items-center gap-1"><AlertCircle size={11}/> Tarefas atrasadas</p>
+                  <div className="space-y-1.5">
+                    {tarefasCriticas.map(t => (
+                      <div key={t.id} className="flex items-center justify-between px-3 py-2 bg-red-50 rounded-lg border border-red-100">
+                        <p className="text-sm truncate flex-1">{t.titulo}</p>
+                        <div className="flex items-center gap-2 ml-2 shrink-0">
+                          {t.prazo && <p className="text-xs text-red-500 font-medium">{format(new Date(t.prazo), 'dd/MM')}</p>}
+                          <Badge variant="destructive" className="text-xs px-1.5">{t.prioridade}</Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Financial health */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <BarChart3 size={15} className="text-muted-foreground" /> Saúde Financeira
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Tabs defaultValue="psicanalise">
+                <TabsList className="grid w-full grid-cols-2 mb-4">
+                  <TabsTrigger value="psicanalise">Psicanálise</TabsTrigger>
+                  <TabsTrigger value="numerologia">Numerologia</TabsTrigger>
+                </TabsList>
+                {(['psicanalise', 'numerologia'] as const).map(prod => {
+                  const s = getSaude(prod);
+                  return (
+                    <TabsContent key={prod} value={prod} className="space-y-3 mt-0">
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="text-center p-3 rounded-xl bg-blue-50 border border-blue-100">
+                          <p className="text-2xl font-bold text-blue-700">{s.ativos}</p>
+                          <p className="text-xs text-blue-600 mt-0.5">Ativos</p>
+                        </div>
+                        <div className="text-center p-3 rounded-xl bg-emerald-50 border border-emerald-100">
+                          <p className="text-sm font-bold text-emerald-700 leading-tight mt-1">{fmtK(s.mrr)}</p>
+                          <p className="text-xs text-emerald-600 mt-0.5">MRR</p>
+                        </div>
+                        <div className={`text-center p-3 rounded-xl border ${s.inadimp > 0 ? 'bg-red-50 border-red-100' : 'bg-muted border-border'}`}>
+                          <p className={`text-2xl font-bold ${s.inadimp > 0 ? 'text-red-700' : 'text-muted-foreground'}`}>{s.inadimp}</p>
+                          <p className={`text-xs mt-0.5 ${s.inadimp > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>Inadimp.</p>
+                        </div>
+                      </div>
+                      {s.ativos > 0 && (
+                        <div>
+                          <div className="flex justify-between mb-1.5">
+                            <span className="text-xs text-muted-foreground">Coleta {mesAtual}</span>
+                            <span className={`text-xs font-semibold ${s.mrr > 0 && (s.recebido / s.mrr) >= 0.8 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                              {fmtK(s.recebido)} / {fmtK(s.mrr)}
+                            </span>
+                          </div>
+                          <div className="h-2 bg-muted rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${Math.min(s.mrr > 0 ? (s.recebido / s.mrr) * 100 : 0, 100)}%` }} />
+                          </div>
+                          {s.txInad > 0 && (
+                            <div className="mt-2">
+                              <div className="flex justify-between mb-1">
+                                <span className="text-xs text-muted-foreground">Inadimplência</span>
+                                <span className={`text-xs font-semibold ${s.txInad > 10 ? 'text-red-600' : 'text-amber-600'}`}>{s.txInad}%</span>
+                              </div>
+                              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full ${s.txInad > 10 ? 'bg-red-500' : 'bg-amber-500'}`} style={{ width: `${Math.min(s.txInad, 100)}%` }} />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {s.proxTurma && (
+                        <div className="flex items-center gap-3 p-3 rounded-xl bg-purple-50 border border-purple-100">
+                          <Zap size={14} className="text-purple-600 shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-purple-700 truncate">{s.proxTurma.nome}</p>
+                            <p className="text-xs text-purple-500">{s.proxTurma.data_inicio ? format(new Date(s.proxTurma.data_inicio), 'dd/MM/yyyy') : 'A definir'}</p>
+                          </div>
+                        </div>
+                      )}
+                    </TabsContent>
+                  );
+                })}
+              </Tabs>
+            </CardContent>
+          </Card>
+        </div>
+      </CollapsibleSection>
+
     </div>
   );
 }
