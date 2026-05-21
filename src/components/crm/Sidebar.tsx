@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { ensureDefaultLancamentoKanbanColumns } from '@/components/crm/kanban/useKanbanColunas';
@@ -29,25 +29,31 @@ type MenuItem =
   | { group: string; label: string; icon: React.ElementType; adminOnly?: boolean; children: { key: View; label: string }[] };
 
 const BASE_MENU: MenuItem[] = [
-  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { key: 'pipeline', label: 'Leads Diretos', icon: Kanban },
-  { group: 'lancamentos_legado', label: 'Lancamentos', icon: Rocket, children: [] },
-  { group: 'npa_dinamico', label: 'NPA', icon: BarChart3, children: [] },
-  { group: 'aula_secreta', label: 'Aula Secreta', icon: Rocket, children: [] },
-  { key: 'chat', label: 'Chat', icon: MessageCircle },
-  { key: 'sheets', label: 'Leads Sheets', icon: FileSpreadsheet },
-  { key: 'financeiro', label: 'Financeiro', icon: BarChart3 },
-  { key: 'financeiro_cfo', label: 'Análise CFO', icon: TrendingUp },
-  { key: 'balanco', label: 'Balanco', icon: Scale },
-  { key: 'cobranca',         label: 'Cobrança',           icon: MessageSquare },
-  { key: 'funil_lancamento', label: 'Funil de Lançamento', icon: GitBranch },
-  { key: 'disparo_planilha', label: 'Disparo de Planilha', icon: Zap },
-  { key: 'team', label: 'Equipe', icon: UserCog, adminOnly: true },
-  { key: 'operacoes_calendario_geral', label: 'Calendário', icon: CalendarDays },
-  { key: 'mapa_mental', label: 'Mapa Mental', icon: Brain },
-  { key: 'rodrygo', label: 'Tarefas Rodrygo', icon: CheckSquare },
-  { key: 'pedagogico', label: 'Pedagogico', icon: GraduationCap },
-  { key: 'settings', label: 'Configuracoes', icon: Settings },
+  // Início
+  { key: 'dashboard',                  label: 'Dashboard',           icon: LayoutDashboard },
+  { key: 'operacoes_calendario_geral', label: 'Calendário',          icon: CalendarDays },
+  // CRM
+  { key: 'pipeline',                   label: 'Leads Diretos',       icon: Kanban },
+  { key: 'chat',                       label: 'Chat',                icon: MessageCircle },
+  { key: 'sheets',                     label: 'Leads Sheets',        icon: FileSpreadsheet },
+  // Eventos & Funis
+  { group: 'lancamentos_legado',       label: 'Lancamentos',         icon: Rocket,       children: [] },
+  { group: 'npa_dinamico',            label: 'NPA',                  icon: BarChart3,    children: [] },
+  { group: 'aula_secreta',            label: 'Aula Secreta',         icon: Rocket,       children: [] },
+  { key: 'funil_lancamento',          label: 'Funil de Lançamento',  icon: GitBranch },
+  { key: 'disparo_planilha',          label: 'Disparo de Planilha',  icon: Zap },
+  // Financeiro
+  { key: 'financeiro',                label: 'Financeiro',           icon: BarChart3 },
+  { key: 'financeiro_cfo',           label: 'Análise CFO',           icon: TrendingUp },
+  { key: 'balanco',                  label: 'Balanço',               icon: Scale },
+  { key: 'cobranca',                 label: 'Cobrança',              icon: MessageSquare },
+  // Gestão
+  { key: 'mapa_mental',              label: 'Mapa Mental',           icon: Brain },
+  { key: 'rodrygo',                  label: 'Tarefas Rodrygo',       icon: CheckSquare },
+  { key: 'pedagogico',              label: 'Pedagógico',              icon: GraduationCap },
+  // Admin
+  { key: 'team',                    label: 'Equipe',                  icon: UserCog, adminOnly: true },
+  { key: 'settings',                label: 'Configurações',           icon: Settings },
 ];
 
 function getItemId(item: MenuItem) {
@@ -70,10 +76,27 @@ function applyOrder(menu: MenuItem[], order: string[]): MenuItem[] {
   return [...sorted, ...rest];
 }
 
+function SectionDivider({ label }: { label: string }) {
+  return (
+    <div className="px-3 pt-5 pb-1.5">
+      <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40 select-none">{label}</p>
+    </div>
+  );
+}
+
 export function Sidebar({ currentView, onViewChange }: SidebarProps) {
   const { user } = useAuth();
   const isAdmin = user?.tipo === 'admin';
   const permissions = user?.permissions ?? getDefaultPermissions(user?.tipo);
+
+  const SECTION_BEFORE: Record<string, string> = {
+    dashboard:          'Início',
+    pipeline:           'CRM',
+    lancamentos_legado: 'Eventos & Funis',
+    financeiro:         'Financeiro',
+    mapa_mental:        'Gestão',
+    ...(isAdmin ? { team: 'Admin' } : { settings: 'Admin' }),
+  };
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
     lancamentos_legado: true,
     npa_dinamico: true,
@@ -320,9 +343,11 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
 
             const isOpen = !editMode && !collapsed && expanded[item.group];
 
+            const groupSection = SECTION_BEFORE[item.group];
             return (
+              <React.Fragment key={item.group}>
+                {groupSection && !collapsed && !editMode && <SectionDivider label={groupSection} />}
               <div
-                key={item.group}
                 draggable={editMode}
                 onDragStart={() => handleDragStart(idx)}
                 onDragOver={(e) => handleDragOver(e, idx, itemId)}
@@ -446,13 +471,16 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
                   </div>
                 )}
               </div>
+              </React.Fragment>
             );
           }
 
           const mi = item as { key: View; label: string; icon: React.ElementType };
+          const keySection = SECTION_BEFORE[mi.key];
           return (
+            <React.Fragment key={mi.key}>
+              {keySection && !collapsed && !editMode && <SectionDivider label={keySection} />}
             <div
-              key={mi.key}
               draggable={editMode}
               onDragStart={() => handleDragStart(idx)}
               onDragOver={(e) => handleDragOver(e, idx, itemId)}
@@ -485,6 +513,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
                 )}
               </button>
             </div>
+            </React.Fragment>
           );
         })}
       </nav>
