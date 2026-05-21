@@ -264,7 +264,9 @@ const getEmptyAlunoForm = () => ({
 });
 
 export function Financeiro() {
-  const { permissions, isAdmin } = useAuth();
+  const { user } = useAuth();
+  const isAdmin = user?.tipo === 'admin';
+  const permissions = user?.permissions ?? null;
   const [activeTab, setActiveTab] = useState<ProdutoTab>('psicanalise');
   const [subView, setSubView] = useState<SubView>('alunos');
   const [turmas, setTurmas] = useState<Turma[]>([]);
@@ -405,7 +407,7 @@ export function Financeiro() {
     let r = alunos.filter(a => {
       if (a.produto !== activeTab) return false;
       if (isAdmin) return true;
-      if (!permissions) return true;
+      if (!permissions) return false;
       return canAccessFinanceiroTurma(permissions, a.turma_id);
     });
     if (selectedTurmaId !== 'todas') r = r.filter(a => a.turma_id === selectedTurmaId);

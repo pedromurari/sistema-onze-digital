@@ -16,15 +16,24 @@ import {
   Play, Pause, Square, Plus, CheckCircle2, XCircle, SkipForward,
   Clock, Zap, Users, AlertTriangle, MessageSquare, Shield, Trash2,
   ChevronDown, ChevronUp, Activity, RotateCcw,
-  Image, Video, Music, Type, Link2, Loader2, FileDown,
+  Image, Video, Music, Type, Link2, Loader2, FileDown, Pencil,
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type CampanhaStatus  = 'rascunho' | 'ativo' | 'pausado' | 'concluido' | 'erro';
-type MessageType     = 'text' | 'image' | 'video' | 'audio';
-type LeadsSource     = 'paste' | 'sistema';
-type SistemaType     = 'lancamento' | 'npa' | 'aula_secreta';
+type CampanhaStatus = 'rascunho' | 'ativo' | 'pausado' | 'concluido' | 'erro';
+type MessageType    = 'text' | 'image' | 'video' | 'audio';
+type LeadsSource    = 'paste' | 'sistema';
+type SistemaType    = 'lancamento' | 'npa' | 'aula_secreta';
+type CardTab        = 'log' | 'leads';
+
+interface EvolutionInstance {
+  id: string;
+  instance_name: string;
+  api_url: string;
+  api_key: string;
+  ativo: boolean;
+}
 
 interface Campanha {
   id: string;
@@ -44,44 +53,37 @@ interface Campanha {
   safe_hour_start: number;
   safe_hour_end: number;
   max_errors_seq: number;
+  evolution_config_id: string;
   created_at: string;
 }
 
 interface LogEntry {
-  id: string;
-  phone: string;
-  nome: string;
-  status: 'enviado' | 'erro' | 'pulado';
-  msg: string;
-  ts: Date;
+  id: string; phone: string; nome: string;
+  status: 'enviado' | 'erro' | 'pulado'; msg: string; ts: Date;
 }
 
-interface LoadedLead {
-  phone: string;
-  nome: string;
-  variaveis: Record<string, string>;
+interface LeadRow {
+  id: string; phone: string; nome?: string;
+  status: 'pendente' | 'enviado' | 'erro' | 'pulado';
+  error_msg?: string; sent_at?: string; ordem: number;
 }
+
+interface LoadedLead { phone: string; nome: string; variaveis: Record<string, string>; }
 
 interface CampanhaForm {
-  nome: string;
-  descricao: string;
-  messageType: MessageType;
-  mediaUrl: string;
-  template: string;
-  leadsSource: LeadsSource;
-  leadsText: string;
-  sistemaType: SistemaType;
-  sistemaId: string;
-  loadedLeads: LoadedLead[];
-  delayMin: number;
-  delayMax: number;
-  dailyLimit: number;
-  safeStart: number;
-  safeEnd: number;
-  maxErrors: number;
+  nome: string; descricao: string; messageType: MessageType;
+  mediaUrl: string; template: string; leadsSource: LeadsSource;
+  leadsText: string; sistemaType: SistemaType; sistemaId: string;
+  loadedLeads: LoadedLead[]; delayMin: number; delayMax: number;
+  dailyLimit: number; safeStart: number; safeEnd: number;
+  maxErrors: number; evolutionConfigId: string;
 }
 
 interface SistemaItem { id: string; nome: string; }
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const LEADS_PER_PAGE = 50;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -99,10 +101,7 @@ function applyVars(template: string, vars: Record<string, string>): string {
 }
 
 function parseLeads(raw: string): LoadedLead[] {
-  return raw
-    .split('\n')
-    .map(l => l.trim())
-    .filter(Boolean)
+  return raw.split('\n').map(l => l.trim()).filter(Boolean)
     .filter(l => !l.toLowerCase().startsWith('telefone') && !l.toLowerCase().startsWith('phone'))
     .map(line => {
       const parts = line.split(/[,;\t]/);
@@ -110,8 +109,7 @@ function parseLeads(raw: string): LoadedLead[] {
       const nome  = (parts[1] ?? '').trim();
       const variaveis: Record<string, string> = {};
       for (let i = 2; i < parts.length - 1; i += 2) {
-        const key = parts[i]?.trim();
-        const val = parts[i + 1]?.trim();
+        const key = parts[i]?.trim(), val = parts[i + 1]?.trim();
         if (key && val) variaveis[key] = val;
       }
       return { phone, nome, variaveis };
@@ -119,13 +117,10 @@ function parseLeads(raw: string): LoadedLead[] {
     .filter(l => l.phone.replace(/\D/g, '').length >= 10);
 }
 
-/** Converts Google Drive share URLs to direct download links. */
 function toDriveDownload(url: string): string {
   const trimmed = url.trim();
-  // https://drive.google.com/file/d/FILE_ID/...
   const m1 = trimmed.match(/\/d\/([a-zA-Z0-9_-]{10,})/);
   if (m1) return `https://drive.google.com/uc?export=download&id=${m1[1]}`;
-  // https://drive.google.com/open?id=FILE_ID or uc?id=FILE_ID
   const m2 = trimmed.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
   if (m2) return `https://drive.google.com/uc?export=download&id=${m2[1]}`;
   return trimmed;
@@ -137,9 +132,7 @@ function randomDelay(minS: number, maxS: number): number {
   return Math.max(minS * 1000, base + jitter);
 }
 
-function pct(sent: number, total: number) {
-  return total ? Math.round((sent / total) * 100) : 0;
-}
+function pct(sent: number, total: number) { return total ? Math.round((sent / total) * 100) : 0; }
 
 function etaStr(pending: number, speed: number): string {
   if (!speed || !pending) return '—';
@@ -151,40 +144,37 @@ function formatTime(d: Date): string {
   return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-// ── Message type metadata ─────────────────────────────────────────────────────
+// ── Metadata ──────────────────────────────────────────────────────────────────
 
 const MSG_TYPES: Record<MessageType, { label: string; icon: React.ElementType; color: string; hasCaption: boolean }> = {
-  text:  { label: 'Texto',  icon: Type,     color: 'text-blue-600',   hasCaption: true },
-  image: { label: 'Imagem', icon: Image,    color: 'text-green-600',  hasCaption: true },
-  video: { label: 'Vídeo',  icon: Video,    color: 'text-purple-600', hasCaption: true },
-  audio: { label: 'Áudio',  icon: Music,    color: 'text-orange-600', hasCaption: false },
+  text:  { label: 'Texto',  icon: Type,  color: 'text-blue-600',   hasCaption: true },
+  image: { label: 'Imagem', icon: Image, color: 'text-green-600',  hasCaption: true },
+  video: { label: 'Vídeo',  icon: Video, color: 'text-purple-600', hasCaption: true },
+  audio: { label: 'Áudio',  icon: Music, color: 'text-orange-600', hasCaption: false },
 };
-
-// ── Status helpers ────────────────────────────────────────────────────────────
 
 const STATUS_STYLES: Record<CampanhaStatus, { border: string; bg: string }> = {
-  ativo:    { border: 'border-green-300',  bg: 'bg-green-50' },
-  pausado:  { border: 'border-yellow-300', bg: 'bg-yellow-50' },
-  erro:     { border: 'border-red-300',    bg: 'bg-red-50' },
-  concluido:{ border: 'border-blue-300',   bg: 'bg-blue-50' },
-  rascunho: { border: 'border-border',     bg: 'bg-card' },
+  ativo:     { border: 'border-green-300',  bg: 'bg-green-50' },
+  pausado:   { border: 'border-yellow-300', bg: 'bg-yellow-50' },
+  erro:      { border: 'border-red-300',    bg: 'bg-red-50' },
+  concluido: { border: 'border-blue-300',   bg: 'bg-blue-50' },
+  rascunho:  { border: 'border-border',     bg: 'bg-card' },
 };
 
+// ── Small shared components ───────────────────────────────────────────────────
+
 function StatusBadge({ status, isRunning }: { status: CampanhaStatus; isRunning: boolean }) {
-  if (isRunning) {
-    return (
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
-        <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-        Enviando
-      </span>
-    );
-  }
+  if (isRunning) return (
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
+      <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> Enviando
+    </span>
+  );
   const map: Record<CampanhaStatus, { cls: string; label: string }> = {
-    ativo:    { cls: 'bg-green-100 text-green-700',    label: 'Ativo' },
-    pausado:  { cls: 'bg-yellow-100 text-yellow-700',  label: 'Pausado' },
-    erro:     { cls: 'bg-red-100 text-red-700',        label: 'Erro' },
-    concluido:{ cls: 'bg-blue-100 text-blue-700',      label: 'Concluído' },
-    rascunho: { cls: 'bg-muted text-muted-foreground', label: 'Rascunho' },
+    ativo:     { cls: 'bg-green-100 text-green-700',    label: 'Ativo' },
+    pausado:   { cls: 'bg-yellow-100 text-yellow-700',  label: 'Pausado' },
+    erro:      { cls: 'bg-red-100 text-red-700',        label: 'Erro' },
+    concluido: { cls: 'bg-blue-100 text-blue-700',      label: 'Concluído' },
+    rascunho:  { cls: 'bg-muted text-muted-foreground', label: 'Rascunho' },
   };
   const { cls, label } = map[status];
   return <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${cls}`}>{label}</span>;
@@ -202,33 +192,157 @@ function Stat({ icon, label, value, color = 'text-foreground' }: {
   );
 }
 
+function LeadStatusBadge({ status }: { status: LeadRow['status'] }) {
+  const styles = {
+    pendente: 'bg-gray-100 text-gray-600',
+    enviado:  'bg-green-100 text-green-700',
+    erro:     'bg-red-100 text-red-700',
+    pulado:   'bg-zinc-100 text-zinc-500',
+  };
+  const labels = { pendente: 'Pendente', enviado: 'Enviado', erro: 'Erro', pulado: 'Pulado' };
+  return <span className={`px-2 py-0.5 rounded text-xs font-medium ${styles[status]}`}>{labels[status]}</span>;
+}
+
+// ── AntiBanFields (shared between Create and Edit modals) ─────────────────────
+
+function AntiBanFields({ delayMin, setDelayMin, delayMax, setDelayMax, dailyLimit, setDailyLimit,
+  safeStart, setSafeStart, safeEnd, setSafeEnd, maxErrors, setMaxErrors }: {
+  delayMin: number; setDelayMin: (v: number) => void;
+  delayMax: number; setDelayMax: (v: number) => void;
+  dailyLimit: number; setDailyLimit: (v: number) => void;
+  safeStart: number; setSafeStart: (v: number) => void;
+  safeEnd: number; setSafeEnd: (v: number) => void;
+  maxErrors: number; setMaxErrors: (v: number) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+        <Shield className="w-3.5 h-3.5 text-green-600" /> Anti-ban
+      </p>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-1.5">
+          <Label>Delay mínimo (s)</Label>
+          <div className="flex items-center gap-2">
+            <Input type="number" min={3} max={60} value={delayMin}
+              onChange={e => setDelayMin(Math.max(3, +e.target.value))} className="w-24" />
+            <span className="text-xs text-muted-foreground">s (mín. 3)</span>
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Delay máximo (s)</Label>
+          <div className="flex items-center gap-2">
+            <Input type="number" min={delayMin} max={300} value={delayMax}
+              onChange={e => setDelayMax(Math.max(delayMin, +e.target.value))} className="w-24" />
+            <span className="text-xs text-muted-foreground">s</span>
+          </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-4">
+        <div className="space-y-1.5">
+          <Label>Limite diário</Label>
+          <div className="flex items-center gap-2">
+            <Input type="number" min={10} max={500} value={dailyLimit}
+              onChange={e => setDailyLimit(Math.max(10, +e.target.value))} className="w-24" />
+            <span className="text-xs text-muted-foreground">msgs</span>
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Hora início</Label>
+          <div className="flex items-center gap-2">
+            <Input type="number" min={0} max={23} value={safeStart}
+              onChange={e => setSafeStart(+e.target.value)} className="w-20" />
+            <span className="text-xs text-muted-foreground">h</span>
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Hora fim</Label>
+          <div className="flex items-center gap-2">
+            <Input type="number" min={1} max={23} value={safeEnd}
+              onChange={e => setSafeEnd(+e.target.value)} className="w-20" />
+            <span className="text-xs text-muted-foreground">h</span>
+          </div>
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label>Pausar após N erros consecutivos</Label>
+        <div className="flex items-center gap-2">
+          <Input type="number" min={1} max={20} value={maxErrors}
+            onChange={e => setMaxErrors(Math.max(1, +e.target.value))} className="w-20" />
+          <span className="text-xs text-muted-foreground">erros</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── EvolutionSelector (shared) ────────────────────────────────────────────────
+
+function EvolutionSelector({ instances, value, onChange }: {
+  instances: EvolutionInstance[]; value: string; onChange: (v: string) => void;
+}) {
+  if (instances.length === 0) return (
+    <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
+      <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+      Nenhuma instância Evolution API configurada. Vá em <strong>Configurações</strong> para cadastrar.
+    </div>
+  );
+  return (
+    <div className="space-y-1.5">
+      <Label>Instância Evolution API *</Label>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger>
+          <SelectValue placeholder="Selecione a instância" />
+        </SelectTrigger>
+        <SelectContent>
+          {instances.map(inst => (
+            <SelectItem key={inst.id} value={inst.id}>
+              📡 {inst.instance_name}{!inst.ativo ? ' (inativa)' : ''}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 // ── CampanhaCard ──────────────────────────────────────────────────────────────
 
 interface CardProps {
   campanha: Campanha;
   isRunning: boolean;
   logs: LogEntry[];
-  showLog: boolean;
+  activeTab: CardTab;
+  leads: LeadRow[];
+  leadsTotal: number;
+  leadsPage: number;
+  loadingLeads: boolean;
+  showExpanded: boolean;
   speed: number;
-  onToggleLog: () => void;
+  evolutionInstanceName?: string;
+  onToggleExpand: () => void;
+  onTabChange: (tab: CardTab) => void;
+  onLoadLeads: (page: number) => void;
   onStart: () => void;
   onPause: () => void;
   onStop: () => void;
   onDelete: () => void;
   onReset: () => void;
+  onEdit: () => void;
 }
 
 function CampanhaCard({
-  campanha: c, isRunning, logs, showLog, speed,
-  onToggleLog, onStart, onPause, onStop, onDelete, onReset,
+  campanha: c, isRunning, logs, activeTab, leads, leadsTotal, leadsPage, loadingLeads,
+  showExpanded, speed, evolutionInstanceName,
+  onToggleExpand, onTabChange, onLoadLeads, onStart, onPause, onStop, onDelete, onReset, onEdit,
 }: CardProps) {
   const { border, bg } = STATUS_STYLES[c.status];
-  const done    = c.leads_sent + c.leads_error + c.leads_skipped;
-  const pending = Math.max(0, c.leads_total - done);
-  const progress = pct(done, c.leads_total);
-  const canStart = !isRunning && (c.status === 'rascunho' || c.status === 'pausado' || c.status === 'ativo' || c.status === 'erro');
-  const msgMeta  = MSG_TYPES[c.message_type ?? 'text'];
-  const MsgIcon  = msgMeta.icon;
+  const done      = c.leads_sent + c.leads_error + c.leads_skipped;
+  const pending   = Math.max(0, c.leads_total - done);
+  const progress  = pct(done, c.leads_total);
+  const canStart  = !isRunning && (c.status === 'rascunho' || c.status === 'pausado' || c.status === 'ativo' || c.status === 'erro');
+  const msgMeta   = MSG_TYPES[c.message_type ?? 'text'];
+  const MsgIcon   = msgMeta.icon;
+  const totalPages = Math.max(1, Math.ceil((leadsTotal || c.leads_total) / LEADS_PER_PAGE));
 
   return (
     <div className={`rounded-xl border-2 ${border} ${bg} shadow-sm overflow-hidden`}>
@@ -241,18 +355,22 @@ function CampanhaCard({
             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-white/60 border ${msgMeta.color}`}>
               <MsgIcon className="w-3 h-3" /> {msgMeta.label}
             </span>
+            {evolutionInstanceName && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 border border-indigo-200 text-indigo-700">
+                📡 {evolutionInstanceName}
+              </span>
+            )}
           </div>
           <p className="text-xs text-muted-foreground mt-1 font-mono line-clamp-1">
             {c.message_type !== 'text' && c.media_url
               ? `📎 ${c.media_url.slice(0, 60)}…`
-              : c.template.slice(0, 90) + (c.template.length > 90 ? '…' : '')}
+              : (c.template || '').slice(0, 90) + ((c.template || '').length > 90 ? '…' : '')}
           </p>
         </div>
-        <div className="flex items-center gap-1.5 flex-shrink-0">
+        <div className="flex items-center gap-1 flex-shrink-0">
           {canStart && (
             <Button size="sm" onClick={onStart} className="gap-1.5 h-8 bg-green-600 hover:bg-green-500 text-white">
-              <Play className="w-3.5 h-3.5" />
-              {c.status === 'pausado' ? 'Retomar' : 'Iniciar'}
+              <Play className="w-3.5 h-3.5" /> {c.status === 'pausado' ? 'Retomar' : 'Iniciar'}
             </Button>
           )}
           {isRunning && (
@@ -267,10 +385,15 @@ function CampanhaCard({
           )}
           {c.status === 'concluido' && (
             <Button size="sm" variant="outline" onClick={onReset} className="gap-1.5 h-8 text-muted-foreground">
-              <RotateCcw className="w-3.5 h-3.5" /> Reenviar pendentes
+              <RotateCcw className="w-3.5 h-3.5" /> Reenviar
             </Button>
           )}
-          <Button size="sm" variant="ghost" onClick={onDelete} className="h-8 w-8 p-0 text-muted-foreground hover:text-red-600">
+          <Button size="sm" variant="ghost" onClick={onEdit} title="Editar campanha"
+            className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground">
+            <Pencil className="w-3.5 h-3.5" />
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onDelete}
+            className="h-8 w-8 p-0 text-muted-foreground hover:text-red-600">
             <Trash2 className="w-3.5 h-3.5" />
           </Button>
         </div>
@@ -287,36 +410,48 @@ function CampanhaCard({
 
       {/* Stats */}
       <div className="flex flex-wrap items-center gap-4 px-5 pb-3">
-        <Stat icon={<CheckCircle2 className="w-3.5 h-3.5" />} label="Enviados"  value={c.leads_sent}     color="text-green-600" />
-        <Stat icon={<XCircle      className="w-3.5 h-3.5" />} label="Erros"     value={c.leads_error}    color="text-red-500" />
-        <Stat icon={<SkipForward  className="w-3.5 h-3.5" />} label="Pulados"   value={c.leads_skipped}  color="text-muted-foreground" />
-        <Stat icon={<Clock        className="w-3.5 h-3.5" />} label="Pendentes" value={pending}           color="text-blue-600" />
+        <Stat icon={<CheckCircle2 className="w-3.5 h-3.5" />} label="Enviados"  value={c.leads_sent}    color="text-green-600" />
+        <Stat icon={<XCircle      className="w-3.5 h-3.5" />} label="Erros"     value={c.leads_error}   color="text-red-500" />
+        <Stat icon={<SkipForward  className="w-3.5 h-3.5" />} label="Pulados"   value={c.leads_skipped} color="text-muted-foreground" />
+        <Stat icon={<Clock        className="w-3.5 h-3.5" />} label="Pendentes" value={pending}          color="text-blue-600" />
         {isRunning && speed > 0 && (
           <>
-            <Stat icon={<Zap      className="w-3.5 h-3.5" />} label="msgs/min"  value={speed}            color="text-amber-500" />
-            <Stat icon={<Activity className="w-3.5 h-3.5" />} label="ETA"       value={etaStr(pending, speed)} color="text-muted-foreground" />
+            <Stat icon={<Zap      className="w-3.5 h-3.5" />} label="msgs/min" value={speed}                  color="text-amber-500" />
+            <Stat icon={<Activity className="w-3.5 h-3.5" />} label="ETA"      value={etaStr(pending, speed)} color="text-muted-foreground" />
           </>
         )}
         <div className="ml-auto text-xs text-muted-foreground">
-          delay {c.delay_min_s}–{c.delay_max_s}s · limite {c.daily_limit}/dia · {c.safe_hour_start}h–{c.safe_hour_end}h
+          delay {c.delay_min_s}–{c.delay_max_s}s · {c.daily_limit}/dia · {c.safe_hour_start}h–{c.safe_hour_end}h
         </div>
       </div>
 
-      {/* Log toggle */}
-      {(isRunning || logs.length > 0) && (
-        <>
-          <button
-            onClick={onToggleLog}
-            className="flex items-center gap-1.5 w-full px-5 py-2 text-xs text-muted-foreground hover:text-foreground border-t border-border/50 transition-colors bg-muted/30"
-          >
-            {showLog ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            {showLog ? 'Ocultar log' : 'Ver log ao vivo'}
-            {logs.length > 0 && <span className="ml-1 px-1.5 py-0.5 rounded-full bg-muted">{logs.length}</span>}
-          </button>
+      {/* Expand toggle */}
+      <button onClick={onToggleExpand}
+        className="flex items-center gap-1.5 w-full px-5 py-2 text-xs text-muted-foreground hover:text-foreground border-t border-border/50 transition-colors bg-muted/30">
+        {showExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+        {showExpanded ? 'Recolher' : 'Expandir'}
+        <span className="ml-auto text-muted-foreground/60">{c.leads_total} leads</span>
+      </button>
 
-          {showLog && (
-            <div className="border-t border-border/50 bg-zinc-950/[0.03] px-5 py-3 space-y-1.5 max-h-64 overflow-y-auto">
-              {logs.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">Aguardando envios…</p>}
+      {/* Expanded panel */}
+      {showExpanded && (
+        <div className="border-t border-border/50">
+          {/* Tab bar */}
+          <div className="flex border-b border-border/50 bg-muted/20">
+            <button onClick={() => onTabChange('log')}
+              className={`flex-1 py-1.5 text-xs font-medium transition-colors ${activeTab === 'log' ? 'bg-background text-foreground border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+              📋 Log ao vivo {logs.length > 0 && <span className="ml-1 opacity-60">({logs.length})</span>}
+            </button>
+            <button onClick={() => { onTabChange('leads'); if (leads.length === 0) onLoadLeads(0); }}
+              className={`flex-1 py-1.5 text-xs font-medium transition-colors ${activeTab === 'leads' ? 'bg-background text-foreground border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+              👥 Leads ({leadsTotal > 0 ? leadsTotal : c.leads_total})
+            </button>
+          </div>
+
+          {/* Log tab */}
+          {activeTab === 'log' && (
+            <div className="bg-zinc-950/[0.03] px-5 py-3 space-y-1.5 max-h-64 overflow-y-auto">
+              {logs.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">Aguardando envios…</p>}
               {logs.map(entry => (
                 <div key={entry.id} className="flex items-start gap-2 text-xs font-mono">
                   <span className="text-muted-foreground/60 flex-shrink-0">{formatTime(entry.ts)}</span>
@@ -333,119 +468,305 @@ function CampanhaCard({
               ))}
             </div>
           )}
-        </>
+
+          {/* Leads tab */}
+          {activeTab === 'leads' && (
+            <div>
+              {loadingLeads ? (
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <>
+                  <div className="overflow-x-auto max-h-72 overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 bg-muted/90 backdrop-blur-sm z-10">
+                        <tr className="text-left">
+                          <th className="px-3 py-2 font-semibold text-muted-foreground w-10">#</th>
+                          <th className="px-3 py-2 font-semibold text-muted-foreground">Nome</th>
+                          <th className="px-3 py-2 font-semibold text-muted-foreground">Telefone</th>
+                          <th className="px-3 py-2 font-semibold text-muted-foreground">Status</th>
+                          <th className="px-3 py-2 font-semibold text-muted-foreground">Enviado em</th>
+                          <th className="px-3 py-2 font-semibold text-muted-foreground">Erro</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/40">
+                        {leads.length === 0 && (
+                          <tr>
+                            <td colSpan={6} className="text-center py-8 text-muted-foreground">Nenhum lead carregado</td>
+                          </tr>
+                        )}
+                        {leads.map((l, i) => (
+                          <tr key={l.id} className="hover:bg-muted/20">
+                            <td className="px-3 py-1.5 text-muted-foreground">{leadsPage * LEADS_PER_PAGE + i + 1}</td>
+                            <td className="px-3 py-1.5 text-foreground max-w-[120px] truncate">{l.nome || '—'}</td>
+                            <td className="px-3 py-1.5 font-mono">{l.phone}</td>
+                            <td className="px-3 py-1.5"><LeadStatusBadge status={l.status} /></td>
+                            <td className="px-3 py-1.5 text-muted-foreground whitespace-nowrap">
+                              {l.sent_at
+                                ? new Date(l.sent_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+                                : '—'}
+                            </td>
+                            <td className="px-3 py-1.5 text-red-500 max-w-[200px] truncate" title={l.error_msg ?? undefined}>
+                              {l.error_msg || '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {/* Pagination */}
+                  <div className="flex items-center justify-between px-4 py-2 border-t border-border/50 bg-muted/10">
+                    <span className="text-xs text-muted-foreground">
+                      Pág. {leadsPage + 1} de {totalPages} · {leadsTotal || c.leads_total} leads
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" variant="ghost" className="h-6 text-xs gap-1 text-muted-foreground"
+                        onClick={() => onLoadLeads(leadsPage)}>
+                        <RotateCcw className="w-3 h-3" /> Atualizar
+                      </Button>
+                      <div className="flex gap-1">
+                        <Button size="sm" variant="outline" className="h-6 w-6 p-0 text-xs"
+                          disabled={leadsPage === 0} onClick={() => onLoadLeads(leadsPage - 1)}>‹</Button>
+                        <Button size="sm" variant="outline" className="h-6 w-6 p-0 text-xs"
+                          disabled={leadsPage >= totalPages - 1} onClick={() => onLoadLeads(leadsPage + 1)}>›</Button>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
 }
 
+// ── EditCampanhaModal ─────────────────────────────────────────────────────────
+
+function EditCampanhaModal({ campanha, evolutionInstances, onClose, onSave }: {
+  campanha: Campanha;
+  evolutionInstances: EvolutionInstance[];
+  onClose: () => void;
+  onSave: (id: string, data: Partial<Campanha>) => Promise<void>;
+}) {
+  const [nome,        setNome]        = useState(campanha.nome);
+  const [descricao,   setDescricao]   = useState(campanha.descricao ?? '');
+  const [messageType, setMessageType] = useState<MessageType>(campanha.message_type ?? 'text');
+  const [mediaUrl,    setMediaUrl]    = useState(campanha.media_url ?? '');
+  const [template,    setTemplate]    = useState(campanha.template ?? '');
+  const [delayMin,    setDelayMin]    = useState(campanha.delay_min_s);
+  const [delayMax,    setDelayMax]    = useState(campanha.delay_max_s);
+  const [dailyLimit,  setDailyLimit]  = useState(campanha.daily_limit);
+  const [safeStart,   setSafeStart]   = useState(campanha.safe_hour_start);
+  const [safeEnd,     setSafeEnd]     = useState(campanha.safe_hour_end);
+  const [maxErrors,   setMaxErrors]   = useState(campanha.max_errors_seq);
+  const [evoId,       setEvoId]       = useState(campanha.evolution_config_id ?? 'default');
+  const [saving,      setSaving]      = useState(false);
+
+  const needsMedia  = messageType !== 'text';
+  const hasCaption  = MSG_TYPES[messageType].hasCaption;
+
+  const handleConvertDrive = () => {
+    const converted = toDriveDownload(mediaUrl);
+    if (converted !== mediaUrl) { setMediaUrl(converted); toast.success('URL convertida'); }
+    else toast.info('URL já no formato correto');
+  };
+
+  const handleSave = async () => {
+    if (!nome.trim()) { toast.error('Nome obrigatório'); return; }
+    setSaving(true);
+    try {
+      await onSave(campanha.id, {
+        nome: nome.trim(),
+        descricao: descricao.trim() || undefined,
+        message_type: messageType,
+        media_url: mediaUrl.trim() || undefined,
+        template: template.trim(),
+        delay_min_s: delayMin, delay_max_s: delayMax,
+        daily_limit: dailyLimit, safe_hour_start: safeStart, safe_hour_end: safeEnd,
+        max_errors_seq: maxErrors, evolution_config_id: evoId,
+      });
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Pencil className="w-4 h-4" /> Editar Campanha
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-1">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Nome *</Label>
+              <Input value={nome} onChange={e => setNome(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Descrição</Label>
+              <Input value={descricao} onChange={e => setDescricao(e.target.value)} placeholder="Observações" />
+            </div>
+          </div>
+
+          <EvolutionSelector instances={evolutionInstances} value={evoId} onChange={setEvoId} />
+
+          {/* Tipo */}
+          <div className="space-y-1.5">
+            <Label>Tipo de mensagem</Label>
+            <div className="flex gap-2 flex-wrap">
+              {(Object.entries(MSG_TYPES) as [MessageType, typeof MSG_TYPES[MessageType]][]).map(([key, meta]) => {
+                const Icon = meta.icon;
+                return (
+                  <button key={key} onClick={() => setMessageType(key)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-all ${
+                      messageType === key ? 'border-primary bg-primary text-white' : 'border-border bg-background text-muted-foreground hover:text-foreground'
+                    }`}>
+                    <Icon className="w-4 h-4" /> {meta.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {needsMedia && (
+            <div className="space-y-1.5">
+              <Label>URL da mídia *</Label>
+              <div className="flex gap-2">
+                <Input value={mediaUrl} onChange={e => setMediaUrl(e.target.value)}
+                  placeholder="https://drive.google.com/…" className="font-mono text-xs" />
+                <Button type="button" variant="outline" size="sm" onClick={handleConvertDrive}
+                  className="shrink-0 gap-1.5 h-9">
+                  <Link2 className="w-3.5 h-3.5" /> Converter
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {hasCaption && (
+            <div className="space-y-1.5">
+              <Label>{messageType === 'text' ? 'Template *' : 'Legenda (opcional)'}</Label>
+              <Textarea rows={4} value={template} onChange={e => setTemplate(e.target.value)}
+                className="font-mono text-sm resize-none"
+                placeholder={messageType === 'text' ? 'Olá {{nome}}! 🎉' : 'Legenda da mídia…'} />
+              <p className="text-xs text-muted-foreground">Use <code className="bg-muted px-1 rounded">{'{{nome}}'}</code> para personalizar.</p>
+            </div>
+          )}
+
+          <hr className="border-border" />
+
+          <AntiBanFields
+            delayMin={delayMin} setDelayMin={setDelayMin}
+            delayMax={delayMax} setDelayMax={setDelayMax}
+            dailyLimit={dailyLimit} setDailyLimit={setDailyLimit}
+            safeStart={safeStart} setSafeStart={setSafeStart}
+            safeEnd={safeEnd} setSafeEnd={setSafeEnd}
+            maxErrors={maxErrors} setMaxErrors={setMaxErrors}
+          />
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button onClick={handleSave} disabled={saving} className="gap-2">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <><CheckCircle2 className="w-4 h-4" /> Salvar</>}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── NovaCampanhaModal ─────────────────────────────────────────────────────────
 
-const FORM_DEFAULT: CampanhaForm = {
-  nome: '', descricao: '',
-  messageType: 'text', mediaUrl: '', template: '',
-  leadsSource: 'paste', leadsText: '',
-  sistemaType: 'lancamento', sistemaId: '', loadedLeads: [],
-  delayMin: 8, delayMax: 20, dailyLimit: 150, safeStart: 8, safeEnd: 21, maxErrors: 3,
-};
-
-function NovaCampanhaModal({ onClose, onCreate }: {
+function NovaCampanhaModal({ evolutionInstances, onClose, onCreate }: {
+  evolutionInstances: EvolutionInstance[];
   onClose: () => void;
   onCreate: (form: CampanhaForm) => Promise<void>;
 }) {
-  const [form, setForm] = useState<CampanhaForm>(FORM_DEFAULT);
-  const [saving, setSaving] = useState(false);
-  const [sistemaItems, setSistemaItems] = useState<SistemaItem[]>([]);
-  const [loadingItems, setLoadingItems] = useState(false);
-  const [loadingLeads, setLoadingLeads] = useState(false);
+  const defaultEvoId = evolutionInstances.find(i => i.ativo)?.id ?? evolutionInstances[0]?.id ?? 'default';
 
-  const setF = <K extends keyof CampanhaForm>(k: K) => (v: CampanhaForm[K]) =>
-    setForm(prev => ({ ...prev, [k]: v }));
+  const [nome,        setNome]        = useState('');
+  const [descricao,   setDescricao]   = useState('');
+  const [messageType, setMessageType] = useState<MessageType>('text');
+  const [mediaUrl,    setMediaUrl]    = useState('');
+  const [template,    setTemplate]    = useState('');
+  const [leadsSource, setLeadsSource] = useState<LeadsSource>('paste');
+  const [leadsText,   setLeadsText]   = useState('');
+  const [sistemaType, setSistemaType] = useState<SistemaType>('lancamento');
+  const [sistemaId,   setSistemaId]   = useState('');
+  const [loadedLeads, setLoadedLeads] = useState<LoadedLead[]>([]);
+  const [delayMin,    setDelayMin]    = useState(8);
+  const [delayMax,    setDelayMax]    = useState(20);
+  const [dailyLimit,  setDailyLimit]  = useState(150);
+  const [safeStart,   setSafeStart]   = useState(8);
+  const [safeEnd,     setSafeEnd]     = useState(21);
+  const [maxErrors,   setMaxErrors]   = useState(3);
+  const [evolutionId, setEvolutionId] = useState(defaultEvoId);
+  const [saving,        setSaving]      = useState(false);
+  const [sistemaItems,  setSistemaItems]  = useState<SistemaItem[]>([]);
+  const [loadingItems,  setLoadingItems]  = useState(false);
+  const [loadingLeadsX, setLoadingLeadsX] = useState(false);
 
-  // Fetch sistema items when type changes
   useEffect(() => {
-    if (form.leadsSource !== 'sistema') return;
-    setLoadingItems(true);
-    setSistemaItems([]);
-    setForm(prev => ({ ...prev, sistemaId: '', loadedLeads: [] }));
-
+    if (leadsSource !== 'sistema') return;
+    setLoadingItems(true); setSistemaItems([]); setSistemaId(''); setLoadedLeads([]);
     const tables: Record<SistemaType, string> = {
-      lancamento:   'lancamentos',
-      npa:          'npa_eventos',
-      aula_secreta: 'aula_secreta_eventos',
+      lancamento: 'lancamentos', npa: 'npa_eventos', aula_secreta: 'aula_secreta_eventos',
     };
-
-    supabase
-      .from(tables[form.sistemaType])
-      .select('id, nome')
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        setSistemaItems((data ?? []) as SistemaItem[]);
-        setLoadingItems(false);
-      });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.leadsSource, form.sistemaType]);
+    supabase.from(tables[sistemaType]).select('id, nome').order('created_at', { ascending: false })
+      .then(({ data }) => { setSistemaItems((data ?? []) as SistemaItem[]); setLoadingItems(false); });
+  }, [leadsSource, sistemaType]);
 
   const handleLoadLeads = async () => {
-    if (!form.sistemaId) return;
-    setLoadingLeads(true);
-
+    if (!sistemaId) return;
+    setLoadingLeadsX(true);
     const cfg: Record<SistemaType, { table: string; fk: string }> = {
-      lancamento:   { table: 'lancamento_leads',    fk: 'lancamento_id' },
-      npa:          { table: 'npa_evento_leads',    fk: 'npa_evento_id' },
-      aula_secreta: { table: 'aula_secreta_leads',  fk: 'aula_secreta_evento_id' },
+      lancamento:   { table: 'lancamento_leads',   fk: 'lancamento_id' },
+      npa:          { table: 'npa_evento_leads',   fk: 'npa_evento_id' },
+      aula_secreta: { table: 'aula_secreta_leads', fk: 'aula_secreta_evento_id' },
     };
-    const { table, fk } = cfg[form.sistemaType];
-
-    const PAGE = 1000;
-    let all: Array<{ nome: string; whatsapp: string }> = [];
-    let from = 0;
+    const { table, fk } = cfg[sistemaType];
+    const PAGE = 1000; let all: Array<{ nome: string; whatsapp: string }> = []; let from = 0;
     while (true) {
-      const { data, error } = await supabase
-        .from(table)
-        .select('nome, whatsapp')
-        .eq(fk, form.sistemaId)
-        .range(from, from + PAGE - 1);
+      const { data, error } = await supabase.from(table).select('nome, whatsapp').eq(fk, sistemaId).range(from, from + PAGE - 1);
       if (error || !data?.length) break;
       all = all.concat(data as typeof all);
       if (data.length < PAGE) break;
       from += PAGE;
     }
-
     const leads: LoadedLead[] = all
       .filter(l => l.whatsapp?.replace(/\D/g, '').length >= 10)
       .map(l => ({ phone: l.whatsapp, nome: l.nome ?? '', variaveis: {} }));
-
-    setForm(prev => ({ ...prev, loadedLeads: leads }));
-    setLoadingLeads(false);
+    setLoadedLeads(leads); setLoadingLeadsX(false);
     toast.success(`${leads.length} leads carregados`);
   };
 
   const handleConvertDrive = () => {
-    const converted = toDriveDownload(form.mediaUrl);
-    if (converted !== form.mediaUrl) {
-      setForm(prev => ({ ...prev, mediaUrl: converted }));
-      toast.success('URL convertida para link de download direto');
-    } else {
-      toast.info('URL já está no formato correto');
-    }
+    const converted = toDriveDownload(mediaUrl);
+    if (converted !== mediaUrl) { setMediaUrl(converted); toast.success('URL convertida'); }
+    else toast.info('URL já no formato correto');
   };
 
-  const leadsCount = form.leadsSource === 'paste'
-    ? parseLeads(form.leadsText).length
-    : form.loadedLeads.length;
-
-  const needsMedia  = form.messageType !== 'text';
-  const hasCaption  = MSG_TYPES[form.messageType].hasCaption;
-  const captionLabel = form.messageType === 'text' ? 'Template da mensagem' : 'Legenda (opcional)';
+  const leadsCount  = leadsSource === 'paste' ? parseLeads(leadsText).length : loadedLeads.length;
+  const needsMedia  = messageType !== 'text';
+  const hasCaption  = MSG_TYPES[messageType].hasCaption;
+  const captionLabel = messageType === 'text' ? 'Template da mensagem' : 'Legenda (opcional)';
 
   const handleSubmit = async () => {
-    if (!form.nome.trim())       { toast.error('Nome da campanha é obrigatório'); return; }
-    if (needsMedia && !form.mediaUrl.trim()) { toast.error('URL da mídia é obrigatória'); return; }
-    if (form.messageType === 'text' && !form.template.trim()) { toast.error('Template da mensagem é obrigatório'); return; }
-    if (!leadsCount)             { toast.error('Nenhum lead válido'); return; }
-    setSaving(true);
-    try { await onCreate(form); } finally { setSaving(false); }
+    if (!nome.trim())                               { toast.error('Nome obrigatório'); return; }
+    if (needsMedia && !mediaUrl.trim())             { toast.error('URL da mídia obrigatória'); return; }
+    if (messageType === 'text' && !template.trim()) { toast.error('Template obrigatório'); return; }
+    if (!leadsCount)                                { toast.error('Nenhum lead válido'); return; }
+    const form: CampanhaForm = {
+      nome, descricao, messageType, mediaUrl, template,
+      leadsSource, leadsText, sistemaType, sistemaId, loadedLeads,
+      delayMin, delayMax, dailyLimit, safeStart, safeEnd, maxErrors,
+      evolutionConfigId: evolutionId,
+    };
+    setSaving(true); try { await onCreate(form); } finally { setSaving(false); }
   };
 
   const SISTEMA_LABELS: Record<SistemaType, string> = {
@@ -457,96 +778,83 @@ function NovaCampanhaModal({ onClose, onCreate }: {
       <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Zap className="w-5 h-5 text-green-600" />
-            Nova Campanha de Disparo
+            <Zap className="w-5 h-5 text-green-600" /> Nova Campanha de Disparo
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-5 py-1">
 
-          {/* ── Nome + Descrição ── */}
+          {/* Nome + Descrição */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>Nome da campanha *</Label>
-              <Input placeholder="Ex: Oferta especial maio" value={form.nome} onChange={e => setF('nome')(e.target.value)} />
+              <Input placeholder="Ex: Oferta especial maio" value={nome} onChange={e => setNome(e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label>Descrição (opcional)</Label>
-              <Input placeholder="Observações internas" value={form.descricao} onChange={e => setF('descricao')(e.target.value)} />
+              <Input placeholder="Observações internas" value={descricao} onChange={e => setDescricao(e.target.value)} />
             </div>
           </div>
 
-          {/* ── Tipo de mensagem ── */}
+          {/* Evolution API */}
+          <EvolutionSelector instances={evolutionInstances} value={evolutionId} onChange={setEvolutionId} />
+
+          {/* Tipo de mensagem */}
           <div className="space-y-2">
             <Label>Tipo de mensagem *</Label>
             <div className="flex gap-2">
               {(Object.entries(MSG_TYPES) as [MessageType, typeof MSG_TYPES[MessageType]][]).map(([key, meta]) => {
                 const Icon = meta.icon;
                 return (
-                  <button
-                    key={key}
-                    onClick={() => setF('messageType')(key)}
+                  <button key={key} onClick={() => setMessageType(key)}
                     className={`flex items-center gap-1.5 px-4 py-2 rounded-lg border text-sm font-medium transition-all ${
-                      form.messageType === key
+                      messageType === key
                         ? 'border-primary bg-primary text-white shadow-sm'
                         : 'border-border bg-background text-muted-foreground hover:text-foreground hover:border-foreground/30'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                    {meta.label}
+                    }`}>
+                    <Icon className="w-4 h-4" /> {meta.label}
                   </button>
                 );
               })}
             </div>
           </div>
 
-          {/* ── URL da mídia (image/video/audio) ── */}
+          {/* URL mídia */}
           {needsMedia && (
             <div className="space-y-1.5">
               <Label>URL da mídia (Google Drive) *</Label>
               <div className="flex gap-2">
-                <Input
-                  placeholder="https://drive.google.com/file/d/FILE_ID/view"
-                  value={form.mediaUrl}
-                  onChange={e => setF('mediaUrl')(e.target.value)}
-                  className="font-mono text-xs"
-                />
-                <Button type="button" variant="outline" size="sm" onClick={handleConvertDrive} className="shrink-0 gap-1.5 h-9">
+                <Input placeholder="https://drive.google.com/file/d/FILE_ID/view"
+                  value={mediaUrl} onChange={e => setMediaUrl(e.target.value)} className="font-mono text-xs" />
+                <Button type="button" variant="outline" size="sm" onClick={handleConvertDrive}
+                  className="shrink-0 gap-1.5 h-9">
                   <Link2 className="w-3.5 h-3.5" /> Converter
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                No Drive, clique em <strong>Compartilhar → Qualquer pessoa com o link</strong>. Cole o link e clique em{' '}
-                <strong>Converter</strong> para gerar a URL de download direto.
+                No Drive: <strong>Compartilhar → Qualquer pessoa com o link</strong>, depois clique em <strong>Converter</strong>.
               </p>
             </div>
           )}
 
-          {/* ── Template / Legenda ── */}
+          {/* Template / Legenda */}
           {hasCaption && (
             <div className="space-y-1.5">
-              <Label>{captionLabel}{form.messageType === 'text' ? ' *' : ''}</Label>
-              <Textarea
-                rows={4}
-                placeholder={
-                  form.messageType === 'text'
-                    ? 'Olá {{nome}}, temos uma novidade incrível para você! 🎉'
-                    : 'Legenda que acompanha a mídia (opcional)…'
-                }
-                value={form.template}
-                onChange={e => setF('template')(e.target.value)}
-                className="font-mono text-sm resize-none"
-              />
+              <Label>{captionLabel}{messageType === 'text' ? ' *' : ''}</Label>
+              <Textarea rows={4}
+                placeholder={messageType === 'text' ? 'Olá {{nome}}, temos uma novidade incrível! 🎉' : 'Legenda da mídia (opcional)…'}
+                value={template} onChange={e => setTemplate(e.target.value)}
+                className="font-mono text-sm resize-none" />
               <p className="text-xs text-muted-foreground">
-                Use <code className="bg-muted px-1 rounded">{'{{nome}}'}</code> para o nome e{' '}
-                <code className="bg-muted px-1 rounded">{'{{phone}}'}</code> para o número.
+                Use <code className="bg-muted px-1 rounded">{'{{nome}}'}</code> e{' '}
+                <code className="bg-muted px-1 rounded">{'{{phone}}'}</code> para personalizar.
               </p>
             </div>
           )}
 
           <hr className="border-border" />
 
-          {/* ── Fonte de leads ── */}
+          {/* Fonte de leads */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <Label className="text-base">Lista de leads *</Label>
@@ -557,44 +865,30 @@ function NovaCampanhaModal({ onClose, onCreate }: {
               )}
             </div>
 
-            {/* Source toggle */}
             <div className="flex rounded-lg border border-border overflow-hidden">
               {(['sistema', 'paste'] as LeadsSource[]).map(src => (
-                <button
-                  key={src}
-                  onClick={() => setF('leadsSource')(src)}
+                <button key={src} onClick={() => setLeadsSource(src)}
                   className={`flex-1 py-2 text-sm font-medium transition-colors ${
-                    form.leadsSource === src
-                      ? 'bg-foreground text-background'
-                      : 'bg-background text-muted-foreground hover:text-foreground'
-                  }`}
-                >
+                    leadsSource === src ? 'bg-foreground text-background' : 'bg-background text-muted-foreground hover:text-foreground'
+                  }`}>
                   {src === 'sistema' ? '📊 Base do Sistema' : '📋 Colar / CSV'}
                 </button>
               ))}
             </div>
 
-            {/* ── Sistema ── */}
-            {form.leadsSource === 'sistema' && (
+            {/* Sistema */}
+            {leadsSource === 'sistema' && (
               <div className="space-y-3 p-4 rounded-lg border border-border bg-muted/30">
-                {/* Type selector */}
                 <div className="flex gap-2">
                   {(Object.keys(SISTEMA_LABELS) as SistemaType[]).map(t => (
-                    <button
-                      key={t}
-                      onClick={() => setF('sistemaType')(t)}
+                    <button key={t} onClick={() => setSistemaType(t)}
                       className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-all ${
-                        form.sistemaType === t
-                          ? 'border-primary bg-primary text-white'
-                          : 'border-border bg-background text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
+                        sistemaType === t ? 'border-primary bg-primary text-white' : 'border-border bg-background text-muted-foreground hover:text-foreground'
+                      }`}>
                       {SISTEMA_LABELS[t]}
                     </button>
                   ))}
                 </div>
-
-                {/* Item selector */}
                 <div className="flex gap-2">
                   <div className="flex-1">
                     {loadingItems ? (
@@ -602,48 +896,37 @@ function NovaCampanhaModal({ onClose, onCreate }: {
                         <Loader2 className="w-4 h-4 animate-spin" /> Carregando…
                       </div>
                     ) : (
-                      <Select value={form.sistemaId} onValueChange={v => { setF('sistemaId')(v); setForm(p => ({ ...p, loadedLeads: [] })); }}>
+                      <Select value={sistemaId} onValueChange={v => { setSistemaId(v); setLoadedLeads([]); }}>
                         <SelectTrigger className="text-sm">
-                          <SelectValue placeholder={`Selecione o ${SISTEMA_LABELS[form.sistemaType].slice(0, -1)}`} />
+                          <SelectValue placeholder={`Selecione o ${SISTEMA_LABELS[sistemaType].slice(0, -1)}`} />
                         </SelectTrigger>
                         <SelectContent>
-                          {sistemaItems.map(item => (
-                            <SelectItem key={item.id} value={item.id}>{item.nome}</SelectItem>
-                          ))}
+                          {sistemaItems.map(item => <SelectItem key={item.id} value={item.id}>{item.nome}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     )}
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleLoadLeads}
-                    disabled={!form.sistemaId || loadingLeads}
-                    className="gap-1.5 shrink-0"
-                  >
-                    {loadingLeads
-                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      : <FileDown className="w-3.5 h-3.5" />}
+                  <Button type="button" variant="outline" onClick={handleLoadLeads}
+                    disabled={!sistemaId || loadingLeadsX} className="gap-1.5 shrink-0">
+                    {loadingLeadsX ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
                     Carregar leads
                   </Button>
                 </div>
-
-                {/* Preview table */}
-                {form.loadedLeads.length > 0 && (
+                {loadedLeads.length > 0 && (
                   <div className="rounded-lg border border-border overflow-hidden">
                     <div className="grid grid-cols-2 bg-muted px-3 py-1.5 text-xs font-semibold text-muted-foreground">
                       <span>Nome</span><span>Telefone</span>
                     </div>
                     <div className="divide-y divide-border max-h-40 overflow-y-auto">
-                      {form.loadedLeads.slice(0, 5).map((l, i) => (
+                      {loadedLeads.slice(0, 5).map((l, i) => (
                         <div key={i} className="grid grid-cols-2 px-3 py-1.5 text-xs">
                           <span className="truncate text-foreground">{l.nome || '—'}</span>
                           <span className="font-mono text-muted-foreground">{l.phone}</span>
                         </div>
                       ))}
-                      {form.loadedLeads.length > 5 && (
+                      {loadedLeads.length > 5 && (
                         <div className="px-3 py-1.5 text-xs text-muted-foreground italic">
-                          + {form.loadedLeads.length - 5} leads…
+                          + {loadedLeads.length - 5} leads…
                         </div>
                       )}
                     </div>
@@ -652,16 +935,13 @@ function NovaCampanhaModal({ onClose, onCreate }: {
               </div>
             )}
 
-            {/* ── Paste / CSV ── */}
-            {form.leadsSource === 'paste' && (
+            {/* Paste / CSV */}
+            {leadsSource === 'paste' && (
               <div className="space-y-1.5">
-                <Textarea
-                  rows={5}
+                <Textarea rows={5}
                   placeholder={`Cole aqui os leads (um por linha):\n5511999999999,João Silva\n5511888888888,Maria Costa\n5511777777777`}
-                  value={form.leadsText}
-                  onChange={e => setF('leadsText')(e.target.value)}
-                  className="font-mono text-xs resize-none"
-                />
+                  value={leadsText} onChange={e => setLeadsText(e.target.value)}
+                  className="font-mono text-xs resize-none" />
                 <p className="text-xs text-muted-foreground">
                   Formato: <code className="bg-muted px-1 rounded">telefone,nome</code> · Aceita vírgula, ponto-e-vírgula ou tab.
                 </p>
@@ -671,74 +951,22 @@ function NovaCampanhaModal({ onClose, onCreate }: {
 
           <hr className="border-border" />
 
-          {/* ── Anti-ban ── */}
-          <div className="space-y-4">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-              <Shield className="w-3.5 h-3.5 text-green-600" /> Configurações anti-ban
-            </p>
+          {/* Anti-ban */}
+          <AntiBanFields
+            delayMin={delayMin} setDelayMin={setDelayMin}
+            delayMax={delayMax} setDelayMax={setDelayMax}
+            dailyLimit={dailyLimit} setDailyLimit={setDailyLimit}
+            safeStart={safeStart} setSafeStart={setSafeStart}
+            safeEnd={safeEnd} setSafeEnd={setSafeEnd}
+            maxErrors={maxErrors} setMaxErrors={setMaxErrors}
+          />
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label>Delay mínimo (seg)</Label>
-                <div className="flex items-center gap-2">
-                  <Input type="number" min={3} max={60} value={form.delayMin}
-                    onChange={e => setF('delayMin')(Math.max(3, +e.target.value))} className="w-24" />
-                  <span className="text-xs text-muted-foreground">s (mín. 3s)</span>
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Delay máximo (seg)</Label>
-                <div className="flex items-center gap-2">
-                  <Input type="number" min={form.delayMin} max={300} value={form.delayMax}
-                    onChange={e => setF('delayMax')(Math.max(form.delayMin, +e.target.value))} className="w-24" />
-                  <span className="text-xs text-muted-foreground">s</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-1.5">
-                <Label>Limite diário</Label>
-                <div className="flex items-center gap-2">
-                  <Input type="number" min={10} max={500} value={form.dailyLimit}
-                    onChange={e => setF('dailyLimit')(Math.max(10, +e.target.value))} className="w-24" />
-                  <span className="text-xs text-muted-foreground">msgs</span>
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Hora início</Label>
-                <div className="flex items-center gap-2">
-                  <Input type="number" min={0} max={23} value={form.safeStart}
-                    onChange={e => setF('safeStart')(+e.target.value)} className="w-20" />
-                  <span className="text-xs text-muted-foreground">h</span>
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Hora fim</Label>
-                <div className="flex items-center gap-2">
-                  <Input type="number" min={1} max={23} value={form.safeEnd}
-                    onChange={e => setF('safeEnd')(+e.target.value)} className="w-20" />
-                  <span className="text-xs text-muted-foreground">h</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Pausar após N erros consecutivos</Label>
-              <div className="flex items-center gap-2">
-                <Input type="number" min={1} max={20} value={form.maxErrors}
-                  onChange={e => setF('maxErrors')(Math.max(1, +e.target.value))} className="w-20" />
-                <span className="text-xs text-muted-foreground">erros</span>
-              </div>
-            </div>
-
-            <div className="flex gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
-              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-600" />
-              <span>
-                <strong>Anti-ban:</strong> Use delays maiores (15–40s) para números novos. Limite diário abaixo de 200.
-                Envie apenas em horário comercial. Personalize com <code>{'{{nome}}'}</code>.
-              </span>
-            </div>
+          <div className="flex gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-600" />
+            <span>
+              <strong>Anti-ban:</strong> Use delays maiores (15–40s) para números novos. Limite diário abaixo de 200.
+              Envie apenas em horário comercial. Personalize com <code>{'{{nome}}'}</code>.
+            </span>
           </div>
         </div>
 
@@ -758,11 +986,18 @@ function NovaCampanhaModal({ onClose, onCreate }: {
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function DisparoPlanilha() {
-  const [campanhas, setCampanhas] = useState<Campanha[]>([]);
-  const [logs, setLogs] = useState<Record<string, LogEntry[]>>({});
-  const [showModal, setShowModal] = useState(false);
-  const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set());
-  const [activeCampaignIds, setActiveCampaignIds] = useState<Set<string>>(new Set());
+  const [campanhas,          setCampanhas]          = useState<Campanha[]>([]);
+  const [evolutionInstances, setEvolutionInstances] = useState<EvolutionInstance[]>([]);
+  const [logs,               setLogs]               = useState<Record<string, LogEntry[]>>({});
+  const [showModal,          setShowModal]          = useState(false);
+  const [editingCampanha,    setEditingCampanha]    = useState<Campanha | null>(null);
+  const [expandedCards,      setExpandedCards]      = useState<Set<string>>(new Set());
+  const [activeTabMap,       setActiveTabMap]       = useState<Record<string, CardTab>>({});
+  const [leadsMap,           setLeadsMap]           = useState<Record<string, LeadRow[]>>({});
+  const [leadsTotalMap,      setLeadsTotalMap]      = useState<Record<string, number>>({});
+  const [leadsPageMap,       setLeadsPageMap]       = useState<Record<string, number>>({});
+  const [loadingLeadsSet,    setLoadingLeadsSet]    = useState<Set<string>>(new Set());
+  const [activeCampaignIds,  setActiveCampaignIds]  = useState<Set<string>>(new Set());
 
   const runningRef = useRef<Map<string, boolean>>(new Map());
   const speedRef   = useRef<Map<string, number[]>>(new Map());
@@ -775,17 +1010,23 @@ export default function DisparoPlanilha() {
   }, [activeCampaignIds.size]);
 
   const fetchCampanhas = useCallback(async () => {
-    const { data } = await supabase
-      .from('disparo_campanhas')
-      .select('*')
-      .order('created_at', { ascending: false });
+    const { data } = await supabase.from('disparo_campanhas').select('*').order('created_at', { ascending: false });
     if (data) setCampanhas(data as Campanha[]);
+  }, []);
+
+  const fetchEvolutionInstances = useCallback(async () => {
+    const { data } = await supabase
+      .from('evolution_config')
+      .select('id, instance_name, api_url, api_key, ativo')
+      .order('created_at', { ascending: true });
+    if (data) setEvolutionInstances(data as EvolutionInstance[]);
   }, []);
 
   useEffect(() => {
     fetchCampanhas();
+    fetchEvolutionInstances();
     return () => { runningRef.current.forEach((_, id) => runningRef.current.set(id, false)); };
-  }, [fetchCampanhas]);
+  }, [fetchCampanhas, fetchEvolutionInstances]);
 
   const addLog = useCallback((campanhaId: string, entry: LogEntry) => {
     setLogs(prev => ({
@@ -800,7 +1041,26 @@ export default function DisparoPlanilha() {
     return ts.filter(t => Date.now() - t < 60_000).length;
   }
 
-  // ── Sending loop ──────────────────────────────────────────────────────────────
+  // ── Leads lazy loading ───────────────────────────────────────────────────
+
+  const handleLoadLeads = useCallback(async (campanhaId: string, page: number) => {
+    setLoadingLeadsSet(prev => new Set(prev).add(campanhaId));
+    setLeadsPageMap(prev => ({ ...prev, [campanhaId]: page }));
+
+    const from = page * LEADS_PER_PAGE;
+    const { data, count } = await supabase
+      .from('disparo_leads')
+      .select('id, phone, nome, status, error_msg, sent_at, ordem', { count: 'exact' })
+      .eq('campanha_id', campanhaId)
+      .order('ordem', { ascending: true })
+      .range(from, from + LEADS_PER_PAGE - 1);
+
+    if (data) setLeadsMap(prev => ({ ...prev, [campanhaId]: data as LeadRow[] }));
+    if (count !== null) setLeadsTotalMap(prev => ({ ...prev, [campanhaId]: count }));
+    setLoadingLeadsSet(prev => { const s = new Set(prev); s.delete(campanhaId); return s; });
+  }, []);
+
+  // ── Sending loop — calls Evolution API directly ──────────────────────────
 
   const runCampanha = useCallback(async (campanhaId: string) => {
     if (runningRef.current.get(campanhaId)) return;
@@ -814,28 +1074,29 @@ export default function DisparoPlanilha() {
     let consecutiveErrors = 0;
 
     while (runningRef.current.get(campanhaId)) {
-      const { data: camp } = await supabase
-        .from('disparo_campanhas').select('*').eq('id', campanhaId).maybeSingle();
+      const { data: camp } = await supabase.from('disparo_campanhas').select('*').eq('id', campanhaId).maybeSingle();
       if (!camp) break;
 
+      // Safe hours
       const hour = new Date().getHours();
       if (hour < camp.safe_hour_start || hour >= camp.safe_hour_end) {
-        toast.warning(`"${camp.nome}" pausada: fora do horário seguro (${camp.safe_hour_start}h–${camp.safe_hour_end}h)`);
+        toast.warning(`"${camp.nome}" pausada: fora do horário ${camp.safe_hour_start}h–${camp.safe_hour_end}h`);
         await supabase.from('disparo_campanhas').update({ status: 'pausado' }).eq('id', campanhaId);
         break;
       }
 
+      // Daily limit
       const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
       const { count: sentToday } = await supabase
         .from('disparo_leads').select('*', { count: 'exact', head: true })
         .eq('campanha_id', campanhaId).eq('status', 'enviado').gte('sent_at', todayStart.toISOString());
-
       if ((sentToday ?? 0) >= camp.daily_limit) {
         toast.warning(`"${camp.nome}" pausada: limite diário de ${camp.daily_limit} atingido`);
         await supabase.from('disparo_campanhas').update({ status: 'pausado' }).eq('id', campanhaId);
         break;
       }
 
+      // Next lead
       const { data: lead } = await supabase
         .from('disparo_leads').select('*')
         .eq('campanha_id', campanhaId).eq('status', 'pendente')
@@ -856,38 +1117,45 @@ export default function DisparoPlanilha() {
       }
 
       const vars: Record<string, string> = { nome: lead.nome ?? '', phone, ...(lead.variaveis as Record<string, string> ?? {}) };
-      const text    = applyVars(camp.template ?? '', vars);
-      const msgType = camp.message_type ?? 'text';
+      const text     = applyVars(camp.template ?? '', vars);
+      const msgType  = (camp.message_type ?? 'text') as MessageType;
       const mediaUrl = camp.media_url ?? '';
 
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const supabaseUrl = (supabase as unknown as { supabaseUrl: string }).supabaseUrl ?? import.meta.env.VITE_SUPABASE_URL;
+        // Fetch the Evolution API config for this campaign
+        const evoConfigId = camp.evolution_config_id ?? 'default';
+        const { data: evo } = await supabase
+          .from('evolution_config')
+          .select('api_url, api_key, instance_name')
+          .eq('id', evoConfigId)
+          .maybeSingle();
 
-        const payload: Record<string, unknown> = {
-          quick_send: true,
-          recipient_id: phone,
-          message_type: msgType,
-          message_text: text,
-          link_preview: false,
-          mention_everyone: false,
-          send_header_image: false,
-        };
-        if (msgType !== 'text') payload.media_url = mediaUrl;
+        if (!evo?.api_url || !evo?.instance_name) {
+          throw new Error(`Evolution API não configurada (id: ${evoConfigId})`);
+        }
 
-        const resp = await fetch(`${supabaseUrl}/functions/v1/funil-processar`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-          body: JSON.stringify(payload),
-        });
-        if (!resp.ok) throw new Error(await resp.text());
+        const base    = evo.api_url.replace(/\/$/, '');
+        const headers = { 'Content-Type': 'application/json', 'apikey': evo.api_key };
 
-        await supabase.from('disparo_leads')
-          .update({ status: 'enviado', sent_at: new Date().toISOString(), error_msg: null }).eq('id', lead.id);
-        await supabase.from('disparo_campanhas')
-          .update({ leads_sent: camp.leads_sent + 1 }).eq('id', campanhaId);
+        if (msgType === 'text') {
+          const r = await fetch(`${base}/message/sendText/${evo.instance_name}`, {
+            method: 'POST', headers,
+            body: JSON.stringify({ number: phone, text }),
+          });
+          if (!r.ok) throw new Error(await r.text());
+        } else {
+          const mtype = { image: 'image', video: 'video', audio: 'audio' }[msgType] ?? 'image';
+          const r = await fetch(`${base}/message/sendMedia/${evo.instance_name}`, {
+            method: 'POST', headers,
+            body: JSON.stringify({ number: phone, mediatype: mtype, media: mediaUrl, caption: text || undefined }),
+          });
+          if (!r.ok) throw new Error(await r.text());
+        }
 
+        await supabase.from('disparo_leads').update({ status: 'enviado', sent_at: new Date().toISOString(), error_msg: null }).eq('id', lead.id);
+        await supabase.from('disparo_campanhas').update({ leads_sent: camp.leads_sent + 1 }).eq('id', campanhaId);
         addLog(campanhaId, { id: lead.id, phone, nome: lead.nome ?? '', status: 'enviado', msg: text || mediaUrl, ts: new Date() });
+
         const ts = speedRef.current.get(campanhaId) ?? [];
         speedRef.current.set(campanhaId, [...ts, Date.now()].slice(-120));
         consecutiveErrors = 0;
@@ -915,7 +1183,7 @@ export default function DisparoPlanilha() {
     await fetchCampanhas();
   }, [addLog, fetchCampanhas]);
 
-  // ── Controls ──────────────────────────────────────────────────────────────────
+  // ── Controls ─────────────────────────────────────────────────────────────
 
   const pauseCampanha = useCallback(async (id: string) => {
     runningRef.current.set(id, false);
@@ -924,21 +1192,18 @@ export default function DisparoPlanilha() {
   }, [fetchCampanhas]);
 
   const stopCampanha = useCallback(async (id: string, nome: string) => {
-    if (!confirm(`Parar "${nome}"? Os leads pendentes ficam como "pendente" para reenviar depois.`)) return;
+    if (!confirm(`Parar "${nome}"? Leads pendentes podem ser retomados depois.`)) return;
     runningRef.current.set(id, false);
     await supabase.from('disparo_campanhas').update({ status: 'pausado' }).eq('id', id);
     await fetchCampanhas();
   }, [fetchCampanhas]);
 
   const resetCampanha = useCallback(async (id: string) => {
-    if (!confirm('Remarcar todos os leads "erro" e "pulado" como pendentes para reenvio?')) return;
+    if (!confirm('Remarcar leads com erro/pulado como pendentes para reenvio?')) return;
     runningRef.current.set(id, false);
-    const { data: leads } = await supabase
-      .from('disparo_leads').select('id').eq('campanha_id', id).in('status', ['erro', 'pulado']);
-    if (leads?.length) {
-      await supabase.from('disparo_leads')
-        .update({ status: 'pendente', error_msg: null, sent_at: null })
-        .in('id', leads.map((l: { id: string }) => l.id));
+    const { data: errLeads } = await supabase.from('disparo_leads').select('id').eq('campanha_id', id).in('status', ['erro', 'pulado']);
+    if (errLeads?.length) {
+      await supabase.from('disparo_leads').update({ status: 'pendente', error_msg: null, sent_at: null }).in('id', errLeads.map((l: { id: string }) => l.id));
     }
     const { count: total } = await supabase.from('disparo_leads').select('*', { count: 'exact', head: true }).eq('campanha_id', id);
     const { count: sent }  = await supabase.from('disparo_leads').select('*', { count: 'exact', head: true }).eq('campanha_id', id).eq('status', 'enviado');
@@ -954,31 +1219,37 @@ export default function DisparoPlanilha() {
     await fetchCampanhas();
   }, [fetchCampanhas]);
 
-  // ── Create ────────────────────────────────────────────────────────────────────
+  const handleSaveEdit = useCallback(async (id: string, data: Partial<Campanha>) => {
+    const { error } = await supabase.from('disparo_campanhas').update(data).eq('id', id);
+    if (error) { toast.error('Erro ao salvar: ' + error.message); return; }
+    toast.success('Campanha atualizada');
+    setEditingCampanha(null);
+    await fetchCampanhas();
+  }, [fetchCampanhas]);
+
+  // ── Create ────────────────────────────────────────────────────────────────
 
   const handleCreate = useCallback(async (form: CampanhaForm) => {
-    const leads = form.leadsSource === 'sistema'
-      ? form.loadedLeads
-      : parseLeads(form.leadsText);
-
+    const leads = form.leadsSource === 'sistema' ? form.loadedLeads : parseLeads(form.leadsText);
     if (!leads.length) { toast.error('Nenhum lead válido'); return; }
 
     const { data: camp, error } = await supabase
       .from('disparo_campanhas')
       .insert({
-        nome:            form.nome.trim(),
-        descricao:       form.descricao.trim() || null,
-        template:        form.template.trim(),
-        message_type:    form.messageType,
-        media_url:       form.mediaUrl.trim() || null,
-        status:          'rascunho',
-        leads_total:     leads.length,
-        delay_min_s:     form.delayMin,
-        delay_max_s:     form.delayMax,
-        daily_limit:     form.dailyLimit,
-        safe_hour_start: form.safeStart,
-        safe_hour_end:   form.safeEnd,
-        max_errors_seq:  form.maxErrors,
+        nome:                form.nome.trim(),
+        descricao:           form.descricao.trim() || null,
+        template:            form.template.trim(),
+        message_type:        form.messageType,
+        media_url:           form.mediaUrl.trim() || null,
+        status:              'rascunho',
+        leads_total:         leads.length,
+        delay_min_s:         form.delayMin,
+        delay_max_s:         form.delayMax,
+        daily_limit:         form.dailyLimit,
+        safe_hour_start:     form.safeStart,
+        safe_hour_end:       form.safeEnd,
+        max_errors_seq:      form.maxErrors,
+        evolution_config_id: form.evolutionConfigId || 'default',
       })
       .select().single();
 
@@ -1002,32 +1273,42 @@ export default function DisparoPlanilha() {
     setShowModal(false);
   }, [fetchCampanhas]);
 
-  // ── Partition ─────────────────────────────────────────────────────────────────
+  // ── UI helpers ────────────────────────────────────────────────────────────
 
   const activeAndPaused = campanhas.filter(c => activeCampaignIds.has(c.id) || c.status === 'ativo' || c.status === 'pausado' || c.status === 'erro');
   const drafts = campanhas.filter(c => c.status === 'rascunho' && !activeCampaignIds.has(c.id));
   const done   = campanhas.filter(c => c.status === 'concluido' && !activeCampaignIds.has(c.id));
 
-  function toggleLog(id: string) {
-    setExpandedLogs(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  function toggleExpand(id: string) {
+    setExpandedCards(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
   }
 
   function cardProps(c: Campanha): Omit<CardProps, 'campanha'> {
+    const evoInst = evolutionInstances.find(i => i.id === (c.evolution_config_id ?? 'default'));
     return {
-      isRunning:   activeCampaignIds.has(c.id),
-      logs:        logs[c.id] ?? [],
-      showLog:     expandedLogs.has(c.id),
-      speed:       getSpeed(c.id),
-      onToggleLog: () => toggleLog(c.id),
-      onStart:     () => runCampanha(c.id),
-      onPause:     () => pauseCampanha(c.id),
-      onStop:      () => stopCampanha(c.id, c.nome),
-      onDelete:    () => deleteCampanha(c.id, c.nome),
-      onReset:     () => resetCampanha(c.id),
+      isRunning:            activeCampaignIds.has(c.id),
+      logs:                 logs[c.id] ?? [],
+      activeTab:            activeTabMap[c.id] ?? 'log',
+      leads:                leadsMap[c.id] ?? [],
+      leadsTotal:           leadsTotalMap[c.id] ?? 0,
+      leadsPage:            leadsPageMap[c.id] ?? 0,
+      loadingLeads:         loadingLeadsSet.has(c.id),
+      showExpanded:         expandedCards.has(c.id),
+      speed:                getSpeed(c.id),
+      evolutionInstanceName: evoInst?.instance_name,
+      onToggleExpand:       () => toggleExpand(c.id),
+      onTabChange:          (tab) => setActiveTabMap(prev => ({ ...prev, [c.id]: tab })),
+      onLoadLeads:          (page) => handleLoadLeads(c.id, page),
+      onStart:              () => runCampanha(c.id),
+      onPause:              () => pauseCampanha(c.id),
+      onStop:               () => stopCampanha(c.id, c.nome),
+      onDelete:             () => deleteCampanha(c.id, c.nome),
+      onReset:              () => resetCampanha(c.id),
+      onEdit:               () => setEditingCampanha(c),
     };
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
@@ -1090,7 +1371,22 @@ export default function DisparoPlanilha() {
         </div>
       )}
 
-      {showModal && <NovaCampanhaModal onClose={() => setShowModal(false)} onCreate={handleCreate} />}
+      {showModal && (
+        <NovaCampanhaModal
+          evolutionInstances={evolutionInstances}
+          onClose={() => setShowModal(false)}
+          onCreate={handleCreate}
+        />
+      )}
+
+      {editingCampanha && (
+        <EditCampanhaModal
+          campanha={editingCampanha}
+          evolutionInstances={evolutionInstances}
+          onClose={() => setEditingCampanha(null)}
+          onSave={handleSaveEdit}
+        />
+      )}
     </div>
   );
 }
