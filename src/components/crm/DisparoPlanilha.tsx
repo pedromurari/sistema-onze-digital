@@ -222,19 +222,19 @@ function AntiBanFields({ delayMin, setDelayMin, delayMax, setDelayMax, dailyLimi
       </p>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1.5">
-          <Label>Delay mínimo (s)</Label>
+          <Label>Delay mínimo (min)</Label>
           <div className="flex items-center gap-2">
-            <Input type="number" min={3} max={60} value={delayMin}
-              onChange={e => setDelayMin(Math.max(3, +e.target.value))} className="w-24" />
-            <span className="text-xs text-muted-foreground">s (mín. 3)</span>
+            <Input type="number" min={1} max={60} value={delayMin}
+              onChange={e => setDelayMin(Math.max(1, +e.target.value))} className="w-24" />
+            <span className="text-xs text-muted-foreground">min (mín. 1)</span>
           </div>
         </div>
         <div className="space-y-1.5">
-          <Label>Delay máximo (s)</Label>
+          <Label>Delay máximo (min)</Label>
           <div className="flex items-center gap-2">
-            <Input type="number" min={delayMin} max={300} value={delayMax}
+            <Input type="number" min={delayMin} max={120} value={delayMax}
               onChange={e => setDelayMax(Math.max(delayMin, +e.target.value))} className="w-24" />
-            <span className="text-xs text-muted-foreground">s</span>
+            <span className="text-xs text-muted-foreground">min</span>
           </div>
         </div>
       </div>
@@ -589,7 +589,7 @@ function CampanhaCard({
           </>
         )}
         <div className="ml-auto text-xs text-muted-foreground">
-          delay {c.delay_min_s}–{c.delay_max_s}s · {c.daily_limit}/dia · {c.safe_hour_start}h–{c.safe_hour_end}h
+          delay {Math.round(c.delay_min_s/60)}–{Math.round(c.delay_max_s/60)}min · {c.daily_limit}/dia · {c.safe_hour_start}h–{c.safe_hour_end}h
         </div>
       </div>
 
@@ -725,8 +725,8 @@ function EditCampanhaModal({ campanha, evolutionInstances, onClose, onSave, onMa
   const [messageType, setMessageType] = useState<MessageType>(campanha.message_type ?? 'text');
   const [mediaUrl,    setMediaUrl]    = useState(campanha.media_url ?? '');
   const [template,    setTemplate]    = useState(campanha.template ?? '');
-  const [delayMin,    setDelayMin]    = useState(campanha.delay_min_s);
-  const [delayMax,    setDelayMax]    = useState(campanha.delay_max_s);
+  const [delayMin,    setDelayMin]    = useState(Math.round(campanha.delay_min_s / 60) || 1);
+  const [delayMax,    setDelayMax]    = useState(Math.round(campanha.delay_max_s / 60) || 3);
   const [dailyLimit,  setDailyLimit]  = useState(campanha.daily_limit);
   const [safeStart,   setSafeStart]   = useState(campanha.safe_hour_start);
   const [safeEnd,     setSafeEnd]     = useState(campanha.safe_hour_end);
@@ -753,7 +753,7 @@ function EditCampanhaModal({ campanha, evolutionInstances, onClose, onSave, onMa
         message_type: messageType,
         media_url: mediaUrl.trim() || undefined,
         template: template.trim(),
-        delay_min_s: delayMin, delay_max_s: delayMax,
+        delay_min_s: delayMin * 60, delay_max_s: delayMax * 60,
         daily_limit: dailyLimit, safe_hour_start: safeStart, safe_hour_end: safeEnd,
         max_errors_seq: maxErrors, evolution_config_id: evoId,
       });
@@ -868,8 +868,8 @@ function NovaCampanhaModal({ evolutionInstances, onClose, onCreate, onManageEvo 
   const [sistemaType, setSistemaType] = useState<SistemaType>('lancamento');
   const [sistemaId,   setSistemaId]   = useState('');
   const [loadedLeads, setLoadedLeads] = useState<LoadedLead[]>([]);
-  const [delayMin,    setDelayMin]    = useState(8);
-  const [delayMax,    setDelayMax]    = useState(20);
+  const [delayMin,    setDelayMin]    = useState(1);
+  const [delayMax,    setDelayMax]    = useState(3);
   const [dailyLimit,  setDailyLimit]  = useState(150);
   const [safeStart,   setSafeStart]   = useState(8);
   const [safeEnd,     setSafeEnd]     = useState(21);
@@ -1134,7 +1134,7 @@ function NovaCampanhaModal({ evolutionInstances, onClose, onCreate, onManageEvo 
           <div className="flex gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
             <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-600" />
             <span>
-              <strong>Anti-ban:</strong> Use delays maiores (15–40s) para números novos. Limite diário abaixo de 200.
+              <strong>Anti-ban:</strong> Use delays maiores (2–5 min) para números novos. Limite diário abaixo de 200.
               Envie apenas em horário comercial. Personalize com <code>{'{{nome}}'}</code>.
             </span>
           </div>
@@ -1414,8 +1414,8 @@ export default function DisparoPlanilha() {
         media_url:           form.mediaUrl.trim() || null,
         status:              'rascunho',
         leads_total:         leads.length,
-        delay_min_s:         form.delayMin,
-        delay_max_s:         form.delayMax,
+        delay_min_s:         form.delayMin * 60,
+        delay_max_s:         form.delayMax * 60,
         daily_limit:         form.dailyLimit,
         safe_hour_start:     form.safeStart,
         safe_hour_end:       form.safeEnd,
