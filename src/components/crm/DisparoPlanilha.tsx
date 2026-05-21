@@ -16,8 +16,9 @@ import {
   Play, Pause, Square, Plus, CheckCircle2, XCircle, SkipForward,
   Clock, Zap, Users, AlertTriangle, MessageSquare, Shield, Trash2,
   ChevronDown, ChevronUp, Activity, RotateCcw,
-  Image, Video, Music, Type, Link2, Loader2, FileDown, Pencil,
+  Image, Video, Music, Type, Link2, Loader2, FileDown, Pencil, Settings,
 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -275,32 +276,199 @@ function AntiBanFields({ delayMin, setDelayMin, delayMax, setDelayMax, dailyLimi
   );
 }
 
+// ── EvolutionInstancesModal ───────────────────────────────────────────────────
+
+interface InstForm extends EvolutionInstance { isNew: boolean; }
+
+function EvolutionInstancesModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [instances,    setInstances]   = useState<EvolutionInstance[]>([]);
+  const [loading,      setLoading]     = useState(true);
+  const [editingInst,  setEditingInst] = useState<InstForm | null>(null);
+  const [saving,       setSaving]      = useState(false);
+  const [deleting,     setDeleting]    = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await (supabase as any)
+      .from('evolution_config')
+      .select('id, instance_name, api_url, api_key, ativo')
+      .order('created_at', { ascending: true });
+    if (data) setInstances(data as EvolutionInstance[]);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleNew = () => setEditingInst({
+    id: crypto.randomUUID(), instance_name: '', api_url: '', api_key: '', ativo: true, isNew: true,
+  });
+
+  const handleSave = async () => {
+    if (!editingInst) return;
+    setSaving(true);
+    const { error } = await (supabase as any).from('evolution_config').upsert({
+      id:            editingInst.id,
+      instance_name: editingInst.instance_name.trim(),
+      api_url:       editingInst.api_url.trim().replace(/\/$/, ''),
+      api_key:       editingInst.api_key.trim(),
+      ativo:         editingInst.ativo,
+      updated_at:    new Date().toISOString(),
+    }, { onConflict: 'id' });
+    setSaving(false);
+    if (error) { toast.error('Erro: ' + error.message); return; }
+    toast.success(editingInst.isNew ? 'Instância criada!' : 'Instância salva!');
+    setEditingInst(null);
+    await load();
+    onSaved();
+  };
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`Excluir instância "${name || id}"?`)) return;
+    setDeleting(id);
+    await (supabase as any).from('evolution_config').delete().eq('id', id);
+    setDeleting(null);
+    await load();
+    onSaved();
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <span>📡</span> Instâncias Evolution API
+          </DialogTitle>
+        </DialogHeader>
+
+        {loading ? (
+          <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
+        ) : editingInst ? (
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Nome da instância *</Label>
+                <Input
+                  placeholder="ex: 11ds-principal"
+                  value={editingInst.instance_name}
+                  onChange={e => setEditingInst(p => p ? { ...p, instance_name: e.target.value } : p)}
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>URL do servidor *</Label>
+                <Input
+                  placeholder="https://evolution.seudominio.com"
+                  value={editingInst.api_url}
+                  onChange={e => setEditingInst(p => p ? { ...p, api_url: e.target.value } : p)}
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>API Key *</Label>
+              <Input
+                type="password"
+                placeholder="••••••••••••••••"
+                value={editingInst.api_key}
+                onChange={e => setEditingInst(p => p ? { ...p, api_key: e.target.value } : p)}
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <Switch
+                checked={editingInst.ativo}
+                onCheckedChange={v => setEditingInst(p => p ? { ...p, ativo: v } : p)}
+              />
+              <Label>Instância ativa</Label>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditingInst(null)}>Cancelar</Button>
+              <Button
+                onClick={handleSave}
+                disabled={saving || !editingInst.instance_name || !editingInst.api_url || !editingInst.api_key}
+                className="gap-2"
+              >
+                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+                Salvar
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <div className="space-y-3 py-2">
+            {instances.length === 0 ? (
+              <p className="text-center py-8 text-sm text-muted-foreground">Nenhuma instância cadastrada</p>
+            ) : instances.map(inst => (
+              <div key={inst.id} className="flex items-center justify-between p-3 rounded-lg border bg-card gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-sm">{inst.instance_name || '(sem nome)'}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${inst.ativo ? 'bg-green-100 text-green-700' : 'bg-zinc-100 text-zinc-500'}`}>
+                      {inst.ativo ? 'Ativa' : 'Inativa'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate">{inst.api_url || '—'}</p>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button size="sm" variant="outline" onClick={() => handleEdit(inst)} className="gap-1 h-8 px-2.5">
+                    <Pencil className="w-3.5 h-3.5" /> Editar
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => handleDelete(inst.id, inst.instance_name)}
+                    disabled={deleting === inst.id} className="text-destructive hover:text-destructive h-8 w-8 p-0">
+                    {deleting === inst.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  </Button>
+                </div>
+              </div>
+            ))}
+            <Button onClick={handleNew} variant="outline" className="w-full gap-2 border-dashed mt-1">
+              <Plus className="w-4 h-4" /> Nova instância
+            </Button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+
+  function handleEdit(inst: EvolutionInstance) { setEditingInst({ ...inst, isNew: false }); }
+}
+
 // ── EvolutionSelector (shared) ────────────────────────────────────────────────
 
-function EvolutionSelector({ instances, value, onChange }: {
-  instances: EvolutionInstance[]; value: string; onChange: (v: string) => void;
+function EvolutionSelector({ instances, value, onChange, onManage }: {
+  instances: EvolutionInstance[]; value: string; onChange: (v: string) => void; onManage?: () => void;
 }) {
-  if (instances.length === 0) return (
-    <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
-      <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
-      Nenhuma instância Evolution API configurada. Vá em <strong>Configurações</strong> para cadastrar.
-    </div>
-  );
   return (
     <div className="space-y-1.5">
-      <Label>Instância Evolution API *</Label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger>
-          <SelectValue placeholder="Selecione a instância" />
-        </SelectTrigger>
-        <SelectContent>
-          {instances.map(inst => (
-            <SelectItem key={inst.id} value={inst.id}>
-              📡 {inst.instance_name}{!inst.ativo ? ' (inativa)' : ''}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <div className="flex items-center justify-between">
+        <Label>Instância Evolution API *</Label>
+        {onManage && (
+          <button type="button" onClick={onManage}
+            className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
+            <Settings className="w-3 h-3" /> Gerenciar instâncias
+          </button>
+        )}
+      </div>
+      {instances.length === 0 ? (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+          Nenhuma instância configurada.
+          {onManage && (
+            <button type="button" onClick={onManage} className="font-semibold underline ml-1">
+              Cadastrar agora
+            </button>
+          )}
+        </div>
+      ) : (
+        <Select value={value} onValueChange={onChange}>
+          <SelectTrigger>
+            <SelectValue placeholder="Selecione a instância" />
+          </SelectTrigger>
+          <SelectContent>
+            {instances.map(inst => (
+              <SelectItem key={inst.id} value={inst.id}>
+                📡 {inst.instance_name || inst.id}{!inst.ativo ? ' (inativa)' : ''}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
     </div>
   );
 }
@@ -545,11 +713,12 @@ function CampanhaCard({
 
 // ── EditCampanhaModal ─────────────────────────────────────────────────────────
 
-function EditCampanhaModal({ campanha, evolutionInstances, onClose, onSave }: {
+function EditCampanhaModal({ campanha, evolutionInstances, onClose, onSave, onManageEvo }: {
   campanha: Campanha;
   evolutionInstances: EvolutionInstance[];
   onClose: () => void;
   onSave: (id: string, data: Partial<Campanha>) => Promise<void>;
+  onManageEvo?: () => void;
 }) {
   const [nome,        setNome]        = useState(campanha.nome);
   const [descricao,   setDescricao]   = useState(campanha.descricao ?? '');
@@ -612,7 +781,7 @@ function EditCampanhaModal({ campanha, evolutionInstances, onClose, onSave }: {
             </div>
           </div>
 
-          <EvolutionSelector instances={evolutionInstances} value={evoId} onChange={setEvoId} />
+          <EvolutionSelector instances={evolutionInstances} value={evoId} onChange={setEvoId} onManage={onManageEvo} />
 
           {/* Tipo */}
           <div className="space-y-1.5">
@@ -681,10 +850,11 @@ function EditCampanhaModal({ campanha, evolutionInstances, onClose, onSave }: {
 
 // ── NovaCampanhaModal ─────────────────────────────────────────────────────────
 
-function NovaCampanhaModal({ evolutionInstances, onClose, onCreate }: {
+function NovaCampanhaModal({ evolutionInstances, onClose, onCreate, onManageEvo }: {
   evolutionInstances: EvolutionInstance[];
   onClose: () => void;
   onCreate: (form: CampanhaForm) => Promise<void>;
+  onManageEvo?: () => void;
 }) {
   const defaultEvoId = evolutionInstances.find(i => i.ativo)?.id ?? evolutionInstances[0]?.id ?? 'default';
 
@@ -797,7 +967,7 @@ function NovaCampanhaModal({ evolutionInstances, onClose, onCreate }: {
           </div>
 
           {/* Evolution API */}
-          <EvolutionSelector instances={evolutionInstances} value={evolutionId} onChange={setEvolutionId} />
+          <EvolutionSelector instances={evolutionInstances} value={evolutionId} onChange={setEvolutionId} onManage={onManageEvo} />
 
           {/* Tipo de mensagem */}
           <div className="space-y-2">
@@ -998,6 +1168,7 @@ export default function DisparoPlanilha() {
   const [leadsPageMap,       setLeadsPageMap]       = useState<Record<string, number>>({});
   const [loadingLeadsSet,    setLoadingLeadsSet]    = useState<Set<string>>(new Set());
   const [activeCampaignIds,  setActiveCampaignIds]  = useState<Set<string>>(new Set());
+  const [showEvoManager,     setShowEvoManager]     = useState(false);
 
   const runningRef = useRef<Map<string, boolean>>(new Map());
   const speedRef   = useRef<Map<string, number[]>>(new Map());
@@ -1376,6 +1547,7 @@ export default function DisparoPlanilha() {
           evolutionInstances={evolutionInstances}
           onClose={() => setShowModal(false)}
           onCreate={handleCreate}
+          onManageEvo={() => setShowEvoManager(true)}
         />
       )}
 
@@ -1385,6 +1557,14 @@ export default function DisparoPlanilha() {
           evolutionInstances={evolutionInstances}
           onClose={() => setEditingCampanha(null)}
           onSave={handleSaveEdit}
+          onManageEvo={() => setShowEvoManager(true)}
+        />
+      )}
+
+      {showEvoManager && (
+        <EvolutionInstancesModal
+          onClose={() => setShowEvoManager(false)}
+          onSaved={() => { fetchEvolutionInstances(); }}
         />
       )}
     </div>
