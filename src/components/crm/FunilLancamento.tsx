@@ -45,6 +45,7 @@ interface FunnelMessage {
   link_preview: boolean;
   mention_everyone: boolean;
   send_header_image: boolean;
+  subtipo?: string;
   status: MessageStatus;
   sent_at?: string;
   error_message?: string;
@@ -79,6 +80,7 @@ interface MsgForm {
   link_preview: boolean;
   mention_everyone: boolean;
   send_header_image: boolean;
+  subtipo: string;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -107,19 +109,20 @@ const DRIVE_URL   = (id: string) => `https://drive.google.com/uc?export=view&id=
 interface ImageSlot { key: string; label: string; driveId: string; hint: string; group: string; }
 
 const IMAGE_SLOTS: ImageSlot[] = [
-  { key: 'manha',       label: 'Manhã',       driveId: '1SkxuYbunOvbAcXZsu8rTRJFdeogbnyxI', hint: 'Bom dia', group: 'Dias normais' },
-  { key: 'tarde',       label: 'Tarde',        driveId: '1ezvELlgl9AIpaTFbKLx9-nlbZOT61JxA', hint: 'Conteúdo feito pra você', group: 'Dias normais' },
-  { key: 'noite',       label: 'Noite',        driveId: '1ov483G9T4c9hCAr9_-_vka8z2lMpQPkY', hint: 'Contagem noturna', group: 'Dias normais' },
-  { key: 'aula_manha',  label: 'Aula — Manhã', driveId: '1EpDy5feYWIpm9OO7_lqsP5RWL2fL-YwH', hint: 'Manhã em dias de aula', group: 'Dias das aulas' },
-  { key: 'aula_tarde',  label: 'Aula — Tarde', driveId: '1cdKhi7pNFburRVPYnWm1eIh0zMZelNKS', hint: 'Tarde em dias de aula', group: 'Dias das aulas' },
-  { key: 'contagem_3h', label: 'Faltam 3h',    driveId: '1lOEPLjQuEO9CuYaQFkkYz9LjqaKmMBwi', hint: 'Contagem regressiva 3 horas', group: 'Contagem' },
-  { key: 'contagem_2h', label: 'Faltam 2h',    driveId: '1uxNhpaBdK7y6y7oXX8tPlJLTcSMqDq3G', hint: 'Contagem regressiva 2 horas', group: 'Contagem' },
-  { key: 'contagem_1h', label: 'Falta 1h',     driveId: '1J6GZQ3m-Ar8qRoA-S8nuPVAF8zWKjINW', hint: 'Contagem regressiva 1 hora', group: 'Contagem' },
-  { key: 'live',        label: 'Ao vivo',       driveId: '1xkrnWTiry6A0zCWa3lB7tr6l4SR2b4Fp', hint: 'Transmissões ao vivo', group: 'Eventos' },
-  { key: 'provocacao',  label: 'Provocação',    driveId: '1qEVmFI2yf2pwPdMYLcw1FtALVflDFUzR', hint: 'Mensagens de provocação', group: 'Eventos' },
-  { key: 'aula_1',      label: 'Aula 1',        driveId: '1ZOEJkNGG58iDKfadw322QnMAZ-BppyDn', hint: 'Dia da Aula 1', group: 'Aulas específicas' },
-  { key: 'aula_2',      label: 'Aula 2',        driveId: '1ev8X5j8lFl4X5W5cNkr0_-rAWP3-c1yv', hint: 'Dia da Aula 2', group: 'Aulas específicas' },
-  { key: 'aula_3',      label: 'Aula 3',        driveId: '1Eh9-0a0OkopBMVA_afWKAdEsRUQSNQUk', hint: 'Dia da Aula 3', group: 'Aulas específicas' },
+  { key: 'contagem_dia_7', label: 'Faltam 7 dias', driveId: '1qEVmFI2yf2pwPdMYLcw1FtALVflDFUzR', hint: '7 dias antes do evento', group: 'Contagem regressiva' },
+  { key: 'contagem_dia_6', label: 'Faltam 6 dias', driveId: '1xkrnWTiry6A0zCWa3lB7tr6l4SR2b4Fp', hint: '6 dias antes do evento', group: 'Contagem regressiva' },
+  { key: 'contagem_dia_5', label: 'Faltam 5 dias', driveId: '1cdKhi7pNFburRVPYnWm1eIh0zMZelNKS', hint: '5 dias antes do evento', group: 'Contagem regressiva' },
+  { key: 'contagem_dia_4', label: 'Faltam 4 dias', driveId: '1EpDy5feYWIpm9OO7_lqsP5RWL2fL-YwH', hint: '4 dias antes do evento', group: 'Contagem regressiva' },
+  { key: 'contagem_dia_3', label: 'Faltam 3 dias', driveId: '1ov483G9T4c9hCAr9_-_vka8z2lMpQPkY', hint: '3 dias antes do evento', group: 'Contagem regressiva' },
+  { key: 'contagem_dia_2', label: 'Faltam 2 dias', driveId: '1ezvELlgl9AIpaTFbKLx9-nlbZOT61JxA', hint: '2 dias antes do evento', group: 'Contagem regressiva' },
+  { key: 'contagem_dia_1', label: 'Falta 1 dia',   driveId: '1SkxuYbunOvbAcXZsu8rTRJFdeogbnyxI', hint: '1 dia antes do evento', group: 'Contagem regressiva' },
+  { key: 'contagem_3h',    label: 'Faltam 3h',     driveId: '1lOEPLjQuEO9CuYaQFkkYz9LjqaKmMBwi', hint: 'Contagem regressiva 3 horas', group: 'Contagem horária' },
+  { key: 'contagem_2h',    label: 'Faltam 2h',     driveId: '1uxNhpaBdK7y6y7oXX8tPlJLTcSMqDq3G', hint: 'Contagem regressiva 2 horas', group: 'Contagem horária' },
+  { key: 'contagem_1h',    label: 'Falta 1h',      driveId: '1J6GZQ3m-Ar8qRoA-S8nuPVAF8zWKjINW', hint: 'Contagem regressiva 1 hora',  group: 'Contagem horária' },
+  { key: 'aula_1',         label: 'Aula 1',         driveId: '1ZOEJkNGG58iDKfadw322QnMAZ-BppyDn', hint: 'Dia da Aula 1', group: 'Aulas' },
+  { key: 'aula_2',         label: 'Aula 2',         driveId: '1ev8X5j8lFl4X5W5cNkr0_-rAWP3-c1yv', hint: 'Dia da Aula 2', group: 'Aulas' },
+  { key: 'aula_3',         label: 'Aula 3',         driveId: '1Eh9-0a0OkopBMVA_afWKAdEsRUQSNQUk', hint: 'Dia da Aula 3', group: 'Aulas' },
+  { key: 'ao_vivo',        label: 'Ao vivo',         driveId: '1KKUd8RocD967j0u4CIth5mLrZdyUpixi', hint: 'Transmissão ao vivo',  group: 'Eventos' },
 ];
 
 const SLOT_GROUPS = [...new Set(IMAGE_SLOTS.map(s => s.group))];
@@ -176,6 +179,7 @@ const EMPTY_FORM: MsgForm = {
   message_type: 'text', message_text: '', media_url: '',
   poll_name: '', poll_options: ['', ''], poll_selectable_count: 1,
   link_preview: false, mention_everyone: false, send_header_image: true,
+  subtipo: '',
 };
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -323,6 +327,7 @@ export function FunilLancamento() {
       link_preview:          msg.link_preview     ?? false,
       mention_everyone:      msg.mention_everyone ?? false,
       send_header_image:     msg.send_header_image ?? true,
+      subtipo:               msg.subtipo ?? '',
     });
     setModalOpen(true);
   }
@@ -343,6 +348,7 @@ export function FunilLancamento() {
       link_preview:          f.link_preview,
       mention_everyone:      f.mention_everyone,
       send_header_image:     f.send_header_image,
+      subtipo:               f.subtipo || null,
       status,
     };
   }
@@ -742,6 +748,7 @@ export function FunilLancamento() {
         isEditing={!!editingId} saving={saving}
         varNames={allVarNames}
         hasHeaderImages={hasHeaderImages}
+        imageSlots={IMAGE_SLOTS.filter(s => currentConfig.imagens?.[s.key])}
         onDraft={() => handleSave('draft')}
         onSchedule={() => handleSave('scheduled')}
         onSendNow={handleSendNow}
@@ -1006,7 +1013,10 @@ function MsgCard({ msg, onEdit, onDelete }: {
           <div className="flex items-center gap-1 mb-2 flex-wrap">
             {msg.send_header_image && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 border border-purple-100 flex items-center gap-0.5">
-                <Image className="h-2.5 w-2.5" /> header
+                <Image className="h-2.5 w-2.5" />
+                {msg.subtipo
+                  ? IMAGE_SLOTS.find(s => s.key === msg.subtipo)?.label ?? msg.subtipo
+                  : 'header'}
               </span>
             )}
             {msg.link_preview && (
@@ -1063,12 +1073,14 @@ interface MsgModalProps {
   form: MsgForm; setForm: (f: MsgForm) => void;
   funnelNames: string[]; isEditing: boolean; saving: boolean;
   varNames: string[]; hasHeaderImages: boolean;
+  imageSlots: ImageSlot[];
   onDraft: () => void; onSchedule: () => void; onSendNow: () => void;
 }
 
 function MsgModal({
   open, onClose, form, setForm, funnelNames,
   isEditing, saving, varNames, hasHeaderImages,
+  imageSlots,
   onDraft, onSchedule, onSendNow,
 }: MsgModalProps) {
   const set = <K extends keyof MsgForm>(k: K, v: MsgForm[K]) => setForm({ ...form, [k]: v });
@@ -1295,12 +1307,34 @@ function MsgModal({
               <BigToggle
                 icon={<Image className="h-4 w-4" />}
                 label="Imagem de cabeçalho"
-                desc={hasHeaderImages ? 'Envia imagem manhã/tarde/noite antes desta mensagem' : 'Configure as imagens em "Configurar funil"'}
+                desc={hasHeaderImages ? 'Envia imagem antes desta mensagem' : 'Configure as imagens em "Configurar funil"'}
                 value={form.send_header_image}
                 onChange={v => set('send_header_image', v)}
                 disabled={!hasHeaderImages}
                 color="blue"
               />
+              {form.send_header_image && hasHeaderImages && imageSlots.length > 0 && (
+                <div className="w-full">
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+                    Qual imagem enviar?
+                  </label>
+                  <Select value={form.subtipo || '__auto__'} onValueChange={v => set('subtipo', v === '__auto__' ? '' : v)}>
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue placeholder="Selecione a imagem" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__auto__">
+                        <span className="text-muted-foreground">Automático (por horário)</span>
+                      </SelectItem>
+                      {imageSlots.map(s => (
+                        <SelectItem key={s.key} value={s.key}>
+                          {s.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
 
             {!showLinkPreview && (
@@ -1615,10 +1649,12 @@ function getNativeSubtipo(tipo: string, label: string): string {
     if (l.includes('2')) return 'contagem_2h';
     return 'contagem_1h';
   }
-  if (tipo === 'manha') return l.includes('aula') ? 'aula_manha' : 'manha';
-  if (tipo === 'tarde') return l.includes('aula') ? 'aula_tarde' : 'tarde';
-  if (tipo === 'live') return 'live';
-  if (tipo === 'provocacao') return 'provocacao';
+  if (tipo === 'contagem_dia') {
+    const match = l.match(/(\d+)/);
+    if (match) return `contagem_dia_${match[1]}`;
+    return 'contagem_dia_1';
+  }
+  if (tipo === 'live' || tipo === 'ao_vivo') return 'ao_vivo';
   return tipo;
 }
 
