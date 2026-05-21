@@ -234,8 +234,7 @@ async function processMessage(
     }
 
     if (headerUrl) {
-      // Atualiza foto do grupo antes de enviar a mensagem
-      if (number.endsWith('@g.us')) {
+      if (number.endsWith('@g.us') && (p.update_group_picture as boolean) === true) {
         await updateGroupPicture(base, instance, apikey, number, headerUrl);
       }
 

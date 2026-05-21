@@ -45,6 +45,7 @@ interface FunnelMessage {
   link_preview: boolean;
   mention_everyone: boolean;
   send_header_image: boolean;
+  update_group_picture: boolean;
   subtipo?: string;
   status: MessageStatus;
   sent_at?: string;
@@ -80,6 +81,7 @@ interface MsgForm {
   link_preview: boolean;
   mention_everyone: boolean;
   send_header_image: boolean;
+  update_group_picture: boolean;
   subtipo: string;
 }
 
@@ -179,6 +181,7 @@ const EMPTY_FORM: MsgForm = {
   message_type: 'text', message_text: '', media_url: '',
   poll_name: '', poll_options: ['', ''], poll_selectable_count: 1,
   link_preview: false, mention_everyone: false, send_header_image: true,
+  update_group_picture: false,
   subtipo: '',
 };
 
@@ -327,6 +330,7 @@ export function FunilLancamento() {
       link_preview:          msg.link_preview     ?? false,
       mention_everyone:      msg.mention_everyone ?? false,
       send_header_image:     msg.send_header_image ?? true,
+      update_group_picture:  msg.update_group_picture ?? false,
       subtipo:               msg.subtipo ?? '',
     });
     setModalOpen(true);
@@ -348,6 +352,7 @@ export function FunilLancamento() {
       link_preview:          f.link_preview,
       mention_everyone:      f.mention_everyone,
       send_header_image:     f.send_header_image,
+      update_group_picture:  f.update_group_picture,
       subtipo:               f.subtipo || null,
       status,
     };
@@ -1339,25 +1344,36 @@ function MsgModal({
                 color="blue"
               />
               {form.send_header_image && hasHeaderImages && imageSlots.length > 0 && (
-                <div className="w-full">
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-                    Qual imagem enviar?
-                  </label>
-                  <Select value={form.subtipo || '__auto__'} onValueChange={v => set('subtipo', v === '__auto__' ? '' : v)}>
-                    <SelectTrigger className="h-9 text-sm">
-                      <SelectValue placeholder="Selecione a imagem" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__auto__">
-                        <span className="text-muted-foreground">Automático (por horário)</span>
-                      </SelectItem>
-                      {imageSlots.map(s => (
-                        <SelectItem key={s.key} value={s.key}>
-                          {s.label}
+                <div className="w-full space-y-2">
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+                      Qual imagem enviar?
+                    </label>
+                    <Select value={form.subtipo || '__auto__'} onValueChange={v => set('subtipo', v === '__auto__' ? '' : v)}>
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue placeholder="Selecione a imagem" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__auto__">
+                          <span className="text-muted-foreground">Automático (por horário)</span>
                         </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                        {imageSlots.map(s => (
+                          <SelectItem key={s.key} value={s.key}>
+                            {s.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <BigToggle
+                    icon={<Image className="h-4 w-4" />}
+                    label="Trocar foto do grupo"
+                    desc="Atualiza a foto do grupo WhatsApp para esta imagem"
+                    value={form.update_group_picture}
+                    onChange={v => set('update_group_picture', v)}
+                    disabled={!form.subtipo}
+                    color="blue"
+                  />
                 </div>
               )}
             </div>
