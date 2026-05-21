@@ -238,9 +238,9 @@ export function CRMLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F4F4F6]">
+    <div className="min-h-screen bg-white">
       <Header onAddLead={handleAddLead} onAddFlashLead={handleAddFlashLead} />
-      <div className="flex h-[calc(100vh-3.5rem)]">
+      <div className="flex h-[calc(100vh-4rem)]">
         <Sidebar currentView={currentView} onViewChange={setCurrentView} />
         <main className="flex-1 overflow-auto pb-16 lg:pb-0">
           <Suspense fallback={<ModuleLoader />}>{renderView()}</Suspense>

@@ -705,6 +705,7 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
   const [syncGrupoInput, setSyncGrupoInput] = useState('');
   const [syncingGrupo, setSyncingGrupo] = useState(false);
   const [syncGrupoResult, setSyncGrupoResult] = useState<{ updated: number; notFound: number } | null>(null);
+  const [syncingFromEvo, setSyncingFromEvo] = useState(false);
 
   // Webhook groups config
   const [showWebhookModal, setShowWebhookModal] = useState(false);
@@ -1067,6 +1068,89 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
 
     setSyncingGrupo(false);
     setSyncGrupoResult({ updated, notFound: Math.max(0, notFound) });
+  };
+
+  // ── Sync group participants live from Evolution API ─────────────────────────
+  const handleSyncFromEvolution = async (tipo: 'lancamento' | 'oferta' = 'lancamento') => {
+    const jid = tipo === 'lancamento' ? lancamento?.grupo_lancamento_jid : lancamento?.grupo_oferta_jid;
+    if (!jid) { toast.error('JID do grupo não configurado'); return; }
+
+    setSyncingFromEvo(true);
+    try {
+      // Fetch active Evolution instance
+      const { data: instances } = await (supabase as any)
+        .from('evolution_config')
+        .select('instance_name, api_url, api_key')
+        .eq('ativo', true)
+        .limit(1);
+
+      if (!instances?.length) {
+        toast.error('Nenhuma instância Evolution API ativa encontrada. Configure em Disparo → Instâncias.');
+        return;
+      }
+
+      const { instance_name, api_url, api_key } = instances[0];
+
+      // Try Evolution API v2 endpoint first, fall back to v1
+      let participants: string[] = [];
+      const headers = { 'apikey': api_key, 'Content-Type': 'application/json' };
+
+      for (const endpoint of [
+        `${api_url}/group/findParticipants/${instance_name}?groupJid=${encodeURIComponent(jid)}`,
+        `${api_url}/group/participants/${instance_name}?groupJid=${encodeURIComponent(jid)}`,
+      ]) {
+        let res: Response;
+        try { res = await fetch(endpoint, { headers }); } catch { continue; }
+        if (!res.ok) continue;
+        const json = await res.json();
+        // Response may be array or { participants: [] }
+        const raw: unknown[] = Array.isArray(json) ? json : (json?.participants ?? json?.data ?? []);
+        participants = raw.map((p: any) => String(p?.id ?? p?.phone ?? p?.phoneNumber ?? ''))
+          .filter(s => /\d{8,}/.test(s));
+        if (participants.length) break;
+      }
+
+      if (!participants.length) {
+        toast.error('Nenhum participante retornado. Verifique a instância e o JID do grupo.');
+        return;
+      }
+
+      // Find "Grupo Lançamento" column ID to move leads
+      const grupoColId = tipo === 'lancamento'
+        ? findColunaIdByName(colunas, n => n.includes('grupol') || (n.includes('grupo') && n.includes('lancamento')))
+        : findColunaIdByName(colunas, n => n.includes('grupoo') || (n.includes('grupo') && n.includes('oferta')));
+
+      const normalizePhone = (raw: string) => {
+        const digits = raw.replace(/\D/g, '');
+        if ((digits.length === 13 || digits.length === 12) && digits.startsWith('55')) return digits.slice(2);
+        return digits.slice(-11);
+      };
+      const groupSuffix8 = new Set(participants.map(p => normalizePhone(p).slice(-8)));
+      const matchedLeads = leads.filter(l => groupSuffix8.has(normalizePhone(l.whatsapp).slice(-8)));
+      const notFound = participants.length - matchedLeads.length;
+
+      const fieldName = tipo === 'lancamento' ? 'no_grupo' : 'grupo_oferta';
+      const updates: Record<string, unknown> = { [fieldName]: true };
+      if (grupoColId) updates.fase = grupoColId;
+
+      const BATCH = 100;
+      let updated = 0;
+      for (let i = 0; i < matchedLeads.length; i += BATCH) {
+        const ids = matchedLeads.slice(i, i + BATCH).map(l => l.id);
+        const { error } = await supabase.from('lancamento_leads').update(updates).in('id', ids);
+        if (!error) {
+          updated += ids.length;
+          setLeads(prev => prev.map(l => ids.includes(l.id) ? { ...l, ...updates as Partial<LaunchLead> } : l));
+        }
+      }
+
+      setSyncGrupoResult({ updated, notFound: Math.max(0, notFound) });
+      toast.success(`${updated} lead(s) marcado(s) como no grupo!`);
+    } catch (e: unknown) {
+      toast.error('Erro ao buscar participantes: ' + (e as Error).message);
+    } finally {
+      setSyncingFromEvo(false);
+    }
   };
 
   // ── Toggle active ───────────────────────────────────────────────────────────
@@ -1668,6 +1752,47 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
 
           {!syncGrupoResult ? (
             <div className="flex flex-col gap-4 min-h-0 flex-1">
+              {/* Live sync from Evolution API */}
+              {lancamento?.grupo_lancamento_jid && (
+                <div className="rounded-lg border border-border bg-muted/30 p-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">Buscar participantes do WhatsApp</p>
+                    <p className="text-xs text-muted-foreground truncate">Grupo: {lancamento.grupo_lancamento_jid}</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => handleSyncFromEvolution('lancamento')}
+                    disabled={syncingFromEvo}
+                    className="shrink-0 gap-1.5"
+                  >
+                    {syncingFromEvo ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Buscando...</> : <><Users className="h-3.5 w-3.5" />Sincronizar</>}
+                  </Button>
+                </div>
+              )}
+              {lancamento?.grupo_oferta_jid && (
+                <div className="rounded-lg border border-border bg-muted/30 p-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">Buscar participantes — Grupo Oferta</p>
+                    <p className="text-xs text-muted-foreground truncate">Grupo: {lancamento.grupo_oferta_jid}</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleSyncFromEvolution('oferta')}
+                    disabled={syncingFromEvo}
+                    className="shrink-0 gap-1.5"
+                  >
+                    {syncingFromEvo ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Buscando...</> : <><Users className="h-3.5 w-3.5" />Sincronizar</>}
+                  </Button>
+                </div>
+              )}
+              {(lancamento?.grupo_lancamento_jid || lancamento?.grupo_oferta_jid) && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <div className="flex-1 h-px bg-border" />
+                  <span>ou importe manualmente</span>
+                  <div className="flex-1 h-px bg-border" />
+                </div>
+              )}
               {/* File upload */}
               <label className="flex items-center gap-3 border border-dashed border-border rounded-lg px-4 py-3 cursor-pointer hover:border-primary transition-colors">
                 <Upload className="h-4 w-4 text-muted-foreground shrink-0" />

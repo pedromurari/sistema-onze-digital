@@ -8,13 +8,6 @@ const corsHeaders = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/**
- * Normalizes a WhatsApp phone to the 11-digit BR format (DDD + number).
- * Input examples:
- *   "5511987654321@s.whatsapp.net"  → "11987654321"
- *   "5511987654321"                  → "11987654321"
- *   "11987654321"                    → "11987654321"
- */
 function normalizePhone(raw: string): string {
   const digits = raw.replace(/\D/g, '');
   if ((digits.length === 13 || digits.length === 12) && digits.startsWith('55')) {
@@ -23,15 +16,10 @@ function normalizePhone(raw: string): string {
   return digits.slice(-11);
 }
 
-/** Returns the last 8 digits of a normalized phone (core number, no DDD, no 9-prefix). */
 function suffix8(phone: string): string {
   return normalizePhone(phone).slice(-8);
 }
 
-/**
- * Finds the kanban column id for a given lancamento that best matches
- * a tipo ('lancamento' | 'oferta').
- */
 async function findColunaId(
   supabase: ReturnType<typeof createClient>,
   lancamentoId: string,
@@ -80,7 +68,6 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase   = createClient(supabaseUrl, supabaseKey);
 
-    // Optional webhook secret validation (configure via Supabase env var WEBHOOK_SECRET)
     const webhookSecret = Deno.env.get('WEBHOOK_SECRET');
     if (webhookSecret) {
       const incoming = req.headers.get('x-webhook-secret') ?? new URL(req.url).searchParams.get('secret');
@@ -94,13 +81,17 @@ serve(async (req) => {
 
     const body = await req.json();
 
-    // Evolution API v1/v2 event field might be "event" or inside body directly
     const event: string  = (body.event ?? body.type ?? '').toLowerCase();
     const data           = body.data ?? body;
-
-    // Only care about participants joining a group
     const action: string = (data.action ?? '').toLowerCase();
-    if (!event.includes('participant') || action !== 'add') {
+
+    // Log every incoming call so we can debug from Supabase logs
+    console.log(JSON.stringify({ event, action, groupId: data.id ?? data.groupId ?? '', ts: new Date().toISOString() }));
+
+    // Accept both direct-add and invite-link joins.
+    // Evolution API fires action="add" for both, but some versions use "invite".
+    const ACCEPTED_ACTIONS = new Set(['add', 'invite', '']);
+    if (!event.includes('participant') || !ACCEPTED_ACTIONS.has(action)) {
       return json200({ ok: true, skipped: true, reason: `event="${event}" action="${action}"` });
     }
 
@@ -115,12 +106,20 @@ serve(async (req) => {
 
     if (!participants.length) return json200({ ok: true, skipped: true, reason: 'no participants' });
 
-    // Find which lancamento has this group JID (lançamento or oferta)
-    const { data: lancamentos } = await supabase
+    // Find which lancamento has this group JID.
+    // IMPORTANT: quote the JID value so PostgREST doesn't misparse '@' and '.' as
+    // column accessors — e.g. "120363428224959911@g.us" needs double-quotes in the filter.
+    const quotedJid = `"${groupJid}"`;
+    const { data: lancamentos, error: lancError } = await supabase
       .from('lancamentos')
       .select('id, grupo_lancamento_jid, grupo_oferta_jid')
-      .or(`grupo_lancamento_jid.eq.${groupJid},grupo_oferta_jid.eq.${groupJid}`)
+      .or(`grupo_lancamento_jid.eq.${quotedJid},grupo_oferta_jid.eq.${quotedJid}`)
       .limit(5);
+
+    if (lancError) {
+      console.error('lancamentos query error:', JSON.stringify(lancError));
+      throw new Error(`DB error: ${lancError.message}`);
+    }
 
     if (!lancamentos?.length) {
       return json200({ ok: true, skipped: true, reason: `no lancamento configured for group "${groupJid}"` });
@@ -133,13 +132,11 @@ serve(async (req) => {
       const tipo: 'lancamento' | 'oferta' = isLancamentoGroup ? 'lancamento' : 'oferta';
       const fieldName = isLancamentoGroup ? 'no_grupo' : 'grupo_oferta';
 
-      // Find kanban column for this group type
       const colunaId = await findColunaId(supabase, lancamento.id, tipo);
 
       for (const participant of participants) {
         const s8 = suffix8(participant);
 
-        // Find lead by last 8 digits of whatsapp
         const { data: matchedLeads } = await supabase
           .from('lancamento_leads')
           .select('id, whatsapp, fase')
@@ -147,21 +144,27 @@ serve(async (req) => {
           .filter('whatsapp', 'ilike', `%${s8}`);
 
         if (!matchedLeads?.length) {
+          console.log(`no lead matched suffix8="${s8}" lancamento="${lancamento.id}"`);
           results.push({ lancamentoId: lancamento.id, phone: participant, tipo, updated: false });
           continue;
         }
 
-        // Update each matched lead
         for (const lead of matchedLeads) {
           const updates: Record<string, unknown> = { [fieldName]: true };
           if (colunaId) updates.fase = colunaId;
 
-          await supabase
+          const { error: updateError } = await supabase
             .from('lancamento_leads')
             .update(updates)
             .eq('id', lead.id);
 
-          results.push({ lancamentoId: lancamento.id, phone: normalizePhone(participant), tipo, updated: true });
+          if (updateError) {
+            console.error(`update error lead=${lead.id}:`, JSON.stringify(updateError));
+          } else {
+            console.log(`updated lead=${lead.id} phone=${normalizePhone(participant)} tipo=${tipo} coluna=${colunaId}`);
+          }
+
+          results.push({ lancamentoId: lancamento.id, phone: normalizePhone(participant), tipo, updated: !updateError });
         }
       }
     }
@@ -169,6 +172,7 @@ serve(async (req) => {
     return json200({ ok: true, processed: results.length, results });
 
   } catch (e: unknown) {
+    console.error('webhook-grupo fatal:', (e as Error).message);
     return new Response(JSON.stringify({ error: (e as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
