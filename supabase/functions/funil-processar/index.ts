@@ -222,7 +222,6 @@ async function processMessage(
         caption: applyVars(p.message_text as string, vars) || undefined,
         delay: 1200,
         mentionsEveryOne: (p.mention_everyone as boolean) ?? false,
-        mentioned: [],
       }, apikey);
       break;
     }
@@ -245,7 +244,6 @@ async function processMessage(
         text,
         linkPreview: (p.link_preview as boolean) ?? false,
         mentionsEveryOne: (p.mention_everyone as boolean) ?? false,
-        mentioned: [],
         delay: 1200,
       }, apikey);
       break;
