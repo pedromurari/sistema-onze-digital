@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Kanban, Settings, UserCog, FileSpreadsheet,
   MessageCircle, Rocket, BarChart3, CheckSquare, ChevronDown,
   ChevronLeft, ChevronRight, Plus, Brain, Scale,
-  GraduationCap, GripVertical, Pencil, Check, MessageSquare, TrendingUp, GitBranch, Zap, CalendarDays,
+  GraduationCap, GripVertical, Pencil, Check, MessageSquare, TrendingUp, GitBranch, Zap, CalendarDays, ShoppingBag,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,6 +36,7 @@ const BASE_MENU: MenuItem[] = [
   { key: 'pipeline',                   label: 'Leads Diretos',       icon: Kanban },
   { key: 'chat',                       label: 'Chat',                icon: MessageCircle },
   { key: 'sheets',                     label: 'Leads Sheets',        icon: FileSpreadsheet },
+  { key: 'produtos',                   label: 'Produtos',            icon: ShoppingBag, adminOnly: true },
   // Eventos & Funis
   { group: 'lancamentos_legado',       label: 'Lancamentos',         icon: Rocket,       children: [] },
   { group: 'npa_dinamico',            label: 'NPA',                  icon: BarChart3,    children: [] },

@@ -37,7 +37,7 @@ serve(async (req) => {
     // Auth: Bearer JWT (UI) ou x-cron-key (pg_cron)
     const supabaseUrl    = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey    = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const cronSecret     = Deno.env.get('CRON_SECRET') ?? 'cron-secret-11ds';
+    const cronSecret     = Deno.env.get('CRON_SECRET') ?? 'funil-processar-internal-2026';
     const authHeader     = req.headers.get('authorization') ?? '';
     const cronKeyHeader  = req.headers.get('x-cron-key') ?? '';
 

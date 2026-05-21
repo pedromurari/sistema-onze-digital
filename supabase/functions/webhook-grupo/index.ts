@@ -107,19 +107,26 @@ serve(async (req) => {
     if (!participants.length) return json200({ ok: true, skipped: true, reason: 'no participants' });
 
     // Find which lancamento has this group JID.
-    // IMPORTANT: quote the JID value so PostgREST doesn't misparse '@' and '.' as
-    // column accessors — e.g. "120363428224959911@g.us" needs double-quotes in the filter.
-    const quotedJid = `"${groupJid}"`;
-    const { data: lancamentos, error: lancError } = await supabase
-      .from('lancamentos')
-      .select('id, grupo_lancamento_jid, grupo_oferta_jid')
-      .or(`grupo_lancamento_jid.eq.${quotedJid},grupo_oferta_jid.eq.${quotedJid}`)
-      .limit(5);
+    // Two separate .eq() queries to avoid PostgREST .or() escaping issues with
+    // JID values that contain '@' and '.' (e.g. "120363428224959911@g.us").
+    const [{ data: byLanc, error: e1 }, { data: byOferta, error: e2 }] = await Promise.all([
+      supabase.from('lancamentos').select('id, grupo_lancamento_jid, grupo_oferta_jid').eq('grupo_lancamento_jid', groupJid).limit(5),
+      supabase.from('lancamentos').select('id, grupo_lancamento_jid, grupo_oferta_jid').eq('grupo_oferta_jid', groupJid).limit(5),
+    ]);
 
+    const lancError = e1 ?? e2;
     if (lancError) {
       console.error('lancamentos query error:', JSON.stringify(lancError));
       throw new Error(`DB error: ${lancError.message}`);
     }
+
+    // Merge and deduplicate (a lancamento won't match both, but guard anyway)
+    const seen = new Set<string>();
+    const lancamentos = [...(byLanc ?? []), ...(byOferta ?? [])].filter(l => {
+      if (seen.has(l.id as string)) return false;
+      seen.add(l.id as string);
+      return true;
+    });
 
     if (!lancamentos?.length) {
       return json200({ ok: true, skipped: true, reason: `no lancamento configured for group "${groupJid}"` });

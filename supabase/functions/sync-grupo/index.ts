@@ -27,7 +27,8 @@ function isLid(s: string): boolean {
 function extractJid(p: unknown): string {
   if (typeof p === 'string') return p;
   const o = p as Record<string, unknown>;
-  return String(o?.id ?? o?.jid ?? o?.phone ?? o?.phoneNumber ?? o?.number ?? '');
+  // phoneNumber (@s.whatsapp.net) must come before id (@lid)
+  return String(o?.phoneNumber ?? o?.phone ?? o?.number ?? o?.id ?? o?.jid ?? '');
 }
 
 function toRawList(json: unknown): unknown[] {
@@ -46,11 +47,15 @@ async function safeFetch(url: string, opts: RequestInit, timeoutMs = 15000): Pro
   try {
     const res = await fetch(url, { ...opts, signal: controller.signal });
     clearTimeout(timer);
-    if (!res.ok) { console.warn(`${url} → ${res.status}`); return null; }
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      console.warn(`safeFetch ${res.status} ${url} body=${body.slice(0, 300)}`);
+      return null;
+    }
     return await res.json();
   } catch (e) {
     clearTimeout(timer);
-    console.warn(`fetch error/timeout ${url}:`, (e as Error).message);
+    console.warn(`safeFetch error/timeout ${url}:`, (e as Error).message);
     return null;
   }
 }
@@ -108,10 +113,70 @@ async function resolveParticipants(
       console.log(`Resolved ${resolved.length}/${lids.length} via contacts`);
       return resolved;
     }
+
+    // Fallback: extract unique senders from group message history (@s.whatsapp.net)
+    console.log('Trying message history fallback...');
+    const msgPhones = await resolveViaMessages(api_url, instance_name, groupJid, evoHeaders);
+    if (msgPhones.length) {
+      console.log(`Message history: ${msgPhones.length} unique senders`);
+      return msgPhones;
+    }
+
     return lids; // Return @lid so caller can report 422
   }
 
   return [];
+}
+
+async function resolveViaMessages(
+  api_url: string,
+  instance_name: string,
+  groupJid: string,
+  evoHeaders: Record<string, string>,
+): Promise<string[]> {
+  const enc = encodeURIComponent(groupJid);
+
+  // Try multiple body/url formats — Evolution API versions differ in how messages are queried
+  const messageCandidates: Array<() => Promise<unknown | null>> = [
+    () => safeFetch(`${api_url}/message/findMessages/${instance_name}`, {
+      method: 'POST', headers: evoHeaders,
+      body: JSON.stringify({ where: { key: { remoteJid: groupJid } }, limit: 200 }),
+    }, 20000),
+    () => safeFetch(`${api_url}/message/findMessages/${instance_name}`, {
+      method: 'POST', headers: evoHeaders,
+      body: JSON.stringify({ remoteJid: groupJid, limit: 200 }),
+    }, 20000),
+    () => safeFetch(
+      `${api_url}/message/findMessages/${instance_name}?where[key][remoteJid]=${enc}&limit=200`,
+      { headers: evoHeaders }, 20000,
+    ),
+  ];
+
+  let messages: unknown[] = [];
+  for (const attempt of messageCandidates) {
+    const res = await attempt();
+    if (res) {
+      const p = res as Record<string, unknown>;
+      const found = Array.isArray(res) ? res
+        : Array.isArray(p?.messages) ? p.messages as unknown[]
+        : Array.isArray(p?.data)     ? p.data as unknown[]
+        : [];
+      if (found.length) { messages = found; break; }
+    }
+  }
+
+  if (!messages.length) { console.log('Message history: no messages found'); return []; }
+  console.log(`Message history: ${messages.length} messages`);
+
+  const senders = new Set<string>();
+  for (const m of messages) {
+    const msg = m as Record<string, unknown>;
+    const key = msg?.key as Record<string, unknown> | undefined;
+    const participant = String(key?.participant ?? msg?.participant ?? '');
+    if (isPhoneJid(participant)) senders.add(participant);
+  }
+
+  return [...senders];
 }
 
 // Build @lid → @s.whatsapp.net map from Evolution's contact store, then resolve
@@ -121,20 +186,27 @@ async function resolveLidsViaContacts(
   evoHeaders: Record<string, string>,
   lids: string[],
 ): Promise<string[]> {
-  // POST /contact/findContacts — some versions accept a where filter
-  const postRes = await safeFetch(`${api_url}/contact/findContacts/${instance_name}`, {
-    method: 'POST',
-    headers: evoHeaders,
-    body: JSON.stringify({ where: {} }),
-  });
-
   let contactList: unknown[] = [];
-  if (postRes) {
-    contactList = Array.isArray(postRes) ? postRes : toRawList(postRes);
-  } else {
-    // Fallback: GET fetchContacts
-    const getRes = await safeFetch(`${api_url}/contact/fetchContacts/${instance_name}`, { headers: evoHeaders });
-    if (getRes) contactList = Array.isArray(getRes) ? getRes : toRawList(getRes);
+
+  // Try multiple endpoint variants in order — different Evolution API versions
+  // expose contacts at different paths/methods
+  const candidates: Array<() => Promise<unknown | null>> = [
+    () => safeFetch(`${api_url}/contact/findContacts/${instance_name}`, {
+      method: 'POST', headers: evoHeaders, body: JSON.stringify({ where: {} }),
+    }),
+    () => safeFetch(`${api_url}/contact/fetchContacts/${instance_name}`, { headers: evoHeaders }),
+    () => safeFetch(`${api_url}/contact/findContacts/${instance_name}`, { headers: evoHeaders }),
+    () => safeFetch(`${api_url}/chat/findContacts/${instance_name}`, {
+      method: 'POST', headers: evoHeaders, body: JSON.stringify({ where: {} }),
+    }),
+  ];
+
+  for (const attempt of candidates) {
+    const res = await attempt();
+    if (res) {
+      contactList = Array.isArray(res) ? res : toRawList(res);
+      if (contactList.length) break;
+    }
   }
 
   if (!contactList.length) return [];

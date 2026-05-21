@@ -30,6 +30,7 @@ const Pedagogico       = lazy(() => import('../pedagogico/Pedagogico').then(m =>
 const LancamentoKanban = lazy(() => import('./LancamentoKanban').then(m => ({ default: m.LancamentoKanban })));
 const NPAKanban        = lazy(() => import('./NPAKanban'));
 const AulaSecretaKanban = lazy(() => import('./AulaSecretaKanban').then(m => ({ default: m.AulaSecretaKanban })));
+const Produtos          = lazy(() => import('./Produtos').then(m => ({ default: m.Produtos })));
 
 function ModuleLoader() {
   return (
@@ -233,6 +234,7 @@ export function CRMLayout() {
       case 'operacoes_calendario_conteudo': return <Operacoes currentPage={currentView} />;
       case 'mapa_mental': return <MapaMental />;
       case 'pedagogico': return <Pedagogico />;
+      case 'produtos': return isAdmin ? <Produtos /> : <RestrictedView />;
       default: return <Dashboard />;
     }
   };

@@ -29,7 +29,7 @@ export type AppView =
   | 'lancamentos_30' | 'lancamentos_31' | 'lancamentos_32'
   | 'team' | 'settings' | 'cobranca' | 'funil_lancamento' | 'disparo_planilha'
   | 'operacoes_tarefas' | 'operacoes_calendario_geral' | 'operacoes_calendario_conteudo'
-  | 'mapa_mental' | 'pedagogico';
+  | 'mapa_mental' | 'pedagogico' | 'produtos';
 
 export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
   canViewDashboard: true,
@@ -180,6 +180,7 @@ export function canAccessView(view: string, permissions: AccessPermissions, isAd
     operacoes_calendario_conteudo: permissions.canViewOperacoes,
     mapa_mental: permissions.canViewMapaMental,
     pedagogico: permissions.canViewPedagogico,
+    produtos: false, // admin-only — isAdmin check at top of function already handles it
   };
 
   return permissionByView[view as AppView] ?? false; // deny-by-default para views não mapeadas
