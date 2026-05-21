@@ -118,7 +118,7 @@ function KpiCard({
 function CollapsibleSection({ title, icon: Icon, children }: {
   title: string; icon: React.ElementType; children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   return (
     <div>
       <button

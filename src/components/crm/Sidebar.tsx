@@ -97,11 +97,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
     mapa_mental:        'Gestão',
     ...(isAdmin ? { team: 'Admin' } : { settings: 'Admin' }),
   };
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({
-    lancamentos_legado: true,
-    npa_dinamico: true,
-    aula_secreta: true,
-  });
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
   });
