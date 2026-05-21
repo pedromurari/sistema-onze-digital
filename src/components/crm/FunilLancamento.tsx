@@ -383,7 +383,7 @@ export function FunilLancamento() {
   async function handleDelete(id: string) {
     const { error } = await supabase.from('funnel_messages').delete().eq('id', id);
     if (error) { toast.error(`Erro: ${error.message}`); return; }
-    toast.success('Excluído'); setDeleteTarget(null); loadMessages();
+    toast.success('Excluído'); setDeleteTarget(null); loadFunnels();
   }
 
   async function handleQuickSend() {
