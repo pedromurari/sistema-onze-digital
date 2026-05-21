@@ -607,6 +607,7 @@ export function FunilLancamento() {
                           <MsgCard
                             key={msg.id}
                             msg={msg}
+                            imagens={currentConfig.imagens ?? {}}
                             onEdit={() => openEdit(msg)}
                             onDelete={() => setDeleteTarget(msg.id)}
                           />
@@ -975,8 +976,9 @@ function RecipBtn({ active, icon, label, onClick }: {
 
 // ── Message Card ───────────────────────────────────────────────────────────────
 
-function MsgCard({ msg, onEdit, onDelete }: {
-  msg: FunnelMessage; onEdit: () => void; onDelete: () => void;
+function MsgCard({ msg, imagens, onEdit, onDelete }: {
+  msg: FunnelMessage; imagens: Record<string, string>;
+  onEdit: () => void; onDelete: () => void;
 }) {
   const sc  = STATUS_CFG[msg.status];
   const tc  = TYPE_CFG[msg.message_type || 'text'];
@@ -988,10 +990,33 @@ function MsgCard({ msg, onEdit, onDelete }: {
     msg.message_text             ? msg.message_text :
     msg.media_url                ? msg.media_url : '—';
 
+  const headerSlot  = msg.subtipo ? IMAGE_SLOTS.find(s => s.key === msg.subtipo) : null;
+  const headerUrl   = msg.subtipo ? imagens[msg.subtipo] : null;
+  const headerThumb = headerUrl
+    ? `https://lh3.googleusercontent.com/d/${headerUrl.match(/id=([^&]+)/)?.[1]}=w120`
+    : null;
+
   return (
     <Card className="hover:shadow-sm transition-shadow group cursor-pointer" onClick={onEdit}>
       <CardContent className="pt-3 pb-3 px-4">
-        {/* Header */}
+        {/* Header image preview strip */}
+        {msg.send_header_image && headerThumb && (
+          <div className="relative -mx-4 -mt-3 mb-2 h-16 overflow-hidden rounded-t-lg bg-muted/30">
+            <img
+              src={headerThumb}
+              alt={headerSlot?.label ?? msg.subtipo ?? ''}
+              className="w-full h-full object-cover"
+              onError={e => { (e.currentTarget as HTMLImageElement).parentElement!.style.display = 'none'; }}
+            />
+            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent px-2 py-1">
+              <span className="text-[10px] text-white font-semibold">
+                {headerSlot?.label ?? msg.subtipo}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Time + type row */}
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Clock className="h-3 w-3" />
@@ -1008,10 +1033,10 @@ function MsgCard({ msg, onEdit, onDelete }: {
         <p className="text-sm text-foreground line-clamp-2 mb-2 min-h-[2.5rem]">{preview}</p>
 
         {/* Feature + header badges */}
-        {(msg.link_preview || msg.mention_everyone || msg.send_header_image ||
+        {(msg.link_preview || msg.mention_everyone || (msg.send_header_image && !headerThumb) ||
           (msg.message_type === 'poll' && msg.poll_options)) && (
           <div className="flex items-center gap-1 mb-2 flex-wrap">
-            {msg.send_header_image && (
+            {msg.send_header_image && !headerThumb && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 border border-purple-100 flex items-center gap-0.5">
                 <Image className="h-2.5 w-2.5" />
                 {msg.subtipo
