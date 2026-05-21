@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -14,11 +14,15 @@ import {
 } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   Plus, Send, Clock, CheckCircle2, AlertCircle, FileText,
   Pencil, Trash2, MessageSquare, Users, Phone, Zap, Calendar,
   GitBranch, Image, Video, Music, FileIcon, BarChart2, Eye,
   AtSign, Upload, Download, X, Settings2,
-  Variable, Link2,
+  Variable, Link2, ChevronDown, ChevronRight, MoreVertical,
 } from 'lucide-react';
 import { format, parseISO, isBefore } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -51,6 +55,10 @@ interface FunnelMessage {
   sent_at?: string;
   error_message?: string;
   created_at: string;
+}
+
+interface FunnelStats {
+  total: number; sent: number; scheduled: number; draft: number; error: number;
 }
 
 interface FunnelConfig {
@@ -188,20 +196,22 @@ const EMPTY_FORM: MsgForm = {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function FunilLancamento() {
-  const [messages,     setMessages]     = useState<FunnelMessage[]>([]);
-  const [funnelNames,  setFunnelNames]  = useState<string[]>([]);
-  const [selected,     setSelected]     = useState('');
-  const [newName,      setNewName]      = useState('');
-  const [loading,      setLoading]      = useState(true);
-  const [saving,       setSaving]       = useState(false);
-  const [sendingQ,     setSendingQ]     = useState(false);
-  const [modalOpen,    setModalOpen]    = useState(false);
-  const [editingId,    setEditingId]    = useState<string | null>(null);
-  const [form,         setForm]         = useState<MsgForm>(EMPTY_FORM);
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [bulkOpen,     setBulkOpen]     = useState(false);
-  const [configOpen,   setConfigOpen]   = useState(false);
-  const [configs,      setConfigs]      = useState<Record<string, FunnelConfig>>({});
+  const [funnelNames,     setFunnelNames]     = useState<string[]>([]);
+  const [funnelStats,     setFunnelStats]     = useState<Record<string, FunnelStats>>({});
+  const [expandedFunnels, setExpandedFunnels] = useState<Set<string>>(new Set());
+  const [newName,         setNewName]         = useState('');
+  const [saving,          setSaving]          = useState(false);
+  const [sendingQ,        setSendingQ]        = useState(false);
+  const [modalOpen,       setModalOpen]       = useState(false);
+  const [editingId,       setEditingId]       = useState<string | null>(null);
+  const [form,            setForm]            = useState<MsgForm>(EMPTY_FORM);
+  const [deleteTarget,    setDeleteTarget]    = useState<string | null>(null);
+  const [bulkOpen,        setBulkOpen]        = useState(false);
+  const [configOpen,      setConfigOpen]      = useState(false);
+  const [configFunnel,    setConfigFunnel]    = useState('');
+  const [configs,         setConfigs]         = useState<Record<string, FunnelConfig>>({});
+  const [renamingFunnel,  setRenamingFunnel]  = useState<{ name: string; newName: string } | null>(null);
+  const [deletingFunnel,  setDeletingFunnel]  = useState<string | null>(null);
 
   // Quick send state
   const [qType,    setQType]    = useState<RecipientType>('group');
@@ -219,24 +229,22 @@ export function FunilLancamento() {
 
   const loadFunnels = useCallback(async () => {
     const { data } = await supabase
-      .from('funnel_messages').select('funnel_name')
+      .from('funnel_messages').select('funnel_name, status')
       .order('created_at', { ascending: false });
-    const unique = [...new Set((data || []).map(r => r.funnel_name as string))];
+    const rows = data || [];
+    const unique = [...new Set(rows.map(r => r.funnel_name as string))];
     setFunnelNames(unique);
-    setSelected(prev => prev || unique[0] || '');
+    const statsMap: Record<string, FunnelStats> = {};
+    for (const r of rows) {
+      const fn = r.funnel_name as string;
+      if (!statsMap[fn]) statsMap[fn] = { total: 0, sent: 0, scheduled: 0, draft: 0, error: 0 };
+      statsMap[fn].total++;
+      const st = r.status as MessageStatus;
+      if (st in statsMap[fn]) statsMap[fn][st]++;
+    }
+    setFunnelStats(statsMap);
+    setExpandedFunnels(prev => prev.size === 0 && unique.length > 0 ? new Set([unique[0]]) : prev);
   }, []);
-
-  const loadMessages = useCallback(async () => {
-    if (!selected) { setMessages([]); setLoading(false); return; }
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('funnel_messages').select('*')
-      .eq('funnel_name', selected)
-      .order('scheduled_at', { ascending: true });
-    if (error) toast.error(`Erro: ${error.message}`);
-    setMessages((data as FunnelMessage[]) || []);
-    setLoading(false);
-  }, [selected]);
 
   const loadConfig = useCallback(async (name: string) => {
     if (!name || configs[name]) return;
@@ -255,59 +263,24 @@ export function FunilLancamento() {
   }, [configs]);
 
   useEffect(() => { loadFunnels(); }, []);
-  useEffect(() => { loadMessages(); }, [selected]);
-  useEffect(() => { if (selected) loadConfig(selected); }, [selected]);
-
-  useEffect(() => {
-    const ch = supabase.channel('funil_lancamento_v3')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'funnel_messages' }, () => loadMessages())
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [loadMessages]);
-
-  // ── Derived ──────────────────────────────────────────────────────────────
-
-  const currentConfig = configs[selected] ?? EMPTY_CONFIG(selected);
-
-  const allVarNames = useMemo(() => {
-    const fixed = ['grupo_1', 'grupo_2'];
-    const custom = Object.keys(currentConfig.variaveis || {});
-    return [...fixed, ...custom];
-  }, [currentConfig]);
-
-  const byDay = useMemo(() => {
-    const map = new Map<number, FunnelMessage[]>();
-    for (const m of messages) {
-      const arr = map.get(m.day_number) ?? [];
-      arr.push(m);
-      map.set(m.day_number, arr);
-    }
-    return [...map.entries()].sort((a, b) => a[0] - b[0]);
-  }, [messages]);
-
-  const stats = useMemo(() => ({
-    total:     messages.length,
-    sent:      messages.filter(m => m.status === 'sent').length,
-    scheduled: messages.filter(m => m.status === 'scheduled').length,
-    draft:     messages.filter(m => m.status === 'draft').length,
-    error:     messages.filter(m => m.status === 'error').length,
-  }), [messages]);
-
-  const progress = stats.total > 0 ? Math.round((stats.sent / stats.total) * 100) : 0;
-
-  const hasHeaderImages = !!(
-    currentConfig.imagem_manha || currentConfig.imagem_tarde || currentConfig.imagem_noite ||
-    Object.values(currentConfig.imagens || {}).some(Boolean)
-  );
 
   // ── Handlers ─────────────────────────────────────────────────────────────
 
-  function openCreate(day?: number) {
-    const nextDay = day ?? (byDay.length > 0 ? byDay[byDay.length - 1][0] + 1 : 1);
-    const cfg = configs[selected];
+  function toggleFunnel(name: string) {
+    setExpandedFunnels(prev => {
+      const s = new Set(prev);
+      if (s.has(name)) s.delete(name); else s.add(name);
+      return s;
+    });
+    loadConfig(name);
+  }
+
+  function openCreate(funnelName: string, maxDay?: number) {
+    loadConfig(funnelName);
+    const cfg = configs[funnelName];
     const defaultRecip = cfg?.grupo_1_id ? '{{grupo_1}}' : '';
     setEditingId(null);
-    setForm({ ...EMPTY_FORM, funnel_name: selected, day_number: nextDay, recipient_id: defaultRecip });
+    setForm({ ...EMPTY_FORM, funnel_name: funnelName, day_number: maxDay != null ? maxDay + 1 : 1, recipient_id: defaultRecip });
     setModalOpen(true);
   }
 
@@ -388,8 +361,7 @@ export function FunilLancamento() {
     if (error) { toast.error(`Erro: ${error.message}`); return; }
     toast.success(action === 'draft' ? 'Salvo como rascunho' : 'Mensagem agendada!');
     setModalOpen(false);
-    if (!selected) setSelected(form.funnel_name.trim());
-    loadMessages(); loadFunnels();
+    loadFunnels();
   }
 
   async function handleSendNow() {
@@ -446,7 +418,45 @@ export function FunilLancamento() {
     const name = newName.trim();
     if (!name) return;
     setFunnelNames(prev => [...new Set([...prev, name])]);
-    setSelected(name); setNewName('');
+    setExpandedFunnels(prev => new Set([...prev, name]));
+    setNewName('');
+  }
+
+  async function handleRenameFunnel(oldName: string, nextName: string) {
+    const n = nextName.trim();
+    if (!n || n === oldName) { setRenamingFunnel(null); return; }
+    const [r1, r2] = await Promise.all([
+      supabase.from('funnel_messages').update({ funnel_name: n }).eq('funnel_name', oldName),
+      supabase.from('funnel_configs').update({ funnel_name: n }).eq('funnel_name', oldName),
+    ]);
+    if (r1.error || r2.error) { toast.error('Erro ao renomear'); return; }
+    setFunnelNames(prev => prev.map(fn => fn === oldName ? n : fn));
+    setConfigs(prev => {
+      const c = { ...prev };
+      if (c[oldName]) { c[n] = { ...c[oldName], funnel_name: n }; delete c[oldName]; }
+      return c;
+    });
+    setExpandedFunnels(prev => {
+      const s = new Set(prev);
+      if (s.has(oldName)) { s.delete(oldName); s.add(n); }
+      return s;
+    });
+    setRenamingFunnel(null);
+    toast.success('Funil renomeado!');
+    loadFunnels();
+  }
+
+  async function handleDeleteFunnel(name: string) {
+    await Promise.all([
+      supabase.from('funnel_messages').delete().eq('funnel_name', name),
+      supabase.from('funnel_configs').delete().eq('funnel_name', name),
+    ]);
+    setFunnelNames(prev => prev.filter(fn => fn !== name));
+    setConfigs(prev => { const c = { ...prev }; delete c[name]; return c; });
+    setExpandedFunnels(prev => { const s = new Set(prev); s.delete(name); return s; });
+    setFunnelStats(prev => { const c = { ...prev }; delete c[name]; return c; });
+    setDeletingFunnel(null);
+    toast.success('Funil excluído!');
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -482,151 +492,45 @@ export function FunilLancamento() {
         </TabsList>
 
         {/* ── FUNIL ────────────────────────────────────────────────────────── */}
-        <TabsContent value="funil" className="mt-4 space-y-4">
-          {/* Funnel tabs */}
-          <div className="flex flex-wrap items-center gap-2">
-            {funnelNames.map(name => (
-              <button
-                key={name}
-                onClick={() => setSelected(name)}
-                className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
-                  selected === name
-                    ? 'bg-primary text-white border-primary'
-                    : 'border-border text-foreground/70 hover:border-primary/40 hover:text-primary'
-                }`}
-              >
-                {name}
-              </button>
-            ))}
-            <div className="flex items-center gap-1.5">
-              <Input
-                placeholder="Novo funil…"
-                value={newName}
-                onChange={e => setNewName(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && createFunnel()}
-                className="h-8 w-36 text-sm"
-              />
-              <Button size="sm" variant="outline" className="h-8 px-2" onClick={createFunnel}>
-                <Plus className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-            {selected && (
-              <Button
-                variant="outline" size="sm"
-                className="h-8 gap-1.5 ml-auto border-amber-200 text-amber-700 hover:bg-amber-50"
-                onClick={() => setConfigOpen(true)}
-              >
-                <Settings2 className="h-3.5 w-3.5" /> Configurar funil
-              </Button>
-            )}
+        <TabsContent value="funil" className="mt-4 space-y-3">
+          {/* New funnel input */}
+          <div className="flex items-center gap-1.5">
+            <Input
+              placeholder="Novo funil…"
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && createFunnel()}
+              className="h-8 w-44 text-sm"
+            />
+            <Button size="sm" variant="outline" className="h-8 px-2" onClick={createFunnel}>
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
           </div>
 
-          {/* Config summary strip */}
-          {selected && (currentConfig.grupo_1_id || hasHeaderImages || Object.keys(currentConfig.variaveis).length > 0) && (
-            <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-100 text-xs">
-              <Variable className="h-3.5 w-3.5 text-amber-600 flex-shrink-0" />
-              {currentConfig.grupo_1_id && (
-                <span className="text-amber-800">
-                  <span className="font-mono bg-amber-100 px-1 rounded">{'{{grupo_1}}'}</span>
-                  {' '}→ {currentConfig.grupo_1_id.slice(0, 20)}{currentConfig.grupo_1_id.length > 20 ? '…' : ''}
-                </span>
-              )}
-              {currentConfig.grupo_2_id && (
-                <span className="text-amber-800">
-                  <span className="font-mono bg-amber-100 px-1 rounded">{'{{grupo_2}}'}</span>
-                  {' '}→ {currentConfig.grupo_2_id.slice(0, 20)}{currentConfig.grupo_2_id.length > 20 ? '…' : ''}
-                </span>
-              )}
-              {Object.entries(currentConfig.variaveis).map(([k, v]) => (
-                <span key={k} className="text-amber-800">
-                  <span className="font-mono bg-amber-100 px-1 rounded">{`{{${k}}}`}</span>
-                  {v ? ` → ${v.slice(0, 20)}${v.length > 20 ? '…' : ''}` : <span className="text-red-500"> não preenchido</span>}
-                </span>
-              ))}
-              {hasHeaderImages && (
-                <span className="text-amber-700 flex items-center gap-1">
-                  <Image className="h-3 w-3" /> Imagens de cabeçalho configuradas
-                </span>
-              )}
-            </div>
-          )}
-
-          {selected ? (
-            <>
-              {/* Progress card */}
-              <Card>
-                <CardContent className="pt-4 pb-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-                    <span className="text-sm font-semibold text-foreground">{selected}</span>
-                    <div className="flex items-center gap-4 flex-wrap">
-                      <Chip label="Total"     value={stats.total}     color="text-foreground" />
-                      <Chip label="Enviadas"  value={stats.sent}      color="text-emerald-700" />
-                      <Chip label="Agendadas" value={stats.scheduled} color="text-blue-700" />
-                      <Chip label="Rascunhos" value={stats.draft}     color="text-gray-500" />
-                      {stats.error > 0 && <Chip label="Erros" value={stats.error} color="text-red-700" />}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Progress value={progress} className="flex-1 h-2" />
-                    <span className="text-sm font-bold min-w-[40px] text-right">{progress}%</span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Messages */}
-              {loading ? (
-                <div className="flex justify-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-                </div>
-              ) : byDay.length === 0 ? (
-                <div className="text-center py-16 text-muted-foreground space-y-2">
-                  <MessageSquare className="h-10 w-10 mx-auto opacity-25" />
-                  <p className="text-sm">Nenhuma mensagem neste funil</p>
-                  <Button variant="link" className="text-primary h-auto p-0" onClick={() => openCreate()}>
-                    Criar primeira mensagem
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {byDay.map(([day, dayMsgs]) => (
-                    <div key={day}>
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                          <span className="text-[11px] font-bold text-primary">{day}</span>
-                        </div>
-                        <span className="text-sm font-semibold text-foreground">Dia {day}</span>
-                        <span className="text-xs text-muted-foreground">
-                          · {fmtDate(dayMsgs[0].scheduled_at)}
-                        </span>
-                        <div className="flex-1 border-t border-border/40" />
-                        <Button
-                          variant="ghost" size="sm"
-                          className="h-7 text-xs gap-1 text-primary hover:bg-primary/5"
-                          onClick={() => openCreate(day)}
-                        >
-                          <Plus className="h-3 w-3" /> Adicionar
-                        </Button>
-                      </div>
-                      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {dayMsgs.map(msg => (
-                          <MsgCard
-                            key={msg.id}
-                            msg={msg}
-                            imagens={currentConfig.imagens ?? {}}
-                            onEdit={() => openEdit(msg)}
-                            onDelete={() => setDeleteTarget(msg.id)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          ) : (
+          {/* Funnel sections */}
+          {funnelNames.length === 0 ? (
             <div className="text-center py-16 text-muted-foreground space-y-2">
               <GitBranch className="h-10 w-10 mx-auto opacity-25" />
-              <p className="text-sm">Crie ou selecione um funil para começar</p>
+              <p className="text-sm">Crie um funil para começar</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {funnelNames.map(name => (
+                <FunnelSection
+                  key={name}
+                  name={name}
+                  stats={funnelStats[name] ?? { total: 0, sent: 0, scheduled: 0, draft: 0, error: 0 }}
+                  expanded={expandedFunnels.has(name)}
+                  config={configs[name] ?? EMPTY_CONFIG(name)}
+                  onToggle={() => toggleFunnel(name)}
+                  onRename={() => setRenamingFunnel({ name, newName: name })}
+                  onDeleteFunnel={() => setDeletingFunnel(name)}
+                  onConfigure={() => { loadConfig(name); setConfigFunnel(name); setConfigOpen(true); }}
+                  onCreateMessage={(maxDay) => openCreate(name, maxDay)}
+                  onEditMessage={(msg) => openEdit(msg)}
+                  onDeleteMessage={(id) => setDeleteTarget(id)}
+                />
+              ))}
             </div>
           )}
         </TabsContent>
@@ -747,34 +651,82 @@ export function FunilLancamento() {
         </DialogContent>
       </Dialog>
 
+      {/* Rename funnel dialog */}
+      <Dialog open={!!renamingFunnel} onOpenChange={v => !v && setRenamingFunnel(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Renomear funil</DialogTitle></DialogHeader>
+          <div className="py-2">
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Novo nome</label>
+            <Input
+              value={renamingFunnel?.newName ?? ''}
+              onChange={e => setRenamingFunnel(prev => prev ? { ...prev, newName: e.target.value } : null)}
+              onKeyDown={e => e.key === 'Enter' && renamingFunnel && handleRenameFunnel(renamingFunnel.name, renamingFunnel.newName)}
+              autoFocus
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setRenamingFunnel(null)}>Cancelar</Button>
+            <Button onClick={() => renamingFunnel && handleRenameFunnel(renamingFunnel.name, renamingFunnel.newName)}
+              className="bg-primary hover:bg-primary/90">
+              Renomear
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete funnel dialog */}
+      <Dialog open={!!deletingFunnel} onOpenChange={v => !v && setDeletingFunnel(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Excluir funil?</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Isso excluirá <strong>todas as mensagens</strong> do funil{' '}
+            <strong>{deletingFunnel}</strong>. Esta ação não pode ser desfeita.
+          </p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDeletingFunnel(null)}>Cancelar</Button>
+            <Button variant="destructive" onClick={() => deletingFunnel && handleDeleteFunnel(deletingFunnel)}>
+              Excluir funil
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Create / Edit modal */}
-      <MsgModal
-        open={modalOpen} onClose={() => setModalOpen(false)}
-        form={form} setForm={setForm} funnelNames={funnelNames}
-        isEditing={!!editingId} saving={saving}
-        varNames={allVarNames}
-        hasHeaderImages={hasHeaderImages}
-        imageSlots={IMAGE_SLOTS.filter(s => currentConfig.imagens?.[s.key])}
-        onDraft={() => handleSave('draft')}
-        onSchedule={() => handleSave('scheduled')}
-        onSendNow={handleSendNow}
-      />
+      {(() => {
+        const mc = configs[form.funnel_name] ?? EMPTY_CONFIG(form.funnel_name);
+        const mHasHeader = !!(mc.imagem_manha || mc.imagem_tarde || mc.imagem_noite || Object.values(mc.imagens || {}).some(Boolean));
+        const mVarNames = ['grupo_1', 'grupo_2', ...Object.keys(mc.variaveis || {})];
+        const mImageSlots = IMAGE_SLOTS.filter(s => mc.imagens?.[s.key]);
+        return (
+          <MsgModal
+            open={modalOpen} onClose={() => setModalOpen(false)}
+            form={form} setForm={setForm} funnelNames={funnelNames}
+            isEditing={!!editingId} saving={saving}
+            varNames={mVarNames}
+            hasHeaderImages={mHasHeader}
+            imageSlots={mImageSlots}
+            onDraft={() => handleSave('draft')}
+            onSchedule={() => handleSave('scheduled')}
+            onSendNow={handleSendNow}
+          />
+        );
+      })()}
 
       {/* Bulk import */}
       <BulkImportModal
         open={bulkOpen} onClose={() => setBulkOpen(false)}
-        currentFunnel={selected}
-        onImported={() => { loadMessages(); loadFunnels(); }}
+        currentFunnel={funnelNames[0] ?? ''}
+        onImported={() => loadFunnels()}
       />
 
       {/* Funnel config modal */}
       <FunnelConfigModal
         open={configOpen}
         onClose={() => setConfigOpen(false)}
-        funnelName={selected}
-        initialConfig={currentConfig}
+        funnelName={configFunnel}
+        initialConfig={configs[configFunnel] ?? EMPTY_CONFIG(configFunnel)}
         onSaved={cfg => {
-          setConfigs(prev => ({ ...prev, [selected]: cfg }));
+          setConfigs(prev => ({ ...prev, [configFunnel]: cfg }));
           setConfigOpen(false);
           toast.success('Configurações salvas!');
         }}
@@ -1763,6 +1715,208 @@ function parseNativeMessages(items: Record<string, unknown>[], funnelName: strin
   });
 
   return result;
+}
+
+// ── FunnelSection ─────────────────────────────────────────────────────────────
+
+function FunnelSection({
+  name, stats, expanded, config,
+  onToggle, onRename, onDeleteFunnel, onConfigure,
+  onCreateMessage, onEditMessage, onDeleteMessage,
+}: {
+  name: string;
+  stats: FunnelStats;
+  expanded: boolean;
+  config: FunnelConfig;
+  onToggle: () => void;
+  onRename: () => void;
+  onDeleteFunnel: () => void;
+  onConfigure: () => void;
+  onCreateMessage: (maxDay?: number) => void;
+  onEditMessage: (msg: FunnelMessage) => void;
+  onDeleteMessage: (id: string) => void;
+}) {
+  const [messages, setMessages] = useState<FunnelMessage[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const loadMessages = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('funnel_messages').select('*')
+      .eq('funnel_name', name)
+      .order('scheduled_at', { ascending: true });
+    setMessages((data as FunnelMessage[]) || []);
+    setLoading(false);
+  }, [name]);
+
+  useEffect(() => {
+    if (!expanded) return;
+    loadMessages();
+  }, [expanded, loadMessages]);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const ch = supabase.channel(`funil_sec_${name}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'funnel_messages' }, () => loadMessages())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [expanded, name, loadMessages]);
+
+  const byDay = useMemo(() => {
+    const map = new Map<number, FunnelMessage[]>();
+    for (const m of messages) {
+      const arr = map.get(m.day_number) ?? [];
+      arr.push(m);
+      map.set(m.day_number, arr);
+    }
+    return [...map.entries()].sort((a, b) => a[0] - b[0]);
+  }, [messages]);
+
+  const maxDay = byDay.length > 0 ? byDay[byDay.length - 1][0] : 0;
+  const progress = stats.total > 0 ? Math.round((stats.sent / stats.total) * 100) : 0;
+  const hasHeaderImages = !!(
+    config.imagem_manha || config.imagem_tarde || config.imagem_noite ||
+    Object.values(config.imagens || {}).some(Boolean)
+  );
+
+  return (
+    <Card className="overflow-hidden">
+      {/* Header row — always visible */}
+      <div
+        className="flex items-center gap-2 px-4 py-3 cursor-pointer hover:bg-muted/20 transition-colors select-none"
+        onClick={onToggle}
+      >
+        <div className="flex-shrink-0 text-muted-foreground">
+          {expanded
+            ? <ChevronDown className="h-4 w-4" />
+            : <ChevronRight className="h-4 w-4" />}
+        </div>
+        <span className="font-semibold text-foreground text-sm truncate min-w-0">{name}</span>
+        <div className="flex items-center gap-3 ml-1 flex-shrink-0">
+          <Chip label="Total"     value={stats.total}     color="text-foreground/70" />
+          <Chip label="Enviadas"  value={stats.sent}      color="text-emerald-700" />
+          <Chip label="Agendadas" value={stats.scheduled} color="text-blue-700" />
+          {stats.error > 0 && <Chip label="Erros" value={stats.error} color="text-red-700" />}
+        </div>
+        <div className="flex-1 flex items-center gap-2 ml-2 min-w-0">
+          <Progress value={progress} className="flex-1 h-1.5" />
+          <span className="text-xs font-bold text-foreground/60 min-w-[36px] text-right">{progress}%</span>
+        </div>
+        {/* Action buttons */}
+        <div className="flex items-center gap-0.5 flex-shrink-0 ml-1" onClick={e => e.stopPropagation()}>
+          <Button
+            variant="ghost" size="sm"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-amber-700"
+            title="Configurar funil"
+            onClick={onConfigure}
+          >
+            <Settings2 className="h-3.5 w-3.5" />
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onCreateMessage(maxDay)}>
+                <Plus className="h-4 w-4 mr-2" /> Nova mensagem
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onRename}>
+                <Pencil className="h-4 w-4 mr-2" /> Renomear funil
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={onDeleteFunnel} className="text-red-600 focus:text-red-600">
+                <Trash2 className="h-4 w-4 mr-2" /> Excluir funil
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      {/* Config summary strip */}
+      {expanded && (config.grupo_1_id || hasHeaderImages || Object.keys(config.variaveis).length > 0) && (
+        <div className="flex flex-wrap items-center gap-2 px-4 py-2 bg-amber-50 border-t border-amber-100 text-xs">
+          <Variable className="h-3.5 w-3.5 text-amber-600 flex-shrink-0" />
+          {config.grupo_1_id && (
+            <span className="text-amber-800">
+              <span className="font-mono bg-amber-100 px-1 rounded">{'{{grupo_1}}'}</span>
+              {' '}→ {config.grupo_1_id.slice(0, 20)}{config.grupo_1_id.length > 20 ? '…' : ''}
+            </span>
+          )}
+          {config.grupo_2_id && (
+            <span className="text-amber-800">
+              <span className="font-mono bg-amber-100 px-1 rounded">{'{{grupo_2}}'}</span>
+              {' '}→ {config.grupo_2_id.slice(0, 20)}{config.grupo_2_id.length > 20 ? '…' : ''}
+            </span>
+          )}
+          {Object.entries(config.variaveis).map(([k, v]) => (
+            <span key={k} className="text-amber-800">
+              <span className="font-mono bg-amber-100 px-1 rounded">{`{{${k}}}`}</span>
+              {v ? ` → ${v.slice(0, 20)}${v.length > 20 ? '…' : ''}` : <span className="text-red-500"> não preenchido</span>}
+            </span>
+          ))}
+          {hasHeaderImages && (
+            <span className="text-amber-700 flex items-center gap-1">
+              <Image className="h-3 w-3" /> Imagens configuradas
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Messages (expanded) */}
+      {expanded && (
+        <div className="border-t px-4 py-4">
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+            </div>
+          ) : byDay.length === 0 ? (
+            <div className="text-center py-10 text-muted-foreground space-y-2">
+              <MessageSquare className="h-8 w-8 mx-auto opacity-25" />
+              <p className="text-sm">Nenhuma mensagem neste funil</p>
+              <Button variant="link" className="text-primary h-auto p-0" onClick={() => onCreateMessage()}>
+                Criar primeira mensagem
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {byDay.map(([day, dayMsgs]) => (
+                <div key={day}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <span className="text-[10px] font-bold text-primary">{day}</span>
+                    </div>
+                    <span className="text-sm font-semibold text-foreground">Dia {day}</span>
+                    <span className="text-xs text-muted-foreground">· {fmtDate(dayMsgs[0].scheduled_at)}</span>
+                    <div className="flex-1 border-t border-border/40" />
+                    <Button
+                      variant="ghost" size="sm"
+                      className="h-7 text-xs gap-1 text-primary hover:bg-primary/5"
+                      onClick={() => onCreateMessage(day)}
+                    >
+                      <Plus className="h-3 w-3" /> Adicionar
+                    </Button>
+                  </div>
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {dayMsgs.map(msg => (
+                      <MsgCard
+                        key={msg.id}
+                        msg={msg}
+                        imagens={config.imagens ?? {}}
+                        onEdit={() => onEditMessage(msg)}
+                        onDelete={() => onDeleteMessage(msg.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
 }
 
 // ── Bulk Import Modal ──────────────────────────────────────────────────────────
