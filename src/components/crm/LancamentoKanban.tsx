@@ -704,7 +704,7 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
   const [showSyncGrupoModal, setShowSyncGrupoModal] = useState(false);
   const [syncGrupoInput, setSyncGrupoInput] = useState('');
   const [syncingGrupo, setSyncingGrupo] = useState(false);
-  const [syncGrupoResult, setSyncGrupoResult] = useState<{ updated: number; notFound: number } | null>(null);
+  const [syncGrupoResult, setSyncGrupoResult] = useState<{ updated: number; notFound: number; lidCount?: number } | null>(null);
   const [syncingFromEvo, setSyncingFromEvo] = useState(false);
   const [syncDebug, setSyncDebug] = useState<Record<string, unknown> | null>(null);
 
@@ -1027,31 +1027,32 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
     if (!syncGrupoInput.trim()) return;
     setSyncingGrupo(true);
 
-    // Normalize phone to last 11 digits (DDD + número), removing country code 55 if present
     const normalizePhone = (raw: string) => {
       const digits = raw.replace(/\D/g, '');
       if ((digits.length === 13 || digits.length === 12) && digits.startsWith('55')) return digits.slice(2);
       return digits.slice(-11);
     };
 
-    // Extract phoneNumber fields (format: "5511999999999@s.whatsapp.net") first,
-    // falling back to any 8+ digit sequence if none found
-    const phoneFieldMatches = [...syncGrupoInput.matchAll(/"phoneNumber"\s*:\s*"(\d+)@/g)].map(m => m[1]);
-    const rawNumbers = phoneFieldMatches.length > 0
-      ? phoneFieldMatches
-      : (syncGrupoInput.match(/(\d{8,})@s\.whatsapp\.net/g) || []).map(m => m.replace(/@.*/, ''))
-        .concat((syncGrupoInput.match(/\d{8,}/g) || []));
-    const uniqueRaw = [...new Set(rawNumbers)];
-    // Compare by last 8 digits (core number without area code or 9-prefix)
-    // WhatsApp stores old 8-digit format; leads may have new 9-digit format
-    const groupSuffix8 = new Set(uniqueRaw.map(n => normalizePhone(n).slice(-8)));
+    // Extrai SOMENTE JIDs reais de telefone: @s.whatsapp.net ou @c.us
+    // @lid são IDs internos do WhatsApp (não são números de telefone)
+    const phoneJids = [
+      ...[...syncGrupoInput.matchAll(/"phoneNumber"\s*:\s*"(\d{8,})@/g)].map(m => m[1]),
+      ...(syncGrupoInput.match(/\d{8,}@(?:s\.whatsapp\.net|c\.us)/g) || []).map(m => m.replace(/@.*/, '')),
+    ];
+    const uniquePhones = [...new Set(phoneJids)];
+
+    // Conta @lid separadamente — não podem ser comparados a números de telefone
+    const lidCount = new Set(syncGrupoInput.match(/\d{7,}@lid/g) || []).size;
+
+    const groupSuffix8 = new Set(uniquePhones.map(n => normalizePhone(n).slice(-8)));
 
     const matchedLeads = leads.filter(lead => {
+      if (!lead.whatsapp) return false;
       const norm = normalizePhone(lead.whatsapp);
       return groupSuffix8.has(norm.slice(-8));
     });
 
-    const notFound = uniqueRaw.length - matchedLeads.length;
+    const notFound = uniquePhones.length - matchedLeads.length;
 
     const BATCH = 100;
     let updated = 0;
@@ -1068,7 +1069,7 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
     }
 
     setSyncingGrupo(false);
-    setSyncGrupoResult({ updated, notFound: Math.max(0, notFound) });
+    setSyncGrupoResult({ updated, notFound: Math.max(0, notFound), lidCount });
   };
 
   // ── Sync group participants live from Evolution API (server-side) ─────────────
@@ -1786,9 +1787,14 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
                 onChange={e => setSyncGrupoInput(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                {syncGrupoInput
-                  ? `${[...syncGrupoInput.matchAll(/"phoneNumber"\s*:\s*[\n\r\s]*"(\d+)@/g)].length || (syncGrupoInput.match(/\d{8,}/g) || []).length} número(s) detectado(s)`
-                  : 'Aguardando arquivo ou colagem...'}
+                {syncGrupoInput ? (() => {
+                  const phones = new Set([
+                    ...[...syncGrupoInput.matchAll(/"phoneNumber"\s*:\s*"(\d{8,})@/g)].map(m => m[1]),
+                    ...(syncGrupoInput.match(/\d{8,}@(?:s\.whatsapp\.net|c\.us)/g) || []).map(m => m.replace(/@.*/, '')),
+                  ]);
+                  const lids = new Set(syncGrupoInput.match(/\d{7,}@lid/g) || []);
+                  return `${phones.size} telefone(s) detectado(s)${lids.size > 0 ? ` · ${lids.size} @lid (IDs internos — não mapeáveis)` : ''}`;
+                })() : 'Aguardando arquivo ou colagem...'}
               </p>
               <div className="flex justify-end gap-2 pt-2 border-t flex-shrink-0">
                 <Button variant="outline" onClick={() => setShowSyncGrupoModal(false)}>Cancelar</Button>
@@ -1807,7 +1813,15 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
               <div>
                 <p className="text-lg font-semibold">{syncGrupoResult.updated} lead(s) marcado(s) como no grupo!</p>
                 {syncGrupoResult.notFound > 0 && (
-                  <p className="text-sm text-muted-foreground mt-1">{syncGrupoResult.notFound} número(s) do grupo não encontrado(s) na planilha.</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {syncGrupoResult.notFound} número(s) de telefone do grupo não encontrado(s) nos leads.
+                  </p>
+                )}
+                {!!syncGrupoResult.lidCount && syncGrupoResult.lidCount > 0 && (
+                  <p className="text-sm text-amber-600 mt-1">
+                    {syncGrupoResult.lidCount} participante(s) com @lid — IDs internos do WhatsApp, não são números de telefone.
+                    Use o botão "Sincronizar" acima (Evolution API) para resolvê-los automaticamente.
+                  </p>
                 )}
               </div>
               {syncGrupoResult.updated === 0 && syncDebug && (
