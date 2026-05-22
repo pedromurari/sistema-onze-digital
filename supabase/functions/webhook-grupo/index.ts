@@ -79,11 +79,21 @@ serve(async (req) => {
       }
     }
 
-    const body = await req.json();
+    let body: Record<string, unknown>;
+    try {
+      const raw = await req.text();
+      console.log('raw body (first 300):', raw.slice(0, 300));
+      body = raw ? JSON.parse(raw) : {};
+    } catch {
+      console.warn('body is not valid JSON — skipping');
+      return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'non-JSON body' }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     const event: string  = (body.event ?? body.type ?? '').toLowerCase();
-    const data           = body.data ?? body;
-    const action: string = (data.action ?? '').toLowerCase();
+    const data           = (body.data ?? body) as Record<string, unknown>;
+    const action: string = ((data.action ?? '') as string).toLowerCase();
 
     // Log every incoming call so we can debug from Supabase logs
     console.log(JSON.stringify({ event, action, groupId: data.id ?? data.groupId ?? '', ts: new Date().toISOString() }));
@@ -96,13 +106,13 @@ serve(async (req) => {
     }
 
     // Group JID (e.g. "120363XXXXXXXXXX@g.us")
-    const groupJid: string = data.id ?? data.groupId ?? '';
+    const groupJid: string = String(data.id ?? data.groupId ?? '');
     if (!groupJid) return json400('groupJid not found in payload');
 
     // Participants array — each entry is "5511999999999@s.whatsapp.net" or similar
     const participants: string[] = Array.isArray(data.participants)
-      ? data.participants
-      : typeof data.participant === 'string' ? [data.participant] : [];
+      ? (data.participants as string[])
+      : typeof data.participant === 'string' ? [data.participant as string] : [];
 
     if (!participants.length) return json200({ ok: true, skipped: true, reason: 'no participants' });
 
