@@ -538,7 +538,7 @@ function CampanhaCard({
         <div className="flex items-center gap-1 flex-shrink-0">
           {canStart && (
             <Button size="sm" onClick={onStart} className="gap-1.5 h-8 bg-green-600 hover:bg-green-500 text-white">
-              <Play className="w-3.5 h-3.5" /> {c.status === 'pausado' ? 'Retomar' : 'Iniciar'}
+              <Play className="w-3.5 h-3.5" /> {(c.status === 'pausado' || c.status === 'ativo') ? 'Retomar' : 'Iniciar'}
             </Button>
           )}
           {isRunning && (
@@ -1170,8 +1170,9 @@ export default function DisparoPlanilha() {
   const [activeCampaignIds,  setActiveCampaignIds]  = useState<Set<string>>(new Set());
   const [showEvoManager,     setShowEvoManager]     = useState(false);
 
-  const runningRef = useRef<Map<string, boolean>>(new Map());
-  const speedRef   = useRef<Map<string, number[]>>(new Map());
+  const runningRef    = useRef<Map<string, boolean>>(new Map());
+  const speedRef      = useRef<Map<string, number[]>>(new Map());
+  const autoResumedRef = useRef(false);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -1443,6 +1444,17 @@ export default function DisparoPlanilha() {
     await fetchCampanhas();
     setShowModal(false);
   }, [fetchCampanhas]);
+
+  // ── Auto-resume: restart ativo campaigns on page return ──────────────────
+  useEffect(() => {
+    if (autoResumedRef.current || campanhas.length === 0) return;
+    autoResumedRef.current = true;
+    const ativas = campanhas.filter(c => c.status === 'ativo');
+    if (ativas.length > 0) {
+      ativas.forEach(c => runCampanha(c.id));
+      toast.info(`${ativas.length} campanha(s) retomada(s) automaticamente`);
+    }
+  }, [campanhas, runCampanha]);
 
   // ── UI helpers ────────────────────────────────────────────────────────────
 

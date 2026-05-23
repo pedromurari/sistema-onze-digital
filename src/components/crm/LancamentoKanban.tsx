@@ -70,6 +70,11 @@ interface LancamentoKanbanProps {
   lancamentoId: string;
 }
 
+interface Turma {
+  id: string; nome: string; produto: string;
+  valor_mensalidade?: number | null; total_mensalidades?: number | null;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const VALOR_MATRICULA_PADRAO = 109.90;
@@ -719,6 +724,14 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
   const [deletingColuna, setDeletingColuna] = useState<KanbanColuna | null>(null);
   const [settingsColuna, setSettingsColuna] = useState<KanbanColuna | null>(null);
 
+  // Turmas + confirm matricula modal
+  const [turmas, setTurmas] = useState<Turma[]>([]);
+  const [confirmMatriculaLead, setConfirmMatriculaLead] = useState<LaunchLead | null>(null);
+  const [confirmMatriculaForm, setConfirmMatriculaForm] = useState({
+    turma_id: '', produto: 'psicanalise', valor_mensalidade: '', dia_vencimento: '10', total_mensalidades: '15',
+  });
+  const [savingMatricula, setSavingMatricula] = useState(false);
+
   // Shared column hook
   const {
     colunas, colunasRef, loadingColunas,
@@ -759,6 +772,12 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
     },
     [],
   );
+
+  // ── Load turmas (for matricula modal) ─────────────────────────────────────
+  useEffect(() => {
+    supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades')
+      .then(({ data }) => setTurmas((data as Turma[]) || []));
+  }, []);
 
   // ── Fetch lancamento + leads ────────────────────────────────────────────────
   useEffect(() => {
@@ -898,6 +917,40 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
     };
   }, [colunas]);
 
+  // ── Matricula modal helpers ────────────────────────────────────────────────
+
+  const openConfirmMatricula = (lead: LaunchLead) => {
+    setConfirmMatriculaLead(lead);
+    setConfirmMatriculaForm({
+      turma_id: turmas[0]?.id ?? '',
+      produto: turmas[0]?.produto ?? 'psicanalise',
+      valor_mensalidade: String(turmas[0]?.valor_mensalidade ?? '109.90'),
+      dia_vencimento: '10',
+      total_mensalidades: String(turmas[0]?.total_mensalidades ?? '15'),
+    });
+  };
+
+  const handleConfirmMatricula = async () => {
+    if (!confirmMatriculaLead) return;
+    setSavingMatricula(true);
+    const { error } = await supabase.from('alunos').insert({
+      nome: confirmMatriculaLead.nome,
+      whatsapp: confirmMatriculaLead.whatsapp || null,
+      email: confirmMatriculaLead.email || null,
+      turma_id: confirmMatriculaForm.turma_id || null,
+      produto: confirmMatriculaForm.produto,
+      valor_mensalidade: Number(confirmMatriculaForm.valor_mensalidade) || null,
+      dia_vencimento: Number(confirmMatriculaForm.dia_vencimento) || null,
+      total_mensalidades: Number(confirmMatriculaForm.total_mensalidades) || 15,
+      status: 'ativo',
+      data_matricula: new Date().toISOString().slice(0, 10),
+    });
+    setSavingMatricula(false);
+    if (error) { toast.error('Erro ao criar aluno: ' + error.message); return; }
+    toast.success('Aluno registrado no financeiro!');
+    setConfirmMatriculaLead(null);
+  };
+
   // ── Move lead ───────────────────────────────────────────────────────────────
   const handleMoveLead = useCallback(async (leadId: string, colunaId: string) => {
     const previousLeads = leadsRef.current;
@@ -922,9 +975,16 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
       return;
     }
 
-    setLeads(prev => prev.map(l => l.id === leadId ? (updated as LaunchLead) : l));
+    const updatedLead = updated as LaunchLead;
+    setLeads(prev => prev.map(l => l.id === leadId ? updatedLead : l));
     setTimeout(() => { pendingUpdates.current.delete(leadId); }, 5000);
-  }, []);
+
+    // If moved to matricula column, offer to register in financeiro
+    if (coluna?.nome.toLowerCase().includes('matricul') && updatedLead.matriculado) {
+      openConfirmMatricula(updatedLead);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turmas]);
 
   // ── Add lead ────────────────────────────────────────────────────────────────
   const handleAddLead = async () => {
@@ -1227,9 +1287,15 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
       })
       .eq('id', editingLead.id);
     if (error) { toast.error('Erro ao salvar lead'); return; }
-    setLeads(prev => prev.map(l => l.id === editingLead.id ? { ...l, ...editLeadForm } : l));
+    const updatedLead = { ...editingLead, ...editLeadForm };
+    setLeads(prev => prev.map(l => l.id === editingLead.id ? updatedLead : l));
+    const wasMatriculado = editingLead.matriculado;
     setEditingLead(null);
     toast.success('Lead atualizado!');
+    // If newly marked as matriculado, offer to register in financeiro
+    if (!wasMatriculado && editLeadForm.matriculado) {
+      openConfirmMatricula(updatedLead);
+    }
   };
 
   // ── Delete column (move orphaned leads to first remaining column) ───────────
@@ -1921,6 +1987,83 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
         onConfirm={handleDeleteColWithLeads}
         onClose={() => setDeletingColuna(null)}
       />
+
+      {/* ── Confirmar Matrícula no Financeiro ── */}
+      <Dialog open={!!confirmMatriculaLead} onOpenChange={() => setConfirmMatriculaLead(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserCheck className="h-5 w-5 text-emerald-600" /> Registrar Matrícula no Financeiro
+            </DialogTitle>
+            <DialogDescription>
+              <strong>{confirmMatriculaLead?.nome}</strong> foi marcado como matriculado.
+              Deseja criar o registro de aluno no sistema financeiro?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Turma</label>
+              <Select
+                value={confirmMatriculaForm.turma_id}
+                onValueChange={v => {
+                  const t = turmas.find(x => x.id === v);
+                  setConfirmMatriculaForm(f => ({
+                    ...f,
+                    turma_id: v,
+                    produto: t?.produto ?? f.produto,
+                    valor_mensalidade: String(t?.valor_mensalidade ?? f.valor_mensalidade),
+                    total_mensalidades: String(t?.total_mensalidades ?? f.total_mensalidades),
+                  }));
+                }}
+              >
+                <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Selecionar turma..." /></SelectTrigger>
+                <SelectContent>
+                  {turmas.map(t => <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Valor mensalidade</label>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">R$</span>
+                  <Input
+                    type="number" step="0.01" className="pl-8 h-9 text-sm"
+                    value={confirmMatriculaForm.valor_mensalidade}
+                    onChange={e => setConfirmMatriculaForm(f => ({ ...f, valor_mensalidade: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Dia vencimento</label>
+                <Input
+                  type="number" min={1} max={31} className="h-9 text-sm"
+                  value={confirmMatriculaForm.dia_vencimento}
+                  onChange={e => setConfirmMatriculaForm(f => ({ ...f, dia_vencimento: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Total de parcelas</label>
+              <Input
+                type="number" min={1} className="h-9 text-sm"
+                value={confirmMatriculaForm.total_mensalidades}
+                onChange={e => setConfirmMatriculaForm(f => ({ ...f, total_mensalidades: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setConfirmMatriculaLead(null)}>Não agora</Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              onClick={handleConfirmMatricula}
+              disabled={savingMatricula}
+            >
+              {savingMatricula ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Registrando...</> : 'Registrar Aluno'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Edit Lead Modal ── */}
       <Dialog open={!!editingLead} onOpenChange={() => setEditingLead(null)}>

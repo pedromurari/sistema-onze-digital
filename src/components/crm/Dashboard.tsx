@@ -190,7 +190,7 @@ export function Dashboard() {
       const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
       const [alunosRes, pagRes, tasksRes, turmasRes, lancRes, npaEvtRes, evtCalRes] = await Promise.all([
         supabase.from('alunos').select('id, nome, produto, status, turma_id, data_inicio, created_at, valor_mensalidade, mensalidades_pagas, total_mensalidades').limit(500),
-        supabase.from('pagamentos').select('id, aluno_id, valor, mes_referencia, status, data_pagamento, data_vencimento, created_at').order('created_at', { ascending: false }).limit(2000),
+        supabase.from('pagamentos').select('id, aluno_id, valor, mes_referencia, status, data_pagamento, data_vencimento, created_at').order('created_at', { ascending: false }).limit(5000),
         supabase.from('tarefas').select('id, titulo, status, prioridade, responsavel_id, responsaveis, prazo, categoria, pagina, created_at').order('prazo').limit(50),
         supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades, data_inicio, data_fim, status'),
         supabase.from('lancamentos').select('id, nome, ativo, created_at, data_live').order('created_at', { ascending: false }).limit(20),
@@ -319,9 +319,10 @@ export function Dashboard() {
     new Set(pagamentos.filter(p => p.status === 'atrasado').map(p => p.aluno_id)),
   [pagamentos]);
 
+  // Use aluno.status directly — more reliable than pagamentos (avoids pagination gaps)
   const inadimplentesCount = useMemo(() =>
-    alunosAtivos.filter(a => alunoInadimplentesIds.has(a.id)).length,
-  [alunosAtivos, alunoInadimplentesIds]);
+    alunos.filter(a => a.status === 'inadimplente').length,
+  [alunos]);
 
   const valorInadimplente = useMemo(() =>
     pagamentos.filter(p => p.status === 'atrasado').reduce((s, p) => s + p.valor, 0),
