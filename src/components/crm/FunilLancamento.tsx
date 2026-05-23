@@ -1386,6 +1386,24 @@ function VarChips({ names, onInsert }: { names: string[]; onInsert: (tag: string
 
 // ── Funnel Config Modal ────────────────────────────────────────────────────────
 
+// ── Aula date helpers ─────────────────────────────────────────────────────────
+
+function aulaDateToInput(stored: string): string {
+  // stored = "26/05" → try to convert to "2026-05-26" for date input
+  const m = stored.match(/^(\d{1,2})\/(\d{2})(?:\/(\d{4}))?$/);
+  if (!m) return '';
+  const day = m[1].padStart(2, '0');
+  const mon = m[2];
+  const yr  = m[3] ?? String(new Date().getFullYear());
+  return `${yr}-${mon}-${day}`;
+}
+
+function aulaInputToDisplay(inputVal: string): string {
+  try { return format(parseISO(inputVal), 'dd/MM'); } catch { return inputVal; }
+}
+
+type AulaEntry = { data: string; link: string }; // data = "2026-05-26" (date input format)
+
 function FunnelConfigModal({
   open, onClose, funnelName, initialConfig, onSaved,
 }: {
@@ -1398,8 +1416,23 @@ function FunnelConfigModal({
   const [saving,  setSaving]  = useState(false);
   const [newVarK, setNewVarK] = useState('');
   const [newVarV, setNewVarV] = useState('');
+  const [aulas,   setAulas]   = useState<AulaEntry[]>([{ data: '', link: '' }]);
 
-  useEffect(() => { setCfg(initialConfig); }, [initialConfig, open]);
+  useEffect(() => {
+    setCfg(initialConfig);
+    // Extract aula entries from variaveis
+    const vars = (initialConfig.variaveis as Record<string, string>) || {};
+    const entries: AulaEntry[] = [];
+    let i = 1;
+    while (vars[`data_aula_${i}`] !== undefined || vars[`link_aula_${i}`] !== undefined) {
+      entries.push({
+        data: aulaDateToInput(vars[`data_aula_${i}`] ?? ''),
+        link: vars[`link_aula_${i}`] ?? '',
+      });
+      i++;
+    }
+    setAulas(entries.length > 0 ? entries : [{ data: '', link: '' }]);
+  }, [initialConfig, open]);
 
   const setField = <K extends keyof FunnelConfig>(k: K, v: FunnelConfig[K]) =>
     setCfg(prev => ({ ...prev, [k]: v }));
@@ -1430,6 +1463,17 @@ function FunnelConfigModal({
 
   async function handleSave() {
     setSaving(true);
+    // Merge aulas into variaveis (remove stale aula_* keys then add current ones)
+    const varSansAulas = Object.fromEntries(
+      Object.entries(cfg.variaveis).filter(([k]) => !/^(data|link)_aula_\d+$/.test(k))
+    );
+    const aulaVars: Record<string, string> = {};
+    aulas.forEach((a, i) => {
+      if (a.data) aulaVars[`data_aula_${i + 1}`] = aulaInputToDisplay(a.data);
+      if (a.link) aulaVars[`link_aula_${i + 1}`] = a.link;
+    });
+    const finalVars = { ...varSansAulas, ...aulaVars };
+
     const payload = {
       funnel_name:   funnelName,
       grupo_1_id:    cfg.grupo_1_id,
@@ -1437,7 +1481,7 @@ function FunnelConfigModal({
       imagem_manha:  cfg.imagens['manha'] || cfg.imagem_manha,
       imagem_tarde:  cfg.imagens['tarde'] || cfg.imagem_tarde,
       imagem_noite:  cfg.imagens['noite'] || cfg.imagem_noite,
-      variaveis:     cfg.variaveis,
+      variaveis:     finalVars,
       imagens:       cfg.imagens,
     };
     const { error } = await supabase
@@ -1445,7 +1489,7 @@ function FunnelConfigModal({
       .upsert(payload, { onConflict: 'funnel_name' });
     setSaving(false);
     if (error) { toast.error(`Erro: ${error.message}`); return; }
-    onSaved({ ...cfg, imagem_manha: payload.imagem_manha, imagem_tarde: payload.imagem_tarde, imagem_noite: payload.imagem_noite });
+    onSaved({ ...cfg, variaveis: finalVars, imagem_manha: payload.imagem_manha, imagem_tarde: payload.imagem_tarde, imagem_noite: payload.imagem_noite });
   }
 
   return (
@@ -1488,6 +1532,57 @@ function FunnelConfigModal({
             <p className="text-xs text-muted-foreground mt-2">
               Use <code className="bg-muted px-1 rounded text-[10px]">{'{{grupo_1}}'}</code> como destinatário nas mensagens
             </p>
+          </div>
+
+          {/* Aulas — datas e links */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-primary" /> Aulas
+              </p>
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
+                onClick={() => setAulas(prev => [...prev, { data: '', link: '' }])}>
+                <Plus className="h-3 w-3" /> Adicionar aula
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">
+              Datas e links das aulas ficam disponíveis como{' '}
+              <code className="bg-muted px-1 rounded">{'{{data_aula_1}}'}</code>,{' '}
+              <code className="bg-muted px-1 rounded">{'{{link_aula_1}}'}</code> etc. nas mensagens.
+            </p>
+            <div className="space-y-2">
+              {aulas.map((aula, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-muted-foreground w-12 shrink-0 text-right">
+                    Aula {i + 1}
+                  </span>
+                  <Input
+                    type="date"
+                    className="h-8 text-xs w-36 shrink-0"
+                    value={aula.data}
+                    onChange={e => setAulas(prev => prev.map((a, j) => j === i ? { ...a, data: e.target.value } : a))}
+                  />
+                  <Input
+                    className="h-8 text-xs flex-1"
+                    placeholder="Link da aula (opcional)"
+                    value={aula.link}
+                    onChange={e => setAulas(prev => prev.map((a, j) => j === i ? { ...a, link: e.target.value } : a))}
+                  />
+                  {aula.data && (
+                    <span className="text-[10px] text-emerald-600 font-medium shrink-0 w-12 text-center">
+                      {aulaInputToDisplay(aula.data)}
+                    </span>
+                  )}
+                  {aulas.length > 1 && (
+                    <button type="button"
+                      onClick={() => setAulas(prev => prev.filter((_, j) => j !== i))}
+                      className="p-1 rounded hover:text-red-600 text-muted-foreground shrink-0">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Imagens de cabeçalho */}
@@ -1557,9 +1652,9 @@ function FunnelConfigModal({
               Use <code className="bg-muted px-1 rounded text-[10px]">{'{{nome_da_variavel}}'}</code> nas mensagens.
             </p>
 
-            {Object.entries(cfg.variaveis).length > 0 && (
+            {Object.entries(cfg.variaveis).filter(([k]) => !/^(data|link)_aula_\d+$/.test(k)).length > 0 && (
               <div className="rounded-lg border divide-y mb-3">
-                {Object.entries(cfg.variaveis).map(([k, v]) => (
+                {Object.entries(cfg.variaveis).filter(([k]) => !/^(data|link)_aula_\d+$/.test(k)).map(([k, v]) => (
                   <div key={k} className="flex items-center gap-2 px-3 py-2">
                     <code className="text-[11px] font-mono text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded min-w-[100px] flex-shrink-0">
                       {`{{${k}}}`}
