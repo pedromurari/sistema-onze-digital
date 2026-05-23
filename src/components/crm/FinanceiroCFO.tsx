@@ -21,6 +21,10 @@ import { ptBR } from 'date-fns/locale';
 interface Turma {
   id: string; nome: string; produto?: string;
   valor_mensalidade?: number | null; total_mensalidades?: number | null;
+  responsavel_id?: string | null;
+}
+interface Responsavel {
+  id: string; nome: string;
 }
 interface Aluno {
   id: string; nome: string; turma_id: string;
@@ -186,6 +190,7 @@ export function FinanceiroCFO() {
   const [alunos, setAlunos]           = useState<Aluno[]>([]);
   const [pagamentos, setPagamentos]   = useState<Pagamento[]>([]);
   const [responsaveis, setResponsaveis] = useState<TurmaResponsavel[]>([]);
+  const [responsaveisList, setResponsaveisList] = useState<Responsavel[]>([]); // tabela responsaveis (donos)
   const [loading, setLoading]         = useState(true);
   const [periodo, setPeriodo]         = useState<Periodo>('mes');
   const [ownerFilter, setOwnerFilter] = useState<string>(''); // '' = todos
@@ -207,16 +212,18 @@ export function FinanceiroCFO() {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const [{ data: t }, { data: a }, { data: p }, { data: r }] = await Promise.all([
-        supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades'),
+      const [{ data: t }, { data: a }, { data: p }, { data: r }, { data: rl }] = await Promise.all([
+        supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades, responsavel_id'),
         supabase.from('alunos').select('id, nome, turma_id, status, dia_vencimento, valor_mensalidade, mensalidades_pagas, total_mensalidades').neq('status', 'cancelado'),
         supabase.from('pagamentos').select('id, aluno_id, turma_id, valor, status, data_pagamento, data_vencimento, mes_referencia'),
         supabase.from('turma_responsaveis').select('id, turma_id, user_id, nome_ref, percentual'),
+        supabase.from('responsaveis').select('id, nome'),
       ]);
       setTurmas(t || []);
       setAlunos(a || []);
       setPagamentos(p || []);
       setResponsaveis(r || []);
+      setResponsaveisList(rl || []);
       setLoading(false);
     };
     load();
@@ -249,14 +256,21 @@ export function FinanceiroCFO() {
     pagamentos.filter(p => (p.status || '') === 'pago' && p.data_pagamento),
   [pagamentos]);
 
-  // Returns MRR share for a turma/aluno considering owner filter
+  // Returns MRR share for a turma considering owner filter.
+  // Primary: turmas.responsavel_id → responsaveis.nome (1-to-1 ownership).
+  // Fallback: turma_responsaveis with nome_ref (split ownership).
   const getOwnerShare = useCallback((turmaId: string | null): number => {
     if (!ownerFilter || !turmaId) return 1;
-    const turmaResps = responsaveis.filter(r => r.turma_id === turmaId);
-    if (!turmaResps.length) return ownerFilter === '' ? 1 : 0;
+    const turma = turmas.find(t => t.id === turmaId);
+    if (turma?.responsavel_id) {
+      const resp = responsaveisList.find(r => r.id === turma.responsavel_id);
+      if (resp) return resp.nome === ownerFilter ? 1 : 0;
+    }
+    const turmaResps = responsaveis.filter(r => r.turma_id === turmaId && r.nome_ref);
+    if (!turmaResps.length) return 0;
     const ownerPct = turmaResps.filter(r => r.nome_ref === ownerFilter).reduce((s, r) => s + r.percentual, 0);
     return ownerPct / 100;
-  }, [ownerFilter, responsaveis]);
+  }, [ownerFilter, responsaveis, turmas, responsaveisList]);
 
   // ── MRR ──────────────────────────────────────────────────────────────────
 
@@ -328,11 +342,10 @@ export function FinanceiroCFO() {
       else                  { buckets.b90p   += val; counts.b90p++;   }
     }
     const totalInadimplentes = alunos.filter(a =>
-      (a.status === 'inadimplente' || a.status === 'ativo') &&
-      pagamentos.some(p => p.aluno_id === a.id && (p.status || '') === 'atrasado')
+      a.status === 'inadimplente' && getOwnerShare(a.turma_id) > 0
     ).length;
-    const txInadimplencia = alunosAtivos.length > 0
-      ? pct(totalInadimplentes, alunosAtivos.length) : 0;
+    const ativosOwner = alunosAtivos.filter(a => getOwnerShare(a.turma_id) > 0).length;
+    const txInadimplencia = ativosOwner > 0 ? pct(totalInadimplentes, ativosOwner) : 0;
     return { valorTotal, buckets, counts, totalInadimplentes, txInadimplencia };
   }, [pagamentos, alunos, alunosAtivos, hoje, getOwnerShare]);
 
@@ -362,37 +375,51 @@ export function FinanceiroCFO() {
         p.turma_id === turma.id && (p.status || '') === 'pago' && p.mes_referencia?.startsWith(mesAtual)
       ).reduce((s, p) => s + (p.valor || 0) * share, 0);
       const turmaResps = responsaveis.filter(r => r.turma_id === turma.id);
-      return { turma, ativos: ativos.length, mrrReal, recebido, tc: pct(recebido, mrrReal), turmaResps };
+      const ownerName = !turmaResps.length && turma.responsavel_id
+        ? responsaveisList.find(r => r.id === turma.responsavel_id)?.nome ?? null
+        : null;
+      return { turma, ativos: ativos.length, mrrReal, recebido, tc: pct(recebido, mrrReal), turmaResps, ownerName };
     }).filter(Boolean).sort((a, b) => b!.mrrReal - a!.mrrReal) as NonNullable<ReturnType<typeof turmas.map>[0]>[];
-  }, [turmas, alunosAtivos, pagamentos, mesAtual, responsaveis, getOwnerShare]);
+  }, [turmas, alunosAtivos, pagamentos, mesAtual, responsaveis, responsaveisList, getOwnerShare]);
 
   // ── Receita por responsável ───────────────────────────────────────────────
 
   const receitaPorOwner = useMemo(() => {
     const map: Record<string, { nome: string; mrr: number; recebido: number; txColeta: number }> = {};
-    for (const resp of responsaveis) {
-      const nome = resp.nome_ref || `ID:${resp.user_id.slice(0, 6)}`;
-      if (!map[nome]) map[nome] = { nome, mrr: 0, recebido: 0, txColeta: 0 };
-      const item = (mrrPorTurma as any[]).find((m: any) => m?.turma?.id === resp.turma_id);
-      const mrrTurma: number = item?.mrrReal ?? 0;
-      const recTurma: number = item?.recebido ?? 0;
-      // Proportional share BEFORE owner share multiplication (mrrReal already has share)
-      // Reset: calculate raw without filter
-      const ativosRaw = alunosAtivos.filter(a => a.turma_id === resp.turma_id);
-      const turma = turmas.find(t => t.id === resp.turma_id);
+    for (const owner of OWNERS) map[owner] = { nome: owner, mrr: 0, recebido: 0, txColeta: 0 };
+
+    for (const turma of turmas) {
+      const ativosRaw = alunosAtivos.filter(a => a.turma_id === turma.id);
+      if (!ativosRaw.length) continue;
       const mrrRaw = ativosRaw.reduce((s, a) =>
-        s + ((a.valor_mensalidade ?? turma?.valor_mensalidade ?? 0) as number), 0);
+        s + ((a.valor_mensalidade ?? turma.valor_mensalidade ?? 0) as number), 0);
       const recRaw = pagamentos.filter(p =>
-        p.turma_id === resp.turma_id && (p.status || '') === 'pago' && p.mes_referencia?.startsWith(mesAtual)
+        p.turma_id === turma.id && (p.status || '') === 'pago' && p.mes_referencia?.startsWith(mesAtual)
       ).reduce((s, p) => s + (p.valor || 0), 0);
-      map[nome].mrr      += mrrRaw * (resp.percentual / 100);
-      map[nome].recebido += recRaw * (resp.percentual / 100);
+
+      // Primary: turmas.responsavel_id → responsaveis.nome
+      if (turma.responsavel_id) {
+        const resp = responsaveisList.find(r => r.id === turma.responsavel_id);
+        if (resp && map[resp.nome]) {
+          map[resp.nome].mrr      += mrrRaw;
+          map[resp.nome].recebido += recRaw;
+        }
+        continue;
+      }
+      // Fallback: turma_responsaveis (split ownership)
+      const turmaResps = responsaveis.filter(r => r.turma_id === turma.id && r.nome_ref);
+      for (const resp of turmaResps) {
+        const nome = resp.nome_ref;
+        if (!map[nome]) map[nome] = { nome, mrr: 0, recebido: 0, txColeta: 0 };
+        map[nome].mrr      += mrrRaw * (resp.percentual / 100);
+        map[nome].recebido += recRaw * (resp.percentual / 100);
+      }
     }
     for (const key of Object.keys(map)) {
       map[key].txColeta = pct(map[key].recebido, map[key].mrr);
     }
-    return Object.values(map).sort((a, b) => b.mrr - a.mrr);
-  }, [responsaveis, alunosAtivos, turmas, pagamentos, mesAtual, mrrPorTurma]);
+    return Object.values(map).filter(o => o.mrr > 0).sort((a, b) => b.mrr - a.mrr);
+  }, [responsaveis, responsaveisList, alunosAtivos, turmas, pagamentos, mesAtual]);
 
   // ── Receita diária (últimos 30 dias) ─────────────────────────────────────
 
@@ -731,7 +758,14 @@ export function FinanceiroCFO() {
                               {r.nome_ref} {r.percentual}%
                             </span>
                           ))}
-                          {!item.turmaResps?.length && <span className="text-xs text-muted-foreground">Não atribuído</span>}
+                          {!item.turmaResps?.length && item.ownerName && (
+                            <span className="text-xs bg-muted px-1.5 py-0.5 rounded-md border border-border/50">
+                              {item.ownerName} 100%
+                            </span>
+                          )}
+                          {!item.turmaResps?.length && !item.ownerName && (
+                            <span className="text-xs text-muted-foreground">Não atribuído</span>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
