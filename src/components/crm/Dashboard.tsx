@@ -34,7 +34,7 @@ interface Task {
 interface Turma {
   id: string; nome: string; produto: 'psicanalise' | 'numerologia';
   valor_mensalidade?: number; total_mensalidades?: number;
-  data_inicio?: string; data_fim?: string; status: string;
+  data_inicio?: string; data_fim?: string; tipo?: string;
   responsavel_id?: string | null;
 }
 interface Responsavel { id: string; nome: string; }
@@ -196,7 +196,7 @@ export function Dashboard() {
         supabase.from('alunos').select('id, nome, produto, status, turma_id, data_inicio, created_at, valor_mensalidade, mensalidades_pagas, total_mensalidades').limit(500),
         supabase.from('pagamentos').select('id, aluno_id, valor, mes_referencia, status, data_pagamento, data_vencimento, created_at').order('created_at', { ascending: false }).limit(5000),
         supabase.from('tarefas').select('id, titulo, status, prioridade, responsavel_id, responsaveis, prazo, categoria, pagina, created_at').order('prazo').limit(50),
-        supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades, data_inicio, data_fim, status, responsavel_id'),
+        supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades, data_inicio, data_fim, responsavel_id'),
         supabase.from('lancamentos').select('id, nome, ativo, created_at, data_live').order('created_at', { ascending: false }).limit(20),
         supabase.from('npa_eventos').select('id, nome, ativo, data_evento').order('created_at', { ascending: false }).limit(20),
         supabase.from('eventos_calendario').select('id, titulo, data_inicio, cor').gte('data_inicio', hoje.toISOString()).order('data_inicio').limit(20),
@@ -455,7 +455,7 @@ export function Dashboard() {
     const recebido = pagamentos.filter(p => p.status === 'pago' && ids.has(p.aluno_id) && p.mes_referencia?.startsWith(mesAtual)).reduce((s, p) => s + p.valor, 0);
     const inadimp = ativos.filter(a => alunoInadimplentesIds.has(a.id)).length;
     const txInad = ativos.length > 0 ? Math.round((inadimp / ativos.length) * 100) : 0;
-    const proxTurma = turmas.filter(t => t.produto === produto && t.status === 'ativa').sort((a, b) => new Date(a.data_inicio || '').getTime() - new Date(b.data_inicio || '').getTime())[0];
+    const proxTurma = turmas.filter(t => t.produto === produto).sort((a, b) => new Date(a.data_inicio || '').getTime() - new Date(b.data_inicio || '').getTime())[0];
     const mrr = ativos.reduce((sum, a) => {
       const t = turmas.find(tr => tr.id === a.turma_id);
       return sum + (a.valor_mensalidade ?? t?.valor_mensalidade ?? 0);
