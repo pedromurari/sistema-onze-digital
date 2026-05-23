@@ -861,17 +861,20 @@ export function FinanceiroCFO() {
                         <span className="text-sm font-medium w-32 shrink-0">{turma.nome}</span>
                         {/* Owner 1 */}
                         <Select
-                          value={entry.owner1}
-                          onValueChange={v => setCfgResp(prev => ({
-                            ...prev,
-                            [turma.id]: { ...entry, owner1: v as Owner, pct1: v ? (entry.owner2 ? entry.pct1 : 100) : 100 },
-                          }))}
+                          value={entry.owner1 || '__none__'}
+                          onValueChange={v => {
+                            const owner = v === '__none__' ? '' : v;
+                            setCfgResp(prev => ({
+                              ...prev,
+                              [turma.id]: { ...entry, owner1: owner as Owner, pct1: owner ? (entry.owner2 ? entry.pct1 : 100) : 100 },
+                            }));
+                          }}
                         >
                           <SelectTrigger className="h-8 text-xs w-36">
                             <SelectValue placeholder="Responsável 1..." />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="">— Nenhum —</SelectItem>
+                            <SelectItem value="__none__">— Nenhum —</SelectItem>
                             {OWNERS.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
                           </SelectContent>
                         </Select>
@@ -890,17 +893,20 @@ export function FinanceiroCFO() {
                           <>
                             <span className="text-xs text-muted-foreground">+</span>
                             <Select
-                              value={entry.owner2}
-                              onValueChange={v => setCfgResp(prev => ({
-                                ...prev,
-                                [turma.id]: { ...entry, owner2: v as Owner, pct2: v ? 100 - entry.pct1 : 0 },
-                              }))}
+                              value={entry.owner2 || '__none__'}
+                              onValueChange={v => {
+                                const owner = v === '__none__' ? '' : v;
+                                setCfgResp(prev => ({
+                                  ...prev,
+                                  [turma.id]: { ...entry, owner2: owner as Owner, pct2: owner ? 100 - entry.pct1 : 0 },
+                                }));
+                              }}
                             >
                               <SelectTrigger className="h-8 text-xs w-36">
                                 <SelectValue placeholder="Responsável 2..." />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="">— Nenhum —</SelectItem>
+                                <SelectItem value="__none__">— Nenhum —</SelectItem>
                                 {OWNERS.filter(o => o !== entry.owner1).map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
                               </SelectContent>
                             </Select>

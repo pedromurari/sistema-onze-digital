@@ -35,7 +35,9 @@ interface Turma {
   id: string; nome: string; produto: 'psicanalise' | 'numerologia';
   valor_mensalidade?: number; total_mensalidades?: number;
   data_inicio?: string; data_fim?: string; status: string;
+  responsavel_id?: string | null;
 }
+interface Responsavel { id: string; nome: string; }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -175,8 +177,10 @@ export function Dashboard() {
   const [npaEventos, setNpaEventos]   = useState<any[]>([]);
   const [npaLeads, setNpaLeads]       = useState<any[]>([]);
   const [eventosCalendario, setEventosCalendario] = useState<{id: string; titulo: string; data_inicio: string; cor: string}[]>([]);
+  const [responsaveisList, setResponsaveisList] = useState<Responsavel[]>([]);
   const [selLancId, setSelLancId]     = useState('');
   const [selNpaId, setSelNpaId]       = useState('');
+  const [ownerFilter, setOwnerFilter] = useState<string>('Onze Digital');
   const [loading, setLoading]         = useState(true);
   const isAdmin = user?.tipo === 'admin';
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -188,20 +192,22 @@ export function Dashboard() {
       if (showLoading) setLoading(true);
 
       const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-      const [alunosRes, pagRes, tasksRes, turmasRes, lancRes, npaEvtRes, evtCalRes] = await Promise.all([
+      const [alunosRes, pagRes, tasksRes, turmasRes, lancRes, npaEvtRes, evtCalRes, respRes] = await Promise.all([
         supabase.from('alunos').select('id, nome, produto, status, turma_id, data_inicio, created_at, valor_mensalidade, mensalidades_pagas, total_mensalidades').limit(500),
         supabase.from('pagamentos').select('id, aluno_id, valor, mes_referencia, status, data_pagamento, data_vencimento, created_at').order('created_at', { ascending: false }).limit(5000),
         supabase.from('tarefas').select('id, titulo, status, prioridade, responsavel_id, responsaveis, prazo, categoria, pagina, created_at').order('prazo').limit(50),
-        supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades, data_inicio, data_fim, status'),
+        supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades, data_inicio, data_fim, status, responsavel_id'),
         supabase.from('lancamentos').select('id, nome, ativo, created_at, data_live').order('created_at', { ascending: false }).limit(20),
         supabase.from('npa_eventos').select('id, nome, ativo, data_evento').order('created_at', { ascending: false }).limit(20),
         supabase.from('eventos_calendario').select('id, titulo, data_inicio, cor').gte('data_inicio', hoje.toISOString()).order('data_inicio').limit(20),
+        supabase.from('responsaveis').select('id, nome'),
       ]);
 
       if (alunosRes.data) setAlunos(alunosRes.data as Aluno[]);
       if (pagRes.data) setPagamentos(pagRes.data as Pagamento[]);
       if (tasksRes.data) setTasks(tasksRes.data as Task[]);
       if (turmasRes.data) setTurmas(turmasRes.data as Turma[]);
+      if (respRes.data) setResponsaveisList(respRes.data as Responsavel[]);
       if (evtCalRes.data) setEventosCalendario(evtCalRes.data as any);
 
       const lancList = lancRes.data || [];
@@ -299,19 +305,40 @@ export function Dashboard() {
 
   const alunosAtivos = useMemo(() => alunos.filter(a => a.status === 'ativo'), [alunos]);
 
+  // Owner filter: 1 = include, 0 = exclude
+  const ownerTurmaIds = useMemo(() => {
+    if (!ownerFilter) return null; // null = todos
+    const ids = new Set<string>();
+    for (const turma of turmas) {
+      if (!turma.responsavel_id) continue;
+      const resp = responsaveisList.find(r => r.id === turma.responsavel_id);
+      if (resp?.nome === ownerFilter) ids.add(turma.id);
+    }
+    return ids;
+  }, [ownerFilter, turmas, responsaveisList]);
+
+  const ownerAlunoIds = useMemo(() => {
+    if (!ownerTurmaIds) return null;
+    return new Set(alunos.filter(a => a.turma_id && ownerTurmaIds.has(a.turma_id)).map(a => a.id));
+  }, [alunos, ownerTurmaIds]);
+
+  const filteredAlunosAtivos = useMemo(() =>
+    ownerAlunoIds ? alunosAtivos.filter(a => ownerAlunoIds.has(a.id)) : alunosAtivos,
+  [alunosAtivos, ownerAlunoIds]);
+
   const mrrEfetivo = useMemo(() => {
-    // Use individual student value; fall back to turma default
-    return alunosAtivos.reduce((sum, a) => {
+    return filteredAlunosAtivos.reduce((sum, a) => {
       const turma = turmas.find(t => t.id === a.turma_id);
       const val = a.valor_mensalidade ?? turma?.valor_mensalidade ?? 0;
       return sum + val;
     }, 0);
-  }, [alunosAtivos, turmas]);
+  }, [filteredAlunosAtivos, turmas]);
 
   const recebidoMes = useMemo(() =>
-    pagamentos.filter(p => p.status === 'pago' && p.mes_referencia?.startsWith(mesAtual))
-              .reduce((s, p) => s + p.valor, 0),
-  [pagamentos, mesAtual]);
+    pagamentos
+      .filter(p => p.status === 'pago' && p.mes_referencia?.startsWith(mesAtual) && (!ownerAlunoIds || ownerAlunoIds.has(p.aluno_id)))
+      .reduce((s, p) => s + p.valor, 0),
+  [pagamentos, mesAtual, ownerAlunoIds]);
 
   const taxaColeta = mrrEfetivo > 0 ? Math.round((recebidoMes / mrrEfetivo) * 100) : 0;
 
@@ -319,18 +346,19 @@ export function Dashboard() {
     new Set(pagamentos.filter(p => p.status === 'atrasado').map(p => p.aluno_id)),
   [pagamentos]);
 
-  // Use aluno.status directly — more reliable than pagamentos (avoids pagination gaps)
   const inadimplentesCount = useMemo(() =>
-    alunos.filter(a => a.status === 'inadimplente').length,
-  [alunos]);
+    alunos.filter(a => a.status === 'inadimplente' && (!ownerAlunoIds || ownerAlunoIds.has(a.id))).length,
+  [alunos, ownerAlunoIds]);
 
   const valorInadimplente = useMemo(() =>
-    pagamentos.filter(p => p.status === 'atrasado').reduce((s, p) => s + p.valor, 0),
-  [pagamentos]);
+    pagamentos
+      .filter(p => p.status === 'atrasado' && (!ownerAlunoIds || ownerAlunoIds.has(p.aluno_id)))
+      .reduce((s, p) => s + p.valor, 0),
+  [pagamentos, ownerAlunoIds]);
 
   // Receita restante (parcelas futuras ainda a receber)
   const receitaRestante = useMemo(() => {
-    return alunosAtivos.reduce((sum, a) => {
+    return filteredAlunosAtivos.reduce((sum, a) => {
       const turma = turmas.find(t => t.id === a.turma_id);
       const val = a.valor_mensalidade ?? turma?.valor_mensalidade ?? 0;
       const total = a.total_mensalidades ?? 15;
@@ -338,7 +366,7 @@ export function Dashboard() {
       const restantes = Math.max(total - pagas, 0);
       return sum + val * restantes;
     }, 0);
-  }, [alunosAtivos, turmas]);
+  }, [filteredAlunosAtivos, turmas]);
 
   // ── Funil Lancamento ──────────────────────────────────────────────────────
 
@@ -463,35 +491,53 @@ export function Dashboard() {
       </div>
 
       {/* ── KPIs financeiros reais ─────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard
-          label="MRR Projetado"
-          value={fmtK(mrrEfetivo)}
-          sub={`${alunosAtivos.length} alunos ativos`}
-          icon={DollarSign}
-          accent="green"
-        />
-        <KpiCard
-          label={`Recebido ${new Date().toLocaleDateString('pt-BR', { month: 'short' })}`}
-          value={fmtK(recebidoMes)}
-          sub={`Taxa de coleta: ${taxaColeta}%`}
-          icon={TrendingUp}
-          accent={taxaColeta >= 80 ? 'green' : taxaColeta >= 50 ? 'amber' : 'red'}
-        />
-        <KpiCard
-          label="Inadimplência"
-          value={inadimplentesCount > 0 ? fmt(valorInadimplente) : 'Zerada'}
-          sub={inadimplentesCount > 0 ? `${inadimplentesCount} alunos em atraso` : 'Sem atrasos'}
-          icon={inadimplentesCount > 0 ? AlertTriangle : CheckCircle2}
-          accent={inadimplentesCount === 0 ? 'green' : inadimplentesCount <= 5 ? 'amber' : 'red'}
-        />
-        <KpiCard
-          label="Receita Restante"
-          value={fmtK(receitaRestante)}
-          sub="Parcelas futuras a receber"
-          icon={BarChart3}
-          accent="purple"
-        />
+      <div className="space-y-3">
+        {/* Owner filter chips */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {['Onze Digital', 'Rodrygo', 'Keila', ''].map(owner => (
+            <button
+              key={owner || '__todos__'}
+              onClick={() => setOwnerFilter(owner)}
+              className={`px-3 py-1 rounded-lg text-xs font-medium transition-all border ${
+                ownerFilter === owner
+                  ? 'bg-primary text-white border-primary shadow-sm'
+                  : 'bg-white text-muted-foreground border-border/60 hover:border-primary/40'
+              }`}
+            >
+              {owner || 'Todos'}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <KpiCard
+            label="MRR Projetado"
+            value={fmtK(mrrEfetivo)}
+            sub={`${filteredAlunosAtivos.length} alunos ativos${ownerFilter ? ` · ${ownerFilter}` : ''}`}
+            icon={DollarSign}
+            accent="green"
+          />
+          <KpiCard
+            label={`Recebido ${new Date().toLocaleDateString('pt-BR', { month: 'short' })}`}
+            value={fmtK(recebidoMes)}
+            sub={`Taxa de coleta: ${taxaColeta}%`}
+            icon={TrendingUp}
+            accent={taxaColeta >= 80 ? 'green' : taxaColeta >= 50 ? 'amber' : 'red'}
+          />
+          <KpiCard
+            label="Inadimplência"
+            value={inadimplentesCount > 0 ? fmt(valorInadimplente) : 'Zerada'}
+            sub={inadimplentesCount > 0 ? `${inadimplentesCount} alunos em atraso` : 'Sem atrasos'}
+            icon={inadimplentesCount > 0 ? AlertTriangle : CheckCircle2}
+            accent={inadimplentesCount === 0 ? 'green' : inadimplentesCount <= 5 ? 'amber' : 'red'}
+          />
+          <KpiCard
+            label="Receita Restante"
+            value={fmtK(receitaRestante)}
+            sub="Parcelas futuras a receber"
+            icon={BarChart3}
+            accent="purple"
+          />
+        </div>
       </div>
 
       {/* ── Próximas datas importantes ────────────────────────────────────── */}
