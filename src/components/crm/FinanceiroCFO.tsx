@@ -7,10 +7,12 @@ import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DollarSign, TrendingUp, AlertTriangle, Target, Info, Calendar,
-  Users, BarChart3, CheckCircle2, TrendingDown, Pencil, Save, X,
+  Users, BarChart3, CheckCircle2, TrendingDown, Pencil, Save, X, Settings2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { format, differenceInDays, parseISO, subDays, subMonths, startOfWeek, endOfWeek } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -57,6 +59,9 @@ function mesStr(offset = 0) {
   d.setMonth(d.getMonth() - offset);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
+
+const OWNERS = ['Onze Digital', 'Rodrygo', 'Keila'] as const;
+type Owner = typeof OWNERS[number] | '';
 
 const METAS_KEY = 'cfo_metas_v1';
 const METAS_DEFAULT: Metas = { mrr: 50000, coleta_mes: 40000, inadimplencia_max: 5, receita_hoje: 2000 };
@@ -188,6 +193,11 @@ export function FinanceiroCFO() {
   const [editingMeta, setEditingMeta] = useState(false);
   const [metasDraft, setMetasDraft]   = useState<Metas>(loadMetas);
 
+  // Configuração de responsáveis por turma
+  type RespEntry = { owner1: Owner; pct1: number; owner2: Owner; pct2: number };
+  const [cfgResp, setCfgResp]       = useState<Record<string, RespEntry>>({});
+  const [savingResp, setSavingResp] = useState(false);
+
   const mesAtual   = useMemo(() => mesStr(0), []);
   const mesAnterior = useMemo(() => mesStr(1), []);
   const hoje       = useMemo(() => todayStr(), []);
@@ -212,12 +222,22 @@ export function FinanceiroCFO() {
     load();
   }, []);
 
-  // ── Owners ───────────────────────────────────────────────────────────────
-
-  const owners = useMemo(() => {
-    const names = [...new Set(responsaveis.map(r => r.nome_ref).filter(Boolean))];
-    return names.sort();
-  }, [responsaveis]);
+  // ── Build cfgResp from loaded responsaveis ───────────────────────────────
+  useEffect(() => {
+    const cfg: Record<string, RespEntry> = {};
+    for (const turma of turmas) {
+      const entries = responsaveis.filter(r => r.turma_id === turma.id && r.nome_ref);
+      const [e1, e2] = entries;
+      cfg[turma.id] = {
+        owner1: (e1?.nome_ref as Owner) || '',
+        pct1:   e1?.percentual ?? 100,
+        owner2: (e2?.nome_ref as Owner) || '',
+        pct2:   e2?.percentual ?? 0,
+      };
+    }
+    setCfgResp(cfg);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turmas, responsaveis]);
 
   // ── Base sets ────────────────────────────────────────────────────────────
 
@@ -445,6 +465,26 @@ export function FinanceiroCFO() {
     ? ((receitaMesAtual - receitaMesAnterior) / receitaMesAnterior) * 100
     : 0;
 
+  // ── Resp config save ─────────────────────────────────────────────────────
+
+  async function handleSaveResp() {
+    setSavingResp(true);
+    const turmaIds = Object.keys(cfgResp);
+    if (turmaIds.length) {
+      await supabase.from('turma_responsaveis').delete().in('turma_id', turmaIds);
+    }
+    const rows: { turma_id: string; nome_ref: string; percentual: number; user_id: string }[] = [];
+    for (const [turmaId, entry] of Object.entries(cfgResp)) {
+      if (entry.owner1) rows.push({ turma_id: turmaId, nome_ref: entry.owner1, percentual: entry.pct1, user_id: crypto.randomUUID() });
+      if (entry.owner2) rows.push({ turma_id: turmaId, nome_ref: entry.owner2, percentual: entry.pct2, user_id: crypto.randomUUID() });
+    }
+    if (rows.length) await supabase.from('turma_responsaveis').insert(rows);
+    const { data: r } = await supabase.from('turma_responsaveis').select('id, turma_id, user_id, nome_ref, percentual');
+    setResponsaveis(r || []);
+    setSavingResp(false);
+    toast.success('Distribuição salva!');
+  }
+
   // ── Metas handlers ────────────────────────────────────────────────────────
 
   function handleSaveMetas() {
@@ -476,22 +516,20 @@ export function FinanceiroCFO() {
             {format(new Date(), "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR })} · Visão financeira executiva
           </p>
         </div>
-        {/* Owner filter */}
+        {/* Owner filter — sempre visível com os 3 donos */}
         <div className="flex items-center gap-2 flex-wrap">
           <Users className="h-4 w-4 text-muted-foreground shrink-0" />
-          <button
-            onClick={() => setOwnerFilter('')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${!ownerFilter ? 'bg-primary text-white shadow-sm' : 'bg-muted/50 text-muted-foreground hover:bg-muted'}`}
-          >
-            Todos
-          </button>
-          {owners.map(owner => (
+          {(['', ...OWNERS] as const).map(owner => (
             <button
-              key={owner}
+              key={owner || '__todos__'}
               onClick={() => setOwnerFilter(owner === ownerFilter ? '' : owner)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${ownerFilter === owner ? 'bg-primary text-white shadow-sm' : 'bg-muted/50 text-muted-foreground hover:bg-muted'}`}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                ownerFilter === owner
+                  ? 'bg-primary text-white shadow-sm'
+                  : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+              }`}
             >
-              {owner}
+              {owner || 'Todos'}
             </button>
           ))}
         </div>
@@ -709,67 +747,153 @@ export function FinanceiroCFO() {
 
         {/* ── Responsáveis ──────────────────────────────────────────────────── */}
         <TabsContent value="responsavel" className="mt-4 space-y-4">
-          <Card className="border border-border/60 bg-white">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                Receita por Responsável — {format(new Date(), 'MMMM yyyy', { locale: ptBR })}
-                <InfoTip text="Receita proporcional à % cadastrada em turma_responsaveis. Ex: se Onze Digital tem 50% de uma turma com R$10.000 MRR, aparecem R$5.000 aqui. Isso permite ver exatamente quanto cada sócio/investidor controla." />
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {receitaPorOwner.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-6">
-                  Nenhum responsável cadastrado. Configure em Financeiro → Responsáveis por turma.
-                </p>
-              )}
+
+          {/* Métricas por responsável */}
+          {receitaPorOwner.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {receitaPorOwner.map(({ nome, mrr, recebido, txColeta }) => {
                 const totalMrr = receitaPorOwner.reduce((s, r) => s + r.mrr, 0);
                 const participacao = pct(mrr, totalMrr);
+                const colors: Record<string, string> = {
+                  'Onze Digital': 'from-blue-500 to-blue-600',
+                  'Rodrygo':      'from-violet-500 to-violet-600',
+                  'Keila':        'from-pink-500 to-pink-600',
+                };
+                const grad = colors[nome] || 'from-gray-500 to-gray-600';
                 return (
-                  <div key={nome} className="p-4 rounded-xl border border-border/60 bg-muted/10 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary">
-                          {nome.slice(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="text-sm font-semibold">{nome}</p>
-                          <p className="text-xs text-muted-foreground">{participacao}% do MRR total</p>
-                        </div>
+                  <div key={nome} className="rounded-xl border border-border/60 bg-white overflow-hidden shadow-sm">
+                    <div className={`bg-gradient-to-r ${grad} p-4 text-white`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="font-semibold text-sm">{nome}</p>
+                        <Badge className="bg-white/20 text-white border-0 text-xs">{participacao}% do MRR</Badge>
                       </div>
-                      <div className="text-right">
-                        <p className="text-lg font-bold tabular-nums">{fmtK(mrr)}</p>
-                        <p className="text-xs text-muted-foreground">MRR</p>
-                      </div>
+                      <p className="text-2xl font-bold tabular-nums">{fmtK(mrr)}</p>
+                      <p className="text-xs text-white/70">MRR mensal</p>
                     </div>
-                    <div className="grid grid-cols-3 gap-3 pt-1 border-t border-border/40">
-                      <div className="text-center">
-                        <p className="text-sm font-semibold tabular-nums text-emerald-700">{fmtK(recebido)}</p>
-                        <p className="text-xs text-muted-foreground">Recebido mês</p>
+                    <div className="p-3 grid grid-cols-3 gap-2 text-center">
+                      <div>
+                        <p className="text-sm font-bold text-emerald-700 tabular-nums">{fmtK(recebido)}</p>
+                        <p className="text-xs text-muted-foreground">Recebido</p>
                       </div>
-                      <div className="text-center">
-                        <p className="text-sm font-semibold tabular-nums text-amber-700">{fmtK(mrr - recebido)}</p>
+                      <div>
+                        <p className="text-sm font-bold text-amber-700 tabular-nums">{fmtK(Math.max(0, mrr - recebido))}</p>
                         <p className="text-xs text-muted-foreground">Pendente</p>
                       </div>
-                      <div className="text-center">
-                        <Badge className={`text-xs ${txColeta >= 80 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
-                          {txColeta}% coleta
-                        </Badge>
+                      <div>
+                        <p className={`text-sm font-bold tabular-nums ${txColeta >= 80 ? 'text-emerald-700' : 'text-amber-700'}`}>{txColeta}%</p>
+                        <p className="text-xs text-muted-foreground">Coleta</p>
                       </div>
                     </div>
-                    <Progress value={participacao} className="h-1.5" />
                   </div>
                 );
               })}
-              <Card className="border border-blue-100 bg-blue-50/30 mt-2">
-                <CardContent className="p-4">
-                  <p className="text-xs text-blue-700 font-medium mb-1">💡 Como funciona a divisão</p>
-                  <p className="text-xs text-blue-600">
-                    Cada turma pode ter múltiplos responsáveis com % de propriedade distintos. A receita gerada por cada turma é
-                    dividida proporcionalmente. Configure as % em <strong>Financeiro → editar turma → Responsáveis</strong>.
-                  </p>
-                </CardContent>
-              </Card>
+            </div>
+          )}
+
+          {receitaPorOwner.length === 0 && (
+            <div className="text-center py-6 text-sm text-muted-foreground">
+              Configure a distribuição abaixo para ver as métricas por responsável.
+            </div>
+          )}
+
+          {/* Configurar distribuição por turma */}
+          <Card className="border border-border/60 bg-white">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Settings2 size={14} className="text-muted-foreground" />
+                  Configurar distribuição por turma
+                  <InfoTip text="Defina qual % de cada turma pertence a cada responsável. Onze Digital, Rodrygo e Keila podem dividir a mesma turma proporcionalmente. Total deve somar 100%." />
+                </CardTitle>
+                <Button size="sm" className="gap-1.5 text-xs" onClick={handleSaveResp} disabled={savingResp}>
+                  {savingResp ? <><span className="animate-spin">⏳</span> Salvando...</> : <><Save className="h-3 w-3" /> Salvar</>}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {turmas.filter(t => {
+                  const ativos = alunos.filter(a => a.turma_id === t.id && a.status === 'ativo');
+                  return ativos.length > 0;
+                }).map(turma => {
+                  const entry = cfgResp[turma.id] ?? { owner1: '', pct1: 100, owner2: '', pct2: 0 };
+                  const pct1 = entry.pct1;
+                  const pct2 = entry.pct2;
+                  const total = (entry.owner1 ? pct1 : 0) + (entry.owner2 ? pct2 : 0);
+                  const ok = !entry.owner1 || total === 100;
+                  return (
+                    <div key={turma.id} className={`rounded-lg border px-4 py-3 ${ok ? 'border-border/60' : 'border-amber-300 bg-amber-50/30'}`}>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <span className="text-sm font-medium w-32 shrink-0">{turma.nome}</span>
+                        {/* Owner 1 */}
+                        <Select
+                          value={entry.owner1}
+                          onValueChange={v => setCfgResp(prev => ({
+                            ...prev,
+                            [turma.id]: { ...entry, owner1: v as Owner, pct1: v ? (entry.owner2 ? entry.pct1 : 100) : 100 },
+                          }))}
+                        >
+                          <SelectTrigger className="h-8 text-xs w-36">
+                            <SelectValue placeholder="Responsável 1..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">— Nenhum —</SelectItem>
+                            {OWNERS.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        {entry.owner1 && (
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number" min={0} max={100} className="h-8 w-16 text-xs"
+                              value={pct1}
+                              onChange={e => setCfgResp(prev => ({ ...prev, [turma.id]: { ...entry, pct1: Number(e.target.value) } }))}
+                            />
+                            <span className="text-xs text-muted-foreground">%</span>
+                          </div>
+                        )}
+                        {/* Owner 2 (opcional) */}
+                        {entry.owner1 && (
+                          <>
+                            <span className="text-xs text-muted-foreground">+</span>
+                            <Select
+                              value={entry.owner2}
+                              onValueChange={v => setCfgResp(prev => ({
+                                ...prev,
+                                [turma.id]: { ...entry, owner2: v as Owner, pct2: v ? 100 - entry.pct1 : 0 },
+                              }))}
+                            >
+                              <SelectTrigger className="h-8 text-xs w-36">
+                                <SelectValue placeholder="Responsável 2..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="">— Nenhum —</SelectItem>
+                                {OWNERS.filter(o => o !== entry.owner1).map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            {entry.owner2 && (
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  type="number" min={0} max={100} className="h-8 w-16 text-xs"
+                                  value={pct2}
+                                  onChange={e => setCfgResp(prev => ({ ...prev, [turma.id]: { ...entry, pct2: Number(e.target.value) } }))}
+                                />
+                                <span className="text-xs text-muted-foreground">%</span>
+                              </div>
+                            )}
+                          </>
+                        )}
+                        {/* Validação total */}
+                        {entry.owner1 && !ok && (
+                          <span className="text-xs text-amber-700 font-medium">total {total}% (precisa ser 100%)</span>
+                        )}
+                        {entry.owner1 && ok && (
+                          <span className="text-xs text-emerald-600">✓</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
