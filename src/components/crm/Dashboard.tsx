@@ -193,8 +193,8 @@ export function Dashboard() {
         supabase.from('pagamentos').select('id, aluno_id, valor, mes_referencia, status, data_pagamento, data_vencimento, created_at').order('created_at', { ascending: false }).limit(2000),
         supabase.from('tarefas').select('id, titulo, status, prioridade, responsavel_id, responsaveis, prazo, categoria, pagina, created_at').order('prazo').limit(50),
         supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades, data_inicio, data_fim, status'),
-        supabase.from('lancamentos').select('id, nome, ativo, created_at, data_inicio').order('created_at', { ascending: false }).limit(20),
-        supabase.from('npa_eventos').select('id, nome, ativo, data_inicio').order('created_at', { ascending: false }).limit(20),
+        supabase.from('lancamentos').select('id, nome, ativo, created_at, data_live').order('created_at', { ascending: false }).limit(20),
+        supabase.from('npa_eventos').select('id, nome, ativo, data_evento').order('created_at', { ascending: false }).limit(20),
         supabase.from('eventos_calendario').select('id, titulo, data_inicio, cor').gte('data_inicio', hoje.toISOString()).order('data_inicio').limit(20),
       ]);
 
@@ -405,11 +405,11 @@ export function Dashboard() {
     eventosCalendario.forEach(e => {
       items.push({ id: `evt-${e.id}`, titulo: e.titulo, data: new Date(e.data_inicio), tipo: 'evento', cor: e.cor });
     });
-    lancamentos.filter(l => (l as any).data_inicio && new Date((l as any).data_inicio) >= hoje).forEach(l => {
-      items.push({ id: `lanc-${l.id}`, titulo: l.nome, data: new Date((l as any).data_inicio), tipo: 'lancamento', cor: '#EA580C' });
+    lancamentos.filter(l => (l as any).data_live && new Date((l as any).data_live) >= hoje).forEach(l => {
+      items.push({ id: `lanc-${l.id}`, titulo: l.nome, data: new Date((l as any).data_live), tipo: 'lancamento', cor: '#EA580C' });
     });
-    (npaEventos as any[]).filter(n => n.data_inicio && new Date(n.data_inicio) >= hoje).forEach(n => {
-      items.push({ id: `npa-${n.id}`, titulo: n.nome, data: new Date(n.data_inicio), tipo: 'npa', cor: '#7C3AED' });
+    (npaEventos as any[]).filter(n => n.data_evento && new Date(n.data_evento) >= hoje).forEach(n => {
+      items.push({ id: `npa-${n.id}`, titulo: n.nome, data: new Date(n.data_evento), tipo: 'npa', cor: '#7C3AED' });
     });
     tasks.filter(t => t.status !== 'concluido' && t.prazo && new Date(t.prazo) >= hoje).forEach(t => {
       items.push({ id: `tar-${t.id}`, titulo: t.titulo, data: new Date(t.prazo!), tipo: 'tarefa', cor: '#ef4444' });

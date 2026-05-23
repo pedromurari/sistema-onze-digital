@@ -64,7 +64,8 @@ serve(async (req) => {
       });
     }
 
-    const base     = evoCfg.api_url.replace(/\/$/, '');
+    const rawBase  = evoCfg.api_url.replace(/\/$/, '');
+    const base     = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
     const apikey   = evoCfg.api_key;
     const instance = evoCfg.instance_name;
 

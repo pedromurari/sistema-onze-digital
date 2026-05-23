@@ -24,7 +24,7 @@ import {
   AtSign, Upload, Download, X, Settings2,
   Variable, Link2, ChevronDown, ChevronRight, MoreVertical,
 } from 'lucide-react';
-import { format, parseISO, isBefore } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -188,7 +188,7 @@ const EMPTY_FORM: MsgForm = {
   recipient_type: 'group', recipient_id: '',
   message_type: 'text', message_text: '', media_url: '',
   poll_name: '', poll_options: ['', ''], poll_selectable_count: 1,
-  link_preview: false, mention_everyone: false, send_header_image: true,
+  link_preview: false, mention_everyone: false, send_header_image: false,
   update_group_picture: false,
   subtipo: '',
 };
@@ -302,7 +302,7 @@ export function FunilLancamento() {
       poll_selectable_count: msg.poll_selectable_count ?? 1,
       link_preview:          msg.link_preview     ?? false,
       mention_everyone:      msg.mention_everyone ?? false,
-      send_header_image:     msg.send_header_image ?? true,
+      send_header_image:     msg.send_header_image ?? false,
       update_group_picture:  msg.update_group_picture ?? false,
       subtipo:               msg.subtipo ?? '',
     });
@@ -348,10 +348,6 @@ export function FunilLancamento() {
   async function handleSave(action: 'draft' | 'scheduled') {
     const err = validate(form);
     if (err) { toast.error(err); return; }
-    const scheduledAt = new Date(`${form.scheduled_date}T${form.scheduled_time}:00`);
-    if (action === 'scheduled' && isBefore(scheduledAt, new Date())) {
-      toast.error('Não é possível agendar no passado'); return;
-    }
     setSaving(true);
     const payload = buildPayload(form, action);
     const { error } = editingId
@@ -1296,9 +1292,9 @@ function MsgModal({
               <BigToggle
                 icon={<Image className="h-4 w-4" />}
                 label="Imagem de cabeçalho"
-                desc={hasHeaderImages ? 'Envia imagem antes desta mensagem' : 'Configure as imagens em "Configurar funil"'}
-                value={form.send_header_image}
-                onChange={v => set('send_header_image', v)}
+                desc={hasHeaderImages ? 'Envia imagem antes desta mensagem' : 'Configure imagens em "Configurar funil"'}
+                value={form.send_header_image && hasHeaderImages}
+                onChange={v => set('send_header_image', hasHeaderImages ? v : false)}
                 disabled={!hasHeaderImages}
                 color="blue"
               />
