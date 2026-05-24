@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -478,14 +478,12 @@ function EvolutionSelector({ instances, value, onChange, onManage }: {
 interface CardProps {
   campanha: Campanha;
   isRunning: boolean;
-  logs: LogEntry[];
   activeTab: CardTab;
   leads: LeadRow[];
   leadsTotal: number;
   leadsPage: number;
   loadingLeads: boolean;
   showExpanded: boolean;
-  speed: number;
   evolutionInstanceName?: string;
   onToggleExpand: () => void;
   onTabChange: (tab: CardTab) => void;
@@ -499,8 +497,8 @@ interface CardProps {
 }
 
 function CampanhaCard({
-  campanha: c, isRunning, logs, activeTab, leads, leadsTotal, leadsPage, loadingLeads,
-  showExpanded, speed, evolutionInstanceName,
+  campanha: c, isRunning, activeTab, leads, leadsTotal, leadsPage, loadingLeads,
+  showExpanded, evolutionInstanceName,
   onToggleExpand, onTabChange, onLoadLeads, onStart, onPause, onStop, onDelete, onReset, onEdit,
 }: CardProps) {
   const { border, bg } = STATUS_STYLES[c.status];
@@ -582,11 +580,8 @@ function CampanhaCard({
         <Stat icon={<XCircle      className="w-3.5 h-3.5" />} label="Erros"     value={c.leads_error}   color="text-red-500" />
         <Stat icon={<SkipForward  className="w-3.5 h-3.5" />} label="Pulados"   value={c.leads_skipped} color="text-muted-foreground" />
         <Stat icon={<Clock        className="w-3.5 h-3.5" />} label="Pendentes" value={pending}          color="text-blue-600" />
-        {isRunning && speed > 0 && (
-          <>
-            <Stat icon={<Zap      className="w-3.5 h-3.5" />} label="msgs/min" value={speed}                  color="text-amber-500" />
-            <Stat icon={<Activity className="w-3.5 h-3.5" />} label="ETA"      value={etaStr(pending, speed)} color="text-muted-foreground" />
-          </>
+        {isRunning && (
+          <Stat icon={<Zap className="w-3.5 h-3.5" />} label="Servidor" value="ativo" color="text-amber-500" />
         )}
         <div className="ml-auto text-xs text-muted-foreground">
           delay {Math.round(c.delay_min_s/60)}–{Math.round(c.delay_max_s/60)}min · {c.daily_limit}/dia · {c.safe_hour_start}h–{c.safe_hour_end}h
@@ -606,9 +601,9 @@ function CampanhaCard({
         <div className="border-t border-border/50">
           {/* Tab bar */}
           <div className="flex border-b border-border/50 bg-muted/20">
-            <button onClick={() => onTabChange('log')}
+            <button onClick={() => { onTabChange('log'); if (leads.length === 0) onLoadLeads(0); }}
               className={`flex-1 py-1.5 text-xs font-medium transition-colors ${activeTab === 'log' ? 'bg-background text-foreground border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}>
-              📋 Log ao vivo {logs.length > 0 && <span className="ml-1 opacity-60">({logs.length})</span>}
+              📋 Processados
             </button>
             <button onClick={() => { onTabChange('leads'); if (leads.length === 0) onLoadLeads(0); }}
               className={`flex-1 py-1.5 text-xs font-medium transition-colors ${activeTab === 'leads' ? 'bg-background text-foreground border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}>
@@ -616,26 +611,44 @@ function CampanhaCard({
             </button>
           </div>
 
-          {/* Log tab */}
-          {activeTab === 'log' && (
-            <div className="bg-zinc-950/[0.03] px-5 py-3 space-y-1.5 max-h-64 overflow-y-auto">
-              {logs.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">Aguardando envios…</p>}
-              {logs.map(entry => (
-                <div key={entry.id} className="flex items-start gap-2 text-xs font-mono">
-                  <span className="text-muted-foreground/60 flex-shrink-0">{formatTime(entry.ts)}</span>
-                  {entry.status === 'enviado' && <CheckCircle2 className="w-3 h-3 text-green-500 flex-shrink-0 mt-0.5" />}
-                  {entry.status === 'erro'    && <XCircle      className="w-3 h-3 text-red-500 flex-shrink-0 mt-0.5" />}
-                  {entry.status === 'pulado'  && <SkipForward  className="w-3 h-3 text-zinc-400 flex-shrink-0 mt-0.5" />}
-                  <div className="min-w-0">
-                    <span className="text-foreground">{entry.phone}</span>
-                    {entry.nome && <span className="text-muted-foreground"> ({entry.nome})</span>}
-                    {entry.status === 'erro'    && <span className="text-red-500 ml-1">— {entry.msg}</span>}
-                    {entry.status === 'enviado' && <span className="text-muted-foreground/70 ml-1">{entry.msg.slice(0, 60)}{entry.msg.length > 60 ? '…' : ''}</span>}
+          {/* Log tab — leads processados (não-pendentes) ordenados pelo mais recente */}
+          {activeTab === 'log' && (() => {
+            const processed = [...leads]
+              .filter(l => l.status !== 'pendente')
+              .sort((a, b) => new Date(b.sent_at ?? 0).getTime() - new Date(a.sent_at ?? 0).getTime());
+            return (
+              <div className="bg-zinc-950/[0.03] px-5 py-3 space-y-1.5 max-h-64 overflow-y-auto">
+                {isRunning && (
+                  <div className="flex items-center gap-1.5 text-xs text-amber-600 font-medium mb-2">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Processando automaticamente no servidor…
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
+                )}
+                {processed.length === 0 && (
+                  <p className="text-xs text-muted-foreground text-center py-4">
+                    Nenhum lead processado ainda.{' '}
+                    <button className="underline" onClick={() => onLoadLeads(0)}>Carregar</button>
+                  </p>
+                )}
+                {processed.map(entry => (
+                  <div key={entry.id} className="flex items-start gap-2 text-xs font-mono">
+                    <span className="text-muted-foreground/60 flex-shrink-0">
+                      {entry.sent_at
+                        ? new Date(entry.sent_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                        : '—'}
+                    </span>
+                    {entry.status === 'enviado' && <CheckCircle2 className="w-3 h-3 text-green-500 flex-shrink-0 mt-0.5" />}
+                    {entry.status === 'erro'    && <XCircle      className="w-3 h-3 text-red-500 flex-shrink-0 mt-0.5" />}
+                    {entry.status === 'pulado'  && <SkipForward  className="w-3 h-3 text-zinc-400 flex-shrink-0 mt-0.5" />}
+                    <div className="min-w-0">
+                      <span className="text-foreground">{entry.phone}</span>
+                      {entry.nome && <span className="text-muted-foreground"> ({entry.nome})</span>}
+                      {entry.status === 'erro' && <span className="text-red-500 ml-1">— {entry.error_msg}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
 
           {/* Leads tab */}
           {activeTab === 'leads' && (
@@ -1158,7 +1171,6 @@ function NovaCampanhaModal({ evolutionInstances, onClose, onCreate, onManageEvo 
 export default function DisparoPlanilha() {
   const [campanhas,          setCampanhas]          = useState<Campanha[]>([]);
   const [evolutionInstances, setEvolutionInstances] = useState<EvolutionInstance[]>([]);
-  const [logs,               setLogs]               = useState<Record<string, LogEntry[]>>({});
   const [showModal,          setShowModal]          = useState(false);
   const [editingCampanha,    setEditingCampanha]    = useState<Campanha | null>(null);
   const [expandedCards,      setExpandedCards]      = useState<Set<string>>(new Set());
@@ -1167,19 +1179,7 @@ export default function DisparoPlanilha() {
   const [leadsTotalMap,      setLeadsTotalMap]      = useState<Record<string, number>>({});
   const [leadsPageMap,       setLeadsPageMap]       = useState<Record<string, number>>({});
   const [loadingLeadsSet,    setLoadingLeadsSet]    = useState<Set<string>>(new Set());
-  const [activeCampaignIds,  setActiveCampaignIds]  = useState<Set<string>>(new Set());
   const [showEvoManager,     setShowEvoManager]     = useState(false);
-
-  const runningRef    = useRef<Map<string, boolean>>(new Map());
-  const speedRef      = useRef<Map<string, number[]>>(new Map());
-  const autoResumedRef = useRef(false);
-  const [tick, setTick] = useState(0);
-
-  useEffect(() => {
-    if (!activeCampaignIds.size) return;
-    const id = setInterval(() => setTick(t => t + 1), 5000);
-    return () => clearInterval(id);
-  }, [activeCampaignIds.size]);
 
   const fetchCampanhas = useCallback(async () => {
     const { data } = await supabase.from('disparo_campanhas').select('*').order('created_at', { ascending: false });
@@ -1194,24 +1194,13 @@ export default function DisparoPlanilha() {
     if (data) setEvolutionInstances(data as EvolutionInstance[]);
   }, []);
 
+  // Polling a cada 5s para refletir progresso do servidor
   useEffect(() => {
     fetchCampanhas();
     fetchEvolutionInstances();
-    return () => { runningRef.current.forEach((_, id) => runningRef.current.set(id, false)); };
+    const id = setInterval(fetchCampanhas, 5000);
+    return () => clearInterval(id);
   }, [fetchCampanhas, fetchEvolutionInstances]);
-
-  const addLog = useCallback((campanhaId: string, entry: LogEntry) => {
-    setLogs(prev => ({
-      ...prev,
-      [campanhaId]: [entry, ...(prev[campanhaId] ?? [])].slice(0, 100),
-    }));
-  }, []);
-
-  function getSpeed(campanhaId: string): number {
-    void tick;
-    const ts = speedRef.current.get(campanhaId) ?? [];
-    return ts.filter(t => Date.now() - t < 60_000).length;
-  }
 
   // ── Leads lazy loading ───────────────────────────────────────────────────
 
@@ -1232,147 +1221,37 @@ export default function DisparoPlanilha() {
     setLoadingLeadsSet(prev => { const s = new Set(prev); s.delete(campanhaId); return s; });
   }, []);
 
-  // ── Sending loop — calls Evolution API directly ──────────────────────────
+  // ── activeCampaignIds derivado do DB (campanhas com status='ativo') ────────
+  const activeCampaignIds = useMemo(
+    () => new Set(campanhas.filter(c => c.status === 'ativo').map(c => c.id)),
+    [campanhas],
+  );
+
+  // ── Iniciar campanha: seta status no DB e o servidor assume ─────────────
 
   const runCampanha = useCallback(async (campanhaId: string) => {
-    if (runningRef.current.get(campanhaId)) return;
-    runningRef.current.set(campanhaId, true);
-    setActiveCampaignIds(prev => new Set(prev).add(campanhaId));
-    speedRef.current.set(campanhaId, []);
-
-    await supabase.from('disparo_campanhas').update({ status: 'ativo' }).eq('id', campanhaId);
+    await supabase.from('disparo_campanhas')
+      .update({ status: 'ativo', next_send_at: new Date().toISOString() })
+      .eq('id', campanhaId);
+    toast.success('Campanha iniciada — servidor vai processar automaticamente');
     await fetchCampanhas();
-
-    let consecutiveErrors = 0;
-
-    while (runningRef.current.get(campanhaId)) {
-      const { data: camp } = await supabase.from('disparo_campanhas').select('*').eq('id', campanhaId).maybeSingle();
-      if (!camp) break;
-
-      // Safe hours
-      const hour = new Date().getHours();
-      if (hour < camp.safe_hour_start || hour >= camp.safe_hour_end) {
-        toast.warning(`"${camp.nome}" pausada: fora do horário ${camp.safe_hour_start}h–${camp.safe_hour_end}h`);
-        await supabase.from('disparo_campanhas').update({ status: 'pausado' }).eq('id', campanhaId);
-        break;
-      }
-
-      // Daily limit
-      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-      const { count: sentToday } = await supabase
-        .from('disparo_leads').select('*', { count: 'exact', head: true })
-        .eq('campanha_id', campanhaId).eq('status', 'enviado').gte('sent_at', todayStart.toISOString());
-      if ((sentToday ?? 0) >= camp.daily_limit) {
-        toast.warning(`"${camp.nome}" pausada: limite diário de ${camp.daily_limit} atingido`);
-        await supabase.from('disparo_campanhas').update({ status: 'pausado' }).eq('id', campanhaId);
-        break;
-      }
-
-      // Next lead
-      const { data: lead } = await supabase
-        .from('disparo_leads').select('*')
-        .eq('campanha_id', campanhaId).eq('status', 'pendente')
-        .order('ordem', { ascending: true }).limit(1).maybeSingle();
-
-      if (!lead) {
-        toast.success(`Campanha "${camp.nome}" concluída!`);
-        await supabase.from('disparo_campanhas').update({ status: 'concluido' }).eq('id', campanhaId);
-        break;
-      }
-
-      const phone = formatPhone(lead.phone);
-      if (!phone) {
-        await supabase.from('disparo_leads').update({ status: 'pulado', error_msg: 'Telefone inválido' }).eq('id', lead.id);
-        await supabase.from('disparo_campanhas').update({ leads_skipped: camp.leads_skipped + 1 }).eq('id', campanhaId);
-        addLog(campanhaId, { id: lead.id, phone: lead.phone, nome: lead.nome ?? '', status: 'pulado', msg: 'Telefone inválido', ts: new Date() });
-        continue;
-      }
-
-      const vars: Record<string, string> = { nome: lead.nome ?? '', phone, ...(lead.variaveis as Record<string, string> ?? {}) };
-      const text     = applyVars(camp.template ?? '', vars);
-      const msgType  = (camp.message_type ?? 'text') as MessageType;
-      const mediaUrl = camp.media_url ?? '';
-
-      try {
-        // Fetch the Evolution API config for this campaign
-        const evoConfigId = camp.evolution_config_id ?? 'default';
-        const { data: evo } = await supabase
-          .from('evolution_config')
-          .select('api_url, api_key, instance_name')
-          .eq('id', evoConfigId)
-          .maybeSingle();
-
-        if (!evo?.api_url || !evo?.instance_name) {
-          throw new Error(`Evolution API não configurada (id: ${evoConfigId})`);
-        }
-
-        const base    = evo.api_url.replace(/\/$/, '');
-        const headers = { 'Content-Type': 'application/json', 'apikey': evo.api_key };
-
-        if (msgType === 'text') {
-          const r = await fetch(`${base}/message/sendText/${evo.instance_name}`, {
-            method: 'POST', headers,
-            body: JSON.stringify({ number: phone, text }),
-          });
-          if (!r.ok) throw new Error(await r.text());
-        } else {
-          const mtype = { image: 'image', video: 'video', audio: 'audio' }[msgType] ?? 'image';
-          const r = await fetch(`${base}/message/sendMedia/${evo.instance_name}`, {
-            method: 'POST', headers,
-            body: JSON.stringify({ number: phone, mediatype: mtype, media: mediaUrl, caption: text || undefined }),
-          });
-          if (!r.ok) throw new Error(await r.text());
-        }
-
-        await supabase.from('disparo_leads').update({ status: 'enviado', sent_at: new Date().toISOString(), error_msg: null }).eq('id', lead.id);
-        await supabase.from('disparo_campanhas').update({ leads_sent: camp.leads_sent + 1 }).eq('id', campanhaId);
-        addLog(campanhaId, { id: lead.id, phone, nome: lead.nome ?? '', status: 'enviado', msg: text || mediaUrl, ts: new Date() });
-
-        const ts = speedRef.current.get(campanhaId) ?? [];
-        speedRef.current.set(campanhaId, [...ts, Date.now()].slice(-120));
-        consecutiveErrors = 0;
-
-      } catch (err) {
-        consecutiveErrors++;
-        const errMsg = (err as Error).message;
-        await supabase.from('disparo_leads').update({ status: 'erro', error_msg: errMsg }).eq('id', lead.id);
-        await supabase.from('disparo_campanhas').update({ leads_error: camp.leads_error + 1 }).eq('id', campanhaId);
-        addLog(campanhaId, { id: lead.id, phone, nome: lead.nome ?? '', status: 'erro', msg: errMsg, ts: new Date() });
-
-        if (consecutiveErrors >= camp.max_errors_seq) {
-          toast.error(`"${camp.nome}" parada: ${camp.max_errors_seq} erros consecutivos`);
-          await supabase.from('disparo_campanhas').update({ status: 'erro' }).eq('id', campanhaId);
-          break;
-        }
-      }
-
-      await fetchCampanhas();
-      await new Promise<void>(r => setTimeout(r, randomDelay(camp.delay_min_s, camp.delay_max_s)));
-    }
-
-    runningRef.current.delete(campanhaId);
-    setActiveCampaignIds(prev => { const s = new Set(prev); s.delete(campanhaId); return s; });
-    await fetchCampanhas();
-  }, [addLog, fetchCampanhas]);
+  }, [fetchCampanhas]);
 
   // ── Controls ─────────────────────────────────────────────────────────────
 
   const pauseCampanha = useCallback(async (id: string) => {
-    runningRef.current.set(id, false);
     await supabase.from('disparo_campanhas').update({ status: 'pausado' }).eq('id', id);
     await fetchCampanhas();
   }, [fetchCampanhas]);
 
   const stopCampanha = useCallback(async (id: string, nome: string) => {
     if (!confirm(`Parar "${nome}"? Leads pendentes podem ser retomados depois.`)) return;
-    runningRef.current.set(id, false);
     await supabase.from('disparo_campanhas').update({ status: 'pausado' }).eq('id', id);
     await fetchCampanhas();
   }, [fetchCampanhas]);
 
   const resetCampanha = useCallback(async (id: string) => {
     if (!confirm('Remarcar leads com erro/pulado como pendentes para reenvio?')) return;
-    runningRef.current.set(id, false);
     const { data: errLeads } = await supabase.from('disparo_leads').select('id').eq('campanha_id', id).in('status', ['erro', 'pulado']);
     if (errLeads?.length) {
       await supabase.from('disparo_leads').update({ status: 'pendente', error_msg: null, sent_at: null }).in('id', errLeads.map((l: { id: string }) => l.id));
@@ -1386,7 +1265,6 @@ export default function DisparoPlanilha() {
 
   const deleteCampanha = useCallback(async (id: string, nome: string) => {
     if (!confirm(`Excluir campanha "${nome}" e todos os seus leads? Irreversível.`)) return;
-    runningRef.current.set(id, false);
     await supabase.from('disparo_campanhas').delete().eq('id', id);
     await fetchCampanhas();
   }, [fetchCampanhas]);
@@ -1445,17 +1323,6 @@ export default function DisparoPlanilha() {
     setShowModal(false);
   }, [fetchCampanhas]);
 
-  // ── Auto-resume: restart ativo campaigns on page return ──────────────────
-  useEffect(() => {
-    if (autoResumedRef.current || campanhas.length === 0) return;
-    autoResumedRef.current = true;
-    const ativas = campanhas.filter(c => c.status === 'ativo');
-    if (ativas.length > 0) {
-      ativas.forEach(c => runCampanha(c.id));
-      toast.info(`${ativas.length} campanha(s) retomada(s) automaticamente`);
-    }
-  }, [campanhas, runCampanha]);
-
   // ── UI helpers ────────────────────────────────────────────────────────────
 
   const activeAndPaused = campanhas.filter(c => activeCampaignIds.has(c.id) || c.status === 'ativo' || c.status === 'pausado' || c.status === 'erro');
@@ -1470,14 +1337,12 @@ export default function DisparoPlanilha() {
     const evoInst = evolutionInstances.find(i => i.id === (c.evolution_config_id ?? 'default'));
     return {
       isRunning:            activeCampaignIds.has(c.id),
-      logs:                 logs[c.id] ?? [],
       activeTab:            activeTabMap[c.id] ?? 'log',
       leads:                leadsMap[c.id] ?? [],
       leadsTotal:           leadsTotalMap[c.id] ?? 0,
       leadsPage:            leadsPageMap[c.id] ?? 0,
       loadingLeads:         loadingLeadsSet.has(c.id),
       showExpanded:         expandedCards.has(c.id),
-      speed:                getSpeed(c.id),
       evolutionInstanceName: evoInst?.instance_name,
       onToggleExpand:       () => toggleExpand(c.id),
       onTabChange:          (tab) => setActiveTabMap(prev => ({ ...prev, [c.id]: tab })),
@@ -1501,7 +1366,7 @@ export default function DisparoPlanilha() {
             <Zap className="w-6 h-6 text-green-600" /> Disparo de Planilha
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Disparos WhatsApp sequenciais com proteção anti-ban integrada
+            Disparos automáticos no servidor — funciona mesmo com a aba fechada
           </p>
         </div>
         <Button onClick={() => setShowModal(true)} className="gap-2 bg-green-600 hover:bg-green-500 text-white shrink-0">
