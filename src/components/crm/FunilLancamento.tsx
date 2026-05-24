@@ -241,13 +241,26 @@ export function FunilLancamento() {
   // ── Data ──────────────────────────────────────────────────────────────────
 
   const loadFunnels = useCallback(async () => {
-    const { data } = await supabase
-      .from('funnel_messages').select('funnel_name, status')
-      .order('created_at', { ascending: false });
+    const [{ data, error }, { data: configRows, error: configError }] = await Promise.all([
+      supabase
+        .from('funnel_messages').select('funnel_name, status')
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('funnel_configs').select('*'),
+    ]);
+    if (error) toast.error(`Erro ao carregar mensagens: ${error.message}`);
+    if (configError) toast.error(`Erro ao carregar funis: ${configError.message}`);
     const rows = data || [];
-    const unique = [...new Set(rows.map(r => r.funnel_name as string))];
+    const configNames = ((configRows || []) as Record<string, unknown>[])
+      .map(r => r.funnel_name as string)
+      .filter(Boolean);
+    const messageNames = rows.map(r => r.funnel_name as string).filter(Boolean);
+    const unique = [...new Set([...messageNames, ...configNames])];
     setFunnelNames(unique);
     const statsMap: Record<string, FunnelStats> = {};
+    for (const name of configNames) {
+      statsMap[name] = { total: 0, sent: 0, scheduled: 0, draft: 0, error: 0 };
+    }
     for (const r of rows) {
       const fn = r.funnel_name as string;
       if (!statsMap[fn]) statsMap[fn] = { total: 0, sent: 0, scheduled: 0, draft: 0, error: 0 };
@@ -256,6 +269,19 @@ export function FunilLancamento() {
       if (st in statsMap[fn]) statsMap[fn][st]++;
     }
     setFunnelStats(statsMap);
+    setConfigs(prev => {
+      const next = { ...prev };
+      for (const cfg of (configRows || []) as Record<string, unknown>[]) {
+        const name = cfg.funnel_name as string;
+        if (!name) continue;
+        next[name] = {
+          ...(cfg as unknown as FunnelConfig),
+          variaveis: (cfg.variaveis as Record<string, string>) || {},
+          imagens: (cfg.imagens as Record<string, string>) || {},
+        };
+      }
+      return next;
+    });
     setExpandedFunnels(prev => prev.size === 0 && unique.length > 0 ? new Set([unique[0]]) : prev);
   }, []);
 
@@ -274,6 +300,32 @@ export function FunilLancamento() {
         : EMPTY_CONFIG(name),
     }));
   }, [configs]);
+
+  async function ensureFunnelConfig(name: string): Promise<boolean> {
+    const funnelName = name.trim();
+    if (!funnelName) return false;
+    const { data, error } = await supabase
+      .from('funnel_configs')
+      .select('id')
+      .eq('funnel_name', funnelName)
+      .maybeSingle();
+    if (error) {
+      toast.error(`Erro ao verificar funil: ${error.message}`);
+      return false;
+    }
+    if (data) return true;
+
+    const cfg = EMPTY_CONFIG(funnelName);
+    const { error: insertError } = await supabase
+      .from('funnel_configs')
+      .insert(cfg as any);
+    if (insertError) {
+      toast.error(`Erro ao criar funil: ${insertError.message}`);
+      return false;
+    }
+    setConfigs(prev => ({ ...prev, [funnelName]: cfg }));
+    return true;
+  }
 
   useEffect(() => { loadFunnels(); }, []);
 
@@ -361,6 +413,8 @@ export function FunilLancamento() {
   async function handleSave(action: 'draft' | 'scheduled') {
     const err = validate(form);
     if (err) { toast.error(err); return; }
+    const configOk = await ensureFunnelConfig(form.funnel_name);
+    if (!configOk) return;
     setSaving(true);
     const payload = buildPayload(form, action);
     const { error } = editingId
@@ -376,17 +430,46 @@ export function FunilLancamento() {
   async function handleSendNow() {
     const err = validate(form);
     if (err) { toast.error(err); return; }
+    const configOk = await ensureFunnelConfig(form.funnel_name);
+    if (!configOk) return;
     setSaving(true);
     const p = buildPayload(form, 'scheduled');
     const { data, error } = await supabase.functions.invoke('funil-processar', {
       body: { quick_send: true, ...p },
     });
+    const invokeError = error?.message ?? (data as any)?.error;
+    if (invokeError && editingId) {
+      await supabase.from('funnel_messages').update({
+        ...p,
+        status: 'error',
+        error_message: invokeError,
+      }).eq('id', editingId);
+    }
+    if (invokeError) {
+      setSaving(false);
+      toast.error(`Erro: ${invokeError}`);
+      loadFunnels();
+      return;
+    }
+
+    const sentAt = new Date().toISOString();
+    const sentPayload = {
+      ...p,
+      status: 'sent',
+      sent_at: sentAt,
+      error_message: null,
+    };
+    const { error: persistError } = editingId
+      ? await supabase.from('funnel_messages').update(sentPayload).eq('id', editingId)
+      : await supabase.from('funnel_messages').insert({ ...sentPayload, scheduled_at: sentAt } as any);
     setSaving(false);
-    if (error || (data as any)?.error) {
-      toast.error(`Erro: ${error?.message ?? (data as any)?.error}`); return;
+    if (persistError) {
+      toast.error(`Mensagem enviada, mas falhou ao marcar como enviada: ${persistError.message}`);
+      return;
     }
     toast.success('Mensagem enviada!');
     setModalOpen(false);
+    loadFunnels();
   }
 
   async function handleDelete(id: string) {
@@ -423,12 +506,16 @@ export function FunilLancamento() {
     setQText(''); setQUrl(''); setQCaption(''); setQPollName(''); setQPollOpts(['', '']);
   }
 
-  function createFunnel() {
+  async function createFunnel() {
     const name = newName.trim();
     if (!name) return;
+    const ok = await ensureFunnelConfig(name);
+    if (!ok) return;
     setFunnelNames(prev => [...new Set([...prev, name])]);
     setExpandedFunnels(prev => new Set([...prev, name]));
     setNewName('');
+    toast.success('Funil criado!');
+    loadFunnels();
   }
 
   async function handleRenameFunnel(oldName: string, nextName: string) {
@@ -2144,6 +2231,29 @@ function BulkImportModal({ open, onClose, currentFunnel, onImported }: {
   async function handleImport() {
     if (!preview.length) return;
     setImporting(true);
+    const funnelNamesToCreate = [...new Set(preview.map(m => m.funnel_name as string).filter(Boolean))];
+    for (const funnelName of funnelNamesToCreate) {
+      const { data: existing, error: lookupError } = await supabase
+        .from('funnel_configs')
+        .select('id')
+        .eq('funnel_name', funnelName)
+        .maybeSingle();
+      if (lookupError) {
+        setImporting(false);
+        toast.error(`Erro ao verificar funil "${funnelName}": ${lookupError.message}`);
+        return;
+      }
+      if (!existing) {
+        const { error: configError } = await supabase
+          .from('funnel_configs')
+          .insert(EMPTY_CONFIG(funnelName) as any);
+        if (configError) {
+          setImporting(false);
+          toast.error(`Erro ao criar funil "${funnelName}": ${configError.message}`);
+          return;
+        }
+      }
+    }
     const { error } = await supabase.from('funnel_messages').insert(preview as any);
     setImporting(false);
     if (error) { toast.error(`Erro na importação: ${error.message}`); return; }
