@@ -889,19 +889,44 @@ function NovaCampanhaModal({ evolutionInstances, onClose, onCreate, onManageEvo 
   const [maxErrors,   setMaxErrors]   = useState(3);
   const [evolutionId, setEvolutionId] = useState(defaultEvoId);
   const [saving,        setSaving]      = useState(false);
-  const [sistemaItems,  setSistemaItems]  = useState<SistemaItem[]>([]);
-  const [loadingItems,  setLoadingItems]  = useState(false);
-  const [loadingLeadsX, setLoadingLeadsX] = useState(false);
+  const [sistemaItems,   setSistemaItems]   = useState<SistemaItem[]>([]);
+  const [loadingItems,   setLoadingItems]   = useState(false);
+  const [loadingLeadsX,  setLoadingLeadsX]  = useState(false);
+  const [sistemaFase,    setSistemaFase]    = useState('');
+  const [kanbanColunas,  setKanbanColunas]  = useState<{ id: string; nome: string }[]>([]);
 
   useEffect(() => {
     if (leadsSource !== 'sistema') return;
     setLoadingItems(true); setSistemaItems([]); setSistemaId(''); setLoadedLeads([]);
+    setSistemaFase(''); setKanbanColunas([]);
     const tables: Record<SistemaType, string> = {
       lancamento: 'lancamentos', npa: 'npa_eventos', aula_secreta: 'aula_secreta_eventos',
     };
     supabase.from(tables[sistemaType]).select('id, nome').order('created_at', { ascending: false })
       .then(({ data }) => { setSistemaItems((data ?? []) as SistemaItem[]); setLoadingItems(false); });
   }, [leadsSource, sistemaType]);
+
+  // Carrega colunas do kanban quando um lançamento é selecionado
+  useEffect(() => {
+    if (sistemaType !== 'lancamento' || !sistemaId) {
+      setKanbanColunas([]); setSistemaFase(''); return;
+    }
+    supabase.from('kanban_colunas').select('id, nome').eq('lancamento_id', sistemaId).order('ordem')
+      .then(({ data }) => { setKanbanColunas(data ?? []); setSistemaFase(''); });
+  }, [sistemaType, sistemaId]);
+
+  const NPA_FASES = [
+    { value: 'novo',          label: 'Novo' },
+    { value: 'ingresso_pago', label: 'Ingresso Pago' },
+    { value: 'no_grupo',      label: 'No Grupo' },
+    { value: 'confirmado',    label: 'Confirmado' },
+    { value: 'evento',        label: 'Evento' },
+    { value: 'closer',        label: 'Closer' },
+    { value: 'follow_up_01',  label: 'Follow-up 1' },
+    { value: 'follow_up_02',  label: 'Follow-up 2' },
+    { value: 'follow_up_03',  label: 'Follow-up 3' },
+    { value: 'matricula',     label: 'Matrícula' },
+  ];
 
   const handleLoadLeads = async () => {
     if (!sistemaId) return;
@@ -914,17 +939,25 @@ function NovaCampanhaModal({ evolutionInstances, onClose, onCreate, onManageEvo 
     const { table, fk } = cfg[sistemaType];
     const PAGE = 1000; let all: Array<{ nome: string; whatsapp: string }> = []; let from = 0;
     while (true) {
-      const { data, error } = await supabase.from(table).select('nome, whatsapp').eq(fk, sistemaId).range(from, from + PAGE - 1);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let q: any = supabase.from(table).select('nome, whatsapp').eq(fk, sistemaId);
+      if (sistemaFase) q = q.eq('fase', sistemaFase);
+      const { data, error } = await q.range(from, from + PAGE - 1);
       if (error || !data?.length) break;
       all = all.concat(data as typeof all);
       if (data.length < PAGE) break;
       from += PAGE;
     }
     const leads: LoadedLead[] = all
-      .filter(l => l.whatsapp?.replace(/\D/g, '').length >= 10)
-      .map(l => ({ phone: l.whatsapp, nome: l.nome ?? '', variaveis: {} }));
+      .filter((l: { whatsapp?: string }) => l.whatsapp?.replace(/\D/g, '').length >= 10)
+      .map((l: { whatsapp: string; nome?: string }) => ({ phone: l.whatsapp, nome: l.nome ?? '', variaveis: {} }));
+    const faseLabel = sistemaFase
+      ? (kanbanColunas.find(c => c.id === sistemaFase)?.nome
+         ?? NPA_FASES.find(f => f.value === sistemaFase)?.label
+         ?? sistemaFase)
+      : 'todas as fases';
     setLoadedLeads(leads); setLoadingLeadsX(false);
-    toast.success(`${leads.length} leads carregados`);
+    toast.success(`${leads.length} leads carregados (${faseLabel})`);
   };
 
   const handleConvertDrive = () => {
@@ -1089,12 +1122,42 @@ function NovaCampanhaModal({ evolutionInstances, onClose, onCreate, onManageEvo 
                       </Select>
                     )}
                   </div>
+                </div>
+
+                {/* Filtro por fase/coluna — aparece após selecionar lancamento ou NPA */}
+                {sistemaId && (sistemaType === 'npa' || kanbanColunas.length > 0) && (
+                  <div className="flex gap-2 items-center">
+                    <Select
+                      value={sistemaFase || '__todas__'}
+                      onValueChange={v => { setSistemaFase(v === '__todas__' ? '' : v); setLoadedLeads([]); }}
+                    >
+                      <SelectTrigger className="text-sm flex-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__todas__">Todas as colunas</SelectItem>
+                        {sistemaType === 'lancamento'
+                          ? kanbanColunas.map(c => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)
+                          : NPA_FASES.map(f => <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>)
+                        }
+                      </SelectContent>
+                    </Select>
+                    <Button type="button" variant="outline" onClick={handleLoadLeads}
+                      disabled={!sistemaId || loadingLeadsX} className="gap-1.5 shrink-0">
+                      {loadingLeadsX ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+                      Carregar leads
+                    </Button>
+                  </div>
+                )}
+
+                {/* Botão carregar para aula_secreta (sem filtro de fase) */}
+                {sistemaId && sistemaType === 'aula_secreta' && (
                   <Button type="button" variant="outline" onClick={handleLoadLeads}
-                    disabled={!sistemaId || loadingLeadsX} className="gap-1.5 shrink-0">
+                    disabled={!sistemaId || loadingLeadsX} className="gap-1.5">
                     {loadingLeadsX ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
                     Carregar leads
                   </Button>
-                </div>
+                )}
                 {loadedLeads.length > 0 && (
                   <div className="rounded-lg border border-border overflow-hidden">
                     <div className="grid grid-cols-2 bg-muted px-3 py-1.5 text-xs font-semibold text-muted-foreground">
