@@ -182,6 +182,18 @@ const todayInput = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
+const isCountdownDaySubtipo = (subtipo?: string | null) => /^contagem_dia_\d+$/.test(subtipo || '');
+const shouldSendHeaderImage = (
+  messageType: MessageType,
+  subtipo: string | null | undefined,
+  hour: number,
+  minute: number,
+  requested = true,
+) => {
+  if (!requested || messageType === 'poll' || subtipo === 'enquete') return false;
+  if (isCountdownDaySubtipo(subtipo)) return hour === 20 && minute === 0;
+  return true;
+};
 
 const EMPTY_FORM: MsgForm = {
   funnel_name: '', day_number: 1,
@@ -326,7 +338,7 @@ export function FunilLancamento() {
       link_preview:          f.link_preview,
       mention_everyone:      f.mention_everyone,
       send_header_image:     f.send_header_image,
-      update_group_picture:  f.update_group_picture,
+      update_group_picture:  f.recipient_type === 'group' && !!f.subtipo && f.update_group_picture,
       subtipo:               f.subtipo || null,
       status,
     };
@@ -457,6 +469,9 @@ export function FunilLancamento() {
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
+
+  const expandedFunnelList = Array.from(expandedFunnels);
+  const activeFunnel = expandedFunnelList[expandedFunnelList.length - 1] ?? funnelNames[0] ?? '';
 
   return (
     <div className="p-6 space-y-5 max-w-6xl mx-auto">
@@ -738,7 +753,7 @@ export function FunilLancamento() {
       {/* Bulk import */}
       <BulkImportModal
         open={bulkOpen} onClose={() => setBulkOpen(false)}
-        currentFunnel={funnelNames[0] ?? ''}
+        currentFunnel={activeFunnel}
         onImported={() => loadFunnels()}
       />
 
@@ -1344,9 +1359,9 @@ function MsgModal({
                     icon={<Image className="h-4 w-4" />}
                     label="Trocar foto do grupo"
                     desc="Atualiza a foto do grupo WhatsApp para esta imagem"
-                    value={form.update_group_picture}
+                    value={form.recipient_type === 'group' && form.update_group_picture}
                     onChange={v => set('update_group_picture', v)}
-                    disabled={!form.subtipo}
+                    disabled={form.recipient_type !== 'group' || !form.subtipo}
                     color="blue"
                   />
                 </div>
@@ -1788,6 +1803,7 @@ function parseNativeMessages(items: Record<string, unknown>[], funnelName: strin
     const grupo           = (item.grupo as string) || '{{grupo_1}}';
     const recType         = grupo.includes('@g.us') || grupo.startsWith('{{') ? 'group' : 'number';
     const subtipo         = getNativeSubtipo(tipo, label);
+    const sendHeaderImage = shouldSendHeaderImage('text', subtipo, h, m);
 
     const base = {
       funnel_name: funnelName || 'Funil',
@@ -1796,7 +1812,7 @@ function parseNativeMessages(items: Record<string, unknown>[], funnelName: strin
       recipient_id: grupo,
       link_preview: false,
       mention_everyone: true,
-      send_header_image: true,
+      send_header_image: sendHeaderImage,
       subtipo,
       status: 'draft',
     };
@@ -1805,6 +1821,7 @@ function parseNativeMessages(items: Record<string, unknown>[], funnelName: strin
       const enquete = (item.enquete as { titulo?: string; opcoes?: string[] }) ?? {};
       if (item.textoPrincipal) {
         result.push({ ...base, scheduled_at: msgDate.toISOString(),
+          send_header_image: false,
           message_type: 'text', message_text: item.textoPrincipal,
           media_url: null, poll_name: null, poll_options: null, poll_selectable_count: 1 });
       }
@@ -2084,7 +2101,9 @@ function BulkImportModal({ open, onClose, currentFunnel, onImported }: {
         const date = new Date(startDate);
         date.setDate(date.getDate() + ((m.dia as number || 1) - 1));
         const [h, mi] = ((m.horario as string) || '09:00').split(':');
-        date.setHours(parseInt(h) || 9, parseInt(mi) || 0, 0, 0);
+        const hour = parseInt(h) || 9;
+        const minute = parseInt(mi) || 0;
+        date.setHours(hour, minute, 0, 0);
         const recip = (m.destinatario as string) || defaultRecip;
         const tipo  = (m.tipo as string) || 'texto';
         const message_type: MessageType =
@@ -2093,6 +2112,7 @@ function BulkImportModal({ open, onClose, currentFunnel, onImported }: {
           tipo === 'audio'     ? 'audio'    :
           tipo === 'documento' ? 'document' :
           tipo === 'enquete'   ? 'poll'     : 'text';
+        const subtipo = (m.subtipo as string) || null;
         return {
           funnel_name:           (data.funil as string) || currentFunnel || 'Funil',
           day_number:            (m.dia as number) || 1,
@@ -2107,7 +2127,8 @@ function BulkImportModal({ open, onClose, currentFunnel, onImported }: {
           poll_selectable_count: m.multipla_escolha ? ((m.opcoes as unknown[])?.length || 2) : 1,
           link_preview:          !!(m.preview_link),
           mention_everyone:      !!(m.marcar_todos),
-          send_header_image:     m.imagem_cabecalho !== false,
+          send_header_image:     shouldSendHeaderImage(message_type, subtipo, hour, minute, m.imagem_cabecalho !== false),
+          subtipo,
           status:                'draft',
         };
       });

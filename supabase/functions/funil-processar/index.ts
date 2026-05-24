@@ -17,6 +17,40 @@ function hourOf(iso: string): number {
   try { return new Date(iso).getHours(); } catch { return 12; }
 }
 
+function localHourMinuteOf(iso: string): { hour: number; minute: number } {
+  try {
+    const parts = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date(iso));
+    const hour = Number(parts.find(p => p.type === 'hour')?.value ?? 12);
+    const minute = Number(parts.find(p => p.type === 'minute')?.value ?? 0);
+    return { hour, minute };
+  } catch {
+    return { hour: hourOf(iso), minute: 0 };
+  }
+}
+
+function isCountdownDaySubtipo(subtipo: string): boolean {
+  return /^contagem_dia_\d+$/.test(subtipo);
+}
+
+function canSendHeaderImage(subtipo: string, msgType: string, scheduledAt: string): boolean {
+  if (msgType === 'poll' || subtipo === 'enquete') return false;
+  if (!isCountdownDaySubtipo(subtipo)) return true;
+  const { hour, minute } = localHourMinuteOf(scheduledAt);
+  return hour === 20 && minute === 0;
+}
+
+function toGroupJid(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.endsWith('@g.us')) return trimmed;
+  if (/^\d+$/.test(trimmed)) return `${trimmed}@g.us`;
+  return '';
+}
+
 async function sendEvolution(endpoint: string, body: unknown, apikey: string) {
   const res = await fetch(endpoint, {
     method: 'POST',
@@ -187,28 +221,26 @@ async function updateGroupPicture(
     // Busca a imagem e converte para base64
     const imgRes = await fetch(imageUrl, { redirect: 'follow' });
     if (!imgRes.ok) {
-      console.warn(`updateGroupPicture: falha ao buscar imagem (${imgRes.status})`);
-      return;
+      throw new Error(`falha ao buscar imagem (${imgRes.status})`);
     }
     const buffer = await imgRes.arrayBuffer();
     const bytes  = new Uint8Array(buffer);
     let binary = '';
     for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
     const base64 = btoa(binary);
-    const mime   = (imgRes.headers.get('content-type') ?? 'image/jpeg').split(';')[0];
 
-    const res = await fetch(`${base}/group/updateGroupPicture/${instance}`, {
-      method: 'PUT',
+    const res = await fetch(`${base}/group/updateGroupPicture/${instance}?groupJid=${encodeURIComponent(groupJid)}`, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey },
-      body: JSON.stringify({ groupJid, image: `data:${mime};base64,${base64}` }),
+      body: JSON.stringify({ image: base64 }),
     });
     if (!res.ok) {
       const txt = await res.text().catch(() => '');
-      console.warn(`updateGroupPicture: Evolution ${res.status} — ${txt.slice(0, 200)}`);
+      throw new Error(`Evolution ${res.status} - ${txt.slice(0, 200)}`);
     }
   } catch (e: unknown) {
-    // Não deixa erro de foto do grupo quebrar o envio da mensagem
-    console.warn('updateGroupPicture falhou:', (e as Error).message);
+    // Superficie erro de troca de foto para o funil marcar a mensagem corretamente.
+    throw new Error(`updateGroupPicture falhou: ${(e as Error).message}`);
   }
 }
 
@@ -240,9 +272,13 @@ async function processMessage(
   }
 
   // ── Imagem de cabeçalho ───────────────────────────────────────────────────
-  if (p.send_header_image !== false && funnelCfg) {
+  const msgType = (p.message_type as string) ?? 'text';
+  const headerSubtipo = (p.subtipo as string) ?? '';
+  const scheduledAt = (p.scheduled_at as string) ?? new Date().toISOString();
+
+  if (p.send_header_image !== false && funnelCfg && canSendHeaderImage(headerSubtipo, msgType, scheduledAt)) {
     const imagens = (funnelCfg.imagens as Record<string, string>) ?? {};
-    const subtipo = (p.subtipo as string) ?? '';
+    const subtipo = headerSubtipo;
     let headerUrl = '';
 
     if (subtipo && imagens[subtipo]) {
@@ -251,15 +287,17 @@ async function processMessage(
       headerUrl = imagens[subtipo];
     } else {
       // Fallback: seleção por horário
-      const hour = hourOf((p.scheduled_at as string) ?? new Date().toISOString());
+      const hour = hourOf(scheduledAt);
       if      (hour >= 6  && hour < 12) headerUrl = imagens['manha'] || (funnelCfg.imagem_manha as string) || '';
       else if (hour >= 12 && hour < 18) headerUrl = imagens['tarde'] || (funnelCfg.imagem_tarde as string) || '';
       else                              headerUrl = imagens['noite'] || (funnelCfg.imagem_noite as string) || '';
     }
 
     if (headerUrl) {
-      if (number.endsWith('@g.us') && (p.update_group_picture as boolean) === true) {
-        await updateGroupPicture(base, instance, apikey, number, headerUrl);
+      if ((p.update_group_picture as boolean) === true) {
+        const groupJid = toGroupJid(number);
+        if (!groupJid) throw new Error(`Destinatario do grupo invalido para trocar foto: "${number}"`);
+        await updateGroupPicture(base, instance, apikey, groupJid, headerUrl);
       }
 
       await sendEvolution(`${base}/message/sendMedia/${instance}`, {
@@ -273,8 +311,6 @@ async function processMessage(
   }
 
   // ── Mensagem principal ────────────────────────────────────────────────────
-  const msgType = (p.message_type as string) ?? 'text';
-
   switch (msgType) {
     case 'image':
     case 'video':
