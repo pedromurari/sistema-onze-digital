@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { EvolutionTaskPanel } from './EvolutionTaskPanel';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -492,6 +493,9 @@ export function FunilLancamento() {
           <TabsTrigger value="rapido" className="gap-1.5">
             <Zap className="h-4 w-4" /> Envio Rápido
           </TabsTrigger>
+          <TabsTrigger value="whatsapp" className="gap-1.5">
+            <Phone className="h-4 w-4" /> WhatsApp
+          </TabsTrigger>
         </TabsList>
 
         {/* ── FUNIL ────────────────────────────────────────────────────────── */}
@@ -635,6 +639,22 @@ export function FunilLancamento() {
                     ? <><Spinner small /> Enviando…</>
                     : <><Send className="h-4 w-4" /> Enviar agora</>}
                 </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* ── WHATSAPP ─────────────────────────────────────────────────────── */}
+        <TabsContent value="whatsapp" className="mt-4">
+          <div className="max-w-lg">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Phone className="h-4 w-4 text-primary" /> WhatsApp — Funil
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <EvolutionTaskPanel task="funil" label="Funil" />
               </CardContent>
             </Card>
           </div>

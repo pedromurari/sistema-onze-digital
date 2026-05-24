@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { validateWebhookUrl, WebhookUrlValidationError } from '@/lib/webhook';
 import { supabase } from '@/integrations/supabase/client';
 import { Webhook, BookOpen, Globe, Plus, Trash2, Send, Smartphone, RefreshCw, Loader2, CheckCircle2, XCircle, QrCode } from 'lucide-react';
+import { EvolutionTaskPanel } from './EvolutionTaskPanel';
 
 interface EvolutionInstance {
   id: string;
@@ -45,10 +46,10 @@ function useEvolutionInstances() {
   };
 
   const toggle = async (id: string) => {
-    // Desativa todas, ativa só a selecionada
-    await supabase.from('evolution_config').update({ ativo: false }).neq('id', 'none');
-    await supabase.from('evolution_config').update({ ativo: true }).eq('id', id);
-    setInstances(prev => prev.map(i => ({ ...i, ativo: i.id === id })));
+    const inst = instances.find(i => i.id === id);
+    if (!inst) return;
+    await supabase.from('evolution_config').update({ ativo: !inst.ativo }).eq('id', id);
+    setInstances(prev => prev.map(i => i.id === id ? { ...i, ativo: !i.ativo } : i));
   };
 
   const remove = async (id: string) => {
@@ -204,6 +205,29 @@ function EvolutionTab() {
           )}
         </div>
       </Card>
+
+      {/* Prioridade por serviço */}
+      {instances.length > 0 && (
+        <Card className="p-6 bg-card border-border">
+          <h2 className="text-lg font-semibold text-foreground mb-1">Prioridade por Serviço</h2>
+          <p className="text-sm text-muted-foreground mb-5">
+            Selecione qual número envia cada tipo de mensagem e adicione backups opcionais.
+          </p>
+          <div className="grid gap-6 md:grid-cols-3">
+            {(['cobranca', 'funil', 'disparo'] as const).map(task => {
+              const labels: Record<string, string> = { cobranca: 'Cobrança', funil: 'Funil', disparo: 'Disparo' };
+              return (
+                <div key={task} className="rounded-lg border p-4 space-y-3">
+                  <p className="text-sm font-semibold text-foreground">
+                    {task === 'cobranca' ? '💳' : task === 'funil' ? '🎯' : '📢'} {labels[task]}
+                  </p>
+                  <EvolutionTaskPanel task={task} label={labels[task]} />
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       <Dialog open={qrDialog.open} onOpenChange={open => setQrDialog(d => ({ ...d, open }))}>
         <DialogContent className="sm:max-w-sm">

@@ -22,19 +22,12 @@ import {
 import {
   MessageSquare, Send, Settings, FileText, History, Clock,
   Plus, Trash2, Pencil, Play, CheckCircle2, XCircle, AlertCircle,
-  Wifi, WifiOff, RefreshCw, Zap, Phone, User, Calendar, Info,
+  RefreshCw, Zap, Phone, Calendar, Info,
   AlertTriangle, TrendingDown,
 } from 'lucide-react';
+import { EvolutionTaskPanel } from './EvolutionTaskPanel';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-
-interface EvolutionConfig {
-  id: string;
-  api_url: string;
-  api_key: string;
-  instance_name: string;
-  ativo: boolean;
-}
 
 interface CobrancaConfig {
   id: string;
@@ -172,7 +165,6 @@ export function Cobranca() {
   // ── State ─────────────────────────────────────────────────────────────────
   const [tab, setTab] = useState<'fila' | 'historico' | 'templates' | 'config'>('fila');
 
-  const [evoCfg, setEvoCfg]           = useState<EvolutionConfig | null>(null);
   const [cobrancaCfg, setCobrancaCfg] = useState<CobrancaConfig | null>(null);
   const [templates, setTemplates]     = useState<Template[]>([]);
   const [logs, setLogs]               = useState<CobrancaLog[]>([]);
@@ -180,8 +172,6 @@ export function Cobranca() {
 
   const [loading, setLoading]         = useState(true);
   const [saving, setSaving]           = useState(false);
-  const [testando, setTestando]       = useState(false);
-  const [conexaoStatus, setConexaoStatus] = useState<'unknown' | 'ok' | 'erro'>('unknown');
   const [enviandoIds, setEnviandoIds] = useState<Set<string>>(new Set());
 
   // Template modal
@@ -204,14 +194,12 @@ export function Cobranca() {
   // ── Load data ─────────────────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [evoRes, cfgRes, tplRes, logRes] = await Promise.all([
-      supabase.from('evolution_config' as any).select('*').eq('id', 'default').single(),
+    const [cfgRes, tplRes, logRes] = await Promise.all([
       supabase.from('cobranca_config'  as any).select('*').eq('id', 'default').single(),
       supabase.from('cobranca_templates' as any).select('*').order('ordem'),
       supabase.from('cobranca_logs' as any).select('*').order('created_at', { ascending: false }).limit(200),
     ]);
 
-    if (evoRes.data) setEvoCfg(evoRes.data as EvolutionConfig);
     if (cfgRes.data) setCobrancaCfg(cfgRes.data as CobrancaConfig);
     if (tplRes.data) setTemplates(tplRes.data as Template[]);
     if (logRes.data) setLogs(logRes.data as CobrancaLog[]);
@@ -243,53 +231,7 @@ export function Cobranca() {
     mesMes: fila.filter(f => f.pagamento_status === 'pendente').length,
   }), [fila]);
 
-  // ── Testar conexão Evolution ──────────────────────────────────────────────
-  const testarConexao = async () => {
-    if (!evoCfg?.api_url || !evoCfg?.api_key || !evoCfg?.instance_name) {
-      toast.error('Preencha URL, API Key e Instância antes de testar');
-      return;
-    }
-    setTestando(true);
-    try {
-      const url = `${evoCfg.api_url.replace(/\/$/, '')}/instance/fetchInstances`;
-      const res = await fetch(url, { headers: { apikey: evoCfg.api_key } });
-      if (res.ok) {
-        const data = await res.json();
-        const instances = Array.isArray(data) ? data : [data];
-        const found = instances.some((i: any) =>
-          i.instance?.instanceName === evoCfg.instance_name ||
-          i.name === evoCfg.instance_name
-        );
-        if (found) {
-          setConexaoStatus('ok');
-          toast.success('Conectado! Instância encontrada.');
-        } else {
-          setConexaoStatus('erro');
-          toast.warning(`Servidor acessível mas instância "${evoCfg.instance_name}" não encontrada.`);
-        }
-      } else {
-        setConexaoStatus('erro');
-        toast.error(`Erro ${res.status} ao conectar com Evolution API`);
-      }
-    } catch (e: any) {
-      setConexaoStatus('erro');
-      toast.error('Não foi possível conectar: ' + (e?.message ?? 'verifique a URL'));
-    }
-    setTestando(false);
-  };
-
   // ── Salvar configs ────────────────────────────────────────────────────────
-  const salvarEvoCfg = async () => {
-    if (!evoCfg) return;
-    setSaving(true);
-    const { error } = await (supabase as any)
-      .from('evolution_config')
-      .upsert({ ...evoCfg, updated_at: new Date().toISOString() }, { onConflict: 'id' });
-    if (error) toast.error('Erro ao salvar: ' + error.message);
-    else toast.success('Configuração Evolution salva!');
-    setSaving(false);
-  };
-
   const salvarCobrancaCfg = async () => {
     if (!cobrancaCfg) return;
     setSaving(true);
@@ -810,67 +752,15 @@ export function Cobranca() {
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Phone size={16}/> Evolution API (WhatsApp)
+                  <Phone size={16}/> WhatsApp — Cobrança
                 </CardTitle>
-                <CardDescription>Configure a instância do WhatsApp para envio automático</CardDescription>
+                <CardDescription>
+                  Selecione qual número envia as cobranças e adicione backups opcionais.
+                  Gerencie as instâncias em <strong>Configurações → WhatsApp</strong>.
+                </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
-                  <div>
-                    <p className="text-sm font-medium">API ativa</p>
-                    <p className="text-xs text-muted-foreground">Habilita todos os envios automáticos</p>
-                  </div>
-                  <Switch
-                    checked={evoCfg?.ativo ?? false}
-                    onCheckedChange={v => setEvoCfg(p => p ? { ...p, ativo: v } : p)}
-                  />
-                </div>
-
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">URL do servidor</label>
-                    <Input
-                      placeholder="https://evolution.seudominio.com"
-                      value={evoCfg?.api_url ?? ''}
-                      onChange={e => setEvoCfg(p => p ? { ...p, api_url: e.target.value } : p)}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">API Key</label>
-                    <Input
-                      type="password"
-                      placeholder="••••••••••••••••"
-                      value={evoCfg?.api_key ?? ''}
-                      onChange={e => setEvoCfg(p => p ? { ...p, api_key: e.target.value } : p)}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Nome da instância</label>
-                    <Input
-                      placeholder="ex: 11ds-principal"
-                      value={evoCfg?.instance_name ?? ''}
-                      onChange={e => setEvoCfg(p => p ? { ...p, instance_name: e.target.value } : p)}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 pt-2">
-                  <Button variant="outline" size="sm" className="gap-1.5" onClick={testarConexao} disabled={testando}>
-                    {testando
-                      ? <RefreshCw size={13} className="animate-spin"/>
-                      : conexaoStatus === 'ok' ? <Wifi size={13} className="text-emerald-600"/>
-                      : conexaoStatus === 'erro' ? <WifiOff size={13} className="text-red-500"/>
-                      : <Wifi size={13}/>
-                    }
-                    {testando ? 'Testando...' : 'Testar conexão'}
-                  </Button>
-                  <Button size="sm" onClick={salvarEvoCfg} disabled={saving} className="gap-1.5">
-                    {saving ? <RefreshCw size={13} className="animate-spin"/> : null}
-                    Salvar
-                  </Button>
-                  {conexaoStatus === 'ok' && <span className="text-xs text-emerald-600 font-medium">✓ Conectado</span>}
-                  {conexaoStatus === 'erro' && <span className="text-xs text-red-500 font-medium">✗ Falha na conexão</span>}
-                </div>
+              <CardContent>
+                <EvolutionTaskPanel task="cobranca" label="Cobrança" />
               </CardContent>
             </Card>
 

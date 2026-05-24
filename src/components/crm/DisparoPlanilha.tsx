@@ -19,6 +19,7 @@ import {
   Image, Video, Music, Type, Link2, Loader2, FileDown, Pencil, Settings,
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
+import { EvolutionTaskPanel } from './EvolutionTaskPanel';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -829,26 +830,8 @@ function EditCampanhaModal({ campanha, evolutionInstances, onClose, onSave, onMa
             </div>
           </div>
 
-          {/* Evolution API — prioridade global */}
-          <div className="p-3 rounded-lg bg-indigo-50 border border-indigo-200">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-semibold text-indigo-800">📡 Instâncias Evolution (prioridade global)</span>
-              {onManageEvo && (
-                <button type="button" onClick={onManageEvo} className="text-xs text-indigo-600 hover:underline">Gerenciar</button>
-              )}
-            </div>
-            {evolutionInstances.filter(i => i.ativo).length === 0 ? (
-              <p className="text-xs text-amber-700">Nenhuma instância ativa.</p>
-            ) : (
-              <div className="flex gap-1.5 flex-wrap">
-                {evolutionInstances.filter(i => i.ativo).map((inst, idx) => (
-                  <span key={inst.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-white border border-indigo-200 text-indigo-700">
-                    <span className="font-bold">{idx + 1}°</span> {inst.instance_name}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+          {/* WhatsApp — instâncias por tarefa */}
+          <EvolutionTaskPanel task="disparo" label="Disparo" />
 
           {/* Tipo */}
           <div className="space-y-1.5">
@@ -1063,31 +1046,8 @@ function NovaCampanhaModal({ evolutionInstances, onClose, onCreate, onManageEvo 
             </div>
           </div>
 
-          {/* Evolution API — prioridade global */}
-          <div className="p-3 rounded-lg bg-indigo-50 border border-indigo-200">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-semibold text-indigo-800 flex items-center gap-1.5">
-                📡 Instâncias Evolution (prioridade global)
-              </span>
-              {onManageEvo && (
-                <button type="button" onClick={onManageEvo}
-                  className="text-xs text-indigo-600 hover:underline">
-                  Gerenciar
-                </button>
-              )}
-            </div>
-            {evolutionInstances.filter(i => i.ativo).length === 0 ? (
-              <p className="text-xs text-amber-700">Nenhuma instância ativa — configure antes de disparar.</p>
-            ) : (
-              <div className="flex gap-1.5 flex-wrap">
-                {evolutionInstances.filter(i => i.ativo).map((inst, idx) => (
-                  <span key={inst.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-white border border-indigo-200 text-indigo-700">
-                    <span className="font-bold">{idx + 1}°</span> {inst.instance_name}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+          {/* WhatsApp — instâncias por tarefa */}
+          <EvolutionTaskPanel task="disparo" label="Disparo" />
 
           {/* Tipo de mensagem */}
           <div className="space-y-2">
