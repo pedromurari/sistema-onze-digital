@@ -34,6 +34,7 @@ interface EvolutionInstance {
   api_url: string;
   api_key: string;
   ativo: boolean;
+  prioridade: number;
 }
 
 interface Campanha {
@@ -286,13 +287,14 @@ function EvolutionInstancesModal({ onClose, onSaved }: { onClose: () => void; on
   const [editingInst,  setEditingInst] = useState<InstForm | null>(null);
   const [saving,       setSaving]      = useState(false);
   const [deleting,     setDeleting]    = useState<string | null>(null);
+  const [reordering,   setReordering]  = useState(false);
 
   const load = async () => {
     setLoading(true);
     const { data } = await (supabase as any)
       .from('evolution_config')
-      .select('id, instance_name, api_url, api_key, ativo')
-      .order('created_at', { ascending: true });
+      .select('id, instance_name, api_url, api_key, ativo, prioridade')
+      .order('prioridade', { ascending: true });
     if (data) setInstances(data as EvolutionInstance[]);
     setLoading(false);
   };
@@ -300,8 +302,25 @@ function EvolutionInstancesModal({ onClose, onSaved }: { onClose: () => void; on
   useEffect(() => { load(); }, []);
 
   const handleNew = () => setEditingInst({
-    id: crypto.randomUUID(), instance_name: '', api_url: '', api_key: '', ativo: true, isNew: true,
+    id: crypto.randomUUID(), instance_name: '', api_url: '', api_key: '', ativo: true,
+    prioridade: instances.length, isNew: true,
   });
+
+  const handleMove = async (id: string, direction: 'up' | 'down') => {
+    const idx = instances.findIndex(i => i.id === id);
+    if (direction === 'up' && idx <= 0) return;
+    if (direction === 'down' && idx >= instances.length - 1) return;
+    setReordering(true);
+    const reordered = [...instances];
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
+    await Promise.all(reordered.map((inst, i) =>
+      (supabase as any).from('evolution_config').update({ prioridade: i }).eq('id', inst.id)
+    ));
+    setReordering(false);
+    await load();
+    onSaved();
+  };
 
   const handleSave = async () => {
     if (!editingInst) return;
@@ -312,6 +331,7 @@ function EvolutionInstancesModal({ onClose, onSaved }: { onClose: () => void; on
       api_url:       editingInst.api_url.trim().replace(/\/$/, ''),
       api_key:       editingInst.api_key.trim(),
       ativo:         editingInst.ativo,
+      prioridade:    editingInst.prioridade,
       updated_at:    new Date().toISOString(),
     }, { onConflict: 'id' });
     setSaving(false);
@@ -395,28 +415,50 @@ function EvolutionInstancesModal({ onClose, onSaved }: { onClose: () => void; on
           <div className="space-y-3 py-2">
             {instances.length === 0 ? (
               <p className="text-center py-8 text-sm text-muted-foreground">Nenhuma instância cadastrada</p>
-            ) : instances.map(inst => (
-              <div key={inst.id} className="flex items-center justify-between p-3 rounded-lg border bg-card gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-sm">{inst.instance_name || '(sem nome)'}</span>
-                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${inst.ativo ? 'bg-green-100 text-green-700' : 'bg-zinc-100 text-zinc-500'}`}>
-                      {inst.ativo ? 'Ativa' : 'Inativa'}
-                    </span>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <span className="font-semibold">Ordem de prioridade</span> — o servidor tenta a 1° primeiro, depois os backups em sequência.
+                </p>
+                {instances.map((inst, idx) => (
+                  <div key={inst.id} className="flex items-center justify-between p-3 rounded-lg border bg-card gap-3">
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex flex-col gap-0.5">
+                        <button onClick={() => handleMove(inst.id, 'up')} disabled={reordering || idx === 0}
+                          className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                          <ChevronUp className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => handleMove(inst.id, 'down')} disabled={reordering || idx === instances.length - 1}
+                          className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded ${idx === 0 ? 'bg-indigo-100 text-indigo-700' : 'bg-zinc-100 text-zinc-500'}`}>
+                        {idx === 0 ? '1° Primária' : `${idx + 1}° Backup`}
+                      </span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm">{inst.instance_name || '(sem nome)'}</span>
+                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${inst.ativo ? 'bg-green-100 text-green-700' : 'bg-zinc-100 text-zinc-500'}`}>
+                          {inst.ativo ? 'Ativa' : 'Inativa'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate">{inst.api_url || '—'}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Button size="sm" variant="outline" onClick={() => handleEdit(inst)} className="gap-1 h-8 px-2.5">
+                        <Pencil className="w-3.5 h-3.5" /> Editar
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => handleDelete(inst.id, inst.instance_name)}
+                        disabled={deleting === inst.id} className="text-destructive hover:text-destructive h-8 w-8 p-0">
+                        {deleting === inst.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                      </Button>
+                    </div>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-0.5 truncate">{inst.api_url || '—'}</p>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <Button size="sm" variant="outline" onClick={() => handleEdit(inst)} className="gap-1 h-8 px-2.5">
-                    <Pencil className="w-3.5 h-3.5" /> Editar
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => handleDelete(inst.id, inst.instance_name)}
-                    disabled={deleting === inst.id} className="text-destructive hover:text-destructive h-8 w-8 p-0">
-                    {deleting === inst.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                  </Button>
-                </div>
-              </div>
-            ))}
+                ))}
+              </>
+            )}
             <Button onClick={handleNew} variant="outline" className="w-full gap-2 border-dashed mt-1">
               <Plus className="w-4 h-4" /> Nova instância
             </Button>
@@ -484,7 +526,6 @@ interface CardProps {
   leadsPage: number;
   loadingLeads: boolean;
   showExpanded: boolean;
-  evolutionInstanceName?: string;
   onToggleExpand: () => void;
   onTabChange: (tab: CardTab) => void;
   onLoadLeads: (page: number) => void;
@@ -498,7 +539,7 @@ interface CardProps {
 
 function CampanhaCard({
   campanha: c, isRunning, activeTab, leads, leadsTotal, leadsPage, loadingLeads,
-  showExpanded, evolutionInstanceName,
+  showExpanded,
   onToggleExpand, onTabChange, onLoadLeads, onStart, onPause, onStop, onDelete, onReset, onEdit,
 }: CardProps) {
   const { border, bg } = STATUS_STYLES[c.status];
@@ -521,11 +562,6 @@ function CampanhaCard({
             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-white/60 border ${msgMeta.color}`}>
               <MsgIcon className="w-3 h-3" /> {msgMeta.label}
             </span>
-            {evolutionInstanceName && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 border border-indigo-200 text-indigo-700">
-                📡 {evolutionInstanceName}
-              </span>
-            )}
           </div>
           <p className="text-xs text-muted-foreground mt-1 font-mono line-clamp-1">
             {c.message_type !== 'text' && c.media_url
@@ -744,7 +780,6 @@ function EditCampanhaModal({ campanha, evolutionInstances, onClose, onSave, onMa
   const [safeStart,   setSafeStart]   = useState(campanha.safe_hour_start);
   const [safeEnd,     setSafeEnd]     = useState(campanha.safe_hour_end);
   const [maxErrors,   setMaxErrors]   = useState(campanha.max_errors_seq);
-  const [evoId,       setEvoId]       = useState(campanha.evolution_config_id ?? 'default');
   const [saving,      setSaving]      = useState(false);
 
   const needsMedia  = messageType !== 'text';
@@ -768,7 +803,7 @@ function EditCampanhaModal({ campanha, evolutionInstances, onClose, onSave, onMa
         template: template.trim(),
         delay_min_s: delayMin * 60, delay_max_s: delayMax * 60,
         daily_limit: dailyLimit, safe_hour_start: safeStart, safe_hour_end: safeEnd,
-        max_errors_seq: maxErrors, evolution_config_id: evoId,
+        max_errors_seq: maxErrors,
       });
     } finally { setSaving(false); }
   };
@@ -794,7 +829,26 @@ function EditCampanhaModal({ campanha, evolutionInstances, onClose, onSave, onMa
             </div>
           </div>
 
-          <EvolutionSelector instances={evolutionInstances} value={evoId} onChange={setEvoId} onManage={onManageEvo} />
+          {/* Evolution API — prioridade global */}
+          <div className="p-3 rounded-lg bg-indigo-50 border border-indigo-200">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-semibold text-indigo-800">📡 Instâncias Evolution (prioridade global)</span>
+              {onManageEvo && (
+                <button type="button" onClick={onManageEvo} className="text-xs text-indigo-600 hover:underline">Gerenciar</button>
+              )}
+            </div>
+            {evolutionInstances.filter(i => i.ativo).length === 0 ? (
+              <p className="text-xs text-amber-700">Nenhuma instância ativa.</p>
+            ) : (
+              <div className="flex gap-1.5 flex-wrap">
+                {evolutionInstances.filter(i => i.ativo).map((inst, idx) => (
+                  <span key={inst.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-white border border-indigo-200 text-indigo-700">
+                    <span className="font-bold">{idx + 1}°</span> {inst.instance_name}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Tipo */}
           <div className="space-y-1.5">
@@ -869,8 +923,6 @@ function NovaCampanhaModal({ evolutionInstances, onClose, onCreate, onManageEvo 
   onCreate: (form: CampanhaForm) => Promise<void>;
   onManageEvo?: () => void;
 }) {
-  const defaultEvoId = evolutionInstances.find(i => i.ativo)?.id ?? evolutionInstances[0]?.id ?? 'default';
-
   const [nome,        setNome]        = useState('');
   const [descricao,   setDescricao]   = useState('');
   const [messageType, setMessageType] = useState<MessageType>('text');
@@ -887,7 +939,6 @@ function NovaCampanhaModal({ evolutionInstances, onClose, onCreate, onManageEvo 
   const [safeStart,   setSafeStart]   = useState(8);
   const [safeEnd,     setSafeEnd]     = useState(21);
   const [maxErrors,   setMaxErrors]   = useState(3);
-  const [evolutionId, setEvolutionId] = useState(defaultEvoId);
   const [saving,        setSaving]      = useState(false);
   const [sistemaItems,   setSistemaItems]   = useState<SistemaItem[]>([]);
   const [loadingItems,   setLoadingItems]   = useState(false);
@@ -980,7 +1031,7 @@ function NovaCampanhaModal({ evolutionInstances, onClose, onCreate, onManageEvo 
       nome, descricao, messageType, mediaUrl, template,
       leadsSource, leadsText, sistemaType, sistemaId, loadedLeads,
       delayMin, delayMax, dailyLimit, safeStart, safeEnd, maxErrors,
-      evolutionConfigId: evolutionId,
+      evolutionConfigId: '',
     };
     setSaving(true); try { await onCreate(form); } finally { setSaving(false); }
   };
@@ -1012,8 +1063,31 @@ function NovaCampanhaModal({ evolutionInstances, onClose, onCreate, onManageEvo 
             </div>
           </div>
 
-          {/* Evolution API */}
-          <EvolutionSelector instances={evolutionInstances} value={evolutionId} onChange={setEvolutionId} onManage={onManageEvo} />
+          {/* Evolution API — prioridade global */}
+          <div className="p-3 rounded-lg bg-indigo-50 border border-indigo-200">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-semibold text-indigo-800 flex items-center gap-1.5">
+                📡 Instâncias Evolution (prioridade global)
+              </span>
+              {onManageEvo && (
+                <button type="button" onClick={onManageEvo}
+                  className="text-xs text-indigo-600 hover:underline">
+                  Gerenciar
+                </button>
+              )}
+            </div>
+            {evolutionInstances.filter(i => i.ativo).length === 0 ? (
+              <p className="text-xs text-amber-700">Nenhuma instância ativa — configure antes de disparar.</p>
+            ) : (
+              <div className="flex gap-1.5 flex-wrap">
+                {evolutionInstances.filter(i => i.ativo).map((inst, idx) => (
+                  <span key={inst.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-white border border-indigo-200 text-indigo-700">
+                    <span className="font-bold">{idx + 1}°</span> {inst.instance_name}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Tipo de mensagem */}
           <div className="space-y-2">
@@ -1252,8 +1326,8 @@ export default function DisparoPlanilha() {
   const fetchEvolutionInstances = useCallback(async () => {
     const { data } = await supabase
       .from('evolution_config')
-      .select('id, instance_name, api_url, api_key, ativo')
-      .order('created_at', { ascending: true });
+      .select('id, instance_name, api_url, api_key, ativo, prioridade')
+      .order('prioridade', { ascending: true });
     if (data) setEvolutionInstances(data as EvolutionInstance[]);
   }, []);
 
@@ -1397,17 +1471,15 @@ export default function DisparoPlanilha() {
   }
 
   function cardProps(c: Campanha): Omit<CardProps, 'campanha'> {
-    const evoInst = evolutionInstances.find(i => i.id === (c.evolution_config_id ?? 'default'));
     return {
-      isRunning:            activeCampaignIds.has(c.id),
-      activeTab:            activeTabMap[c.id] ?? 'log',
-      leads:                leadsMap[c.id] ?? [],
-      leadsTotal:           leadsTotalMap[c.id] ?? 0,
-      leadsPage:            leadsPageMap[c.id] ?? 0,
-      loadingLeads:         loadingLeadsSet.has(c.id),
-      showExpanded:         expandedCards.has(c.id),
-      evolutionInstanceName: evoInst?.instance_name,
-      onToggleExpand:       () => toggleExpand(c.id),
+      isRunning:      activeCampaignIds.has(c.id),
+      activeTab:      activeTabMap[c.id] ?? 'log',
+      leads:          leadsMap[c.id] ?? [],
+      leadsTotal:     leadsTotalMap[c.id] ?? 0,
+      leadsPage:      leadsPageMap[c.id] ?? 0,
+      loadingLeads:   loadingLeadsSet.has(c.id),
+      showExpanded:   expandedCards.has(c.id),
+      onToggleExpand: () => toggleExpand(c.id),
       onTabChange:          (tab) => setActiveTabMap(prev => ({ ...prev, [c.id]: tab })),
       onLoadLeads:          (page) => handleLoadLeads(c.id, page),
       onStart:              () => runCampanha(c.id),

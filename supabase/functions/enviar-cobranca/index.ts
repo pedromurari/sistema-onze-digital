@@ -63,21 +63,15 @@ serve(async (req) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  // Buscar config Evolution API
-  const { data: evoCfg, error: evoCfgErr } = await db
+  // Buscar instâncias Evolution ativas em ordem de prioridade
+  const { data: evoInstances, error: evoErr } = await db
     .from("evolution_config")
-    .select("*")
-    .eq("id", "default")
-    .single();
+    .select("api_url, api_key, instance_name")
+    .eq("ativo", true)
+    .order("prioridade", { ascending: true });
 
-  if (evoCfgErr || !evoCfg) {
-    return new Response(JSON.stringify({ error: "Configuração Evolution API não encontrada" }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  if (!evoCfg.ativo || !evoCfg.api_url || !evoCfg.api_key || !evoCfg.instance_name) {
-    return new Response(JSON.stringify({ error: "Evolution API não configurada ou inativa" }), {
+  if (evoErr || !evoInstances?.length) {
+    return new Response(JSON.stringify({ error: "Nenhuma instância Evolution ativa configurada" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
@@ -96,18 +90,15 @@ serve(async (req) => {
   // Modo 3: envio de mensagem direta (aluno_id + mensagem direta)
 
   if (body.log_id) {
-    // Envio de um item do log
-    return await enviarPorLogId(db, evoCfg, body.log_id, userId, corsHeaders);
+    return await enviarPorLogId(db, evoInstances, body.log_id, userId, corsHeaders);
   }
 
   if (body.bulk) {
-    // Processamento da fila automática
-    return await processarFilaAutomatica(db, evoCfg, userId, corsHeaders);
+    return await processarFilaAutomatica(db, evoInstances, userId, corsHeaders);
   }
 
   if (body.aluno_id && body.mensagem) {
-    // Envio manual avulso
-    return await enviarManual(db, evoCfg, body, userId, corsHeaders);
+    return await enviarManual(db, evoInstances, body, userId, corsHeaders);
   }
 
   return new Response(JSON.stringify({ error: "Parâmetros inválidos" }), {
@@ -116,39 +107,33 @@ serve(async (req) => {
 });
 
 async function sendViaEvolution(
-  evoCfg: any,
+  evoInstances: Array<{ api_url: string; api_key: string; instance_name: string }>,
   phone: string,
   message: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const baseUrl = evoCfg.api_url.replace(/\/$/, "");
-  const url = `${baseUrl}/message/sendText/${evoCfg.instance_name}`;
-
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "apikey": evoCfg.api_key,
-      },
-      body: JSON.stringify({
-        number: formatPhone(phone),
-        text: message,
-        delay: 1000,
-      }),
-    });
-
-    if (!res.ok) {
+  let lastError = "";
+  for (const cfg of evoInstances) {
+    const baseUrl = cfg.api_url.replace(/\/$/, "");
+    const url = `${baseUrl}/message/sendText/${cfg.instance_name}`;
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "apikey": cfg.api_key },
+        body: JSON.stringify({ number: formatPhone(phone), text: message, delay: 1000 }),
+      });
+      if (res.ok) return { ok: true };
       const body = await res.text();
-      return { ok: false, error: `Evolution API ${res.status}: ${body}` };
+      lastError = `[${cfg.instance_name}] ${res.status}: ${body.slice(0, 200)}`;
+      console.warn(`enviar-cobranca: instância ${cfg.instance_name} falhou (${res.status}), tentando próxima...`);
+    } catch (e: any) {
+      lastError = `[${cfg.instance_name}] ${e?.message ?? "Erro de conexão"}`;
+      console.warn(`enviar-cobranca: instância ${cfg.instance_name} falhou, tentando próxima...`);
     }
-
-    return { ok: true };
-  } catch (e: any) {
-    return { ok: false, error: e?.message ?? "Erro de conexão com Evolution API" };
   }
+  return { ok: false, error: lastError || "Todas as instâncias Evolution falharam" };
 }
 
-async function enviarPorLogId(db: any, evoCfg: any, logId: string, userId: string, cors: any) {
+async function enviarPorLogId(db: any, evoInstances: any[], logId: string, userId: string, cors: any) {
   const { data: log, error: logErr } = await db
     .from("cobranca_logs")
     .select("*")
@@ -161,7 +146,7 @@ async function enviarPorLogId(db: any, evoCfg: any, logId: string, userId: strin
     });
   }
 
-  const result = await sendViaEvolution(evoCfg, log.telefone, log.mensagem);
+  const result = await sendViaEvolution(evoInstances, log.telefone, log.mensagem);
 
   await db.from("cobranca_logs").update({
     status: result.ok ? "enviado" : "erro",
@@ -176,7 +161,7 @@ async function enviarPorLogId(db: any, evoCfg: any, logId: string, userId: strin
   });
 }
 
-async function enviarManual(db: any, evoCfg: any, body: any, userId: string, cors: any) {
+async function enviarManual(db: any, evoInstances: any[], body: any, userId: string, cors: any) {
   const { aluno_id, pagamento_id, mensagem, template_nome, template_tipo, aluno_nome, telefone } = body;
 
   // Busca dados do aluno se não fornecido
@@ -215,7 +200,7 @@ async function enviarManual(db: any, evoCfg: any, body: any, userId: string, cor
     agendado_para: new Date().toISOString(),
   }).select("id").single();
 
-  const result = await sendViaEvolution(evoCfg, phone, mensagem);
+  const result = await sendViaEvolution(evoInstances, phone, mensagem);
 
   await db.from("cobranca_logs").update({
     status: result.ok ? "enviado" : "erro",
@@ -229,7 +214,7 @@ async function enviarManual(db: any, evoCfg: any, body: any, userId: string, cor
   });
 }
 
-async function processarFilaAutomatica(db: any, evoCfg: any, userId: string, cors: any) {
+async function processarFilaAutomatica(db: any, evoInstances: any[], userId: string, cors: any) {
   // Buscar config de cobrança
   const { data: cfg } = await db
     .from("cobranca_config")
@@ -330,7 +315,7 @@ async function processarFilaAutomatica(db: any, evoCfg: any, userId: string, cor
       agendado_para: new Date().toISOString(),
     }).select("id").single();
 
-    const result = await sendViaEvolution(evoCfg, item.telefone, mensagem);
+    const result = await sendViaEvolution(evoInstances, item.telefone, mensagem);
 
     await db.from("cobranca_logs").update({
       status:    result.ok ? "enviado" : "erro",

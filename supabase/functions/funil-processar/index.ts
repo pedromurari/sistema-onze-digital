@@ -50,43 +50,56 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // ── Evolution API config ──────────────────────────────────────────────────
-    const { data: evoCfg } = await supabase
+    // ── Evolution API config (todas as instâncias ativas em ordem de prioridade) ──
+    const { data: evoRows } = await supabase
       .from('evolution_config')
       .select('api_url, api_key, instance_name')
       .eq('ativo', true)
-      .limit(1)
-      .maybeSingle();
+      .order('prioridade', { ascending: true });
 
-    if (!evoCfg?.api_url || !evoCfg?.api_key || !evoCfg?.instance_name) {
-      return new Response(JSON.stringify({ error: 'Evolution API não configurada' }), {
+    if (!evoRows?.length) {
+      return new Response(JSON.stringify({ error: 'Evolution API não configurada ou sem instâncias ativas' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const rawBase  = evoCfg.api_url.replace(/\/$/, '');
-    const base     = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
-    const apikey   = evoCfg.api_key;
-    const instance = evoCfg.instance_name;
+    const evoInstances = evoRows.map((inst: { api_url: string; instance_name: string; api_key: string }) => {
+      const rawBase = inst.api_url.replace(/\/$/, '');
+      return {
+        base:     /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`,
+        instance: inst.instance_name,
+        apikey:   inst.api_key,
+      };
+    });
 
     const body = await req.json();
 
     // ── Quick send (envio imediato pelo UI) ───────────────────────────────────
     if (body.quick_send) {
       try {
-        // Carrega config do funil para substituição de variáveis
         const { data: funnelCfg } = await supabase
           .from('funnel_configs')
           .select('*')
           .eq('funnel_name', body.funnel_name ?? '')
           .maybeSingle();
 
-        await processMessage(body, base, instance, apikey, supabase, funnelCfg);
+        let lastErr: Error | null = null;
+        for (const { base, instance, apikey } of evoInstances) {
+          try {
+            await processMessage(body, base, instance, apikey, supabase, funnelCfg);
+            lastErr = null;
+            break;
+          } catch (e) {
+            lastErr = e as Error;
+            console.warn(`funil-processar: instância ${instance} falhou:`, (e as Error).message);
+          }
+        }
+        if (lastErr) throw lastErr;
+
         return new Response(JSON.stringify({ ok: true }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       } catch (e: unknown) {
-        // Retorna 200 com erro no body para que o cliente veja a mensagem real
         return new Response(JSON.stringify({ ok: false, error: (e as Error).message }), {
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -115,14 +128,24 @@ serve(async (req) => {
     let processed = 0;
     for (const msg of pending) {
       try {
-        // Carrega config do funil para substituição de variáveis
         const { data: funnelCfg } = await supabase
           .from('funnel_configs')
           .select('*')
           .eq('funnel_name', msg.funnel_name)
           .maybeSingle();
 
-        await processMessage(msg, base, instance, apikey, supabase, funnelCfg);
+        let lastErr: Error | null = null;
+        for (const { base, instance, apikey } of evoInstances) {
+          try {
+            await processMessage(msg, base, instance, apikey, supabase, funnelCfg);
+            lastErr = null;
+            break;
+          } catch (e) {
+            lastErr = e as Error;
+            console.warn(`funil-processar: instância ${instance} falhou:`, (e as Error).message);
+          }
+        }
+        if (lastErr) throw lastErr;
 
         await supabase
           .from('funnel_messages')
