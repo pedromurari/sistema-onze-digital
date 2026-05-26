@@ -416,15 +416,20 @@ export function FunilLancamento() {
     const configOk = await ensureFunnelConfig(form.funnel_name);
     if (!configOk) return;
     setSaving(true);
-    const payload = buildPayload(form, action);
-    const { error } = editingId
-      ? await supabase.from('funnel_messages').update(payload).eq('id', editingId)
-      : await supabase.from('funnel_messages').insert(payload);
-    setSaving(false);
-    if (error) { toast.error(`Erro: ${error.message}`); return; }
-    toast.success(action === 'draft' ? 'Salvo como rascunho' : 'Mensagem agendada!');
-    setModalOpen(false);
-    loadFunnels();
+    try {
+      const payload = buildPayload(form, action);
+      const { error } = editingId
+        ? await supabase.from('funnel_messages').update(payload).eq('id', editingId)
+        : await supabase.from('funnel_messages').insert(payload);
+      if (error) { toast.error(`Erro: ${error.message}`); return; }
+      toast.success(action === 'draft' ? 'Salvo como rascunho' : 'Mensagem agendada!');
+      setModalOpen(false);
+      loadFunnels();
+    } catch (e: any) {
+      toast.error(`Erro ao salvar: ${e?.message ?? 'desconhecido'}`);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleSendNow() {

@@ -210,6 +210,17 @@ serve(async (req) => {
 
 // ── updateGroupPicture ────────────────────────────────────────────────────────
 
+function toCdnUrl(url: string): string {
+  if (url.includes('lh3.googleusercontent.com')) return url;
+  // /file/d/{id}/ or /d/{id}=
+  let m = url.match(/\/d\/([a-zA-Z0-9_-]{10,})/);
+  if (m) return `https://lh3.googleusercontent.com/d/${m[1]}=w800`;
+  // ?id={id} or &id={id}
+  m = url.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
+  if (m) return `https://lh3.googleusercontent.com/d/${m[1]}=w800`;
+  return url;
+}
+
 async function updateGroupPicture(
   base: string,
   instance: string,
@@ -217,30 +228,25 @@ async function updateGroupPicture(
   groupJid: string,
   imageUrl: string,
 ) {
-  try {
-    // Busca a imagem e converte para base64
-    const imgRes = await fetch(imageUrl, { redirect: 'follow' });
-    if (!imgRes.ok) {
-      throw new Error(`falha ao buscar imagem (${imgRes.status})`);
-    }
-    const buffer = await imgRes.arrayBuffer();
-    const bytes  = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-    const base64 = btoa(binary);
+  const cdnUrl = toCdnUrl(imageUrl);
+  const imgRes = await fetch(cdnUrl, { redirect: 'follow' });
+  if (!imgRes.ok) {
+    throw new Error(`updateGroupPicture: falha ao buscar imagem (${imgRes.status}): ${cdnUrl}`);
+  }
+  const buffer = await imgRes.arrayBuffer();
+  const bytes  = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  const base64 = btoa(binary);
 
-    const res = await fetch(`${base}/group/updateGroupPicture/${instance}?groupJid=${encodeURIComponent(groupJid)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey },
-      body: JSON.stringify({ image: base64 }),
-    });
-    if (!res.ok) {
-      const txt = await res.text().catch(() => '');
-      throw new Error(`Evolution ${res.status} - ${txt.slice(0, 200)}`);
-    }
-  } catch (e: unknown) {
-    // Superficie erro de troca de foto para o funil marcar a mensagem corretamente.
-    throw new Error(`updateGroupPicture falhou: ${(e as Error).message}`);
+  const res = await fetch(`${base}/group/updateGroupPicture/${instance}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', apikey },
+    body: JSON.stringify({ groupJid, image: base64 }),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`updateGroupPicture: Evolution ${res.status} - ${txt.slice(0, 200)}`);
   }
 }
 
