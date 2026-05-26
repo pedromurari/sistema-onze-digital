@@ -1,9 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { AccessPermissions, getDefaultPermissions, normalizePermissionsRow, permissionsToRow } from '@/lib/access-control';
 
-// Types for our app
 export type UserRole = 'admin' | 'vendedor' | 'professora';
 
 export interface Profile {
@@ -46,136 +45,83 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function buildAppUsers(
+  profiles: Profile[],
+  roles: { user_id: string; role: string }[],
+  permRows: { user_id: string }[],
+): AppUser[] {
+  return profiles.map((profile) => {
+    const userRole = roles.find(r => r.user_id === profile.id);
+    const permRow  = permRows.find(p => p.user_id === profile.id);
+    return {
+      id:          profile.id,
+      nome:        profile.nome,
+      email:       profile.email,
+      tipo:        (userRole?.role as UserRole) || 'vendedor',
+      cor:         profile.cor,
+      avatar:      profile.avatar ?? undefined,
+      ativo:       profile.ativo,
+      criadoEm:    profile.created_at,
+      permissions: normalizePermissionsRow(permRow, userRole?.role),
+    };
+  });
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
-  const [user, setUser] = useState<AppUser | null>(null);
-  const [users, setUsers] = useState<AppUser[]>([]);
+  const [user, setUser]       = useState<AppUser | null>(null);
+  const [users, setUsers]     = useState<AppUser[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchPermissionsRows = async () => {
-    const { data, error } = await (supabase as any)
-      .from('user_access_permissions')
-      .select('*');
-
-    if (error) {
-      if (error.code !== '42P01') {
-        console.error('Error fetching permissions:', error);
-      }
-      return [];
-    }
-
-    return data || [];
-  };
-
-  // Fetch all users (profiles + roles)
-  const fetchUsers = async () => {
+  // 3 parallel queries → builds users list + returns current user
+  const loadAll = useCallback(async (authUserId: string): Promise<AppUser | null> => {
     try {
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('*');
+      const [
+        { data: profiles, error: profilesErr },
+        { data: roles,    error: rolesErr    },
+        { data: permRows, error: permErr     },
+      ] = await Promise.all([
+        supabase.from('profiles').select('*'),
+        supabase.from('user_roles').select('*'),
+        (supabase as any).from('user_access_permissions').select('*'),
+      ]);
 
-      if (profilesError) {
-        console.error('Error fetching profiles:', profilesError);
-        return;
-      }
+      if (profilesErr) console.error('Error fetching profiles:', profilesErr);
+      if (rolesErr)    console.error('Error fetching roles:', rolesErr);
+      if (permErr && permErr.code !== '42P01') console.error('Error fetching permissions:', permErr);
 
-      const { data: roles, error: rolesError } = await supabase
-        .from('user_roles')
-        .select('*');
+      const allUsers = buildAppUsers(profiles || [], roles || [], permRows || []);
+      setUsers(allUsers);
 
-      if (rolesError) {
-        console.error('Error fetching roles:', rolesError);
-        return;
-      }
-
-      const permissionsRows = await fetchPermissionsRows();
-
-      const appUsers: AppUser[] = (profiles || []).map((profile: Profile) => {
-        const userRole = roles?.find((r: { user_id: string; role: UserRole }) => r.user_id === profile.id);
-        const permissionsRow = permissionsRows.find((p: { user_id: string }) => p.user_id === profile.id);
-        return {
-          id: profile.id,
-          nome: profile.nome,
-          email: profile.email,
-          tipo: (userRole?.role as UserRole) || 'vendedor',
-          cor: profile.cor,
-          avatar: profile.avatar ?? undefined,
-          ativo: profile.ativo,
-          criadoEm: profile.created_at,
-          permissions: normalizePermissionsRow(permissionsRow, userRole?.role),
-        };
-      });
-
-      setUsers(appUsers);
-    } catch (error) {
-      console.error('Error in fetchUsers:', error);
-    }
-  };
-
-  // Get current user profile and role
-  const getCurrentUser = async (authUser: User) => {
-    try {
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', authUser.id)
-        .maybeSingle();
-
-      if (profileError) {
-        console.error('Error fetching profile:', profileError);
-        return null;
-      }
-
-      if (!profile) {
-        return null;
-      }
-
-      // Check if user is active
-      if (!profile.ativo) {
+      const current = allUsers.find(u => u.id === authUserId) ?? null;
+      if (current && !current.ativo) {
         await supabase.auth.signOut();
         return null;
       }
-
-      const { data: roleData, error: roleError } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', authUser.id)
-        .maybeSingle();
-
-      if (roleError) {
-        console.error('Error fetching role:', roleError);
-      }
-
-      const { data: permissionsRow, error: permissionsError } = await (supabase as any)
-        .from('user_access_permissions')
-        .select('*')
-        .eq('user_id', authUser.id)
-        .maybeSingle();
-
-      if (permissionsError && permissionsError.code !== '42P01') {
-        console.error('Error fetching permissions:', permissionsError);
-      }
-
-      const appUser: AppUser = {
-        id: profile.id,
-        nome: profile.nome,
-        email: profile.email,
-        tipo: (roleData?.role as UserRole) || 'vendedor',
-        cor: profile.cor,
-        avatar: profile.avatar ?? undefined,
-        ativo: profile.ativo,
-        criadoEm: profile.created_at,
-        permissions: normalizePermissionsRow(permissionsRow, roleData?.role),
-      };
-
-      return appUser;
-    } catch (error) {
-      console.error('Error in getCurrentUser:', error);
+      return current;
+    } catch (e) {
+      console.error('Error in loadAll:', e);
       return null;
     }
-  };
+  }, []);
 
-  // Initialize auth — single path via onAuthStateChange com INITIAL_SESSION
+  const refreshUsers = useCallback(async () => {
+    try {
+      const [
+        { data: profiles },
+        { data: roles    },
+        { data: permRows },
+      ] = await Promise.all([
+        supabase.from('profiles').select('*'),
+        supabase.from('user_roles').select('*'),
+        (supabase as any).from('user_access_permissions').select('*'),
+      ]);
+      setUsers(buildAppUsers(profiles || [], roles || [], permRows || []));
+    } catch (e) {
+      console.error('Error in refreshUsers:', e);
+    }
+  }, []);
+
   useEffect(() => {
     let initialised = false;
 
@@ -183,18 +129,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async (event, session) => {
         setSession(session);
 
-        // INITIAL_SESSION dispara na montagem com a sessão existente ou null.
-        // Eventos subsequentes (SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED) atualizam.
         if (session?.user) {
           // Defer com setTimeout para evitar deadlock interno do Supabase SDK
           setTimeout(async () => {
-            const appUser = await getCurrentUser(session.user);
-            setUser(appUser);
             if (!initialised) {
-              await fetchUsers();
+              const appUser = await loadAll(session.user.id);
+              setUser(appUser);
+              setLoading(false);
               initialised = true;
+            } else if (event === 'SIGNED_IN') {
+              const appUser = await loadAll(session.user.id);
+              setUser(appUser);
             }
-            setLoading(false);
+            // TOKEN_REFRESHED e outros: dados já carregados, não refazer queries
           }, 0);
         } else {
           setUser(null);
@@ -206,7 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [loadAll]);
 
   const login = async (email: string, senha: string): Promise<{ success: boolean; error?: string }> => {
     try {
@@ -221,13 +168,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (data.user) {
-        const appUser = await getCurrentUser(data.user);
+        const appUser = await loadAll(data.user.id);
         if (!appUser) {
           await supabase.auth.signOut();
           return { success: false, error: 'Usuário não encontrado ou inativo.' };
         }
         setUser(appUser);
-        await fetchUsers();
         return { success: true };
       }
 
@@ -247,7 +193,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const addUser = async (userData: { nome: string; email: string; senha: string; tipo: UserRole; cor: string }): Promise<{ success: boolean; error?: string; user?: AppUser }> => {
     try {
-      // Check if this is the first user (should be admin)
       const isFirstUser = users.length === 0;
       const userRole = isFirstUser ? 'admin' : userData.tipo;
       const email = userData.email.trim().toLowerCase();
@@ -307,7 +252,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: 'Erro ao definir permissões do usuário.' };
       }
 
-      await fetchUsers();
+      await refreshUsers();
 
       const newUser: AppUser = {
         id: createdUserId,
@@ -329,10 +274,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updateUser = async (id: string, data: Partial<{ nome: string; cor: string; ativo: boolean; tipo: UserRole }>): Promise<{ success: boolean; error?: string }> => {
     try {
-      // Update profile if nome, cor, or ativo changed
       const profileUpdates: Partial<{ nome: string; cor: string; ativo: boolean }> = {};
-      if (data.nome !== undefined) profileUpdates.nome = data.nome;
-      if (data.cor !== undefined) profileUpdates.cor = data.cor;
+      if (data.nome  !== undefined) profileUpdates.nome  = data.nome;
+      if (data.cor   !== undefined) profileUpdates.cor   = data.cor;
       if (data.ativo !== undefined) profileUpdates.ativo = data.ativo;
 
       if (Object.keys(profileUpdates).length > 0) {
@@ -347,7 +291,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Update role if tipo changed
       if (data.tipo !== undefined) {
         const { error: roleError } = await supabase
           .from('user_roles')
@@ -360,11 +303,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Atualiza state local cirurgicamente
       setUsers(prev => prev.map(u => u.id === id ? { ...u, ...data } : u));
-      if (user?.id === id) {
-        setUser((prev) => prev ? { ...prev, ...data } : null);
-      }
+      if (user?.id === id) setUser(prev => prev ? { ...prev, ...data } : null);
 
       return { success: true };
     } catch (error) {
@@ -377,21 +317,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { error } = await (supabase as any)
         .from('user_access_permissions')
-        .upsert({
-          user_id: id,
-          ...permissionsToRow(permissions),
-        }, { onConflict: 'user_id' });
+        .upsert({ user_id: id, ...permissionsToRow(permissions) }, { onConflict: 'user_id' });
 
       if (error) {
         console.error('Permissions update error:', error);
         return { success: false, error: error.message };
       }
 
-      // Atualiza state local cirurgicamente
       setUsers(prev => prev.map(u => u.id === id ? { ...u, permissions } : u));
-      if (user?.id === id) {
-        setUser((prev) => prev ? { ...prev, permissions } : prev);
-      }
+      if (user?.id === id) setUser(prev => prev ? { ...prev, permissions } : prev);
 
       return { success: true };
     } catch (error) {
@@ -412,7 +346,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: error.message };
       }
 
-      // Também invalida sessões ativas do usuário via edge function
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
       if (accessToken) {
@@ -427,7 +360,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }).catch(e => console.warn('admin-delete-user call failed:', e));
       }
 
-      // Atualiza state local cirurgicamente sem refetch completo
       setUsers(prev => prev.map(u => u.id === id ? { ...u, ativo: false } : u));
       return { success: true };
     } catch (error) {
@@ -436,35 +368,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const getActiveVendedores = (): AppUser[] => {
-    return users.filter((u) => u.ativo && (u.tipo === 'vendedor' || u.tipo === 'admin'));
-  };
+  const getActiveVendedores = (): AppUser[] =>
+    users.filter(u => u.ativo && (u.tipo === 'vendedor' || u.tipo === 'admin'));
 
-  const getUserById = (id: string): AppUser | undefined => {
-    return users.find((u) => u.id === id);
-  };
-
-  const refreshUsers = async () => {
-    await fetchUsers();
-  };
+  const getUserById = (id: string): AppUser | undefined =>
+    users.find(u => u.id === id);
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        users,
-        loading,
-        login,
-        logout,
-        addUser,
-        updateUser,
-        updateUserPermissions,
-        deleteUser,
-        getActiveVendedores,
-        getUserById,
-        refreshUsers,
-      }}
-    >
+    <AuthContext.Provider value={{
+      user, users, loading,
+      login, logout,
+      addUser, updateUser, updateUserPermissions, deleteUser,
+      getActiveVendedores, getUserById, refreshUsers,
+    }}>
       {children}
     </AuthContext.Provider>
   );
@@ -472,8 +388,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within AuthProvider');
   return context;
 }

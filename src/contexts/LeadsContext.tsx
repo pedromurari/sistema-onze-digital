@@ -129,7 +129,7 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState<CRMConfig>({});
   const [loading, setLoading] = useState(true);
 
-  // Load data from Supabase
+  // Load data from Supabase — 4 queries em paralelo
   const loadData = useCallback(async () => {
     if (!user) {
       setLeads([]);
@@ -141,99 +141,59 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
     }
 
     setLoading(true);
-    
-    try {
-      // Load leads
-      const { data: leadsData, error: leadsError } = await supabase
-        .from('leads')
-        .select('*')
-        .order('criado_em', { ascending: false });
 
+    try {
+      const [
+        { data: leadsData,  error: leadsError  },
+        { data: cursosData, error: cursosError },
+        { data: fontesData, error: fontesError },
+        { data: configData, error: configError },
+      ] = await Promise.all([
+        supabase.from('leads').select('*').order('criado_em', { ascending: false }),
+        supabase.from('cursos').select('*').order('nome'),
+        supabase.from('fontes').select('*').order('nome'),
+        supabase.from('crm_config').select('*').limit(1).maybeSingle(),
+      ]);
+
+      // Leads
       if (leadsError) {
         console.error('Error loading leads:', leadsError);
       } else {
-        const mapped = (leadsData || []).map((row) => {
+        setLeads((leadsData || []).map(row => {
           const lead = dbRowToLead(row);
           lead.etapa = computeAutoStage(row);
           return lead;
-        });
-        setLeads(mapped);
+        }));
       }
 
-      // Load cursos
-      const { data: cursosData, error: cursosError } = await supabase
-        .from('cursos')
-        .select('*')
-        .order('nome');
-
+      // Cursos
       if (cursosError) {
         console.error('Error loading cursos:', cursosError);
       } else if (cursosData && cursosData.length > 0) {
-        setCursos(cursosData.map(c => ({
-          id: c.id,
-          nome: c.nome,
-          valorPadrao: c.valor_padrao || undefined,
-        })));
+        setCursos(cursosData.map(c => ({ id: c.id, nome: c.nome, valorPadrao: c.valor_padrao || undefined })));
       } else {
-        // Initialize with default courses
-        const defaultCursos = CURSOS_PADRAO.map((nome) => ({
-          nome,
-        }));
-        
-        for (const curso of defaultCursos) {
-          await supabase.from('cursos').insert(curso);
-        }
-        
+        await Promise.all(CURSOS_PADRAO.map(nome => supabase.from('cursos').insert({ nome })));
         const { data: newCursosData } = await supabase.from('cursos').select('*').order('nome');
         if (newCursosData) {
-          setCursos(newCursosData.map(c => ({
-            id: c.id,
-            nome: c.nome,
-            valorPadrao: c.valor_padrao || undefined,
-          })));
+          setCursos(newCursosData.map(c => ({ id: c.id, nome: c.nome, valorPadrao: c.valor_padrao || undefined })));
         }
       }
 
-      // Load fontes
-      const { data: fontesData, error: fontesError } = await supabase
-        .from('fontes')
-        .select('*')
-        .order('nome');
-
+      // Fontes
       if (fontesError) {
         console.error('Error loading fontes:', fontesError);
       } else if (fontesData && fontesData.length > 0) {
-        setFontes(fontesData.map(f => ({
-          id: f.id,
-          nome: f.nome,
-        })));
+        setFontes(fontesData.map(f => ({ id: f.id, nome: f.nome })));
       } else {
-        // Initialize with default sources
-        const defaultFontes = FONTES_PADRAO.map((nome) => ({
-          nome,
-        }));
-        
-        for (const fonte of defaultFontes) {
-          await supabase.from('fontes').insert(fonte);
-        }
-        
+        await Promise.all(FONTES_PADRAO.map(nome => supabase.from('fontes').insert({ nome })));
         const { data: newFontesData } = await supabase.from('fontes').select('*').order('nome');
         if (newFontesData) {
-          setFontes(newFontesData.map(f => ({
-            id: f.id,
-            nome: f.nome,
-          })));
+          setFontes(newFontesData.map(f => ({ id: f.id, nome: f.nome })));
         }
       }
 
-      // Load config
-      const { data: configData, error: configError } = await supabase
-        .from('crm_config')
-        .select('*')
-        .limit(1)
-        .single();
-
-      if (configError && configError.code !== 'PGRST116') {
+      // Config
+      if (configError) {
         console.error('Error loading config:', configError);
       } else if (configData) {
         setConfig({
