@@ -1855,9 +1855,16 @@ function parseNativeDate(dataStr: string): Date {
 }
 
 function parseNativeHorario(horario: string): { h: number; m: number } {
-  const match = horario.match(/(\d+)h(\d*)/);
-  if (!match) return { h: 9, m: 0 };
-  return { h: parseInt(match[1]), m: match[2] ? parseInt(match[2]) : 0 };
+  // "9h", "9h30", "20h00"
+  let m = horario.match(/(\d+)h(\d*)/i);
+  if (m) return { h: parseInt(m[1]), m: m[2] ? parseInt(m[2]) : 0 };
+  // "09:00", "20:30"
+  m = horario.match(/^(\d{1,2}):(\d{2})$/);
+  if (m) return { h: parseInt(m[1]), m: parseInt(m[2]) };
+  // "9", "20" (só horas)
+  m = horario.match(/^(\d{1,2})$/);
+  if (m) return { h: parseInt(m[1]), m: 0 };
+  return { h: 9, m: 0 };
 }
 
 function getNativeSubtipo(tipo: string, label: string): string {
