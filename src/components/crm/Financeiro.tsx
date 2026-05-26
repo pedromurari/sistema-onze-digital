@@ -200,7 +200,7 @@ const buildInstallments = ({
   minTotal?: number;
 }) => {
   const matricula = parseDateOnly(dataMatricula) || new Date();
-  const targetTotal = Math.max(paymentMethodTotal(method), minTotal || 0);
+  const targetTotal = (minTotal != null && minTotal > 0) ? minTotal : paymentMethodTotal(method);
   const matriculaDate = formatLocalDate(matricula);
 
   return Array.from({ length: targetTotal }, (_, index) => {
@@ -661,11 +661,11 @@ export function Financeiro() {
 
     if (error) return;
 
+    // Atualiza só os contadores — total_mensalidades é gerenciado por sincronizarParcelasAluno
     await supabase
       .from('alunos')
       .update({
         mensalidades_pagas: (data || []).filter(p => p.status === 'pago').length,
-        total_mensalidades: data?.length || 0,
       })
       .eq('id', alunoId);
   };
@@ -874,7 +874,7 @@ export function Financeiro() {
         toDateInput(nextDataMatricula) !== toDateInput(alunoDetail.data_matricula) ||
         Number(nextValorAluno ?? 0) !== Number(alunoDetail.valor_mensalidade ?? 0) ||
         currentParcelas.length === 0 ||
-        currentParcelas.length < targetTotal;
+        currentParcelas.length !== targetTotal;
 
       const updateData: any = {
         nome: editAlunoForm.nome || alunoDetail.nome,
