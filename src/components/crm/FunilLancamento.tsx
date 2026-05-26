@@ -212,6 +212,7 @@ export function FunilLancamento() {
   const [funnelNames,     setFunnelNames]     = useState<string[]>([]);
   const [funnelStats,     setFunnelStats]     = useState<Record<string, FunnelStats>>({});
   const [expandedFunnels, setExpandedFunnels] = useState<Set<string>>(new Set());
+  const [refreshTick,     setRefreshTick]     = useState(0);
   const [newName,         setNewName]         = useState('');
   const [saving,          setSaving]          = useState(false);
   const [sendingQ,        setSendingQ]        = useState(false);
@@ -424,6 +425,7 @@ export function FunilLancamento() {
       if (error) { toast.error(`Erro: ${error.message}`); return; }
       toast.success(action === 'draft' ? 'Salvo como rascunho' : 'Mensagem agendada!');
       setModalOpen(false);
+      setRefreshTick(t => t + 1);
       loadFunnels();
     } catch (e: any) {
       toast.error(`Erro ao salvar: ${e?.message ?? 'desconhecido'}`);
@@ -474,13 +476,16 @@ export function FunilLancamento() {
     }
     toast.success('Mensagem enviada!');
     setModalOpen(false);
+    setRefreshTick(t => t + 1);
     loadFunnels();
   }
 
   async function handleDelete(id: string) {
     const { error } = await supabase.from('funnel_messages').delete().eq('id', id);
     if (error) { toast.error(`Erro: ${error.message}`); return; }
-    toast.success('Excluído'); setDeleteTarget(null); loadFunnels();
+    toast.success('Excluído'); setDeleteTarget(null);
+    setRefreshTick(t => t + 1);
+    loadFunnels();
   }
 
   async function handleQuickSend() {
@@ -636,6 +641,7 @@ export function FunilLancamento() {
                   stats={funnelStats[name] ?? { total: 0, sent: 0, scheduled: 0, draft: 0, error: 0 }}
                   expanded={expandedFunnels.has(name)}
                   config={configs[name] ?? EMPTY_CONFIG(name)}
+                  refreshKey={refreshTick}
                   onToggle={() => toggleFunnel(name)}
                   onRename={() => setRenamingFunnel({ name, newName: name })}
                   onDeleteFunnel={() => setDeletingFunnel(name)}
@@ -1954,7 +1960,7 @@ function parseNativeMessages(items: Record<string, unknown>[], funnelName: strin
 // ── FunnelSection ─────────────────────────────────────────────────────────────
 
 function FunnelSection({
-  name, stats, expanded, config,
+  name, stats, expanded, config, refreshKey,
   onToggle, onRename, onDeleteFunnel, onConfigure,
   onCreateMessage, onEditMessage, onDeleteMessage,
 }: {
@@ -1962,6 +1968,7 @@ function FunnelSection({
   stats: FunnelStats;
   expanded: boolean;
   config: FunnelConfig;
+  refreshKey?: number;
   onToggle: () => void;
   onRename: () => void;
   onDeleteFunnel: () => void;
@@ -1986,7 +1993,7 @@ function FunnelSection({
   useEffect(() => {
     if (!expanded) return;
     loadMessages();
-  }, [expanded, loadMessages]);
+  }, [expanded, loadMessages, refreshKey]);
 
   useEffect(() => {
     if (!expanded) return;

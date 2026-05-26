@@ -260,6 +260,7 @@ const getEmptyAlunoForm = () => ({
   origem: 'direto',
   forma_pagamento: 'boleto' as PaymentMethod,
   valor_mensalidade: '',
+  total_parcelas: '',    // vazio = usa padrão do método
   observacoes: '',
 });
 
@@ -677,6 +678,7 @@ export function Financeiro() {
     diaVencimento,
     dataMatricula,
     valor,
+    customTotal,
   }: {
     alunoId: string;
     turmaId: string;
@@ -685,6 +687,7 @@ export function Financeiro() {
     diaVencimento: number;
     dataMatricula?: string | null;
     valor: number;
+    customTotal?: number;
   }) => {
     const existentes = pagamentos
       .filter(p => p.aluno_id === alunoId)
@@ -692,7 +695,8 @@ export function Financeiro() {
     const pagas = existentes.filter(p => p.status === 'pago');
     const numerosPagos = new Set(pagas.map(p => p.numero_parcela || 0).filter(Boolean));
     const maiorParcelaPaga = Math.max(0, ...Array.from(numerosPagos));
-    const total = Math.max(paymentMethodTotal(method), maiorParcelaPaga, pagas.length);
+    const baseTotal = (customTotal && customTotal > 0) ? customTotal : paymentMethodTotal(method);
+    const total = Math.max(baseTotal, maiorParcelaPaga, pagas.length);
     const abertas = existentes.filter(p => p.status !== 'pago');
 
     if (abertas.length > 0) {
@@ -747,7 +751,8 @@ export function Financeiro() {
     try {
       const method = normalizePaymentMethod(newAlunoForm.forma_pagamento);
       const diaVenc = extractDueDay(newAlunoForm.dia_vencimento);
-      const totalMens = paymentMethodTotal(method);
+      const customTotal = newAlunoForm.total_parcelas ? parseInt(newAlunoForm.total_parcelas) : 0;
+      const totalMens = customTotal > 0 ? customTotal : paymentMethodTotal(method);
       const valorAluno = newAlunoForm.valor_mensalidade ? parseFloat(newAlunoForm.valor_mensalidade) : null;
       const valorEfetivo = getValorEfetivo(newAlunoForm.turma_id, valorAluno);
       const { data: inserted, error } = await supabase.from('alunos').insert({
@@ -784,6 +789,7 @@ export function Financeiro() {
         method,
         diaVencimento: diaVenc,
         dataMatricula: newAlunoForm.data_matricula || todayDateInput(),
+        minTotal: totalMens,
       });
       const { error: pagamentosError } = await supabase.from('pagamentos').insert(rows as any[]);
       if (pagamentosError) throw pagamentosError;
@@ -850,7 +856,10 @@ export function Financeiro() {
       const nextDataMatricula = editAlunoForm.data_matricula || alunoDetail.data_matricula || todayDateInput();
       const nextValorAluno = editAlunoForm.valor_mensalidade ?? null;
       const valorEfetivo = getValorEfetivo(nextTurmaId, nextValorAluno);
-      const targetTotal = paymentMethodTotal(nextMethod);
+      const editCustomTotal = editAlunoForm.total_mensalidades;
+      const targetTotal = (editCustomTotal && editCustomTotal > 0)
+        ? editCustomTotal
+        : paymentMethodTotal(nextMethod);
       const nowIso = new Date().toISOString();
       const checkedDate = (checked?: boolean, formValue?: string, previousValue?: string) => {
         if (!checked) return null;
@@ -917,6 +926,7 @@ export function Financeiro() {
           diaVencimento: nextDiaVenc,
           dataMatricula: nextDataMatricula,
           valor: valorEfetivo,
+          customTotal: targetTotal,
         });
       } else {
         await atualizarContadoresAluno(alunoDetail.id);
@@ -2004,16 +2014,30 @@ export function Financeiro() {
                 <SelectContent>{[1,5,10,15,20,25,28,30].map(d => <SelectItem key={d} value={String(d)}>Dia {d}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <div>
-              <label className="text-sm font-medium">Forma de Pagamento</label>
-              <Select value={newAlunoForm.forma_pagamento} onValueChange={v => setNewAlunoForm({ ...newAlunoForm, forma_pagamento: v as PaymentMethod })}>
-                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="boleto">Boleto - 15 mensalidades</SelectItem>
-                  <SelectItem value="cartao">Cartao - 12x</SelectItem>
-                  <SelectItem value="avista">A vista - 1/1</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium">Forma de Pagamento</label>
+                <Select value={newAlunoForm.forma_pagamento} onValueChange={v => setNewAlunoForm({ ...newAlunoForm, forma_pagamento: v as PaymentMethod, total_parcelas: '' })}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="boleto">Boleto - 15 mensalidades</SelectItem>
+                    <SelectItem value="cartao">Cartao - 12x</SelectItem>
+                    <SelectItem value="avista">A vista - 1/1</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Nº de parcelas</label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={newAlunoForm.total_parcelas}
+                  onChange={e => setNewAlunoForm({ ...newAlunoForm, total_parcelas: e.target.value })}
+                  placeholder={String(paymentMethodTotal(newAlunoForm.forma_pagamento))}
+                  className="mt-1"
+                />
+                <p className="text-[10px] text-muted-foreground mt-0.5">Vazio = padrão do método</p>
+              </div>
             </div>
             <div>
               <label className="text-sm font-medium">Origem</label>
@@ -2218,6 +2242,18 @@ export function Financeiro() {
                       </Select>
                     </div>
                     <div>
+                      <label className="text-xs text-muted-foreground">Nº de parcelas</label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={editAlunoForm.total_mensalidades ?? ''}
+                        onChange={e => setEditAlunoForm({ ...editAlunoForm, total_mensalidades: e.target.value ? parseInt(e.target.value) : undefined })}
+                        placeholder={String(paymentMethodTotal(editAlunoForm.forma_pagamento || 'boleto'))}
+                        className="mt-1 h-8 text-sm"
+                      />
+                      <p className="text-[10px] text-muted-foreground mt-0.5">Vazio = padrão do método. Salvar reagenda parcelas.</p>
+                    </div>
+                    <div>
                       <label className="text-xs text-muted-foreground">Valor mensalidade (R$)</label>
                       <Input type="number" step="0.01" value={editAlunoForm.valor_mensalidade ?? ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, valor_mensalidade: e.target.value ? parseFloat(e.target.value) : undefined })} placeholder={turmaAtual?.valor_mensalidade ? `Padrao: R$ ${turmaAtual.valor_mensalidade}` : 'Padrao da turma'} className="mt-1 h-8 text-sm" />
                       <p className="text-[10px] text-muted-foreground mt-0.5">Vazio = usa valor da turma. Salvar atualiza parcelas pendentes.</p>
@@ -2243,7 +2279,7 @@ export function Financeiro() {
                     </div>
                     <div>
                       <label className="text-xs text-muted-foreground">Parcelas calculadas</label>
-                      <Input value={`${pagas}/${total || paymentMethodTotal(editAlunoForm.forma_pagamento)}`} readOnly className="mt-1 h-8 text-sm bg-muted/50" />
+                      <Input value={`${pagas}/${total || (editAlunoForm.total_mensalidades || paymentMethodTotal(editAlunoForm.forma_pagamento))}`} readOnly className="mt-1 h-8 text-sm bg-muted/50" />
                     </div>
                   </div>
                 </div>
