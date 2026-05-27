@@ -17,6 +17,8 @@ import {
   Plus, DollarSign, Users, AlertCircle, Eye, Trash2,
   TrendingUp, Target, Phone, Pencil, Building2, CheckCircle2,
   Copy, Download, ExternalLink, Upload, FileText,
+  Send, MessageSquare, Shield, ChevronDown, ChevronRight,
+  Play, Square, CheckCircle, XCircle, Clock, RefreshCw,
 } from 'lucide-react';
 import { format, isSameMonth, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -264,6 +266,534 @@ const getEmptyAlunoForm = () => ({
   observacoes: '',
 });
 
+// ── TurmaDisparoModal ─────────────────────────────────────────────────────────
+
+interface DisparoConfig {
+  template: string;
+  link_grupo: string;
+  link_aula_1: string;
+  link_aula_2: string;
+  link_aula_3: string;
+  delay_min_s: number;
+  delay_max_s: number;
+  typing_delay_s: number;
+  instance_name: string | null;
+}
+
+interface SendResult {
+  alunoId: string;
+  nome: string;
+  numero: string;
+  status: 'pending' | 'sending' | 'sent' | 'error' | 'skipped';
+  error?: string;
+}
+
+const DEFAULT_TEMPLATE = `Olá {{nome}}! 👋
+
+Seja muito bem-vindo(a) à nossa turma! 🎉
+
+Aqui estão os links importantes para você:
+
+📱 *Grupo WhatsApp:* {{link_grupo}}
+
+📚 *Links das aulas:*
+▶️ Aula 1: {{link_aula_1}}
+▶️ Aula 2: {{link_aula_2}}
+▶️ Aula 3: {{link_aula_3}}
+
+Qualquer dúvida, é só chamar. Estamos juntos! 💪`;
+
+const DISPARO_VARS = ['nome', 'link_grupo', 'link_aula_1', 'link_aula_2', 'link_aula_3'];
+
+function applyDisparoVars(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`);
+}
+
+function TurmaDisparoModal({
+  open, onClose, turma, alunos: todosAlunos,
+}: {
+  open: boolean;
+  onClose: () => void;
+  turma: { id: string; nome: string };
+  alunos: Array<{ id: string; nome: string; whatsapp?: string; status: string }>;
+}) {
+  const alunosComWpp = todosAlunos.filter(a => a.whatsapp?.trim() && a.status !== 'cancelado');
+
+  const [tab,        setTab]        = useState<'mensagem' | 'antiban' | 'alunos'>('mensagem');
+  const [cfg,        setCfg]        = useState<DisparoConfig>({
+    template:       DEFAULT_TEMPLATE,
+    link_grupo:     '',
+    link_aula_1:    '',
+    link_aula_2:    '',
+    link_aula_3:    '',
+    delay_min_s:    8,
+    delay_max_s:    20,
+    typing_delay_s: 3,
+    instance_name:  null,
+  });
+  const [instances,  setInstances]  = useState<string[]>([]);
+  const [selected,   setSelected]   = useState<Set<string>>(new Set(alunosComWpp.map(a => a.id)));
+  const [results,    setResults]    = useState<SendResult[]>([]);
+  const [running,    setRunning]    = useState(false);
+  const [stopped,    setStopped]    = useState(false);
+  const [cfgLoaded,  setCfgLoaded]  = useState(false);
+  const stopRef = { current: false };
+
+  // Carrega config salva + instâncias ao abrir
+  useEffect(() => {
+    if (!open) return;
+    setResults([]);
+    setRunning(false);
+    setStopped(false);
+    setSelected(new Set(alunosComWpp.map(a => a.id)));
+
+    Promise.all([
+      supabase.from('turma_disparo_config').select('*').eq('turma_id', turma.id).maybeSingle(),
+      supabase.from('evolution_config').select('instance_name').eq('ativo', true).order('prioridade', { ascending: true }),
+    ]).then(([{ data: saved }, { data: evo }]) => {
+      if (saved) {
+        setCfg({
+          template:       saved.template       || DEFAULT_TEMPLATE,
+          link_grupo:     saved.link_grupo      || '',
+          link_aula_1:    saved.link_aula_1     || '',
+          link_aula_2:    saved.link_aula_2     || '',
+          link_aula_3:    saved.link_aula_3     || '',
+          delay_min_s:    saved.delay_min_s     ?? 8,
+          delay_max_s:    saved.delay_max_s     ?? 20,
+          typing_delay_s: saved.typing_delay_s  ?? 3,
+          instance_name:  saved.instance_name   ?? null,
+        });
+      }
+      setInstances((evo || []).map((r: { instance_name: string }) => r.instance_name));
+      setCfgLoaded(true);
+    });
+  }, [open, turma.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function saveCfg() {
+    await supabase.from('turma_disparo_config').upsert(
+      { turma_id: turma.id, ...cfg },
+      { onConflict: 'turma_id' },
+    );
+  }
+
+  function buildMensagem(nome: string) {
+    return applyDisparoVars(cfg.template, {
+      nome,
+      link_grupo:  cfg.link_grupo,
+      link_aula_1: cfg.link_aula_1,
+      link_aula_2: cfg.link_aula_2,
+      link_aula_3: cfg.link_aula_3,
+    });
+  }
+
+  function randomDelay() {
+    const min = Math.max(1, cfg.delay_min_s) * 1000;
+    const max = Math.max(min + 1000, cfg.delay_max_s * 1000);
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  async function startDisparo() {
+    await saveCfg();
+    const toSend = alunosComWpp.filter(a => selected.has(a.id));
+    if (!toSend.length) { return; }
+
+    stopRef.current = false;
+    setStopped(false);
+    setRunning(true);
+    setTab('alunos');
+
+    const initial: SendResult[] = toSend.map(a => ({
+      alunoId: a.id,
+      nome: a.nome,
+      numero: a.whatsapp!.trim(),
+      status: 'pending',
+    }));
+    setResults(initial);
+
+    for (let i = 0; i < toSend.length; i++) {
+      if (stopRef.current) {
+        setStopped(true);
+        break;
+      }
+
+      const aluno = toSend[i];
+      setResults(prev => prev.map(r => r.alunoId === aluno.id ? { ...r, status: 'sending' } : r));
+
+      try {
+        const mensagem = buildMensagem(aluno.nome);
+        const { data, error } = await supabase.functions.invoke('wpp-enviar', {
+          body: {
+            numero:          aluno.whatsapp!.trim(),
+            mensagem,
+            instance_name:   cfg.instance_name ?? undefined,
+            typing_delay_ms: cfg.typing_delay_s * 1000,
+          },
+        });
+        const err = error?.message ?? (data as any)?.error;
+        if (err) throw new Error(err);
+        setResults(prev => prev.map(r => r.alunoId === aluno.id ? { ...r, status: 'sent' } : r));
+      } catch (e: unknown) {
+        setResults(prev => prev.map(r =>
+          r.alunoId === aluno.id ? { ...r, status: 'error', error: (e as Error).message } : r));
+      }
+
+      // Delay aleatório anti-ban (exceto após o último)
+      if (i < toSend.length - 1 && !stopRef.current) {
+        const delay = randomDelay();
+        const countdownEnd = Date.now() + delay;
+        // Countdown no item "next"
+        const nextAluno = toSend[i + 1];
+        const tick = setInterval(() => {
+          const rem = Math.ceil((countdownEnd - Date.now()) / 1000);
+          if (rem <= 0 || stopRef.current) { clearInterval(tick); return; }
+          setResults(prev => prev.map(r =>
+            r.alunoId === nextAluno.id ? { ...r, status: 'pending', error: `Aguardando ${rem}s…` } : r));
+        }, 500);
+        await new Promise(r => setTimeout(r, delay));
+        clearInterval(tick);
+        setResults(prev => prev.map(r =>
+          r.alunoId === nextAluno.id ? { ...r, error: undefined } : r));
+      }
+    }
+
+    setRunning(false);
+  }
+
+  function stopDisparo() { stopRef.current = true; }
+
+  const selectedList = alunosComWpp.filter(a => selected.has(a.id));
+  const sent  = results.filter(r => r.status === 'sent').length;
+  const errs  = results.filter(r => r.status === 'error').length;
+  const total = results.length;
+
+  const templateRef = { current: null as HTMLTextAreaElement | null };
+
+  function insertVar(v: string) {
+    const tag = `{{${v}}}`;
+    const el = templateRef.current;
+    if (el) {
+      const s = el.selectionStart ?? cfg.template.length;
+      const e = el.selectionEnd   ?? s;
+      const next = cfg.template.slice(0, s) + tag + cfg.template.slice(e);
+      setCfg(c => ({ ...c, template: next }));
+      setTimeout(() => { el.selectionStart = el.selectionEnd = s + tag.length; el.focus(); }, 0);
+    } else {
+      setCfg(c => ({ ...c, template: c.template + tag }));
+    }
+  }
+
+  if (!cfgLoaded && open) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v && !running) onClose(); }}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogHeader className="flex-shrink-0">
+          <DialogTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-primary" />
+            Disparar mensagem — {turma.nome}
+          </DialogTitle>
+        </DialogHeader>
+
+        {/* Tab bar */}
+        <div className="flex gap-1 flex-shrink-0 border-b border-border pb-2">
+          {(['mensagem', 'antiban', 'alunos'] as const).map(t => (
+            <button
+              key={t} type="button"
+              onClick={() => setTab(t)}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all capitalize ${
+                tab === t ? 'bg-primary text-white' : 'text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              {t === 'mensagem' ? '✏️ Mensagem'
+               : t === 'antiban' ? '🛡️ Anti-ban'
+               : `👥 Alunos (${selectedList.length})`}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+
+          {/* ── MENSAGEM ─────────────────────────────────────────── */}
+          {tab === 'mensagem' && (
+            <div className="space-y-4 py-2">
+              {/* Variáveis */}
+              <div className="flex flex-wrap gap-1">
+                <span className="text-xs text-muted-foreground flex items-center mr-1">Inserir:</span>
+                {DISPARO_VARS.map(v => (
+                  <button key={v} type="button" onClick={() => insertVar(v)}
+                    className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors">
+                    {`{{${v}}}`}
+                  </button>
+                ))}
+              </div>
+
+              {/* Template */}
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Template da mensagem</label>
+                <textarea
+                  ref={el => { templateRef.current = el; }}
+                  value={cfg.template}
+                  onChange={e => setCfg(c => ({ ...c, template: e.target.value }))}
+                  rows={10}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono resize-y focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  placeholder="Digite sua mensagem..."
+                  disabled={running}
+                />
+                <p className="text-[10px] text-muted-foreground mt-0.5 text-right">{cfg.template.length} chars</p>
+              </div>
+
+              {/* Links */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Valores das variáveis</p>
+                {[
+                  { key: 'link_grupo',  label: '📱 Link do grupo WhatsApp' },
+                  { key: 'link_aula_1', label: '▶️ Link Aula 1' },
+                  { key: 'link_aula_2', label: '▶️ Link Aula 2' },
+                  { key: 'link_aula_3', label: '▶️ Link Aula 3' },
+                ].map(({ key, label }) => (
+                  <div key={key} className="flex items-center gap-2">
+                    <label className="text-xs text-muted-foreground w-40 flex-shrink-0">{label}</label>
+                    <input
+                      type="text"
+                      value={(cfg as any)[key]}
+                      onChange={e => setCfg(c => ({ ...c, [key]: e.target.value }))}
+                      placeholder="https://..."
+                      disabled={running}
+                      className="flex-1 h-7 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Preview */}
+              {alunosComWpp[0] && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                    Pré-visualização (como {alunosComWpp[0].nome})
+                  </p>
+                  <div className="bg-[#e5ddd5] rounded-lg p-3">
+                    <div className="bg-white rounded-lg p-3 max-w-xs shadow-sm ml-auto">
+                      <p className="text-sm whitespace-pre-wrap text-gray-800 leading-relaxed">
+                        {buildMensagem(alunosComWpp[0].nome)}
+                      </p>
+                      <p className="text-[10px] text-gray-400 text-right mt-1">agora ✓✓</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── ANTI-BAN ─────────────────────────────────────────── */}
+          {tab === 'antiban' && (
+            <div className="space-y-5 py-2">
+              <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3">
+                <p className="text-xs font-semibold text-amber-800 mb-1.5 flex items-center gap-1.5">
+                  <Shield className="h-3.5 w-3.5" /> Como funciona o anti-ban
+                </p>
+                <ul className="text-xs text-amber-700 space-y-1 list-disc list-inside">
+                  <li>Delay aleatório entre mensagens simula comportamento humano</li>
+                  <li>Indicador "digitando..." antes de cada mensagem</li>
+                  <li>Evolution API adiciona delay interno de 1.2s no envio</li>
+                  <li>Recomendado: max 50 por sessão, depois pause 30 min</li>
+                </ul>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium">Delay entre mensagens</label>
+                  <div className="grid grid-cols-2 gap-3 mt-2">
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">Mínimo (segundos)</label>
+                      <input
+                        type="number" min="3" max="60"
+                        value={cfg.delay_min_s}
+                        onChange={e => setCfg(c => ({ ...c, delay_min_s: parseInt(e.target.value) || 8 }))}
+                        disabled={running}
+                        className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">Máximo (segundos)</label>
+                      <input
+                        type="number" min="5" max="120"
+                        value={cfg.delay_max_s}
+                        onChange={e => setCfg(c => ({ ...c, delay_max_s: parseInt(e.target.value) || 20 }))}
+                        disabled={running}
+                        className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Cada mensagem aguardará entre {cfg.delay_min_s}s e {cfg.delay_max_s}s antes de enviar a próxima.
+                    Estimativa: ~{Math.round(selectedList.length * (cfg.delay_min_s + cfg.delay_max_s) / 2 / 60)} min para {selectedList.length} alunos.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Indicador de digitação</label>
+                  <div className="flex items-center gap-3 mt-2">
+                    <input
+                      type="number" min="0" max="10"
+                      value={cfg.typing_delay_s}
+                      onChange={e => setCfg(c => ({ ...c, typing_delay_s: parseInt(e.target.value) || 0 }))}
+                      disabled={running}
+                      className="w-24 h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    />
+                    <span className="text-sm text-muted-foreground">segundos de "digitando…" antes de enviar (0 = desativado)</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Instância WhatsApp</label>
+                  <select
+                    value={cfg.instance_name ?? '__auto__'}
+                    onChange={e => setCfg(c => ({ ...c, instance_name: e.target.value === '__auto__' ? null : e.target.value }))}
+                    disabled={running}
+                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    <option value="__auto__">Auto-prioridade (recomendado)</option>
+                    {instances.map(inst => <option key={inst} value={inst}>{inst}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── ALUNOS ───────────────────────────────────────────── */}
+          {tab === 'alunos' && (
+            <div className="space-y-3 py-2">
+              {/* Progress (se running) */}
+              {results.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{sent + errs}/{total} processados · {sent} enviados · {errs} erros</span>
+                    {running && <span className="text-primary animate-pulse">Disparando…</span>}
+                    {stopped && <span className="text-amber-600">Parado pelo usuário</span>}
+                    {!running && !stopped && results.length > 0 && <span className="text-emerald-600">Concluído</span>}
+                  </div>
+                  <div className="w-full bg-muted rounded-full h-2">
+                    <div
+                      className="bg-primary h-2 rounded-full transition-all duration-500"
+                      style={{ width: `${total > 0 ? ((sent + errs) / total) * 100 : 0}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Lista */}
+              {results.length === 0 ? (
+                <>
+                  {alunosComWpp.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-8">Nenhum aluno desta turma tem WhatsApp cadastrado.</p>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2 mb-2">
+                        <input
+                          type="checkbox"
+                          id="select-all"
+                          checked={selected.size === alunosComWpp.length}
+                          onChange={e => setSelected(e.target.checked ? new Set(alunosComWpp.map(a => a.id)) : new Set())}
+                          className="w-4 h-4"
+                        />
+                        <label htmlFor="select-all" className="text-xs font-medium text-muted-foreground cursor-pointer">
+                          Selecionar todos ({alunosComWpp.length} com WhatsApp)
+                        </label>
+                      </div>
+                      <div className="space-y-1 max-h-64 overflow-y-auto">
+                        {alunosComWpp.map(a => (
+                          <label key={a.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/50 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={selected.has(a.id)}
+                              onChange={e => {
+                                const s = new Set(selected);
+                                e.target.checked ? s.add(a.id) : s.delete(a.id);
+                                setSelected(s);
+                              }}
+                              className="w-4 h-4 flex-shrink-0"
+                            />
+                            <span className="text-sm font-medium flex-1 truncate">{a.nome}</span>
+                            <span className="text-xs text-muted-foreground font-mono">{a.whatsapp}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
+              ) : (
+                <div className="space-y-1 max-h-72 overflow-y-auto">
+                  {results.map(r => (
+                    <div key={r.alunoId} className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs ${
+                      r.status === 'sent'    ? 'bg-emerald-50' :
+                      r.status === 'error'   ? 'bg-red-50' :
+                      r.status === 'sending' ? 'bg-blue-50' : 'bg-muted/30'
+                    }`}>
+                      <div className="flex-shrink-0">
+                        {r.status === 'sent'    && <CheckCircle  className="h-3.5 w-3.5 text-emerald-600" />}
+                        {r.status === 'error'   && <XCircle      className="h-3.5 w-3.5 text-red-500" />}
+                        {r.status === 'sending' && <RefreshCw    className="h-3.5 w-3.5 text-blue-600 animate-spin" />}
+                        {r.status === 'pending' && <Clock        className="h-3.5 w-3.5 text-muted-foreground" />}
+                      </div>
+                      <span className="font-medium flex-1 truncate">{r.nome}</span>
+                      <span className="text-muted-foreground font-mono">{r.numero}</span>
+                      {r.error && (
+                        <span className={`max-w-[140px] truncate ${r.status === 'error' ? 'text-red-500' : 'text-muted-foreground italic'}`}
+                          title={r.error}>
+                          {r.error}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between gap-3 pt-3 border-t flex-shrink-0">
+          <span className="text-xs text-muted-foreground">
+            {results.length === 0
+              ? `${selectedList.length} aluno${selectedList.length !== 1 ? 's' : ''} selecionado${selectedList.length !== 1 ? 's' : ''} com WhatsApp`
+              : `${sent} enviados · ${errs} erros · ${total - sent - errs} pendentes`}
+          </span>
+          <div className="flex gap-2">
+            {!running && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors"
+              >
+                {results.length > 0 ? 'Fechar' : 'Cancelar'}
+              </button>
+            )}
+            {running ? (
+              <button
+                type="button"
+                onClick={stopDisparo}
+                className="flex items-center gap-2 px-4 py-1.5 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+              >
+                <Square className="h-3.5 w-3.5" /> Parar disparo
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={startDisparo}
+                disabled={selectedList.length === 0 || running}
+                className="flex items-center gap-2 px-4 py-1.5 text-sm bg-primary text-white rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Play className="h-3.5 w-3.5" />
+                {results.length > 0 ? 'Reenviar' : 'Iniciar disparo'}
+              </button>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function Financeiro() {
   const { user } = useAuth();
   const isAdmin = user?.tipo === 'admin';
@@ -291,6 +821,7 @@ export function Financeiro() {
   const [editingTurmaCardId, setEditingTurmaCardId] = useState<string | null>(null);
   const [inlineTurmaForm, setInlineTurmaForm] = useState<Partial<Turma>>({});
   const [savingInlineTurma, setSavingInlineTurma] = useState(false);
+  const [disparoTurma, setDisparoTurma] = useState<{ id: string; nome: string } | null>(null);
 
   // Formularios
   const emptyTurmaForm = { nome: '', produto: 'psicanalise' as ProdutoTab, data_inicio: '', data_fim: '', valor_mensalidade: '109.90', total_mensalidades: '15' };
@@ -1807,6 +2338,14 @@ export function Financeiro() {
                           </>
                         ) : (
                           <>
+                            <Button
+                              variant="ghost" size="sm"
+                              title="Disparar mensagem para alunos da turma"
+                              onClick={() => setDisparoTurma({ id: turma.id, nome: turma.nome })}
+                              className="text-primary hover:text-primary hover:bg-primary/10"
+                            >
+                              <Send className="h-3.5 w-3.5" />
+                            </Button>
                             <Button variant="ghost" size="sm" onClick={() => { setEditingTurmaCardId(turma.id); setInlineTurmaForm({ nome: turma.nome, data_inicio: turma.data_inicio || '', data_fim: turma.data_fim || '', valor_mensalidade: turma.valor_mensalidade, total_mensalidades: turma.total_mensalidades, responsavel_id: turma.responsavel_id || '' }); }}><Pencil className="h-3.5 w-3.5" /></Button>
                             <Button variant="ghost" size="sm" onClick={() => deleteTurma(turma.id)} className="text-destructive hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
                           </>
@@ -1894,6 +2433,16 @@ export function Financeiro() {
           <TabsContent value="numerologia"><ProdutoContent /></TabsContent>
         </Tabs>
       </div>
+
+      {/* Modal Disparo de Turma */}
+      {disparoTurma && (
+        <TurmaDisparoModal
+          open={!!disparoTurma}
+          onClose={() => setDisparoTurma(null)}
+          turma={disparoTurma}
+          alunos={alunos.filter(a => a.turma_id === disparoTurma.id)}
+        />
+      )}
 
       {/* Modal Nova Turma */}
       <Dialog open={showTurmaDialog} onOpenChange={setShowTurmaDialog}>
