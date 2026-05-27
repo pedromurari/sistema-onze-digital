@@ -23,6 +23,7 @@ import {
   GitBranch, Image, Video, Music, FileIcon, BarChart2, Eye,
   AtSign, Upload, Download, X, Settings2,
   Variable, Link2, ChevronDown, ChevronRight, MoreVertical,
+  Mail, Heart, RefreshCw, CheckCircle, XCircle, Minus,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -605,6 +606,9 @@ export function FunilLancamento() {
           <TabsTrigger value="rapido" className="gap-1.5">
             <Zap className="h-4 w-4" /> Envio Rápido
           </TabsTrigger>
+          <TabsTrigger value="email" className="gap-1.5">
+            <Mail className="h-4 w-4" /> Email
+          </TabsTrigger>
           <TabsTrigger value="whatsapp" className="gap-1.5">
             <Phone className="h-4 w-4" /> WhatsApp
           </TabsTrigger>
@@ -754,7 +758,15 @@ export function FunilLancamento() {
                 </Button>
               </CardContent>
             </Card>
+
+            {/* Email avulso */}
+            <QuickEmailCard />
           </div>
+        </TabsContent>
+
+        {/* ── EMAIL CONFIG ─────────────────────────────────────────────────── */}
+        <TabsContent value="email" className="mt-4">
+          <EmailConfigPanel />
         </TabsContent>
 
         {/* ── WHATSAPP ─────────────────────────────────────────────────────── */}
@@ -2107,7 +2119,7 @@ function FunnelSection({
 
       {/* Messages (expanded) */}
       {expanded && (
-        <div className="border-t px-4 py-4">
+        <div className="border-t px-4 py-4 pb-0">
           {loading ? (
             <div className="flex justify-center py-8">
               <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
@@ -2156,7 +2168,641 @@ function FunnelSection({
           )}
         </div>
       )}
+
+      {/* Boas-vindas section — always visible when expanded */}
+      {expanded && <BoasVindasSection funnelName={name} />}
     </Card>
+  );
+}
+
+// ── Boas-Vindas Section ────────────────────────────────────────────────────────
+
+interface BoasVindasCfg {
+  id?: string;
+  funnel_name: string;
+  ativo: boolean;
+  wpp_ativo: boolean;
+  wpp_instance_name: string | null;
+  wpp_mensagem: string;
+  email_ativo: boolean;
+  email_assunto: string;
+  email_corpo: string;
+}
+
+interface BVLog {
+  id: string;
+  nome: string | null;
+  whatsapp: string | null;
+  email: string | null;
+  wpp_status: string;
+  email_status: string;
+  wpp_error: string | null;
+  email_error: string | null;
+  sent_at: string;
+}
+
+const EMPTY_BV = (funnel_name: string): BoasVindasCfg => ({
+  funnel_name,
+  ativo: false,
+  wpp_ativo: true,
+  wpp_instance_name: null,
+  wpp_mensagem: 'Olá {{nome}}! 🎉\n\nSeja muito bem-vindo(a) à {{turma}}!\n\nEstamos super felizes em ter você conosco. Prepare-se para uma experiência incrível! 🚀',
+  email_ativo: false,
+  email_assunto: 'Boas-vindas à {{turma}}! 🎉',
+  email_corpo: '<h2>Olá, {{nome}}! 👋</h2><p>Seja muito bem-vindo(a) à <strong>{{turma}}</strong>!</p><p>Estamos super felizes em ter você conosco.</p><p>Em breve você receberá mais informações.</p><p>Abraços,<br/>Equipe 11ds</p>',
+});
+
+const BV_VARS = ['nome', 'turma', 'whatsapp', 'email'];
+
+function StatusDot({ status }: { status: string }) {
+  if (status === 'sent')    return <CheckCircle className="h-3.5 w-3.5 text-emerald-600 flex-shrink-0" />;
+  if (status === 'error')   return <XCircle     className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />;
+  if (status === 'skipped') return <Minus       className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />;
+  return null;
+}
+
+function BoasVindasSection({ funnelName }: { funnelName: string }) {
+  const [open,      setOpen]      = useState(false);
+  const [cfg,       setCfg]       = useState<BoasVindasCfg>(EMPTY_BV(funnelName));
+  const [instances, setInstances] = useState<string[]>([]);
+  const [logs,      setLogs]      = useState<BVLog[]>([]);
+  const [saving,    setSaving]    = useState(false);
+  const [sending,   setSending]   = useState(false);
+  const [sendNome,  setSendNome]  = useState('');
+  const [sendWpp,   setSendWpp]   = useState('');
+  const [sendEmail, setSendEmail] = useState('');
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    Promise.all([
+      supabase.from('boas_vindas_config').select('*').eq('funnel_name', funnelName).maybeSingle(),
+      supabase.from('evolution_config').select('instance_name').eq('ativo', true).order('prioridade', { ascending: true }),
+      supabase.from('boas_vindas_logs').select('*').eq('funnel_name', funnelName).order('sent_at', { ascending: false }).limit(10),
+    ]).then(([{ data: bvData }, { data: evoData }, { data: logsData }]) => {
+      if (bvData) setCfg(bvData as BoasVindasCfg);
+      setInstances((evoData || []).map((r: { instance_name: string }) => r.instance_name));
+      setLogs((logsData || []) as BVLog[]);
+    });
+  }, [open, funnelName]);
+
+  async function saveCfg() {
+    setSaving(true);
+    const { error } = await supabase
+      .from('boas_vindas_config')
+      .upsert({ ...cfg, funnel_name: funnelName }, { onConflict: 'funnel_name' });
+    setSaving(false);
+    if (error) { toast.error(`Erro: ${error.message}`); return; }
+    toast.success('Boas-vindas salvas!');
+  }
+
+  async function handleSend() {
+    if (!sendWpp.trim() && !sendEmail.trim()) {
+      toast.error('Informe WhatsApp ou Email do lead');
+      return;
+    }
+    setSending(true);
+    const { data, error } = await supabase.functions.invoke('boas-vindas-enviar', {
+      body: { funnel_name: funnelName, nome: sendNome.trim(), whatsapp: sendWpp.trim(), email: sendEmail.trim() },
+    });
+    setSending(false);
+    const err = error?.message ?? (data as any)?.error;
+    if (err) { toast.error(`Erro: ${err}`); return; }
+
+    const d = data as any;
+    const parts: string[] = [];
+    if (d?.wpp_status   === 'sent')  parts.push('WhatsApp ✓');
+    if (d?.email_status === 'sent')  parts.push('Email ✓');
+    if (d?.wpp_status   === 'error') parts.push(`WPP ✗ ${d.wpp_error ?? ''}`);
+    if (d?.email_status === 'error') parts.push(`Email ✗ ${d.email_error ?? ''}`);
+    toast.success(`Enviado: ${parts.join(' · ')}` || 'Boas-vindas enviadas!');
+
+    setSendNome(''); setSendWpp(''); setSendEmail('');
+    // Refresh logs
+    const { data: newLogs } = await supabase
+      .from('boas_vindas_logs').select('*').eq('funnel_name', funnelName)
+      .order('sent_at', { ascending: false }).limit(10);
+    setLogs((newLogs || []) as BVLog[]);
+  }
+
+  function insertVar(v: string) {
+    const tag = `{{${v}}}`;
+    const el = bodyRef.current;
+    if (el) {
+      const s = el.selectionStart ?? cfg.wpp_mensagem.length;
+      const e = el.selectionEnd   ?? s;
+      const next = cfg.wpp_mensagem.slice(0, s) + tag + cfg.wpp_mensagem.slice(e);
+      setCfg(c => ({ ...c, wpp_mensagem: next }));
+      setTimeout(() => { el.selectionStart = el.selectionEnd = s + tag.length; el.focus(); }, 0);
+    } else {
+      setCfg(c => ({ ...c, wpp_mensagem: c.wpp_mensagem + tag }));
+    }
+  }
+
+  return (
+    <div className="border-t border-border/40">
+      {/* Collapsible header */}
+      <button
+        type="button"
+        className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-muted/20 transition-colors"
+        onClick={() => setOpen(o => !o)}
+      >
+        {open ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+               : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
+        <Heart className="h-3.5 w-3.5 text-rose-500 flex-shrink-0" />
+        <span className="text-xs font-semibold text-foreground">Boas-vindas</span>
+        {cfg.ativo && (
+          <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200 font-medium">
+            Ativo
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-4">
+          {/* Toggle ativo */}
+          <div className="flex items-center gap-3 p-3 rounded-lg border border-border bg-muted/20">
+            <Switch
+              checked={cfg.ativo}
+              onCheckedChange={v => setCfg(c => ({ ...c, ativo: v }))}
+            />
+            <div>
+              <p className="text-sm font-medium leading-none">Boas-vindas ativo</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Quando ativo, dispara automaticamente para novos leads deste funil
+              </p>
+            </div>
+          </div>
+
+          {/* WhatsApp config */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={cfg.wpp_ativo}
+                onCheckedChange={v => setCfg(c => ({ ...c, wpp_ativo: v }))}
+              />
+              <Phone className="h-4 w-4 text-green-600" />
+              <span className="text-sm font-semibold">WhatsApp</span>
+            </div>
+
+            {cfg.wpp_ativo && (
+              <div className="pl-9 space-y-3">
+                {/* Instance selector */}
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Instância</label>
+                  <Select
+                    value={cfg.wpp_instance_name ?? '__auto__'}
+                    onValueChange={v => setCfg(c => ({ ...c, wpp_instance_name: v === '__auto__' ? null : v }))}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__auto__">Auto-prioridade (recomendado)</SelectItem>
+                      {instances.map(inst => (
+                        <SelectItem key={inst} value={inst}>{inst}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Mensagem */}
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Mensagem</label>
+                  <div className="flex flex-wrap gap-1 mb-1.5">
+                    {BV_VARS.map(v => (
+                      <button key={v} type="button" onClick={() => insertVar(v)}
+                        className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors">
+                        {`{{${v}}}`}
+                      </button>
+                    ))}
+                  </div>
+                  <Textarea
+                    ref={bodyRef}
+                    value={cfg.wpp_mensagem}
+                    onChange={e => setCfg(c => ({ ...c, wpp_mensagem: e.target.value }))}
+                    rows={5}
+                    className="text-sm font-mono"
+                    placeholder="Mensagem de boas-vindas no WhatsApp..."
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-0.5 text-right">{cfg.wpp_mensagem.length} chars</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Email config */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={cfg.email_ativo}
+                onCheckedChange={v => setCfg(c => ({ ...c, email_ativo: v }))}
+              />
+              <Mail className="h-4 w-4 text-blue-600" />
+              <span className="text-sm font-semibold">Email</span>
+            </div>
+
+            {cfg.email_ativo && (
+              <div className="pl-9 space-y-3">
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Assunto</label>
+                  <Input
+                    value={cfg.email_assunto}
+                    onChange={e => setCfg(c => ({ ...c, email_assunto: e.target.value }))}
+                    placeholder="Ex: Boas-vindas à {{turma}}! 🎉"
+                    className="h-8 text-sm"
+                  />
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {BV_VARS.map(v => (
+                      <button key={v} type="button"
+                        onClick={() => setCfg(c => ({ ...c, email_assunto: c.email_assunto + `{{${v}}}` }))}
+                        className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors">
+                        {`{{${v}}}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">
+                    Corpo do email (HTML)
+                  </label>
+                  <Textarea
+                    value={cfg.email_corpo}
+                    onChange={e => setCfg(c => ({ ...c, email_corpo: e.target.value }))}
+                    rows={8}
+                    className="text-xs font-mono"
+                    placeholder="<h2>Olá, {{nome}}!</h2><p>...</p>"
+                  />
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {BV_VARS.map(v => (
+                      <button key={v} type="button"
+                        onClick={() => setCfg(c => ({ ...c, email_corpo: c.email_corpo + `{{${v}}}` }))}
+                        className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors">
+                        {`{{${v}}}`}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Use HTML básico: &lt;h2&gt;, &lt;p&gt;, &lt;strong&gt;, &lt;br&gt;. Configure o provedor em Configurações → Email.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Save button */}
+          <Button onClick={saveCfg} disabled={saving} size="sm" className="gap-2">
+            {saving ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+            Salvar configuração
+          </Button>
+
+          {/* Send to lead */}
+          <div className="border border-border rounded-lg p-3 space-y-3 bg-muted/10">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+              <Send className="h-3.5 w-3.5" /> Enviar para lead
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <Input
+                placeholder="Nome"
+                value={sendNome}
+                onChange={e => setSendNome(e.target.value)}
+                className="h-8 text-sm"
+              />
+              <Input
+                placeholder="WhatsApp (55119...)"
+                value={sendWpp}
+                onChange={e => setSendWpp(e.target.value)}
+                className="h-8 text-sm"
+              />
+              <Input
+                placeholder="Email"
+                type="email"
+                value={sendEmail}
+                onChange={e => setSendEmail(e.target.value)}
+                className="h-8 text-sm"
+              />
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2 border-rose-200 text-rose-700 hover:bg-rose-50"
+              onClick={handleSend}
+              disabled={sending || !cfg.ativo}
+              title={!cfg.ativo ? 'Ative as boas-vindas para enviar' : ''}
+            >
+              {sending
+                ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                : <Heart className="h-3.5 w-3.5" />}
+              Enviar boas-vindas
+            </Button>
+            {!cfg.ativo && (
+              <p className="text-[11px] text-amber-600">⚠ Ative as boas-vindas acima para poder enviar</p>
+            )}
+          </div>
+
+          {/* Logs */}
+          {logs.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Últimos envios
+              </p>
+              <div className="space-y-1.5">
+                {logs.map(log => (
+                  <div key={log.id} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded bg-muted/30 border border-border/40">
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <Phone className="h-3 w-3 text-muted-foreground" />
+                      <StatusDot status={log.wpp_status} />
+                      <Mail className="h-3 w-3 text-muted-foreground ml-1" />
+                      <StatusDot status={log.email_status} />
+                    </div>
+                    <span className="font-medium truncate">{log.nome ?? log.whatsapp ?? log.email ?? '—'}</span>
+                    <span className="text-muted-foreground ml-auto flex-shrink-0">
+                      {(() => { try { return format(parseISO(log.sent_at), 'dd/MM HH:mm', { locale: ptBR }); } catch { return ''; } })()}
+                    </span>
+                    {(log.wpp_error || log.email_error) && (
+                      <span className="text-red-500 truncate max-w-[120px]" title={log.wpp_error ?? log.email_error ?? ''}>
+                        {(log.wpp_error ?? log.email_error ?? '').slice(0, 30)}…
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Quick Email Card ───────────────────────────────────────────────────────────
+
+function QuickEmailCard() {
+  const [to,       setTo]       = useState('');
+  const [toName,   setToName]   = useState('');
+  const [subject,  setSubject]  = useState('');
+  const [body,     setBody]     = useState('');
+  const [sending,  setSending]  = useState(false);
+
+  async function handleSend() {
+    if (!to.trim() || !subject.trim() || !body.trim()) {
+      toast.error('Para, Assunto e Corpo são obrigatórios');
+      return;
+    }
+    setSending(true);
+    const { data, error } = await supabase.functions.invoke('email-enviar', {
+      body: { to: to.trim(), to_name: toName.trim() || undefined, subject: subject.trim(), html: body },
+    });
+    setSending(false);
+    const err = error?.message ?? (data as any)?.error;
+    if (err) { toast.error(`Erro: ${err}`); return; }
+    toast.success('Email enviado!');
+    setTo(''); setToName(''); setSubject(''); setBody('');
+  }
+
+  return (
+    <Card className="mt-4">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Mail className="h-4 w-4 text-primary" /> Envio de Email avulso
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Para (email) *</label>
+            <Input type="email" value={to} onChange={e => setTo(e.target.value)} placeholder="destinatario@email.com" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Nome do destinatário</label>
+            <Input value={toName} onChange={e => setToName(e.target.value)} placeholder="João Silva (opcional)" />
+          </div>
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1 block">Assunto *</label>
+          <Input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Assunto do email" />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1 block">
+            Corpo (HTML) *
+          </label>
+          <Textarea
+            value={body}
+            onChange={e => setBody(e.target.value)}
+            rows={6}
+            placeholder="<p>Olá! Mensagem aqui...</p>"
+            className="font-mono text-xs"
+          />
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            Aceita HTML básico. Provedor configurado em Configurações → Email.
+          </p>
+        </div>
+        <Button
+          onClick={handleSend}
+          disabled={sending || !to.trim() || !subject.trim() || !body.trim()}
+          className="w-full gap-2 bg-primary hover:bg-primary/90"
+        >
+          {sending ? <><Spinner small /> Enviando…</> : <><Mail className="h-4 w-4" /> Enviar email</>}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Email Config Panel ─────────────────────────────────────────────────────────
+
+interface EmailCfg {
+  id?: string;
+  ativo: boolean;
+  provider: 'resend' | 'sendgrid' | 'brevo';
+  api_key: string;
+  from_name: string;
+  from_email: string;
+}
+
+const EMPTY_EMAIL_CFG: EmailCfg = {
+  ativo: true,
+  provider: 'resend',
+  api_key: '',
+  from_name: '',
+  from_email: '',
+};
+
+function EmailConfigPanel() {
+  const [cfg,       setCfg]       = useState<EmailCfg>(EMPTY_EMAIL_CFG);
+  const [loading,   setLoading]   = useState(true);
+  const [saving,    setSaving]    = useState(false);
+  const [testing,   setTesting]   = useState(false);
+  const [testTo,    setTestTo]    = useState('');
+
+  useEffect(() => {
+    supabase.from('email_config').select('*').eq('ativo', true)
+      .order('created_at', { ascending: false }).limit(1).maybeSingle()
+      .then(({ data }) => {
+        if (data) setCfg(data as EmailCfg);
+        setLoading(false);
+      });
+  }, []);
+
+  async function saveCfg() {
+    setSaving(true);
+    const { error } = await supabase
+      .from('email_config')
+      .upsert({ ...cfg }, { onConflict: 'id' });
+    setSaving(false);
+    if (error) { toast.error(`Erro: ${error.message}`); return; }
+    toast.success('Configuração de email salva!');
+  }
+
+  async function sendTest() {
+    if (!testTo.trim()) { toast.error('Informe um email para teste'); return; }
+    setTesting(true);
+    const { data, error } = await supabase.functions.invoke('email-enviar', {
+      body: {
+        to: testTo.trim(),
+        subject: 'Teste de email — Sistema 11ds ✉️',
+        html: '<h2>Teste bem-sucedido! ✅</h2><p>Seu email está configurado corretamente no Sistema 11ds.</p><p>Provedor: <strong>' + cfg.provider + '</strong></p>',
+      },
+    });
+    setTesting(false);
+    const err = error?.message ?? (data as any)?.error;
+    if (err) { toast.error(`Erro no envio: ${err}`); return; }
+    toast.success(`Email de teste enviado para ${testTo}`);
+  }
+
+  const providerLinks: Record<string, { label: string; url: string; hint: string }> = {
+    resend:   { label: 'Resend',   url: 'https://resend.com',          hint: '3.000/mês grátis — melhor opção' },
+    sendgrid: { label: 'SendGrid', url: 'https://sendgrid.com',        hint: '100/dia grátis' },
+    brevo:    { label: 'Brevo',    url: 'https://app.brevo.com',       hint: '300/dia grátis' },
+  };
+
+  if (loading) return (
+    <div className="flex justify-center py-12">
+      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+    </div>
+  );
+
+  return (
+    <div className="max-w-xl space-y-6">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Mail className="h-4 w-4 text-primary" /> Configuração de Email
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {/* Provider */}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-2 block">Provedor</label>
+            <div className="grid grid-cols-3 gap-2">
+              {(Object.entries(providerLinks) as [string, { label: string; url: string; hint: string }][]).map(([key, p]) => (
+                <button
+                  key={key} type="button"
+                  onClick={() => setCfg(c => ({ ...c, provider: key as EmailCfg['provider'] }))}
+                  className={`flex flex-col items-center gap-1 py-3 px-2 rounded-lg border text-xs font-medium transition-all ${
+                    cfg.provider === key
+                      ? 'bg-primary text-white border-primary'
+                      : 'border-border text-foreground/70 hover:border-primary/40'
+                  }`}
+                >
+                  <span className="font-semibold">{p.label}</span>
+                  <span className={`text-[10px] ${cfg.provider === key ? 'text-white/70' : 'text-muted-foreground'}`}>{p.hint}</span>
+                </button>
+              ))}
+            </div>
+            <a
+              href={providerLinks[cfg.provider]?.url}
+              target="_blank" rel="noopener noreferrer"
+              className="text-xs text-primary hover:underline mt-2 inline-flex items-center gap-1"
+            >
+              <Link2 className="h-3 w-3" /> Criar conta gratuita em {providerLinks[cfg.provider]?.label}
+            </a>
+          </div>
+
+          {/* API Key */}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              API Key do {providerLinks[cfg.provider]?.label}
+            </label>
+            <Input
+              type="password"
+              value={cfg.api_key}
+              onChange={e => setCfg(c => ({ ...c, api_key: e.target.value }))}
+              placeholder="re_xxxxxxxxxxxx / SG.xxxx / xkeysib-xxxx"
+              className="font-mono text-sm"
+            />
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              {cfg.provider === 'resend'   && 'No Resend: Configurações → API Keys → Create API Key'}
+              {cfg.provider === 'sendgrid' && 'No SendGrid: Settings → API Keys → Create API Key (Mail Send)'}
+              {cfg.provider === 'brevo'    && 'No Brevo: Configurações → API Keys → Gerar nova chave'}
+            </p>
+          </div>
+
+          {/* From */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Nome do remetente</label>
+              <Input
+                value={cfg.from_name}
+                onChange={e => setCfg(c => ({ ...c, from_name: e.target.value }))}
+                placeholder="Ex: Equipe 11ds"
+                className="text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Email do remetente</label>
+              <Input
+                type="email"
+                value={cfg.from_email}
+                onChange={e => setCfg(c => ({ ...c, from_email: e.target.value }))}
+                placeholder="noreply@seudominio.com"
+                className="text-sm"
+              />
+            </div>
+          </div>
+          <p className="text-[10px] text-muted-foreground -mt-2">
+            ⚠️ O email do remetente precisa estar verificado no {providerLinks[cfg.provider]?.label}
+          </p>
+
+          <Button onClick={saveCfg} disabled={saving} className="w-full gap-2">
+            {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+            Salvar configuração
+          </Button>
+
+          {/* Test send */}
+          <div className="border-t pt-4">
+            <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">Envio de teste</p>
+            <div className="flex gap-2">
+              <Input
+                type="email"
+                placeholder="seu@email.com"
+                value={testTo}
+                onChange={e => setTestTo(e.target.value)}
+                className="text-sm flex-1"
+              />
+              <Button variant="outline" onClick={sendTest} disabled={testing || !cfg.api_key} className="gap-2 flex-shrink-0">
+                {testing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Testar
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Dicas */}
+      <Card className="border-amber-200 bg-amber-50/40">
+        <CardContent className="pt-4 pb-4">
+          <p className="text-xs font-semibold text-amber-800 mb-2">💡 Dicas para não cair em spam</p>
+          <ul className="text-xs text-amber-700 space-y-1 list-disc list-inside">
+            <li>Configure SPF e DKIM no DNS do seu domínio</li>
+            <li>Use um domínio próprio como remetente (não Gmail/Outlook pessoal)</li>
+            <li>Mantenha taxa de bounce abaixo de 2%</li>
+            <li>Só envie para leads que se cadastraram voluntariamente</li>
+            <li>Resend recomendado: grátis, confiável e entrega alta</li>
+          </ul>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
