@@ -16,6 +16,7 @@ import {
   Plus, Search, AlertCircle, Users, Target, DollarSign,
   Loader2, Power, Trash2, Pencil, TrendingUp, BarChart2,
   ChevronUp, ChevronDown, Upload, FileText, UserCheck, Globe, Copy,
+  Send, Play, Square, Pause, X as XIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useKanbanColunas } from './kanban/useKanbanColunas';
@@ -642,6 +643,417 @@ function TrafegoTab({ lancamento, leads: crmLeads }: {
   );
 }
 
+// ─── Disparo por Coluna — Types ──────────────────────────────────────────────
+
+interface DisparoLeadStatus {
+  leadId: string;
+  nome: string;
+  whatsapp: string;
+  status: 'pending' | 'sending' | 'done' | 'error' | 'skipped';
+  error?: string;
+}
+
+interface KanbanDisparo {
+  id: string;
+  nome: string;
+  colunaIds: string[];
+  colunaNomes: string[];
+  template: string;
+  typingDelayMs: number;
+  minDelayMs: number;
+  maxDelayMs: number;
+  instanceName: string | null;
+  leads: DisparoLeadStatus[];
+  currentIdx: number;
+  status: 'running' | 'paused' | 'done' | 'stopped';
+  startedAt: number;
+  countdownMs: number;
+}
+
+// ─── KanbanDisparoModal ───────────────────────────────────────────────────────
+
+function KanbanDisparoModal({
+  open,
+  onClose,
+  colunas,
+  leads,
+  evoInstances,
+  onStart,
+}: {
+  open: boolean;
+  onClose: () => void;
+  colunas: KanbanColuna[];
+  leads: LaunchLead[];
+  evoInstances: Array<{ instance_name: string }>;
+  onStart: (config: {
+    colunaIds: string[];
+    template: string;
+    typingDelayMs: number;
+    minDelayMs: number;
+    maxDelayMs: number;
+    instanceName: string | null;
+  }) => void;
+}) {
+  const [selectedColIds, setSelectedColIds] = useState<Set<string>>(new Set());
+  const [template, setTemplate] = useState(
+    'Olá {{nome}}! 🎉\n\nSeu acesso está confirmado.\n\n📲 Grupo de Lançamento:\n{{link_grupo}}\n\nNos vemos lá!',
+  );
+  const [typingDelaySecs, setTypingDelaySecs] = useState(3);
+  const [minDelaySecs, setMinDelaySecs] = useState(10);
+  const [maxDelaySecs, setMaxDelaySecs] = useState(25);
+  const [instanceName, setInstanceName] = useState('__priority__');
+  const [activeTab, setActiveTab] = useState<'colunas' | 'mensagem' | 'antibano'>('colunas');
+
+  const toggleCol = (id: string) =>
+    setSelectedColIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+
+  const selectedLeads = leads.filter(l => selectedColIds.has(l.fase) && l.whatsapp);
+  const allSelected   = leads.filter(l => selectedColIds.has(l.fase));
+
+  const previewMessage = template
+    .replace(/\{\{nome\}\}/g, 'João Silva')
+    .replace(/\{\{whatsapp\}\}/g, '5511999999999')
+    .replace(/\{\{link_grupo\}\}/g, 'https://chat.whatsapp.com/Exemplo123')
+    .replace(/\{\{link_aula_1\}\}/g, 'https://exemplo.com/aula1')
+    .replace(/\{\{link_aula_2\}\}/g, 'https://exemplo.com/aula2')
+    .replace(/\{\{link_aula_3\}\}/g, 'https://exemplo.com/aula3');
+
+  const avgSecs = (minDelaySecs + maxDelaySecs) / 2 + typingDelaySecs;
+
+  const handleStart = () => {
+    if (selectedColIds.size === 0) { toast.error('Selecione ao menos uma coluna'); return; }
+    if (!template.trim()) { toast.error('Digite a mensagem'); return; }
+    if (minDelaySecs > maxDelaySecs) { toast.error('Delay mínimo não pode ser maior que o máximo'); return; }
+    onStart({
+      colunaIds: [...selectedColIds],
+      template,
+      typingDelayMs: typingDelaySecs * 1000,
+      minDelayMs: minDelaySecs * 1000,
+      maxDelayMs: maxDelaySecs * 1000,
+      instanceName: instanceName === '__priority__' ? null : instanceName,
+    });
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={o => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-2xl flex flex-col max-h-[90vh]">
+        <DialogHeader className="flex-shrink-0">
+          <DialogTitle className="flex items-center gap-2">
+            <Send className="h-5 w-5 text-blue-600" /> Nova Campanha — Disparo por Coluna
+          </DialogTitle>
+          <DialogDescription>
+            Selecione as colunas do kanban, configure o template e inicie o disparo com anti-ban.
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Tabs */}
+        <div className="flex gap-1 border-b border-border flex-shrink-0">
+          {(['colunas', 'mensagem', 'antibano'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-3 py-1.5 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === tab
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {tab === 'colunas' ? '📋 Colunas' : tab === 'mensagem' ? '💬 Mensagem' : '🛡️ Anti-Ban'}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-y-auto min-h-0 py-4">
+
+          {/* Tab: Colunas */}
+          {activeTab === 'colunas' && (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground mb-3">
+                Selecione as colunas cujos leads receberão a mensagem.
+                Apenas leads <strong>com WhatsApp</strong> serão disparados.
+              </p>
+              {colunas.map(col => {
+                const total   = leads.filter(l => l.fase === col.id).length;
+                const withWpp = leads.filter(l => l.fase === col.id && l.whatsapp).length;
+                const checked = selectedColIds.has(col.id);
+                return (
+                  <label
+                    key={col.id}
+                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                      checked ? 'border-blue-400 bg-blue-50' : 'border-border hover:border-blue-200 hover:bg-blue-50/30'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleCol(col.id)}
+                      className="w-4 h-4 rounded accent-blue-600"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">{col.nome}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {withWpp} com WhatsApp de {total} lead(s)
+                      </p>
+                    </div>
+                    {withWpp === 0 && (
+                      <span className="text-xs text-amber-500 shrink-0">sem WPP</span>
+                    )}
+                  </label>
+                );
+              })}
+              {selectedColIds.size > 0 && (
+                <div className="mt-3 p-3 rounded-lg bg-green-50 border border-green-200">
+                  <p className="text-sm font-medium text-green-800">
+                    ✅ {selectedLeads.length} lead(s) com WhatsApp serão disparados
+                    {allSelected.length > selectedLeads.length && (
+                      <span className="text-green-600 font-normal"> ({allSelected.length - selectedLeads.length} sem WPP serão ignorados)</span>
+                    )}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tab: Mensagem */}
+          {activeTab === 'mensagem' && (
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs text-muted-foreground font-medium block mb-2">Template da mensagem</label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {['{{nome}}', '{{link_grupo}}', '{{link_aula_1}}', '{{link_aula_2}}', '{{link_aula_3}}', '{{whatsapp}}'].map(v => (
+                    <button
+                      key={v}
+                      onClick={() => setTemplate(t => t + v)}
+                      className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 hover:bg-blue-200 font-mono transition-colors"
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  className="w-full h-40 text-sm font-mono border border-border rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+                  value={template}
+                  onChange={e => setTemplate(e.target.value)}
+                  placeholder="Digite a mensagem..."
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground font-medium block mb-2">Prévia (WhatsApp)</label>
+                <div className="bg-[#e5ddd5] rounded-lg p-4 max-h-52 overflow-y-auto">
+                  <div className="bg-white rounded-lg px-3 py-2 shadow-sm max-w-xs ml-auto">
+                    <p className="text-sm whitespace-pre-wrap text-gray-800">{previewMessage}</p>
+                    <p className="text-[10px] text-gray-400 text-right mt-1">12:00 ✓✓</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tab: Anti-Ban */}
+          {activeTab === 'antibano' && (
+            <div className="space-y-4">
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
+                🛡️ Anti-ban simula comportamento humano: indicador de digitação antes de enviar e delays aleatórios entre mensagens.
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground font-medium">Delay mínimo (segundos)</label>
+                  <input
+                    type="number" min={3} max={300} value={minDelaySecs}
+                    onChange={e => setMinDelaySecs(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-md border border-border text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground font-medium">Delay máximo (segundos)</label>
+                  <input
+                    type="number" min={3} max={300} value={maxDelaySecs}
+                    onChange={e => setMaxDelaySecs(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-md border border-border text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground font-medium">Digitação (segundos de "digitando…" antes de enviar)</label>
+                <input
+                  type="number" min={0} max={15} value={typingDelaySecs}
+                  onChange={e => setTypingDelaySecs(Number(e.target.value))}
+                  className="w-full px-3 py-2 rounded-md border border-border text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                <p className="text-xs text-muted-foreground">0 para desativar o indicador de digitação</p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground font-medium">Instância Evolution</label>
+                <select
+                  value={instanceName}
+                  onChange={e => setInstanceName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md border border-border text-sm focus:outline-none focus:ring-2 focus:ring-ring bg-background"
+                >
+                  <option value="__priority__">Automático (por prioridade)</option>
+                  {evoInstances.map(inst => (
+                    <option key={inst.instance_name} value={inst.instance_name}>{inst.instance_name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="p-3 rounded-lg border border-border bg-muted/30">
+                <p className="text-xs text-muted-foreground">
+                  <strong>Estimativa:</strong> {selectedLeads.length} lead(s) × {Math.round(avgSecs)}s médio ≈{' '}
+                  <strong>{Math.round((selectedLeads.length * avgSecs) / 60)} minutos</strong>
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-between items-center pt-3 border-t flex-shrink-0">
+          <p className="text-sm text-muted-foreground">
+            {selectedLeads.length > 0 ? `${selectedLeads.length} lead(s) selecionados` : 'Nenhuma coluna selecionada'}
+          </p>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button
+              onClick={handleStart}
+              disabled={selectedColIds.size === 0 || selectedLeads.length === 0}
+              className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <Send className="h-4 w-4" /> Iniciar Campanha
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── CampanhasDisparoPanel ────────────────────────────────────────────────────
+
+function CampanhasDisparoPanel({
+  disparos,
+  onPause,
+  onResume,
+  onStop,
+  onDismiss,
+}: {
+  disparos: KanbanDisparo[];
+  onPause: (id: string) => void;
+  onResume: (id: string) => void;
+  onStop: (id: string) => void;
+  onDismiss: (id: string) => void;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  if (disparos.length === 0) return null;
+
+  const active = disparos.filter(d => d.status === 'running' || d.status === 'paused').length;
+
+  return (
+    <div className="fixed bottom-4 right-4 w-96 z-50 shadow-2xl rounded-xl border border-border bg-white overflow-hidden">
+      {/* Header */}
+      <button
+        className="w-full flex items-center justify-between px-4 py-2.5 bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+        onClick={() => setCollapsed(c => !c)}
+      >
+        <div className="flex items-center gap-2">
+          <Send className="h-4 w-4" />
+          <span className="text-sm font-semibold">
+            Campanhas{active > 0 ? ` (${active} ativa${active > 1 ? 's' : ''})` : ' (concluídas)'}
+          </span>
+        </div>
+        {collapsed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+      </button>
+
+      {!collapsed && (
+        <div className="max-h-[420px] overflow-y-auto divide-y divide-border">
+          {disparos.map(disp => {
+            const done  = disp.leads.filter(l => l.status === 'done' || l.status === 'error' || l.status === 'skipped').length;
+            const total = disp.leads.length;
+            const pct   = total > 0 ? Math.round((done / total) * 100) : 0;
+            const errors = disp.leads.filter(l => l.status === 'error').length;
+            const sending = disp.leads[disp.currentIdx];
+
+            return (
+              <div key={disp.id} className="p-3 space-y-2">
+                {/* Row 1: Nome + botões */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{disp.nome}</p>
+                    <p className="text-xs text-muted-foreground truncate">{disp.colunaNomes.join(' · ')}</p>
+                  </div>
+                  <div className="flex items-center gap-0.5 flex-shrink-0">
+                    {disp.status === 'running' && (
+                      <button onClick={() => onPause(disp.id)} title="Pausar"
+                        className="p-1.5 rounded hover:bg-amber-50 text-amber-600 transition-colors">
+                        <Pause className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {disp.status === 'paused' && (
+                      <button onClick={() => onResume(disp.id)} title="Retomar"
+                        className="p-1.5 rounded hover:bg-green-50 text-green-600 transition-colors">
+                        <Play className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {(disp.status === 'running' || disp.status === 'paused') && (
+                      <button onClick={() => onStop(disp.id)} title="Parar"
+                        className="p-1.5 rounded hover:bg-red-50 text-red-500 transition-colors">
+                        <Square className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {(disp.status === 'done' || disp.status === 'stopped') && (
+                      <button onClick={() => onDismiss(disp.id)} title="Fechar"
+                        className="p-1.5 rounded hover:bg-muted text-muted-foreground transition-colors">
+                        <XIcon className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Row 2: Progresso */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>{done}/{total} enviados</span>
+                    <span>
+                      {disp.status === 'running' && disp.countdownMs > 0
+                        ? `⏱ ${Math.ceil(disp.countdownMs / 1000)}s`
+                        : disp.status === 'paused' ? '⏸ Pausado'
+                        : disp.status === 'done'    ? '✅ Concluído'
+                        : disp.status === 'stopped' ? '🛑 Parado'
+                        : ''}
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        disp.status === 'done'    ? 'bg-green-500' :
+                        disp.status === 'stopped' ? 'bg-red-400'   : 'bg-blue-500'
+                      }`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Row 3: Lead atual / erros */}
+                {disp.status === 'running' && sending && sending.status === 'sending' && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1 truncate">
+                    <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                    Enviando para {sending.nome}…
+                  </p>
+                )}
+                {errors > 0 && (
+                  <p className="text-xs text-red-500">{errors} erro{errors > 1 ? 's' : ''} de envio</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── CSV Import Helpers ────────────────────────────────────────────────────────
 
 function parseCSV(text: string): { headers: string[]; rows: string[][] } {
@@ -732,6 +1144,13 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
   });
   const [savingMatricula, setSavingMatricula] = useState(false);
 
+  // ── Disparo por Coluna (campanhas WPP) ────────────────────────────────────
+  const [disparos, setDisparos] = useState<KanbanDisparo[]>([]);
+  const [showDisparoModal, setShowDisparoModal] = useState(false);
+  const [evoInstances, setEvoInstances] = useState<Array<{ instance_name: string }>>([]);
+  const disparosStopMap  = useRef<Map<string, boolean>>(new Map());
+  const disparosPauseMap = useRef<Map<string, boolean>>(new Map());
+
   // Shared column hook
   const {
     colunas, colunasRef, loadingColunas,
@@ -778,6 +1197,158 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
     supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades')
       .then(({ data }) => setTurmas((data as Turma[]) || []));
   }, []);
+
+  // ── Load Evolution instances (for disparo modal) ───────────────────────────
+  useEffect(() => {
+    supabase
+      .from('evolution_config')
+      .select('instance_name')
+      .eq('ativo', true)
+      .order('prioridade', { ascending: true })
+      .then(({ data }) => setEvoInstances(data || []));
+  }, []);
+
+  // ── Disparo helpers ────────────────────────────────────────────────────────
+  const countdownDelay = async (disparoId: string, ms: number) => {
+    const step = 200;
+    let elapsed = 0;
+    while (elapsed < ms) {
+      if (disparosStopMap.current.get(disparoId)) return;
+      if (disparosPauseMap.current.get(disparoId)) {
+        // Frozen while paused
+        await new Promise(r => setTimeout(r, step));
+        continue;
+      }
+      setDisparos(prev => prev.map(d => d.id === disparoId ? { ...d, countdownMs: ms - elapsed } : d));
+      await new Promise(r => setTimeout(r, step));
+      elapsed += step;
+    }
+    setDisparos(prev => prev.map(d => d.id === disparoId ? { ...d, countdownMs: 0 } : d));
+  };
+
+  const runDisparo = async (id: string, disp: KanbanDisparo) => {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+    for (let i = 0; i < disp.leads.length; i++) {
+      if (disparosStopMap.current.get(id)) break;
+
+      // Wait while paused
+      while (disparosPauseMap.current.get(id)) {
+        if (disparosStopMap.current.get(id)) break;
+        await new Promise(r => setTimeout(r, 300));
+      }
+      if (disparosStopMap.current.get(id)) break;
+
+      const lead = disp.leads[i];
+
+      // Mark as sending
+      setDisparos(prev => prev.map(d => d.id === id ? {
+        ...d, currentIdx: i,
+        leads: d.leads.map((l, idx) => idx === i ? { ...l, status: 'sending' } : l),
+      } : d));
+
+      const mensagem = disp.template
+        .replace(/\{\{nome\}\}/g, lead.nome)
+        .replace(/\{\{whatsapp\}\}/g, lead.whatsapp);
+
+      try {
+        const res = await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+          },
+          body: JSON.stringify({
+            numero: lead.whatsapp,
+            mensagem,
+            instance_name: disp.instanceName ?? undefined,
+            typing_delay_ms: disp.typingDelayMs,
+          }),
+        });
+        const result = await res.json();
+        setDisparos(prev => prev.map(d => d.id === id ? {
+          ...d, currentIdx: i + 1,
+          leads: d.leads.map((l, idx) => idx === i ? {
+            ...l,
+            status: result.ok ? 'done' : 'error',
+            error: result.ok ? undefined : (result.error ?? 'Erro desconhecido'),
+          } : l),
+        } : d));
+      } catch (e: unknown) {
+        setDisparos(prev => prev.map(d => d.id === id ? {
+          ...d, currentIdx: i + 1,
+          leads: d.leads.map((l, idx) => idx === i ? {
+            ...l, status: 'error', error: (e as Error).message,
+          } : l),
+        } : d));
+      }
+
+      // Random delay before next send (skip after last)
+      if (i < disp.leads.length - 1 && !disparosStopMap.current.get(id)) {
+        const delay = Math.round(
+          disp.minDelayMs + Math.random() * (disp.maxDelayMs - disp.minDelayMs),
+        );
+        await countdownDelay(id, delay);
+      }
+    }
+
+    // Mark final status
+    setDisparos(prev => prev.map(d => d.id === id ? {
+      ...d,
+      status: disparosStopMap.current.get(id) ? 'stopped' : 'done',
+      countdownMs: 0,
+    } : d));
+  };
+
+  const handleStartDisparo = (config: {
+    colunaIds: string[];
+    template: string;
+    typingDelayMs: number;
+    minDelayMs: number;
+    maxDelayMs: number;
+    instanceName: string | null;
+  }) => {
+    const campaignLeads = leads
+      .filter(l => config.colunaIds.includes(l.fase) && l.whatsapp)
+      .map(l => ({
+        leadId: l.id,
+        nome: l.nome,
+        whatsapp: l.whatsapp,
+        status: 'pending' as const,
+      }));
+
+    const colunaNomes = colunas
+      .filter(c => config.colunaIds.includes(c.id))
+      .map(c => c.nome);
+
+    const newId = crypto.randomUUID();
+    const nomeCampanha = `${colunaNomes.join(', ')} · ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+
+    const newDisp: KanbanDisparo = {
+      id: newId,
+      nome: nomeCampanha,
+      colunaIds: config.colunaIds,
+      colunaNomes,
+      template: config.template,
+      typingDelayMs: config.typingDelayMs,
+      minDelayMs: config.minDelayMs,
+      maxDelayMs: config.maxDelayMs,
+      instanceName: config.instanceName,
+      leads: campaignLeads,
+      currentIdx: 0,
+      status: 'running',
+      startedAt: Date.now(),
+      countdownMs: 0,
+    };
+
+    disparosStopMap.current.set(newId, false);
+    disparosPauseMap.current.set(newId, false);
+    setDisparos(prev => [...prev, newDisp]);
+    runDisparo(newId, newDisp);
+    toast.success(`🚀 Campanha iniciada: ${campaignLeads.length} lead(s)`);
+  };
 
   // ── Fetch lancamento + leads ────────────────────────────────────────────────
   useEffect(() => {
@@ -1494,6 +2065,15 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
               <Plus className="h-4 w-4" />
               Adicionar Lead
             </Button>
+            <Button
+              variant="outline"
+              className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
+              onClick={() => setShowDisparoModal(true)}
+              title="Disparar mensagem WhatsApp para leads de colunas selecionadas"
+            >
+              <Send className="h-4 w-4" />
+              Disparar
+            </Button>
           </div>
 
           {/* Search Results (flat list) */}
@@ -2107,6 +2687,34 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── Disparo por Coluna Modal ── */}
+      <KanbanDisparoModal
+        open={showDisparoModal}
+        onClose={() => setShowDisparoModal(false)}
+        colunas={colunas}
+        leads={leads}
+        evoInstances={evoInstances}
+        onStart={handleStartDisparo}
+      />
+
+      {/* ── Campanhas Disparo Panel (floating) ── */}
+      <CampanhasDisparoPanel
+        disparos={disparos}
+        onPause={id => {
+          disparosPauseMap.current.set(id, true);
+          setDisparos(prev => prev.map(d => d.id === id ? { ...d, status: 'paused' } : d));
+        }}
+        onResume={id => {
+          disparosPauseMap.current.set(id, false);
+          setDisparos(prev => prev.map(d => d.id === id ? { ...d, status: 'running' } : d));
+        }}
+        onStop={id => {
+          disparosStopMap.current.set(id, true);
+          setDisparos(prev => prev.map(d => d.id === id ? { ...d, status: 'stopped', countdownMs: 0 } : d));
+        }}
+        onDismiss={id => setDisparos(prev => prev.filter(d => d.id !== id))}
+      />
 
       {/* ── Webhook Grupos Modal ── */}
       <Dialog open={showWebhookModal} onOpenChange={setShowWebhookModal}>
