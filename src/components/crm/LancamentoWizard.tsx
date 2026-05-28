@@ -222,6 +222,7 @@ function Step2({ config, setConfig, turmas, setTurmas }: {
         .from('turmas')
         .insert({
           nome: newTurma.nome.trim(),
+          tipo: newTurma.produto,   // coluna NOT NULL — mesmo valor que produto
           produto: newTurma.produto,
           valor_mensalidade: newTurma.valor_mensalidade,
           total_mensalidades: newTurma.total_mensalidades,
