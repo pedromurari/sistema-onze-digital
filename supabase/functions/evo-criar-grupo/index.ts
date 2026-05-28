@@ -3,10 +3,13 @@
  * Cria um grupo no WhatsApp via Evolution API.
  * Sempre retorna HTTP 200 — erros vêm em { error: "..." } no body.
  *
+ * IMPORTANTE: Esta versão da Evolution API exige ≥1 participante no create.
+ * Os participantes são passados direto na criação do grupo.
+ *
  * Body: {
  *   subject: string,
  *   instance_name?: string,
- *   participants?: string[],
+ *   participants?: string[],   // pelo menos 1 obrigatório
  *   photo_base64?: string,
  * }
  * Sucesso: { jid: string, subject: string, instance: string }
@@ -46,6 +49,15 @@ serve(async (req) => {
 
     if (!subject?.trim()) return ok({ error: 'subject (nome do grupo) é obrigatório' });
 
+    // Normaliza participantes → formato DDI+número@s.whatsapp.net
+    const participantsJid = (participants ?? [])
+      .map(p => { const n = p.replace(/\D/g, ''); return n ? `${n}@s.whatsapp.net` : ''; })
+      .filter(Boolean);
+
+    if (participantsJid.length === 0) {
+      return ok({ error: 'Adicione pelo menos 1 número de participante. Esta versão da Evolution API exige ≥1 participante para criar o grupo.' });
+    }
+
     // ── Buscar instância Evolution ─────────────────────────────────────────────
     let query = sb.from('evolution_config').select('api_url, api_key, instance_name').eq('ativo', true);
     if (instance_name && instance_name !== '__priority__') {
@@ -67,15 +79,18 @@ serve(async (req) => {
     const apikey   = inst.api_key as string;
     const instName = inst.instance_name as string;
 
-    console.log(`Criando grupo "${subject}" na instância "${instName}" (${base})`);
+    console.log(`Criando grupo "${subject}" na instância "${instName}" com ${participantsJid.length} participante(s)`);
 
-    // ── Criar grupo via Evolution API ─────────────────────────────────────────
+    // ── Criar grupo (participantes incluídos na criação) ───────────────────────
     let evoRes: Response;
     try {
       evoRes = await fetch(`${base}/group/create/${instName}`, {
         method: 'POST',
         headers: { apikey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subject: subject.trim(), participants: [] }),
+        body: JSON.stringify({
+          subject: subject.trim(),
+          participants: participantsJid,  // passados direto no create
+        }),
       });
     } catch (fetchErr: any) {
       console.error('Fetch error para Evolution API:', fetchErr);
@@ -92,7 +107,6 @@ serve(async (req) => {
     let json: any;
     try { json = JSON.parse(rawText); } catch { json = {}; }
 
-    // Evolution retorna: { id: { _serialized: "xxx@g.us" } } ou { groupJid } ou { data.id._serialized }
     const jid =
       json?.id?._serialized ??
       json?.id ??
@@ -105,29 +119,6 @@ serve(async (req) => {
     if (!jid) {
       console.error('JID não encontrado. Resposta completa:', rawText);
       return ok({ error: `Grupo criado mas JID não encontrado. Resposta: ${rawText.slice(0, 200)}` });
-    }
-
-    // ── Adicionar participantes (não-fatal) ────────────────────────────────────
-    const warnings: string[] = [];
-    if (participants && participants.length > 0) {
-      const participantsJid = participants
-        .map(p => { const n = p.replace(/\D/g, ''); return `${n}@s.whatsapp.net`; })
-        .filter(Boolean);
-
-      try {
-        const addRes = await fetch(`${base}/group/updateParticipant/${instName}`, {
-          method: 'POST',
-          headers: { apikey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ groupJid: jid, action: 'add', participants: participantsJid }),
-        });
-        if (!addRes.ok) {
-          const t = await addRes.text();
-          warnings.push(`Participantes (${addRes.status}): ${t.slice(0, 150)}`);
-          console.warn('Erro ao adicionar participantes:', t);
-        }
-      } catch (e: any) {
-        warnings.push(`Participantes: ${e.message}`);
-      }
     }
 
     // ── Atualizar foto (não-fatal) ─────────────────────────────────────────────
@@ -144,7 +135,7 @@ serve(async (req) => {
       }
     }
 
-    return ok({ jid, subject: subject.trim(), instance: instName, warnings: warnings.length ? warnings : undefined });
+    return ok({ jid, subject: subject.trim(), instance: instName });
 
   } catch (err: any) {
     console.error('evo-criar-grupo unhandled error:', err);

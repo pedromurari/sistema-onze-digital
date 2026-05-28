@@ -446,10 +446,18 @@ function Step3({ config, setConfig, evoInstances }: {
   setConfig: React.Dispatch<React.SetStateAction<WizardConfig>>;
   evoInstances: EvoInstance[];
 }) {
+  const STORAGE_KEY = 'evo_default_participants';
+
   const [criando, setCriando] = useState<Record<number, boolean>>({});
   const [erros, setErros]     = useState<Record<number, string>>({});
   const [fotoFiles, setFotoFiles] = useState<Record<number, File | null>>({});
-  const [partInputs, setPartInputs] = useState<Record<number, string>>({});
+  // Inicia partInputs com os números padrão salvos (mesmo valor para todos os grupos)
+  const [partInputs, setPartInputs] = useState<Record<number, string>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY) ?? '';
+      return { 0: saved, 1: saved, 2: saved };
+    } catch { return {}; }
+  });
 
   // qtd = nº de grupos de LANÇAMENTO; total de grupos = qtd + 1 (oferta sempre presente)
   const qtd = config.quantidade_grupos ?? 1;
@@ -635,11 +643,37 @@ function Step3({ config, setConfig, evoInstances }: {
                 disabled={isCriado}
                 className="w-full px-3 py-2 rounded-lg border border-border text-xs font-mono bg-background focus:outline-none focus:ring-2 focus:ring-ring resize-none disabled:opacity-60 leading-relaxed"
               />
-              {numCount > 0 && (
-                <p className="text-[10px] text-primary font-medium">
-                  ✓ {numCount} número{numCount !== 1 ? 's' : ''} válido{numCount !== 1 ? 's' : ''}
-                </p>
-              )}
+              <div className="flex items-center justify-between">
+                {numCount > 0 ? (
+                  <p className="text-[10px] text-primary font-medium">
+                    ✓ {numCount} número{numCount !== 1 ? 's' : ''} válido{numCount !== 1 ? 's' : ''}
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-amber-600 font-medium">
+                    ⚠ Pelo menos 1 número obrigatório
+                  </p>
+                )}
+                {numCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        localStorage.setItem(STORAGE_KEY, partInputs[i] ?? '');
+                        // Propaga para os outros grupos também
+                        setPartInputs(p => {
+                          const next = { ...p };
+                          Object.keys(next).forEach(k => { if (Number(k) !== i) next[Number(k)] = partInputs[i] ?? ''; });
+                          return next;
+                        });
+                        toast.success('Números salvos como padrão para próximos grupos ✓');
+                      } catch {}
+                    }}
+                    className="text-[10px] text-muted-foreground hover:text-primary underline underline-offset-2 transition-colors"
+                  >
+                    💾 Salvar como padrão
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Foto do grupo */}
