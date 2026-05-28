@@ -5,6 +5,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import TarefaPublica from "./pages/TarefaPublica";
 import ContratoPublico from "./pages/ContratoPublico";
+import FormularioAluno from "./pages/FormularioAluno";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -25,6 +26,7 @@ const App = () => (
         <Routes>
           {/* Rotas públicas — sem autenticação */}
           <Route path="/forms/tarefa/:tarefaId" element={<TarefaPublica />} />
+          <Route path="/formulario/:token" element={<FormularioAluno />} />
           <Route path="/assinar/:token" element={<ContratoPublico />} />
           <Route path="/" element={<Index />} />
           <Route path="*" element={<NotFound />} />

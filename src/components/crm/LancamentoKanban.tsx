@@ -1527,33 +1527,22 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
       valor_mensalidade: Number(confirmMatriculaForm.valor_mensalidade) || null,
       dia_vencimento: Number(confirmMatriculaForm.dia_vencimento) || null,
       total_mensalidades: Number(confirmMatriculaForm.total_mensalidades) || 15,
-      status: 'ativo',
+      status: 'pendente',  // ← fica pendente até preencher o formulário
       data_matricula: new Date().toISOString().slice(0, 10),
     }).select('id, contrato_token').single();
     setSavingMatricula(false);
     if (error) { toast.error('Erro ao criar aluno: ' + error.message); return; }
-    toast.success('Aluno registrado no financeiro!');
+    toast.success('Aluno pré-cadastrado! Link do formulário enviado via WPP.');
     setConfirmMatriculaLead(null);
 
-    // ── Boas-vindas automáticas ────────────────────────────────────────────────
-    if (alunoData?.id && lancamento) {
-      supabase.functions.invoke('boas-vindas-enviar', {
-        body: {
-          funnel_name: lancamento.nome,
-          nome:        confirmMatriculaLead.nome,
-          whatsapp:    confirmMatriculaLead.whatsapp || '',
-          email:       confirmMatriculaLead.email    || '',
-        },
-      }).catch(() => {/* silencioso — boas-vindas é opcional */});
-    }
-
-    // ── Link do contrato via WPP ───────────────────────────────────────────────
+    // ── Envio do link do formulário via WPP ───────────────────────────────────
+    // O aluno preenche o formulário → sistema ativa no Financeiro + gera contrato
     if (alunoData?.contrato_token && confirmMatriculaLead.whatsapp) {
-      const contratoUrl = `${window.location.origin}/assinar/${alunoData.contrato_token}`;
+      const formularioUrl = `${window.location.origin}/formulario/${alunoData.contrato_token}`;
       supabase.functions.invoke('wpp-enviar', {
         body: {
           numero:   confirmMatriculaLead.whatsapp,
-          mensagem: `Olá, ${confirmMatriculaLead.nome.split(' ')[0]}! 🎉\n\nSua matrícula foi confirmada! Preencha seus dados para assinar o contrato:\n\n${contratoUrl}`,
+          mensagem: `Olá, ${confirmMatriculaLead.nome.split(' ')[0]}! 🎉\n\nSua matrícula foi pré-aprovada! Preencha seus dados para finalizar e receber o contrato:\n\n${formularioUrl}\n\nÉ rapidinho, menos de 1 minuto! 😊`,
         },
       }).catch(() => {/* silencioso */});
     }

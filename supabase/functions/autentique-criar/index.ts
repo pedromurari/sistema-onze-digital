@@ -182,13 +182,14 @@ serve(async (req) => {
       });
     }
 
-    // ── Atualizar aluno com dados legais ─────────────────────────────────────
+    // ── Atualizar aluno com dados legais + ativar no Financeiro ──────────────
     await sb.from('alunos').update({
       cpf,
       data_nascimento,
       endereco,
       cep: cep ?? null,
       cidade_estado,
+      status:              'ativo',           // ← ativa no Financeiro
       forms_respondido:    true,
       forms_respondido_em: new Date().toISOString(),
       contrato_enviado:    true,
