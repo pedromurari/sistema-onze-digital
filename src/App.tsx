@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import TarefaPublica from "./pages/TarefaPublica";
+import ContratoPublico from "./pages/ContratoPublico";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -22,8 +23,9 @@ const App = () => (
       <Toaster richColors position="top-right" />
       <BrowserRouter>
         <Routes>
-          {/* Rota pública — formulário do aluno (sem autenticação) */}
+          {/* Rotas públicas — sem autenticação */}
           <Route path="/forms/tarefa/:tarefaId" element={<TarefaPublica />} />
+          <Route path="/assinar/:token" element={<ContratoPublico />} />
           <Route path="/" element={<Index />} />
           <Route path="*" element={<NotFound />} />
         </Routes>

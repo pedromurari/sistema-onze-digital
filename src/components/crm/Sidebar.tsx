@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
+import { LancamentoWizard } from '@/components/crm/LancamentoWizard';
 
 export type View = AppView;
 
@@ -109,12 +110,12 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const [lancamentos, setLancamentos] = useState<{ id: string; nome: string }[]>([]);
-  const [newLancamentoName, setNewLancamentoName] = useState('');
-  const [isLancamentoDialogOpen, setIsLancamentoDialogOpen] = useState(false);
-
   const [npaEventos, setNpaEventos] = useState<{ id: string; nome: string }[]>([]);
-  const [newNpaName, setNewNpaName] = useState('');
-  const [isNpaDialogOpen, setIsNpaDialogOpen] = useState(false);
+
+  // Wizard de lançamento/NPA
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardExistingId, setWizardExistingId] = useState<string | undefined>();
+  const [wizardExistingTipo, setWizardExistingTipo] = useState<'lancamento' | 'npa' | undefined>();
 
   const [aulaSecretaEventos, setAulaSecretaEventos] = useState<{ id: string; nome: string }[]>([]);
   const [newAulaSecretaName, setNewAulaSecretaName] = useState('');
@@ -221,49 +222,23 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
     setDragOverId(null);
   };
 
-  const handleAddLancamento = async () => {
-    if (!newLancamentoName.trim()) return;
-    try {
-      const { data, error } = await supabase
-        .from('lancamentos')
-        .insert({ nome: newLancamentoName, status: 'planejamento', ativo: false, meta_matriculas: 0, created_at: new Date().toISOString() })
-        .select('id')
-        .single();
-      if (error) { toast.error(`Erro ao criar lancamento: ${error.message}`); return; }
-      if (data) {
-        try {
-          await ensureDefaultLancamentoKanbanColumns(data.id);
-        } catch {
-          toast.warning('Lancamento criado, mas nao foi possivel criar as colunas padrao agora.');
-        }
-        toast.success(`Lancamento "${newLancamentoName}" criado!`);
-        setNewLancamentoName('');
-        setIsLancamentoDialogOpen(false);
-        onViewChange(`lancamentos_${data.id}` as View);
-      }
-    } catch {
-      toast.error('Erro inesperado.');
-    }
+  const handleWizardSuccess = (id: string, tipo: 'lancamento' | 'npa') => {
+    setWizardOpen(false);
+    setWizardExistingId(undefined);
+    setWizardExistingTipo(undefined);
+    onViewChange((tipo === 'lancamento' ? `lancamentos_${id}` : `npa_${id}`) as View);
   };
 
-  const handleAddNpa = async () => {
-    if (!newNpaName.trim()) return;
-    try {
-      const { data, error } = await supabase
-        .from('npa_eventos')
-        .insert({ nome: newNpaName, status: 'em_andamento', ativo: false, created_at: new Date().toISOString() })
-        .select('id')
-        .single();
-      if (error) { toast.error(`Erro ao criar evento NPA: ${error.message}`); return; }
-      if (data) {
-        toast.success(`Evento NPA "${newNpaName}" criado!`);
-        setNewNpaName('');
-        setIsNpaDialogOpen(false);
-        onViewChange(`npa_${data.id}` as View);
-      }
-    } catch {
-      toast.error('Erro inesperado.');
-    }
+  const openWizardNew = (tipo: 'lancamento' | 'npa') => {
+    setWizardExistingId(undefined);
+    setWizardExistingTipo(tipo);
+    setWizardOpen(true);
+  };
+
+  const openWizardEdit = (id: string, tipo: 'lancamento' | 'npa') => {
+    setWizardExistingId(id);
+    setWizardExistingTipo(tipo);
+    setWizardOpen(true);
   };
 
   const handleAddAulaSecreta = async () => {
@@ -375,70 +350,51 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
 
                 {isOpen && !collapsed && (
                   <div className="ml-0 mt-1 space-y-0.5 pl-3 border-l-2 border-primary/15">
-                    {renderedChildren.map((child) => (
-                      <button
-                        key={child.key}
-                        onClick={() => onViewChange(child.key)}
-                        className={cn(
-                          'w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs transition-all duration-300',
-                          currentView === child.key ? 'bg-primary/12 text-primary font-600' : 'text-foreground/70 hover:text-primary hover:bg-primary/5',
-                        )}
-                      >
-                        <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', currentView === child.key ? 'bg-primary' : 'bg-foreground/30')} />
-                        <span className="truncate">{child.label}</span>
-                      </button>
-                    ))}
+                    {renderedChildren.map((child) => {
+                      const isLancOrNpa = item.group === 'lancamentos_legado' || item.group === 'npa_dinamico';
+                      const childId = child.key.replace(/^(lancamentos|npa|aula_secreta)_/, '');
+                      const childTipo = item.group === 'lancamentos_legado' ? 'lancamento' : 'npa';
+                      return (
+                        <div key={child.key} className="flex items-center group">
+                          <button
+                            onClick={() => onViewChange(child.key)}
+                            className={cn(
+                              'flex-1 flex items-center gap-2 px-3 py-2 rounded text-left text-xs transition-all duration-300',
+                              currentView === child.key ? 'bg-primary/12 text-primary font-600' : 'text-foreground/70 hover:text-primary hover:bg-primary/5',
+                            )}
+                          >
+                            <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', currentView === child.key ? 'bg-primary' : 'bg-foreground/30')} />
+                            <span className="truncate">{child.label}</span>
+                          </button>
+                          {isAdmin && isLancOrNpa && (
+                            <button
+                              onClick={() => openWizardEdit(childId, childTipo as 'lancamento' | 'npa')}
+                              className="opacity-0 group-hover:opacity-100 p-1 mr-1 rounded hover:bg-primary/10 transition-all flex-shrink-0"
+                              title="Configurar"
+                            >
+                              <Settings className="h-3 w-3 text-primary/70" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
 
                     {item.group === 'lancamentos_legado' && isAdmin && (
-                      <Dialog open={isLancamentoDialogOpen} onOpenChange={setIsLancamentoDialogOpen}>
-                        <DialogTrigger asChild>
-                          <button className="w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs text-primary hover:bg-primary/10 mt-1 font-600">
-                            <Plus className="h-4 w-4" /> Novo Lancamento
-                          </button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Criar novo lancamento</DialogTitle>
-                            <DialogDescription>Digite o nome do novo lancamento</DialogDescription>
-                          </DialogHeader>
-                          <div className="flex gap-2">
-                            <Input
-                              placeholder="Nome do lancamento"
-                              value={newLancamentoName}
-                              onChange={(e) => setNewLancamentoName(e.target.value)}
-                              onKeyPress={(e) => e.key === 'Enter' && handleAddLancamento()}
-                              className="border border-border focus:border-primary"
-                            />
-                            <Button onClick={handleAddLancamento} className="bg-primary hover:bg-primary/90">Criar</Button>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
+                      <button
+                        onClick={() => openWizardNew('lancamento')}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs text-primary hover:bg-primary/10 mt-1 font-600"
+                      >
+                        <Plus className="h-4 w-4" /> Novo Lançamento
+                      </button>
                     )}
 
                     {item.group === 'npa_dinamico' && isAdmin && (
-                      <Dialog open={isNpaDialogOpen} onOpenChange={setIsNpaDialogOpen}>
-                        <DialogTrigger asChild>
-                          <button className="w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs text-primary hover:bg-primary/10 mt-1 font-600">
-                            <Plus className="h-4 w-4" /> Novo NPA
-                          </button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Criar novo evento NPA</DialogTitle>
-                            <DialogDescription>Digite o nome do novo evento NPA</DialogDescription>
-                          </DialogHeader>
-                          <div className="flex gap-2">
-                            <Input
-                              placeholder="Nome do evento NPA"
-                              value={newNpaName}
-                              onChange={(e) => setNewNpaName(e.target.value)}
-                              onKeyPress={(e) => e.key === 'Enter' && handleAddNpa()}
-                              className="border border-border focus:border-primary"
-                            />
-                            <Button onClick={handleAddNpa} className="bg-primary hover:bg-primary/90">Criar</Button>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
+                      <button
+                        onClick={() => openWizardNew('npa')}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs text-primary hover:bg-primary/10 mt-1 font-600"
+                      >
+                        <Plus className="h-4 w-4" /> Novo NPA
+                      </button>
                     )}
 
                     {item.group === 'aula_secreta' && isAdmin && (
@@ -516,6 +472,14 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
           );
         })}
       </nav>
+
+      <LancamentoWizard
+        open={wizardOpen}
+        onClose={() => { setWizardOpen(false); setWizardExistingId(undefined); setWizardExistingTipo(undefined); }}
+        onSuccess={handleWizardSuccess}
+        existingId={wizardExistingId}
+        existingTipo={wizardExistingTipo}
+      />
     </aside>
   );
 }

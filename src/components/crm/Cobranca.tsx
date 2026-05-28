@@ -23,7 +23,7 @@ import {
   MessageSquare, Send, Settings, FileText, History, Clock,
   Plus, Trash2, Pencil, Play, CheckCircle2, XCircle, AlertCircle,
   RefreshCw, Zap, Phone, Calendar, Info,
-  AlertTriangle, TrendingDown,
+  AlertTriangle, TrendingDown, Copy, ExternalLink,
 } from 'lucide-react';
 import { EvolutionTaskPanel } from './EvolutionTaskPanel';
 
@@ -187,6 +187,11 @@ export function Cobranca() {
 
   // Confirm bulk modal
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+
+  // Resumo diário (dormant feature — stored in localStorage)
+  const [resumoAtivo, setResumoAtivo] = useState(() => localStorage.getItem('resumo_diario_ativo') === 'true');
+  const [resumoNumero, setResumoNumero] = useState(() => localStorage.getItem('resumo_diario_numero') ?? '');
+  const [enviandoResumo, setEnviandoResumo] = useState(false);
 
   // Search
   const [searchLog, setSearchLog] = useState('');
@@ -390,6 +395,35 @@ export function Cobranca() {
       toast.error(json.error ?? 'Erro ao processar fila');
     }
     await loadAll();
+  };
+
+  // ── Resumo diário ─────────────────────────────────────────────────────────
+  const salvarResumoConfig = (ativo: boolean, numero: string) => {
+    localStorage.setItem('resumo_diario_ativo', String(ativo));
+    localStorage.setItem('resumo_diario_numero', numero);
+  };
+
+  const enviarResumoDiario = async (dryRun = false) => {
+    setEnviandoResumo(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('resumo-diario', {
+        body: { dry_run: dryRun, numero: resumoNumero },
+      });
+      if (error) throw new Error(error.message);
+      if (dryRun) {
+        const r = data as any;
+        toast.info(
+          `Simulação: ${r.novos_leads} leads, ${r.matriculas} matrículas, R$ ${Number(r.total_recebido ?? 0).toFixed(2)} recebidos, ${r.inadimplentes} inadimplentes`,
+          { duration: 6000 },
+        );
+      } else {
+        toast.success('Resumo diário enviado!');
+      }
+    } catch (e: any) {
+      toast.error('Erro: ' + (e?.message ?? 'desconhecido'));
+    } finally {
+      setEnviandoResumo(false);
+    }
   };
 
   // ── Filtered logs ─────────────────────────────────────────────────────────
@@ -876,6 +910,146 @@ export function Cobranca() {
                 </Button>
               </CardContent>
             </Card>
+
+            {/* ── Ativação via Cron ── */}
+            <Card className="lg:col-span-2">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Zap size={16}/>Ativação via Cron (cron-job.org)
+                </CardTitle>
+                <CardDescription>
+                  Configure um cron externo para disparar a cobrança automaticamente todos os dias às 9h.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className={`flex items-center gap-2 text-sm font-medium px-3 py-2 rounded-lg border w-fit ${
+                  cobrancaCfg?.ativo
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                }`}>
+                  {cobrancaCfg?.ativo
+                    ? <><CheckCircle2 size={14}/> Automação ativa — disparará diariamente às 9h</>
+                    : <><Clock size={14}/> Aguardando ativação — ative o toggle "Automação ativa" acima</>}
+                </div>
+
+                <div className="space-y-2 text-xs">
+                  <p className="text-muted-foreground font-medium">Configure no cron-job.org:</p>
+                  {[
+                    { label: 'URL', value: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/enviar-cobranca` },
+                    { label: 'Method', value: 'POST' },
+                    { label: 'Body', value: '{"bulk": true}' },
+                    { label: 'Header', value: 'Content-Type: application/json' },
+                    { label: 'Cron', value: '0 9 * * *' },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="flex items-center gap-2 bg-muted/40 rounded px-3 py-1.5 font-mono">
+                      <span className="text-muted-foreground w-16 flex-shrink-0">{label}</span>
+                      <span className="flex-1 truncate text-foreground">{value}</span>
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(value); toast.success('Copiado!'); }}
+                        className="p-1 hover:bg-primary/10 rounded transition-colors flex-shrink-0"
+                      >
+                        <Copy size={12} className="text-primary"/>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline" size="sm"
+                    className="gap-1.5"
+                    onClick={() => setTab('fila')}
+                  >
+                    <Info size={13}/> Ver fila atual ({fila.length})
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => setBulkConfirmOpen(true)}
+                    disabled={fila.length === 0}
+                  >
+                    <Play size={13}/> Enviar agora
+                  </Button>
+                  <a
+                    href="https://cron-job.org"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-auto"
+                  >
+                    <Button variant="ghost" size="sm" className="gap-1.5 text-xs text-muted-foreground">
+                      <ExternalLink size={12}/> cron-job.org
+                    </Button>
+                  </a>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* ── Resumo Diário WhatsApp (dormant) ── */}
+            <Card className="lg:col-span-2">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <MessageSquare size={16}/> Resumo Diário via WhatsApp
+                </CardTitle>
+                <CardDescription>
+                  Receba um resumo das métricas do dia (leads, matrículas, pagamentos, inadimplentes) por WhatsApp.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
+                  <div>
+                    <p className="text-sm font-medium">Resumo diário ativo</p>
+                    <p className="text-xs text-muted-foreground">Recebe mensagem todo dia às 8h (via cron)</p>
+                  </div>
+                  <Switch
+                    checked={resumoAtivo}
+                    onCheckedChange={v => { setResumoAtivo(v); salvarResumoConfig(v, resumoNumero); }}
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">Número de destino (WhatsApp com DDI)</label>
+                  <Input
+                    placeholder="Ex: 5511999999999"
+                    value={resumoNumero}
+                    onChange={e => { setResumoNumero(e.target.value); salvarResumoConfig(resumoAtivo, e.target.value); }}
+                    className="h-9 max-w-xs font-mono"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline" size="sm" className="gap-1.5"
+                    onClick={() => enviarResumoDiario(true)}
+                    disabled={enviandoResumo}
+                  >
+                    {enviandoResumo ? <RefreshCw size={13} className="animate-spin"/> : <Info size={13}/>}
+                    Simular (dry run)
+                  </Button>
+                  <Button
+                    size="sm" className="gap-1.5"
+                    onClick={() => enviarResumoDiario(false)}
+                    disabled={enviandoResumo || !resumoNumero}
+                  >
+                    {enviandoResumo ? <RefreshCw size={13} className="animate-spin"/> : <Send size={13}/>}
+                    Enviar agora
+                  </Button>
+                </div>
+
+                {resumoAtivo && (
+                  <div className="text-xs bg-muted/30 rounded p-3 space-y-1 border">
+                    <p className="font-medium text-muted-foreground">Configure também no cron-job.org para envio automático:</p>
+                    <div className="font-mono text-muted-foreground">
+                      POST {import.meta.env.VITE_SUPABASE_URL}/functions/v1/resumo-diario
+                    </div>
+                    <div className="font-mono text-muted-foreground">
+                      Body: {`{"numero":"${resumoNumero || 'SEU_NUMERO'}"}`}
+                    </div>
+                    <div className="font-mono text-muted-foreground">Cron: 0 8 * * *</div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
           </div>
         </TabsContent>
       </Tabs>

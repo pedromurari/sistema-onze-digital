@@ -45,6 +45,12 @@ interface Launch {
   meta_access_token?: string;
   grupo_lancamento_jid?: string;
   grupo_oferta_jid?: string;
+  // Wizard: turma destino (auto-matrícula)
+  turma_destino_id?: string;
+  produto_destino?: string;
+  valor_mensalidade_destino?: number;
+  dia_vencimento_destino?: number;
+  total_mensalidades_destino?: number;
 }
 
 interface LaunchLead {
@@ -1492,19 +1498,27 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
 
   const openConfirmMatricula = (lead: LaunchLead) => {
     setConfirmMatriculaLead(lead);
+    // Se o wizard configurou turma destino, usa ela; senão cai para primeira turma
+    const hasDestino = !!lancamento?.turma_destino_id;
     setConfirmMatriculaForm({
-      turma_id: turmas[0]?.id ?? '',
-      produto: turmas[0]?.produto ?? 'psicanalise',
-      valor_mensalidade: String(turmas[0]?.valor_mensalidade ?? '109.90'),
-      dia_vencimento: '10',
-      total_mensalidades: String(turmas[0]?.total_mensalidades ?? '15'),
+      turma_id: hasDestino ? lancamento!.turma_destino_id! : (turmas[0]?.id ?? ''),
+      produto: hasDestino ? (lancamento!.produto_destino ?? 'psicanalise') : (turmas[0]?.produto ?? 'psicanalise'),
+      valor_mensalidade: hasDestino
+        ? String(lancamento!.valor_mensalidade_destino ?? '109.90')
+        : String(turmas[0]?.valor_mensalidade ?? '109.90'),
+      dia_vencimento: hasDestino
+        ? String(lancamento!.dia_vencimento_destino ?? 10)
+        : '10',
+      total_mensalidades: hasDestino
+        ? String(lancamento!.total_mensalidades_destino ?? 15)
+        : String(turmas[0]?.total_mensalidades ?? '15'),
     });
   };
 
   const handleConfirmMatricula = async () => {
     if (!confirmMatriculaLead) return;
     setSavingMatricula(true);
-    const { error } = await supabase.from('alunos').insert({
+    const { data: alunoData, error } = await supabase.from('alunos').insert({
       nome: confirmMatriculaLead.nome,
       whatsapp: confirmMatriculaLead.whatsapp || null,
       email: confirmMatriculaLead.email || null,
@@ -1515,11 +1529,34 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
       total_mensalidades: Number(confirmMatriculaForm.total_mensalidades) || 15,
       status: 'ativo',
       data_matricula: new Date().toISOString().slice(0, 10),
-    });
+    }).select('id, contrato_token').single();
     setSavingMatricula(false);
     if (error) { toast.error('Erro ao criar aluno: ' + error.message); return; }
     toast.success('Aluno registrado no financeiro!');
     setConfirmMatriculaLead(null);
+
+    // ── Boas-vindas automáticas ────────────────────────────────────────────────
+    if (alunoData?.id && lancamento) {
+      supabase.functions.invoke('boas-vindas-enviar', {
+        body: {
+          funnel_name: lancamento.nome,
+          nome:        confirmMatriculaLead.nome,
+          whatsapp:    confirmMatriculaLead.whatsapp || '',
+          email:       confirmMatriculaLead.email    || '',
+        },
+      }).catch(() => {/* silencioso — boas-vindas é opcional */});
+    }
+
+    // ── Link do contrato via WPP ───────────────────────────────────────────────
+    if (alunoData?.contrato_token && confirmMatriculaLead.whatsapp) {
+      const contratoUrl = `${window.location.origin}/assinar/${alunoData.contrato_token}`;
+      supabase.functions.invoke('wpp-enviar', {
+        body: {
+          numero:   confirmMatriculaLead.whatsapp,
+          mensagem: `Olá, ${confirmMatriculaLead.nome.split(' ')[0]}! 🎉\n\nSua matrícula foi confirmada! Preencha seus dados para assinar o contrato:\n\n${contratoUrl}`,
+        },
+      }).catch(() => {/* silencioso */});
+    }
   };
 
   // ── Move lead ───────────────────────────────────────────────────────────────
@@ -2575,73 +2612,112 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
             <DialogTitle className="flex items-center gap-2">
               <UserCheck className="h-5 w-5 text-emerald-600" /> Registrar Matrícula no Financeiro
             </DialogTitle>
-            <DialogDescription>
-              <strong>{confirmMatriculaLead?.nome}</strong> foi marcado como matriculado.
-              Deseja criar o registro de aluno no sistema financeiro?
-            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Turma</label>
-              <Select
-                value={confirmMatriculaForm.turma_id}
-                onValueChange={v => {
-                  const t = turmas.find(x => x.id === v);
-                  setConfirmMatriculaForm(f => ({
-                    ...f,
-                    turma_id: v,
-                    produto: t?.produto ?? f.produto,
-                    valor_mensalidade: String(t?.valor_mensalidade ?? f.valor_mensalidade),
-                    total_mensalidades: String(t?.total_mensalidades ?? f.total_mensalidades),
-                  }));
-                }}
-              >
-                <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Selecionar turma..." /></SelectTrigger>
-                <SelectContent>
-                  {turmas.map(t => <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>)}
-                </SelectContent>
-              </Select>
+
+          {lancamento?.turma_destino_id ? (
+            /* ── Modo rápido: turma pré-configurada pelo wizard ── */
+            <div className="space-y-4">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 text-sm space-y-2">
+                <p className="font-medium text-emerald-800">
+                  {confirmMatriculaLead?.nome}
+                </p>
+                <p className="text-emerald-700">
+                  Turma: <strong>{turmas.find(t => t.id === lancamento.turma_destino_id)?.nome ?? 'Turma configurada'}</strong>
+                </p>
+                <div className="flex gap-4 text-xs text-emerald-600">
+                  <span>R$ {Number(confirmMatriculaForm.valor_mensalidade).toFixed(2)}</span>
+                  <span>·</span>
+                  <span>Dia {confirmMatriculaForm.dia_vencimento}</span>
+                  <span>·</span>
+                  <span>{confirmMatriculaForm.total_mensalidades}x</span>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Após confirmar: boas-vindas e link do contrato serão enviados automaticamente via WhatsApp.
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => setConfirmMatriculaLead(null)}>Cancelar</Button>
+                <Button
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  size="sm"
+                  onClick={handleConfirmMatricula}
+                  disabled={savingMatricula}
+                >
+                  {savingMatricula ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Registrando...</> : '✓ Confirmar Matrícula'}
+                </Button>
+              </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Valor mensalidade</label>
-                <div className="relative">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">R$</span>
+          ) : (
+            /* ── Modo completo: selecionar turma manualmente ── */
+            <>
+              <DialogDescription>
+                <strong>{confirmMatriculaLead?.nome}</strong> foi marcado como matriculado.
+                Deseja criar o registro de aluno no sistema financeiro?
+              </DialogDescription>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Turma</label>
+                  <Select
+                    value={confirmMatriculaForm.turma_id}
+                    onValueChange={v => {
+                      const t = turmas.find(x => x.id === v);
+                      setConfirmMatriculaForm(f => ({
+                        ...f,
+                        turma_id: v,
+                        produto: t?.produto ?? f.produto,
+                        valor_mensalidade: String(t?.valor_mensalidade ?? f.valor_mensalidade),
+                        total_mensalidades: String(t?.total_mensalidades ?? f.total_mensalidades),
+                      }));
+                    }}
+                  >
+                    <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Selecionar turma..." /></SelectTrigger>
+                    <SelectContent>
+                      {turmas.map(t => <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Valor mensalidade</label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">R$</span>
+                      <Input
+                        type="number" step="0.01" className="pl-8 h-9 text-sm"
+                        value={confirmMatriculaForm.valor_mensalidade}
+                        onChange={e => setConfirmMatriculaForm(f => ({ ...f, valor_mensalidade: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Dia vencimento</label>
+                    <Input
+                      type="number" min={1} max={31} className="h-9 text-sm"
+                      value={confirmMatriculaForm.dia_vencimento}
+                      onChange={e => setConfirmMatriculaForm(f => ({ ...f, dia_vencimento: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Total de parcelas</label>
                   <Input
-                    type="number" step="0.01" className="pl-8 h-9 text-sm"
-                    value={confirmMatriculaForm.valor_mensalidade}
-                    onChange={e => setConfirmMatriculaForm(f => ({ ...f, valor_mensalidade: e.target.value }))}
+                    type="number" min={1} className="h-9 text-sm"
+                    value={confirmMatriculaForm.total_mensalidades}
+                    onChange={e => setConfirmMatriculaForm(f => ({ ...f, total_mensalidades: e.target.value }))}
                   />
                 </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Dia vencimento</label>
-                <Input
-                  type="number" min={1} max={31} className="h-9 text-sm"
-                  value={confirmMatriculaForm.dia_vencimento}
-                  onChange={e => setConfirmMatriculaForm(f => ({ ...f, dia_vencimento: e.target.value }))}
-                />
+              <div className="flex justify-end gap-2 mt-4">
+                <Button variant="outline" onClick={() => setConfirmMatriculaLead(null)}>Não agora</Button>
+                <Button
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  onClick={handleConfirmMatricula}
+                  disabled={savingMatricula}
+                >
+                  {savingMatricula ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Registrando...</> : 'Registrar Aluno'}
+                </Button>
               </div>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Total de parcelas</label>
-              <Input
-                type="number" min={1} className="h-9 text-sm"
-                value={confirmMatriculaForm.total_mensalidades}
-                onChange={e => setConfirmMatriculaForm(f => ({ ...f, total_mensalidades: e.target.value }))}
-              />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 mt-4">
-            <Button variant="outline" onClick={() => setConfirmMatriculaLead(null)}>Não agora</Button>
-            <Button
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-              onClick={handleConfirmMatricula}
-              disabled={savingMatricula}
-            >
-              {savingMatricula ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Registrando...</> : 'Registrar Aluno'}
-            </Button>
-          </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 
