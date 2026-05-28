@@ -51,7 +51,11 @@ function defaultConfig(): WizardConfig {
     total_mensalidades_destino: 15,
     grupos: [{ nickname: 'Grupo de Lançamento', jid: '' }],
     instancia_evolution: '__priority__',
-    aulas: [{ data: '', hora: '20:00', link: '', professor: '' }],
+    aulas: [
+      { data: '', hora: '20:00', link: '', professor: '' },
+      { data: '', hora: '20:00', link: '', professor: '' },
+      { data: '', hora: '20:00', link: '', professor: '' },
+    ],
     links_extras: [{ key: 'link_checkout', value: '' }],
     bv_wpp_ativo: true, bv_wpp_mensagem: '',
     bv_email_ativo: false, bv_email_assunto: '', bv_email_corpo: '',
@@ -118,12 +122,27 @@ function Step1({ config, setConfig, responsaveis }: {
             {(['lancamento', 'npa'] as const).map(t => (
               <button
                 key={t}
-                onClick={() => set('tipo', t)}
+                onClick={() => {
+                  set('tipo', t);
+                  // Ajusta aulas padrão conforme o tipo
+                  setConfig(prev => {
+                    if (t === 'lancamento' && prev.aulas.length < 3) {
+                      const extras = Array.from({ length: 3 - prev.aulas.length }, () => ({
+                        data: '', hora: '20:00', link: '', professor: '',
+                      }));
+                      return { ...prev, tipo: t, aulas: [...prev.aulas, ...extras] };
+                    }
+                    if (t === 'npa' && prev.aulas.length > 1) {
+                      return { ...prev, tipo: t, aulas: [prev.aulas[0]] };
+                    }
+                    return { ...prev, tipo: t };
+                  });
+                }}
                 className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${
                   config.tipo === t ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/40'
                 }`}
               >
-                {t === 'lancamento' ? '🚀 Lançamento' : '🎯 NPA'}
+                {t === 'lancamento' ? '🚀 Lançamento (3 aulas)' : '🎯 NPA (1 aula)'}
               </button>
             ))}
           </div>
