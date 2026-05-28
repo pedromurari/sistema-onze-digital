@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
+import { NovoLancamentoWizard } from '@/components/crm/NovoLancamentoWizard';
 
 export type View = AppView;
 
@@ -95,6 +96,9 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const [lancamentos, setLancamentos] = useState<{ id: string; nome: string }[]>([]);
+  const [isLancamentoWizardOpen, setIsLancamentoWizardOpen] = useState(false);
+
+  // legado – mantido para compatibilidade mas o wizard substituiu o dialog simples
   const [newLancamentoName, setNewLancamentoName] = useState('');
   const [isLancamentoDialogOpen, setIsLancamentoDialogOpen] = useState(false);
 
@@ -365,29 +369,22 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
                     ))}
 
                     {item.group === 'lancamentos_legado' && isAdmin && (
-                      <Dialog open={isLancamentoDialogOpen} onOpenChange={setIsLancamentoDialogOpen}>
-                        <DialogTrigger asChild>
-                          <button className="w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs text-primary hover:bg-primary/10 mt-1 font-600">
-                            <Plus className="h-4 w-4" /> Novo Lancamento
-                          </button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Criar novo lancamento</DialogTitle>
-                            <DialogDescription>Digite o nome do novo lancamento</DialogDescription>
-                          </DialogHeader>
-                          <div className="flex gap-2">
-                            <Input
-                              placeholder="Nome do lancamento"
-                              value={newLancamentoName}
-                              onChange={(e) => setNewLancamentoName(e.target.value)}
-                              onKeyPress={(e) => e.key === 'Enter' && handleAddLancamento()}
-                              className="border border-border focus:border-primary"
-                            />
-                            <Button onClick={handleAddLancamento} className="bg-primary hover:bg-primary/90">Criar</Button>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
+                      <>
+                        <button
+                          onClick={() => setIsLancamentoWizardOpen(true)}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs text-primary hover:bg-primary/10 mt-1 font-600"
+                        >
+                          <Plus className="h-4 w-4" /> Novo Lancamento
+                        </button>
+                        <NovoLancamentoWizard
+                          open={isLancamentoWizardOpen}
+                          onClose={() => setIsLancamentoWizardOpen(false)}
+                          onCreated={(id) => {
+                            setIsLancamentoWizardOpen(false);
+                            onViewChange(`lancamentos_${id}` as View);
+                          }}
+                        />
+                      </>
                     )}
 
                     {item.group === 'npa_dinamico' && isAdmin && (
