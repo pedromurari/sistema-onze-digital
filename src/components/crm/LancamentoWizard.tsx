@@ -656,6 +656,9 @@ function Step4({ config, setConfig }: {
   config: WizardConfig;
   setConfig: React.Dispatch<React.SetStateAction<WizardConfig>>;
 }) {
+  // profInputs: um campo de texto temporário por aula para digitar novo professor
+  const [profInputs, setProfInputs] = useState<Record<number, string>>({});
+
   const updateAula = (i: number, field: keyof AulaConfig, val: string) =>
     setConfig(c => ({ ...c, aulas: c.aulas.map((a, idx) => idx === i ? { ...a, [field]: val } : a) }));
 
@@ -664,6 +667,30 @@ function Step4({ config, setConfig }: {
 
   const removeAula = (i: number) =>
     setConfig(c => ({ ...c, aulas: c.aulas.filter((_, idx) => idx !== i) }));
+
+  /** Retorna lista de professores da aula i */
+  const getProfessores = (i: number) =>
+    config.aulas[i]?.professor
+      ? config.aulas[i].professor.split(',').map(p => p.trim()).filter(Boolean)
+      : [];
+
+  /** Adiciona professor pelo input temporário */
+  const commitProfessor = (aulaIdx: number) => {
+    const nome = (profInputs[aulaIdx] ?? '').trim();
+    if (!nome) return;
+    const atual = getProfessores(aulaIdx);
+    if (!atual.includes(nome)) {
+      updateAula(aulaIdx, 'professor', [...atual, nome].join(', '));
+    }
+    setProfInputs(p => ({ ...p, [aulaIdx]: '' }));
+  };
+
+  /** Remove professor pelo índice dentro da lista */
+  const removeProfessor = (aulaIdx: number, profIdx: number) => {
+    const atual = getProfessores(aulaIdx);
+    atual.splice(profIdx, 1);
+    updateAula(aulaIdx, 'professor', atual.join(', '));
+  };
 
   const updateLink = (i: number, field: 'key' | 'value', val: string) =>
     setConfig(c => ({ ...c, links_extras: c.links_extras.map((l, idx) => idx === i ? { ...l, [field]: val } : l) }));
@@ -679,8 +706,10 @@ function Step4({ config, setConfig }: {
       {/* Aulas */}
       <div className="space-y-3">
         <h3 className="text-sm font-semibold">Aulas ao vivo</h3>
-        {config.aulas.map((a, i) => (
-          <div key={i} className="border border-border rounded-lg p-3 space-y-2">
+        {config.aulas.map((a, i) => {
+          const professores = getProfessores(i);
+          return (
+          <div key={i} className="border border-border rounded-lg p-3 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-primary">Aula {i + 1}</span>
               {config.aulas.length > 1 && (
@@ -689,8 +718,10 @@ function Step4({ config, setConfig }: {
                 </button>
               )}
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <div className="col-span-2 sm:col-span-1 space-y-1">
+
+            {/* Data + Horário */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
                 <label className="text-[10px] text-muted-foreground">Data</label>
                 <Input type="date" value={a.data} onChange={e => updateAula(i, 'data', e.target.value)} className="h-8 text-sm" />
               </div>
@@ -698,17 +729,66 @@ function Step4({ config, setConfig }: {
                 <label className="text-[10px] text-muted-foreground">Horário</label>
                 <Input type="time" value={a.hora} onChange={e => updateAula(i, 'hora', e.target.value)} className="h-8 text-sm" />
               </div>
-              <div className="space-y-1">
-                <label className="text-[10px] text-muted-foreground">Professor(a)</label>
-                <Input value={a.professor} onChange={e => updateAula(i, 'professor', e.target.value)} placeholder="Nome" className="h-8 text-sm" />
+            </div>
+
+            {/* Professores — chips + input */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                Professor(es) — <span className="text-primary font-medium">{'{{professor_' + (i + 1) + '}}'}</span>
+              </label>
+
+              {/* Chips dos professores adicionados */}
+              {professores.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {professores.map((p, pi) => (
+                    <span
+                      key={pi}
+                      className="inline-flex items-center gap-1 bg-primary/10 text-primary text-xs px-2 py-0.5 rounded-full font-medium"
+                    >
+                      {p}
+                      <button
+                        type="button"
+                        onClick={() => removeProfessor(i, pi)}
+                        className="hover:text-red-500 transition-colors"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Input para adicionar novo professor */}
+              <div className="flex gap-1.5">
+                <Input
+                  value={profInputs[i] ?? ''}
+                  onChange={e => setProfInputs(p => ({ ...p, [i]: e.target.value }))}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { e.preventDefault(); commitProfessor(i); }
+                  }}
+                  placeholder={professores.length === 0 ? 'Nome do professor' : '+ Outro professor'}
+                  className="h-8 text-sm flex-1"
+                />
+                <button
+                  type="button"
+                  onClick={() => commitProfessor(i)}
+                  disabled={!(profInputs[i] ?? '').trim()}
+                  className="h-8 w-8 flex items-center justify-center rounded-md border border-border text-muted-foreground hover:text-primary hover:border-primary disabled:opacity-40 transition-colors flex-shrink-0"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
               </div>
-              <div className="col-span-2 sm:col-span-4 space-y-1">
-                <label className="text-[10px] text-muted-foreground">Link da aula → {'{{link_aula_' + (i + 1) + '}}'}</label>
-                <Input value={a.link} onChange={e => updateAula(i, 'link', e.target.value)} placeholder="https://..." className="h-8 text-sm" />
-              </div>
+              <p className="text-[10px] text-muted-foreground">Pressione Enter ou clique + para adicionar</p>
+            </div>
+
+            {/* Link da aula */}
+            <div className="space-y-1">
+              <label className="text-[10px] text-muted-foreground">Link da aula → {'{{link_aula_' + (i + 1) + '}}'}</label>
+              <Input value={a.link} onChange={e => updateAula(i, 'link', e.target.value)} placeholder="https://..." className="h-8 text-sm" />
             </div>
           </div>
-        ))}
+          );
+        })}
         {config.aulas.length < 5 && (
           <button onClick={addAula} className="flex items-center gap-1.5 text-sm text-primary hover:text-primary/80">
             <Plus className="h-4 w-4" /> Adicionar aula
