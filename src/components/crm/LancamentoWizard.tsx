@@ -183,12 +183,20 @@ function Step1({ config, setConfig, responsaveis }: {
 
 // ─── Step 2: Turma Destino ────────────────────────────────────────────────────
 
-function Step2({ config, setConfig, turmas }: {
+function Step2({ config, setConfig, turmas, setTurmas }: {
   config: WizardConfig;
   setConfig: React.Dispatch<React.SetStateAction<WizardConfig>>;
   turmas: Turma[];
+  setTurmas: React.Dispatch<React.SetStateAction<Turma[]>>;
 }) {
   const set = (k: keyof WizardConfig, v: unknown) => setConfig(c => ({ ...c, [k]: v }));
+
+  // ── inline "criar turma" ───────────────────────────────────────────────────
+  const [showCreate, setShowCreate] = useState(false);
+  const [saving, setSaving]         = useState(false);
+  const [newTurma, setNewTurma]     = useState({
+    nome: '', produto: 'psicanalise', valor_mensalidade: 109.90, total_mensalidades: 15,
+  });
 
   const handleTurmaSelect = (id: string) => {
     const t = turmas.find(x => x.id === id);
@@ -202,11 +210,42 @@ function Step2({ config, setConfig, turmas }: {
     }));
   };
 
+  const salvarNovaTurma = async () => {
+    if (!newTurma.nome.trim()) return;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from('turmas')
+        .insert({
+          nome: newTurma.nome.trim(),
+          produto: newTurma.produto,
+          valor_mensalidade: newTurma.valor_mensalidade,
+          total_mensalidades: newTurma.total_mensalidades,
+        })
+        .select('id, nome, produto, valor_mensalidade, dia_vencimento, total_mensalidades')
+        .single();
+
+      if (error) throw error;
+
+      const criada = data as Turma;
+      setTurmas(prev => [...prev, criada].sort((a, b) => a.nome.localeCompare(b.nome)));
+      handleTurmaSelect(criada.id);
+      setShowCreate(false);
+      setNewTurma({ nome: '', produto: 'psicanalise', valor_mensalidade: 109.90, total_mensalidades: 15 });
+    } catch (e: any) {
+      toast.error('Erro ao criar turma: ' + (e.message ?? e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
         Defina para qual turma os leads matriculados neste lançamento serão enviados automaticamente.
       </p>
+
+      {/* ── Seletor de turma ── */}
       <div className="space-y-1">
         <label className="text-xs font-medium text-muted-foreground">Turma destino *</label>
         <select
@@ -217,8 +256,90 @@ function Step2({ config, setConfig, turmas }: {
           <option value="">— Selecionar turma —</option>
           {turmas.map(t => <option key={t.id} value={t.id}>{t.nome} ({t.produto})</option>)}
         </select>
+
+        {/* Botão criar nova turma */}
+        {!showCreate && (
+          <button
+            type="button"
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors mt-1.5"
+          >
+            <Plus className="h-3.5 w-3.5" /> Criar nova turma
+          </button>
+        )}
       </div>
 
+      {/* ── Mini-form de criação inline ── */}
+      {showCreate && (
+        <div className="border border-primary/30 rounded-xl p-4 space-y-3 bg-primary/5">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-primary">Nova turma</p>
+            <button
+              type="button"
+              onClick={() => setShowCreate(false)}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Nome *</label>
+            <Input
+              value={newTurma.nome}
+              onChange={e => setNewTurma(p => ({ ...p, nome: e.target.value }))}
+              placeholder="Ex: Turma #02526"
+              className="h-9 text-sm"
+              autoFocus
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Produto</label>
+              <select
+                value={newTurma.produto}
+                onChange={e => setNewTurma(p => ({ ...p, produto: e.target.value }))}
+                className="w-full px-3 py-2 rounded-md border border-border text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="psicanalise">Psicanálise</option>
+                <option value="numerologia">Numerologia</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Valor mensalidade (R$)</label>
+              <Input
+                type="number" step="0.01"
+                value={newTurma.valor_mensalidade}
+                onChange={e => setNewTurma(p => ({ ...p, valor_mensalidade: Number(e.target.value) }))}
+                className="h-9 text-sm"
+              />
+            </div>
+            <div className="space-y-1 col-span-2">
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Total de parcelas</label>
+              <Input
+                type="number" min={1}
+                value={newTurma.total_mensalidades}
+                onChange={e => setNewTurma(p => ({ ...p, total_mensalidades: Number(e.target.value) }))}
+                className="h-9 text-sm"
+              />
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={salvarNovaTurma}
+            disabled={saving || !newTurma.nome.trim()}
+            className="w-full py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {saving
+              ? <><Loader2 className="h-4 w-4 animate-spin" /> Criando...</>
+              : <><Check className="h-4 w-4" /> Criar e selecionar turma</>}
+          </button>
+        </div>
+      )}
+
+      {/* ── Campos editáveis pós-seleção ── */}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground">Produto</label>
@@ -1094,7 +1215,7 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
 
         <div className="flex-1 overflow-y-auto px-6 pb-2 min-h-0">
           {step === 1 && <Step1 config={config} setConfig={setConfig} responsaveis={responsaveis} />}
-          {step === 2 && <Step2 config={config} setConfig={setConfig} turmas={turmas} />}
+          {step === 2 && <Step2 config={config} setConfig={setConfig} turmas={turmas} setTurmas={setTurmas} />}
           {step === 3 && <Step3 config={config} setConfig={setConfig} evoInstances={evoInstances} />}
           {step === 4 && <Step4 config={config} setConfig={setConfig} />}
           {step === 5 && <Step5 config={config} setConfig={setConfig} />}
