@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { validateWebhookUrl, WebhookUrlValidationError } from '@/lib/webhook';
 import { supabase } from '@/integrations/supabase/client';
-import { Webhook, BookOpen, Globe, Plus, Trash2, Send, Smartphone, RefreshCw, Loader2, CheckCircle2, XCircle, QrCode } from 'lucide-react';
+import { Webhook, BookOpen, Globe, Plus, Trash2, Send, Smartphone, RefreshCw, Loader2, CheckCircle2, XCircle, QrCode, FileText, Copy, ExternalLink, ChevronRight } from 'lucide-react';
 import { EvolutionTaskPanel } from './EvolutionTaskPanel';
 
 interface EvolutionInstance {
@@ -373,6 +373,10 @@ export function Settings() {
             <Globe className="h-4 w-4 mr-2" />
             Fontes
           </TabsTrigger>
+          <TabsTrigger value="contratos">
+            <FileText className="h-4 w-4 mr-2" />
+            Contratos
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="webhooks" className="space-y-4">
@@ -511,6 +515,125 @@ export function Settings() {
               ))}
             </div>
           </Card>
+        </TabsContent>
+
+        {/* ── Contratos / Autentique ─────────────────────────────────────── */}
+        <TabsContent value="contratos" className="space-y-4">
+
+          {/* Fluxo visual */}
+          <Card className="p-6 bg-card border-border">
+            <h2 className="text-lg font-semibold mb-1 flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" /> Fluxo de Contrato
+            </h2>
+            <p className="text-sm text-muted-foreground mb-5">
+              Como funciona o processo integrado de contrato — do pagamento à assinatura.
+            </p>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 text-sm">
+              {[
+                { icon: '💰', label: 'Matrícula confirmada', desc: 'Lead movido para "Matrícula" no Kanban' },
+                { icon: '📩', label: 'Link enviado por WPP', desc: 'URL única gerada automaticamente' },
+                { icon: '📋', label: 'Aluno preenche dados', desc: 'CPF, nascimento, endereço' },
+                { icon: '📝', label: 'Contrato gerado', desc: 'Autentique cria o documento' },
+                { icon: '✅', label: 'Aluno assina', desc: 'Webhook atualiza o sistema' },
+              ].map((step, i, arr) => (
+                <div key={step.label} className="flex items-center gap-2">
+                  <div className="bg-muted/60 rounded-lg p-3 text-center w-32 flex-shrink-0">
+                    <div className="text-2xl mb-1">{step.icon}</div>
+                    <p className="text-[11px] font-semibold leading-tight">{step.label}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">{step.desc}</p>
+                  </div>
+                  {i < arr.length - 1 && <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />}
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* Config Autentique */}
+          <Card className="p-6 bg-card border-border space-y-5">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              🔐 Configuração da Autentique
+            </h2>
+
+            <div className="space-y-3">
+              <div className="flex items-start gap-3 p-4 rounded-lg border border-amber-200 bg-amber-50">
+                <span className="text-2xl flex-shrink-0">1️⃣</span>
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-amber-900">Obter token da API</p>
+                  <p className="text-xs text-amber-700">
+                    Acesse <strong>autentique.com.br → Configurações → API</strong> e copie seu token de acesso.
+                  </p>
+                  <a href="https://app.autentique.com.br/dashboard/configuracoes" target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-amber-700 underline font-medium">
+                    <ExternalLink className="h-3 w-3" /> Abrir Autentique
+                  </a>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 p-4 rounded-lg border border-blue-200 bg-blue-50">
+                <span className="text-2xl flex-shrink-0">2️⃣</span>
+                <div className="space-y-2 w-full">
+                  <p className="text-sm font-semibold text-blue-900">Adicionar secret no Supabase</p>
+                  <p className="text-xs text-blue-700">
+                    Acesse <strong>Supabase → Edge Functions → Secrets</strong> e adicione:
+                  </p>
+                  <div className="flex items-center gap-2 bg-white border border-blue-200 rounded px-3 py-2 font-mono text-xs">
+                    <span className="flex-1 text-blue-900">AUTENTIQUE_TOKEN = seu_token_aqui</span>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText('AUTENTIQUE_TOKEN'); }}
+                      className="p-1 hover:bg-blue-100 rounded"
+                      title="Copiar nome da variável"
+                    >
+                      <Copy className="h-3 w-3 text-blue-600" />
+                    </button>
+                  </div>
+                  <a href="https://supabase.com/dashboard/project/usqiyekfmwwnvkmkdlej/functions" target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-blue-700 underline font-medium">
+                    <ExternalLink className="h-3 w-3" /> Abrir Supabase Functions
+                  </a>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 p-4 rounded-lg border border-violet-200 bg-violet-50">
+                <span className="text-2xl flex-shrink-0">3️⃣</span>
+                <div className="space-y-2 w-full">
+                  <p className="text-sm font-semibold text-violet-900">Configurar Webhook na Autentique</p>
+                  <p className="text-xs text-violet-700">
+                    Em <strong>Autentique → Configurações → Webhooks</strong>, adicione a URL abaixo.
+                    Ela será chamada automaticamente quando o aluno assinar.
+                  </p>
+                  <div className="flex items-center gap-2 bg-white border border-violet-200 rounded px-3 py-2 font-mono text-xs break-all">
+                    <span className="flex-1 text-violet-900">
+                      {import.meta.env.VITE_SUPABASE_URL}/functions/v1/autentique-webhook
+                    </span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/autentique-webhook`);
+                      }}
+                      className="p-1 hover:bg-violet-100 rounded flex-shrink-0"
+                      title="Copiar URL"
+                    >
+                      <Copy className="h-3 w-3 text-violet-600" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 p-4 rounded-lg border border-emerald-200 bg-emerald-50">
+                <span className="text-2xl flex-shrink-0">4️⃣</span>
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-emerald-900">Enviar link para o aluno</p>
+                  <p className="text-xs text-emerald-700">
+                    No <strong>Financeiro → painel do aluno</strong>, clique em "Enviar por WPP" na seção
+                    "Formulário de Contrato". O link tem o formato:
+                  </p>
+                  <div className="font-mono text-xs bg-white border border-emerald-200 rounded px-3 py-2 text-emerald-800 break-all">
+                    {window.location.origin}/assinar/[token-único-do-aluno]
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Card>
+
         </TabsContent>
       </Tabs>
     </div>

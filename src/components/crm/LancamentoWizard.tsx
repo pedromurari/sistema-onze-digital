@@ -230,10 +230,6 @@ function Step2({ config, setConfig, turmas }: {
           </select>
         </div>
         <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Dia de vencimento</label>
-          <Input type="number" min={1} max={31} value={config.dia_vencimento_destino || ''} onChange={e => set('dia_vencimento_destino', Number(e.target.value))} />
-        </div>
-        <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground">Valor mensalidade (R$)</label>
           <Input type="number" step="0.01" value={config.valor_mensalidade_destino || ''} onChange={e => set('valor_mensalidade_destino', Number(e.target.value))} />
         </div>
@@ -242,10 +238,13 @@ function Step2({ config, setConfig, turmas }: {
           <Input type="number" min={1} value={config.total_mensalidades_destino || ''} onChange={e => set('total_mensalidades_destino', Number(e.target.value))} />
         </div>
       </div>
+      <p className="text-xs text-muted-foreground">
+        💡 O dia de vencimento é escolhido individualmente por cada aluno no momento da matrícula.
+      </p>
 
       {config.turma_destino_id && (
         <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-sm text-green-800">
-          ✅ Configurado: R$ {config.valor_mensalidade_destino?.toFixed(2).replace('.', ',')} × {config.total_mensalidades_destino}x, venc. dia {config.dia_vencimento_destino}
+          ✅ Configurado: R$ {config.valor_mensalidade_destino?.toFixed(2).replace('.', ',')} × {config.total_mensalidades_destino}x
         </div>
       )}
     </div>

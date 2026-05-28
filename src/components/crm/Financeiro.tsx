@@ -82,6 +82,7 @@ interface Aluno {
   asaas_link?: string;
   voomp_integrado?: boolean;
   voomp_link?: string;
+  contrato_token?: string;
   created_at: string;
 }
 
@@ -852,7 +853,7 @@ export function Financeiro() {
 
   useEffect(() => { loadData(); }, []);
 
-  const ALUNOS_SELECT_FULL = 'id, turma_id, produto, nome, whatsapp, email, cpf, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, valor_mensalidade, forma_pagamento, observacoes, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, contrato_baixado, contrato_arquivo_url, contrato_arquivo_nome, asaas_integrado, asaas_link, voomp_integrado, voomp_link, created_at';
+  const ALUNOS_SELECT_FULL = 'id, turma_id, produto, nome, whatsapp, email, cpf, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, valor_mensalidade, forma_pagamento, observacoes, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, contrato_baixado, contrato_arquivo_url, contrato_arquivo_nome, asaas_integrado, asaas_link, voomp_integrado, voomp_link, contrato_token, created_at';
   const ALUNOS_SELECT_BASE = 'id, turma_id, produto, nome, whatsapp, email, cpf, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, valor_mensalidade, forma_pagamento, observacoes, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, created_at';
 
   const loadData = async () => {
@@ -2627,6 +2628,94 @@ export function Financeiro() {
             const valorEfetivo = editAlunoForm.valor_mensalidade ?? turmaAtual?.valor_mensalidade ?? 0;
             return (
               <div className="space-y-5">
+
+                {/* Link do Formulário de Contrato */}
+                {alunoDetail.contrato_token && (
+                  <div className="rounded-lg border border-border bg-white p-4 space-y-3">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Formulário de Contrato</p>
+
+                    {/* Pipeline visual */}
+                    <div className="flex items-center gap-1 text-xs">
+                      {[
+                        { label: 'Link gerado', done: true },
+                        { label: 'Forms respondido', done: !!alunoDetail.forms_respondido },
+                        { label: 'Contrato enviado', done: !!alunoDetail.contrato_enviado },
+                        { label: 'Assinado', done: !!alunoDetail.contrato_assinado },
+                      ].map((step, i, arr) => (
+                        <div key={step.label} className="flex items-center gap-1">
+                          <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium ${
+                            step.done ? 'bg-emerald-100 text-emerald-700' : 'bg-muted text-muted-foreground'
+                          }`}>
+                            {step.done ? <CheckCircle2 className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
+                            {step.label}
+                          </div>
+                          {i < arr.length - 1 && <div className={`h-px w-3 ${step.done ? 'bg-emerald-300' : 'bg-border'}`} />}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* URL do formulário */}
+                    <div className="space-y-1">
+                      <p className="text-[10px] text-muted-foreground">Link para o aluno preencher os dados e assinar:</p>
+                      <div className="flex items-center gap-2 bg-muted/40 rounded-md px-3 py-2 font-mono text-xs">
+                        <span className="flex-1 truncate text-foreground/70">
+                          {window.location.origin}/assinar/{alunoDetail.contrato_token}
+                        </span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(`${window.location.origin}/assinar/${alunoDetail.contrato_token}`);
+                            toast({ title: 'Link copiado!' });
+                          }}
+                          className="p-1 hover:bg-primary/10 rounded transition-colors flex-shrink-0"
+                          title="Copiar link"
+                        >
+                          <Copy className="h-3.5 w-3.5 text-primary" />
+                        </button>
+                        <a
+                          href={`${window.location.origin}/assinar/${alunoDetail.contrato_token}`}
+                          target="_blank" rel="noopener noreferrer"
+                          className="p-1 hover:bg-primary/10 rounded transition-colors flex-shrink-0"
+                          title="Abrir formulário"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5 text-primary" />
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Ações */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Button
+                        size="sm" variant="outline"
+                        className="gap-1.5 text-xs h-8"
+                        onClick={async () => {
+                          const link = `${window.location.origin}/assinar/${alunoDetail.contrato_token}`;
+                          const { error } = await supabase.functions.invoke('wpp-enviar', {
+                            body: {
+                              numero: alunoDetail.whatsapp,
+                              mensagem: `Olá, ${alunoDetail.nome.split(' ')[0]}! 📝\n\nPreencha seus dados para assinar o contrato de matrícula:\n\n${link}`,
+                            },
+                          });
+                          if (error) toast({ variant: 'destructive', title: 'Erro ao enviar WPP', description: error.message });
+                          else toast({ title: '✅ Link enviado por WhatsApp!' });
+                        }}
+                        disabled={!alunoDetail.whatsapp}
+                      >
+                        <MessageSquare className="h-3.5 w-3.5" /> Enviar por WPP
+                      </Button>
+
+                      {alunoDetail.autentique_link_assinatura && (
+                        <a
+                          href={alunoDetail.autentique_link_assinatura}
+                          target="_blank" rel="noopener noreferrer"
+                        >
+                          <Button size="sm" className="gap-1.5 text-xs h-8 bg-violet-600 hover:bg-violet-700">
+                            <ExternalLink className="h-3.5 w-3.5" /> Abrir na Autentique
+                          </Button>
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Contrato */}
                 <div className="flex flex-wrap items-center gap-3 p-3 rounded-lg bg-muted/50 border border-border">
