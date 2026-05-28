@@ -50,8 +50,12 @@ function defaultConfig(): WizardConfig {
     turma_destino_id: '', produto_destino: 'psicanalise',
     valor_mensalidade_destino: 109.90, dia_vencimento_destino: 10,
     total_mensalidades_destino: 15,
+    // quantidade_grupos = nº de grupos de LANÇAMENTO; grupo de oferta é sempre +1
     quantidade_grupos: 1,
-    grupos: [{ nickname: '', jid: '', participantes: [] }],
+    grupos: [
+      { nickname: '', jid: '', participantes: [] }, // lançamento 1
+      { nickname: '', jid: '', participantes: [] }, // oferta (sempre presente)
+    ],
     instancia_evolution: '__priority__',
     aulas: [
       { data: '', hora: '20:00', link: '', professor: '' },
@@ -399,13 +403,22 @@ function Step3({ config, setConfig, evoInstances }: {
   const [fotoFiles, setFotoFiles] = useState<Record<number, File | null>>({});
   const [partInputs, setPartInputs] = useState<Record<number, string>>({});
 
+  // qtd = nº de grupos de LANÇAMENTO; total de grupos = qtd + 1 (oferta sempre presente)
   const qtd = config.quantidade_grupos ?? 1;
+  const totalGrupos = qtd + 1;
 
   const setQtd = (n: 1 | 2) => {
     setConfig(c => {
       const novos = [...c.grupos];
-      while (novos.length < n) novos.push({ nickname: '', jid: '', participantes: [] });
-      return { ...c, quantidade_grupos: n, grupos: novos.slice(0, n) };
+      const total = n + 1; // n lançamento + 1 oferta
+      // Garante que temos slots suficientes
+      while (novos.length < total) novos.push({ nickname: '', jid: '', participantes: [] });
+      // Ao reduzir de 2→1: remove o segundo grupo de lançamento (índice 1),
+      // mantém lançamento-1 (índice 0) e oferta (último)
+      if (n === 1 && novos.length > 2) {
+        novos.splice(1, novos.length - 2); // deixa só [0] + [ultimo]
+      }
+      return { ...c, quantidade_grupos: n, grupos: novos.slice(0, total) };
     });
   };
 
@@ -454,15 +467,22 @@ function Step3({ config, setConfig, evoInstances }: {
     }
   };
 
-  const LABELS    = ['Lançamento', 'Oferta'];
-  const EMOJI     = ['🚀', '🎯'];
-  const VAR_NAMES = ['{{grupo_1}}', '{{grupo_2}}'];
+  // Label/emoji/varname dinâmicos por posição
+  // Último grupo (índice qtd) é sempre Oferta; os demais são Lançamento
+  const getLabel    = (i: number) => i === qtd ? 'Oferta'  : qtd === 1 ? 'Lançamento' : `Lançamento ${i + 1}`;
+  const getEmoji    = (i: number) => i === qtd ? '🎯'      : '🚀';
+  const getVarName  = (i: number) => `{{grupo_${i + 1}}}`;
 
   return (
     <div className="space-y-5">
-      {/* ── Toggle 1 / 2 grupos ── */}
+      {/* ── Toggle: quantos grupos de lançamento ── */}
       <div className="space-y-2">
-        <label className="text-sm font-medium">Quantos grupos WhatsApp?</label>
+        <div>
+          <label className="text-sm font-medium">Grupos de lançamento</label>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            O grupo de oferta <strong>sempre</strong> é criado. Escolha quantos grupos de lançamento você quer.
+          </p>
+        </div>
         <div className="flex gap-2">
           {([1, 2] as const).map(n => (
             <button
@@ -475,7 +495,9 @@ function Step3({ config, setConfig, evoInstances }: {
                   : 'bg-background border-border text-muted-foreground hover:border-primary/50'
               }`}
             >
-              {n === 1 ? '1 grupo' : '2 grupos  (lançamento + oferta)'}
+              {n === 1
+                ? '1 lançamento + oferta  (2 total)'
+                : '2 lançamentos + oferta  (3 total)'}
             </button>
           ))}
         </div>
@@ -498,14 +520,17 @@ function Step3({ config, setConfig, evoInstances }: {
         </select>
       </div>
 
-      {/* ── Cards de grupo ── */}
-      {Array.from({ length: qtd }).map((_, i) => {
+      {/* ── Cards de grupo (totalGrupos = qtd lançamento + 1 oferta) ── */}
+      {Array.from({ length: totalGrupos }).map((_, i) => {
         const grupo    = config.grupos[i] ?? { nickname: '', jid: '', participantes: [] };
         const isCriado = !!grupo.jid;
         const isLoading = criando[i] ?? false;
         const erro     = erros[i] ?? '';
         const fotoFile = fotoFiles[i] ?? null;
         const numCount = parseNumeros(partInputs[i] ?? '').length;
+        const label    = getLabel(i);
+        const emoji    = getEmoji(i);
+        const varName  = getVarName(i);
 
         return (
           <div
@@ -520,11 +545,11 @@ function Step3({ config, setConfig, evoInstances }: {
                 <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold ${
                   isCriado ? 'bg-green-500 text-white' : 'bg-primary/10 text-primary'
                 }`}>
-                  {isCriado ? <Check className="h-4 w-4" /> : EMOJI[i]}
+                  {isCriado ? <Check className="h-4 w-4" /> : emoji}
                 </span>
                 <div>
-                  <p className="text-sm font-semibold">Grupo de {LABELS[i]}</p>
-                  <p className="text-[10px] text-muted-foreground">{VAR_NAMES[i]}</p>
+                  <p className="text-sm font-semibold">Grupo de {label}</p>
+                  <p className="text-[10px] text-muted-foreground">{varName}</p>
                 </div>
               </div>
               {isCriado ? (
@@ -542,9 +567,7 @@ function Step3({ config, setConfig, evoInstances }: {
               <Input
                 value={grupo.nickname}
                 onChange={e => updateGrupo(i, 'nickname', e.target.value)}
-                placeholder={i === 0
-                  ? `Ex: ${config.nome || 'Turma 37'} – Lançamento`
-                  : `Ex: ${config.nome || 'Turma 37'} – Oferta`}
+                placeholder={`Ex: ${config.nome || 'Turma 37'} – ${label}`}
                 className="h-9 text-sm"
                 disabled={isCriado}
               />
