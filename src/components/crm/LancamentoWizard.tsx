@@ -165,14 +165,6 @@ function Step1({ config, setConfig, responsaveis }: {
           </select>
         </div>
         <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Data do live *</label>
-          <Input type="date" value={config.data_live} onChange={e => set('data_live', e.target.value)} />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Horário</label>
-          <Input type="time" value={config.hora_live} onChange={e => set('hora_live', e.target.value)} />
-        </div>
-        <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground">Meta de leads</label>
           <Input type="number" value={config.meta_leads || ''} onChange={e => set('meta_leads', Number(e.target.value))} placeholder="Ex: 500" />
         </div>
@@ -180,6 +172,61 @@ function Step1({ config, setConfig, responsaveis }: {
           <label className="text-xs font-medium text-muted-foreground">Meta de matrículas</label>
           <Input type="number" value={config.meta_matriculas || ''} onChange={e => set('meta_matriculas', Number(e.target.value))} placeholder="Ex: 30" />
         </div>
+      </div>
+
+      {/* ── Datas das lives ── */}
+      <div className="pt-3 border-t border-border space-y-3">
+        <div className="flex items-center justify-between">
+          <label className="text-sm font-semibold">
+            {config.tipo === 'lancamento' ? '📅 Datas das 3 lives' : '📅 Data do evento'}
+          </label>
+          <div className="flex items-center gap-1.5">
+            <label className="text-[10px] text-muted-foreground">Horário padrão</label>
+            <Input
+              type="time"
+              value={config.hora_live}
+              onChange={e => {
+                set('hora_live', e.target.value);
+                // Propaga o horário para todas as aulas
+                setConfig(c => ({
+                  ...c,
+                  hora_live: e.target.value,
+                  aulas: c.aulas.map(a => a.hora === config.hora_live ? { ...a, hora: e.target.value } : a),
+                }));
+              }}
+              className="h-7 w-24 text-xs"
+            />
+          </div>
+        </div>
+
+        <div className={`grid gap-3 ${config.tipo === 'lancamento' ? 'grid-cols-3' : 'grid-cols-1'}`}>
+          {config.aulas.map((aula, i) => (
+            <div key={i} className="space-y-1">
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                {config.tipo === 'lancamento' ? `Aula ${i + 1}` : 'Dia do evento'}
+              </label>
+              <Input
+                type="date"
+                value={aula.data}
+                onChange={e => {
+                  const newData = e.target.value;
+                  setConfig(c => ({
+                    ...c,
+                    // Aula 1 auto-preenche data_live (âncora de scheduling)
+                    data_live: i === 0 ? newData : c.data_live,
+                    aulas: c.aulas.map((a, idx) =>
+                      idx === i ? { ...a, data: newData } : a,
+                    ),
+                  }));
+                }}
+                className="h-9 text-sm"
+              />
+            </div>
+          ))}
+        </div>
+        <p className="text-[10px] text-muted-foreground">
+          💡 Essas datas são marcadas automaticamente no calendário ao salvar.
+        </p>
       </div>
     </div>
   );
@@ -743,16 +790,27 @@ function Step4({ config, setConfig }: {
               )}
             </div>
 
-            {/* Data + Horário */}
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="text-[10px] text-muted-foreground">Data</label>
-                <Input type="date" value={a.data} onChange={e => updateAula(i, 'data', e.target.value)} className="h-8 text-sm" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] text-muted-foreground">Horário</label>
+            {/* Data (read-only, definida no Step 1) + Horário */}
+            <div className="flex items-center gap-3">
+              <div className="flex-1 space-y-1">
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Horário</label>
                 <Input type="time" value={a.hora} onChange={e => updateAula(i, 'hora', e.target.value)} className="h-8 text-sm" />
               </div>
+              {a.data ? (
+                <div className="flex-1 space-y-1">
+                  <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Data (Step 1)</label>
+                  <div className="h-8 flex items-center px-3 rounded-md border border-border bg-muted/50 text-sm text-muted-foreground">
+                    {new Date(a.data + 'T00:00:00').toLocaleDateString('pt-BR')}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 space-y-1">
+                  <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Data</label>
+                  <div className="h-8 flex items-center px-3 rounded-md border border-dashed border-border text-xs text-muted-foreground/60">
+                    ← definir no Step 1
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Professores — chips + input */}
@@ -1287,6 +1345,25 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
           status: m.status,
         }));
         await supabase.from('funnel_messages').insert(rows);
+      }
+
+      // 5. Criar entradas no calendário para cada aula com data preenchida
+      const aulaComData = config.aulas.filter(a => a.data);
+      if (aulaComData.length > 0) {
+        // Remove entradas antigas deste lancamento (se editando)
+        if (existingId) {
+          await supabase.from('eventos_calendario')
+            .delete()
+            .ilike('titulo', `${config.nome} — Aula%`);
+        }
+        const cor = config.tipo === 'npa' ? '#7C3AED' : '#EA580C';
+        const evtRows = aulaComData.map((a, i) => ({
+          titulo: `${config.nome} — Aula ${i + 1}`,
+          data_inicio: `${a.data}T${a.hora || '20:00'}:00`,
+          cor,
+          tipo: config.tipo,
+        }));
+        await supabase.from('eventos_calendario').insert(evtRows);
       }
 
       toast.success(existingId ? `${config.nome} atualizado!` : `${config.nome} criado com sucesso! 🚀`);

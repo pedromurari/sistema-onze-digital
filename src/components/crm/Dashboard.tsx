@@ -176,7 +176,7 @@ export function Dashboard() {
   const [allLancLeads, setAllLancLeads] = useState<any[]>([]);  // all, for cross-lancamento dedup
   const [npaEventos, setNpaEventos]   = useState<any[]>([]);
   const [npaLeads, setNpaLeads]       = useState<any[]>([]);
-  const [eventosCalendario, setEventosCalendario] = useState<{id: string; titulo: string; data_inicio: string; cor: string}[]>([]);
+  const [eventosCalendario, setEventosCalendario] = useState<{id: string; titulo: string; data_inicio: string; data_fim?: string | null; cor: string}[]>([]);
   const [responsaveisList, setResponsaveisList] = useState<Responsavel[]>([]);
   const [selLancId, setSelLancId]     = useState('');
   const [selNpaId, setSelNpaId]       = useState('');
@@ -199,7 +199,10 @@ export function Dashboard() {
         supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades, data_inicio, data_fim, responsavel_id'),
         supabase.from('lancamentos').select('id, nome, ativo, created_at, data_live').order('created_at', { ascending: false }).limit(20),
         supabase.from('npa_eventos').select('id, nome, ativo, data_evento').order('created_at', { ascending: false }).limit(20),
-        supabase.from('eventos_calendario').select('id, titulo, data_inicio, cor').gte('data_inicio', hoje.toISOString()).order('data_inicio').limit(20),
+        // Inclui eventos futuros E eventos em andamento (data_fim >= hoje, mesmo que data_inicio < hoje)
+        supabase.from('eventos_calendario').select('id, titulo, data_inicio, data_fim, cor')
+          .or(`data_inicio.gte.${hoje.toISOString()},data_fim.gte.${hoje.toISOString()}`)
+          .order('data_inicio').limit(30),
         supabase.from('responsaveis').select('id, nome'),
       ]);
 
@@ -432,7 +435,13 @@ export function Dashboard() {
     const items: ProxEvento[] = [];
 
     eventosCalendario.forEach(e => {
-      items.push({ id: `evt-${e.id}`, titulo: e.titulo, data: new Date(e.data_inicio), tipo: 'evento', cor: e.cor });
+      const dataInicio = new Date(e.data_inicio);
+      // Para eventos em andamento (data_inicio < hoje mas data_fim >= hoje),
+      // mostra com a data de hoje para aparecer no topo da lista
+      const dataExibir = dataInicio < hoje && e.data_fim && new Date(e.data_fim) >= hoje
+        ? hoje
+        : dataInicio;
+      items.push({ id: `evt-${e.id}`, titulo: e.titulo, data: dataExibir, tipo: 'evento', cor: e.cor });
     });
     lancamentos.filter(l => (l as any).data_live && new Date((l as any).data_live) >= hoje).forEach(l => {
       items.push({ id: `lanc-${l.id}`, titulo: l.nome, data: new Date((l as any).data_live), tipo: 'lancamento', cor: '#EA580C' });
