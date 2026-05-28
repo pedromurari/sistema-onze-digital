@@ -19,6 +19,7 @@ import { toast } from 'sonner';
 import {
   Plus, Trash2, ChevronLeft, ChevronRight, Check, Loader2,
   AlertTriangle, Calendar, Users, MessageSquare, Zap, Eye, Settings,
+  Upload, X, Smartphone,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -49,7 +50,8 @@ function defaultConfig(): WizardConfig {
     turma_destino_id: '', produto_destino: 'psicanalise',
     valor_mensalidade_destino: 109.90, dia_vencimento_destino: 10,
     total_mensalidades_destino: 15,
-    grupos: [{ nickname: 'Grupo de Lançamento', jid: '' }],
+    quantidade_grupos: 1,
+    grupos: [{ nickname: '', jid: '', participantes: [] }],
     instancia_evolution: '__priority__',
     aulas: [
       { data: '', hora: '20:00', link: '', professor: '' },
@@ -253,79 +255,276 @@ function Step2({ config, setConfig, turmas }: {
 
 // ─── Step 3: Grupos WhatsApp ──────────────────────────────────────────────────
 
+/** Converte File para base64 puro (sem prefixo data:...) */
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.split(',')[1]);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 function Step3({ config, setConfig, evoInstances }: {
   config: WizardConfig;
   setConfig: React.Dispatch<React.SetStateAction<WizardConfig>>;
   evoInstances: EvoInstance[];
 }) {
+  const [criando, setCriando] = useState<Record<number, boolean>>({});
+  const [erros, setErros]     = useState<Record<number, string>>({});
+  const [fotoFiles, setFotoFiles] = useState<Record<number, File | null>>({});
+  const [partInputs, setPartInputs] = useState<Record<number, string>>({});
+
+  const qtd = config.quantidade_grupos ?? 1;
+
+  const setQtd = (n: 1 | 2) => {
+    setConfig(c => {
+      const novos = [...c.grupos];
+      while (novos.length < n) novos.push({ nickname: '', jid: '', participantes: [] });
+      return { ...c, quantidade_grupos: n, grupos: novos.slice(0, n) };
+    });
+  };
+
   const updateGrupo = (i: number, field: keyof GrupoConfig, val: string) =>
     setConfig(c => ({ ...c, grupos: c.grupos.map((g, idx) => idx === i ? { ...g, [field]: val } : g) }));
 
-  const addGrupo = () =>
-    setConfig(c => ({ ...c, grupos: [...c.grupos, { nickname: `Grupo ${c.grupos.length + 1}`, jid: '' }] }));
+  const parseNumeros = (raw: string) =>
+    raw.split(/[\n,;]+/).map(p => p.trim().replace(/\D/g, '')).filter(p => p.length >= 10);
 
-  const removeGrupo = (i: number) =>
-    setConfig(c => ({ ...c, grupos: c.grupos.filter((_, idx) => idx !== i) }));
+  const criarGrupo = async (i: number) => {
+    const grupo = config.grupos[i];
+    if (!grupo?.nickname?.trim()) return;
+
+    setCriando(p => ({ ...p, [i]: true }));
+    setErros(p => ({ ...p, [i]: '' }));
+
+    try {
+      let photo_base64: string | undefined;
+      const fotoFile = fotoFiles[i];
+      if (fotoFile) photo_base64 = await fileToBase64(fotoFile);
+
+      const participants = parseNumeros(partInputs[i] ?? '');
+
+      const instName = config.instancia_evolution !== '__priority__'
+        ? config.instancia_evolution
+        : undefined;
+
+      const { data, error } = await supabase.functions.invoke('evo-criar-grupo', {
+        body: { subject: grupo.nickname.trim(), instance_name: instName, participants, photo_base64 },
+      });
+
+      if (error || data?.error) throw new Error(error?.message ?? data?.error);
+
+      updateGrupo(i, 'jid', data.jid);
+      // salva participantes no config também
+      setConfig(c => ({
+        ...c,
+        grupos: c.grupos.map((g, idx) =>
+          idx === i ? { ...g, participantes: participants } : g,
+        ),
+      }));
+    } catch (e: any) {
+      setErros(p => ({ ...p, [i]: e.message ?? 'Erro ao criar grupo' }));
+    } finally {
+      setCriando(p => ({ ...p, [i]: false }));
+    }
+  };
+
+  const LABELS    = ['Lançamento', 'Oferta'];
+  const EMOJI     = ['🚀', '🎯'];
+  const VAR_NAMES = ['{{grupo_1}}', '{{grupo_2}}'];
 
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
-        Adicione os grupos WhatsApp deste lançamento. Cada grupo vira uma variável <code className="bg-muted px-1 rounded text-xs">{'{{grupo_N}}'}</code> nas mensagens.
-      </p>
-
-      <div className="space-y-3">
-        {config.grupos.map((g, i) => (
-          <div key={i} className="border border-border rounded-lg p-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-primary">{`{{grupo_${i + 1}}}`}</span>
-              {config.grupos.length > 1 && (
-                <button onClick={() => removeGrupo(i)} className="text-muted-foreground hover:text-red-500 transition-colors">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="text-[10px] text-muted-foreground">Apelido (para identificar)</label>
-                <Input
-                  value={g.nickname}
-                  onChange={e => updateGrupo(i, 'nickname', e.target.value)}
-                  placeholder={i === 0 ? 'Grupo de Lançamento' : 'Grupo de Oferta'}
-                  className="h-8 text-sm"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] text-muted-foreground">JID do grupo</label>
-                <Input
-                  value={g.jid}
-                  onChange={e => updateGrupo(i, 'jid', e.target.value)}
-                  placeholder="120363...@g.us"
-                  className="h-8 text-sm font-mono"
-                />
-              </div>
-            </div>
-          </div>
-        ))}
+    <div className="space-y-5">
+      {/* ── Toggle 1 / 2 grupos ── */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Quantos grupos WhatsApp?</label>
+        <div className="flex gap-2">
+          {([1, 2] as const).map(n => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setQtd(n)}
+              className={`flex-1 py-2.5 rounded-xl border text-sm font-medium transition-all ${
+                qtd === n
+                  ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                  : 'bg-background border-border text-muted-foreground hover:border-primary/50'
+              }`}
+            >
+              {n === 1 ? '1 grupo' : '2 grupos  (lançamento + oferta)'}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <button
-        onClick={addGrupo}
-        className="flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors"
-      >
-        <Plus className="h-4 w-4" /> Adicionar grupo
-      </button>
-
-      <div className="space-y-1 pt-2 border-t border-border">
-        <label className="text-xs font-medium text-muted-foreground">Instância Evolution (para disparos)</label>
+      {/* ── Instância Evolution ── */}
+      <div className="space-y-1">
+        <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          Instância Evolution
+        </label>
         <select
           value={config.instancia_evolution}
           onChange={e => setConfig(c => ({ ...c, instancia_evolution: e.target.value }))}
-          className="w-full px-3 py-2 rounded-md border border-border text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+          className="w-full px-3 py-2 rounded-lg border border-border text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
         >
           <option value="__priority__">Automático (por prioridade)</option>
-          {evoInstances.map(inst => <option key={inst.instance_name} value={inst.instance_name}>{inst.instance_name}</option>)}
+          {evoInstances.map(inst => (
+            <option key={inst.instance_name} value={inst.instance_name}>{inst.instance_name}</option>
+          ))}
         </select>
       </div>
+
+      {/* ── Cards de grupo ── */}
+      {Array.from({ length: qtd }).map((_, i) => {
+        const grupo    = config.grupos[i] ?? { nickname: '', jid: '', participantes: [] };
+        const isCriado = !!grupo.jid;
+        const isLoading = criando[i] ?? false;
+        const erro     = erros[i] ?? '';
+        const fotoFile = fotoFiles[i] ?? null;
+        const numCount = parseNumeros(partInputs[i] ?? '').length;
+
+        return (
+          <div
+            key={i}
+            className={`rounded-2xl border p-4 space-y-4 transition-all ${
+              isCriado ? 'border-green-300 bg-green-50/60' : 'border-border bg-card'
+            }`}
+          >
+            {/* Cabeçalho do card */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold ${
+                  isCriado ? 'bg-green-500 text-white' : 'bg-primary/10 text-primary'
+                }`}>
+                  {isCriado ? <Check className="h-4 w-4" /> : EMOJI[i]}
+                </span>
+                <div>
+                  <p className="text-sm font-semibold">Grupo de {LABELS[i]}</p>
+                  <p className="text-[10px] text-muted-foreground">{VAR_NAMES[i]}</p>
+                </div>
+              </div>
+              {isCriado ? (
+                <span className="flex items-center gap-1 text-xs text-green-700 bg-green-100 border border-green-200 px-2 py-0.5 rounded-full font-medium">
+                  <Check className="h-3 w-3" /> Criado
+                </span>
+              ) : (
+                <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">⏳ Pendente</span>
+              )}
+            </div>
+
+            {/* Nome do grupo */}
+            <div className="space-y-1">
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Nome do grupo</label>
+              <Input
+                value={grupo.nickname}
+                onChange={e => updateGrupo(i, 'nickname', e.target.value)}
+                placeholder={i === 0
+                  ? `Ex: ${config.nome || 'Turma 37'} – Lançamento`
+                  : `Ex: ${config.nome || 'Turma 37'} – Oferta`}
+                className="h-9 text-sm"
+                disabled={isCriado}
+              />
+            </div>
+
+            {/* Participantes */}
+            <div className="space-y-1">
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                <Smartphone className="h-3 w-3" />
+                Participantes a adicionar (um número por linha, com DDI+DDD)
+              </label>
+              <textarea
+                value={partInputs[i] ?? ''}
+                onChange={e => setPartInputs(p => ({ ...p, [i]: e.target.value }))}
+                placeholder={"5511999990001\n5521988880002\n5531977770003"}
+                rows={4}
+                disabled={isCriado}
+                className="w-full px-3 py-2 rounded-lg border border-border text-xs font-mono bg-background focus:outline-none focus:ring-2 focus:ring-ring resize-none disabled:opacity-60 leading-relaxed"
+              />
+              {numCount > 0 && (
+                <p className="text-[10px] text-primary font-medium">
+                  ✓ {numCount} número{numCount !== 1 ? 's' : ''} válido{numCount !== 1 ? 's' : ''}
+                </p>
+              )}
+            </div>
+
+            {/* Foto do grupo */}
+            <div className="space-y-1">
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Foto do grupo</label>
+              {fotoFile ? (
+                <div className="flex items-center gap-3 p-2 border border-border rounded-lg bg-muted/30">
+                  <img
+                    src={URL.createObjectURL(fotoFile)}
+                    alt="preview"
+                    className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
+                  />
+                  <span className="text-xs text-muted-foreground flex-1 truncate">{fotoFile.name}</span>
+                  {!isCriado && (
+                    <button
+                      type="button"
+                      onClick={() => setFotoFiles(p => ({ ...p, [i]: null }))}
+                      className="text-muted-foreground hover:text-red-500 transition-colors flex-shrink-0"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <label className={`flex items-center gap-2 px-3 py-3 border border-dashed rounded-lg text-sm text-muted-foreground transition-colors cursor-pointer ${
+                  isCriado ? 'opacity-50 pointer-events-none' : 'hover:border-primary/50 hover:text-primary border-border'
+                }`}>
+                  <Upload className="h-4 w-4" />
+                  <span>Clique para enviar a foto do grupo</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={isCriado}
+                    onChange={e => {
+                      const f = e.target.files?.[0];
+                      if (f) setFotoFiles(p => ({ ...p, [i]: f }));
+                    }}
+                  />
+                </label>
+              )}
+            </div>
+
+            {/* JID exibido após criação */}
+            {isCriado && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-green-100 border border-green-200 rounded-lg">
+                <Check className="h-3.5 w-3.5 text-green-600 flex-shrink-0" />
+                <span className="text-[11px] text-green-800 font-mono truncate">{grupo.jid}</span>
+              </div>
+            )}
+
+            {/* Erro */}
+            {erro && (
+              <div className="flex items-start gap-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+                <AlertTriangle className="h-3.5 w-3.5 text-red-500 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-red-700">{erro}</p>
+              </div>
+            )}
+
+            {/* Botão criar */}
+            {!isCriado && (
+              <button
+                type="button"
+                onClick={() => criarGrupo(i)}
+                disabled={isLoading || !grupo.nickname?.trim()}
+                className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all"
+              >
+                {isLoading ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Criando grupo...</>
+                ) : (
+                  <><MessageSquare className="h-4 w-4" /> Criar grupo no WhatsApp</>
+                )}
+              </button>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

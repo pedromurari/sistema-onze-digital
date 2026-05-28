@@ -14,6 +14,8 @@ export interface AulaConfig {
 export interface GrupoConfig {
   nickname: string;
   jid: string;
+  /** Números com DDI+DDD a adicionar ao grupo após a criação */
+  participantes?: string[];
 }
 
 export interface WizardConfig {
@@ -34,6 +36,7 @@ export interface WizardConfig {
   total_mensalidades_destino: number;
 
   // Etapa 3
+  quantidade_grupos: 1 | 2;
   grupos: GrupoConfig[];
   instancia_evolution: string;
 
