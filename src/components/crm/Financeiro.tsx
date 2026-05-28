@@ -15,7 +15,10 @@ import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/ui/use-toast';
 import {
   Plus, DollarSign, Users, AlertCircle, Eye, Trash2,
-  TrendingUp, Target, Phone, Pencil, Building2, CheckCircle2
+  TrendingUp, Target, Phone, Pencil, Building2, CheckCircle2,
+  Copy, Download, ExternalLink, Upload, FileText,
+  Send, MessageSquare, Shield, ChevronDown, ChevronRight,
+  Play, Square, CheckCircle, XCircle, Clock, RefreshCw,
 } from 'lucide-react';
 import { format, isSameMonth, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -29,6 +32,13 @@ interface Turma {
   data_fim?: string;
   valor_mensalidade?: number;
   total_mensalidades?: number;
+  responsavel_id?: string;
+  created_at: string;
+}
+
+interface Responsavel {
+  id: string;
+  nome: string;
   created_at: string;
 }
 
@@ -65,6 +75,14 @@ interface Aluno {
   contrato_assinado_em?: string;
   autentique_documento_id?: string;
   autentique_link_assinatura?: string;
+  contrato_baixado?: boolean;
+  contrato_arquivo_url?: string;
+  contrato_arquivo_nome?: string;
+  asaas_integrado?: boolean;
+  asaas_link?: string;
+  voomp_integrado?: boolean;
+  voomp_link?: string;
+  contrato_token?: string;
   created_at: string;
 }
 
@@ -83,7 +101,7 @@ interface Pagamento {
 }
 
 type ProdutoTab = 'psicanalise' | 'numerologia';
-type SubView = 'alunos' | 'turmas';
+type SubView = 'alunos' | 'turmas' | 'responsaveis';
 type PaymentMethod = 'boleto' | 'cartao' | 'avista';
 type PaymentFilter = 'todos' | PaymentMethod;
 type DueFilter = 'todos' | 'vencidos' | 'hoje' | 'proximos_7' | 'proximos_30' | 'quitados';
@@ -185,7 +203,7 @@ const buildInstallments = ({
   minTotal?: number;
 }) => {
   const matricula = parseDateOnly(dataMatricula) || new Date();
-  const targetTotal = Math.max(paymentMethodTotal(method), minTotal || 0);
+  const targetTotal = (minTotal != null && minTotal > 0) ? minTotal : paymentMethodTotal(method);
   const matriculaDate = formatLocalDate(matricula);
 
   return Array.from({ length: targetTotal }, (_, index) => {
@@ -215,10 +233,10 @@ const buildInstallments = ({
 };
 
 const statusColors: Record<string, string> = {
-  ativo: 'bg-green-100 text-green-800',
-  inadimplente: 'bg-red-100 text-red-800',
-  cancelado: 'bg-gray-100 text-gray-800',
-  concluido: 'bg-blue-100 text-blue-800',
+  ativo: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+  inadimplente: 'bg-red-50 text-red-700 border border-red-200',
+  cancelado: 'bg-zinc-100 text-zinc-600 border border-zinc-200',
+  concluido: 'bg-sky-50 text-sky-700 border border-sky-200',
 };
 
 const paymentLabels: Record<PaymentMethod, string> = {
@@ -245,11 +263,542 @@ const getEmptyAlunoForm = () => ({
   origem: 'direto',
   forma_pagamento: 'boleto' as PaymentMethod,
   valor_mensalidade: '',
+  total_parcelas: '',    // vazio = usa padrão do método
   observacoes: '',
 });
 
+// ── TurmaDisparoModal ─────────────────────────────────────────────────────────
+
+interface DisparoConfig {
+  template: string;
+  link_grupo: string;
+  link_aula_1: string;
+  link_aula_2: string;
+  link_aula_3: string;
+  delay_min_s: number;
+  delay_max_s: number;
+  typing_delay_s: number;
+  instance_name: string | null;
+}
+
+interface SendResult {
+  alunoId: string;
+  nome: string;
+  numero: string;
+  status: 'pending' | 'sending' | 'sent' | 'error' | 'skipped';
+  error?: string;
+}
+
+const DEFAULT_TEMPLATE = `Olá {{nome}}! 👋
+
+Seja muito bem-vindo(a) à nossa turma! 🎉
+
+Aqui estão os links importantes para você:
+
+📱 *Grupo WhatsApp:* {{link_grupo}}
+
+📚 *Links das aulas:*
+▶️ Aula 1: {{link_aula_1}}
+▶️ Aula 2: {{link_aula_2}}
+▶️ Aula 3: {{link_aula_3}}
+
+Qualquer dúvida, é só chamar. Estamos juntos! 💪`;
+
+const DISPARO_VARS = ['nome', 'link_grupo', 'link_aula_1', 'link_aula_2', 'link_aula_3'];
+
+function applyDisparoVars(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`);
+}
+
+function TurmaDisparoModal({
+  open, onClose, turma, alunos: todosAlunos,
+}: {
+  open: boolean;
+  onClose: () => void;
+  turma: { id: string; nome: string };
+  alunos: Array<{ id: string; nome: string; whatsapp?: string; status: string }>;
+}) {
+  const alunosComWpp = todosAlunos.filter(a => a.whatsapp?.trim() && a.status !== 'cancelado');
+
+  const [tab,        setTab]        = useState<'mensagem' | 'antiban' | 'alunos'>('mensagem');
+  const [cfg,        setCfg]        = useState<DisparoConfig>({
+    template:       DEFAULT_TEMPLATE,
+    link_grupo:     '',
+    link_aula_1:    '',
+    link_aula_2:    '',
+    link_aula_3:    '',
+    delay_min_s:    8,
+    delay_max_s:    20,
+    typing_delay_s: 3,
+    instance_name:  null,
+  });
+  const [instances,  setInstances]  = useState<string[]>([]);
+  const [selected,   setSelected]   = useState<Set<string>>(new Set(alunosComWpp.map(a => a.id)));
+  const [results,    setResults]    = useState<SendResult[]>([]);
+  const [running,    setRunning]    = useState(false);
+  const [stopped,    setStopped]    = useState(false);
+  const [cfgLoaded,  setCfgLoaded]  = useState(false);
+  const stopRef = { current: false };
+
+  // Carrega config salva + instâncias ao abrir
+  useEffect(() => {
+    if (!open) return;
+    setResults([]);
+    setRunning(false);
+    setStopped(false);
+    setSelected(new Set(alunosComWpp.map(a => a.id)));
+
+    Promise.all([
+      supabase.from('turma_disparo_config').select('*').eq('turma_id', turma.id).maybeSingle(),
+      supabase.from('evolution_config').select('instance_name').eq('ativo', true).order('prioridade', { ascending: true }),
+    ]).then(([{ data: saved }, { data: evo }]) => {
+      if (saved) {
+        setCfg({
+          template:       saved.template       || DEFAULT_TEMPLATE,
+          link_grupo:     saved.link_grupo      || '',
+          link_aula_1:    saved.link_aula_1     || '',
+          link_aula_2:    saved.link_aula_2     || '',
+          link_aula_3:    saved.link_aula_3     || '',
+          delay_min_s:    saved.delay_min_s     ?? 8,
+          delay_max_s:    saved.delay_max_s     ?? 20,
+          typing_delay_s: saved.typing_delay_s  ?? 3,
+          instance_name:  saved.instance_name   ?? null,
+        });
+      }
+      setInstances((evo || []).map((r: { instance_name: string }) => r.instance_name));
+      setCfgLoaded(true);
+    });
+  }, [open, turma.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function saveCfg() {
+    await supabase.from('turma_disparo_config').upsert(
+      { turma_id: turma.id, ...cfg },
+      { onConflict: 'turma_id' },
+    );
+  }
+
+  function buildMensagem(nome: string) {
+    return applyDisparoVars(cfg.template, {
+      nome,
+      link_grupo:  cfg.link_grupo,
+      link_aula_1: cfg.link_aula_1,
+      link_aula_2: cfg.link_aula_2,
+      link_aula_3: cfg.link_aula_3,
+    });
+  }
+
+  function randomDelay() {
+    const min = Math.max(1, cfg.delay_min_s) * 1000;
+    const max = Math.max(min + 1000, cfg.delay_max_s * 1000);
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  async function startDisparo() {
+    await saveCfg();
+    const toSend = alunosComWpp.filter(a => selected.has(a.id));
+    if (!toSend.length) { return; }
+
+    stopRef.current = false;
+    setStopped(false);
+    setRunning(true);
+    setTab('alunos');
+
+    const initial: SendResult[] = toSend.map(a => ({
+      alunoId: a.id,
+      nome: a.nome,
+      numero: a.whatsapp!.trim(),
+      status: 'pending',
+    }));
+    setResults(initial);
+
+    for (let i = 0; i < toSend.length; i++) {
+      if (stopRef.current) {
+        setStopped(true);
+        break;
+      }
+
+      const aluno = toSend[i];
+      setResults(prev => prev.map(r => r.alunoId === aluno.id ? { ...r, status: 'sending' } : r));
+
+      try {
+        const mensagem = buildMensagem(aluno.nome);
+        const { data, error } = await supabase.functions.invoke('wpp-enviar', {
+          body: {
+            numero:          aluno.whatsapp!.trim(),
+            mensagem,
+            instance_name:   cfg.instance_name ?? undefined,
+            typing_delay_ms: cfg.typing_delay_s * 1000,
+          },
+        });
+        const err = error?.message ?? (data as any)?.error;
+        if (err) throw new Error(err);
+        setResults(prev => prev.map(r => r.alunoId === aluno.id ? { ...r, status: 'sent' } : r));
+      } catch (e: unknown) {
+        setResults(prev => prev.map(r =>
+          r.alunoId === aluno.id ? { ...r, status: 'error', error: (e as Error).message } : r));
+      }
+
+      // Delay aleatório anti-ban (exceto após o último)
+      if (i < toSend.length - 1 && !stopRef.current) {
+        const delay = randomDelay();
+        const countdownEnd = Date.now() + delay;
+        // Countdown no item "next"
+        const nextAluno = toSend[i + 1];
+        const tick = setInterval(() => {
+          const rem = Math.ceil((countdownEnd - Date.now()) / 1000);
+          if (rem <= 0 || stopRef.current) { clearInterval(tick); return; }
+          setResults(prev => prev.map(r =>
+            r.alunoId === nextAluno.id ? { ...r, status: 'pending', error: `Aguardando ${rem}s…` } : r));
+        }, 500);
+        await new Promise(r => setTimeout(r, delay));
+        clearInterval(tick);
+        setResults(prev => prev.map(r =>
+          r.alunoId === nextAluno.id ? { ...r, error: undefined } : r));
+      }
+    }
+
+    setRunning(false);
+  }
+
+  function stopDisparo() { stopRef.current = true; }
+
+  const selectedList = alunosComWpp.filter(a => selected.has(a.id));
+  const sent  = results.filter(r => r.status === 'sent').length;
+  const errs  = results.filter(r => r.status === 'error').length;
+  const total = results.length;
+
+  const templateRef = { current: null as HTMLTextAreaElement | null };
+
+  function insertVar(v: string) {
+    const tag = `{{${v}}}`;
+    const el = templateRef.current;
+    if (el) {
+      const s = el.selectionStart ?? cfg.template.length;
+      const e = el.selectionEnd   ?? s;
+      const next = cfg.template.slice(0, s) + tag + cfg.template.slice(e);
+      setCfg(c => ({ ...c, template: next }));
+      setTimeout(() => { el.selectionStart = el.selectionEnd = s + tag.length; el.focus(); }, 0);
+    } else {
+      setCfg(c => ({ ...c, template: c.template + tag }));
+    }
+  }
+
+  if (!cfgLoaded && open) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v && !running) onClose(); }}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogHeader className="flex-shrink-0">
+          <DialogTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-primary" />
+            Disparar mensagem — {turma.nome}
+          </DialogTitle>
+        </DialogHeader>
+
+        {/* Tab bar */}
+        <div className="flex gap-1 flex-shrink-0 border-b border-border pb-2">
+          {(['mensagem', 'antiban', 'alunos'] as const).map(t => (
+            <button
+              key={t} type="button"
+              onClick={() => setTab(t)}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all capitalize ${
+                tab === t ? 'bg-primary text-white' : 'text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              {t === 'mensagem' ? '✏️ Mensagem'
+               : t === 'antiban' ? '🛡️ Anti-ban'
+               : `👥 Alunos (${selectedList.length})`}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+
+          {/* ── MENSAGEM ─────────────────────────────────────────── */}
+          {tab === 'mensagem' && (
+            <div className="space-y-4 py-2">
+              {/* Variáveis */}
+              <div className="flex flex-wrap gap-1">
+                <span className="text-xs text-muted-foreground flex items-center mr-1">Inserir:</span>
+                {DISPARO_VARS.map(v => (
+                  <button key={v} type="button" onClick={() => insertVar(v)}
+                    className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors">
+                    {`{{${v}}}`}
+                  </button>
+                ))}
+              </div>
+
+              {/* Template */}
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Template da mensagem</label>
+                <textarea
+                  ref={el => { templateRef.current = el; }}
+                  value={cfg.template}
+                  onChange={e => setCfg(c => ({ ...c, template: e.target.value }))}
+                  rows={10}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono resize-y focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  placeholder="Digite sua mensagem..."
+                  disabled={running}
+                />
+                <p className="text-[10px] text-muted-foreground mt-0.5 text-right">{cfg.template.length} chars</p>
+              </div>
+
+              {/* Links */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Valores das variáveis</p>
+                {[
+                  { key: 'link_grupo',  label: '📱 Link do grupo WhatsApp' },
+                  { key: 'link_aula_1', label: '▶️ Link Aula 1' },
+                  { key: 'link_aula_2', label: '▶️ Link Aula 2' },
+                  { key: 'link_aula_3', label: '▶️ Link Aula 3' },
+                ].map(({ key, label }) => (
+                  <div key={key} className="flex items-center gap-2">
+                    <label className="text-xs text-muted-foreground w-40 flex-shrink-0">{label}</label>
+                    <input
+                      type="text"
+                      value={(cfg as any)[key]}
+                      onChange={e => setCfg(c => ({ ...c, [key]: e.target.value }))}
+                      placeholder="https://..."
+                      disabled={running}
+                      className="flex-1 h-7 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Preview */}
+              {alunosComWpp[0] && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                    Pré-visualização (como {alunosComWpp[0].nome})
+                  </p>
+                  <div className="bg-[#e5ddd5] rounded-lg p-3">
+                    <div className="bg-white rounded-lg p-3 max-w-xs shadow-sm ml-auto">
+                      <p className="text-sm whitespace-pre-wrap text-gray-800 leading-relaxed">
+                        {buildMensagem(alunosComWpp[0].nome)}
+                      </p>
+                      <p className="text-[10px] text-gray-400 text-right mt-1">agora ✓✓</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── ANTI-BAN ─────────────────────────────────────────── */}
+          {tab === 'antiban' && (
+            <div className="space-y-5 py-2">
+              <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3">
+                <p className="text-xs font-semibold text-amber-800 mb-1.5 flex items-center gap-1.5">
+                  <Shield className="h-3.5 w-3.5" /> Como funciona o anti-ban
+                </p>
+                <ul className="text-xs text-amber-700 space-y-1 list-disc list-inside">
+                  <li>Delay aleatório entre mensagens simula comportamento humano</li>
+                  <li>Indicador "digitando..." antes de cada mensagem</li>
+                  <li>Evolution API adiciona delay interno de 1.2s no envio</li>
+                  <li>Recomendado: max 50 por sessão, depois pause 30 min</li>
+                </ul>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium">Delay entre mensagens</label>
+                  <div className="grid grid-cols-2 gap-3 mt-2">
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">Mínimo (segundos)</label>
+                      <input
+                        type="number" min="3" max="60"
+                        value={cfg.delay_min_s}
+                        onChange={e => setCfg(c => ({ ...c, delay_min_s: parseInt(e.target.value) || 8 }))}
+                        disabled={running}
+                        className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">Máximo (segundos)</label>
+                      <input
+                        type="number" min="5" max="120"
+                        value={cfg.delay_max_s}
+                        onChange={e => setCfg(c => ({ ...c, delay_max_s: parseInt(e.target.value) || 20 }))}
+                        disabled={running}
+                        className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Cada mensagem aguardará entre {cfg.delay_min_s}s e {cfg.delay_max_s}s antes de enviar a próxima.
+                    Estimativa: ~{Math.round(selectedList.length * (cfg.delay_min_s + cfg.delay_max_s) / 2 / 60)} min para {selectedList.length} alunos.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Indicador de digitação</label>
+                  <div className="flex items-center gap-3 mt-2">
+                    <input
+                      type="number" min="0" max="10"
+                      value={cfg.typing_delay_s}
+                      onChange={e => setCfg(c => ({ ...c, typing_delay_s: parseInt(e.target.value) || 0 }))}
+                      disabled={running}
+                      className="w-24 h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    />
+                    <span className="text-sm text-muted-foreground">segundos de "digitando…" antes de enviar (0 = desativado)</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Instância WhatsApp</label>
+                  <select
+                    value={cfg.instance_name ?? '__auto__'}
+                    onChange={e => setCfg(c => ({ ...c, instance_name: e.target.value === '__auto__' ? null : e.target.value }))}
+                    disabled={running}
+                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    <option value="__auto__">Auto-prioridade (recomendado)</option>
+                    {instances.map(inst => <option key={inst} value={inst}>{inst}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── ALUNOS ───────────────────────────────────────────── */}
+          {tab === 'alunos' && (
+            <div className="space-y-3 py-2">
+              {/* Progress (se running) */}
+              {results.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{sent + errs}/{total} processados · {sent} enviados · {errs} erros</span>
+                    {running && <span className="text-primary animate-pulse">Disparando…</span>}
+                    {stopped && <span className="text-amber-600">Parado pelo usuário</span>}
+                    {!running && !stopped && results.length > 0 && <span className="text-emerald-600">Concluído</span>}
+                  </div>
+                  <div className="w-full bg-muted rounded-full h-2">
+                    <div
+                      className="bg-primary h-2 rounded-full transition-all duration-500"
+                      style={{ width: `${total > 0 ? ((sent + errs) / total) * 100 : 0}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Lista */}
+              {results.length === 0 ? (
+                <>
+                  {alunosComWpp.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-8">Nenhum aluno desta turma tem WhatsApp cadastrado.</p>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2 mb-2">
+                        <input
+                          type="checkbox"
+                          id="select-all"
+                          checked={selected.size === alunosComWpp.length}
+                          onChange={e => setSelected(e.target.checked ? new Set(alunosComWpp.map(a => a.id)) : new Set())}
+                          className="w-4 h-4"
+                        />
+                        <label htmlFor="select-all" className="text-xs font-medium text-muted-foreground cursor-pointer">
+                          Selecionar todos ({alunosComWpp.length} com WhatsApp)
+                        </label>
+                      </div>
+                      <div className="space-y-1 max-h-64 overflow-y-auto">
+                        {alunosComWpp.map(a => (
+                          <label key={a.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/50 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={selected.has(a.id)}
+                              onChange={e => {
+                                const s = new Set(selected);
+                                e.target.checked ? s.add(a.id) : s.delete(a.id);
+                                setSelected(s);
+                              }}
+                              className="w-4 h-4 flex-shrink-0"
+                            />
+                            <span className="text-sm font-medium flex-1 truncate">{a.nome}</span>
+                            <span className="text-xs text-muted-foreground font-mono">{a.whatsapp}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
+              ) : (
+                <div className="space-y-1 max-h-72 overflow-y-auto">
+                  {results.map(r => (
+                    <div key={r.alunoId} className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs ${
+                      r.status === 'sent'    ? 'bg-emerald-50' :
+                      r.status === 'error'   ? 'bg-red-50' :
+                      r.status === 'sending' ? 'bg-blue-50' : 'bg-muted/30'
+                    }`}>
+                      <div className="flex-shrink-0">
+                        {r.status === 'sent'    && <CheckCircle  className="h-3.5 w-3.5 text-emerald-600" />}
+                        {r.status === 'error'   && <XCircle      className="h-3.5 w-3.5 text-red-500" />}
+                        {r.status === 'sending' && <RefreshCw    className="h-3.5 w-3.5 text-blue-600 animate-spin" />}
+                        {r.status === 'pending' && <Clock        className="h-3.5 w-3.5 text-muted-foreground" />}
+                      </div>
+                      <span className="font-medium flex-1 truncate">{r.nome}</span>
+                      <span className="text-muted-foreground font-mono">{r.numero}</span>
+                      {r.error && (
+                        <span className={`max-w-[140px] truncate ${r.status === 'error' ? 'text-red-500' : 'text-muted-foreground italic'}`}
+                          title={r.error}>
+                          {r.error}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between gap-3 pt-3 border-t flex-shrink-0">
+          <span className="text-xs text-muted-foreground">
+            {results.length === 0
+              ? `${selectedList.length} aluno${selectedList.length !== 1 ? 's' : ''} selecionado${selectedList.length !== 1 ? 's' : ''} com WhatsApp`
+              : `${sent} enviados · ${errs} erros · ${total - sent - errs} pendentes`}
+          </span>
+          <div className="flex gap-2">
+            {!running && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors"
+              >
+                {results.length > 0 ? 'Fechar' : 'Cancelar'}
+              </button>
+            )}
+            {running ? (
+              <button
+                type="button"
+                onClick={stopDisparo}
+                className="flex items-center gap-2 px-4 py-1.5 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+              >
+                <Square className="h-3.5 w-3.5" /> Parar disparo
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={startDisparo}
+                disabled={selectedList.length === 0 || running}
+                className="flex items-center gap-2 px-4 py-1.5 text-sm bg-primary text-white rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Play className="h-3.5 w-3.5" />
+                {results.length > 0 ? 'Reenviar' : 'Iniciar disparo'}
+              </button>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function Financeiro() {
-  const { permissions, isAdmin } = useAuth();
+  const { user } = useAuth();
+  const isAdmin = user?.tipo === 'admin';
+  const permissions = user?.permissions ?? null;
   const [activeTab, setActiveTab] = useState<ProdutoTab>('psicanalise');
   const [subView, setSubView] = useState<SubView>('alunos');
   const [turmas, setTurmas] = useState<Turma[]>([]);
@@ -273,6 +822,7 @@ export function Financeiro() {
   const [editingTurmaCardId, setEditingTurmaCardId] = useState<string | null>(null);
   const [inlineTurmaForm, setInlineTurmaForm] = useState<Partial<Turma>>({});
   const [savingInlineTurma, setSavingInlineTurma] = useState(false);
+  const [disparoTurma, setDisparoTurma] = useState<{ id: string; nome: string } | null>(null);
 
   // Formularios
   const emptyTurmaForm = { nome: '', produto: 'psicanalise' as ProdutoTab, data_inicio: '', data_fim: '', valor_mensalidade: '109.90', total_mensalidades: '15' };
@@ -283,6 +833,7 @@ export function Financeiro() {
   const [editAlunoForm, setEditAlunoForm] = useState<Partial<Aluno> & { turma_id_new?: string }>({});
   const [editTurmaForm, setEditTurmaForm] = useState<Partial<Turma>>({});
   const [savingAluno, setSavingAluno] = useState(false);
+  const [uploadingContrato, setUploadingContrato] = useState(false);
   const [savingTurma, setSavingTurma] = useState(false);
   const [showPagoDialog, setShowPagoDialog] = useState(false);
   const [pagoInfo, setPagoInfo] = useState<{ pagamentoId: string; alunoId: string; data: string } | null>(null);
@@ -290,20 +841,41 @@ export function Financeiro() {
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('todos');
   const [dueDayFilter, setDueDayFilter] = useState<DueDayFilter>('todos');
   const [dueFilter, setDueFilter] = useState<DueFilter>('todos');
+  const [showFiltrosAvancados, setShowFiltrosAvancados] = useState(false);
+  const [searchAluno, setSearchAluno] = useState('');
+  const [assigningTurma, setAssigningTurma] = useState<Record<string, boolean>>({});
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [bulkMarking, setBulkMarking] = useState(false);
+  const [duplicataWarning, setDuplicataWarning] = useState<Aluno | null>(null);
+  const [responsaveis, setResponsaveis] = useState<Responsavel[]>([]);
+  const [newResponsavelNome, setNewResponsavelNome] = useState('');
+  const [savingResponsavel, setSavingResponsavel] = useState(false);
 
   useEffect(() => { loadData(); }, []);
+
+  const ALUNOS_SELECT_FULL = 'id, turma_id, produto, nome, whatsapp, email, cpf, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, valor_mensalidade, forma_pagamento, observacoes, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, contrato_baixado, contrato_arquivo_url, contrato_arquivo_nome, asaas_integrado, asaas_link, voomp_integrado, voomp_link, contrato_token, created_at';
+  const ALUNOS_SELECT_BASE = 'id, turma_id, produto, nome, whatsapp, email, cpf, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, valor_mensalidade, forma_pagamento, observacoes, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, created_at';
 
   const loadData = async () => {
     setLoading(true);
     try {
       const [turmasRes, alunosRes, pagamentosRes] = await Promise.all([
-        supabase.from('turmas').select('id, nome, produto, tipo, data_inicio, data_fim, valor_mensalidade, total_mensalidades, created_at').order('created_at', { ascending: false }).limit(200),
-        supabase.from('alunos').select('id, turma_id, produto, nome, whatsapp, email, cpf, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, valor_mensalidade, forma_pagamento, observacoes, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, created_at').order('created_at', { ascending: false }).limit(500),
+        supabase.from('turmas').select('id, nome, produto, tipo, data_inicio, data_fim, valor_mensalidade, total_mensalidades, responsavel_id, created_at').order('created_at', { ascending: false }).limit(200),
+        supabase.from('alunos').select(ALUNOS_SELECT_FULL).order('created_at', { ascending: false }).limit(500),
         supabase.from('pagamentos').select('id, aluno_id, turma_id, produto, valor, mes_referencia, data_vencimento, data_pagamento, numero_parcela, status, created_at').order('created_at', { ascending: false }).limit(2000),
       ]);
       if (turmasRes.data) setTurmas(turmasRes.data);
-      if (alunosRes.data) setAlunos(alunosRes.data);
+      if (alunosRes.data) {
+        setAlunos(alunosRes.data);
+      } else if (alunosRes.error) {
+        // Fallback: novas colunas ainda nao existem (migration pendente)
+        const { data: fallback } = await supabase.from('alunos').select(ALUNOS_SELECT_BASE).order('created_at', { ascending: false }).limit(500);
+        if (fallback) setAlunos(fallback);
+      }
       if (pagamentosRes.data) setPagamentos(pagamentosRes.data);
+      // Responsaveis e opcional (tabela pode nao existir ainda)
+      const respRes = await supabase.from('responsaveis').select('id, nome, created_at').order('nome');
+      if (respRes.data) setResponsaveis(respRes.data);
     } catch (e) {
       toast({ variant: 'destructive', title: 'Erro', description: 'Falha ao carregar dados' });
     } finally {
@@ -315,10 +887,20 @@ export function Financeiro() {
     return turmas.filter(t => {
       if ((t.tipo || t.produto) !== activeTab) return false;
       if (isAdmin) return true;
-      if (!permissions) return true;
+      if (!permissions) return false;
       return canAccessFinanceiroTurma(permissions, t.id);
     });
   }, [turmas, activeTab, permissions, isAdmin]);
+
+  // Tabs visíveis conforme turmas acessíveis
+  const visibleTabs = useMemo<ProdutoTab[]>(() => {
+    if (isAdmin) return ['psicanalise', 'numerologia'];
+    const tabs: ProdutoTab[] = (['psicanalise', 'numerologia'] as ProdutoTab[]).filter(tab =>
+      turmas.some(t => (t.tipo || t.produto) === tab && permissions && canAccessFinanceiroTurma(permissions, t.id))
+    );
+    return tabs.length > 0 ? tabs : ['psicanalise'];
+  }, [turmas, permissions, isAdmin]);
+
   const filteredPagamentos = useMemo(() => pagamentos.filter(p => p.produto === activeTab), [pagamentos, activeTab]);
   const pagamentosPorAluno = useMemo(() => {
     const map: Record<string, Pagamento[]> = {};
@@ -336,7 +918,9 @@ export function Financeiro() {
     const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
     filteredPagamentos.forEach(p => {
       const aluno = alunos.find(a => a.id === p.aluno_id);
-      if (aluno && normalizePaymentMethod(aluno.forma_pagamento) !== 'boleto') return;
+      if (!aluno) return;
+      if (aluno.status === 'cancelado' || aluno.status === 'concluido') return;
+      if (normalizePaymentMethod(aluno.forma_pagamento) !== 'boleto') return;
 
       if (p.status !== 'pago') {
         const venc = new Date(p.data_vencimento + 'T12:00:00');
@@ -356,7 +940,7 @@ export function Financeiro() {
     let r = alunos.filter(a => {
       if (a.produto !== activeTab) return false;
       if (isAdmin) return true;
-      if (!permissions) return true;
+      if (!permissions) return false;
       return canAccessFinanceiroTurma(permissions, a.turma_id);
     });
     if (selectedTurmaId !== 'todas') r = r.filter(a => a.turma_id === selectedTurmaId);
@@ -450,25 +1034,48 @@ export function Financeiro() {
     } catch { return false; }
   };
 
-  const receitaMes = useMemo(() => filteredPagamentos.filter(p => p.status === 'pago' && periodoFilter(p.data_pagamento)).reduce((s, p) => s + p.valor, 0), [filteredPagamentos, periodo]);
-  const previstoMes = useMemo(() => filteredPagamentos.filter(p => periodoFilter(p.data_vencimento)).reduce((s, p) => s + p.valor, 0), [filteredPagamentos, periodo]);
+  const pagamentosEmFoco = useMemo(() => {
+    if (selectedTurmaId === 'todas') return filteredPagamentos;
+    return filteredPagamentos.filter(p => p.turma_id === selectedTurmaId);
+  }, [filteredPagamentos, selectedTurmaId]);
+
+  const receitaMes = useMemo(() => pagamentosEmFoco.filter(p => p.status === 'pago' && periodoFilter(p.data_pagamento)).reduce((s, p) => s + p.valor, 0), [pagamentosEmFoco, periodo]);
+  const previstoMes = useMemo(() => pagamentosEmFoco.filter(p => periodoFilter(p.data_vencimento)).reduce((s, p) => s + p.valor, 0), [pagamentosEmFoco, periodo]);
+  const ltvTotal = useMemo(() => pagamentosEmFoco.filter(p => p.status === 'pago').reduce((s, p) => s + p.valor, 0), [pagamentosEmFoco]);
+  const ltvMedio = useMemo(() => {
+    const ids = new Set(pagamentosEmFoco.filter(p => p.status === 'pago').map(p => p.aluno_id));
+    return ids.size > 0 ? ltvTotal / ids.size : 0;
+  }, [ltvTotal, pagamentosEmFoco]);
+  const parcelasEmAberto = useMemo(() => pagamentosEmFoco.filter(p => p.status !== 'pago'), [pagamentosEmFoco]);
+  const valorAReceber = useMemo(() => parcelasEmAberto.reduce((s, p) => s + p.valor, 0), [parcelasEmAberto]);
 
   const inadimplentes = useMemo(() => filteredAlunos.filter(a => inadimplenciaMap[a.id] || a.status === 'inadimplente'), [filteredAlunos, inadimplenciaMap]);
-  const totalEmAtraso = useMemo(() => Object.values(inadimplenciaMap).reduce((s, v) => s + v.valorEmAtraso, 0), [inadimplenciaMap]);
+  const totalEmAtraso = useMemo(() => inadimplentes.reduce((s, a) => s + (inadimplenciaMap[a.id]?.valorEmAtraso || 0), 0), [inadimplentes, inadimplenciaMap]);
   const contratosPendentes = useMemo(() => filteredAlunos.filter(a => !a.contrato_assinado && a.status === 'ativo').length, [filteredAlunos]);
+  const alunosSemTurma = useMemo(() => alunos.filter(a => a.produto === activeTab && !a.turma_id), [alunos, activeTab]);
 
   // Agrupar alunos por turma
+  const alunosVisiveis = useMemo(() => {
+    if (!searchAluno.trim()) return filteredAlunos;
+    const q = searchAluno.toLowerCase();
+    return filteredAlunos.filter(a =>
+      a.nome.toLowerCase().includes(q) ||
+      (a.whatsapp || '').includes(q) ||
+      (a.email || '').toLowerCase().includes(q)
+    );
+  }, [filteredAlunos, searchAluno]);
+
   const alunosPorTurma = useMemo(() => {
     const groups: Record<string, Aluno[]> = {};
-    filteredAlunos.forEach(a => {
+    alunosVisiveis.forEach(a => {
       const key = a.turma_id || '__sem_turma__';
       if (!groups[key]) groups[key] = [];
       groups[key].push(a);
     });
-    // Sort: turmas first (by nome), sem_turma last
+    // Sort: sem_turma first (needs attention), then turmas by name
     return Object.entries(groups).sort(([a], [b]) => {
-      if (a === '__sem_turma__') return 1;
-      if (b === '__sem_turma__') return -1;
+      if (a === '__sem_turma__') return -1;
+      if (b === '__sem_turma__') return 1;
       const ta = turmas.find(t => t.id === a)?.nome || '';
       const tb = turmas.find(t => t.id === b)?.nome || '';
       return ta.localeCompare(tb);
@@ -514,6 +1121,7 @@ export function Financeiro() {
         data_fim: editTurmaForm.data_fim || null,
         valor_mensalidade: editTurmaForm.valor_mensalidade || null,
         total_mensalidades: editTurmaForm.total_mensalidades || null,
+        responsavel_id: editTurmaForm.responsavel_id || null,
       }).eq('id', turmaToEdit.id);
       if (error) throw error;
       toast({ title: 'Turma atualizada!' });
@@ -534,6 +1142,25 @@ export function Financeiro() {
     loadData();
   };
 
+  const createResponsavel = async () => {
+    if (!newResponsavelNome.trim()) return;
+    setSavingResponsavel(true);
+    const { error } = await supabase.from('responsaveis').insert({ nome: newResponsavelNome.trim() });
+    setSavingResponsavel(false);
+    if (error) { toast({ variant: 'destructive', title: 'Erro', description: error.message }); return; }
+    toast({ title: 'Responsavel adicionado!' });
+    setNewResponsavelNome('');
+    loadData();
+  };
+
+  const deleteResponsavel = async (id: string) => {
+    if (!confirm('Remover responsavel? As turmas ficam sem dono.')) return;
+    const { error } = await supabase.from('responsaveis').delete().eq('id', id);
+    if (error) { toast({ variant: 'destructive', title: 'Erro', description: error.message }); return; }
+    toast({ title: 'Responsavel removido!' });
+    loadData();
+  };
+
   const saveInlineTurma = async () => {
     if (!editingTurmaCardId) return;
     setSavingInlineTurma(true);
@@ -543,6 +1170,7 @@ export function Financeiro() {
       data_fim: inlineTurmaForm.data_fim || null,
       valor_mensalidade: inlineTurmaForm.valor_mensalidade || null,
       total_mensalidades: inlineTurmaForm.total_mensalidades || null,
+      responsavel_id: inlineTurmaForm.responsavel_id || null,
     }).eq('id', editingTurmaCardId);
     setSavingInlineTurma(false);
     if (error) { toast({ variant: 'destructive', title: 'Erro', description: error.message }); return; }
@@ -565,11 +1193,11 @@ export function Financeiro() {
 
     if (error) return;
 
+    // Atualiza só os contadores — total_mensalidades é gerenciado por sincronizarParcelasAluno
     await supabase
       .from('alunos')
       .update({
         mensalidades_pagas: (data || []).filter(p => p.status === 'pago').length,
-        total_mensalidades: data?.length || 0,
       })
       .eq('id', alunoId);
   };
@@ -582,6 +1210,7 @@ export function Financeiro() {
     diaVencimento,
     dataMatricula,
     valor,
+    customTotal,
   }: {
     alunoId: string;
     turmaId: string;
@@ -590,6 +1219,7 @@ export function Financeiro() {
     diaVencimento: number;
     dataMatricula?: string | null;
     valor: number;
+    customTotal?: number;
   }) => {
     const existentes = pagamentos
       .filter(p => p.aluno_id === alunoId)
@@ -597,7 +1227,8 @@ export function Financeiro() {
     const pagas = existentes.filter(p => p.status === 'pago');
     const numerosPagos = new Set(pagas.map(p => p.numero_parcela || 0).filter(Boolean));
     const maiorParcelaPaga = Math.max(0, ...Array.from(numerosPagos));
-    const total = Math.max(paymentMethodTotal(method), maiorParcelaPaga, pagas.length);
+    const baseTotal = (customTotal && customTotal > 0) ? customTotal : paymentMethodTotal(method);
+    const total = Math.max(baseTotal, maiorParcelaPaga, pagas.length);
     const abertas = existentes.filter(p => p.status !== 'pago');
 
     if (abertas.length > 0) {
@@ -639,12 +1270,21 @@ export function Financeiro() {
     if (error) throw error;
   };
 
-  const createAluno = async () => {
+  const createAluno = async (forceCreate = false) => {
     if (!newAlunoForm.nome.trim() || !newAlunoForm.turma_id) return;
+    if (!forceCreate) {
+      const wNum = newAlunoForm.whatsapp.replace(/\D/g, '');
+      const dup = alunos.find(a =>
+        (newAlunoForm.email.trim() && a.email?.toLowerCase() === newAlunoForm.email.trim().toLowerCase()) ||
+        (wNum && a.whatsapp?.replace(/\D/g, '') === wNum)
+      );
+      if (dup) { setDuplicataWarning(dup); return; }
+    }
     try {
       const method = normalizePaymentMethod(newAlunoForm.forma_pagamento);
       const diaVenc = extractDueDay(newAlunoForm.dia_vencimento);
-      const totalMens = paymentMethodTotal(method);
+      const customTotal = newAlunoForm.total_parcelas ? parseInt(newAlunoForm.total_parcelas) : 0;
+      const totalMens = customTotal > 0 ? customTotal : paymentMethodTotal(method);
       const valorAluno = newAlunoForm.valor_mensalidade ? parseFloat(newAlunoForm.valor_mensalidade) : null;
       const valorEfetivo = getValorEfetivo(newAlunoForm.turma_id, valorAluno);
       const { data: inserted, error } = await supabase.from('alunos').insert({
@@ -681,6 +1321,7 @@ export function Financeiro() {
         method,
         diaVencimento: diaVenc,
         dataMatricula: newAlunoForm.data_matricula || todayDateInput(),
+        minTotal: totalMens,
       });
       const { error: pagamentosError } = await supabase.from('pagamentos').insert(rows as any[]);
       if (pagamentosError) throw pagamentosError;
@@ -724,6 +1365,13 @@ export function Financeiro() {
       contrato_assinado_em: toDateInput(a.contrato_assinado_em),
       autentique_documento_id: a.autentique_documento_id || '',
       autentique_link_assinatura: a.autentique_link_assinatura || '',
+      contrato_baixado: a.contrato_baixado ?? false,
+      contrato_arquivo_url: a.contrato_arquivo_url || '',
+      contrato_arquivo_nome: a.contrato_arquivo_nome || '',
+      asaas_integrado: a.asaas_integrado ?? false,
+      asaas_link: a.asaas_link || '',
+      voomp_integrado: a.voomp_integrado ?? false,
+      voomp_link: a.voomp_link || '',
       total_mensalidades: a.total_mensalidades,
       observacoes: a.observacoes || '',
     });
@@ -740,7 +1388,10 @@ export function Financeiro() {
       const nextDataMatricula = editAlunoForm.data_matricula || alunoDetail.data_matricula || todayDateInput();
       const nextValorAluno = editAlunoForm.valor_mensalidade ?? null;
       const valorEfetivo = getValorEfetivo(nextTurmaId, nextValorAluno);
-      const targetTotal = paymentMethodTotal(nextMethod);
+      const editCustomTotal = editAlunoForm.total_mensalidades;
+      const targetTotal = (editCustomTotal && editCustomTotal > 0)
+        ? editCustomTotal
+        : paymentMethodTotal(nextMethod);
       const nowIso = new Date().toISOString();
       const checkedDate = (checked?: boolean, formValue?: string, previousValue?: string) => {
         if (!checked) return null;
@@ -755,7 +1406,7 @@ export function Financeiro() {
         toDateInput(nextDataMatricula) !== toDateInput(alunoDetail.data_matricula) ||
         Number(nextValorAluno ?? 0) !== Number(alunoDetail.valor_mensalidade ?? 0) ||
         currentParcelas.length === 0 ||
-        currentParcelas.length < targetTotal;
+        currentParcelas.length !== targetTotal;
 
       const updateData: any = {
         nome: editAlunoForm.nome || alunoDetail.nome,
@@ -785,6 +1436,13 @@ export function Financeiro() {
         contrato_assinado_em: checkedDate(editAlunoForm.contrato_assinado, editAlunoForm.contrato_assinado_em, alunoDetail.contrato_assinado_em),
         autentique_documento_id: editAlunoForm.autentique_documento_id || null,
         autentique_link_assinatura: editAlunoForm.autentique_link_assinatura || null,
+        contrato_baixado: editAlunoForm.contrato_baixado ?? false,
+        contrato_arquivo_url: editAlunoForm.contrato_arquivo_url || null,
+        contrato_arquivo_nome: editAlunoForm.contrato_arquivo_nome || null,
+        asaas_integrado: editAlunoForm.asaas_integrado ?? false,
+        asaas_link: editAlunoForm.asaas_link || null,
+        voomp_integrado: editAlunoForm.voomp_integrado ?? false,
+        voomp_link: editAlunoForm.voomp_link || null,
         total_mensalidades: targetTotal,
         observacoes: editAlunoForm.observacoes || null,
       };
@@ -800,6 +1458,7 @@ export function Financeiro() {
           diaVencimento: nextDiaVenc,
           dataMatricula: nextDataMatricula,
           valor: valorEfetivo,
+          customTotal: targetTotal,
         });
       } else {
         await atualizarContadoresAluno(alunoDetail.id);
@@ -823,6 +1482,245 @@ export function Financeiro() {
     toast({ title: 'Aluno removido!' });
     setShowDeleteDialog(false);
     setAlunoToDelete(null);
+    loadData();
+  };
+
+  const toggleRowSelection = (id: string) => setSelectedRows(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAllRows = () => setSelectedRows(prev => prev.size === alunosVisiveis.length ? new Set() : new Set(alunosVisiveis.map(a => a.id)));
+
+  const marcarPagoEmMassa = async () => {
+    setBulkMarking(true);
+    const hoje = todayDateInput();
+    let count = 0;
+    for (const alunoId of Array.from(selectedRows)) {
+      const proxima = (pagamentosPorAluno[alunoId] || []).filter(p => p.status !== 'pago').sort((a, b) => (a.numero_parcela || 0) - (b.numero_parcela || 0))[0];
+      if (proxima) {
+        const { error } = await supabase.from('pagamentos').update({ status: 'pago', data_pagamento: hoje }).eq('id', proxima.id);
+        if (!error) { await atualizarContadoresAluno(alunoId); count++; }
+      }
+    }
+    setBulkMarking(false);
+    setSelectedRows(new Set());
+    toast({ title: `${count} pagamento${count !== 1 ? 's' : ''} confirmado${count !== 1 ? 's' : ''}!` });
+    loadData();
+  };
+
+  const copiarMensagem = (aluno: Aluno) => {
+    const parcelas = (pagamentosPorAluno[aluno.id] || []).filter(p => p.status !== 'pago').sort((a, b) => (a.numero_parcela || 0) - (b.numero_parcela || 0));
+    if (!parcelas.length) { toast({ title: 'Sem parcelas em aberto' }); return; }
+    const proxima = parcelas[0];
+    const total = (pagamentosPorAluno[aluno.id] || []).length;
+    const nome = aluno.nome.split(' ')[0];
+    const valor = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(proxima.valor);
+    const venc = proxima.data_vencimento ? (() => { try { const [y,m,d] = proxima.data_vencimento.split('T')[0].split('-'); return `${d}/${m}/${y}`; } catch { return proxima.data_vencimento; } })() : '-';
+    const msg = `Olá ${nome}! 😊\n\nTemos a parcela ${proxima.numero_parcela}/${total} do seu curso no valor de ${valor} com vencimento em ${venc} aguardando pagamento.\n\nRegularize para manter seu acesso em dia. Qualquer dúvida, estou aqui! 🙏`;
+    navigator.clipboard.writeText(msg);
+    toast({ title: 'Mensagem copiada!' });
+  };
+
+  const exportarCSV = () => {
+    const headers = ['Nome', 'WhatsApp', 'Email', 'Turma', 'Pagamento', 'Parcelas pagas', 'Total parcelas', 'Prox. vencimento', 'Status', 'Em atraso (R$)'];
+    const hoje = parseDateOnly(todayDateInput())!;
+    const rows = alunosVisiveis.map(aluno => {
+      const turma = turmas.find(t => t.id === aluno.turma_id);
+      const method = normalizePaymentMethod(aluno.forma_pagamento);
+      const parcs = pagamentosPorAluno[aluno.id] || [];
+      const pagas = parcs.filter(p => p.status === 'pago').length;
+      const total = parcs.length;
+      const abertas = parcs.filter(p => p.status !== 'pago').sort((a, b) => String(a.data_vencimento).localeCompare(String(b.data_vencimento)));
+      const proxVencStr = method !== 'boleto' ? 'Quitado' : abertas[0]?.data_vencimento ? (() => { try { const [y,m,d] = abertas[0].data_vencimento.split('T')[0].split('-'); return `${d}/${m}/${y}`; } catch { return abertas[0].data_vencimento; } })() : 'Sem parcelas';
+      const inad = inadimplenciaMap[aluno.id];
+      return [aluno.nome, aluno.whatsapp || '', aluno.email || '', turma?.nome || 'Sem turma', method, pagas, total, proxVencStr, inad ? 'inadimplente' : aluno.status, inad ? inad.valorEmAtraso.toFixed(2) : ''];
+    });
+    const csv = [headers, ...rows].map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `alunos_${activeTab}_${todayDateInput()}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadFichaPDF = () => {
+    if (!alunoDetail) return;
+    const turma = turmas.find(t => t.id === (editAlunoForm.turma_id || alunoDetail.turma_id));
+    const parcelas = pagamentos
+      .filter(p => p.aluno_id === alunoDetail.id)
+      .sort((a, b) => a.numero_parcela - b.numero_parcela);
+    const pagas = parcelas.filter(p => p.status === 'pago').length;
+    const total = parcelas.length;
+    const geradoEm = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+    const fmtDate = (d?: string | null) => {
+      if (!d) return '—';
+      try { const [y, m, dd] = d.split('T')[0].split('-'); return `${dd}/${m}/${y}`; } catch { return d; }
+    };
+    const fmtStatus = (s: string) => ({ pago: 'Pago', atrasado: 'Atrasado', pendente: 'Pendente' }[s] || s);
+    const fmtMethod = (m?: string | null) => ({ boleto: 'Boleto — 15 mensalidades', cartao: 'Cartão — 12x', avista: 'À vista — 1x' }[m || ''] || m || '—');
+
+    const contratoStatus = editAlunoForm.contrato_assinado
+      ? 'Assinado'
+      : editAlunoForm.contrato_enviado
+        ? 'Enviado — aguardando assinatura'
+        : editAlunoForm.forms_respondido
+          ? 'Forms respondido'
+          : 'Pendente';
+
+    const parcelasRows = parcelas.map(p => `
+      <tr class="${p.status === 'pago' ? 'row-pago' : p.status === 'atrasado' ? 'row-atraso' : ''}">
+        <td>${p.numero_parcela}/${total}</td>
+        <td>${fmtDate(p.data_vencimento)}</td>
+        <td>${p.data_pagamento ? fmtDate(p.data_pagamento) : '—'}</td>
+        <td class="val">R$ ${p.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+        <td><span class="badge badge-${p.status}">${fmtStatus(p.status)}</span></td>
+      </tr>`).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Ficha — ${alunoDetail.nome}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#1a1a1a;background:#fff;padding:32px 40px}
+    h1{font-size:20px;font-weight:700;letter-spacing:-0.3px}
+    .subtitle{font-size:11px;color:#666;margin-top:2px}
+    .divider{border:none;border-top:1px solid #e5e5e5;margin:18px 0}
+    .section-title{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:10px}
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+    .grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+    .field label{font-size:9px;color:#888;text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:2px}
+    .field span{font-size:12px;color:#1a1a1a;font-weight:500}
+    table{width:100%;border-collapse:collapse;font-size:11px}
+    th{background:#f5f5f5;text-align:left;padding:7px 10px;font-size:9px;text-transform:uppercase;letter-spacing:0.8px;color:#666;border-bottom:1px solid #e0e0e0}
+    td{padding:7px 10px;border-bottom:1px solid #f0f0f0;color:#333}
+    .val{font-weight:600;font-variant-numeric:tabular-nums}
+    .row-pago td{background:#f0fdf4}
+    .row-atraso td{background:#fff5f5}
+    .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px}
+    .badge-pago{background:#dcfce7;color:#166534}
+    .badge-atrasado{background:#fee2e2;color:#991b1b}
+    .badge-pendente{background:#fef9c3;color:#854d0e}
+    .contrato-pill{display:inline-block;padding:3px 12px;border-radius:20px;font-size:10px;font-weight:600;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}
+    .header-row{display:flex;justify-content:space-between;align-items:flex-start}
+    .meta{font-size:10px;color:#999;text-align:right}
+    .totals{display:flex;gap:24px;padding:12px 16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e5e5;margin-bottom:12px}
+    .totals .item label{font-size:9px;color:#888;text-transform:uppercase;letter-spacing:0.5px}
+    .totals .item .num{font-size:15px;font-weight:700;color:#111}
+    .footer{margin-top:28px;font-size:9px;color:#bbb;text-align:center}
+    @media print{body{padding:16px 24px}@page{margin:15mm}}
+  </style>
+</head>
+<body>
+  <div class="header-row">
+    <div>
+      <h1>${alunoDetail.nome}</h1>
+      <div class="subtitle">${turma?.nome || 'Sem turma atribuída'} · ${turma?.produto || alunoDetail.produto || ''}</div>
+    </div>
+    <div class="meta">
+      <div>Ficha do Aluno</div>
+      <div>Gerado em ${geradoEm}</div>
+      <div style="margin-top:4px"><span class="contrato-pill">${contratoStatus}</span></div>
+    </div>
+  </div>
+
+  <hr class="divider"/>
+
+  <div class="section-title">Dados Pessoais</div>
+  <div class="grid" style="margin-bottom:16px">
+    <div class="field"><label>Nome completo</label><span>${editAlunoForm.nome || alunoDetail.nome || '—'}</span></div>
+    <div class="field"><label>WhatsApp</label><span>${editAlunoForm.whatsapp || alunoDetail.whatsapp || '—'}</span></div>
+    <div class="field"><label>E-mail</label><span>${editAlunoForm.email || alunoDetail.email || '—'}</span></div>
+    <div class="field"><label>CPF</label><span>${editAlunoForm.cpf || alunoDetail.cpf || '—'}</span></div>
+    <div class="field"><label>Data de nascimento</label><span>${fmtDate(editAlunoForm.data_nascimento || alunoDetail.data_nascimento)}</span></div>
+    <div class="field"><label>País</label><span>${editAlunoForm.pais || alunoDetail.pais || '—'}</span></div>
+    <div class="field"><label>CEP</label><span>${editAlunoForm.cep || alunoDetail.cep || '—'}</span></div>
+    <div class="field"><label>Cidade / Estado</label><span>${editAlunoForm.cidade_estado || alunoDetail.cidade_estado || '—'}</span></div>
+    <div class="field"><label>Origem</label><span>${editAlunoForm.origem_lead || alunoDetail.origem_lead || '—'}</span></div>
+  </div>
+  ${(editAlunoForm.endereco || alunoDetail.endereco) ? `<div class="field" style="margin-bottom:16px"><label>Endereço</label><span>${editAlunoForm.endereco || alunoDetail.endereco}</span></div>` : ''}
+
+  <hr class="divider"/>
+
+  <div class="section-title">Financeiro</div>
+  <div class="grid-2" style="margin-bottom:16px">
+    <div class="field"><label>Turma</label><span>${turma?.nome || '—'}</span></div>
+    <div class="field"><label>Forma de pagamento</label><span>${fmtMethod(editAlunoForm.forma_pagamento || alunoDetail.forma_pagamento)}</span></div>
+    <div class="field"><label>Valor mensalidade</label><span>R$ ${((editAlunoForm.valor_mensalidade ?? alunoDetail.valor_mensalidade ?? turma?.valor_mensalidade ?? 0) as number).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
+    <div class="field"><label>Dia de vencimento</label><span>Dia ${editAlunoForm.dia_vencimento || alunoDetail.dia_vencimento || '—'}</span></div>
+    <div class="field"><label>Data de matrícula</label><span>${fmtDate(editAlunoForm.data_matricula || alunoDetail.data_matricula)}</span></div>
+    <div class="field"><label>Início da turma</label><span>${fmtDate(editAlunoForm.data_inicio || alunoDetail.data_inicio)}</span></div>
+    <div class="field"><label>Fim da turma</label><span>${fmtDate(editAlunoForm.data_fim || alunoDetail.data_fim)}</span></div>
+    <div class="field"><label>Status</label><span>${editAlunoForm.status || alunoDetail.status || '—'}</span></div>
+  </div>
+
+  ${(editAlunoForm.observacoes || alunoDetail.observacoes) ? `<div class="field" style="margin-bottom:16px"><label>Observações</label><span>${editAlunoForm.observacoes || alunoDetail.observacoes}</span></div>` : ''}
+
+  <hr class="divider"/>
+
+  <div class="section-title">Parcelas</div>
+  <div class="totals">
+    <div class="item"><label>Total</label><div class="num">${total}</div></div>
+    <div class="item"><label>Pagas</label><div class="num" style="color:#166534">${pagas}</div></div>
+    <div class="item"><label>Em aberto</label><div class="num" style="color:#92400e">${total - pagas}</div></div>
+    <div class="item"><label>Recebido</label><div class="num">R$ ${parcelas.filter(p => p.status === 'pago').reduce((s, p) => s + p.valor, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div></div>
+    <div class="item"><label>A receber</label><div class="num">R$ ${parcelas.filter(p => p.status !== 'pago').reduce((s, p) => s + p.valor, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div></div>
+  </div>
+  ${total > 0 ? `
+  <table>
+    <thead><tr><th>#</th><th>Vencimento</th><th>Pago em</th><th>Valor</th><th>Status</th></tr></thead>
+    <tbody>${parcelasRows}</tbody>
+  </table>` : '<p style="color:#888;font-size:11px;padding:8px 0">Nenhuma parcela gerada.</p>'}
+
+  <div class="footer">Sistema 11DS · Documento gerado em ${geradoEm}</div>
+
+  <script>window.onload=function(){window.print()}<\/script>
+</body>
+</html>`;
+
+    const w = window.open('', '_blank', 'width=900,height=700');
+    if (w) { w.document.write(html); w.document.close(); }
+  };
+
+  const handleContratoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !alunoDetail) return;
+    e.target.value = '';
+    setUploadingContrato(true);
+    const ext = file.name.split('.').pop() || 'pdf';
+    const path = `${alunoDetail.id}/${Date.now()}.${ext}`;
+    const { error: upErr } = await supabase.storage.from('contratos').upload(path, file, { upsert: true });
+    if (upErr) {
+      toast({ variant: 'destructive', title: 'Erro no upload', description: upErr.message });
+      setUploadingContrato(false);
+      return;
+    }
+    const { data: urlData } = supabase.storage.from('contratos').getPublicUrl(path);
+    const url = urlData.publicUrl;
+    await supabase.from('alunos').update({ contrato_arquivo_url: url, contrato_arquivo_nome: file.name }).eq('id', alunoDetail.id);
+    setEditAlunoForm(f => ({ ...f, contrato_arquivo_url: url, contrato_arquivo_nome: file.name }));
+    setAlunos(prev => prev.map(a => a.id === alunoDetail.id ? { ...a, contrato_arquivo_url: url, contrato_arquivo_nome: file.name } : a));
+    setUploadingContrato(false);
+    toast({ title: 'Contrato anexado!' });
+  };
+
+  const removeContratoArquivo = async () => {
+    if (!alunoDetail) return;
+    const url = editAlunoForm.contrato_arquivo_url;
+    if (url) {
+      const parts = url.split('/contratos/');
+      if (parts[1]) await supabase.storage.from('contratos').remove([parts[1]]);
+    }
+    await supabase.from('alunos').update({ contrato_arquivo_url: null, contrato_arquivo_nome: null }).eq('id', alunoDetail.id);
+    setEditAlunoForm(f => ({ ...f, contrato_arquivo_url: '', contrato_arquivo_nome: '' }));
+    setAlunos(prev => prev.map(a => a.id === alunoDetail.id ? { ...a, contrato_arquivo_url: undefined, contrato_arquivo_nome: undefined } : a));
+    toast({ title: 'Arquivo removido.' });
+  };
+
+  const quickAssignTurma = async (alunoId: string, turmaId: string) => {
+    setAssigningTurma(prev => ({ ...prev, [alunoId]: true }));
+    const { error } = await supabase.from('alunos').update({ turma_id: turmaId }).eq('id', alunoId);
+    setAssigningTurma(prev => ({ ...prev, [alunoId]: false }));
+    if (error) { toast({ variant: 'destructive', title: 'Erro', description: error.message }); return; }
+    toast({ title: 'Turma atribuida!' });
     loadData();
   };
 
@@ -869,170 +1767,265 @@ export function Financeiro() {
         <button onClick={() => setSubView('turmas')} className={`px-4 py-1.5 rounded-t text-sm font-medium transition-colors ${subView === 'turmas' ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'}`}>
           <Building2 className="h-3.5 w-3.5 inline mr-1" />Turmas
         </button>
+        {isAdmin && (
+          <button onClick={() => setSubView('responsaveis')} className={`px-4 py-1.5 rounded-t text-sm font-medium transition-colors ${subView === 'responsaveis' ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'}`}>
+            <Users className="h-3.5 w-3.5 inline mr-1" />Por Responsavel
+            {responsaveis.length > 0 && <span className="ml-1.5 bg-primary/20 text-primary rounded-full text-[10px] px-1.5 py-0.5">{responsaveis.length}</span>}
+          </button>
+        )}
       </div>
 
       {subView === 'alunos' && (
         <>
-          {/* Filtro de periodo */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-medium text-muted-foreground">Periodo:</span>
-            {Object.entries(periodoLabel).map(([key, label]) => (
-              <button key={key} onClick={() => setPeriodo(key)}
-                className={`px-3 py-1 rounded text-xs font-medium transition-colors ${periodo === key ? 'bg-primary text-white' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
-                {label}
+          {/* Banner alunos sem turma — apenas admin */}
+          {isAdmin && alunosSemTurma.length > 0 && (
+            <div className="flex items-center gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg">
+              <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <span className="text-sm font-medium text-amber-800">{alunosSemTurma.length} aluno{alunosSemTurma.length !== 1 ? 's' : ''} sem turma atribuida</span>
+                <span className="text-xs text-amber-600 ml-2 hidden sm:inline">Responderam o formulario mas ainda nao foram alocados.</span>
+              </div>
+              <button
+                onClick={() => { setStatusFilter('todos'); setPaymentFilter('todos'); setDueDayFilter('todos'); setDueFilter('todos'); setSelectedTurmaId('todas'); }}
+                className="text-xs text-amber-700 font-semibold hover:text-amber-900 whitespace-nowrap">
+                Ver na lista ↓
               </button>
-            ))}
-          </div>
+            </div>
+          )}
 
-          {/* Filtro de status */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-medium text-muted-foreground">Status:</span>
-            {([
-              { key: 'todos', label: 'Todos', color: 'bg-muted text-muted-foreground', active: 'bg-gray-700 text-white' },
-              { key: 'ativo', label: 'Ativos', color: 'bg-muted text-muted-foreground', active: 'bg-green-600 text-white' },
-              { key: 'inadimplente', label: `Inadimplentes (${inadimplentes.length})`, color: 'bg-muted text-muted-foreground', active: 'bg-red-600 text-white' },
-              { key: 'cancelado', label: 'Cancelados', color: 'bg-muted text-muted-foreground', active: 'bg-gray-500 text-white' },
-            ] as { key: typeof statusFilter; label: string; color: string; active: string }[]).map(({ key, label, color, active }) => (
-              <button key={key} onClick={() => setStatusFilter(key)}
-                className={`px-3 py-1 rounded text-xs font-medium transition-colors ${statusFilter === key ? active : color + ' hover:bg-muted/70'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
+          {/* Filtros */}
+          <div className="space-y-2">
+            {/* Periodo */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-medium text-muted-foreground w-14 shrink-0">Periodo:</span>
+              {Object.entries(periodoLabel).map(([key, label]) => (
+                <button key={key} onClick={() => setPeriodo(key)}
+                  className={`px-3 py-1 rounded text-xs font-medium transition-colors ${periodo === key ? 'bg-primary text-white' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
 
-          {/* Filtros financeiros */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-medium text-muted-foreground">Pagamento:</span>
-            {([
-              { key: 'todos', label: 'Todos' },
-              { key: 'boleto', label: `Boleto (${paymentCounts.boleto})` },
-              { key: 'cartao', label: `Cartao pago (${paymentCounts.cartao})` },
-              { key: 'avista', label: `A vista pago (${paymentCounts.avista})` },
-            ] as { key: PaymentFilter; label: string }[]).map(({ key, label }) => (
-              <button key={key} onClick={() => {
-                setPaymentFilter(key);
-                if (key === 'cartao' || key === 'avista') setDueDayFilter('todos');
-              }}
-                className={`px-3 py-1 rounded text-xs font-medium transition-colors ${paymentFilter === key ? 'bg-primary text-white' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
-                {label}
+            {/* Status + botao filtros avancados */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-medium text-muted-foreground w-14 shrink-0">Status:</span>
+              {([
+                { key: 'todos', label: 'Todos', active: 'bg-gray-700 text-white' },
+                { key: 'ativo', label: 'Ativos', active: 'bg-green-600 text-white' },
+                { key: 'inadimplente', label: `Inadimplentes (${inadimplentes.length})`, active: 'bg-red-600 text-white' },
+                { key: 'cancelado', label: 'Cancelados', active: 'bg-gray-500 text-white' },
+              ] as { key: typeof statusFilter; label: string; active: string }[]).map(({ key, label, active }) => (
+                <button key={key} onClick={() => setStatusFilter(key)}
+                  className={`px-3 py-1 rounded text-xs font-medium transition-colors ${statusFilter === key ? active : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
+                  {label}
+                </button>
+              ))}
+              <button
+                onClick={() => setShowFiltrosAvancados(f => !f)}
+                className={`ml-auto flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium border transition-colors ${
+                  paymentFilter !== 'todos' || dueDayFilter !== 'todos' || dueFilter !== 'todos'
+                    ? 'bg-primary/10 text-primary border-primary/30'
+                    : 'border-border text-muted-foreground hover:bg-muted/50'
+                }`}>
+                Filtros
+                {(paymentFilter !== 'todos' || dueDayFilter !== 'todos' || dueFilter !== 'todos') && (
+                  <span className="bg-primary text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold">
+                    {[paymentFilter !== 'todos', dueDayFilter !== 'todos', dueFilter !== 'todos'].filter(Boolean).length}
+                  </span>
+                )}
+                <span className="text-[10px]">{showFiltrosAvancados ? '▲' : '▼'}</span>
               </button>
-            ))}
-          </div>
+            </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-medium text-muted-foreground">Dia venc.:</span>
-            <button onClick={() => setDueDayFilter('todos')}
-              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${dueDayFilter === 'todos' ? 'bg-primary text-white' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
-              Todos
-            </button>
-            {dueDayOptions.map(({ key, day, count }) => (
-              <button key={key} onClick={() => {
-                setDueDayFilter(key);
-                setPaymentFilter('boleto');
-              }}
-                className={`px-3 py-1 rounded text-xs font-medium transition-colors ${dueDayFilter === key ? 'bg-primary text-white' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
-                Dia {day} ({count})
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-medium text-muted-foreground">Situacao:</span>
-            {([
-              { key: 'todos', label: 'Todos' },
-              { key: 'vencidos', label: 'Vencidos' },
-              { key: 'hoje', label: 'Hoje' },
-              { key: 'proximos_7', label: '7 dias' },
-              { key: 'proximos_30', label: '30 dias' },
-              { key: 'quitados', label: 'Quitados' },
-            ] as { key: DueFilter; label: string }[]).map(({ key, label }) => (
-              <button key={key} onClick={() => setDueFilter(key)}
-                className={`px-3 py-1 rounded text-xs font-medium transition-colors ${dueFilter === key ? 'bg-primary text-white' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
-                {label}
-              </button>
-            ))}
+            {/* Filtros avancados */}
+            {showFiltrosAvancados && (
+              <div className="bg-muted/30 border border-border/60 rounded-lg p-3 space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-medium text-muted-foreground w-20 shrink-0">Pagamento:</span>
+                  {([
+                    { key: 'todos', label: 'Todos' },
+                    { key: 'boleto', label: `Boleto (${paymentCounts.boleto})` },
+                    { key: 'cartao', label: `Cartao (${paymentCounts.cartao})` },
+                    { key: 'avista', label: `A vista (${paymentCounts.avista})` },
+                  ] as { key: PaymentFilter; label: string }[]).map(({ key, label }) => (
+                    <button key={key} onClick={() => { setPaymentFilter(key); if (key === 'cartao' || key === 'avista') setDueDayFilter('todos'); }}
+                      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${paymentFilter === key ? 'bg-primary text-white' : 'bg-white border border-border text-muted-foreground hover:bg-muted/40'}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-medium text-muted-foreground w-20 shrink-0">Dia venc.:</span>
+                  <button onClick={() => setDueDayFilter('todos')}
+                    className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${dueDayFilter === 'todos' ? 'bg-primary text-white' : 'bg-white border border-border text-muted-foreground hover:bg-muted/40'}`}>
+                    Todos
+                  </button>
+                  {dueDayOptions.map(({ key, day, count }) => (
+                    <button key={key} onClick={() => { setDueDayFilter(key); setPaymentFilter('boleto'); }}
+                      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${dueDayFilter === key ? 'bg-primary text-white' : 'bg-white border border-border text-muted-foreground hover:bg-muted/40'}`}>
+                      Dia {day} ({count})
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-medium text-muted-foreground w-20 shrink-0">Situacao:</span>
+                  {([
+                    { key: 'todos', label: 'Todos' },
+                    { key: 'vencidos', label: 'Vencidos' },
+                    { key: 'hoje', label: 'Hoje' },
+                    { key: 'proximos_7', label: '7 dias' },
+                    { key: 'proximos_30', label: '30 dias' },
+                    { key: 'quitados', label: 'Quitados' },
+                  ] as { key: DueFilter; label: string }[]).map(({ key, label }) => (
+                    <button key={key} onClick={() => setDueFilter(key)}
+                      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${dueFilter === key ? 'bg-primary text-white' : 'bg-white border border-border text-muted-foreground hover:bg-muted/40'}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {(paymentFilter !== 'todos' || dueDayFilter !== 'todos' || dueFilter !== 'todos') && (
+                  <button
+                    onClick={() => { setPaymentFilter('todos'); setDueDayFilter('todos'); setDueFilter('todos'); }}
+                    className="text-xs text-red-600 hover:text-red-800 font-medium">
+                    Limpar filtros avancados
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Cards resumo */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Card className="p-4 flex items-center gap-3">
-              <div className="p-2 bg-green-100 rounded-lg"><DollarSign className="h-4 w-4 text-green-600" /></div>
-              <div><p className="text-xs text-muted-foreground">Recebido - {periodoLabel[periodo]}</p><p className="text-lg font-bold text-green-600">{formatCurrency(receitaMes)}</p></div>
-            </Card>
-            <Card className="p-4 flex items-center gap-3">
-              <div className="p-2 bg-blue-100 rounded-lg"><Target className="h-4 w-4 text-blue-600" /></div>
-              <div><p className="text-xs text-muted-foreground">Previsto - {periodoLabel[periodo]}</p><p className="text-lg font-bold text-blue-600">{formatCurrency(previstoMes)}</p></div>
-            </Card>
-            <Card className="p-4 flex items-center gap-3 border-red-100">
-              <div className="p-2 bg-red-100 rounded-lg"><AlertCircle className="h-4 w-4 text-red-600" /></div>
-              <div>
-                <p className="text-xs text-muted-foreground">Inadimplentes</p>
-                <p className="text-lg font-bold text-red-600">{inadimplentes.length}</p>
-                {totalEmAtraso > 0 && <p className="text-xs text-red-500 font-medium">{formatCurrency(totalEmAtraso)} em atraso</p>}
+          {(() => {
+            const turmaAtiva = selectedTurmaId !== 'todas' ? filteredTurmas.find(t => t.id === selectedTurmaId) : null;
+            const contexto = turmaAtiva ? turmaAtiva.nome : periodoLabel[periodo];
+            return (
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <Card className="p-4 flex items-center gap-3">
+                  <div className="p-2 bg-green-100 rounded-lg"><DollarSign className="h-4 w-4 text-green-600" /></div>
+                  <div>
+                    <p className="text-xs text-muted-foreground truncate max-w-[120px]" title={`Recebido - ${contexto}`}>Recebido - {contexto}</p>
+                    <p className="text-lg font-bold text-green-600">{formatCurrency(receitaMes)}</p>
+                  </div>
+                </Card>
+                <Card className="p-4 flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 rounded-lg"><Target className="h-4 w-4 text-blue-600" /></div>
+                  <div>
+                    <p className="text-xs text-muted-foreground truncate max-w-[120px]" title={`Previsto - ${contexto}`}>Previsto - {contexto}</p>
+                    <p className="text-lg font-bold text-blue-600">{formatCurrency(previstoMes)}</p>
+                  </div>
+                </Card>
+                <Card className="p-4 flex items-center gap-3">
+                  <div className="p-2 bg-yellow-100 rounded-lg"><TrendingUp className="h-4 w-4 text-yellow-600" /></div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">A Receber</p>
+                    <p className="text-lg font-bold text-yellow-700">{formatCurrency(valorAReceber)}</p>
+                    <p className="text-xs text-muted-foreground">{parcelasEmAberto.length} parcela{parcelasEmAberto.length !== 1 ? 's' : ''} em aberto</p>
+                  </div>
+                </Card>
+                <Card className="p-4 flex items-center gap-3 border-red-100">
+                  <div className="p-2 bg-red-100 rounded-lg"><AlertCircle className="h-4 w-4 text-red-600" /></div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Inadimplentes</p>
+                    <p className="text-lg font-bold text-red-600">{inadimplentes.length}</p>
+                    {totalEmAtraso > 0 && <p className="text-xs text-red-500 font-medium">{formatCurrency(totalEmAtraso)} em atraso</p>}
+                  </div>
+                </Card>
+                <Card className="p-4 flex items-center gap-3">
+                  <div className="p-2 bg-purple-100 rounded-lg"><Users className="h-4 w-4 text-purple-600" /></div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Alunos Ativos</p>
+                    <p className="text-lg font-bold text-purple-600">{filteredAlunos.filter(a => a.status === 'ativo').length}</p>
+                    <p className="text-xs text-muted-foreground">{contratosPendentes > 0 ? `${contratosPendentes} sem contrato` : 'Todos c/ contrato'}</p>
+                  </div>
+                </Card>
+              </div>
+            );
+          })()}
+
+          {/* Filtro turma + busca */}
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Card className="p-3 flex-1">
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-medium whitespace-nowrap">Turma:</label>
+                <Select value={selectedTurmaId} onValueChange={setSelectedTurmaId}>
+                  <SelectTrigger className="max-w-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todas as turmas</SelectItem>
+                    {filteredTurmas.map(t => (
+                      <SelectItem key={t.id} value={t.id}>{t.nome} ({alunos.filter(a => a.turma_id === t.id).length} alunos)</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </Card>
-            <Card className="p-4 flex items-center gap-3">
-              <div className="p-2 bg-purple-100 rounded-lg"><TrendingUp className="h-4 w-4 text-purple-600" /></div>
-              <div>
-                <p className="text-xs text-muted-foreground">Alunos Ativos</p>
-                <p className="text-lg font-bold text-purple-600">{filteredAlunos.filter(a => a.status === 'ativo').length}</p>
-                <p className="text-xs text-muted-foreground">{contratosPendentes > 0 ? `${contratosPendentes} sem contrato` : 'Todos c/ contrato'}</p>
-              </div>
+            <Card className="p-3 flex-1 flex items-center gap-2">
+              <Input
+                placeholder="Buscar por nome, WhatsApp ou email..."
+                value={searchAluno}
+                onChange={e => setSearchAluno(e.target.value)}
+                className="border-0 shadow-none p-0 h-auto text-sm focus-visible:ring-0 flex-1"
+              />
+              <Button variant="ghost" size="sm" onClick={exportarCSV} title="Exportar lista como CSV" className="shrink-0 h-7 px-2 text-muted-foreground hover:text-foreground">
+                <Download className="h-4 w-4 mr-1" /><span className="text-xs">CSV</span>
+              </Button>
             </Card>
           </div>
 
-          {/* Filtro turma */}
-          <Card className="p-3">
-            <div className="flex items-center gap-3">
-              <label className="text-sm font-medium whitespace-nowrap">Turma:</label>
-              <Select value={selectedTurmaId} onValueChange={setSelectedTurmaId}>
-                <SelectTrigger className="max-w-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todas">Todas as turmas</SelectItem>
-                  {filteredTurmas.map(t => (
-                    <SelectItem key={t.id} value={t.id}>{t.nome} ({alunos.filter(a => a.turma_id === t.id).length} alunos)</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {/* Barra flutuante de acao em massa */}
+          {selectedRows.size > 0 && (
+            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-gray-900 text-white px-5 py-3 rounded-full shadow-2xl">
+              <span className="text-sm font-medium">{selectedRows.size} selecionado{selectedRows.size !== 1 ? 's' : ''}</span>
+              <button onClick={marcarPagoEmMassa} disabled={bulkMarking}
+                className="flex items-center gap-1.5 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white px-4 py-1.5 rounded-full text-sm font-semibold transition-colors">
+                <CheckCircle2 className="h-4 w-4" />
+                {bulkMarking ? 'Processando...' : 'Marcar proxima parcela como paga'}
+              </button>
+              <button onClick={() => setSelectedRows(new Set())} className="text-gray-400 hover:text-white text-sm">Cancelar</button>
             </div>
-          </Card>
+          )}
 
           {/* Alunos agrupados por turma */}
           {filteredAlunos.length === 0 ? (
             <Card className="p-12 text-center">
               <Users className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
               <p className="text-muted-foreground">Nenhum aluno cadastrado</p>
-              <Button onClick={() => setShowAlunoDialog(true)} className="mt-3 bg-primary text-white"><Plus className="h-4 w-4 mr-1" />Adicionar Aluno</Button>
+              {isAdmin && <Button onClick={() => setShowAlunoDialog(true)} className="mt-3 bg-primary text-white"><Plus className="h-4 w-4 mr-1" />Adicionar Aluno</Button>}
             </Card>
           ) : (
             <div className="space-y-4">
               {alunosPorTurma.map(([turmaId, grupo]) => {
                 const turma = turmas.find(t => t.id === turmaId);
-                const turmaLabel = turmaId === '__sem_turma__' ? 'Sem turma' : (turma?.nome || turmaId);
+                const isSemTurma = turmaId === '__sem_turma__';
+                const turmaLabel = isSemTurma ? 'Aguardando atribuicao de turma' : (turma?.nome || turmaId);
                 return (
-                  <Card key={turmaId} className="p-5">
+                  <Card key={turmaId} className={`p-5 ${isSemTurma ? 'border-amber-300 bg-amber-50/30' : ''}`}>
                     <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-bold flex items-center gap-2">
-                        <Building2 className="h-4 w-4 text-primary" />{turmaLabel}
+                      <h3 className={`font-bold flex items-center gap-2 ${isSemTurma ? 'text-amber-800' : ''}`}>
+                        {isSemTurma
+                          ? <AlertCircle className="h-4 w-4 text-amber-600" />
+                          : <Building2 className="h-4 w-4 text-primary" />}
+                        {turmaLabel}
                         {turma?.valor_mensalidade && <span className="text-xs font-normal text-muted-foreground ml-1">- {formatCurrency(turma.valor_mensalidade)}/mes</span>}
+                        {isSemTurma && <span className="text-xs font-normal text-amber-600 ml-1">— Abra o detalhe para atribuir uma turma</span>}
                       </h3>
-                      <Badge variant="secondary">{grupo.length} aluno{grupo.length !== 1 ? 's' : ''}</Badge>
+                      <Badge variant="secondary" className={isSemTurma ? 'bg-amber-100 text-amber-800 border-amber-200' : ''}>{grupo.length} aluno{grupo.length !== 1 ? 's' : ''}</Badge>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="border-b border-border text-muted-foreground">
-                            <th className="text-left py-2 px-3 font-medium">Nome</th>
-                            <th className="text-left py-2 px-3 font-medium">WhatsApp</th>
-                            <th className="text-left py-2 px-3 font-medium">Turma</th>
-                            <th className="text-left py-2 px-3 font-medium">Pagamento</th>
-                            <th className="text-left py-2 px-3 font-medium">Parcelas</th>
-                            <th className="text-left py-2 px-3 font-medium">Prox. venc.</th>
-                            <th className="text-left py-2 px-3 font-medium">Contrato</th>
-                            <th className="text-left py-2 px-3 font-medium">Status</th>
-                            <th className="text-left py-2 px-3 font-medium">Acoes</th>
+                          <tr className="bg-muted/20 border-b border-border/60">
+                            <th className="py-2 px-2 w-8"><input type="checkbox" className="cursor-pointer" checked={grupo.length > 0 && grupo.every(a => selectedRows.has(a.id))} onChange={() => { const allSelected = grupo.every(a => selectedRows.has(a.id)); setSelectedRows(prev => { const n = new Set(prev); grupo.forEach(a => allSelected ? n.delete(a.id) : n.add(a.id)); return n; }); }} /></th>
+                            <th className="text-left py-2 px-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Nome</th>
+                            <th className="text-left py-2 px-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">WhatsApp</th>
+                            <th className="text-left py-2 px-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Turma</th>
+                            <th className="text-left py-2 px-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Pagamento</th>
+                            <th className="text-left py-2 px-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Parcelas</th>
+                            <th className="text-left py-2 px-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Prox. venc.</th>
+                            <th className="text-left py-2 px-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Contrato</th>
+                            <th className="text-left py-2 px-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Status</th>
+                            <th className="text-left py-2 px-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Acoes</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1049,28 +2042,36 @@ export function Financeiro() {
                               ? parcelasAluno.filter(p => p.status !== 'pago').sort((a, b) => String(a.data_vencimento).localeCompare(String(b.data_vencimento)))
                               : [];
                             const proximoVencimento = abertas[0]?.data_vencimento;
-                            const pgBadge: Record<PaymentMethod, string> = { boleto: 'bg-orange-100 text-orange-700', cartao: 'bg-blue-100 text-blue-700', avista: 'bg-green-100 text-green-700' };
+                            const pgBadge: Record<PaymentMethod, string> = { boleto: 'bg-zinc-100 text-zinc-700 border border-zinc-200', cartao: 'bg-blue-50 text-blue-600 border border-blue-200', avista: 'bg-emerald-50 text-emerald-700 border border-emerald-200' };
 
                             const inad = method === 'boleto' ? inadimplenciaMap[aluno.id] : undefined;
                             const contratoLabel = aluno.contrato_assinado ? 'Assinado' : aluno.contrato_enviado ? 'Enviado' : aluno.forms_respondido ? 'Forms ok' : 'Pendente';
                             const contratoClass = aluno.contrato_assinado
-                              ? 'bg-green-100 text-green-800'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                               : aluno.contrato_enviado
-                                ? 'bg-yellow-100 text-yellow-800'
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200'
                                 : aluno.forms_respondido
-                                  ? 'bg-blue-100 text-blue-800'
-                                  : 'bg-gray-100 text-gray-700';
+                                  ? 'bg-sky-50 text-sky-700 border border-sky-200'
+                                  : 'bg-zinc-100 text-zinc-500 border border-zinc-200';
+                            const hoje2 = parseDateOnly(todayDateInput())!;
+                            const urgDot = (() => {
+                              if (method !== 'boleto') return { cls: 'bg-zinc-300', tip: 'Quitado' };
+                              if (abertas.length === 0) return { cls: 'bg-emerald-500', tip: 'Quitado' };
+                              if (!proximoVencimento) return { cls: 'bg-zinc-400', tip: '-' };
+                              const v = parseDateOnly(proximoVencimento); if (!v) return { cls: 'bg-zinc-400', tip: '-' };
+                              const diff = Math.floor((v.getTime() - hoje2.getTime()) / (1000*60*60*24));
+                              if (diff < 0) return { cls: 'bg-red-600 ring-2 ring-red-200', tip: `Vencido há ${Math.abs(diff)}d` };
+                              if (diff === 0) return { cls: 'bg-red-500 ring-2 ring-red-200', tip: 'Vence hoje!' };
+                              if (diff <= 7) return { cls: 'bg-amber-500 ring-2 ring-amber-100', tip: `Vence em ${diff}d` };
+                              return { cls: 'bg-emerald-500', tip: `Vence em ${diff}d` };
+                            })();
                             return (
-                              <tr key={aluno.id} className={`border-b border-border/40 hover:bg-muted/40 ${inad ? 'bg-red-50/40' : ''}`}>
+                              <tr key={aluno.id} className={`border-b border-border/30 transition-colors ${selectedRows.has(aluno.id) ? 'bg-primary/5' : inad ? 'bg-red-50/60 border-l-[3px] border-l-red-400' : 'hover:bg-muted/25'}`}>
+                                <td className="py-2.5 px-2"><input type="checkbox" className="cursor-pointer" checked={selectedRows.has(aluno.id)} onChange={() => toggleRowSelection(aluno.id)} /></td>
                                 <td className="py-2.5 px-3 font-medium">
                                   <div className="flex items-center gap-1.5">
-                                    {aluno.nome}
-                                    {aluno.contrato_assinado
-                                      ? <span title="Contrato assinado" className="text-green-600 text-[10px] font-bold">-</span>
-                                      : aluno.contrato_enviado
-                                        ? <span title="Contrato enviado, aguardando assinatura" className="text-yellow-500 text-[10px] font-bold">-</span>
-                                        : <span title="Sem contrato" className="text-gray-300 text-[10px]">-</span>
-                                    }
+                                    <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${urgDot.cls}`} title={urgDot.tip} />
+                                    <span className="font-medium text-foreground">{aluno.nome}</span>
                                   </div>
                                   {aluno.observacoes && (
                                     <p className="text-[11px] text-muted-foreground font-normal mt-0.5 leading-tight max-w-[180px] truncate" title={aluno.observacoes}>
@@ -1079,9 +2080,29 @@ export function Financeiro() {
                                   )}
                                 </td>
                                 <td className="py-2.5 px-3">
-                                  {aluno.whatsapp ? <span className="flex items-center gap-1"><Phone className="h-3.5 w-3.5 text-muted-foreground" />{aluno.whatsapp}</span> : <span className="text-muted-foreground text-xs">-</span>}
+                                  {aluno.whatsapp
+                                    ? <a href={`https://wa.me/${aluno.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer"
+                                        className="flex items-center gap-1 text-green-700 hover:text-green-900 font-medium transition-colors">
+                                        <Phone className="h-3.5 w-3.5" />{aluno.whatsapp}
+                                      </a>
+                                    : <span className="text-muted-foreground text-xs">-</span>}
                                 </td>
-                                <td className="py-2.5 px-3 text-muted-foreground text-xs">{turma?.nome || '-'}</td>
+                                <td className="py-2.5 px-3 text-muted-foreground text-xs">
+                                  {isSemTurma
+                                    ? <Select
+                                        value=""
+                                        onValueChange={v => quickAssignTurma(aluno.id, v)}
+                                        disabled={assigningTurma[aluno.id]}
+                                      >
+                                        <SelectTrigger className="h-7 text-xs w-36 border-amber-300 text-amber-700 bg-amber-50">
+                                          <SelectValue placeholder={assigningTurma[aluno.id] ? 'Salvando...' : 'Atribuir turma'} />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {filteredTurmas.map(t => <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>)}
+                                        </SelectContent>
+                                      </Select>
+                                    : turma?.nome || '-'}
+                                </td>
                                 <td className="py-2.5 px-3">
                                   <div className="flex flex-col gap-1">
                                     <Badge className={pgBadge[method]}>{method === 'boleto' ? paymentLabels[method] : `${paymentLabels[method]} pago`}</Badge>
@@ -1108,12 +2129,16 @@ export function Financeiro() {
                                 </td>
                                 <td className="py-2.5 px-3">
                                   <div className="flex flex-col gap-1">
-                                    <Badge className={inad ? 'bg-red-100 text-red-800' : statusColors[aluno.status] || 'bg-gray-100 text-gray-800'}>
+                                    <Badge className={inad ? 'bg-red-50 text-red-700 border border-red-200' : statusColors[aluno.status] || 'bg-zinc-100 text-zinc-600 border border-zinc-200'}>
                                       {inad ? 'inadimplente' : aluno.status}
                                     </Badge>
                                     {inad && (
-                                      <span className="text-[10px] text-red-600 font-medium leading-tight">
-                                        {inad.parcelasAtrasadas}x - {inad.diasAtraso}d - {formatCurrency(inad.valorEmAtraso)}
+                                      <span className="text-[10px] text-red-600 font-medium leading-tight mt-0.5 flex items-center gap-1">
+                                        <span>{inad.parcelasAtrasadas}p</span>
+                                        <span className="text-red-300">·</span>
+                                        <span>{inad.diasAtraso}d</span>
+                                        <span className="text-red-300">·</span>
+                                        <span>{formatCurrency(inad.valorEmAtraso)}</span>
                                       </span>
                                     )}
                                   </div>
@@ -1121,6 +2146,7 @@ export function Financeiro() {
                                 <td className="py-2.5 px-3">
                                   <div className="flex gap-1">
                                     <Button variant="ghost" size="sm" onClick={() => openAlunoDetail(aluno)} title="Ver detalhes"><Eye className="h-4 w-4" /></Button>
+                                    <Button variant="ghost" size="sm" onClick={() => copiarMensagem(aluno)} title="Copiar mensagem de cobranca" className="text-muted-foreground hover:text-foreground"><Copy className="h-4 w-4" /></Button>
                                     <Button variant="ghost" size="sm" onClick={() => { setAlunoToDelete(aluno); setShowDeleteDialog(true); }} className="text-destructive hover:text-destructive"><Trash2 className="h-4 w-4" /></Button>
                                   </div>
                                 </td>
@@ -1138,11 +2164,153 @@ export function Financeiro() {
         </>
       )}
 
+      {subView === 'responsaveis' && (
+        <div className="space-y-4">
+          {/* Adicionar responsavel */}
+          <Card className="p-4">
+            <p className="text-sm font-semibold mb-3">Gerenciar Responsaveis</p>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Nome do responsavel (ex: Joao, Equipe A...)"
+                value={newResponsavelNome}
+                onChange={e => setNewResponsavelNome(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && createResponsavel()}
+                className="max-w-sm"
+              />
+              <Button onClick={createResponsavel} disabled={savingResponsavel || !newResponsavelNome.trim()} className="bg-primary text-white">
+                <Plus className="h-4 w-4 mr-1" />{savingResponsavel ? 'Salvando...' : 'Adicionar'}
+              </Button>
+            </div>
+            {responsaveis.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-3">
+                {responsaveis.map(r => (
+                  <div key={r.id} className="flex items-center gap-1.5 bg-muted px-3 py-1 rounded-full text-sm">
+                    <span>{r.nome}</span>
+                    <button onClick={() => deleteResponsavel(r.id)} className="text-muted-foreground hover:text-destructive ml-1 text-xs">×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          {/* Dashboard por responsavel */}
+          {responsaveis.length === 0 ? (
+            <Card className="p-12 text-center">
+              <Users className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+              <p className="text-muted-foreground">Nenhum responsavel cadastrado ainda.</p>
+              <p className="text-xs text-muted-foreground mt-1">Adicione responsaveis e vincule turmas a eles na aba Turmas.</p>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {responsaveis.map(resp => {
+                const turmasResp = filteredTurmas.filter(t => t.responsavel_id === resp.id);
+                const alunosResp = alunos.filter(a => turmasResp.some(t => t.id === a.turma_id) && a.produto === activeTab);
+                const ativosResp = alunosResp.filter(a => a.status === 'ativo');
+                const pagResp = filteredPagamentos.filter(p => turmasResp.some(t => t.id === p.turma_id));
+                const recebidoResp = pagResp.filter(p => p.status === 'pago').reduce((s, p) => s + p.valor, 0);
+                const aReceberResp = pagResp.filter(p => p.status !== 'pago').reduce((s, p) => s + p.valor, 0);
+                const inadResp = alunosResp.filter(a => inadimplenciaMap[a.id] || a.status === 'inadimplente');
+                const atrasoResp = inadResp.reduce((s, a) => s + (inadimplenciaMap[a.id]?.valorEmAtraso || 0), 0);
+
+                return (
+                  <Card key={resp.id} className="p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-lg font-bold">{resp.nome}</h3>
+                        <p className="text-xs text-muted-foreground">{turmasResp.length} turma{turmasResp.length !== 1 ? 's' : ''} · {alunosResp.length} aluno{alunosResp.length !== 1 ? 's' : ''}</p>
+                      </div>
+                      {turmasResp.length === 0 && <span className="text-xs text-muted-foreground italic">Nenhuma turma vinculada</span>}
+                    </div>
+
+                    {/* Metricas do responsavel */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                      <div className="bg-green-50 rounded-lg p-3">
+                        <p className="text-xs text-green-700 font-medium">Recebido (total)</p>
+                        <p className="text-base font-bold text-green-700">{formatCurrency(recebidoResp)}</p>
+                      </div>
+                      <div className="bg-yellow-50 rounded-lg p-3">
+                        <p className="text-xs text-yellow-700 font-medium">A Receber</p>
+                        <p className="text-base font-bold text-yellow-700">{formatCurrency(aReceberResp)}</p>
+                        <p className="text-[10px] text-yellow-600">{pagResp.filter(p => p.status !== 'pago').length} parcelas</p>
+                      </div>
+                      <div className="bg-purple-50 rounded-lg p-3">
+                        <p className="text-xs text-purple-700 font-medium">Alunos Ativos</p>
+                        <p className="text-base font-bold text-purple-700">{ativosResp.length}</p>
+                        <p className="text-[10px] text-purple-600">{alunosResp.length} total</p>
+                      </div>
+                      <div className="bg-red-50 rounded-lg p-3">
+                        <p className="text-xs text-red-700 font-medium">Inadimplentes</p>
+                        <p className="text-base font-bold text-red-700">{inadResp.length}</p>
+                        {atrasoResp > 0 && <p className="text-[10px] text-red-600">{formatCurrency(atrasoResp)} em atraso</p>}
+                      </div>
+                    </div>
+
+                    {/* Turmas do responsavel */}
+                    {turmasResp.length > 0 && (
+                      <div className="border-t border-border pt-3">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Turmas</p>
+                        <div className="space-y-2">
+                          {turmasResp.map(t => {
+                            const alunosTurma = alunosResp.filter(a => a.turma_id === t.id);
+                            const ativosTurma = alunosTurma.filter(a => a.status === 'ativo').length;
+                            const pagTurma = filteredPagamentos.filter(p => p.turma_id === t.id);
+                            const recTurma = pagTurma.filter(p => p.status === 'pago').reduce((s, p) => s + p.valor, 0);
+                            const recebTurma = pagTurma.filter(p => p.status !== 'pago').reduce((s, p) => s + p.valor, 0);
+                            const inadTurma = alunosTurma.filter(a => inadimplenciaMap[a.id] || a.status === 'inadimplente').length;
+                            return (
+                              <div key={t.id} className="flex items-center justify-between bg-muted/30 rounded-lg px-3 py-2 text-sm">
+                                <div className="flex items-center gap-2">
+                                  <Building2 className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                                  <div>
+                                    <span className="font-medium">{t.nome}</span>
+                                    {t.valor_mensalidade && <span className="text-xs text-muted-foreground ml-1.5">{formatCurrency(t.valor_mensalidade)}/mes</span>}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                  <span><span className="font-medium text-foreground">{alunosTurma.length}</span> alunos ({ativosTurma} ativos)</span>
+                                  <span className="text-green-700 font-medium">{formatCurrency(recTurma)}</span>
+                                  <span className="text-yellow-700">{formatCurrency(recebTurma)} a receber</span>
+                                  {inadTurma > 0 && <span className="text-red-600 font-medium">{inadTurma} inad.</span>}
+                                  <button onClick={() => { setSelectedTurmaId(t.id); setSubView('alunos'); }} className="text-primary hover:underline">Ver alunos</button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </Card>
+                );
+              })}
+
+              {/* Turmas sem responsavel */}
+              {(() => {
+                const semDono = filteredTurmas.filter(t => !t.responsavel_id);
+                if (semDono.length === 0) return null;
+                return (
+                  <Card className="p-5 border-dashed border-muted-foreground/30">
+                    <h3 className="text-sm font-semibold text-muted-foreground mb-3">{semDono.length} turma{semDono.length !== 1 ? 's' : ''} sem responsavel</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {semDono.map(t => (
+                        <span key={t.id} className="bg-muted text-sm px-3 py-1 rounded-full">{t.nome}</span>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">Va em Turmas, edite cada uma e atribua um responsavel.</p>
+                  </Card>
+                );
+              })()}
+            </div>
+          )}
+        </div>
+      )}
+
       {subView === 'turmas' && (
         <div className="space-y-4">
-          <div className="flex justify-end">
-            <Button onClick={() => setShowTurmaDialog(true)} variant="outline"><Plus className="h-4 w-4 mr-1" />Nova Turma</Button>
-          </div>
+          {isAdmin && (
+            <div className="flex justify-end">
+              <Button onClick={() => setShowTurmaDialog(true)} variant="outline"><Plus className="h-4 w-4 mr-1" />Nova Turma</Button>
+            </div>
+          )}
           {filteredTurmas.length === 0 ? (
             <Card className="p-12 text-center">
               <Building2 className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
@@ -1171,7 +2339,15 @@ export function Financeiro() {
                           </>
                         ) : (
                           <>
-                            <Button variant="ghost" size="sm" onClick={() => { setEditingTurmaCardId(turma.id); setInlineTurmaForm({ nome: turma.nome, data_inicio: turma.data_inicio || '', data_fim: turma.data_fim || '', valor_mensalidade: turma.valor_mensalidade, total_mensalidades: turma.total_mensalidades }); }}><Pencil className="h-3.5 w-3.5" /></Button>
+                            <Button
+                              variant="ghost" size="sm"
+                              title="Disparar mensagem para alunos da turma"
+                              onClick={() => setDisparoTurma({ id: turma.id, nome: turma.nome })}
+                              className="text-primary hover:text-primary hover:bg-primary/10"
+                            >
+                              <Send className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => { setEditingTurmaCardId(turma.id); setInlineTurmaForm({ nome: turma.nome, data_inicio: turma.data_inicio || '', data_fim: turma.data_fim || '', valor_mensalidade: turma.valor_mensalidade, total_mensalidades: turma.total_mensalidades, responsavel_id: turma.responsavel_id || '' }); }}><Pencil className="h-3.5 w-3.5" /></Button>
                             <Button variant="ghost" size="sm" onClick={() => deleteTurma(turma.id)} className="text-destructive hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
                           </>
                         )}
@@ -1184,6 +2360,16 @@ export function Financeiro() {
                           <div><label className="text-muted-foreground">Fim</label><Input type="date" value={inlineTurmaForm.data_fim || ''} onChange={e => setInlineTurmaForm(f => ({ ...f, data_fim: e.target.value }))} className="h-7 mt-0.5 text-xs" /></div>
                           <div><label className="text-muted-foreground">Mensalidade (R$)</label><Input type="number" step="0.01" value={inlineTurmaForm.valor_mensalidade ?? ''} onChange={e => setInlineTurmaForm(f => ({ ...f, valor_mensalidade: parseFloat(e.target.value) || undefined }))} className="h-7 mt-0.5 text-xs" /></div>
                           <div><label className="text-muted-foreground">Total Parcelas</label><Input type="number" value={inlineTurmaForm.total_mensalidades ?? ''} onChange={e => setInlineTurmaForm(f => ({ ...f, total_mensalidades: parseInt(e.target.value) || undefined }))} className="h-7 mt-0.5 text-xs" /></div>
+                          <div className="col-span-2">
+                            <label className="text-muted-foreground">Responsavel</label>
+                            <Select value={inlineTurmaForm.responsavel_id || '__none__'} onValueChange={v => setInlineTurmaForm(f => ({ ...f, responsavel_id: v === '__none__' ? '' : v }))}>
+                              <SelectTrigger className="h-7 mt-0.5 text-xs"><SelectValue placeholder="Sem responsavel" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">Sem responsavel</SelectItem>
+                                {responsaveis.map(r => <SelectItem key={r.id} value={r.id}>{r.nome}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </>
                       ) : (
                         <>
@@ -1191,6 +2377,7 @@ export function Financeiro() {
                           <div className="text-muted-foreground"><span className="font-medium text-foreground">Fim:</span> {safeDate(turma.data_fim) || '-'}</div>
                           <div className="text-muted-foreground"><span className="font-medium text-foreground">Mensalidade:</span> {turma.valor_mensalidade ? formatCurrency(turma.valor_mensalidade) : '-'}</div>
                           <div className="text-muted-foreground"><span className="font-medium text-foreground">Parcelas:</span> {turma.total_mensalidades ?? '-'}</div>
+                          {turma.responsavel_id && <div className="col-span-2 text-muted-foreground"><span className="font-medium text-foreground">Responsavel:</span> {responsaveis.find(r => r.id === turma.responsavel_id)?.nome || '-'}</div>}
                         </>
                       )}
                     </div>
@@ -1226,23 +2413,37 @@ export function Financeiro() {
             <h1 className="text-2xl font-bold">Financeiro</h1>
             <p className="text-sm text-muted-foreground">Gestao completa de turmas e pagamentos</p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setShowTurmaDialog(true)}><Plus className="h-4 w-4 mr-1" />Nova Turma</Button>
-            <Button onClick={() => setShowAlunoDialog(true)} className="bg-primary text-white"><Plus className="h-4 w-4 mr-1" />Adicionar Aluno</Button>
-          </div>
+          {isAdmin && (
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setShowTurmaDialog(true)}><Plus className="h-4 w-4 mr-1" />Nova Turma</Button>
+              <Button onClick={() => setShowAlunoDialog(true)} className="bg-primary text-white"><Plus className="h-4 w-4 mr-1" />Adicionar Aluno</Button>
+            </div>
+          )}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 lg:p-6">
         <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as ProdutoTab); setSubView('alunos'); setSelectedTurmaId('todas'); }}>
-          <TabsList className="grid w-full max-w-xs grid-cols-2 mb-4">
-            <TabsTrigger value="psicanalise">Psicanalise</TabsTrigger>
-            <TabsTrigger value="numerologia">Numerologia</TabsTrigger>
-          </TabsList>
+          {visibleTabs.length > 1 && (
+            <TabsList className={`grid w-full max-w-xs mb-4`} style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, 1fr)` }}>
+              {visibleTabs.includes('psicanalise') && <TabsTrigger value="psicanalise">Psicanalise</TabsTrigger>}
+              {visibleTabs.includes('numerologia') && <TabsTrigger value="numerologia">Numerologia</TabsTrigger>}
+            </TabsList>
+          )}
           <TabsContent value="psicanalise"><ProdutoContent /></TabsContent>
           <TabsContent value="numerologia"><ProdutoContent /></TabsContent>
         </Tabs>
       </div>
+
+      {/* Modal Disparo de Turma */}
+      {disparoTurma && (
+        <TurmaDisparoModal
+          open={!!disparoTurma}
+          onClose={() => setDisparoTurma(null)}
+          turma={disparoTurma}
+          alunos={alunos.filter(a => a.turma_id === disparoTurma.id)}
+        />
+      )}
 
       {/* Modal Nova Turma */}
       <Dialog open={showTurmaDialog} onOpenChange={setShowTurmaDialog}>
@@ -1301,6 +2502,28 @@ export function Financeiro() {
         </DialogContent>
       </Dialog>
 
+      {/* Dialog duplicata */}
+      <Dialog open={!!duplicataWarning} onOpenChange={() => setDuplicataWarning(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Possivel duplicata</DialogTitle>
+            <DialogDescription>Ja existe um aluno cadastrado com o mesmo email ou WhatsApp.</DialogDescription>
+          </DialogHeader>
+          {duplicataWarning && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm space-y-1">
+              <p className="font-semibold">{duplicataWarning.nome}</p>
+              {duplicataWarning.whatsapp && <p className="text-muted-foreground">{duplicataWarning.whatsapp}</p>}
+              {duplicataWarning.email && <p className="text-muted-foreground">{duplicataWarning.email}</p>}
+              <p className="text-xs">Status: <span className="font-medium">{duplicataWarning.status}</span></p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDuplicataWarning(null)}>Cancelar</Button>
+            <Button onClick={() => { setDuplicataWarning(null); createAluno(true); }} className="bg-primary text-white">Cadastrar mesmo assim</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Modal Adicionar Aluno */}
       <Dialog open={showAlunoDialog} onOpenChange={setShowAlunoDialog}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -1341,16 +2564,30 @@ export function Financeiro() {
                 <SelectContent>{[1,5,10,15,20,25,28,30].map(d => <SelectItem key={d} value={String(d)}>Dia {d}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <div>
-              <label className="text-sm font-medium">Forma de Pagamento</label>
-              <Select value={newAlunoForm.forma_pagamento} onValueChange={v => setNewAlunoForm({ ...newAlunoForm, forma_pagamento: v as PaymentMethod })}>
-                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="boleto">Boleto - 15 mensalidades</SelectItem>
-                  <SelectItem value="cartao">Cartao - 12x</SelectItem>
-                  <SelectItem value="avista">A vista - 1/1</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium">Forma de Pagamento</label>
+                <Select value={newAlunoForm.forma_pagamento} onValueChange={v => setNewAlunoForm({ ...newAlunoForm, forma_pagamento: v as PaymentMethod, total_parcelas: '' })}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="boleto">Boleto - 15 mensalidades</SelectItem>
+                    <SelectItem value="cartao">Cartao - 12x</SelectItem>
+                    <SelectItem value="avista">A vista - 1/1</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Nº de parcelas</label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={newAlunoForm.total_parcelas}
+                  onChange={e => setNewAlunoForm({ ...newAlunoForm, total_parcelas: e.target.value })}
+                  placeholder={String(paymentMethodTotal(newAlunoForm.forma_pagamento))}
+                  className="mt-1"
+                />
+                <p className="text-[10px] text-muted-foreground mt-0.5">Vazio = padrão do método</p>
+              </div>
             </div>
             <div>
               <label className="text-sm font-medium">Origem</label>
@@ -1392,6 +2629,94 @@ export function Financeiro() {
             return (
               <div className="space-y-5">
 
+                {/* Link do Formulário de Contrato */}
+                {alunoDetail.contrato_token && (
+                  <div className="rounded-lg border border-border bg-white p-4 space-y-3">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Formulário de Contrato</p>
+
+                    {/* Pipeline visual */}
+                    <div className="flex items-center gap-1 text-xs">
+                      {[
+                        { label: 'Link gerado', done: true },
+                        { label: 'Forms respondido', done: !!alunoDetail.forms_respondido },
+                        { label: 'Contrato enviado', done: !!alunoDetail.contrato_enviado },
+                        { label: 'Assinado', done: !!alunoDetail.contrato_assinado },
+                      ].map((step, i, arr) => (
+                        <div key={step.label} className="flex items-center gap-1">
+                          <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium ${
+                            step.done ? 'bg-emerald-100 text-emerald-700' : 'bg-muted text-muted-foreground'
+                          }`}>
+                            {step.done ? <CheckCircle2 className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
+                            {step.label}
+                          </div>
+                          {i < arr.length - 1 && <div className={`h-px w-3 ${step.done ? 'bg-emerald-300' : 'bg-border'}`} />}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* URL do formulário */}
+                    <div className="space-y-1">
+                      <p className="text-[10px] text-muted-foreground">Link para o aluno preencher os dados e assinar:</p>
+                      <div className="flex items-center gap-2 bg-muted/40 rounded-md px-3 py-2 font-mono text-xs">
+                        <span className="flex-1 truncate text-foreground/70">
+                          {window.location.origin}/assinar/{alunoDetail.contrato_token}
+                        </span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(`${window.location.origin}/assinar/${alunoDetail.contrato_token}`);
+                            toast({ title: 'Link copiado!' });
+                          }}
+                          className="p-1 hover:bg-primary/10 rounded transition-colors flex-shrink-0"
+                          title="Copiar link"
+                        >
+                          <Copy className="h-3.5 w-3.5 text-primary" />
+                        </button>
+                        <a
+                          href={`${window.location.origin}/assinar/${alunoDetail.contrato_token}`}
+                          target="_blank" rel="noopener noreferrer"
+                          className="p-1 hover:bg-primary/10 rounded transition-colors flex-shrink-0"
+                          title="Abrir formulário"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5 text-primary" />
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Ações */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Button
+                        size="sm" variant="outline"
+                        className="gap-1.5 text-xs h-8"
+                        onClick={async () => {
+                          const link = `${window.location.origin}/assinar/${alunoDetail.contrato_token}`;
+                          const { error } = await supabase.functions.invoke('wpp-enviar', {
+                            body: {
+                              numero: alunoDetail.whatsapp,
+                              mensagem: `Olá, ${alunoDetail.nome.split(' ')[0]}! 📝\n\nPreencha seus dados para assinar o contrato de matrícula:\n\n${link}`,
+                            },
+                          });
+                          if (error) toast({ variant: 'destructive', title: 'Erro ao enviar WPP', description: error.message });
+                          else toast({ title: '✅ Link enviado por WhatsApp!' });
+                        }}
+                        disabled={!alunoDetail.whatsapp}
+                      >
+                        <MessageSquare className="h-3.5 w-3.5" /> Enviar por WPP
+                      </Button>
+
+                      {alunoDetail.autentique_link_assinatura && (
+                        <a
+                          href={alunoDetail.autentique_link_assinatura}
+                          target="_blank" rel="noopener noreferrer"
+                        >
+                          <Button size="sm" className="gap-1.5 text-xs h-8 bg-violet-600 hover:bg-violet-700">
+                            <ExternalLink className="h-3.5 w-3.5" /> Abrir na Autentique
+                          </Button>
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Contrato */}
                 <div className="flex flex-wrap items-center gap-3 p-3 rounded-lg bg-muted/50 border border-border">
                   <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contrato</span>
@@ -1404,6 +2729,21 @@ export function Financeiro() {
                     onClick={() => setEditAlunoForm(f => ({ ...f, contrato_assinado: !f.contrato_assinado, contrato_assinado_em: !f.contrato_assinado ? (f.contrato_assinado_em || todayDateInput()) : '', contrato_enviado: f.contrato_assinado ? f.contrato_enviado : true, contrato_enviado_em: f.contrato_assinado ? f.contrato_enviado_em : (f.contrato_enviado_em || todayDateInput()) }))}
                     className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${editAlunoForm.contrato_assinado ? 'bg-green-500 text-white' : 'bg-white border border-border text-muted-foreground'}`}>
                     Assinado
+                  </button>
+                  <button
+                    onClick={() => setEditAlunoForm(f => ({ ...f, contrato_baixado: !f.contrato_baixado }))}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${editAlunoForm.contrato_baixado ? 'bg-violet-500 text-white' : 'bg-white border border-border text-muted-foreground'}`}>
+                    Baixado
+                  </button>
+                  <button
+                    onClick={() => setEditAlunoForm(f => ({ ...f, asaas_integrado: !f.asaas_integrado }))}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${editAlunoForm.asaas_integrado ? 'bg-sky-500 text-white' : 'bg-white border border-border text-muted-foreground'}`}>
+                    Asaas
+                  </button>
+                  <button
+                    onClick={() => setEditAlunoForm(f => ({ ...f, voomp_integrado: !f.voomp_integrado }))}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${editAlunoForm.voomp_integrado ? 'bg-orange-500 text-white' : 'bg-white border border-border text-muted-foreground'}`}>
+                    Voomp
                   </button>
                   <div className="ml-auto flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">Status:</span>
@@ -1427,6 +2767,62 @@ export function Financeiro() {
                     <div><label className="text-xs text-muted-foreground">Assinado em</label><Input type="date" value={editAlunoForm.contrato_assinado_em || ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, contrato_assinado_em: e.target.value, contrato_assinado: !!e.target.value || editAlunoForm.contrato_assinado })} className="mt-1 h-8 text-sm" /></div>
                     <div><label className="text-xs text-muted-foreground">ID Autentique</label><Input value={editAlunoForm.autentique_documento_id || ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, autentique_documento_id: e.target.value })} className="mt-1 h-8 text-sm" /></div>
                     <div className="lg:col-span-3"><label className="text-xs text-muted-foreground">Link de assinatura</label><Input value={editAlunoForm.autentique_link_assinatura || ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, autentique_link_assinatura: e.target.value })} placeholder="https://..." className="mt-1 h-8 text-sm" /></div>
+                    <div>
+                      <label className="text-xs text-muted-foreground flex items-center gap-1">
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${editAlunoForm.asaas_integrado ? 'bg-sky-500' : 'bg-zinc-300'}`} />
+                        Link Asaas
+                      </label>
+                      <div className="flex items-center gap-1 mt-1">
+                        <Input value={editAlunoForm.asaas_link || ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, asaas_link: e.target.value })} placeholder="https://asaas.com/..." className="h-8 text-sm flex-1" />
+                        {editAlunoForm.asaas_link && (
+                          <a href={editAlunoForm.asaas_link} target="_blank" rel="noopener noreferrer" className="text-sky-600 hover:text-sky-800 flex-shrink-0">
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground flex items-center gap-1">
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${editAlunoForm.voomp_integrado ? 'bg-orange-500' : 'bg-zinc-300'}`} />
+                        Link Voomp
+                      </label>
+                      <div className="flex items-center gap-1 mt-1">
+                        <Input value={editAlunoForm.voomp_link || ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, voomp_link: e.target.value })} placeholder="https://voomp.com.br/..." className="h-8 text-sm flex-1" />
+                        {editAlunoForm.voomp_link && (
+                          <a href={editAlunoForm.voomp_link} target="_blank" rel="noopener noreferrer" className="text-orange-600 hover:text-orange-800 flex-shrink-0">
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                    <div className="col-span-2 lg:col-span-4">
+                      <label className="text-xs text-muted-foreground">Arquivo do contrato</label>
+                      {editAlunoForm.contrato_arquivo_url ? (
+                        <div className="mt-1 flex items-center gap-2 px-3 py-2 rounded-md border border-emerald-200 bg-emerald-50/60">
+                          <FileText className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                          <span className="text-sm text-emerald-800 flex-1 truncate" title={editAlunoForm.contrato_arquivo_nome}>
+                            {editAlunoForm.contrato_arquivo_nome || 'Contrato'}
+                          </span>
+                          <a href={editAlunoForm.contrato_arquivo_url} target="_blank" rel="noopener noreferrer"
+                            className="text-xs font-semibold text-emerald-700 hover:text-emerald-900 flex-shrink-0 flex items-center gap-1">
+                            <ExternalLink className="h-3 w-3" />Ver
+                          </a>
+                          <button onClick={removeContratoArquivo}
+                            className="text-muted-foreground hover:text-red-500 transition-colors flex-shrink-0 ml-1">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <label className={`mt-1 flex items-center gap-2 px-3 py-2 rounded-md border border-dashed border-border bg-white hover:bg-muted/20 cursor-pointer transition-colors ${uploadingContrato ? 'opacity-60 pointer-events-none' : ''}`}>
+                          <Upload className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <span className="text-sm text-muted-foreground">
+                            {uploadingContrato ? 'Enviando...' : 'Clique para anexar PDF, imagem ou documento'}
+                          </span>
+                          <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                            onChange={handleContratoUpload} disabled={uploadingContrato} />
+                        </label>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -1484,6 +2880,18 @@ export function Financeiro() {
                       </Select>
                     </div>
                     <div>
+                      <label className="text-xs text-muted-foreground">Nº de parcelas</label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={editAlunoForm.total_mensalidades ?? ''}
+                        onChange={e => setEditAlunoForm({ ...editAlunoForm, total_mensalidades: e.target.value ? parseInt(e.target.value) : undefined })}
+                        placeholder={String(paymentMethodTotal(editAlunoForm.forma_pagamento || 'boleto'))}
+                        className="mt-1 h-8 text-sm"
+                      />
+                      <p className="text-[10px] text-muted-foreground mt-0.5">Vazio = padrão do método. Salvar reagenda parcelas.</p>
+                    </div>
+                    <div>
                       <label className="text-xs text-muted-foreground">Valor mensalidade (R$)</label>
                       <Input type="number" step="0.01" value={editAlunoForm.valor_mensalidade ?? ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, valor_mensalidade: e.target.value ? parseFloat(e.target.value) : undefined })} placeholder={turmaAtual?.valor_mensalidade ? `Padrao: R$ ${turmaAtual.valor_mensalidade}` : 'Padrao da turma'} className="mt-1 h-8 text-sm" />
                       <p className="text-[10px] text-muted-foreground mt-0.5">Vazio = usa valor da turma. Salvar atualiza parcelas pendentes.</p>
@@ -1509,7 +2917,7 @@ export function Financeiro() {
                     </div>
                     <div>
                       <label className="text-xs text-muted-foreground">Parcelas calculadas</label>
-                      <Input value={`${pagas}/${total || paymentMethodTotal(editAlunoForm.forma_pagamento)}`} readOnly className="mt-1 h-8 text-sm bg-muted/50" />
+                      <Input value={`${pagas}/${total || (editAlunoForm.total_mensalidades || paymentMethodTotal(editAlunoForm.forma_pagamento))}`} readOnly className="mt-1 h-8 text-sm bg-muted/50" />
                     </div>
                   </div>
                 </div>
@@ -1576,6 +2984,9 @@ export function Financeiro() {
             );
           })()}
           <DialogFooter>
+            <Button variant="outline" onClick={downloadFichaPDF} className="mr-auto gap-1.5">
+              <Download className="h-4 w-4" />Baixar PDF
+            </Button>
             <Button variant="outline" onClick={() => setShowAlunoDetail(false)}>Fechar</Button>
             <Button onClick={saveAlunoDetail} disabled={savingAluno} className="bg-primary text-white"><CheckCircle2 className="h-4 w-4 mr-1" />{savingAluno ? 'Salvando...' : 'Salvar Alteracoes'}</Button>
           </DialogFooter>

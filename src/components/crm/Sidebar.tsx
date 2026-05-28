@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { ensureDefaultLancamentoKanbanColumns } from '@/components/crm/kanban/useKanbanColunas';
@@ -8,14 +8,15 @@ import { toast } from 'sonner';
 import {
   LayoutDashboard, Kanban, Settings, UserCog, FileSpreadsheet,
   MessageCircle, Rocket, BarChart3, CheckSquare, ChevronDown,
-  ChevronLeft, ChevronRight, Plus, Brain, ListTodo, Scale,
-  GraduationCap, GripVertical, Pencil, Check,
+  ChevronLeft, ChevronRight, Plus, Brain, Scale,
+  GraduationCap, GripVertical, Pencil, Check, MessageSquare, TrendingUp, GitBranch, Zap, CalendarDays, ShoppingBag,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
+import { LancamentoWizard } from '@/components/crm/LancamentoWizard';
 
 export type View = AppView;
 
@@ -29,30 +30,32 @@ type MenuItem =
   | { group: string; label: string; icon: React.ElementType; adminOnly?: boolean; children: { key: View; label: string }[] };
 
 const BASE_MENU: MenuItem[] = [
-  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { key: 'pipeline', label: 'Leads Diretos', icon: Kanban },
-  { group: 'lancamentos_legado', label: 'Lancamentos', icon: Rocket, children: [] },
-  { group: 'npa_dinamico', label: 'NPA', icon: BarChart3, children: [] },
-  { group: 'aula_secreta', label: 'Aula Secreta', icon: Rocket, children: [] },
-  { key: 'chat', label: 'Chat', icon: MessageCircle },
-  { key: 'sheets', label: 'Leads Sheets', icon: FileSpreadsheet },
-  { key: 'financeiro', label: 'Financeiro', icon: BarChart3 },
-  { key: 'balanco', label: 'Balanco', icon: Scale },
-  { key: 'team', label: 'Equipe', icon: UserCog, adminOnly: true },
-  {
-    group: 'operacoes',
-    label: 'Operacoes',
-    icon: ListTodo,
-    children: [
-      { key: 'operacoes_tarefas', label: 'Tarefas' },
-      { key: 'operacoes_calendario_geral', label: 'Calendario Geral' },
-      { key: 'operacoes_calendario_conteudo', label: 'Calendario de Conteudo' },
-    ],
-  },
-  { key: 'mapa_mental', label: 'Mapa Mental', icon: Brain },
-  { key: 'rodrygo', label: 'Tarefas Rodrygo', icon: CheckSquare },
-  { key: 'pedagogico', label: 'Pedagogico', icon: GraduationCap },
-  { key: 'settings', label: 'Configuracoes', icon: Settings },
+  // Início
+  { key: 'dashboard',                  label: 'Dashboard',           icon: LayoutDashboard },
+  { key: 'operacoes_calendario_geral', label: 'Calendário',          icon: CalendarDays },
+  // CRM
+  { key: 'pipeline',                   label: 'Leads Diretos',       icon: Kanban },
+  { key: 'chat',                       label: 'Chat',                icon: MessageCircle },
+  { key: 'sheets',                     label: 'Leads Sheets',        icon: FileSpreadsheet },
+  { key: 'produtos',                   label: 'Produtos',            icon: ShoppingBag, adminOnly: true },
+  // Eventos & Funis
+  { group: 'lancamentos_legado',       label: 'Lancamentos',         icon: Rocket,       children: [] },
+  { group: 'npa_dinamico',            label: 'NPA',                  icon: BarChart3,    children: [] },
+  { group: 'aula_secreta',            label: 'Aula Secreta',         icon: Rocket,       children: [] },
+  { key: 'funil_lancamento',          label: 'Funil de Lançamento',  icon: GitBranch },
+  { key: 'disparo_planilha',          label: 'Disparo de Planilha',  icon: Zap },
+  // Financeiro
+  { key: 'financeiro',                label: 'Financeiro',           icon: BarChart3 },
+  { key: 'financeiro_cfo',           label: 'Análise CFO',           icon: TrendingUp },
+  { key: 'balanco',                  label: 'Balanço',               icon: Scale },
+  { key: 'cobranca',                 label: 'Cobrança',              icon: MessageSquare },
+  // Gestão
+  { key: 'mapa_mental',              label: 'Mapa Mental',           icon: Brain },
+  { key: 'rodrygo',                  label: 'Tarefas Rodrygo',       icon: CheckSquare },
+  { key: 'pedagogico',              label: 'Pedagógico',              icon: GraduationCap },
+  // Admin
+  { key: 'team',                    label: 'Equipe',                  icon: UserCog, adminOnly: true },
+  { key: 'settings',                label: 'Configurações',           icon: Settings },
 ];
 
 function getItemId(item: MenuItem) {
@@ -75,16 +78,28 @@ function applyOrder(menu: MenuItem[], order: string[]): MenuItem[] {
   return [...sorted, ...rest];
 }
 
+function SectionDivider({ label }: { label: string }) {
+  return (
+    <div className="px-3 pt-5 pb-1.5">
+      <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40 select-none">{label}</p>
+    </div>
+  );
+}
+
 export function Sidebar({ currentView, onViewChange }: SidebarProps) {
   const { user } = useAuth();
   const isAdmin = user?.tipo === 'admin';
   const permissions = user?.permissions ?? getDefaultPermissions(user?.tipo);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({
-    lancamentos_legado: true,
-    npa_dinamico: true,
-    aula_secreta: true,
-    operacoes: false,
-  });
+
+  const SECTION_BEFORE: Record<string, string> = {
+    dashboard:          'Início',
+    pipeline:           'CRM',
+    lancamentos_legado: 'Eventos & Funis',
+    financeiro:         'Financeiro',
+    mapa_mental:        'Gestão',
+    ...(isAdmin ? { team: 'Admin' } : { settings: 'Admin' }),
+  };
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
   });
@@ -95,16 +110,24 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const [lancamentos, setLancamentos] = useState<{ id: string; nome: string }[]>([]);
-  const [newLancamentoName, setNewLancamentoName] = useState('');
-  const [isLancamentoDialogOpen, setIsLancamentoDialogOpen] = useState(false);
-
   const [npaEventos, setNpaEventos] = useState<{ id: string; nome: string }[]>([]);
-  const [newNpaName, setNewNpaName] = useState('');
-  const [isNpaDialogOpen, setIsNpaDialogOpen] = useState(false);
+
+  // Wizard de lançamento/NPA
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardExistingId, setWizardExistingId] = useState<string | undefined>();
+  const [wizardExistingTipo, setWizardExistingTipo] = useState<'lancamento' | 'npa' | undefined>();
 
   const [aulaSecretaEventos, setAulaSecretaEventos] = useState<{ id: string; nome: string }[]>([]);
   const [newAulaSecretaName, setNewAulaSecretaName] = useState('');
   const [isAulaSecretaDialogOpen, setIsAulaSecretaDialogOpen] = useState(false);
+  const [vencimentosHoje, setVencimentosHoje] = useState(0);
+
+  useEffect(() => {
+    const hoje = new Date();
+    const hojeStr = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+    supabase.from('pagamentos').select('id', { count: 'exact', head: true }).eq('data_vencimento', hojeStr).neq('status', 'pago')
+      .then(({ count }) => setVencimentosHoje(count || 0));
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -199,49 +222,23 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
     setDragOverId(null);
   };
 
-  const handleAddLancamento = async () => {
-    if (!newLancamentoName.trim()) return;
-    try {
-      const { data, error } = await supabase
-        .from('lancamentos')
-        .insert({ nome: newLancamentoName, status: 'planejamento', ativo: false, meta_matriculas: 0, created_at: new Date().toISOString() })
-        .select('id')
-        .single();
-      if (error) { toast.error(`Erro ao criar lancamento: ${error.message}`); return; }
-      if (data) {
-        try {
-          await ensureDefaultLancamentoKanbanColumns(data.id);
-        } catch {
-          toast.warning('Lancamento criado, mas nao foi possivel criar as colunas padrao agora.');
-        }
-        toast.success(`Lancamento "${newLancamentoName}" criado!`);
-        setNewLancamentoName('');
-        setIsLancamentoDialogOpen(false);
-        onViewChange(`lancamentos_${data.id}` as View);
-      }
-    } catch {
-      toast.error('Erro inesperado.');
-    }
+  const handleWizardSuccess = (id: string, tipo: 'lancamento' | 'npa') => {
+    setWizardOpen(false);
+    setWizardExistingId(undefined);
+    setWizardExistingTipo(undefined);
+    onViewChange((tipo === 'lancamento' ? `lancamentos_${id}` : `npa_${id}`) as View);
   };
 
-  const handleAddNpa = async () => {
-    if (!newNpaName.trim()) return;
-    try {
-      const { data, error } = await supabase
-        .from('npa_eventos')
-        .insert({ nome: newNpaName, status: 'em_andamento', ativo: false, created_at: new Date().toISOString() })
-        .select('id')
-        .single();
-      if (error) { toast.error(`Erro ao criar evento NPA: ${error.message}`); return; }
-      if (data) {
-        toast.success(`Evento NPA "${newNpaName}" criado!`);
-        setNewNpaName('');
-        setIsNpaDialogOpen(false);
-        onViewChange(`npa_${data.id}` as View);
-      }
-    } catch {
-      toast.error('Erro inesperado.');
-    }
+  const openWizardNew = (tipo: 'lancamento' | 'npa') => {
+    setWizardExistingId(undefined);
+    setWizardExistingTipo(tipo);
+    setWizardOpen(true);
+  };
+
+  const openWizardEdit = (id: string, tipo: 'lancamento' | 'npa') => {
+    setWizardExistingId(id);
+    setWizardExistingTipo(tipo);
+    setWizardOpen(true);
   };
 
   const handleAddAulaSecreta = async () => {
@@ -317,10 +314,13 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
             if (renderedChildren.length === 0 && item.group !== 'operacoes' && !isAdmin) return null;
 
             const isOpen = !editMode && !collapsed && expanded[item.group];
+            const groupActive = isGroupActive(renderedChildren);
 
+            const groupSection = SECTION_BEFORE[item.group];
             return (
+              <React.Fragment key={item.group}>
+                {groupSection && !collapsed && !editMode && <SectionDivider label={groupSection} />}
               <div
-                key={item.group}
                 draggable={editMode}
                 onDragStart={() => handleDragStart(idx)}
                 onDragOver={(e) => handleDragOver(e, idx, itemId)}
@@ -335,11 +335,11 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
                     'w-full flex items-center rounded transition-all duration-300 text-left text-sm font-600',
                     collapsed ? 'justify-center px-2 py-2.5' : 'gap-2.5 px-3 py-2.5',
                     editMode ? 'cursor-grab active:cursor-grabbing' : '',
-                    isGroupActive(renderedChildren) ? 'text-primary bg-primary/8' : 'text-foreground hover:bg-primary/5 hover:text-primary',
+                    groupActive ? 'text-primary bg-primary/8' : 'text-foreground hover:bg-primary/5 hover:text-primary',
                   )}
                 >
                   {editMode && !collapsed && <GripVertical className="h-3.5 w-3.5 text-foreground/30 flex-shrink-0" />}
-                  <item.icon className={cn('h-4.5 w-4.5 transition-colors duration-300 flex-shrink-0', isGroupActive(renderedChildren) ? 'text-primary' : 'text-foreground/60')} />
+                  <item.icon className={cn('h-4.5 w-4.5 transition-colors duration-300 flex-shrink-0', groupActive ? 'text-primary' : 'text-foreground/60')} />
                   {!collapsed && (
                     <>
                       <span className="flex-1">{item.label}</span>
@@ -350,70 +350,51 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
 
                 {isOpen && !collapsed && (
                   <div className="ml-0 mt-1 space-y-0.5 pl-3 border-l-2 border-primary/15">
-                    {renderedChildren.map((child) => (
-                      <button
-                        key={child.key}
-                        onClick={() => onViewChange(child.key)}
-                        className={cn(
-                          'w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs transition-all duration-300',
-                          currentView === child.key ? 'bg-primary/12 text-primary font-600' : 'text-foreground/70 hover:text-primary hover:bg-primary/5',
-                        )}
-                      >
-                        <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', currentView === child.key ? 'bg-primary' : 'bg-foreground/30')} />
-                        <span className="truncate">{child.label}</span>
-                      </button>
-                    ))}
+                    {renderedChildren.map((child) => {
+                      const isLancOrNpa = item.group === 'lancamentos_legado' || item.group === 'npa_dinamico';
+                      const childId = child.key.replace(/^(lancamentos|npa|aula_secreta)_/, '');
+                      const childTipo = item.group === 'lancamentos_legado' ? 'lancamento' : 'npa';
+                      return (
+                        <div key={child.key} className="flex items-center group">
+                          <button
+                            onClick={() => onViewChange(child.key)}
+                            className={cn(
+                              'flex-1 flex items-center gap-2 px-3 py-2 rounded text-left text-xs transition-all duration-300',
+                              currentView === child.key ? 'bg-primary/12 text-primary font-600' : 'text-foreground/70 hover:text-primary hover:bg-primary/5',
+                            )}
+                          >
+                            <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', currentView === child.key ? 'bg-primary' : 'bg-foreground/30')} />
+                            <span className="truncate">{child.label}</span>
+                          </button>
+                          {isAdmin && isLancOrNpa && (
+                            <button
+                              onClick={() => openWizardEdit(childId, childTipo as 'lancamento' | 'npa')}
+                              className="opacity-0 group-hover:opacity-100 p-1 mr-1 rounded hover:bg-primary/10 transition-all flex-shrink-0"
+                              title="Configurar"
+                            >
+                              <Settings className="h-3 w-3 text-primary/70" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
 
                     {item.group === 'lancamentos_legado' && isAdmin && (
-                      <Dialog open={isLancamentoDialogOpen} onOpenChange={setIsLancamentoDialogOpen}>
-                        <DialogTrigger asChild>
-                          <button className="w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs text-primary hover:bg-primary/10 mt-1 font-600">
-                            <Plus className="h-4 w-4" /> Novo Lancamento
-                          </button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Criar novo lancamento</DialogTitle>
-                            <DialogDescription>Digite o nome do novo lancamento</DialogDescription>
-                          </DialogHeader>
-                          <div className="flex gap-2">
-                            <Input
-                              placeholder="Nome do lancamento"
-                              value={newLancamentoName}
-                              onChange={(e) => setNewLancamentoName(e.target.value)}
-                              onKeyPress={(e) => e.key === 'Enter' && handleAddLancamento()}
-                              className="border border-border focus:border-primary"
-                            />
-                            <Button onClick={handleAddLancamento} className="bg-primary hover:bg-primary/90">Criar</Button>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
+                      <button
+                        onClick={() => openWizardNew('lancamento')}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs text-primary hover:bg-primary/10 mt-1 font-600"
+                      >
+                        <Plus className="h-4 w-4" /> Novo Lançamento
+                      </button>
                     )}
 
                     {item.group === 'npa_dinamico' && isAdmin && (
-                      <Dialog open={isNpaDialogOpen} onOpenChange={setIsNpaDialogOpen}>
-                        <DialogTrigger asChild>
-                          <button className="w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs text-primary hover:bg-primary/10 mt-1 font-600">
-                            <Plus className="h-4 w-4" /> Novo NPA
-                          </button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Criar novo evento NPA</DialogTitle>
-                            <DialogDescription>Digite o nome do novo evento NPA</DialogDescription>
-                          </DialogHeader>
-                          <div className="flex gap-2">
-                            <Input
-                              placeholder="Nome do evento NPA"
-                              value={newNpaName}
-                              onChange={(e) => setNewNpaName(e.target.value)}
-                              onKeyPress={(e) => e.key === 'Enter' && handleAddNpa()}
-                              className="border border-border focus:border-primary"
-                            />
-                            <Button onClick={handleAddNpa} className="bg-primary hover:bg-primary/90">Criar</Button>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
+                      <button
+                        onClick={() => openWizardNew('npa')}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs text-primary hover:bg-primary/10 mt-1 font-600"
+                      >
+                        <Plus className="h-4 w-4" /> Novo NPA
+                      </button>
                     )}
 
                     {item.group === 'aula_secreta' && isAdmin && (
@@ -444,13 +425,17 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
                   </div>
                 )}
               </div>
+              </React.Fragment>
             );
           }
 
           const mi = item as { key: View; label: string; icon: React.ElementType };
+          const keySection = SECTION_BEFORE[mi.key];
+          const isActive = currentView === mi.key;
           return (
+            <React.Fragment key={mi.key}>
+              {keySection && !collapsed && !editMode && <SectionDivider label={keySection} />}
             <div
-              key={mi.key}
               draggable={editMode}
               onDragStart={() => handleDragStart(idx)}
               onDragOver={(e) => handleDragOver(e, idx, itemId)}
@@ -469,13 +454,32 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
                 )}
               >
                 {editMode && !collapsed && <GripVertical className="h-3.5 w-3.5 text-foreground/30 flex-shrink-0" />}
-                <mi.icon className={cn('h-4.5 w-4.5 transition-colors duration-300 flex-shrink-0', currentView === mi.key ? 'text-primary' : 'text-foreground/60')} />
-                {!collapsed && <span>{mi.label}</span>}
+                <div className="relative flex-shrink-0">
+                  <mi.icon className={cn('h-4.5 w-4.5 transition-colors duration-300', currentView === mi.key ? 'text-primary' : 'text-foreground/60')} />
+                  {collapsed && mi.key === 'financeiro' && vencimentosHoje > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-red-500 rounded-full w-2 h-2" />
+                  )}
+                </div>
+                {!collapsed && <span className="flex-1">{mi.label}</span>}
+                {!collapsed && mi.key === 'financeiro' && vencimentosHoje > 0 && (
+                  <span className="ml-auto bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 leading-none">
+                    {vencimentosHoje}
+                  </span>
+                )}
               </button>
             </div>
+            </React.Fragment>
           );
         })}
       </nav>
+
+      <LancamentoWizard
+        open={wizardOpen}
+        onClose={() => { setWizardOpen(false); setWizardExistingId(undefined); setWizardExistingTipo(undefined); }}
+        onSuccess={handleWizardSuccess}
+        existingId={wizardExistingId}
+        existingTipo={wizardExistingTipo}
+      />
     </aside>
   );
 }
@@ -489,25 +493,32 @@ export function MobileNav({ currentView, onViewChange }: MobileNavProps) {
   const { user } = useAuth();
   const isAdmin = user?.tipo === 'admin';
   const permissions = user?.permissions ?? getDefaultPermissions(user?.tipo);
-  const mobileItems: { key: View; label: string; icon: React.ElementType }[] = [
-    { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { key: 'pipeline', label: 'Leads', icon: Kanban },
-    { key: 'chat', label: 'Chat', icon: MessageCircle },
-    { key: 'lancamentos_30', label: 'Lan.', icon: Rocket },
-    { key: 'operacoes_tarefas', label: 'Tarefas', icon: CheckSquare },
-    { key: 'settings', label: 'Config', icon: Settings },
+
+  const allMobileItems: { key: View; label: string; icon: React.ElementType }[] = [
+    { key: 'dashboard',          label: 'Início',    icon: LayoutDashboard },
+    { key: 'pipeline',           label: 'Leads',     icon: Kanban },
+    { key: 'financeiro',                  label: 'Financeiro', icon: BarChart3 },
+    { key: 'cobranca',                    label: 'Cobrança',   icon: MessageSquare },
+    { key: 'operacoes_calendario_geral',  label: 'Calendário', icon: CalendarDays },
+    { key: 'chat',                        label: 'Chat',       icon: MessageCircle },
+    { key: 'settings',           label: 'Config',    icon: Settings },
   ];
 
-  const visibleItems = mobileItems.filter((item) => canAccessView(item.key, permissions, Boolean(isAdmin)));
+  const visibleItems = allMobileItems
+    .filter(item => canAccessView(item.key, permissions, Boolean(isAdmin)))
+    .slice(0, 5); // limite de 5 itens no nav mobile
 
   return (
-    <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border z-50">
-      <div className="flex justify-around py-2">
+    <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border z-50 safe-area-pb">
+      <div className="flex justify-around py-1">
         {visibleItems.map((item) => (
           <button
             key={item.key}
             onClick={() => onViewChange(item.key)}
-            className={cn('flex flex-col items-center gap-1 px-2 py-2 rounded-lg transition-colors', currentView === item.key ? 'text-primary' : 'text-muted-foreground')}
+            className={cn(
+              'flex flex-col items-center gap-0.5 px-2 py-2 rounded-lg transition-colors flex-1',
+              currentView === item.key ? 'text-primary' : 'text-muted-foreground',
+            )}
           >
             <item.icon className="h-5 w-5" />
             <span className="text-[10px] font-medium">{item.label}</span>

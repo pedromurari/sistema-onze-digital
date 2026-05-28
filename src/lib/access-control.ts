@@ -9,9 +9,11 @@ export interface AccessPermissions {
   canViewChat: boolean;
   canViewSheets: boolean;
   canViewFinanceiro: boolean;
+  canViewFinanceiroCfo: boolean;
   canViewAllFinanceiroTurmas: boolean;
   allowedFinanceiroTurmaIds: string[];
   canViewBalanco: boolean;
+  canViewCobranca: boolean;
   canViewOperacoes: boolean;
   canViewMapaMental: boolean;
   canViewRodrygo: boolean;
@@ -23,11 +25,11 @@ export interface AccessPermissions {
 }
 
 export type AppView =
-  | 'dashboard' | 'pipeline' | 'npa_overview' | 'chat' | 'sheets' | 'financeiro' | 'balanco' | 'rodrygo'
+  | 'dashboard' | 'pipeline' | 'npa_overview' | 'chat' | 'sheets' | 'financeiro' | 'financeiro_cfo' | 'balanco' | 'rodrygo'
   | 'lancamentos_30' | 'lancamentos_31' | 'lancamentos_32'
-  | 'team' | 'settings'
+  | 'team' | 'settings' | 'cobranca' | 'funil_lancamento' | 'disparo_planilha'
   | 'operacoes_tarefas' | 'operacoes_calendario_geral' | 'operacoes_calendario_conteudo'
-  | 'mapa_mental' | 'pedagogico';
+  | 'mapa_mental' | 'pedagogico' | 'produtos';
 
 export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
   canViewDashboard: true,
@@ -40,9 +42,11 @@ export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
   canViewChat: true,
   canViewSheets: true,
   canViewFinanceiro: true,
+  canViewFinanceiroCfo: false,
   canViewAllFinanceiroTurmas: true,
   allowedFinanceiroTurmaIds: [],
   canViewBalanco: true,
+  canViewCobranca: false,
   canViewOperacoes: true,
   canViewMapaMental: true,
   canViewRodrygo: true,
@@ -55,6 +59,7 @@ export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
 
 export const DEFAULT_ADMIN_PERMISSIONS: AccessPermissions = {
   ...DEFAULT_NON_ADMIN_PERMISSIONS,
+  canViewCobranca: true,
   canViewTeam: true,
   canViewSettings: true,
 };
@@ -79,9 +84,11 @@ export function normalizePermissionsRow(row: any, role?: string): AccessPermissi
     canViewChat: row.can_view_chat ?? defaults.canViewChat,
     canViewSheets: row.can_view_sheets ?? defaults.canViewSheets,
     canViewFinanceiro: row.can_view_financeiro ?? defaults.canViewFinanceiro,
+    canViewFinanceiroCfo: row.can_view_financeiro_cfo ?? defaults.canViewFinanceiroCfo,
     canViewAllFinanceiroTurmas: row.can_view_all_financeiro_turmas ?? defaults.canViewAllFinanceiroTurmas,
     allowedFinanceiroTurmaIds: Array.isArray(row.allowed_financeiro_turma_ids) ? row.allowed_financeiro_turma_ids.filter(Boolean) : defaults.allowedFinanceiroTurmaIds,
     canViewBalanco: row.can_view_balanco ?? defaults.canViewBalanco,
+    canViewCobranca: row.can_view_cobranca ?? defaults.canViewCobranca,
     canViewOperacoes: row.can_view_operacoes ?? defaults.canViewOperacoes,
     canViewMapaMental: row.can_view_mapa_mental ?? defaults.canViewMapaMental,
     canViewRodrygo: row.can_view_rodrygo ?? defaults.canViewRodrygo,
@@ -105,9 +112,11 @@ export function permissionsToRow(permissions: AccessPermissions) {
     can_view_chat: permissions.canViewChat,
     can_view_sheets: permissions.canViewSheets,
     can_view_financeiro: permissions.canViewFinanceiro,
+    can_view_financeiro_cfo: permissions.canViewFinanceiroCfo,
     can_view_all_financeiro_turmas: permissions.canViewAllFinanceiroTurmas,
     allowed_financeiro_turma_ids: permissions.allowedFinanceiroTurmaIds,
     can_view_balanco: permissions.canViewBalanco,
+    can_view_cobranca: permissions.canViewCobranca,
     can_view_operacoes: permissions.canViewOperacoes,
     can_view_mapa_mental: permissions.canViewMapaMental,
     can_view_rodrygo: permissions.canViewRodrygo,
@@ -158,8 +167,12 @@ export function canAccessView(view: string, permissions: AccessPermissions, isAd
     chat: permissions.canViewChat,
     sheets: permissions.canViewSheets,
     financeiro: permissions.canViewFinanceiro,
+    financeiro_cfo: permissions.canViewFinanceiroCfo,
     balanco: permissions.canViewBalanco,
-    rodrygo: permissions.canViewRodrygo,
+    cobranca:         permissions.canViewCobranca,
+    funil_lancamento: permissions.canViewCobranca,
+    disparo_planilha: permissions.canViewCobranca,
+    rodrygo:          permissions.canViewRodrygo,
     team: permissions.canViewTeam,
     settings: permissions.canViewSettings,
     operacoes_tarefas: permissions.canViewOperacoes,
@@ -167,9 +180,10 @@ export function canAccessView(view: string, permissions: AccessPermissions, isAd
     operacoes_calendario_conteudo: permissions.canViewOperacoes,
     mapa_mental: permissions.canViewMapaMental,
     pedagogico: permissions.canViewPedagogico,
+    produtos: false, // admin-only — isAdmin check at top of function already handles it
   };
 
-  return permissionByView[view as AppView] ?? true;
+  return permissionByView[view as AppView] ?? false; // deny-by-default para views não mapeadas
 }
 
 export function firstAllowedView(permissions: AccessPermissions, isAdmin: boolean, allowedLaunchIds: string[]) {

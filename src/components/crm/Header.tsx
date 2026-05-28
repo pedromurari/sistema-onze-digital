@@ -20,17 +20,17 @@ export function Header({ onAddLead, onAddFlashLead }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-2 lg:gap-3">
-        <Button 
-          onClick={onAddFlashLead} 
-          variant="outline" 
-          className="border border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-colors duration-300" 
+        <Button
+          onClick={onAddFlashLead}
+          variant="outline"
+          className="border border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-colors duration-300"
           title="Adicionar lead rápido"
         >
           <Zap className="h-4 w-4" />
           <span className="hidden sm:inline ml-1">Rápido</span>
         </Button>
-        <Button 
-          onClick={onAddLead} 
+        <Button
+          onClick={onAddLead}
           className="bg-primary hover:bg-primary/90 text-white shadow-sm hover:shadow-md transition-all duration-300"
         >
           + Novo Lead
@@ -41,8 +41,8 @@ export function Header({ onAddLead, onAddFlashLead }: HeaderProps) {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="flex items-center gap-2 p-2 rounded-md hover:bg-muted transition-colors duration-300">
-              <div 
-                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white shadow-sm" 
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white shadow-sm"
                 style={{ backgroundColor: user?.cor || '#AC1131' }}
               >
                 {getInitials(user?.nome || 'U')}
@@ -61,8 +61,8 @@ export function Header({ onAddLead, onAddFlashLead }: HeaderProps) {
             </div>
             <DropdownMenuItem className="cursor-pointer hover:bg-muted transition-colors duration-300"><User className="mr-2 h-4 w-4" />Meu Perfil</DropdownMenuItem>
             <DropdownMenuSeparator className="bg-border" />
-            <DropdownMenuItem 
-              onClick={logout} 
+            <DropdownMenuItem
+              onClick={logout}
               className="cursor-pointer text-destructive focus:text-destructive hover:bg-destructive/5 transition-colors duration-300"
             >
               <LogOut className="mr-2 h-4 w-4" />Sair

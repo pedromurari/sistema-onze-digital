@@ -1,13 +1,268 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useLeads } from '@/contexts/LeadsContext';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { validateWebhookUrl, WebhookUrlValidationError } from '@/lib/webhook';
-import { Webhook, BookOpen, Globe, Plus, Trash2, Send } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { Webhook, BookOpen, Globe, Plus, Trash2, Send, Smartphone, RefreshCw, Loader2, CheckCircle2, XCircle, QrCode, FileText, Copy, ExternalLink, ChevronRight } from 'lucide-react';
+import { EvolutionTaskPanel } from './EvolutionTaskPanel';
+
+interface EvolutionInstance {
+  id: string;
+  instance_name: string;
+  api_url: string;
+  api_key: string;
+  ativo: boolean;
+}
+
+type ConnState = 'open' | 'close' | 'connecting' | 'loading' | 'unknown';
+
+function useEvolutionInstances() {
+  const [instances, setInstances] = useState<EvolutionInstance[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from('evolution_config').select('*').order('instance_name');
+    if (!error && data) setInstances(data as EvolutionInstance[]);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = async (inst: Omit<EvolutionInstance, 'id'>) => {
+    const { error } = await supabase.from('evolution_config').insert({ id: crypto.randomUUID(), ...inst });
+    if (error) { toast({ variant: 'destructive', title: 'Erro', description: error.message }); return false; }
+    await load();
+    return true;
+  };
+
+  const toggle = async (id: string) => {
+    const inst = instances.find(i => i.id === id);
+    if (!inst) return;
+    await supabase.from('evolution_config').update({ ativo: !inst.ativo }).eq('id', id);
+    setInstances(prev => prev.map(i => i.id === id ? { ...i, ativo: !i.ativo } : i));
+  };
+
+  const remove = async (id: string) => {
+    await supabase.from('evolution_config').delete().eq('id', id);
+    setInstances(prev => prev.filter(i => i.id !== id));
+  };
+
+  return { instances, loading, load, save, toggle, remove };
+}
+
+async function fetchConnectionState(inst: EvolutionInstance): Promise<ConnState> {
+  try {
+    const res = await fetch(`${inst.api_url}/instance/connectionState/${inst.instance_name}`, {
+      headers: { apikey: inst.api_key },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return 'unknown';
+    const json = await res.json() as Record<string, unknown>;
+    const state = String(json?.instance?.state ?? json?.state ?? json?.connectionStatus ?? 'unknown').toLowerCase();
+    if (state.includes('open')) return 'open';
+    if (state.includes('connect')) return 'connecting';
+    if (state.includes('close') || state.includes('logout')) return 'close';
+    return 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+async function fetchQrCode(inst: EvolutionInstance): Promise<string | null> {
+  try {
+    // Try connect endpoint first (returns QR)
+    const res = await fetch(`${inst.api_url}/instance/connect/${inst.instance_name}`, {
+      headers: { apikey: inst.api_key },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return null;
+    const json = await res.json() as Record<string, unknown>;
+    return String(json?.base64 ?? json?.qrcode?.base64 ?? json?.code ?? '') || null;
+  } catch {
+    return null;
+  }
+}
+
+function ConnStateBadge({ state }: { state: ConnState }) {
+  if (state === 'loading') return <Badge variant="outline" className="gap-1"><Loader2 className="h-3 w-3 animate-spin" />Verificando</Badge>;
+  if (state === 'open') return <Badge className="gap-1 bg-green-100 text-green-800 border-green-200"><CheckCircle2 className="h-3 w-3" />Conectado</Badge>;
+  if (state === 'connecting') return <Badge variant="outline" className="gap-1 text-yellow-700 border-yellow-300 bg-yellow-50"><Loader2 className="h-3 w-3 animate-spin" />Conectando</Badge>;
+  if (state === 'close') return <Badge variant="outline" className="gap-1 text-red-700 border-red-300 bg-red-50"><XCircle className="h-3 w-3" />Desconectado</Badge>;
+  return <Badge variant="outline" className="text-muted-foreground">Desconhecido</Badge>;
+}
+
+function EvolutionTab() {
+  const { instances, loading, load, save, toggle, remove } = useEvolutionInstances();
+  const [states, setStates] = useState<Record<string, ConnState>>({});
+  const [qrDialog, setQrDialog] = useState<{ open: boolean; inst?: EvolutionInstance; qr?: string; checking: boolean }>({ open: false, checking: false });
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ instance_name: '', api_url: '', api_key: '' });
+  const { toast } = useToast();
+
+  const checkAll = useCallback(async (list: EvolutionInstance[]) => {
+    setStates(prev => Object.fromEntries(list.map(i => [i.id, prev[i.id] ?? 'loading'])));
+    const results = await Promise.all(list.map(async i => ({ id: i.id, state: await fetchConnectionState(i) })));
+    setStates(Object.fromEntries(results.map(r => [r.id, r.state])));
+  }, []);
+
+  useEffect(() => {
+    if (instances.length) checkAll(instances);
+  }, [instances, checkAll]);
+
+  const handleReconnect = async (inst: EvolutionInstance) => {
+    setQrDialog({ open: true, inst, checking: true });
+    const qr = await fetchQrCode(inst);
+    setQrDialog({ open: true, inst, qr: qr ?? undefined, checking: false });
+    if (!qr) toast({ variant: 'destructive', title: 'Erro', description: 'Não foi possível obter o QR code. Verifique a URL e a API key.' });
+  };
+
+  const handleAdd = async () => {
+    if (!form.instance_name || !form.api_url || !form.api_key) {
+      toast({ variant: 'destructive', title: 'Preencha todos os campos' }); return;
+    }
+    const ok = await save({ ...form, ativo: true });
+    if (ok) { setForm({ instance_name: '', api_url: '', api_key: '' }); setAdding(false); toast({ title: 'Instância adicionada' }); }
+  };
+
+  if (loading) return <div className="flex items-center gap-2 text-muted-foreground py-8"><Loader2 className="h-4 w-4 animate-spin" />Carregando instâncias...</div>;
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-6 bg-card border-border">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Instâncias Evolution API</h2>
+            <p className="text-sm text-muted-foreground mt-1">Gerencie as conexões WhatsApp usadas nos lançamentos.</p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => { load(); }} className="gap-1">
+              <RefreshCw className="h-3.5 w-3.5" />Atualizar
+            </Button>
+            <Button size="sm" onClick={() => setAdding(true)} className="gap-1 bg-primary hover:bg-primary/90 text-white">
+              <Plus className="h-3.5 w-3.5" />Nova
+            </Button>
+          </div>
+        </div>
+
+        {instances.length === 0 && !adding && (
+          <div className="text-center py-8 text-muted-foreground">
+            <Smartphone className="h-8 w-8 mx-auto mb-2 opacity-40" />
+            <p className="text-sm">Nenhuma instância configurada.</p>
+          </div>
+        )}
+
+        <div className="space-y-3">
+          {instances.map(inst => (
+            <div key={inst.id} className="flex items-center gap-3 p-3 rounded-lg border border-border bg-muted/30">
+              <Smartphone className="h-4 w-4 text-muted-foreground shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm text-foreground">{inst.instance_name}</p>
+                <p className="text-xs text-muted-foreground truncate">{inst.api_url}</p>
+              </div>
+              <ConnStateBadge state={states[inst.id] ?? 'loading'} />
+              <Switch checked={inst.ativo} onCheckedChange={() => toggle(inst.id)} title={inst.ativo ? 'Instância ativa' : 'Clique para usar esta'} />
+              <Button size="sm" variant="outline" className="gap-1 shrink-0" onClick={() => handleReconnect(inst)}>
+                <QrCode className="h-3.5 w-3.5" />Reconectar
+              </Button>
+              <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive shrink-0" onClick={() => remove(inst.id)}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+
+          {adding && (
+            <div className="p-4 rounded-lg border border-primary/30 bg-primary/5 space-y-3">
+              <p className="text-sm font-medium text-foreground">Nova Instância</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Nome da instância</Label>
+                  <Input placeholder="pm" value={form.instance_name} onChange={e => setForm(f => ({ ...f, instance_name: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">URL da API</Label>
+                  <Input placeholder="https://evolution.exemplo.com" value={form.api_url} onChange={e => setForm(f => ({ ...f, api_url: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">API Key</Label>
+                  <Input placeholder="sua-api-key" type="password" value={form.api_key} onChange={e => setForm(f => ({ ...f, api_key: e.target.value }))} />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={handleAdd} className="bg-primary hover:bg-primary/90 text-white">Salvar</Button>
+                <Button size="sm" variant="outline" onClick={() => setAdding(false)}>Cancelar</Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {/* Prioridade por serviço */}
+      {instances.length > 0 && (
+        <Card className="p-6 bg-card border-border">
+          <h2 className="text-lg font-semibold text-foreground mb-1">Prioridade por Serviço</h2>
+          <p className="text-sm text-muted-foreground mb-5">
+            Selecione qual número envia cada tipo de mensagem e adicione backups opcionais.
+          </p>
+          <div className="grid gap-6 md:grid-cols-3">
+            {(['cobranca', 'funil', 'disparo'] as const).map(task => {
+              const labels: Record<string, string> = { cobranca: 'Cobrança', funil: 'Funil', disparo: 'Disparo' };
+              return (
+                <div key={task} className="rounded-lg border p-4 space-y-3">
+                  <p className="text-sm font-semibold text-foreground">
+                    {task === 'cobranca' ? '💳' : task === 'funil' ? '🎯' : '📢'} {labels[task]}
+                  </p>
+                  <EvolutionTaskPanel task={task} label={labels[task]} />
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      <Dialog open={qrDialog.open} onOpenChange={open => setQrDialog(d => ({ ...d, open }))}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Reconectar {qrDialog.inst?.instance_name}</DialogTitle>
+          </DialogHeader>
+          {qrDialog.checking ? (
+            <div className="flex flex-col items-center gap-3 py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="text-sm text-muted-foreground">Gerando QR code...</p>
+            </div>
+          ) : qrDialog.qr ? (
+            <div className="flex flex-col items-center gap-4">
+              <p className="text-sm text-muted-foreground text-center">Escaneie com o WhatsApp do número que deseja conectar.</p>
+              <img
+                src={qrDialog.qr.startsWith('data:') ? qrDialog.qr : `data:image/png;base64,${qrDialog.qr}`}
+                alt="QR Code WhatsApp"
+                className="w-56 h-56 rounded-lg border border-border"
+              />
+              <Button variant="outline" size="sm" className="gap-1" onClick={() => qrDialog.inst && handleReconnect(qrDialog.inst)}>
+                <RefreshCw className="h-3.5 w-3.5" />Gerar novo QR
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3 py-6 text-center">
+              <XCircle className="h-8 w-8 text-destructive" />
+              <p className="text-sm text-muted-foreground">Não foi possível obter o QR code.<br />Verifique se a instância existe na Evolution API e se a API key está correta.</p>
+              <Button variant="outline" size="sm" onClick={() => qrDialog.inst && handleReconnect(qrDialog.inst)}>Tentar novamente</Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
 export function Settings() {
   const { cursos, fontes, config, addCurso, deleteCurso, addFonte, deleteFonte, updateConfig } = useLeads();
@@ -106,6 +361,10 @@ export function Settings() {
             <Webhook className="h-4 w-4 mr-2" />
             Integrações
           </TabsTrigger>
+          <TabsTrigger value="whatsapp">
+            <Smartphone className="h-4 w-4 mr-2" />
+            WhatsApp
+          </TabsTrigger>
           <TabsTrigger value="cursos">
             <BookOpen className="h-4 w-4 mr-2" />
             Cursos
@@ -113,6 +372,10 @@ export function Settings() {
           <TabsTrigger value="fontes">
             <Globe className="h-4 w-4 mr-2" />
             Fontes
+          </TabsTrigger>
+          <TabsTrigger value="contratos">
+            <FileText className="h-4 w-4 mr-2" />
+            Contratos
           </TabsTrigger>
         </TabsList>
 
@@ -178,6 +441,10 @@ export function Settings() {
               </div>
             </div>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="whatsapp">
+          <EvolutionTab />
         </TabsContent>
 
         <TabsContent value="cursos" className="space-y-4">
@@ -248,6 +515,125 @@ export function Settings() {
               ))}
             </div>
           </Card>
+        </TabsContent>
+
+        {/* ── Contratos / Autentique ─────────────────────────────────────── */}
+        <TabsContent value="contratos" className="space-y-4">
+
+          {/* Fluxo visual */}
+          <Card className="p-6 bg-card border-border">
+            <h2 className="text-lg font-semibold mb-1 flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" /> Fluxo de Contrato
+            </h2>
+            <p className="text-sm text-muted-foreground mb-5">
+              Como funciona o processo integrado de contrato — do pagamento à assinatura.
+            </p>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 text-sm">
+              {[
+                { icon: '💰', label: 'Matrícula confirmada', desc: 'Lead movido para "Matrícula" no Kanban' },
+                { icon: '📩', label: 'Link enviado por WPP', desc: 'URL única gerada automaticamente' },
+                { icon: '📋', label: 'Aluno preenche dados', desc: 'CPF, nascimento, endereço' },
+                { icon: '📝', label: 'Contrato gerado', desc: 'Autentique cria o documento' },
+                { icon: '✅', label: 'Aluno assina', desc: 'Webhook atualiza o sistema' },
+              ].map((step, i, arr) => (
+                <div key={step.label} className="flex items-center gap-2">
+                  <div className="bg-muted/60 rounded-lg p-3 text-center w-32 flex-shrink-0">
+                    <div className="text-2xl mb-1">{step.icon}</div>
+                    <p className="text-[11px] font-semibold leading-tight">{step.label}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">{step.desc}</p>
+                  </div>
+                  {i < arr.length - 1 && <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />}
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* Config Autentique */}
+          <Card className="p-6 bg-card border-border space-y-5">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              🔐 Configuração da Autentique
+            </h2>
+
+            <div className="space-y-3">
+              <div className="flex items-start gap-3 p-4 rounded-lg border border-amber-200 bg-amber-50">
+                <span className="text-2xl flex-shrink-0">1️⃣</span>
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-amber-900">Obter token da API</p>
+                  <p className="text-xs text-amber-700">
+                    Acesse <strong>autentique.com.br → Configurações → API</strong> e copie seu token de acesso.
+                  </p>
+                  <a href="https://app.autentique.com.br/dashboard/configuracoes" target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-amber-700 underline font-medium">
+                    <ExternalLink className="h-3 w-3" /> Abrir Autentique
+                  </a>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 p-4 rounded-lg border border-blue-200 bg-blue-50">
+                <span className="text-2xl flex-shrink-0">2️⃣</span>
+                <div className="space-y-2 w-full">
+                  <p className="text-sm font-semibold text-blue-900">Adicionar secret no Supabase</p>
+                  <p className="text-xs text-blue-700">
+                    Acesse <strong>Supabase → Edge Functions → Secrets</strong> e adicione:
+                  </p>
+                  <div className="flex items-center gap-2 bg-white border border-blue-200 rounded px-3 py-2 font-mono text-xs">
+                    <span className="flex-1 text-blue-900">AUTENTIQUE_TOKEN = seu_token_aqui</span>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText('AUTENTIQUE_TOKEN'); }}
+                      className="p-1 hover:bg-blue-100 rounded"
+                      title="Copiar nome da variável"
+                    >
+                      <Copy className="h-3 w-3 text-blue-600" />
+                    </button>
+                  </div>
+                  <a href="https://supabase.com/dashboard/project/usqiyekfmwwnvkmkdlej/functions" target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-blue-700 underline font-medium">
+                    <ExternalLink className="h-3 w-3" /> Abrir Supabase Functions
+                  </a>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 p-4 rounded-lg border border-violet-200 bg-violet-50">
+                <span className="text-2xl flex-shrink-0">3️⃣</span>
+                <div className="space-y-2 w-full">
+                  <p className="text-sm font-semibold text-violet-900">Configurar Webhook na Autentique</p>
+                  <p className="text-xs text-violet-700">
+                    Em <strong>Autentique → Configurações → Webhooks</strong>, adicione a URL abaixo.
+                    Ela será chamada automaticamente quando o aluno assinar.
+                  </p>
+                  <div className="flex items-center gap-2 bg-white border border-violet-200 rounded px-3 py-2 font-mono text-xs break-all">
+                    <span className="flex-1 text-violet-900">
+                      {import.meta.env.VITE_SUPABASE_URL}/functions/v1/autentique-webhook
+                    </span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/autentique-webhook`);
+                      }}
+                      className="p-1 hover:bg-violet-100 rounded flex-shrink-0"
+                      title="Copiar URL"
+                    >
+                      <Copy className="h-3 w-3 text-violet-600" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 p-4 rounded-lg border border-emerald-200 bg-emerald-50">
+                <span className="text-2xl flex-shrink-0">4️⃣</span>
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-emerald-900">Enviar link para o aluno</p>
+                  <p className="text-xs text-emerald-700">
+                    No <strong>Financeiro → painel do aluno</strong>, clique em "Enviar por WPP" na seção
+                    "Formulário de Contrato". O link tem o formato:
+                  </p>
+                  <div className="font-mono text-xs bg-white border border-emerald-200 rounded px-3 py-2 text-emerald-800 break-all">
+                    {window.location.origin}/assinar/[token-único-do-aluno]
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Card>
+
         </TabsContent>
       </Tabs>
     </div>

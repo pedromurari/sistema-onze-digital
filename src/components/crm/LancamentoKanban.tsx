@@ -15,7 +15,8 @@ import {
 import {
   Plus, Search, AlertCircle, Users, Target, DollarSign,
   Loader2, Power, Trash2, Pencil, TrendingUp, BarChart2,
-  ChevronUp, ChevronDown, Upload, FileText, UserCheck,
+  ChevronUp, ChevronDown, Upload, FileText, UserCheck, Globe, Copy,
+  Send, Play, Square, Pause, X as XIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useKanbanColunas } from './kanban/useKanbanColunas';
@@ -42,6 +43,14 @@ interface Launch {
   meta_campaign_id?: string;
   meta_ad_account_id?: string;
   meta_access_token?: string;
+  grupo_lancamento_jid?: string;
+  grupo_oferta_jid?: string;
+  // Wizard: turma destino (auto-matrícula)
+  turma_destino_id?: string;
+  produto_destino?: string;
+  valor_mensalidade_destino?: number;
+  dia_vencimento_destino?: number;
+  total_mensalidades_destino?: number;
 }
 
 interface LaunchLead {
@@ -66,6 +75,11 @@ interface LaunchLead {
 
 interface LancamentoKanbanProps {
   lancamentoId: string;
+}
+
+interface Turma {
+  id: string; nome: string; produto: string;
+  valor_mensalidade?: number | null; total_mensalidades?: number | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -635,6 +649,417 @@ function TrafegoTab({ lancamento, leads: crmLeads }: {
   );
 }
 
+// ─── Disparo por Coluna — Types ──────────────────────────────────────────────
+
+interface DisparoLeadStatus {
+  leadId: string;
+  nome: string;
+  whatsapp: string;
+  status: 'pending' | 'sending' | 'done' | 'error' | 'skipped';
+  error?: string;
+}
+
+interface KanbanDisparo {
+  id: string;
+  nome: string;
+  colunaIds: string[];
+  colunaNomes: string[];
+  template: string;
+  typingDelayMs: number;
+  minDelayMs: number;
+  maxDelayMs: number;
+  instanceName: string | null;
+  leads: DisparoLeadStatus[];
+  currentIdx: number;
+  status: 'running' | 'paused' | 'done' | 'stopped';
+  startedAt: number;
+  countdownMs: number;
+}
+
+// ─── KanbanDisparoModal ───────────────────────────────────────────────────────
+
+function KanbanDisparoModal({
+  open,
+  onClose,
+  colunas,
+  leads,
+  evoInstances,
+  onStart,
+}: {
+  open: boolean;
+  onClose: () => void;
+  colunas: KanbanColuna[];
+  leads: LaunchLead[];
+  evoInstances: Array<{ instance_name: string }>;
+  onStart: (config: {
+    colunaIds: string[];
+    template: string;
+    typingDelayMs: number;
+    minDelayMs: number;
+    maxDelayMs: number;
+    instanceName: string | null;
+  }) => void;
+}) {
+  const [selectedColIds, setSelectedColIds] = useState<Set<string>>(new Set());
+  const [template, setTemplate] = useState(
+    'Olá {{nome}}! 🎉\n\nSeu acesso está confirmado.\n\n📲 Grupo de Lançamento:\n{{link_grupo}}\n\nNos vemos lá!',
+  );
+  const [typingDelaySecs, setTypingDelaySecs] = useState(3);
+  const [minDelaySecs, setMinDelaySecs] = useState(10);
+  const [maxDelaySecs, setMaxDelaySecs] = useState(25);
+  const [instanceName, setInstanceName] = useState('__priority__');
+  const [activeTab, setActiveTab] = useState<'colunas' | 'mensagem' | 'antibano'>('colunas');
+
+  const toggleCol = (id: string) =>
+    setSelectedColIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+
+  const selectedLeads = leads.filter(l => selectedColIds.has(l.fase) && l.whatsapp);
+  const allSelected   = leads.filter(l => selectedColIds.has(l.fase));
+
+  const previewMessage = template
+    .replace(/\{\{nome\}\}/g, 'João Silva')
+    .replace(/\{\{whatsapp\}\}/g, '5511999999999')
+    .replace(/\{\{link_grupo\}\}/g, 'https://chat.whatsapp.com/Exemplo123')
+    .replace(/\{\{link_aula_1\}\}/g, 'https://exemplo.com/aula1')
+    .replace(/\{\{link_aula_2\}\}/g, 'https://exemplo.com/aula2')
+    .replace(/\{\{link_aula_3\}\}/g, 'https://exemplo.com/aula3');
+
+  const avgSecs = (minDelaySecs + maxDelaySecs) / 2 + typingDelaySecs;
+
+  const handleStart = () => {
+    if (selectedColIds.size === 0) { toast.error('Selecione ao menos uma coluna'); return; }
+    if (!template.trim()) { toast.error('Digite a mensagem'); return; }
+    if (minDelaySecs > maxDelaySecs) { toast.error('Delay mínimo não pode ser maior que o máximo'); return; }
+    onStart({
+      colunaIds: [...selectedColIds],
+      template,
+      typingDelayMs: typingDelaySecs * 1000,
+      minDelayMs: minDelaySecs * 1000,
+      maxDelayMs: maxDelaySecs * 1000,
+      instanceName: instanceName === '__priority__' ? null : instanceName,
+    });
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={o => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-2xl flex flex-col max-h-[90vh]">
+        <DialogHeader className="flex-shrink-0">
+          <DialogTitle className="flex items-center gap-2">
+            <Send className="h-5 w-5 text-blue-600" /> Nova Campanha — Disparo por Coluna
+          </DialogTitle>
+          <DialogDescription>
+            Selecione as colunas do kanban, configure o template e inicie o disparo com anti-ban.
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Tabs */}
+        <div className="flex gap-1 border-b border-border flex-shrink-0">
+          {(['colunas', 'mensagem', 'antibano'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-3 py-1.5 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === tab
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {tab === 'colunas' ? '📋 Colunas' : tab === 'mensagem' ? '💬 Mensagem' : '🛡️ Anti-Ban'}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-y-auto min-h-0 py-4">
+
+          {/* Tab: Colunas */}
+          {activeTab === 'colunas' && (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground mb-3">
+                Selecione as colunas cujos leads receberão a mensagem.
+                Apenas leads <strong>com WhatsApp</strong> serão disparados.
+              </p>
+              {colunas.map(col => {
+                const total   = leads.filter(l => l.fase === col.id).length;
+                const withWpp = leads.filter(l => l.fase === col.id && l.whatsapp).length;
+                const checked = selectedColIds.has(col.id);
+                return (
+                  <label
+                    key={col.id}
+                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                      checked ? 'border-blue-400 bg-blue-50' : 'border-border hover:border-blue-200 hover:bg-blue-50/30'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleCol(col.id)}
+                      className="w-4 h-4 rounded accent-blue-600"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">{col.nome}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {withWpp} com WhatsApp de {total} lead(s)
+                      </p>
+                    </div>
+                    {withWpp === 0 && (
+                      <span className="text-xs text-amber-500 shrink-0">sem WPP</span>
+                    )}
+                  </label>
+                );
+              })}
+              {selectedColIds.size > 0 && (
+                <div className="mt-3 p-3 rounded-lg bg-green-50 border border-green-200">
+                  <p className="text-sm font-medium text-green-800">
+                    ✅ {selectedLeads.length} lead(s) com WhatsApp serão disparados
+                    {allSelected.length > selectedLeads.length && (
+                      <span className="text-green-600 font-normal"> ({allSelected.length - selectedLeads.length} sem WPP serão ignorados)</span>
+                    )}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tab: Mensagem */}
+          {activeTab === 'mensagem' && (
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs text-muted-foreground font-medium block mb-2">Template da mensagem</label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {['{{nome}}', '{{link_grupo}}', '{{link_aula_1}}', '{{link_aula_2}}', '{{link_aula_3}}', '{{whatsapp}}'].map(v => (
+                    <button
+                      key={v}
+                      onClick={() => setTemplate(t => t + v)}
+                      className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 hover:bg-blue-200 font-mono transition-colors"
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  className="w-full h-40 text-sm font-mono border border-border rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+                  value={template}
+                  onChange={e => setTemplate(e.target.value)}
+                  placeholder="Digite a mensagem..."
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground font-medium block mb-2">Prévia (WhatsApp)</label>
+                <div className="bg-[#e5ddd5] rounded-lg p-4 max-h-52 overflow-y-auto">
+                  <div className="bg-white rounded-lg px-3 py-2 shadow-sm max-w-xs ml-auto">
+                    <p className="text-sm whitespace-pre-wrap text-gray-800">{previewMessage}</p>
+                    <p className="text-[10px] text-gray-400 text-right mt-1">12:00 ✓✓</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tab: Anti-Ban */}
+          {activeTab === 'antibano' && (
+            <div className="space-y-4">
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
+                🛡️ Anti-ban simula comportamento humano: indicador de digitação antes de enviar e delays aleatórios entre mensagens.
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground font-medium">Delay mínimo (segundos)</label>
+                  <input
+                    type="number" min={3} max={300} value={minDelaySecs}
+                    onChange={e => setMinDelaySecs(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-md border border-border text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground font-medium">Delay máximo (segundos)</label>
+                  <input
+                    type="number" min={3} max={300} value={maxDelaySecs}
+                    onChange={e => setMaxDelaySecs(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-md border border-border text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground font-medium">Digitação (segundos de "digitando…" antes de enviar)</label>
+                <input
+                  type="number" min={0} max={15} value={typingDelaySecs}
+                  onChange={e => setTypingDelaySecs(Number(e.target.value))}
+                  className="w-full px-3 py-2 rounded-md border border-border text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                <p className="text-xs text-muted-foreground">0 para desativar o indicador de digitação</p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground font-medium">Instância Evolution</label>
+                <select
+                  value={instanceName}
+                  onChange={e => setInstanceName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md border border-border text-sm focus:outline-none focus:ring-2 focus:ring-ring bg-background"
+                >
+                  <option value="__priority__">Automático (por prioridade)</option>
+                  {evoInstances.map(inst => (
+                    <option key={inst.instance_name} value={inst.instance_name}>{inst.instance_name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="p-3 rounded-lg border border-border bg-muted/30">
+                <p className="text-xs text-muted-foreground">
+                  <strong>Estimativa:</strong> {selectedLeads.length} lead(s) × {Math.round(avgSecs)}s médio ≈{' '}
+                  <strong>{Math.round((selectedLeads.length * avgSecs) / 60)} minutos</strong>
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-between items-center pt-3 border-t flex-shrink-0">
+          <p className="text-sm text-muted-foreground">
+            {selectedLeads.length > 0 ? `${selectedLeads.length} lead(s) selecionados` : 'Nenhuma coluna selecionada'}
+          </p>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button
+              onClick={handleStart}
+              disabled={selectedColIds.size === 0 || selectedLeads.length === 0}
+              className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <Send className="h-4 w-4" /> Iniciar Campanha
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── CampanhasDisparoPanel ────────────────────────────────────────────────────
+
+function CampanhasDisparoPanel({
+  disparos,
+  onPause,
+  onResume,
+  onStop,
+  onDismiss,
+}: {
+  disparos: KanbanDisparo[];
+  onPause: (id: string) => void;
+  onResume: (id: string) => void;
+  onStop: (id: string) => void;
+  onDismiss: (id: string) => void;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  if (disparos.length === 0) return null;
+
+  const active = disparos.filter(d => d.status === 'running' || d.status === 'paused').length;
+
+  return (
+    <div className="fixed bottom-4 right-4 w-96 z-50 shadow-2xl rounded-xl border border-border bg-white overflow-hidden">
+      {/* Header */}
+      <button
+        className="w-full flex items-center justify-between px-4 py-2.5 bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+        onClick={() => setCollapsed(c => !c)}
+      >
+        <div className="flex items-center gap-2">
+          <Send className="h-4 w-4" />
+          <span className="text-sm font-semibold">
+            Campanhas{active > 0 ? ` (${active} ativa${active > 1 ? 's' : ''})` : ' (concluídas)'}
+          </span>
+        </div>
+        {collapsed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+      </button>
+
+      {!collapsed && (
+        <div className="max-h-[420px] overflow-y-auto divide-y divide-border">
+          {disparos.map(disp => {
+            const done  = disp.leads.filter(l => l.status === 'done' || l.status === 'error' || l.status === 'skipped').length;
+            const total = disp.leads.length;
+            const pct   = total > 0 ? Math.round((done / total) * 100) : 0;
+            const errors = disp.leads.filter(l => l.status === 'error').length;
+            const sending = disp.leads[disp.currentIdx];
+
+            return (
+              <div key={disp.id} className="p-3 space-y-2">
+                {/* Row 1: Nome + botões */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{disp.nome}</p>
+                    <p className="text-xs text-muted-foreground truncate">{disp.colunaNomes.join(' · ')}</p>
+                  </div>
+                  <div className="flex items-center gap-0.5 flex-shrink-0">
+                    {disp.status === 'running' && (
+                      <button onClick={() => onPause(disp.id)} title="Pausar"
+                        className="p-1.5 rounded hover:bg-amber-50 text-amber-600 transition-colors">
+                        <Pause className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {disp.status === 'paused' && (
+                      <button onClick={() => onResume(disp.id)} title="Retomar"
+                        className="p-1.5 rounded hover:bg-green-50 text-green-600 transition-colors">
+                        <Play className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {(disp.status === 'running' || disp.status === 'paused') && (
+                      <button onClick={() => onStop(disp.id)} title="Parar"
+                        className="p-1.5 rounded hover:bg-red-50 text-red-500 transition-colors">
+                        <Square className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {(disp.status === 'done' || disp.status === 'stopped') && (
+                      <button onClick={() => onDismiss(disp.id)} title="Fechar"
+                        className="p-1.5 rounded hover:bg-muted text-muted-foreground transition-colors">
+                        <XIcon className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Row 2: Progresso */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>{done}/{total} enviados</span>
+                    <span>
+                      {disp.status === 'running' && disp.countdownMs > 0
+                        ? `⏱ ${Math.ceil(disp.countdownMs / 1000)}s`
+                        : disp.status === 'paused' ? '⏸ Pausado'
+                        : disp.status === 'done'    ? '✅ Concluído'
+                        : disp.status === 'stopped' ? '🛑 Parado'
+                        : ''}
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        disp.status === 'done'    ? 'bg-green-500' :
+                        disp.status === 'stopped' ? 'bg-red-400'   : 'bg-blue-500'
+                      }`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Row 3: Lead atual / erros */}
+                {disp.status === 'running' && sending && sending.status === 'sending' && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1 truncate">
+                    <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                    Enviando para {sending.nome}…
+                  </p>
+                )}
+                {errors > 0 && (
+                  <p className="text-xs text-red-500">{errors} erro{errors > 1 ? 's' : ''} de envio</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── CSV Import Helpers ────────────────────────────────────────────────────────
 
 function parseCSV(text: string): { headers: string[]; rows: string[][] } {
@@ -702,12 +1127,35 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
   const [showSyncGrupoModal, setShowSyncGrupoModal] = useState(false);
   const [syncGrupoInput, setSyncGrupoInput] = useState('');
   const [syncingGrupo, setSyncingGrupo] = useState(false);
-  const [syncGrupoResult, setSyncGrupoResult] = useState<{ updated: number; notFound: number } | null>(null);
+  const [syncGrupoResult, setSyncGrupoResult] = useState<{ updated: number; notFound: number; lidCount?: number } | null>(null);
+  const [syncingFromEvo, setSyncingFromEvo] = useState(false);
+  const [syncDebug, setSyncDebug] = useState<Record<string, unknown> | null>(null);
+
+  // Webhook groups config
+  const [showWebhookModal, setShowWebhookModal] = useState(false);
+  const [webhookForm, setWebhookForm] = useState({ grupoLancamentoJid: '', grupoOfertaJid: '' });
+  const [savingWebhook, setSavingWebhook] = useState(false);
+  const WEBHOOK_URL = 'https://usqiyekfmwwnvkmkdlej.supabase.co/functions/v1/webhook-grupo';
 
   // Column management
   const [renamingColuna, setRenamingColuna] = useState<KanbanColuna | null>(null);
   const [deletingColuna, setDeletingColuna] = useState<KanbanColuna | null>(null);
   const [settingsColuna, setSettingsColuna] = useState<KanbanColuna | null>(null);
+
+  // Turmas + confirm matricula modal
+  const [turmas, setTurmas] = useState<Turma[]>([]);
+  const [confirmMatriculaLead, setConfirmMatriculaLead] = useState<LaunchLead | null>(null);
+  const [confirmMatriculaForm, setConfirmMatriculaForm] = useState({
+    turma_id: '', produto: 'psicanalise', valor_mensalidade: '', dia_vencimento: '10', total_mensalidades: '15',
+  });
+  const [savingMatricula, setSavingMatricula] = useState(false);
+
+  // ── Disparo por Coluna (campanhas WPP) ────────────────────────────────────
+  const [disparos, setDisparos] = useState<KanbanDisparo[]>([]);
+  const [showDisparoModal, setShowDisparoModal] = useState(false);
+  const [evoInstances, setEvoInstances] = useState<Array<{ instance_name: string }>>([]);
+  const disparosStopMap  = useRef<Map<string, boolean>>(new Map());
+  const disparosPauseMap = useRef<Map<string, boolean>>(new Map());
 
   // Shared column hook
   const {
@@ -750,9 +1198,170 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
     [],
   );
 
+  // ── Load turmas (for matricula modal) ─────────────────────────────────────
+  useEffect(() => {
+    supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades')
+      .then(({ data }) => setTurmas((data as Turma[]) || []));
+  }, []);
+
+  // ── Load Evolution instances (for disparo modal) ───────────────────────────
+  useEffect(() => {
+    supabase
+      .from('evolution_config')
+      .select('instance_name')
+      .eq('ativo', true)
+      .order('prioridade', { ascending: true })
+      .then(({ data }) => setEvoInstances(data || []));
+  }, []);
+
+  // ── Disparo helpers ────────────────────────────────────────────────────────
+  const countdownDelay = async (disparoId: string, ms: number) => {
+    const step = 200;
+    let elapsed = 0;
+    while (elapsed < ms) {
+      if (disparosStopMap.current.get(disparoId)) return;
+      if (disparosPauseMap.current.get(disparoId)) {
+        // Frozen while paused
+        await new Promise(r => setTimeout(r, step));
+        continue;
+      }
+      setDisparos(prev => prev.map(d => d.id === disparoId ? { ...d, countdownMs: ms - elapsed } : d));
+      await new Promise(r => setTimeout(r, step));
+      elapsed += step;
+    }
+    setDisparos(prev => prev.map(d => d.id === disparoId ? { ...d, countdownMs: 0 } : d));
+  };
+
+  const runDisparo = async (id: string, disp: KanbanDisparo) => {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+    for (let i = 0; i < disp.leads.length; i++) {
+      if (disparosStopMap.current.get(id)) break;
+
+      // Wait while paused
+      while (disparosPauseMap.current.get(id)) {
+        if (disparosStopMap.current.get(id)) break;
+        await new Promise(r => setTimeout(r, 300));
+      }
+      if (disparosStopMap.current.get(id)) break;
+
+      const lead = disp.leads[i];
+
+      // Mark as sending
+      setDisparos(prev => prev.map(d => d.id === id ? {
+        ...d, currentIdx: i,
+        leads: d.leads.map((l, idx) => idx === i ? { ...l, status: 'sending' } : l),
+      } : d));
+
+      const mensagem = disp.template
+        .replace(/\{\{nome\}\}/g, lead.nome)
+        .replace(/\{\{whatsapp\}\}/g, lead.whatsapp);
+
+      try {
+        const res = await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+          },
+          body: JSON.stringify({
+            numero: lead.whatsapp,
+            mensagem,
+            instance_name: disp.instanceName ?? undefined,
+            typing_delay_ms: disp.typingDelayMs,
+          }),
+        });
+        const result = await res.json();
+        setDisparos(prev => prev.map(d => d.id === id ? {
+          ...d, currentIdx: i + 1,
+          leads: d.leads.map((l, idx) => idx === i ? {
+            ...l,
+            status: result.ok ? 'done' : 'error',
+            error: result.ok ? undefined : (result.error ?? 'Erro desconhecido'),
+          } : l),
+        } : d));
+      } catch (e: unknown) {
+        setDisparos(prev => prev.map(d => d.id === id ? {
+          ...d, currentIdx: i + 1,
+          leads: d.leads.map((l, idx) => idx === i ? {
+            ...l, status: 'error', error: (e as Error).message,
+          } : l),
+        } : d));
+      }
+
+      // Random delay before next send (skip after last)
+      if (i < disp.leads.length - 1 && !disparosStopMap.current.get(id)) {
+        const delay = Math.round(
+          disp.minDelayMs + Math.random() * (disp.maxDelayMs - disp.minDelayMs),
+        );
+        await countdownDelay(id, delay);
+      }
+    }
+
+    // Mark final status
+    setDisparos(prev => prev.map(d => d.id === id ? {
+      ...d,
+      status: disparosStopMap.current.get(id) ? 'stopped' : 'done',
+      countdownMs: 0,
+    } : d));
+  };
+
+  const handleStartDisparo = (config: {
+    colunaIds: string[];
+    template: string;
+    typingDelayMs: number;
+    minDelayMs: number;
+    maxDelayMs: number;
+    instanceName: string | null;
+  }) => {
+    const campaignLeads = leads
+      .filter(l => config.colunaIds.includes(l.fase) && l.whatsapp)
+      .map(l => ({
+        leadId: l.id,
+        nome: l.nome,
+        whatsapp: l.whatsapp,
+        status: 'pending' as const,
+      }));
+
+    const colunaNomes = colunas
+      .filter(c => config.colunaIds.includes(c.id))
+      .map(c => c.nome);
+
+    const newId = crypto.randomUUID();
+    const nomeCampanha = `${colunaNomes.join(', ')} · ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+
+    const newDisp: KanbanDisparo = {
+      id: newId,
+      nome: nomeCampanha,
+      colunaIds: config.colunaIds,
+      colunaNomes,
+      template: config.template,
+      typingDelayMs: config.typingDelayMs,
+      minDelayMs: config.minDelayMs,
+      maxDelayMs: config.maxDelayMs,
+      instanceName: config.instanceName,
+      leads: campaignLeads,
+      currentIdx: 0,
+      status: 'running',
+      startedAt: Date.now(),
+      countdownMs: 0,
+    };
+
+    disparosStopMap.current.set(newId, false);
+    disparosPauseMap.current.set(newId, false);
+    setDisparos(prev => [...prev, newDisp]);
+    runDisparo(newId, newDisp);
+    toast.success(`🚀 Campanha iniciada: ${campaignLeads.length} lead(s)`);
+  };
+
   // ── Fetch lancamento + leads ────────────────────────────────────────────────
   useEffect(() => {
     if (!lancamentoId) return;
+    // Clear stale leads from previous lancamento immediately to prevent
+    // the colunas-watch effect from running migrateLegacyLeads on wrong data
+    setLeads([]);
     setLoading(true);
 
     const load = async () => {
@@ -772,6 +1381,10 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
           localStorage.removeItem(lsKey);
         }
         setLancamento(merged as Launch);
+        setWebhookForm({
+          grupoLancamentoJid: (merged as Launch).grupo_lancamento_jid ?? '',
+          grupoOfertaJid:     (merged as Launch).grupo_oferta_jid      ?? '',
+        });
       }
 
       let loadedLeads = (await fetchAllLeads(lancamentoId)) as LaunchLead[];
@@ -799,6 +1412,7 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
     });
 
     // Batch update DB — fire and forget errors so UI is not blocked
+    // Double-check lancamento_id in WHERE clause to prevent cross-lancamento data corruption
     await Promise.all(
       legacy.map(lead => {
         const newFase = (migrated.find(m => m.id === lead.id) as LaunchLead).fase;
@@ -806,6 +1420,7 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
           .from('lancamento_leads')
           .update({ fase: newFase })
           .eq('id', lead.id)
+          .eq('lancamento_id', lancamentoId)
           .then(({ error }) => {
             if (error) console.warn('Migration failed for lead', lead.id, error.message);
           });
@@ -858,6 +1473,9 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
   useEffect(() => {
     if (colunas.length === 0 || leadsRef.current.length === 0) return;
 
+    // Guard: skip if any lead belongs to a different lancamento (stale state during navigation)
+    if (leadsRef.current.some(lead => lead.lancamento_id !== lancamentoId)) return;
+
     const validIds = new Set(colunas.map(coluna => coluna.id));
     const hasLegacyPhase = leadsRef.current.some(lead => !validIds.has(lead.fase));
     if (!hasLegacyPhase) return;
@@ -875,6 +1493,60 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
       cancelled = true;
     };
   }, [colunas]);
+
+  // ── Matricula modal helpers ────────────────────────────────────────────────
+
+  const openConfirmMatricula = (lead: LaunchLead) => {
+    setConfirmMatriculaLead(lead);
+    // Se o wizard configurou turma destino, usa ela; senão cai para primeira turma
+    const hasDestino = !!lancamento?.turma_destino_id;
+    setConfirmMatriculaForm({
+      turma_id: hasDestino ? lancamento!.turma_destino_id! : (turmas[0]?.id ?? ''),
+      produto: hasDestino ? (lancamento!.produto_destino ?? 'psicanalise') : (turmas[0]?.produto ?? 'psicanalise'),
+      valor_mensalidade: hasDestino
+        ? String(lancamento!.valor_mensalidade_destino ?? '109.90')
+        : String(turmas[0]?.valor_mensalidade ?? '109.90'),
+      dia_vencimento: hasDestino
+        ? String(lancamento!.dia_vencimento_destino ?? 10)
+        : '10',
+      total_mensalidades: hasDestino
+        ? String(lancamento!.total_mensalidades_destino ?? 15)
+        : String(turmas[0]?.total_mensalidades ?? '15'),
+    });
+  };
+
+  const handleConfirmMatricula = async () => {
+    if (!confirmMatriculaLead) return;
+    setSavingMatricula(true);
+    const { data: alunoData, error } = await supabase.from('alunos').insert({
+      nome: confirmMatriculaLead.nome,
+      whatsapp: confirmMatriculaLead.whatsapp || null,
+      email: confirmMatriculaLead.email || null,
+      turma_id: confirmMatriculaForm.turma_id || null,
+      produto: confirmMatriculaForm.produto,
+      valor_mensalidade: Number(confirmMatriculaForm.valor_mensalidade) || null,
+      dia_vencimento: Number(confirmMatriculaForm.dia_vencimento) || null,
+      total_mensalidades: Number(confirmMatriculaForm.total_mensalidades) || 15,
+      status: 'pendente',  // ← fica pendente até preencher o formulário
+      data_matricula: new Date().toISOString().slice(0, 10),
+    }).select('id, contrato_token').single();
+    setSavingMatricula(false);
+    if (error) { toast.error('Erro ao criar aluno: ' + error.message); return; }
+    toast.success('Aluno pré-cadastrado! Link do formulário enviado via WPP.');
+    setConfirmMatriculaLead(null);
+
+    // ── Envio do link do formulário via WPP ───────────────────────────────────
+    // O aluno preenche o formulário → sistema ativa no Financeiro + gera contrato
+    if (alunoData?.contrato_token && confirmMatriculaLead.whatsapp) {
+      const formularioUrl = `${window.location.origin}/formulario/${alunoData.contrato_token}`;
+      supabase.functions.invoke('wpp-enviar', {
+        body: {
+          numero:   confirmMatriculaLead.whatsapp,
+          mensagem: `Olá, ${confirmMatriculaLead.nome.split(' ')[0]}! 🎉\n\nSua matrícula foi pré-aprovada! Preencha seus dados para finalizar e receber o contrato:\n\n${formularioUrl}\n\nÉ rapidinho, menos de 1 minuto! 😊`,
+        },
+      }).catch(() => {/* silencioso */});
+    }
+  };
 
   // ── Move lead ───────────────────────────────────────────────────────────────
   const handleMoveLead = useCallback(async (leadId: string, colunaId: string) => {
@@ -900,9 +1572,16 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
       return;
     }
 
-    setLeads(prev => prev.map(l => l.id === leadId ? (updated as LaunchLead) : l));
+    const updatedLead = updated as LaunchLead;
+    setLeads(prev => prev.map(l => l.id === leadId ? updatedLead : l));
     setTimeout(() => { pendingUpdates.current.delete(leadId); }, 5000);
-  }, []);
+
+    // If moved to matricula column, offer to register in financeiro
+    if (coluna?.nome.toLowerCase().includes('matricul') && updatedLead.matriculado) {
+      openConfirmMatricula(updatedLead);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turmas]);
 
   // ── Add lead ────────────────────────────────────────────────────────────────
   const handleAddLead = async () => {
@@ -1005,31 +1684,32 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
     if (!syncGrupoInput.trim()) return;
     setSyncingGrupo(true);
 
-    // Normalize phone to last 11 digits (DDD + número), removing country code 55 if present
     const normalizePhone = (raw: string) => {
       const digits = raw.replace(/\D/g, '');
       if ((digits.length === 13 || digits.length === 12) && digits.startsWith('55')) return digits.slice(2);
       return digits.slice(-11);
     };
 
-    // Extract phoneNumber fields (format: "5511999999999@s.whatsapp.net") first,
-    // falling back to any 8+ digit sequence if none found
-    const phoneFieldMatches = [...syncGrupoInput.matchAll(/"phoneNumber"\s*:\s*"(\d+)@/g)].map(m => m[1]);
-    const rawNumbers = phoneFieldMatches.length > 0
-      ? phoneFieldMatches
-      : (syncGrupoInput.match(/(\d{8,})@s\.whatsapp\.net/g) || []).map(m => m.replace(/@.*/, ''))
-        .concat((syncGrupoInput.match(/\d{8,}/g) || []));
-    const uniqueRaw = [...new Set(rawNumbers)];
-    // Compare by last 8 digits (core number without area code or 9-prefix)
-    // WhatsApp stores old 8-digit format; leads may have new 9-digit format
-    const groupSuffix8 = new Set(uniqueRaw.map(n => normalizePhone(n).slice(-8)));
+    // Extrai SOMENTE JIDs reais de telefone: @s.whatsapp.net ou @c.us
+    // @lid são IDs internos do WhatsApp (não são números de telefone)
+    const phoneJids = [
+      ...[...syncGrupoInput.matchAll(/"phoneNumber"\s*:\s*"(\d{8,})@/g)].map(m => m[1]),
+      ...(syncGrupoInput.match(/\d{8,}@(?:s\.whatsapp\.net|c\.us)/g) || []).map(m => m.replace(/@.*/, '')),
+    ];
+    const uniquePhones = [...new Set(phoneJids)];
+
+    // Conta @lid separadamente — não podem ser comparados a números de telefone
+    const lidCount = new Set(syncGrupoInput.match(/\d{7,}@lid/g) || []).size;
+
+    const groupSuffix8 = new Set(uniquePhones.map(n => normalizePhone(n).slice(-8)));
 
     const matchedLeads = leads.filter(lead => {
+      if (!lead.whatsapp) return false;
       const norm = normalizePhone(lead.whatsapp);
       return groupSuffix8.has(norm.slice(-8));
     });
 
-    const notFound = uniqueRaw.length - matchedLeads.length;
+    const notFound = uniquePhones.length - matchedLeads.length;
 
     const BATCH = 100;
     let updated = 0;
@@ -1046,7 +1726,52 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
     }
 
     setSyncingGrupo(false);
-    setSyncGrupoResult({ updated, notFound: Math.max(0, notFound) });
+    setSyncGrupoResult({ updated, notFound: Math.max(0, notFound), lidCount });
+  };
+
+  // ── Sync group participants live from Evolution API (server-side) ─────────────
+  const handleSyncFromEvolution = async (tipo: 'lancamento' | 'oferta' = 'lancamento') => {
+    setSyncingFromEvo(true);
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+      const res = await fetch(`${supabaseUrl}/functions/v1/sync-grupo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
+        body: JSON.stringify({ lancamentoId, tipo }),
+      });
+
+      const result = await res.json();
+
+      if (!res.ok || result.error) {
+        toast.error(result.error ?? 'Erro ao sincronizar grupo');
+        return;
+      }
+
+      setSyncGrupoResult({ updated: result.updated, notFound: result.notFound });
+
+      if (result._debug) {
+        setSyncDebug(result._debug);
+        console.group('sync-grupo debug');
+        console.log('Participants (Evolution API):', result._debug.sampleParticipants);
+        console.log('Participant suffix8:', result._debug.sampleParticipantSuffix8);
+        console.log('Lead phones (DB):', result._debug.sampleLeadPhones);
+        console.log('Lead suffix8:', result._debug.sampleLeadSuffix8);
+        console.groupEnd();
+      }
+
+      // Reload leads so kanban reflects the updates
+      if (result.updated > 0) {
+        const fresh = await fetchAllLeads(lancamentoId);
+        const normalized = await normalizeLeadsToCurrentColunas(fresh as LaunchLead[]);
+        setLeads(normalized);
+      }
+    } catch (e: unknown) {
+      toast.error('Erro ao sincronizar: ' + (e as Error).message);
+    } finally {
+      setSyncingFromEvo(false);
+    }
   };
 
   // ── Toggle active ───────────────────────────────────────────────────────────
@@ -1079,6 +1804,27 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
     toast.success('Lançamento deletado!');
     setShowDeleteModal(false);
     navigate('/dashboard');
+  };
+
+  // ── Save webhook group config ───────────────────────────────────────────────
+  const handleSaveWebhook = async () => {
+    setSavingWebhook(true);
+    const { error } = await supabase
+      .from('lancamentos')
+      .update({
+        grupo_lancamento_jid: webhookForm.grupoLancamentoJid.trim() || null,
+        grupo_oferta_jid:     webhookForm.grupoOfertaJid.trim()     || null,
+      })
+      .eq('id', lancamentoId);
+    setSavingWebhook(false);
+    if (error) { toast.error('Erro ao salvar: ' + error.message); return; }
+    setLancamento(prev => prev ? {
+      ...prev,
+      grupo_lancamento_jid: webhookForm.grupoLancamentoJid.trim() || undefined,
+      grupo_oferta_jid:     webhookForm.grupoOfertaJid.trim()     || undefined,
+    } : prev);
+    toast.success('Configuração de webhook salva!');
+    setShowWebhookModal(false);
   };
 
   // ── Delete lead ─────────────────────────────────────────────────────────────
@@ -1138,9 +1884,15 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
       })
       .eq('id', editingLead.id);
     if (error) { toast.error('Erro ao salvar lead'); return; }
-    setLeads(prev => prev.map(l => l.id === editingLead.id ? { ...l, ...editLeadForm } : l));
+    const updatedLead = { ...editingLead, ...editLeadForm };
+    setLeads(prev => prev.map(l => l.id === editingLead.id ? updatedLead : l));
+    const wasMatriculado = editingLead.matriculado;
     setEditingLead(null);
     toast.success('Lead atualizado!');
+    // If newly marked as matriculado, offer to register in financeiro
+    if (!wasMatriculado && editLeadForm.matriculado) {
+      openConfirmMatricula(updatedLead);
+    }
   };
 
   // ── Delete column (move orphaned leads to first remaining column) ───────────
@@ -1205,6 +1957,18 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
           )}
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline" size="sm"
+            onClick={() => setShowWebhookModal(true)}
+            className="gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50"
+            title="Configurar webhook de grupo WhatsApp"
+          >
+            <Globe className="h-4 w-4" />
+            Webhook Grupos
+            {(lancamento.grupo_lancamento_jid || lancamento.grupo_oferta_jid) && (
+              <span className="w-2 h-2 rounded-full bg-green-500 ml-0.5" />
+            )}
+          </Button>
           <Button variant="destructive" size="sm" onClick={() => setShowDeleteModal(true)} className="gap-2">
             <Trash2 className="h-4 w-4" />
             Apagar
@@ -1326,6 +2090,15 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
             <Button variant="default" className="gap-2" onClick={() => setShowAddLeadDialog(true)}>
               <Plus className="h-4 w-4" />
               Adicionar Lead
+            </Button>
+            <Button
+              variant="outline"
+              className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
+              onClick={() => setShowDisparoModal(true)}
+              title="Disparar mensagem WhatsApp para leads de colunas selecionadas"
+            >
+              <Send className="h-4 w-4" />
+              Disparar
             </Button>
           </div>
 
@@ -1615,6 +2388,47 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
 
           {!syncGrupoResult ? (
             <div className="flex flex-col gap-4 min-h-0 flex-1">
+              {/* Live sync from Evolution API */}
+              {lancamento?.grupo_lancamento_jid && (
+                <div className="rounded-lg border border-border bg-muted/30 p-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">Buscar participantes do WhatsApp</p>
+                    <p className="text-xs text-muted-foreground truncate">Grupo: {lancamento.grupo_lancamento_jid}</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => handleSyncFromEvolution('lancamento')}
+                    disabled={syncingFromEvo}
+                    className="shrink-0 gap-1.5"
+                  >
+                    {syncingFromEvo ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Buscando...</> : <><Users className="h-3.5 w-3.5" />Sincronizar</>}
+                  </Button>
+                </div>
+              )}
+              {lancamento?.grupo_oferta_jid && (
+                <div className="rounded-lg border border-border bg-muted/30 p-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">Buscar participantes — Grupo Oferta</p>
+                    <p className="text-xs text-muted-foreground truncate">Grupo: {lancamento.grupo_oferta_jid}</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleSyncFromEvolution('oferta')}
+                    disabled={syncingFromEvo}
+                    className="shrink-0 gap-1.5"
+                  >
+                    {syncingFromEvo ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Buscando...</> : <><Users className="h-3.5 w-3.5" />Sincronizar</>}
+                  </Button>
+                </div>
+              )}
+              {(lancamento?.grupo_lancamento_jid || lancamento?.grupo_oferta_jid) && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <div className="flex-1 h-px bg-border" />
+                  <span>ou importe manualmente</span>
+                  <div className="flex-1 h-px bg-border" />
+                </div>
+              )}
               {/* File upload */}
               <label className="flex items-center gap-3 border border-dashed border-border rounded-lg px-4 py-3 cursor-pointer hover:border-primary transition-colors">
                 <Upload className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -1645,9 +2459,14 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
                 onChange={e => setSyncGrupoInput(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                {syncGrupoInput
-                  ? `${[...syncGrupoInput.matchAll(/"phoneNumber"\s*:\s*[\n\r\s]*"(\d+)@/g)].length || (syncGrupoInput.match(/\d{8,}/g) || []).length} número(s) detectado(s)`
-                  : 'Aguardando arquivo ou colagem...'}
+                {syncGrupoInput ? (() => {
+                  const phones = new Set([
+                    ...[...syncGrupoInput.matchAll(/"phoneNumber"\s*:\s*"(\d{8,})@/g)].map(m => m[1]),
+                    ...(syncGrupoInput.match(/\d{8,}@(?:s\.whatsapp\.net|c\.us)/g) || []).map(m => m.replace(/@.*/, '')),
+                  ]);
+                  const lids = new Set(syncGrupoInput.match(/\d{7,}@lid/g) || []);
+                  return `${phones.size} telefone(s) detectado(s)${lids.size > 0 ? ` · ${lids.size} @lid (IDs internos — não mapeáveis)` : ''}`;
+                })() : 'Aguardando arquivo ou colagem...'}
               </p>
               <div className="flex justify-end gap-2 pt-2 border-t flex-shrink-0">
                 <Button variant="outline" onClick={() => setShowSyncGrupoModal(false)}>Cancelar</Button>
@@ -1662,14 +2481,35 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
             </div>
           ) : (
             <div className="space-y-4 text-center py-6">
-              <div className="text-4xl">✅</div>
+              <div className="text-4xl">{syncGrupoResult.updated > 0 ? '✅' : '⚠️'}</div>
               <div>
                 <p className="text-lg font-semibold">{syncGrupoResult.updated} lead(s) marcado(s) como no grupo!</p>
                 {syncGrupoResult.notFound > 0 && (
-                  <p className="text-sm text-muted-foreground mt-1">{syncGrupoResult.notFound} número(s) do grupo não encontrado(s) na planilha.</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {syncGrupoResult.notFound} número(s) de telefone do grupo não encontrado(s) nos leads.
+                  </p>
+                )}
+                {!!syncGrupoResult.lidCount && syncGrupoResult.lidCount > 0 && (
+                  <p className="text-sm text-amber-600 mt-1">
+                    {syncGrupoResult.lidCount} participante(s) com @lid — IDs internos do WhatsApp, não são números de telefone.
+                    Use o botão "Sincronizar" acima (Evolution API) para resolvê-los automaticamente.
+                  </p>
                 )}
               </div>
-              <Button onClick={() => setShowSyncGrupoModal(false)}>Fechar</Button>
+              {syncGrupoResult.updated === 0 && syncDebug && (
+                <div className="text-left bg-muted rounded-lg p-3 text-xs font-mono space-y-1 max-h-48 overflow-y-auto">
+                  <p className="font-semibold text-foreground mb-1">Debug — formato dos números:</p>
+                  <p className="text-muted-foreground">Evolution API (participantes):</p>
+                  {(syncDebug.sampleParticipants as string[]).map((p, i) => (
+                    <p key={i} className="text-green-700">{p} → suffix8: {(syncDebug.sampleParticipantSuffix8 as string[])[i]}</p>
+                  ))}
+                  <p className="text-muted-foreground mt-1">Leads no banco:</p>
+                  {(syncDebug.sampleLeadPhones as string[]).map((p, i) => (
+                    <p key={i} className="text-blue-700">{p} → suffix8: {(syncDebug.sampleLeadSuffix8 as string[])[i]}</p>
+                  ))}
+                </div>
+              )}
+              <Button onClick={() => { setShowSyncGrupoModal(false); setSyncDebug(null); }}>Fechar</Button>
             </div>
           )}
         </DialogContent>
@@ -1754,6 +2594,122 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
         onClose={() => setDeletingColuna(null)}
       />
 
+      {/* ── Confirmar Matrícula no Financeiro ── */}
+      <Dialog open={!!confirmMatriculaLead} onOpenChange={() => setConfirmMatriculaLead(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserCheck className="h-5 w-5 text-emerald-600" /> Registrar Matrícula no Financeiro
+            </DialogTitle>
+          </DialogHeader>
+
+          {lancamento?.turma_destino_id ? (
+            /* ── Modo rápido: turma pré-configurada pelo wizard ── */
+            <div className="space-y-4">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 text-sm space-y-2">
+                <p className="font-medium text-emerald-800">
+                  {confirmMatriculaLead?.nome}
+                </p>
+                <p className="text-emerald-700">
+                  Turma: <strong>{turmas.find(t => t.id === lancamento.turma_destino_id)?.nome ?? 'Turma configurada'}</strong>
+                </p>
+                <div className="flex gap-4 text-xs text-emerald-600">
+                  <span>R$ {Number(confirmMatriculaForm.valor_mensalidade).toFixed(2)}</span>
+                  <span>·</span>
+                  <span>Dia {confirmMatriculaForm.dia_vencimento}</span>
+                  <span>·</span>
+                  <span>{confirmMatriculaForm.total_mensalidades}x</span>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Após confirmar: boas-vindas e link do contrato serão enviados automaticamente via WhatsApp.
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => setConfirmMatriculaLead(null)}>Cancelar</Button>
+                <Button
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  size="sm"
+                  onClick={handleConfirmMatricula}
+                  disabled={savingMatricula}
+                >
+                  {savingMatricula ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Registrando...</> : '✓ Confirmar Matrícula'}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            /* ── Modo completo: selecionar turma manualmente ── */
+            <>
+              <DialogDescription>
+                <strong>{confirmMatriculaLead?.nome}</strong> foi marcado como matriculado.
+                Deseja criar o registro de aluno no sistema financeiro?
+              </DialogDescription>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Turma</label>
+                  <Select
+                    value={confirmMatriculaForm.turma_id}
+                    onValueChange={v => {
+                      const t = turmas.find(x => x.id === v);
+                      setConfirmMatriculaForm(f => ({
+                        ...f,
+                        turma_id: v,
+                        produto: t?.produto ?? f.produto,
+                        valor_mensalidade: String(t?.valor_mensalidade ?? f.valor_mensalidade),
+                        total_mensalidades: String(t?.total_mensalidades ?? f.total_mensalidades),
+                      }));
+                    }}
+                  >
+                    <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Selecionar turma..." /></SelectTrigger>
+                    <SelectContent>
+                      {turmas.map(t => <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Valor mensalidade</label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">R$</span>
+                      <Input
+                        type="number" step="0.01" className="pl-8 h-9 text-sm"
+                        value={confirmMatriculaForm.valor_mensalidade}
+                        onChange={e => setConfirmMatriculaForm(f => ({ ...f, valor_mensalidade: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Dia vencimento</label>
+                    <Input
+                      type="number" min={1} max={31} className="h-9 text-sm"
+                      value={confirmMatriculaForm.dia_vencimento}
+                      onChange={e => setConfirmMatriculaForm(f => ({ ...f, dia_vencimento: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Total de parcelas</label>
+                  <Input
+                    type="number" min={1} className="h-9 text-sm"
+                    value={confirmMatriculaForm.total_mensalidades}
+                    onChange={e => setConfirmMatriculaForm(f => ({ ...f, total_mensalidades: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 mt-4">
+                <Button variant="outline" onClick={() => setConfirmMatriculaLead(null)}>Não agora</Button>
+                <Button
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  onClick={handleConfirmMatricula}
+                  disabled={savingMatricula}
+                >
+                  {savingMatricula ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Registrando...</> : 'Registrar Aluno'}
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* ── Edit Lead Modal ── */}
       <Dialog open={!!editingLead} onOpenChange={() => setEditingLead(null)}>
         <DialogContent className="max-w-sm">
@@ -1793,6 +2749,122 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
               <Button variant="outline" onClick={() => setEditingLead(null)}>Cancelar</Button>
               <Button onClick={handleSaveEditLead}>Salvar</Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Disparo por Coluna Modal ── */}
+      <KanbanDisparoModal
+        open={showDisparoModal}
+        onClose={() => setShowDisparoModal(false)}
+        colunas={colunas}
+        leads={leads}
+        evoInstances={evoInstances}
+        onStart={handleStartDisparo}
+      />
+
+      {/* ── Campanhas Disparo Panel (floating) ── */}
+      <CampanhasDisparoPanel
+        disparos={disparos}
+        onPause={id => {
+          disparosPauseMap.current.set(id, true);
+          setDisparos(prev => prev.map(d => d.id === id ? { ...d, status: 'paused' } : d));
+        }}
+        onResume={id => {
+          disparosPauseMap.current.set(id, false);
+          setDisparos(prev => prev.map(d => d.id === id ? { ...d, status: 'running' } : d));
+        }}
+        onStop={id => {
+          disparosStopMap.current.set(id, true);
+          setDisparos(prev => prev.map(d => d.id === id ? { ...d, status: 'stopped', countdownMs: 0 } : d));
+        }}
+        onDismiss={id => setDisparos(prev => prev.filter(d => d.id !== id))}
+      />
+
+      {/* ── Webhook Grupos Modal ── */}
+      <Dialog open={showWebhookModal} onOpenChange={setShowWebhookModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Globe className="h-5 w-5 text-blue-600" />
+              Webhook — Entrada no Grupo WhatsApp
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-5 py-1">
+            {/* URL do webhook */}
+            <div className="space-y-1.5">
+              <p className="text-sm font-medium text-foreground">URL do Webhook (copie para a Evolution API)</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 px-3 py-2 rounded-md bg-muted text-xs font-mono text-foreground break-all select-all">
+                  {WEBHOOK_URL}
+                </code>
+                <Button
+                  size="sm" variant="outline"
+                  onClick={() => { navigator.clipboard.writeText(WEBHOOK_URL); toast.success('URL copiada!'); }}
+                  className="shrink-0 gap-1.5"
+                >
+                  <Copy className="h-3.5 w-3.5" /> Copiar
+                </Button>
+              </div>
+            </div>
+
+            {/* Instruções */}
+            <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-xs text-blue-800 space-y-1">
+              <p className="font-semibold">Como configurar na Evolution API:</p>
+              <ol className="list-decimal list-inside space-y-0.5 text-blue-700">
+                <li>Acesse sua instância → <strong>Webhook</strong></li>
+                <li>Cole a URL acima e marque o evento <strong>GROUP_PARTICIPANTS_UPDATE</strong></li>
+                <li>Salve e ative o webhook</li>
+                <li>Cole os JIDs dos grupos abaixo (encontre em <em>Grupos → ID do grupo</em>)</li>
+              </ol>
+            </div>
+
+            {/* JID Grupo Lançamento */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">
+                JID do Grupo de Lançamento
+                {lancamento?.grupo_lancamento_jid && (
+                  <span className="ml-2 text-xs font-normal text-green-600">● configurado</span>
+                )}
+              </label>
+              <input
+                className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="120363XXXXXXXXXX@g.us"
+                value={webhookForm.grupoLancamentoJid}
+                onChange={e => setWebhookForm(f => ({ ...f, grupoLancamentoJid: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">
+                Quando alguém entrar neste grupo: marca <code className="bg-muted px-1 rounded">no_grupo = true</code> e move o lead para a coluna <em>Grupo Lançamento</em>.
+              </p>
+            </div>
+
+            {/* JID Grupo Oferta */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">
+                JID do Grupo de Oferta
+                {lancamento?.grupo_oferta_jid && (
+                  <span className="ml-2 text-xs font-normal text-green-600">● configurado</span>
+                )}
+              </label>
+              <input
+                className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="120363YYYYYYYYYY@g.us"
+                value={webhookForm.grupoOfertaJid}
+                onChange={e => setWebhookForm(f => ({ ...f, grupoOfertaJid: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">
+                Quando alguém entrar neste grupo: marca <code className="bg-muted px-1 rounded">grupo_oferta = true</code> e move para <em>Grupo Oferta</em>.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setShowWebhookModal(false)}>Cancelar</Button>
+            <Button onClick={handleSaveWebhook} disabled={savingWebhook} className="gap-2">
+              {savingWebhook ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe className="h-4 w-4" />}
+              Salvar configuração
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

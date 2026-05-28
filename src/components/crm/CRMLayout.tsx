@@ -1,29 +1,44 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { canAccessView, firstAllowedView, getDefaultPermissions } from '@/lib/access-control';
 import { Lead } from '@/types/crm';
 import { Header } from './Header';
 import { Sidebar, MobileNav, type View } from './Sidebar';
-import { Dashboard } from './Dashboard';
-import { Pipeline } from './Pipeline';
-import { SheetsLeads } from './SheetsLeads';
-import { Chat } from './Chat';
-import { TeamManagement } from './TeamManagement';
-import { Settings } from './Settings';
 import { LeadModal } from './LeadModal';
 import { FlashLeadModal } from './FlashLeadModal';
-import { NPAEventos } from './NPAEventos';
-import { Operacoes } from './Operacoes';
-import { MapaMental } from './MapaMental';
-import { Financeiro } from './Financeiro';
-import { Balanco } from './Balanco';
-import { Rodrygo } from './Rodrygo';
-import { Pedagogico } from '../pedagogico/Pedagogico';
-import { LancamentoKanban } from './LancamentoKanban';
-import NPAKanban from './NPAKanban';
-import { AulaSecretaKanban } from './AulaSecretaKanban';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, Lock } from 'lucide-react';
+
+// Code splitting: cada módulo carrega só quando o usuário navega até ele
+const Dashboard        = lazy(() => import('./Dashboard').then(m => ({ default: m.Dashboard })));
+const Pipeline         = lazy(() => import('./Pipeline').then(m => ({ default: m.Pipeline })));
+const SheetsLeads      = lazy(() => import('./SheetsLeads').then(m => ({ default: m.SheetsLeads })));
+const Chat             = lazy(() => import('./Chat').then(m => ({ default: m.Chat })));
+const TeamManagement   = lazy(() => import('./TeamManagement').then(m => ({ default: m.TeamManagement })));
+const Settings         = lazy(() => import('./Settings').then(m => ({ default: m.Settings })));
+const NPAEventos       = lazy(() => import('./NPAEventos').then(m => ({ default: m.NPAEventos })));
+const Operacoes        = lazy(() => import('./Operacoes').then(m => ({ default: m.Operacoes })));
+const MapaMental       = lazy(() => import('./MapaMental').then(m => ({ default: m.MapaMental })));
+const Financeiro       = lazy(() => import('./Financeiro').then(m => ({ default: m.Financeiro })));
+const Balanco          = lazy(() => import('./Balanco').then(m => ({ default: m.Balanco })));
+const FinanceiroCFO    = lazy(() => import('./FinanceiroCFO').then(m => ({ default: m.FinanceiroCFO })));
+const Cobranca         = lazy(() => import('./Cobranca').then(m => ({ default: m.Cobranca })));
+const FunilLancamento  = lazy(() => import('./FunilLancamento').then(m => ({ default: m.FunilLancamento })));
+const DisparoPlanilha  = lazy(() => import('./DisparoPlanilha'));
+const Rodrygo          = lazy(() => import('./Rodrygo').then(m => ({ default: m.Rodrygo })));
+const Pedagogico       = lazy(() => import('../pedagogico/Pedagogico').then(m => ({ default: m.Pedagogico })));
+const LancamentoKanban = lazy(() => import('./LancamentoKanban').then(m => ({ default: m.LancamentoKanban })));
+const NPAKanban        = lazy(() => import('./NPAKanban'));
+const AulaSecretaKanban = lazy(() => import('./AulaSecretaKanban').then(m => ({ default: m.AulaSecretaKanban })));
+const Produtos          = lazy(() => import('./Produtos').then(m => ({ default: m.Produtos })));
+
+function ModuleLoader() {
+  return (
+    <div className="flex items-center justify-center h-full">
+      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+    </div>
+  );
+}
 
 function RestrictedView() {
   return (
@@ -206,7 +221,11 @@ export function CRMLayout() {
       case 'chat': return <Chat />;
       case 'sheets': return <SheetsLeads />;
       case 'financeiro': return <Financeiro />;
+      case 'financeiro_cfo': return <FinanceiroCFO />;
       case 'balanco': return <Balanco />;
+      case 'cobranca':         return permissions.canViewCobranca || isAdmin ? <Cobranca /> : <RestrictedView />;
+      case 'funil_lancamento': return permissions.canViewCobranca || isAdmin ? <FunilLancamento /> : <RestrictedView />;
+      case 'disparo_planilha': return permissions.canViewCobranca || isAdmin ? <DisparoPlanilha /> : <RestrictedView />;
       case 'rodrygo': return <Rodrygo />;
       case 'team': return user?.tipo === 'admin' || permissions.canViewTeam ? <TeamManagement /> : <RestrictedView />;
       case 'settings': return permissions.canViewSettings || isAdmin ? <Settings /> : <RestrictedView />;
@@ -215,6 +234,7 @@ export function CRMLayout() {
       case 'operacoes_calendario_conteudo': return <Operacoes currentPage={currentView} />;
       case 'mapa_mental': return <MapaMental />;
       case 'pedagogico': return <Pedagogico />;
+      case 'produtos': return isAdmin ? <Produtos /> : <RestrictedView />;
       default: return <Dashboard />;
     }
   };
@@ -224,7 +244,9 @@ export function CRMLayout() {
       <Header onAddLead={handleAddLead} onAddFlashLead={handleAddFlashLead} />
       <div className="flex h-[calc(100vh-4rem)]">
         <Sidebar currentView={currentView} onViewChange={setCurrentView} />
-        <main className="flex-1 overflow-hidden">{renderView()}</main>
+        <main className="flex-1 overflow-auto pb-16 lg:pb-0">
+          <Suspense fallback={<ModuleLoader />}>{renderView()}</Suspense>
+        </main>
       </div>
       <MobileNav currentView={currentView} onViewChange={setCurrentView} />
       <LeadModal isOpen={isLeadModalOpen} onClose={() => setIsLeadModalOpen(false)} editingLead={editingLead} />
