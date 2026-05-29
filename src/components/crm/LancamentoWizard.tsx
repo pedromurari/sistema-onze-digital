@@ -19,7 +19,7 @@ import { toast } from 'sonner';
 import {
   Plus, Trash2, ChevronLeft, ChevronRight, Check, Loader2,
   AlertTriangle, Calendar, Users, MessageSquare, Zap, Eye, Settings,
-  Upload, X, Smartphone,
+  Upload, X, Smartphone, Search,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -29,7 +29,7 @@ interface Turma {
   valor_mensalidade: number | null; dia_vencimento: number | null; total_mensalidades: number | null;
 }
 interface Responsavel { id: string; nome: string; }
-interface EvoInstance { instance_name: string; }
+interface EvoInstance { instance_name: string; api_url: string; api_key: string; }
 
 interface LancamentoWizardProps {
   open: boolean;
@@ -53,8 +53,8 @@ function defaultConfig(): WizardConfig {
     // quantidade_grupos = nº de grupos de LANÇAMENTO; grupo de oferta é sempre +1
     quantidade_grupos: 1,
     grupos: [
-      { nickname: '', jid: '', participantes: [] }, // lançamento 1
-      { nickname: '', jid: '', participantes: [] }, // oferta (sempre presente)
+      { nickname: '', jid: '', link: '', participantes: [] }, // lançamento 1 / manhã
+      { nickname: '', jid: '', link: '', participantes: [] }, // oferta / tarde
     ],
     instancia_evolution: '__priority__',
     aulas: [
@@ -172,6 +172,23 @@ function Step1({ config, setConfig, responsaveis }: {
           <label className="text-xs font-medium text-muted-foreground">Meta de matrículas</label>
           <Input type="number" value={config.meta_matriculas || ''} onChange={e => set('meta_matriculas', Number(e.target.value))} placeholder="Ex: 30" />
         </div>
+
+        {config.tipo === 'npa' && (
+          <div className="sm:col-span-2 space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">
+              Vega Produto ID <span className="text-muted-foreground/60">(opcional — activa PIX automático)</span>
+            </label>
+            <Input
+              value={config.vega_produto_id ?? ''}
+              onChange={e => set('vega_produto_id', e.target.value)}
+              placeholder="Ex: prod_abc123"
+              className="font-mono"
+            />
+            <p className="text-[10px] text-muted-foreground">
+              Quando preenchido, o PIX é gerado e enviado automaticamente ao marcar "Ingresso Pago".
+            </p>
+          </div>
+        )}
       </div>
 
       {/* ── Datas das lives ── */}
@@ -458,10 +475,37 @@ function Step3({ config, setConfig, evoInstances }: {
       return { 0: saved, 1: saved, 2: saved };
     } catch { return {}; }
   });
+  const [fetchedGroups, setFetchedGroups] = useState<Record<number, Array<{id: string; subject: string; size?: number}>>>({});
+  const [fetchingGroups, setFetchingGroups] = useState<Record<number, boolean>>({});
 
   // qtd = nº de grupos de LANÇAMENTO; total de grupos = qtd + 1 (oferta sempre presente)
+  // NPA: sempre 2 grupos (manhã + tarde)
   const qtd = config.quantidade_grupos ?? 1;
-  const totalGrupos = qtd + 1;
+  const totalGrupos = config.tipo === 'npa' ? 2 : qtd + 1;
+
+  const fetchGroups = async (cardIdx: number) => {
+    const evo = config.instancia_evolution !== '__priority__'
+      ? evoInstances.find(e => e.instance_name === config.instancia_evolution)
+      : evoInstances[0];
+    if (!evo) { toast.error('Nenhuma instância Evolution ativa'); return; }
+    setFetchingGroups(p => ({ ...p, [cardIdx]: true }));
+    try {
+      const rawBase = evo.api_url.replace(/\/$/, '');
+      const base = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
+      const url = `${base}/group/fetchAllGroups/${evo.instance_name}?getParticipants=false`;
+      const res = await fetch(url, { headers: { apikey: evo.api_key } });
+      const data = await res.json();
+      const groups = (Array.isArray(data) ? data : [])
+        .map((g: Record<string, unknown>) => ({ id: String(g.id ?? ''), subject: String(g.subject ?? g.id ?? ''), size: Number(g.size ?? 0) }))
+        .filter(g => g.id.endsWith('@g.us'))
+        .sort((a, b) => a.subject.localeCompare(b.subject));
+      setFetchedGroups(p => ({ ...p, [cardIdx]: groups }));
+    } catch (e: unknown) {
+      toast.error('Erro ao buscar grupos: ' + (e as Error).message);
+    } finally {
+      setFetchingGroups(p => ({ ...p, [cardIdx]: false }));
+    }
+  };
 
   const setQtd = (n: 1 | 2) => {
     setConfig(c => {
@@ -524,40 +568,51 @@ function Step3({ config, setConfig, evoInstances }: {
   };
 
   // Label/emoji/varname dinâmicos por posição
-  // Último grupo (índice qtd) é sempre Oferta; os demais são Lançamento
-  const getLabel    = (i: number) => i === qtd ? 'Oferta'  : qtd === 1 ? 'Lançamento' : `Lançamento ${i + 1}`;
-  const getEmoji    = (i: number) => i === qtd ? '🎯'      : '🚀';
-  const getVarName  = (i: number) => `{{grupo_${i + 1}}}`;
+  const isNpa = config.tipo === 'npa';
+  const getLabel   = (i: number) => isNpa
+    ? (i === 0 ? 'Manhã ☀️' : 'Tarde 🌆')
+    : (i === qtd ? 'Oferta' : qtd === 1 ? 'Lançamento' : `Lançamento ${i + 1}`);
+  const getEmoji   = (i: number) => isNpa ? (i === 0 ? '☀️' : '🌆') : (i === qtd ? '🎯' : '🚀');
+  const getVarName = (i: number) => `{{grupo_${i + 1}}}`;
 
   return (
     <div className="space-y-5">
-      {/* ── Toggle: quantos grupos de lançamento ── */}
-      <div className="space-y-2">
-        <div>
-          <label className="text-sm font-medium">Grupos de lançamento</label>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            O grupo de oferta <strong>sempre</strong> é criado. Escolha quantos grupos de lançamento você quer.
-          </p>
+      {/* ── Toggle: quantos grupos de lançamento (apenas para Lançamento) ── */}
+      {!isNpa && (
+        <div className="space-y-2">
+          <div>
+            <label className="text-sm font-medium">Grupos de lançamento</label>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              O grupo de oferta <strong>sempre</strong> é criado. Escolha quantos grupos de lançamento você quer.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            {([1, 2] as const).map(n => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setQtd(n)}
+                className={`flex-1 py-2.5 rounded-xl border text-sm font-medium transition-all ${
+                  qtd === n
+                    ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                    : 'bg-background border-border text-muted-foreground hover:border-primary/50'
+                }`}
+              >
+                {n === 1
+                  ? '1 lançamento + oferta  (2 total)'
+                  : '2 lançamentos + oferta  (3 total)'}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex gap-2">
-          {([1, 2] as const).map(n => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => setQtd(n)}
-              className={`flex-1 py-2.5 rounded-xl border text-sm font-medium transition-all ${
-                qtd === n
-                  ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                  : 'bg-background border-border text-muted-foreground hover:border-primary/50'
-              }`}
-            >
-              {n === 1
-                ? '1 lançamento + oferta  (2 total)'
-                : '2 lançamentos + oferta  (3 total)'}
-            </button>
-          ))}
+      )}
+
+      {/* ── Cabeçalho NPA ── */}
+      {isNpa && (
+        <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-800">
+          💡 NPA usa <strong>2 grupos separados</strong>: um para a turma Manhã e outro para a Tarde. Cada grupo recebe mensagens e PIX de ingresso independentes.
         </div>
-      </div>
+      )}
 
       {/* ── Instância Evolution ── */}
       <div className="space-y-1">
@@ -628,6 +683,65 @@ function Step3({ config, setConfig, evoInstances }: {
                 disabled={isCriado}
               />
             </div>
+
+            {/* Link de convite */}
+            <div className="space-y-1">
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                Link de convite <span className="normal-case text-muted-foreground/60">(chat.whatsapp.com/...)</span>
+              </label>
+              <Input
+                value={grupo.link ?? ''}
+                onChange={e => updateGrupo(i, 'link', e.target.value)}
+                placeholder="https://chat.whatsapp.com/..."
+                className="h-9 text-sm"
+              />
+            </div>
+
+            {/* Buscar grupo existente */}
+            {!isCriado && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 h-px bg-border" />
+                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">selecionar grupo existente</span>
+                  <div className="flex-1 h-px bg-border" />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fetchGroups(i)}
+                  disabled={fetchingGroups[i] || evoInstances.length === 0}
+                  className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:border-primary/50 hover:text-primary disabled:opacity-50 transition-colors"
+                >
+                  {fetchingGroups[i]
+                    ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Buscando grupos...</>
+                    : <><Search className="h-3.5 w-3.5" /> Buscar grupos do WhatsApp</>}
+                </button>
+                {fetchedGroups[i]?.length > 0 && (
+                  <select
+                    onChange={e => {
+                      if (!e.target.value) return;
+                      const g = fetchedGroups[i].find(x => x.id === e.target.value);
+                      if (!g) return;
+                      updateGrupo(i, 'jid', g.id);
+                      if (!grupo.nickname?.trim()) updateGrupo(i, 'nickname', g.subject);
+                    }}
+                    defaultValue=""
+                    className="w-full px-3 py-2 rounded-lg border border-primary/40 bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    <option value="">— Selecionar grupo —</option>
+                    {fetchedGroups[i].map(g => (
+                      <option key={g.id} value={g.id}>
+                        {g.subject}{g.size ? ` (${g.size} membros)` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 h-px bg-border" />
+                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">ou criar novo</span>
+                  <div className="flex-1 h-px bg-border" />
+                </div>
+              </div>
+            )}
 
             {/* Participantes */}
             <div className="space-y-1">
@@ -717,11 +831,19 @@ function Step3({ config, setConfig, evoInstances }: {
               )}
             </div>
 
-            {/* JID exibido após criação */}
+            {/* JID exibido após criação/seleção */}
             {isCriado && (
               <div className="flex items-center gap-2 px-3 py-2 bg-green-100 border border-green-200 rounded-lg">
                 <Check className="h-3.5 w-3.5 text-green-600 flex-shrink-0" />
-                <span className="text-[11px] text-green-800 font-mono truncate">{grupo.jid}</span>
+                <span className="text-[11px] text-green-800 font-mono truncate flex-1">{grupo.jid}</span>
+                <button
+                  type="button"
+                  onClick={() => updateGrupo(i, 'jid', '')}
+                  className="text-green-600 hover:text-red-500 transition-colors flex-shrink-0"
+                  title="Remover — selecionar outro grupo"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
               </div>
             )}
 
@@ -1180,7 +1302,7 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
     Promise.all([
       supabase.from('turmas').select('id, nome, produto, valor_mensalidade, dia_vencimento, total_mensalidades').order('nome'),
       supabase.from('responsaveis').select('id, nome').order('nome'),
-      supabase.from('evolution_config').select('instance_name').eq('ativo', true).order('prioridade'),
+      supabase.from('evolution_config').select('instance_name, api_url, api_key').eq('ativo', true).order('prioridade'),
     ]).then(([t, r, e]) => {
       setTurmas((t.data as Turma[]) || []);
       setResponsaveis((r.data as Responsavel[]) || []);
@@ -1231,6 +1353,8 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
         .filter(([k]) => !k.startsWith('grupo_') && !k.startsWith('data_aula_') && !k.startsWith('link_aula_') && !k.startsWith('hora_aula_') && !k.startsWith('professor_'))
         .map(([key, value]) => ({ key, value }));
 
+      const isNpaLoad = existingTipo === 'npa';
+      const qtdGrupos = isNpaLoad ? 1 : (Math.max(1, grupos.length - 1) as 1 | 2);
       setConfig({
         nome: lancData.nome || '',
         tipo: existingTipo || 'lancamento',
@@ -1244,8 +1368,10 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
         valor_mensalidade_destino: (lancData as any).valor_mensalidade_destino || 109.90,
         dia_vencimento_destino: (lancData as any).dia_vencimento_destino || 10,
         total_mensalidades_destino: (lancData as any).total_mensalidades_destino || 15,
+        quantidade_grupos: qtdGrupos,
         grupos: grupos.length ? grupos : [{ nickname: 'Grupo de Lançamento', jid: '' }],
         instancia_evolution: '__priority__',
+        vega_produto_id: isNpaLoad ? ((lancData as any).vega_produto_id || '') : undefined,
         aulas: aulas.length ? aulas : [{ data: '', hora: '20:00', link: '', professor: '' }],
         links_extras: links_extras.length ? links_extras : [{ key: 'link_checkout', value: '' }],
         bv_wpp_ativo: (bvConfig as any)?.wpp_ativo ?? true,
@@ -1309,7 +1435,10 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
           meta_matriculas: config.meta_matriculas || 0,
           grupo_lancamento_jid: grupo1,
           grupo_oferta_jid: grupo2,
-        } : commonFields;
+        } : {
+          ...commonFields,
+          vega_produto_id: config.vega_produto_id || null,
+        };
         await supabase.from(table).update(lancFields).eq('id', existingId);
       } else {
         const commonFields = {
@@ -1331,7 +1460,10 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
           data_live: config.data_live,
           grupo_lancamento_jid: grupo1,
           grupo_oferta_jid: grupo2,
-        } : commonFields;
+        } : {
+          ...commonFields,
+          vega_produto_id: config.vega_produto_id || null,
+        };
         const { data: created, error } = await supabase.from(table).insert(lancFields).select('id').single();
         if (error || !created) { toast.error('Erro ao criar: ' + error?.message); setSaving(false); return; }
         lancId = created.id;
