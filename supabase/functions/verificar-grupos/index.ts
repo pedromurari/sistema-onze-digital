@@ -166,6 +166,7 @@ serve(async (req) => {
 
     let npaUpdated = 0;
     let lancUpdated = 0;
+    const debugNpa: unknown[] = [];
 
     // ── 1. NPA ───────────────────────────────────────────────────────────────
     const { data: npas } = await supabase
@@ -180,7 +181,10 @@ serve(async (req) => {
         .eq('funnel_name', npa.nome)
         .maybeSingle();
 
-      if (!fConfig) continue;
+      if (!fConfig) {
+        debugNpa.push({ npa: npa.nome, erro: 'funnel_configs não encontrado' });
+        continue;
+      }
 
       const variaveis: Record<string, string> = (fConfig as any).variaveis ?? {};
       const jidManha = (fConfig as any).grupo_1_id || variaveis['grupo_manha'] || variaveis['grupo_1'] || '';
@@ -200,6 +204,7 @@ serve(async (req) => {
         .select('id, whatsapp, turma, no_grupo')
         .eq('npa_evento_id', npa.id);
 
+      let npaMatch = 0;
       for (const lead of (leads ?? [])) {
         const groupSet = lead.turma === 'tarde'
           ? s8Tarde
@@ -212,8 +217,24 @@ serve(async (req) => {
             .update({ no_grupo: estaNoGrupo })
             .eq('id', lead.id);
           npaUpdated++;
+          npaMatch++;
         }
       }
+
+      debugNpa.push({
+        npa: npa.nome,
+        jid_manha: jidManha || '(não configurado)',
+        jid_tarde: jidTarde || '(não configurado)',
+        participantes_manha: partsManha.length,
+        participantes_manha_phones: s8Manha.size,
+        participantes_tarde: partsTarde.length,
+        participantes_tarde_phones: s8Tarde.size,
+        participantes_manha_amostra: [...s8Manha].slice(0, 3),
+        participantes_tarde_amostra: [...s8Tarde].slice(0, 3),
+        leads_total: leads?.length ?? 0,
+        leads_amostra: leads?.slice(0, 3).map(l => ({ wpp: l.whatsapp, s8: suffix8(l.whatsapp), turma: l.turma })) ?? [],
+        atualizados: npaMatch,
+      });
     }
 
     // ── 2. Lançamentos ───────────────────────────────────────────────────────
@@ -256,7 +277,10 @@ serve(async (req) => {
 
     console.log(`verificar-grupos: NPA=${npaUpdated}, Lançamento=${lancUpdated}`);
 
-    return new Response(JSON.stringify({ ok: true, npa_updated: npaUpdated, lanc_updated: lancUpdated }), {
+    return new Response(JSON.stringify({
+      ok: true, npa_updated: npaUpdated, lanc_updated: lancUpdated,
+      _debug: debugNpa,
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 

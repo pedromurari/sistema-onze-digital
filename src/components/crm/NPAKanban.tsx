@@ -1005,7 +1005,7 @@ function NPAVerificarGruposModal({
   const [loading, setLoading]         = useState(false);
   const [saving, setSaving]           = useState(false);
   const [verifying, setVerifying]     = useState(false);
-  const [result, setResult]           = useState<{ npa_updated: number; lanc_updated: number } | null>(null);
+  const [result, setResult]           = useState<{ npa_updated: number; lanc_updated: number; _debug?: unknown[] } | null>(null);
 
   // Carrega os JIDs atuais do funnel_configs quando abre
   useEffect(() => {
@@ -1125,14 +1125,39 @@ function NPAVerificarGruposModal({
               />
             </div>
 
-            {/* Resultado */}
+            {/* Resultado + Debug */}
             {result && (
-              <div className="p-3 rounded-xl bg-green-50 border border-green-200">
-                <p className="text-sm font-semibold text-green-800">✅ Verificação concluída</p>
-                <p className="text-xs text-green-700 mt-0.5">
-                  {result.npa_updated} lead(s) de NPA atualizados
-                  {result.lanc_updated > 0 ? ` · ${result.lanc_updated} de lançamento` : ''}
-                </p>
+              <div className="space-y-2">
+                <div className={`p-3 rounded-xl border ${result.npa_updated > 0 ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+                  <p className={`text-sm font-semibold ${result.npa_updated > 0 ? 'text-green-800' : 'text-amber-800'}`}>
+                    {result.npa_updated > 0 ? '✅' : '⚠️'} Verificação concluída — {result.npa_updated} lead(s) atualizados
+                  </p>
+                </div>
+                {result._debug && (result._debug as any[]).map((d: any, idx: number) => (
+                  <div key={idx} className="p-3 rounded-xl bg-gray-50 border border-gray-200 text-xs space-y-1 font-mono">
+                    <p className="font-bold text-gray-700 font-sans">{d.npa}</p>
+                    {d.erro ? (
+                      <p className="text-red-600">❌ {d.erro}</p>
+                    ) : (
+                      <>
+                        <p className="text-gray-500">JID Manhã: <span className="text-gray-800">{d.jid_manha}</span></p>
+                        <p className="text-gray-500">JID Tarde: <span className="text-gray-800">{d.jid_tarde}</span></p>
+                        <p className={d.participantes_manha_phones > 0 ? 'text-green-700' : 'text-red-600'}>
+                          Manhã: {d.participantes_manha} total → {d.participantes_manha_phones} phones
+                          {d.participantes_manha_amostra?.length > 0 && ` [${d.participantes_manha_amostra.join(', ')}]`}
+                        </p>
+                        <p className={d.participantes_tarde_phones > 0 ? 'text-green-700' : 'text-red-600'}>
+                          Tarde: {d.participantes_tarde} total → {d.participantes_tarde_phones} phones
+                          {d.participantes_tarde_amostra?.length > 0 && ` [${d.participantes_tarde_amostra.join(', ')}]`}
+                        </p>
+                        <p className="text-gray-500">Leads no DB: {d.leads_total}</p>
+                        {d.leads_amostra?.length > 0 && (
+                          <p className="text-gray-500">Amostra leads: {d.leads_amostra.map((l: any) => `${l.wpp}→s8:${l.s8}(${l.turma})`).join(' | ')}</p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
 
