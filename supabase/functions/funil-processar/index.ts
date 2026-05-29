@@ -227,11 +227,12 @@ async function updateGroupPicture(
   apikey: string,
   groupJid: string,
   imageUrl: string,
-) {
+): Promise<void> {
   const cdnUrl = toCdnUrl(imageUrl);
   const imgRes = await fetch(cdnUrl, { redirect: 'follow' });
   if (!imgRes.ok) {
-    throw new Error(`updateGroupPicture: falha ao buscar imagem (${imgRes.status}): ${cdnUrl}`);
+    console.warn(`updateGroupPicture: falha ao buscar imagem (${imgRes.status}): ${cdnUrl}`);
+    return;
   }
   const buffer = await imgRes.arrayBuffer();
   const bytes  = new Uint8Array(buffer);
@@ -239,14 +240,20 @@ async function updateGroupPicture(
   for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
   const base64 = btoa(binary);
 
-  const res = await fetch(`${base}/group/updateGroupPicture/${instance}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', apikey },
-    body: JSON.stringify({ groupJid, image: base64 }),
-  });
+  const url  = `${base}/group/updateGroupPicture/${instance}`;
+  const body = JSON.stringify({ groupJid, image: base64 });
+  const hdrs = { 'Content-Type': 'application/json', apikey };
+
+  // Tenta PUT; se der 404/405 tenta POST (varia por versão da Evolution API)
+  let res = await fetch(url, { method: 'PUT', headers: hdrs, body });
+  if (res.status === 404 || res.status === 405) {
+    console.warn(`updateGroupPicture: PUT retornou ${res.status}, tentando POST…`);
+    res = await fetch(url, { method: 'POST', headers: hdrs, body });
+  }
   if (!res.ok) {
     const txt = await res.text().catch(() => '');
-    throw new Error(`updateGroupPicture: Evolution ${res.status} - ${txt.slice(0, 200)}`);
+    console.warn(`updateGroupPicture: Evolution ${res.status} - ${txt.slice(0, 200)}`);
+    // Não lança erro — a mensagem deve ser enviada mesmo assim
   }
 }
 
@@ -302,8 +309,14 @@ async function processMessage(
     if (headerUrl) {
       if ((p.update_group_picture as boolean) === true) {
         const groupJid = toGroupJid(number);
-        if (!groupJid) throw new Error(`Destinatario do grupo invalido para trocar foto: "${number}"`);
-        await updateGroupPicture(base, instance, apikey, groupJid, headerUrl);
+        if (groupJid) {
+          // Não-fatal: erro na foto não impede o envio da mensagem
+          await updateGroupPicture(base, instance, apikey, groupJid, headerUrl).catch(e =>
+            console.warn('updateGroupPicture (non-fatal):', e?.message ?? e),
+          );
+        } else {
+          console.warn(`updateGroupPicture: JID inválido para "${number}", pulando`);
+        }
       }
 
       await sendEvolution(`${base}/message/sendMedia/${instance}`, {
