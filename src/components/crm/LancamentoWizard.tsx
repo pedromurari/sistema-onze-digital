@@ -174,19 +174,37 @@ function Step1({ config, setConfig, responsaveis }: {
         </div>
 
         {config.tipo === 'npa' && (
-          <div className="sm:col-span-2 space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">
-              Vega Produto ID <span className="text-muted-foreground/60">(opcional — activa PIX automático)</span>
-            </label>
-            <Input
-              value={config.vega_produto_id ?? ''}
-              onChange={e => set('vega_produto_id', e.target.value)}
-              placeholder="Ex: prod_abc123"
-              className="font-mono"
-            />
-            <p className="text-[10px] text-muted-foreground">
-              Quando preenchido, o PIX é gerado e enviado automaticamente ao marcar "Ingresso Pago".
-            </p>
+          <div className="sm:col-span-2 space-y-3 p-3 rounded-xl bg-amber-50/60 border border-amber-200">
+            <div>
+              <p className="text-xs font-semibold text-amber-900">Produtos Vega Checkout</p>
+              <p className="text-[10px] text-amber-700 mt-0.5">
+                Cole o nome exato do produto no Vega para cada turma. O webhook vai identificar automaticamente qual turma pagou e enviar o PIX ou boas-vindas.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-amber-900 uppercase tracking-wide">
+                  ☀️ Produto Manhã
+                </label>
+                <Input
+                  value={config.vega_produto_id ?? ''}
+                  onChange={e => set('vega_produto_id', e.target.value)}
+                  placeholder="Ex: INGRESSO SP - 30/05 - Turma Manha - ..."
+                  className="h-9 text-xs font-mono bg-white"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-amber-900 uppercase tracking-wide">
+                  🌆 Produto Tarde
+                </label>
+                <Input
+                  value={config.vega_produto_tarde ?? ''}
+                  onChange={e => set('vega_produto_tarde', e.target.value)}
+                  placeholder="Ex: INGRESSO SP - 30/05 - Turma Tarde - ..."
+                  className="h-9 text-xs font-mono bg-white"
+                />
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -1371,7 +1389,8 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
         quantidade_grupos: qtdGrupos,
         grupos: grupos.length ? grupos : [{ nickname: 'Grupo de Lançamento', jid: '' }],
         instancia_evolution: '__priority__',
-        vega_produto_id: isNpaLoad ? ((lancData as any).vega_produto_id || '') : undefined,
+        vega_produto_id:    isNpaLoad ? ((lancData as any).vega_produto_id    || '') : undefined,
+        vega_produto_tarde: isNpaLoad ? ((lancData as any).vega_produto_tarde || '') : undefined,
         aulas: aulas.length ? aulas : [{ data: '', hora: '20:00', link: '', professor: '' }],
         links_extras: links_extras.length ? links_extras : [{ key: 'link_checkout', value: '' }],
         bv_wpp_ativo: (bvConfig as any)?.wpp_ativo ?? true,
@@ -1437,7 +1456,8 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
           grupo_oferta_jid: grupo2,
         } : {
           ...commonFields,
-          vega_produto_id: config.vega_produto_id || null,
+          vega_produto_id:   config.vega_produto_id   || null,
+          vega_produto_tarde: config.vega_produto_tarde || null,
         };
         await supabase.from(table).update(lancFields).eq('id', existingId);
       } else {
@@ -1462,7 +1482,8 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
           grupo_oferta_jid: grupo2,
         } : {
           ...commonFields,
-          vega_produto_id: config.vega_produto_id || null,
+          vega_produto_id:   config.vega_produto_id   || null,
+          vega_produto_tarde: config.vega_produto_tarde || null,
         };
         const { data: created, error } = await supabase.from(table).insert(lancFields).select('id').single();
         if (error || !created) { toast.error('Erro ao criar: ' + error?.message); setSaving(false); return; }

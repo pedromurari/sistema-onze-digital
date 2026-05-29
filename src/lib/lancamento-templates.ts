@@ -22,6 +22,7 @@ export interface AulaConfig {
 export interface GrupoConfig {
   nickname: string;
   jid: string;
+  link?: string;         // link de convite WhatsApp (https://chat.whatsapp.com/...)
   participantes?: string[];
 }
 
@@ -42,10 +43,13 @@ export interface WizardConfig {
   dia_vencimento_destino: number;
   total_mensalidades_destino: number;
 
-  // Etapa 3
+  // Etapa 3 — grupos
   quantidade_grupos: 1 | 2;
   grupos: GrupoConfig[];
   instancia_evolution: string;
+  // NPA only — produto Vega por turma (matching do webhook de pagamento)
+  vega_produto_id?: string;       // nome exato do produto Vega - Turma Manhã
+  vega_produto_tarde?: string;    // nome exato do produto Vega - Turma Tarde
 
   // Etapa 4
   aulas: AulaConfig[];
@@ -499,8 +503,17 @@ export function buildFunnelVariaveis(config: WizardConfig): Record<string, strin
   const vars: Record<string, string> = {};
 
   config.grupos.forEach((g, i) => {
-    if (g.jid) vars[`grupo_${i + 1}`] = g.jid;
+    if (g.jid)  vars[`grupo_${i + 1}`]     = g.jid;
+    if (g.link) vars[`link_grupo_${i + 1}`] = g.link;
   });
+
+  // Para NPA: aliases semânticos por turma
+  if (config.tipo === 'npa') {
+    if (config.grupos[0]?.jid)  vars['grupo_manha']       = config.grupos[0].jid;
+    if (config.grupos[0]?.link) vars['link_grupo_manha']  = config.grupos[0].link;
+    if (config.grupos[1]?.jid)  vars['grupo_tarde']       = config.grupos[1].jid;
+    if (config.grupos[1]?.link) vars['link_grupo_tarde']  = config.grupos[1].link;
+  }
 
   config.aulas.forEach((a, i) => {
     const n = i + 1;
