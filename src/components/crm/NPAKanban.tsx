@@ -991,6 +991,173 @@ function NPADisparoPanel({
   );
 }
 
+// ─── NPAVerificarGruposModal ──────────────────────────────────────────────────
+
+function NPAVerificarGruposModal({
+  open, onClose, nomeEvento,
+}: {
+  open: boolean;
+  onClose: () => void;
+  nomeEvento: string;
+}) {
+  const [jidManha, setJidManha]       = useState('');
+  const [jidTarde, setJidTarde]       = useState('');
+  const [loading, setLoading]         = useState(false);
+  const [saving, setSaving]           = useState(false);
+  const [verifying, setVerifying]     = useState(false);
+  const [result, setResult]           = useState<{ npa_updated: number; lanc_updated: number } | null>(null);
+
+  // Carrega os JIDs atuais do funnel_configs quando abre
+  useEffect(() => {
+    if (!open || !nomeEvento) return;
+    setResult(null);
+    setLoading(true);
+    supabase
+      .from('funnel_configs')
+      .select('grupo_1_id, grupo_2_id')
+      .eq('funnel_name', nomeEvento)
+      .maybeSingle()
+      .then(({ data }) => {
+        setJidManha((data as any)?.grupo_1_id || '');
+        setJidTarde((data as any)?.grupo_2_id || '');
+        setLoading(false);
+      });
+  }, [open, nomeEvento]);
+
+  const handleSaveJids = async () => {
+    setSaving(true);
+    await supabase
+      .from('funnel_configs')
+      .upsert({ funnel_name: nomeEvento, grupo_1_id: jidManha, grupo_2_id: jidTarde }, { onConflict: 'funnel_name' });
+    setSaving(false);
+    toast.success('IDs dos grupos salvos!');
+  };
+
+  const handleVerificar = async () => {
+    // Salva antes de verificar
+    await supabase
+      .from('funnel_configs')
+      .upsert({ funnel_name: nomeEvento, grupo_1_id: jidManha, grupo_2_id: jidTarde }, { onConflict: 'funnel_name' });
+
+    setVerifying(true);
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+      const res = await fetch(`${supabaseUrl}/functions/v1/verificar-grupos`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseKey}`,
+          'apikey': supabaseKey,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) { toast.error(data.error || 'Erro na verificação'); return; }
+      setResult(data);
+      toast.success(`Verificação concluída — ${data.npa_updated} lead(s) atualizados`);
+    } catch (e: unknown) {
+      toast.error('Erro: ' + (e as Error).message);
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const isValidJid = (v: string) => !v || v.endsWith('@g.us');
+
+  return (
+    <Dialog open={open} onOpenChange={o => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-md rounded-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CheckCircle2 className="h-5 w-5 text-green-600" /> Verificar Grupos — {nomeEvento}
+          </DialogTitle>
+          <DialogDescription>
+            Configure os IDs dos grupos WhatsApp e sincronize automaticamente quem está em cada grupo.
+          </DialogDescription>
+        </DialogHeader>
+
+        {loading ? (
+          <div className="py-8 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-gray-400" /></div>
+        ) : (
+          <div className="space-y-4 pt-1">
+            {/* Info box */}
+            <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-800">
+              🤖 O sistema verifica automaticamente às <strong>7h e 19h</strong> quem entrou em cada grupo e atualiza o campo <strong>"No Grupo"</strong> dos leads.
+              <br />Use o botão abaixo para sincronizar agora mesmo.
+            </div>
+
+            {/* Grupo Manhã */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-gray-700 flex items-center gap-2">
+                ☀️ Grupo Manhã — ID WhatsApp
+                {jidManha && !isValidJid(jidManha) && (
+                  <span className="text-xs text-amber-600 font-normal">⚠ precisa terminar com @g.us</span>
+                )}
+                {jidManha && isValidJid(jidManha) && jidManha && (
+                  <span className="text-xs text-green-600 font-normal">✓ válido</span>
+                )}
+              </label>
+              <Input
+                value={jidManha}
+                onChange={e => setJidManha(e.target.value.trim())}
+                placeholder="120363xxxxxxxx@g.us"
+                className="rounded-xl font-mono text-xs"
+              />
+              <p className="text-[10px] text-gray-400">Obtenha o ID via "Buscar grupos" no wizard de configuração</p>
+            </div>
+
+            {/* Grupo Tarde */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-gray-700 flex items-center gap-2">
+                🌆 Grupo Tarde — ID WhatsApp
+                {jidTarde && !isValidJid(jidTarde) && (
+                  <span className="text-xs text-amber-600 font-normal">⚠ precisa terminar com @g.us</span>
+                )}
+                {jidTarde && isValidJid(jidTarde) && jidTarde && (
+                  <span className="text-xs text-green-600 font-normal">✓ válido</span>
+                )}
+              </label>
+              <Input
+                value={jidTarde}
+                onChange={e => setJidTarde(e.target.value.trim())}
+                placeholder="120363xxxxxxxx@g.us"
+                className="rounded-xl font-mono text-xs"
+              />
+            </div>
+
+            {/* Resultado */}
+            {result && (
+              <div className="p-3 rounded-xl bg-green-50 border border-green-200">
+                <p className="text-sm font-semibold text-green-800">✅ Verificação concluída</p>
+                <p className="text-xs text-green-700 mt-0.5">
+                  {result.npa_updated} lead(s) de NPA atualizados
+                  {result.lanc_updated > 0 ? ` · ${result.lanc_updated} de lançamento` : ''}
+                </p>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-1">
+              <Button variant="outline" onClick={handleSaveJids} disabled={saving} className="flex-1 rounded-xl">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Salvar IDs
+              </Button>
+              <Button
+                onClick={handleVerificar}
+                disabled={verifying || (!jidManha && !jidTarde)}
+                className="flex-1 rounded-xl bg-green-600 hover:bg-green-700 text-white gap-2"
+              >
+                {verifying
+                  ? <><Loader2 className="h-4 w-4 animate-spin" /> Verificando...</>
+                  : <><CheckCircle2 className="h-4 w-4" /> Verificar Agora</>}
+              </Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Main Component ────────────────────────────────────────────────────────────
 
 export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
@@ -1018,6 +1185,9 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
   const [renamingColuna, setRenamingColuna]   = useState<KanbanColuna | null>(null);
   const [deletingColuna, setDeletingColuna]   = useState<KanbanColuna | null>(null);
   const [settingsColuna, setSettingsColuna]   = useState<KanbanColuna | null>(null);
+
+  // Verificar grupos
+  const [showVerificarGrupos, setShowVerificarGrupos] = useState(false);
 
   // Disparo por fase
   const [disparos, setDisparos]               = useState<NPADisparoItem[]>([]);
@@ -1668,6 +1838,15 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => setShowVerificarGrupos(true)}
+            className="gap-1.5 border-green-200 text-green-700 hover:bg-green-50 font-medium"
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Grupos
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => { setPreselectFase(null); setShowDisparoModal(true); }}
             className="gap-1.5 border-blue-200 text-blue-600 hover:bg-blue-50 font-medium"
           >
@@ -1968,6 +2147,13 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Verificar Grupos Modal */}
+      <NPAVerificarGruposModal
+        open={showVerificarGrupos}
+        onClose={() => setShowVerificarGrupos(false)}
+        nomeEvento={evento.nome}
+      />
 
       {/* Disparo por Fase Modal */}
       <NPADisparoModal
