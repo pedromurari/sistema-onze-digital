@@ -230,82 +230,81 @@ export function generateLancamentoMessages(config: WizardConfig): TemplateMensag
   // ═══════════════════════════════════════════════════════════════════════════
   if (config.tipo === 'lancamento') {
 
-    const warmupDays = 8;
+    const warmupDays  = 8;
     const warmupStart = addDays(live, -warmupDays);
 
-    // Conteúdo temático para cada dia de aquecimento
+    // ── 8 dias de aquecimento — dor real → psicanálise → aula ─────────────────
     const dias = [
-      // Dia 1 — Boas-vindas
+      // Dia 1 — Boas-vindas + A armadilha da mudança sem raiz
       {
-        manhaTema: `Bem-vindo ao grupo e ao que vem pela frente.\n\nVocê acabou de tomar uma decisão que vai mudar a forma como você se enxerga.\n\nNos próximos ${warmupDays} dias, esse espaço vai ser o início de uma jornada que culmina em ${numAulas} aulas ao vivo transformadoras.\n\nFaltam *${warmupDays} dias* para começar.`,
-        manhaEmoji: '❤️',
-        tardeIntro: 'Primeira enquete da jornada — responda com honestidade:',
-        pollNome: 'O que te trouxe até aqui?',
-        pollOps: ['Busca por autoconhecimento', 'Quero mudar padrões', 'Curiosidade sobre o tema', 'Indicação de alguém'],
-        noiteConteudo: `A jornada para o autoconhecimento começa com uma escolha — e você acabou de fazer a sua.\n\nNos próximos dias, vamos te preparar para ${numAulas} aulas ao vivo que vão revelar o que está por trás dos seus padrões e das suas escolhas.\n\nFaltam *${warmupDays} dias*.`,
+        manhaTxt: `Você acabou de entrar no lugar certo.\n\nPorque aposto que você já tentou mudar.\n\nLeu livros. Fez cursos. Prometeu pra si mesmo que dessa vez seria diferente.\n\nE por um tempo funcionou. Mas depois os mesmos padrões voltaram — o mesmo cansaço, a mesma sensação de que você está rodando em círculos.\n\nIsso não é falta de esforço. É falta de acesso.\n\nA psicanálise não trabalha com força de vontade. Ela trabalha com o que está *abaixo* da consciência — onde os padrões que te travam realmente vivem.\n\nNos próximos ${warmupDays} dias, você vai entender exatamente o que está te impedindo. E nas ${numAulas} aulas ao vivo, vamos fundo nisso juntos.\n\n${aulasDates()}\n\n👆 Salva as datas. Entra ao vivo. A gravação não substitui o ao vivo.\n\nReaja com ❤️ se você chegou até aqui cansado de tentar na força.\n\n${linkBlock()}`,
+        tardeIntro: `Antes de começar, preciso te conhecer melhor.\n\nResponde com honestidade — ninguém vai te julgar aqui:`,
+        pollNome: 'O que você mais tenta mudar na sua vida e não consegue?',
+        pollOps: ['Autossabotagem — chego perto e tudo desmorona', 'Relacionamentos — sempre me envolvo com as pessoas erradas', 'Ansiedade — minha cabeça não para nunca', 'Autoestima — me cobro mais do que me aceito'],
+        noiteTxt: `Tem algo que ninguém te conta sobre mudança:\n\nVocê pode querer mudar com toda a força que tem.\nPode se esforçar, lutar, prometer.\n\nMas se o padrão está no inconsciente — você vai continuar repetindo.\n\nNão porque você é fraco.\nMas porque você está tentando resolver um problema do nível 2 com uma solução do nível 1.\n\nA psicanálise existe para isso. Para acessar o que está abaixo — e mudar a partir da raiz.\n\nEm ${warmupDays} dias, começamos.\n\n${aulasDates()}\n\nReaja com ❤️ se você vai estar ao vivo.\n\n${linkBlock()}`,
       },
-      // Dia 2 — Os ciclos que se repetem
+
+      // Dia 2 — A autossabotagem
       {
-        manhaTema: `Você já percebeu como algumas dores parecem se repetir na sua vida?\n\nMuda a pessoa. Muda o cenário. Muda o emprego.\nMas a mesma sensação volta.\n\nIsso não é coincidência. É o inconsciente operando por padrões que você ainda não identificou.\n\nFaltam *${warmupDays - 1} dias*.`,
-        manhaEmoji: '🔥',
-        tardeIntro: 'Dia 2 — e a pergunta vai direto ao ponto:',
-        pollNome: 'Qual padrão você mais quer quebrar?',
-        pollOps: ['Autossabotagem', 'Ansiedade emocional', 'Relacionamentos repetitivos', 'Medo de agir'],
-        noiteConteudo: `Existe uma diferença enorme entre tentar mudar um comportamento e entender a origem dele.\n\nA maioria das pessoas passa a vida arrancando a folha — sem chegar à raiz.\n\nEm ${warmupDays - 1} dias, a jornada que vai te levar à raiz começa.\n\nFaltam *${warmupDays - 1} dias*.`,
+        manhaTxt: `Você já estava quase lá.\n\nQuase terminando o projeto. Quase assumindo o relacionamento. Quase dando o próximo passo.\n\nAí algo aconteceu. Um motivo surgiu. Você adiou, cancelou, desistiu.\n\nE depois ficou se perguntando: *por que eu faço isso?*\n\nIsso tem nome. Chama autossabotagem. E ela não é fraqueza — é o inconsciente tentando te proteger de algo que aprendeu, em algum momento da sua vida, que é perigoso.\n\nO problema é que o que um dia foi proteção, hoje é uma prisão.\n\nNa *${aulaTit(1)}*, vamos desmontar exatamente isso. Como o inconsciente cria esses bloqueios — e como ressignificá-los.\n\n📅 *${aulaDia(1)}, ${aulaData(1)} — ${aulaTit(1)}, ${aulaH(1)}h*\n👉 ${aulaLink(1)}\n\nFaltam *${warmupDays - 1} dias*.\n\nReaja com 🔥 se você já se sabotou quando estava quase chegando lá.`,
+        tardeIntro: `Vai fundo nessa — responde com sinceridade:`,
+        pollNome: 'Quando você está perto de dar o próximo passo, o que acontece?',
+        pollOps: ['Trava e fico pensando demais', 'Crio um motivo pra adiar', 'Diminuo o que já conquistei', 'Procuro um defeito na oportunidade'],
+        noiteTxt: `A autossabotagem não acontece porque você é limitado.\n\nEla acontece porque uma parte de você acredita — inconscientemente — que você não merece o que está a um passo de ter.\n\nOu que se você chegar lá, algo vai dar errado de qualquer jeito.\n\nEssa crença não foi criada por você hoje. Foi construída em algum momento da sua história — e ficou operando nos bastidores desde então.\n\nEntender de onde ela vem é o primeiro passo para dissolvê-la.\n\nEm ${warmupDays - 1} dias, a *${aulaTit(1)}* vai te mostrar como fazer isso.\n\n📅 *${aulaDia(1)}, ${aulaData(1)} — ${aulaTit(1)}, ${aulaH(1)}h*\n👉 ${aulaLink(1)}\n\nFaltam *${warmupDays - 1} dias*.`,
       },
-      // Dia 3 — O inconsciente
+
+      // Dia 3 — Os relacionamentos que se repetem
       {
-        manhaTema: `A maior parte das nossas decisões não é consciente.\n\nÉ o inconsciente que molda nossas reações, nossos padrões de relacionamento, nossa forma de agir sob pressão.\n\nEntender isso não é fraqueza — é o primeiro passo para a liberdade.\n\nFaltam *${warmupDays - 2} dias*.`,
-        manhaEmoji: '❤️',
-        tardeIntro: 'Reflexão do dia — responda com honestidade:',
-        pollNome: 'O que mais te desperta curiosidade?',
-        pollOps: ['O inconsciente', 'Traumas emocionais', 'Comportamentos humanos', 'Transformação pessoal'],
-        noiteConteudo: `Você sabe o que é o inconsciente?\n\nNão é mistério. Não é coisa de filme.\n\nÉ a parte da sua mente que guia suas decisões, suas reações e seus padrões — sem você perceber.\n\nEm ${warmupDays - 2} dias, você vai entender como isso funciona.\n\nFaltam *${warmupDays - 2} dias*.`,
+        manhaTxt: `Você já reparou como certas histórias se repetem?\n\nMuda o nome. Muda o rosto. Mas a dor no final é sempre a mesma.\n\nO abandono. A decepção. A sensação de que você não é suficiente para quem você mais ama.\n\nIsso não é azar. E não é "tipo errado de pessoa".\n\nÉ o inconsciente recriando o padrão que ele aprendeu cedo — para te dar uma nova chance de resolver o que ficou mal resolvido.\n\nSó que sem entender esse mecanismo, você vai continuar tentando resolver o problema do jeito errado.\n\nNa *${aulaTit(Math.min(2, numAulas))}*, vamos entender por que você atrai quem atrai — e o que isso diz sobre o que você carrega.\n\n📅 *${aulaDia(Math.min(2, numAulas))}, ${aulaData(Math.min(2, numAulas))} — ${aulaTit(Math.min(2, numAulas))}, ${aulaH(Math.min(2, numAulas))}h*\n👉 ${aulaLink(Math.min(2, numAulas))}\n\nFaltam *${warmupDays - 2} dias*.\n\nReaja com ❤️ se você já ficou sem entender por que certos padrões se repetem.`,
+        tardeIntro: `Uma pergunta que vai fundo — responde com honestidade:`,
+        pollNome: 'Nos seus relacionamentos (afetivos ou não), o que mais se repete?',
+        pollOps: ['Abandono ou rejeição no final', 'Eu me perco tentando agradar', 'Sempre escolho alguém que me decepciona', 'Tenho medo de me abrir de verdade'],
+        noiteTxt: `Existe um conceito na psicanálise chamado *compulsão à repetição*.\n\nÉ a tendência do inconsciente de recriar situações emocionais familiares — mesmo quando elas são dolorosas.\n\nNão porque você gosta de sofrer.\nMas porque o inconsciente busca resolver o que ficou irresolvido.\n\nO problema: sem consciência, você vai repetir para sempre.\n\nCom consciência, você pode finalmente mudar o padrão.\n\nEm ${warmupDays - 2} dias, a *${aulaTit(Math.min(2, numAulas))}* vai te dar essa consciência.\n\n📅 *${aulaDia(Math.min(2, numAulas))}, ${aulaData(Math.min(2, numAulas))} — ${aulaTit(Math.min(2, numAulas))}, ${aulaH(Math.min(2, numAulas))}h*\n👉 ${aulaLink(Math.min(2, numAulas))}\n\nFaltam *${warmupDays - 2} dias*.`,
       },
-      // Dia 4 — O que você está evitando
+
+      // Dia 4 — A ansiedade e o controle
       {
-        manhaTema: `*O que você está evitando olhar em você mesmo?*\n\nNão precisa responder agora. Mas guarda essa pergunta.\n\nTudo aquilo que não encaramos de frente continua agindo por trás — nos sabotando, nos limitando, nos fazendo repetir os mesmos erros.\n\nFaltam *${warmupDays - 3} dias*.`,
-        manhaEmoji: '🔥',
-        tardeIntro: 'A pergunta de hoje vai fundo:',
-        pollNome: 'O que você mais sente que precisa hoje?',
-        pollOps: ['Clareza emocional', 'Autoconhecimento', 'Mudança real', 'Entender meus padrões'],
-        noiteConteudo: `Por que você reage do jeito que reage?\nPor que você se apaixona por quem se apaixona?\nPor que você sabota exatamente quando estava quase chegando lá?\n\nEssas respostas estão dentro de você. E em ${warmupDays - 3} dias, você vai encontrá-las.\n\nFaltam *${warmupDays - 3} dias*.`,
+        manhaTxt: `Você consegue desligar?\n\nOu sua cabeça está sempre ligada — revisando o passado, antecipando o futuro, preenchendo cada silêncio com pensamentos?\n\nAnsiedade não é um defeito de personalidade. É o inconsciente tentando controlar o que ele aprendeu a temer.\n\nO problema é que esse controle cansa. Isola. E acaba te mantendo longe exatamente do que você mais quer — leveza, presença, conexão real.\n\nA psicanálise não trata a ansiedade com técnicas de respiração.\nEla pergunta: *do que você está fugindo ao não conseguir parar?*\n\nEssa resposta está na *${aulaTit(1)}*.\n\n📅 *${aulaDia(1)}, ${aulaData(1)} — ${aulaTit(1)}, ${aulaH(1)}h*\n👉 ${aulaLink(1)}\n\nFaltam *${warmupDays - 3} dias*.\n\nReaja com 🔥 se a sua cabeça nunca para.`,
+        tardeIntro: `Você vai se identificar com pelo menos uma dessas — responde:`,
+        pollNome: 'Como a ansiedade aparece mais na sua vida?',
+        pollOps: ['Fico revisando o que disse ou fiz', 'Antecipo o pior em tudo', 'Não consigo estar presente nas coisas', 'Me sinto responsável por tudo ao meu redor'],
+        noiteTxt: `Aqui está o que a maioria das pessoas faz com a ansiedade:\n\nTenta controlar mais.\nPlaneja mais. Trabalha mais. Produz mais.\n\nE a sensação passa por um momento — até voltar mais forte.\n\nPorque a ansiedade não é sobre o que está fora. É sobre o que está dentro e ainda não foi olhado.\n\nNa *${aulaTit(1)}*, vamos entender o que está por baixo dessa necessidade de controle — e como se libertar disso.\n\n📅 *${aulaDia(1)}, ${aulaData(1)} — ${aulaTit(1)}, ${aulaH(1)}h*\n👉 ${aulaLink(1)}\n\nFaltam *${warmupDays - 3} dias*.`,
       },
-      // Dia 5 — Por que você é assim
+
+      // Dia 5 — O crítico interno
       {
-        manhaTema: `Tem uma pergunta que é a mais poderosa do autoconhecimento:\n\n*Por que eu sou assim?*\n\nNão como crítica. Como curiosidade genuína de quem quer se entender de verdade.\n\nA maioria das pessoas passa a vida tentando mudar sem nunca fazer essa pergunta.\n\nFaltam *${warmupDays - 4} dias*.`,
-        manhaEmoji: '❤️',
-        tardeIntro: 'Enquete de hoje — qual situação mais te representa:',
-        pollNome: 'Qual situação mais te representa hoje?',
-        pollOps: ['Sinto que preciso mudar', 'Me sinto emocionalmente cansado', 'Quero me entender melhor', 'Cansei de repetir padrões'],
-        noiteConteudo: `Você não nasceu assim.\n\nMuitos dos comportamentos que hoje te limitam foram aprendidos — nas experiências que moldaram quem você é.\n\nE tudo que foi aprendido pode ser transformado.\n\nÉ exatamente isso que vai acontecer ao vivo, em ${warmupDays - 4} dias.\n\nFaltam *${warmupDays - 4} dias*.`,
+        manhaTxt: `Você já parou para prestar atenção no que fala pra você mesmo?\n\nNão o que você diz em voz alta. O que você fala internamente, quando erra, quando decepciona alguém, quando não atinge o que esperava.\n\n*"Eu nunca faço nada certo."*\n*"Eu não mereço isso."*\n*"Quem eu penso que sou?"*\n\nEssa voz tem um nome na psicanálise. E ela não surgiu do nada.\n\nEla foi construída por vozes externas que você internalizou — e que agora operam como se fossem suas.\n\nO primeiro passo para silenciá-la não é ignorá-la. É entender de onde ela veio.\n\nEssa é uma das coisas que vamos trabalhar na *${aulaTit(Math.min(3, numAulas))}*.\n\n📅 *${aulaDia(Math.min(3, numAulas))}, ${aulaData(Math.min(3, numAulas))} — ${aulaTit(Math.min(3, numAulas))}, ${aulaH(Math.min(3, numAulas))}h*\n👉 ${aulaLink(Math.min(3, numAulas))}\n\nFaltam *${warmupDays - 4} dias*.`,
+        tardeIntro: `Esse vai fundo — mas responde com honestidade:`,
+        pollNome: 'Como a autocrítica aparece mais forte em você?',
+        pollOps: ['Me comparo com os outros o tempo todo', 'Nunca acho que fiz o suficiente', 'Me cobro por erros que já passei', 'Tenho medo de parecer fraco ou incapaz'],
+        noiteTxt: `A autocrítica não te torna melhor.\n\nEla só te deixa exausto.\n\nVocê sabe disso. Mas não consegue parar.\n\nPorque essa voz não é sua — é uma introje ção de algo que você aprendeu que era perigoso não fazer. Ser perfeito. Ser suficiente. Não decepcionar.\n\nEntender isso não é desculpa. É libertação.\n\nNa *${aulaTit(Math.min(3, numAulas))}*, vamos desmontar esse crítico interno e entender o que ele está realmente protegendo.\n\n📅 *${aulaDia(Math.min(3, numAulas))}, ${aulaData(Math.min(3, numAulas))} — ${aulaTit(Math.min(3, numAulas))}, ${aulaH(Math.min(3, numAulas))}h*\n👉 ${aulaLink(Math.min(3, numAulas))}\n\nFaltam *${warmupDays - 4} dias*.`,
       },
-      // Dia 6 — 3 dias, visão geral das aulas
+
+      // Dia 6 — 3 dias — Visão geral das aulas + FOMO
       {
-        manhaTema: `3 aulas. 3 noites. Uma jornada que começa por dentro.\n\nCada aula foi desenhada para revelar uma camada diferente de você mesmo.\n\nNão existe momento certo para começar a se conhecer — mas existe o momento em que você decide que já chega.\n\nFaltam *3 dias*.`,
-        manhaEmoji: '❤️',
-        tardeIntro: 'O que você espera encontrar nessa jornada?',
-        pollNome: 'O que você espera encontrar?',
-        pollOps: ['Autoconhecimento', 'Transformação emocional', 'Respostas', 'Um novo começo'],
-        noiteConteudo: `Existe uma diferença enorme entre conhecer alguém… e conhecer a si mesmo.\n\nA maioria das pessoas dedica anos tentando entender os outros — os conflitos, os relacionamentos, as rejeições.\n\nMas raramente para para perguntar: *O que isso diz sobre mim?*\n\nEm 3 dias, você vai encontrar essa resposta.\n\nFaltam *3 dias*.`,
+        manhaTxt: `Faltam *3 dias*.\n\nVou te falar o que vai acontecer em cada aula — e por que você não pode perder nenhuma delas ao vivo.\n\n${aulasDates()}\n\nO que vai ser diferente nessa jornada?\n\nNão vamos dar dicas. Não vamos ensinar técnicas de respiração. Não vamos falar sobre hábitos.\n\nVamos entrar de verdade no que está te travando — a partir da raiz, pela via do inconsciente.\n\nE quem estiver ao vivo vai ter acesso a algo que a gravação não captura:\n\nDinâmicas em tempo real. Perguntas respondidas. A energia do grupo processando junto.\n\nA gravação ficará disponível — mas a experiência ao vivo é insubstituível.\n\nReaja com 🔥 se você vai estar presente nas 3 aulas.\n\n${linkBlock()}`,
+        tardeIntro: `Estamos a 3 dias das aulas. Quero saber onde você está:`,
+        pollNome: 'Em qual área da vida você mais quer transformação agora?',
+        pollOps: ['Minha saúde emocional e paz interna', 'Meus relacionamentos (amor, família, amizades)', 'Minha carreira e realização profissional', 'Minha autoestima e autoconhecimento'],
+        noiteTxt: `Pensa comigo:\n\nQuanto tempo você já passou tentando entender por que você é do jeito que você é?\n\nCom amigos, terapeutas, livros, podcasts — buscando respostas.\n\nEm 3 dias, começamos uma jornada que vai te dar essas respostas de um jeito que você provavelmente nunca teve acesso antes.\n\nNão como informação. Como experiência.\n\nVocê vai sair das ${numAulas} aulas entendendo coisas sobre si mesmo que estão te limitando há anos.\n\n${aulasDates()}\n\nReaja com ❤️ se você vai estar ao vivo.\n\n${linkBlock()}`,
       },
-      // Dia 7 — 2 dias
+
+      // Dia 7 — 2 dias — Urgência real
       {
-        manhaTema: `Entender o inconsciente pode mudar completamente a forma como você vive emoções, relacionamentos e decisões.\n\nNão porque você vai se tornar outra pessoa.\n\nMas porque você vai finalmente entender quem você é.\n\nFaltam *2 dias*.`,
-        manhaEmoji: '🔥',
-        tardeIntro: 'Quase lá. O que você mais espera das aulas ao vivo?',
-        pollNome: 'O que você mais espera das aulas?',
-        pollOps: ['Aprendizado profundo', 'Transformação imediata', 'Ferramentas práticas', 'Uma nova perspectiva'],
-        noiteConteudo: `Quem já passou por uma experiência profunda de autoconhecimento costuma dizer a mesma coisa depois:\n\n*"Eu não sabia que precisava tanto disso."*\n\nO inconsciente decide por você antes de você perceber. Cria as reações que você não consegue controlar. Repete os padrões que você tanto quer quebrar.\n\nEm 2 dias, você vai entender como ressignificá-lo.\n\nFaltam *2 dias*.`,
+        manhaTxt: `Faltam *2 dias*.\n\nDeixa eu te fazer uma pergunta direta:\n\nSe você não mudar nenhum padrão nos próximos meses — como vai ser a sua vida daqui a um ano?\n\nOs mesmos ciclos. As mesmas travadas. A mesma sensação de "quase lá".\n\nNão estou falando isso pra te assustar. Estou falando porque sei que você não chegou até aqui à toa.\n\nVocê está nesse grupo porque algo em você sabe que precisa de uma virada real.\n\nE em 2 dias, essa virada começa.\n\n${aulasDates()}\n\nReaja com 🔥 se você está pronto pra ir fundo.\n\nEntrada nas aulas ao vivo:\n${linkBlock()}`,
+        tardeIntro: `A 2 dias das aulas — responde isso:`,
+        pollNome: 'O que mais te impede de alcançar o que você quer?',
+        pollOps: ['Meu próprio medo de falhar ou ser julgado', 'Relacionamentos que me drenam a energia', 'Ansiedade e paralisia na tomada de decisão', 'Não me sentir suficiente para o que quero'],
+        noiteTxt: `Quem já passou por uma jornada profunda de psicanálise costuma dizer a mesma coisa:\n\n*"Eu vivia no automático e não sabia."*\n\nNão porque eram ignorantes. Mas porque o inconsciente é exatamente isso — invisível. Você age, reage, escolhe e sente sem perceber de onde vem.\n\nAté que alguém te dá acesso às ferramentas certas.\n\nEm 2 dias, é isso que vai acontecer.\n\n${aulasDates()}\n\nEntrada nas aulas:\n${linkBlock()}`,
       },
-      // Dia 8 — Véspera
+
+      // Dia 8 — Véspera — FOMO máximo
       {
-        manhaTema: `A mudança que você quer não vem de mais esforço.\n\nVem de mais consciência.\n\nVocê pode se esforçar mais, tentar mais, fazer mais listas… Mas se os padrões inconscientes continuam operando do mesmo jeito — o resultado vai ser o mesmo.\n\nA jornada começa amanhã. *AMANHÃ. ${aulaH(1)}. AO VIVO.*\n\nFalta *1 dia*.`,
-        manhaEmoji: '🔥',
-        tardeIntro: 'Véspera. Última enquete antes da jornada começar:',
-        pollNome: 'O que você mais quer levar dessa jornada?',
-        pollOps: ['Autoconhecimento real', 'Quebrar padrões', 'Clareza emocional', 'Transformação de vida'],
-        noiteConteudo: `Amanhã, às ${aulaH(1)}, começa a ${aulaTit(1)}.\n\nUma pergunta para você dormir pensando:\n\n*Como seria a sua vida se você entendesse completamente o que te move?*\n\nNão o que você acha. Não o que as pessoas dizem.\n\nO que de fato está por trás das suas escolhas, das suas reações, dos seus padrões.\n\nChega com caderno, caneta e coração aberto. *AMANHÃ. ${aulaH(1)}. AO VIVO.*\n\nFalta *1 dia*.`,
+        manhaTxt: `Amanhã começa.\n\nVou ser direto: quem aparecer ao vivo vai ter uma experiência completamente diferente de quem assistir pela gravação depois.\n\nAs dinâmicas que acontecem em tempo real.\nAs perguntas que surgem no calor da aula.\nA energia de um grupo processando junto ao vivo.\n\nNada disso se captura em vídeo.\n\nA *${aulaTit(1)}* começa amanhã, *${aulaDia(1)}, ${aulaData(1)}, às ${aulaH(1)}h*.\n\nUma pergunta para você carregar durante o dia:\n\n*Se eu pudesse entender completamente o que me trava — o que mudaria na minha vida?*\n\nChega com essa pergunta. A aula vai responder.\n\n👉 ${aulaLink(1)}\n\nReaja com 🔥 se você vai estar lá amanhã.`,
+        tardeIntro: `Véspera. Uma última enquete antes de amanhã:`,
+        pollNome: 'Qual é a maior mudança que você quer na sua vida a partir de agora?',
+        pollOps: ['Parar de me sabotar e agir de verdade', 'Ter relacionamentos mais saudáveis e reais', 'Me libertar da ansiedade e do excesso de controle', 'Começar a me amar sem precisar de aprovação'],
+        noiteTxt: `Amanhã, às ${aulaH(1)}, começa a *${aulaTit(1)}*.\n\nUma coisa que eu preciso que você entenda:\n\nNão existe momento ideal para começar a se conhecer de verdade.\n\nSempre vai ter algo urgente. Sempre vai ter um motivo pra adiar.\n\nMas enquanto você adia, os padrões continuam operando. Os ciclos continuam se repetindo. O cansaço continua se acumulando.\n\nAmanhã você tem a chance de fazer diferente.\n\nChega com caderno, caneta e disposição pra olhar pra dentro.\n\n📅 *${aulaDia(1)}, ${aulaData(1)} — ${aulaTit(1)}, ${aulaH(1)}h*\n👉 ${aulaLink(1)}\n\nFalta *1 dia*. Não perca.`,
       },
     ];
 
@@ -315,130 +314,125 @@ export function generateLancamentoMessages(config: WizardConfig): TemplateMensag
       const dayDate = addDays(warmupStart, i);
       const d       = dias[i];
 
-      // Manhã (11h) — conteúdo + datas + CTA
       msgs.push(textMsg(fn, day, setTime(dayDate, '11:00'), g1,
-        `Excelente dia! ☀️\n\n${d.manhaTema}\n\n${aulasDates()}\n\nReaja a essa mensagem com um ${d.manhaEmoji} se você vai estar ao vivo!\n\n👇 Deixe o like e ative o lembrete das aulas:\n${linkBlock()}`,
-        `Dia ${day} — Manhã`, { link_preview: true }));
+        d.manhaTxt, `Dia ${day} — Manhã`, { link_preview: true }));
 
-      // Tarde (17h) — intro da enquete
       msgs.push(textMsg(fn, day, setTime(dayDate, '17:00'), g1,
-        `Excelente tarde! ☀️\n\n${d.tardeIntro}\n\n*${d.pollNome}*\n\n👇`,
+        d.tardeIntro + '\n\n👇',
         `Dia ${day} — Enquete (intro)`));
 
-      // Tarde (17h03) — poll
       msgs.push(pollMsg(fn, day,
         new Date(setTime(dayDate, '17:00').getTime() + 3 * 60 * 1000),
         g1, d.pollNome, d.pollOps, `Dia ${day} — Enquete`));
 
-      // Noite (23h) — contagem + CTA
       msgs.push(textMsg(fn, day, setTime(dayDate, '23:00'), g1,
-        `Excelente noite! 🌙\n\n${d.noiteConteudo}\n\n${aulasDates()}\n\nReaja a essa mensagem com um ❤️ se você vai estar ao vivo!\n\n👇 Deixe o like e ative o lembrete das aulas:\n${linkBlock()}`,
-        `Dia ${day} — Noite`, { link_preview: true }));
+        d.noiteTxt, `Dia ${day} — Noite`, { link_preview: true }));
     }
 
     // ── Gerar dias de aula ─────────────────────────────────────────────────────
     for (let i = 1; i <= numAulas; i++) {
-      const aulaDateStr = aula(i)?.data || config.data_live;
-      const aulaDateObj = new Date(aulaDateStr + 'T12:00:00');
-      const dayNum      = warmupDays + i;
+      const aulaDateStr  = aula(i)?.data || config.data_live;
+      const aulaDateObj  = new Date(aulaDateStr + 'T12:00:00');
+      const dayNum       = warmupDays + i;
       const aulaDateHora = setTime(aulaDateObj, aulaHora(i));
 
-      // Manhã do dia da aula
       const manhaTxt = i === 1
-        ? `Excelente dia! ☀️\n\n*HOJE É O DIA.*\n\nEssa noite, às ${aulaH(i)}, começa a ${aulaTit(i)}.\n\nChega com caderno, caneta e coração aberto.\n\n👇 Deixe o like e ative o lembrete:\n${aulaLink(i)}`
-        : `Excelente dia! ☀️\n\nSe a aula de ontem te mexeu — prepara o coração.\n\n*Hoje vai mais fundo.*\n\n${aulaTit(i)} — ${aulaDia(i)}, ${aulaH(i)}.\n\n👇 ${aulaLink(i)}`;
+        ? `*HOJE É O DIA.*\n\nTudo que conversamos nesse grupo nos últimos dias converge agora.\n\nEssa noite, às ${aulaH(i)}, começa a *${aulaTit(i)}*.\n\nEu sei que você tem sua rotina. Tem compromissos. Tem mil coisas pra fazer.\n\nMas deixa eu te perguntar: quantas vezes você colocou tudo em primeiro lugar — menos você mesmo?\n\nEssa aula é pra você. Chega ao vivo.\n\nTrás caderno, caneta e disposição pra ir fundo.\n\n📅 *Hoje, ${aulaData(i)} — ${aulaTit(i)}, ${aulaH(i)}h*\n👉 ${aulaLink(i)}`
+        : `Se a *${aulaTit(i - 1)}* te mexeu — prepara o coração.\n\nHoje vai mais fundo.\n\nA *${aulaTit(i)}* começa às ${aulaH(i)}h. E o que vem pela frente vai continuar o que começou ontem — só que em um nível que você ainda não viu.\n\nEsteja ao vivo. A gravação não captura o que acontece em tempo real.\n\n📅 *Hoje, ${aulaData(i)} — ${aulaTit(i)}, ${aulaH(i)}h*\n👉 ${aulaLink(i)}`;
 
       msgs.push(textMsg(fn, dayNum, setTime(aulaDateObj, '11:00'), g1, manhaTxt,
         `${aulaTit(i)} — Manhã`, { link_preview: true }));
 
-      // Tarde — intro + enquete
       const tardeTxt = i === 1
-        ? `Excelente tarde! ☀️\n\nHOJE ÀS ${aulaH(i)} — ${aulaTit(i)}! 🔴\n\nAntes de começar:\n\n*Qual é a sua maior expectativa para essa aula?*\n\n👇\n\n${aulaLink(i)}`
-        : `Excelente tarde! ☀️\n\nDepois da aula de ontem, quero saber:\n\n*O que mais te pegou na ${aulaTit(i - 1)}?*\n\n👇\n\n${aulaLink(i)}`;
+        ? `Hoje à noite começa a *${aulaTit(i)}*.\n\nUma coisa antes de começar:\n\nNão assista a essa aula deitado no sofá com o celular na mão.\n\nSente em um lugar tranquilo. Com caderno e caneta. Pronto pra registrar o que vai surgir.\n\nEssa aula vai abrir coisas. E você vai querer ter escrito.\n\nNos vemos às ${aulaH(i)}h.\n\n👉 ${aulaLink(i)}`
+        : `Depois de tudo que a *${aulaTit(i - 1)}* trouxe — quero saber:\n\nO que mais te pegou? O que ficou reverberando?\n\nEssa pergunta não é retórica. Leva ela pra aula de hoje.\n\nA *${aulaTit(i)}* começa às ${aulaH(i)}h.\n\n👉 ${aulaLink(i)}`;
 
       msgs.push(textMsg(fn, dayNum, setTime(aulaDateObj, '17:00'), g1, tardeTxt,
         `${aulaTit(i)} — Tarde`, { link_preview: true }));
 
-      // Contagens regressivas — 3h, 2h, 1h antes
-      for (const [offset, label] of [[-3, '3 HORAS'], [-2, '2 HORAS'], [-1, '1 HORA']] as [number, string][]) {
+      // Contagem regressiva
+      const countdown: [number, string][] = [[-3, '3 HORAS'], [-2, '2 HORAS'], [-1, '1 HORA']];
+      for (const [offset, label] of countdown) {
         const t = new Date(aulaDateHora.getTime() + offset * 60 * 60 * 1000);
         const txt = offset === -3
-          ? `⏰ *Faltam ${label} para a ${aulaTit(i)}!*\n\nDaqui a pouco começa a aula mais importante da sua semana.\n\n👉 ${aulaLink(i)}`
+          ? `⏰ *Faltam ${label} para a ${aulaTit(i)}.*\n\nVocê já está com o link salvo?\n\nNão corra o risco de perder o início. A aula começa no horário — e os primeiros minutos são os mais importantes.\n\n👉 ${aulaLink(i)}`
           : offset === -2
-          ? `⏰ *Faltam ${label}!*\n\nChecklist:\n✅ Caderno e caneta do lado\n✅ Fone de ouvido pronto\n✅ Lugar tranquilo garantido\n✅ Link salvo\n\nFalta só você aparecer.\n\n👉 ${aulaLink(i)}`
-          : `⏰ *Falta ${label}!*\n\nReaja com um 🔥 se você vai estar lá!\n\n👉 ${aulaLink(i)}`;
+          ? `⏰ *Faltam ${label}.*\n\nChecklist rápido:\n✅ Local tranquilo\n✅ Caderno e caneta na mão\n✅ Celular no silencioso\n✅ Link aberto e testado\n\nVocê não vai se arrepender de ter estado ao vivo.\n\n👉 ${aulaLink(i)}`
+          : `⏰ *Falta ${label} para a ${aulaTit(i)}!*\n\nReage com 🔥 se você vai estar ao vivo agora!\n\n👉 ${aulaLink(i)}`;
         msgs.push(textMsg(fn, dayNum, t, g1, txt,
           `${aulaTit(i)} — -${Math.abs(offset)}h`,
-          { link_preview: true, mention_everyone: true }));
+          { link_preview: true, mention_everyone: offset === -1 }));
       }
 
       // AO VIVO
       msgs.push(textMsg(fn, dayNum, aulaDateHora, g1,
-        `🔴 *ESTAMOS AO VIVO!*\n\n${aulaTit(i)} começou AGORA!\n\nCorre. Não perde o início.\n\n👉 ${aulaLink(i)}\n\nReage com um ❤️ e entra AGORA!`,
+        `🔴 *AO VIVO AGORA — ${aulaTit(i).toUpperCase()}*\n\nComeçou. Não perde o início.\n\nEntra agora e desliga o que não é urgente — essa aula merece a sua presença total.\n\n👉 ${aulaLink(i)}\n\nReage com ❤️ quando entrar!`,
         `${aulaTit(i)} — AO VIVO`,
         { link_preview: true, mention_everyone: true }));
 
-      // Pós-aula (3h depois) — apenas entre aulas
+      // Pós-aula
       if (i < numAulas) {
         const pos = new Date(aulaDateHora.getTime() + 3 * 60 * 60 * 1000);
         msgs.push(textMsg(fn, dayNum, pos, g1,
-          `✅ *${aulaTit(i)} encerrada!*\n\nEspero que tenham aproveitado!\n\n📹 Gravação disponível por 48h:\n${aulaLink(i)}\n\nNos vemos amanhã para a ${aulaTit(i + 1)}! 💪`,
+          `A *${aulaTit(i)}* encerrou.\n\nSe você estava ao vivo — como você está?\n\nÉ normal que surja muito depois de uma aula assim. Deixa surgir. Anota. Processa.\n\nA *${aulaTit(i + 1)}* continua amanhã. Vai mais fundo.\n\n📹 Gravação disponível por 48h — mas esteja ao vivo amanhã:\n👉 ${aulaLink(i + 1)}`,
           `${aulaTit(i)} — Pós-aula`, { link_preview: true }));
       }
     }
 
     // ── Oferta pós-evento ──────────────────────────────────────────────────────
-    const diaOferta     = addDays(live, numAulas);
-    const linkCheckout  = config.links_extras.find(l => l.key === 'link_checkout')?.value || '{{link_checkout}}';
-    const baseDay       = warmupDays + numAulas;
+    const diaOferta    = addDays(live, numAulas);
+    const linkCheckout = config.links_extras.find(l => l.key === 'link_checkout')?.value || '{{link_checkout}}';
+    const baseDay      = warmupDays + numAulas;
 
     msgs.push(textMsg(fn, baseDay + 1, setTime(diaOferta, '10:00'), g2,
-      `🎁 *Família, chegou o momento!*\n\nApós essas noites incríveis de conteúdo, as matrículas estão abertas.\n\n✨ Garanta sua vaga agora:\n${linkCheckout}\n\n⚠️ Vagas limitadas!`,
+      `Você acabou de passar por algo que a maioria das pessoas nunca vai ter acesso.\n\n${numAulas} aulas que foram fundo no que está por trás dos seus padrões. Do que te trava. Do que te faz repetir.\n\nE agora você tem duas opções:\n\n1️⃣ Levar o que aprendeu e tentar aplicar sozinho — como já fez outras vezes.\n\n2️⃣ Continuar esse trabalho com estrutura, suporte e profundidade real.\n\nPara quem quer ir além, as matrículas abriram agora.\n\nSão vagas limitadas — e quem passou pelas aulas ao vivo tem prioridade.\n\n👉 ${linkCheckout}\n\nAs vagas não esperam.`,
       'Oferta — Abertura', { link_preview: true, mention_everyone: true }));
 
     msgs.push(textMsg(fn, baseDay + 2, setTime(addDays(diaOferta, 1), '19:00'), g2,
-      `⏳ *Ainda dá tempo!*\n\nAs matrículas ainda estão abertas — mas o prazo está acabando.\n\n🔗 ${linkCheckout}`,
+      `Ontem abriram as matrículas. E muita gente já garantiu a vaga.\n\nSe você ainda está pensando — entendo. Toda decisão real exige coragem.\n\nMas deixa eu te perguntar algo:\n\nO que vai ser diferente daqui a 6 meses se você continuar do jeito que está?\n\nOs mesmos padrões. Os mesmos ciclos. A mesma sensação de quase lá.\n\nOu você pode fazer algo diferente agora.\n\n👉 ${linkCheckout}\n\nVagas ainda disponíveis — mas não por muito tempo.`,
       'Oferta — Follow-up +1', { link_preview: true, mention_everyone: true }));
 
     msgs.push(textMsg(fn, baseDay + 3, setTime(addDays(diaOferta, 2), '18:00'), g2,
-      `🚨 *Último aviso!*\n\nAmanhã encerram as matrículas. Depois disso, não haverá nova turma tão cedo.\n\n🔗 ${linkCheckout}\n\nÉ agora ou nunca! 💪`,
+      `⚠️ *Amanhã encerram as matrículas.*\n\nNão vou ficar mandando mensagem insistindo. Respeito a sua decisão.\n\nMas se você saiu das aulas sentindo que algo virou — que você viu coisas que não pode mais ignorar — saiba que o próximo passo está disponível agora.\n\nDepois de amanhã, não tem como garantir vaga.\n\n👉 ${linkCheckout}`,
       'Oferta — Escassez +2', { link_preview: true, mention_everyone: true }));
 
     msgs.push(textMsg(fn, baseDay + 4, setTime(addDays(diaOferta, 3), '12:00'), g2,
-      `🔒 *Encerrando hoje!*\n\nHoje é o último dia. As matrículas fecham à meia-noite.\n\n🔗 ${linkCheckout}\n\nNão deixe pra depois — o depois pode não vir! 🎯`,
+      `🔒 *Hoje é o último dia.*\n\nAs matrículas fecham à meia-noite.\n\nSe você estava esperando o momento certo — ele é agora.\n\nO momento certo não existe. Existe a decisão que você toma antes de estar completamente pronto.\n\nE essa decisão, tomada hoje, pode mudar o que vem depois.\n\n👉 ${linkCheckout}\n\nDepois da meia-noite, a porta fecha.`,
       'Oferta — Encerramento +3', { link_preview: true, mention_everyone: true }));
 
   // ═══════════════════════════════════════════════════════════════════════════
   // NPA
   // ═══════════════════════════════════════════════════════════════════════════
   } else {
-    const warmupDays = 3;
+    const warmupDays  = 3;
     const warmupStart = addDays(live, -warmupDays);
 
     const diasNpa = [
+      // Dia 1 NPA — Boas-vindas + dor real
       {
-        manhaTema: `Você entrou em um grupo de pessoas que estão prontas para sair do piloto automático.\n\nEm ${warmupDays} dias, vamos ter um encontro ao vivo que vai te mostrar caminhos que você ainda não considerou.\n\nFaltam *${warmupDays} dias*.`,
-        manhaEmoji: '❤️',
-        tardeIntro: 'Enquete de boas-vindas:',
+        manhaTxt: `Você entrou.\n\nE isso já diz muito sobre você.\n\nA maioria das pessoas passa a vida inteira convivendo com padrões que não quer — sem nunca parar pra entender de onde eles vêm.\n\nVocê escolheu fazer diferente.\n\nNos próximos ${warmupDays} dias, vamos te preparar para um encontro ao vivo que vai te mostrar o que está por trás das suas reações, dos seus padrões, das escolhas que você não consegue explicar.\n\n📅 *${aulaDia(1)}, ${aulaData(1)} — ${aulaTit(1)}, ${aulaH(1)}h*\n👉 ${aulaLink(1)}\n\nFaltam *${warmupDays} dias*.\n\nReaja com ❤️ se você está pronto pra ir fundo.`,
+        tardeIntro: `Antes de começar, quero te conhecer melhor — responde com honestidade:`,
         pollNome: 'O que mais te trouxe até aqui?',
-        pollOps: ['Busca por mudança', 'Curiosidade', 'Indicação', 'Quero me conhecer melhor'],
-        noiteConteudo: `A maior parte das decisões que tomamos no dia a dia não é consciente.\n\nÉ o inconsciente que dirige — e a maioria das pessoas nunca para para entender isso.\n\nEm ${warmupDays} dias, vamos mudar isso juntos.\n\nFaltam *${warmupDays} dias*.`,
+        pollOps: ['Cansaço de repetir os mesmos padrões', 'Relacionamentos que sempre decepcionam', 'Ansiedade que não me deixa em paz', 'Quero me entender de verdade'],
+        noiteTxt: `A maior parte das coisas que nos travam não está no consciente.\n\nEstá no inconsciente — operando nos bastidores das nossas decisões, reações e escolhas.\n\nE enquanto ele não for acessado, você pode tentar mudar o quanto quiser. Os padrões voltam.\n\nNo nosso encontro ao vivo, vamos abrir esse acesso.\n\n📅 *${aulaDia(1)}, ${aulaData(1)} — ${aulaTit(1)}, ${aulaH(1)}h*\n👉 ${aulaLink(1)}\n\nFaltam *${warmupDays} dias*. Prepara.`,
       },
+
+      // Dia 2 NPA — Padrão que se repete
       {
-        manhaTema: `Faltam *2 dias* para o nosso encontro ao vivo.\n\nVocê já se perguntou por que repete os mesmos padrões, mesmo quando quer mudar?\n\nIsso tem uma explicação — e ela está no seu inconsciente.\n\nFaltam *2 dias*.`,
-        manhaEmoji: '🔥',
-        tardeIntro: 'Enquete de hoje:',
-        pollNome: 'O que você mais quer levar desse encontro?',
-        pollOps: ['Autoconhecimento', 'Clareza emocional', 'Mudança real', 'Entender meus padrões'],
-        noiteConteudo: `Em 2 dias, vamos ter um encontro ao vivo que vai te ajudar a entender o que está por trás dos seus padrões e das suas escolhas.\n\nChega com abertura e vontade de se enxergar.\n\nFaltam *2 dias*.`,
+        manhaTxt: `Você já percebeu que certos padrões da sua vida parecem se repetir — não importa o quanto você tente mudar?\n\nMuda o contexto. Muda a pessoa. Muda o emprego.\nMas a mesma sensação volta.\n\nIsso não é coincidência. É o inconsciente recriando o que aprendeu — na tentativa de te dar uma nova chance de resolver o que ficou irresolvido.\n\nO problema: sem entender o mecanismo, você vai continuar preso nele.\n\nNo nosso encontro ao vivo, vamos desmontar esse ciclo.\n\n📅 *${aulaDia(1)}, ${aulaData(1)} — ${aulaTit(1)}, ${aulaH(1)}h*\n👉 ${aulaLink(1)}\n\nFaltam *2 dias*.\n\nReaja com 🔥 se você já se pegou repetindo um padrão que queria ter quebrado.`,
+        tardeIntro: `A pergunta de hoje vai fundo — responde com sinceridade:`,
+        pollNome: 'Qual situação da sua vida mais se repete de formas diferentes?',
+        pollOps: ['Me saboto quando estou perto do que quero', 'Me envolvo com pessoas que me decepcionam', 'Fico preso(a) em ciclos de ansiedade e controle', 'Me cobro mais do que me aceito'],
+        noiteTxt: `Duas perguntas para você levar pra dormir:\n\n*Por que você reage do jeito que reage?*\n*Por que você escolhe o que escolhe — mesmo quando sabe que vai doer?*\n\nEssas não são perguntas filosóficas. São as perguntas que, quando respondidas, mudam tudo.\n\nAmanhã damos o último passo antes do nosso encontro ao vivo.\n\n📅 *${aulaDia(1)}, ${aulaData(1)} — ${aulaTit(1)}, ${aulaH(1)}h*\n👉 ${aulaLink(1)}\n\nFaltam *2 dias*.`,
       },
+
+      // Dia 3 NPA — Véspera — FOMO
       {
-        manhaTema: `Falta *1 dia* para o nosso encontro!\n\nAmanhã, às ${aulaH(1)}, vamos nos encontrar ao vivo para um conteúdo que vai fundo.\n\nChega preparado — com caderno, caneta e coração aberto.\n\n*AMANHÃ. ${aulaH(1)}. AO VIVO.*`,
-        manhaEmoji: '🔥',
-        tardeIntro: 'Última enquete antes do encontro:',
-        pollNome: 'Como você está chegando para amanhã?',
-        pollOps: ['Animado e preparado', 'Com muita expectativa', 'Ansioso mas pronto', 'Aberto para o que vier'],
-        noiteConteudo: `Amanhã às ${aulaH(1)} começa.\n\nUma pergunta para você dormir pensando:\n\n*O que mudaria na sua vida se você entendesse completamente o que te move?*\n\nChega com caderno, caneta e coração aberto.\n\n*AMANHÃ. ${aulaH(1)}. AO VIVO.*\n\nFalta *1 dia*.`,
+        manhaTxt: `Amanhã começa.\n\nQuero ser direto com você:\n\nO que vai acontecer no nosso encontro ao vivo não é mais um conteúdo de autoconhecimento.\n\nÉ uma experiência de contato real com o que está por baixo dos seus padrões — com acolhimento, profundidade e ferramentas práticas da psicanálise.\n\nQuem estiver ao vivo vai ter algo que a gravação não pode replicar: presença, troca, e o próprio processo acontecendo em tempo real.\n\n📅 *Amanhã, ${aulaDia(1)}, ${aulaData(1)} — ${aulaTit(1)}, ${aulaH(1)}h*\n👉 ${aulaLink(1)}\n\nFalta *1 dia*. Reaja com 🔥 se você vai estar lá.`,
+        tardeIntro: `Véspera do nosso encontro. Uma última pergunta antes de amanhã:`,
+        pollNome: 'Qual é a maior transformação que você quer sair desse encontro tendo iniciado?',
+        pollOps: ['Parar de me sabotar e agir com mais coragem', 'Ter relacionamentos mais saudáveis e reais', 'Me libertar da ansiedade e do excesso de controle', 'Me aceitar mais e me cobrar menos'],
+        noiteTxt: `Amanhã, às ${aulaH(1)}, é o nosso encontro ao vivo.\n\nUma pergunta para você dormir pensando:\n\n*Se eu pudesse entender completamente o que me trava — o que mudaria na minha vida?*\n\nChega amanhã com essa pergunta. O encontro vai respondê-la.\n\nTraz caderno, caneta e disposição pra ir fundo.\n\n📅 *Amanhã, ${aulaDia(1)}, ${aulaData(1)} — ${aulaTit(1)}, ${aulaH(1)}h*\n👉 ${aulaLink(1)}\n\nFalta *1 dia*. Não perca.`,
       },
     ];
 
@@ -448,11 +442,10 @@ export function generateLancamentoMessages(config: WizardConfig): TemplateMensag
       const d       = diasNpa[i];
 
       msgs.push(textMsg(fn, day, setTime(dayDate, '11:00'), g1,
-        `Excelente dia! ☀️\n\n${d.manhaTema}\n\n${aulasDates()}\n\nReaja a essa mensagem com um ${d.manhaEmoji} se você vai estar ao vivo!\n\n👇 Deixe o like e ative o lembrete:\n${linkBlock()}`,
-        `Dia ${day} — Manhã`, { link_preview: true }));
+        d.manhaTxt, `Dia ${day} — Manhã`, { link_preview: true }));
 
       msgs.push(textMsg(fn, day, setTime(dayDate, '17:00'), g1,
-        `Excelente tarde! ☀️\n\n${d.tardeIntro}\n\n*${d.pollNome}*\n\n👇`,
+        d.tardeIntro + '\n\n👇',
         `Dia ${day} — Enquete (intro)`));
 
       msgs.push(pollMsg(fn, day,
@@ -460,30 +453,29 @@ export function generateLancamentoMessages(config: WizardConfig): TemplateMensag
         g1, d.pollNome, d.pollOps, `Dia ${day} — Enquete`));
 
       msgs.push(textMsg(fn, day, setTime(dayDate, '23:00'), g1,
-        `Excelente noite! 🌙\n\n${d.noiteConteudo}\n\n${aulasDates()}\n\nReaja a essa mensagem com um ❤️ se você vai estar ao vivo!\n\n👇 Deixe o like e ative o lembrete:\n${linkBlock()}`,
-        `Dia ${day} — Noite`, { link_preview: true }));
+        d.noiteTxt, `Dia ${day} — Noite`, { link_preview: true }));
     }
 
-    // Dia do evento NPA
+    // ── Dia do evento NPA ──────────────────────────────────────────────────────
     const aulaDateObj  = new Date(config.data_live + 'T12:00:00');
     const aulaDateHora = setTime(aulaDateObj, aulaHora(1));
     const dayNum       = warmupDays + 1;
 
     msgs.push(textMsg(fn, dayNum, setTime(aulaDateObj, '11:00'), g1,
-      `Excelente dia! ☀️\n\n*HOJE É O DIA.*\n\nEssa noite, às ${aulaH(1)}, começa o nosso encontro ao vivo.\n\nChega com caderno, caneta e coração aberto.\n\n👇 ${aulaLink(1)}`,
+      `*HOJE É O DIA.*\n\nTudo que construímos nesses últimos dias converge aqui.\n\nEssa noite, às ${aulaH(1)}, começa o nosso encontro ao vivo.\n\nNão tem outro jeito de dizer: quem estiver presente ao vivo vai ter uma experiência que a gravação não consegue replicar.\n\nChega com caderno, caneta e disposição pra olhar pra dentro.\n\n📅 *Hoje, ${aulaData(1)} — ${aulaTit(1)}, ${aulaH(1)}h*\n👉 ${aulaLink(1)}`,
       'Dia do Evento — Manhã', { link_preview: true }));
 
     msgs.push(textMsg(fn, dayNum, setTime(aulaDateObj, '17:00'), g1,
-      `Excelente tarde! ☀️\n\nHOJE ÀS ${aulaH(1)}! 🔴\n\nAntes de começar:\n\n*Qual é a sua maior expectativa para essa noite?*\n\n👇\n\n${aulaLink(1)}`,
+      `Hoje à noite — *${aulaTit(1)}*, às ${aulaH(1)}h.\n\nDica antes de entrar: senta em um lugar tranquilo, com caderno na mão.\n\nEssa aula vai abrir coisas. Você vai querer ter anotado.\n\nNos vemos em poucas horas.\n\n👉 ${aulaLink(1)}`,
       'Dia do Evento — Tarde', { link_preview: true }));
 
     msgs.push(textMsg(fn, dayNum,
       new Date(aulaDateHora.getTime() - 60 * 60 * 1000), g1,
-      `⏰ *Falta 1 HORA!*\n\nReaja com um 🔥 se você vai estar lá!\n\n👉 ${aulaLink(1)}`,
+      `⏰ *Falta 1 HORA para a ${aulaTit(1)}!*\n\nReage com 🔥 se você vai estar ao vivo agora!\n\n👉 ${aulaLink(1)}`,
       'Dia do Evento — -1h', { link_preview: true, mention_everyone: true }));
 
     msgs.push(textMsg(fn, dayNum, aulaDateHora, g1,
-      `🔴 *ESTAMOS AO VIVO!*\n\nComeçou AGORA!\n\nCorre. Não perde o início.\n\n👉 ${aulaLink(1)}\n\nReage com um ❤️ e entra AGORA!`,
+      `🔴 *AO VIVO AGORA — ${aulaTit(1).toUpperCase()}*\n\nComeçou. Entra agora. Não perde o início.\n\n👉 ${aulaLink(1)}\n\nReage com ❤️ quando entrar!`,
       'Dia do Evento — AO VIVO', { link_preview: true, mention_everyone: true }));
 
     // Oferta pós-NPA
@@ -491,7 +483,7 @@ export function generateLancamentoMessages(config: WizardConfig): TemplateMensag
     const linkCheckout = config.links_extras.find(l => l.key === 'link_checkout')?.value || '{{link_checkout}}';
 
     msgs.push(textMsg(fn, dayNum + 1, setTime(diaOferta, '10:00'), g2,
-      `🎁 *Olá, participante do evento!*\n\nEspero que tenha aproveitado cada minuto!\n\nConforme falamos, aqui estão os próximos passos para quem quer ir além:\n\n🔗 ${linkCheckout}\n\n⚠️ Vagas limitadas!`,
+      `Como você está depois de ontem?\n\nSe o encontro te mexeu — se algo ficou reverberando — é porque você tocou em algo real.\n\nPara quem quer continuar esse trabalho com estrutura, suporte e profundidade:\n\nAs matrículas estão abertas agora. São vagas limitadas e quem participou do evento tem prioridade.\n\n👉 ${linkCheckout}\n\nAs vagas não esperam. Se faz sentido pra você — é agora.`,
       'Oferta Pós-NPA', { link_preview: true, mention_everyone: true }));
   }
 
