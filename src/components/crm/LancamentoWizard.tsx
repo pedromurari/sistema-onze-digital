@@ -10,6 +10,7 @@ import {
   WizardConfig, TemplateMensagem, AulaConfig, GrupoConfig,
   generateLancamentoMessages, buildFunnelVariaveis,
   defaultBoasVindasWpp, defaultBoasVindasEmail,
+  defaultBoasVindasNpaManha, defaultBoasVindasNpaTarde, defaultPixTemplate,
 } from '@/lib/lancamento-templates';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -64,6 +65,7 @@ function defaultConfig(): WizardConfig {
     ],
     links_extras: [{ key: 'link_checkout', value: '' }],
     bv_wpp_ativo: true, bv_wpp_mensagem: '',
+    bv_wpp_mensagem_tarde: '', pix_mensagem_template: '',
     bv_email_ativo: false, bv_email_assunto: '', bv_email_corpo: '',
   };
 }
@@ -512,11 +514,42 @@ function Step3({ config, setConfig, evoInstances }: {
       const base = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
       const url = `${base}/group/fetchAllGroups/${evo.instance_name}?getParticipants=false`;
       const res = await fetch(url, { headers: { apikey: evo.api_key } });
-      const data = await res.json();
-      const groups = (Array.isArray(data) ? data : [])
-        .map((g: Record<string, unknown>) => ({ id: String(g.id ?? ''), subject: String(g.subject ?? g.id ?? ''), size: Number(g.size ?? 0) }))
-        .filter(g => g.id.endsWith('@g.us'))
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        toast.error(`API retornou ${res.status}: ${errText.slice(0, 120)}`);
+        return;
+      }
+
+      const rawText = await res.text();
+      let data: unknown;
+      try { data = JSON.parse(rawText); } catch { toast.error('Resposta inválida da API'); return; }
+
+      // Suporta múltiplos formatos da Evolution API
+      const list: unknown[] = Array.isArray(data)
+        ? data
+        : Array.isArray((data as Record<string, unknown>)?.groups)
+          ? (data as Record<string, unknown[]>).groups
+          : [];
+
+      const groups = list
+        .map((g: unknown) => {
+          const r = g as Record<string, unknown>;
+          const id = String(r.id ?? r.remoteJid ?? r.jid ?? '');
+          return {
+            id,
+            subject: String(r.subject ?? r.name ?? id ?? ''),
+            size: Number(r.size ?? (r.participants as unknown[])?.length ?? 0),
+          };
+        })
+        .filter(g => g.id.includes('@g.us'))
         .sort((a, b) => a.subject.localeCompare(b.subject));
+
+      if (groups.length === 0) {
+        toast.warning('Nenhum grupo encontrado nesta instância');
+      } else {
+        toast.success(`${groups.length} grupo(s) encontrado(s)`);
+      }
       setFetchedGroups(p => ({ ...p, [cardIdx]: groups }));
     } catch (e: unknown) {
       toast.error('Erro ao buscar grupos: ' + (e as Error).message);
@@ -1099,13 +1132,117 @@ function Step4({ config, setConfig }: {
 
 // ─── Step 5: Boas-Vindas ──────────────────────────────────────────────────────
 
+function WppTemplateCard({
+  title, subtitle, badge, bgColor, borderColor, headerColor, badgeColor, emoji,
+  vars, template, onChange, placeholder,
+}: {
+  title: string; subtitle: string; badge: string;
+  bgColor: string; borderColor: string; headerColor: string; badgeColor: string; emoji: string;
+  vars: string[]; template: string; onChange: (v: string) => void; placeholder: string;
+}) {
+  const preview = template
+    .replace(/\{\{nome\}\}/g, 'Maria Silva')
+    .replace(/\{\{evento_nome\}\}/g, 'NPA #14 Santos')
+    .replace(/\{\{data_evento\}\}/g, '14/06/2025')
+    .replace(/\{\{turma\}\}/g, 'Manhã')
+    .replace(/\{\{link_grupo_manha\}\}/g, 'https://chat.whatsapp.com/exemplo')
+    .replace(/\{\{link_grupo_tarde\}\}/g, 'https://chat.whatsapp.com/exemplo2')
+    .replace(/\{\{link_grupo\}\}/g, 'https://chat.whatsapp.com/exemplo');
+
+  return (
+    <div className={`rounded-xl border-2 ${borderColor} ${bgColor} overflow-hidden`}>
+      <div className={`flex items-center gap-3 px-4 py-3 ${headerColor} border-b ${borderColor}`}>
+        <span className="text-lg">{emoji}</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold truncate">{title}</p>
+          <p className="text-xs opacity-75 truncate">{subtitle}</p>
+        </div>
+        <span className={`flex-shrink-0 text-xs ${badgeColor} px-2 py-0.5 rounded-full font-medium font-mono`}>{badge}</span>
+      </div>
+      <div className="p-4 space-y-3">
+        <div className="flex flex-wrap gap-1.5">
+          {vars.map(v => (
+            <button key={v} type="button" onClick={() => onChange(template + v)}
+              className="text-xs px-2 py-0.5 rounded-full bg-white border border-border text-muted-foreground hover:border-primary hover:text-primary font-mono transition-colors">
+              {v}
+            </button>
+          ))}
+        </div>
+        <textarea
+          className="w-full h-36 text-sm font-mono border border-border rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+          value={template}
+          onChange={e => onChange(e.target.value)}
+          placeholder={placeholder}
+        />
+        {template && (
+          <div>
+            <p className="text-[10px] text-muted-foreground mb-1">Prévia (WhatsApp):</p>
+            <div className="bg-[#e5ddd5] rounded-lg p-3 max-h-40 overflow-y-auto">
+              <div className="bg-white rounded-lg px-3 py-2 shadow-sm max-w-[85%] ml-auto">
+                <p className="text-sm whitespace-pre-wrap text-gray-800">{preview}</p>
+                <p className="text-[10px] text-gray-400 text-right mt-1">12:00 ✓✓</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Step5({ config, setConfig }: {
   config: WizardConfig;
   setConfig: React.Dispatch<React.SetStateAction<WizardConfig>>;
 }) {
   const set = (k: keyof WizardConfig, v: unknown) => setConfig(c => ({ ...c, [k]: v }));
-  const VARS = ['{{nome}}', '{{turma}}', '{{whatsapp}}', '{{email}}'];
 
+  // ── NPA: 3 templates automáticos ──────────────────────────────────────────
+  if (config.tipo === 'npa') {
+    return (
+      <div className="space-y-5">
+        <div className="flex items-start gap-3 p-3 rounded-xl bg-blue-50 border border-blue-200">
+          <span className="text-lg flex-shrink-0">🤖</span>
+          <div>
+            <p className="text-sm font-semibold text-blue-900">Mensagens automáticas via Vega Checkout</p>
+            <p className="text-xs text-blue-700 mt-0.5">Essas mensagens são enviadas automaticamente quando o cliente realiza a compra. Configure cada template abaixo para as turmas Manhã e Tarde.</p>
+          </div>
+        </div>
+
+        <WppTemplateCard
+          emoji="💳" title="PIX Gerado" badge="sale_wait_payment · ambas turmas"
+          subtitle="Enviada quando o cliente escolhe PIX no checkout — inclui o código PIX logo em seguida"
+          bgColor="bg-orange-50/40" borderColor="border-orange-200" headerColor="bg-orange-100" badgeColor="bg-orange-200 text-orange-800"
+          vars={['{{nome}}', '{{evento_nome}}', '{{data_evento}}']}
+          template={config.pix_mensagem_template || ''}
+          onChange={v => set('pix_mensagem_template', v)}
+          placeholder="Olá {{nome}}! Seu PIX foi gerado..."
+        />
+
+        <WppTemplateCard
+          emoji="☀️" title="Compra Confirmada — Turma Manhã" badge="sale_paid · manhã"
+          subtitle="Enviada após confirmação do pagamento para alunos da turma Manhã"
+          bgColor="bg-yellow-50/40" borderColor="border-yellow-200" headerColor="bg-yellow-100" badgeColor="bg-yellow-200 text-yellow-800"
+          vars={['{{nome}}', '{{evento_nome}}', '{{data_evento}}', '{{link_grupo_manha}}']}
+          template={config.bv_wpp_mensagem || ''}
+          onChange={v => set('bv_wpp_mensagem', v)}
+          placeholder="🌟 Bem-vindo(a) — Turma Manhã!..."
+        />
+
+        <WppTemplateCard
+          emoji="🌆" title="Compra Confirmada — Turma Tarde" badge="sale_paid · tarde"
+          subtitle="Enviada após confirmação do pagamento para alunos da turma Tarde"
+          bgColor="bg-indigo-50/40" borderColor="border-indigo-200" headerColor="bg-indigo-100" badgeColor="bg-indigo-200 text-indigo-800"
+          vars={['{{nome}}', '{{evento_nome}}', '{{data_evento}}', '{{link_grupo_tarde}}']}
+          template={config.bv_wpp_mensagem_tarde || ''}
+          onChange={v => set('bv_wpp_mensagem_tarde', v)}
+          placeholder="🌟 Bem-vindo(a) — Turma Tarde!..."
+        />
+      </div>
+    );
+  }
+
+  // ── Lançamento: boas-vindas simples ───────────────────────────────────────
+  const VARS = ['{{nome}}', '{{turma}}', '{{whatsapp}}', '{{email}}'];
   const previewWpp = config.bv_wpp_mensagem
     .replace(/\{\{nome\}\}/g, 'Maria Silva')
     .replace(/\{\{turma\}\}/g, config.nome || 'Turma')
@@ -1119,33 +1256,19 @@ function Step5({ config, setConfig }: {
         <div className="flex items-center gap-3">
           <h3 className="text-sm font-semibold">WhatsApp</h3>
           <label className="flex items-center gap-1.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={config.bv_wpp_ativo}
-              onChange={e => set('bv_wpp_ativo', e.target.checked)}
-              className="w-4 h-4 rounded accent-primary"
-            />
+            <input type="checkbox" checked={config.bv_wpp_ativo} onChange={e => set('bv_wpp_ativo', e.target.checked)} className="w-4 h-4 rounded accent-primary" />
             <span className="text-xs text-muted-foreground">Ativo</span>
           </label>
         </div>
-
         {config.bv_wpp_ativo && (
           <div className="space-y-2">
             <div className="flex flex-wrap gap-1.5">
               {VARS.map(v => (
-                <button
-                  key={v}
-                  onClick={() => set('bv_wpp_mensagem', config.bv_wpp_mensagem + v)}
-                  className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary hover:bg-primary/20 font-mono"
-                >{v}</button>
+                <button key={v} type="button" onClick={() => set('bv_wpp_mensagem', config.bv_wpp_mensagem + v)}
+                  className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary hover:bg-primary/20 font-mono">{v}</button>
               ))}
             </div>
-            <textarea
-              className="w-full h-32 text-sm font-mono border border-border rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-primary"
-              value={config.bv_wpp_mensagem}
-              onChange={e => set('bv_wpp_mensagem', e.target.value)}
-              placeholder="Olá {{nome}}! Bem-vindo(a)..."
-            />
+            <textarea className="w-full h-32 text-sm font-mono border border-border rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-primary" value={config.bv_wpp_mensagem} onChange={e => set('bv_wpp_mensagem', e.target.value)} placeholder="Olá {{nome}}! Bem-vindo(a)..." />
             {config.bv_wpp_mensagem && (
               <div className="bg-[#e5ddd5] rounded-lg p-3 max-h-36 overflow-y-auto">
                 <div className="bg-white rounded-lg px-3 py-2 shadow-sm max-w-xs ml-auto">
@@ -1157,22 +1280,15 @@ function Step5({ config, setConfig }: {
           </div>
         )}
       </div>
-
       {/* Email */}
       <div className="space-y-3 pt-3 border-t border-border">
         <div className="flex items-center gap-3">
           <h3 className="text-sm font-semibold">Email</h3>
           <label className="flex items-center gap-1.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={config.bv_email_ativo}
-              onChange={e => set('bv_email_ativo', e.target.checked)}
-              className="w-4 h-4 rounded accent-primary"
-            />
+            <input type="checkbox" checked={config.bv_email_ativo} onChange={e => set('bv_email_ativo', e.target.checked)} className="w-4 h-4 rounded accent-primary" />
             <span className="text-xs text-muted-foreground">Ativo</span>
           </label>
         </div>
-
         {config.bv_email_ativo && (
           <div className="space-y-2">
             <div className="space-y-1">
@@ -1181,12 +1297,7 @@ function Step5({ config, setConfig }: {
             </div>
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground">Corpo (HTML)</label>
-              <textarea
-                className="w-full h-40 text-xs font-mono border border-border rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-primary"
-                value={config.bv_email_corpo}
-                onChange={e => set('bv_email_corpo', e.target.value)}
-                placeholder="<h2>Olá, {{nome}}!</h2>..."
-              />
+              <textarea className="w-full h-40 text-xs font-mono border border-border rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-primary" value={config.bv_email_corpo} onChange={e => set('bv_email_corpo', e.target.value)} placeholder="<h2>Olá, {{nome}}!</h2>..." />
             </div>
           </div>
         )}
@@ -1367,8 +1478,10 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
         ai++;
       }
 
+      const INTERNAL_VAR_PREFIXES = ['grupo_', 'data_aula_', 'link_aula_', 'hora_aula_', 'professor_', 'titulo_aula_', 'link_grupo_', 'bv_wpp_'];
+      const INTERNAL_VAR_KEYS = new Set(['grupo_manha', 'grupo_tarde']);
       const links_extras = Object.entries(variaveis)
-        .filter(([k]) => !k.startsWith('grupo_') && !k.startsWith('data_aula_') && !k.startsWith('link_aula_') && !k.startsWith('hora_aula_') && !k.startsWith('professor_'))
+        .filter(([k]) => !INTERNAL_VAR_PREFIXES.some(p => k.startsWith(p)) && !INTERNAL_VAR_KEYS.has(k))
         .map(([key, value]) => ({ key, value }));
 
       const isNpaLoad = existingTipo === 'npa';
@@ -1389,12 +1502,14 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
         quantidade_grupos: qtdGrupos,
         grupos: grupos.length ? grupos : [{ nickname: 'Grupo de Lançamento', jid: '' }],
         instancia_evolution: '__priority__',
-        vega_produto_id:    isNpaLoad ? ((lancData as any).vega_produto_id    || '') : undefined,
-        vega_produto_tarde: isNpaLoad ? ((lancData as any).vega_produto_tarde || '') : undefined,
+        vega_produto_id:        isNpaLoad ? ((lancData as any).vega_produto_id        || '') : undefined,
+        vega_produto_tarde:     isNpaLoad ? ((lancData as any).vega_produto_tarde     || '') : undefined,
+        pix_mensagem_template:  isNpaLoad ? ((lancData as any).pix_mensagem_template  || '') : undefined,
         aulas: aulas.length ? aulas : [{ data: '', hora: '20:00', link: '', professor: '' }],
         links_extras: links_extras.length ? links_extras : [{ key: 'link_checkout', value: '' }],
         bv_wpp_ativo: (bvConfig as any)?.wpp_ativo ?? true,
         bv_wpp_mensagem: (bvConfig as any)?.wpp_mensagem || '',
+        bv_wpp_mensagem_tarde: isNpaLoad ? (variaveis['bv_wpp_tarde'] || '') : undefined,
         bv_email_ativo: (bvConfig as any)?.email_ativo ?? false,
         bv_email_assunto: (bvConfig as any)?.email_assunto || '',
         bv_email_corpo: (bvConfig as any)?.email_corpo || '',
@@ -1406,16 +1521,27 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
 
   // Regenerate messages when reaching step 6
   const goToStep = useCallback((s: number) => {
-    if (s === 6) {
+    if (s === 5 || s === 6) {
       // Preenche boas-vindas padrão se vazio
       setConfig(c => {
-        const defaults = defaultBoasVindasEmail(c);
-        return {
-          ...c,
-          bv_wpp_mensagem: c.bv_wpp_mensagem || defaultBoasVindasWpp(c),
-          bv_email_assunto: c.bv_email_assunto || defaults.assunto,
-          bv_email_corpo: c.bv_email_corpo || defaults.corpo,
-        };
+        if (c.tipo === 'npa') {
+          return {
+            ...c,
+            pix_mensagem_template:  c.pix_mensagem_template  || defaultPixTemplate(),
+            bv_wpp_mensagem:        c.bv_wpp_mensagem        || defaultBoasVindasNpaManha(c),
+            bv_wpp_mensagem_tarde:  c.bv_wpp_mensagem_tarde  || defaultBoasVindasNpaTarde(c),
+          };
+        }
+        if (s === 6) {
+          const defaults = defaultBoasVindasEmail(c);
+          return {
+            ...c,
+            bv_wpp_mensagem:   c.bv_wpp_mensagem   || defaultBoasVindasWpp(c),
+            bv_email_assunto:  c.bv_email_assunto  || defaults.assunto,
+            bv_email_corpo:    c.bv_email_corpo    || defaults.corpo,
+          };
+        }
+        return c;
       });
       setMessages(generateLancamentoMessages(config));
     }
@@ -1456,8 +1582,9 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
           grupo_oferta_jid: grupo2,
         } : {
           ...commonFields,
-          vega_produto_id:   config.vega_produto_id   || null,
-          vega_produto_tarde: config.vega_produto_tarde || null,
+          vega_produto_id:        config.vega_produto_id        || null,
+          vega_produto_tarde:     config.vega_produto_tarde     || null,
+          pix_mensagem_template:  config.pix_mensagem_template  || null,
         };
         await supabase.from(table).update(lancFields).eq('id', existingId);
       } else {
@@ -1482,8 +1609,9 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
           grupo_oferta_jid: grupo2,
         } : {
           ...commonFields,
-          vega_produto_id:   config.vega_produto_id   || null,
-          vega_produto_tarde: config.vega_produto_tarde || null,
+          vega_produto_id:        config.vega_produto_id        || null,
+          vega_produto_tarde:     config.vega_produto_tarde     || null,
+          pix_mensagem_template:  config.pix_mensagem_template  || null,
         };
         const { data: created, error } = await supabase.from(table).insert(lancFields).select('id').single();
         if (error || !created) { toast.error('Erro ao criar: ' + error?.message); setSaving(false); return; }

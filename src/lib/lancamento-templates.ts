@@ -57,7 +57,9 @@ export interface WizardConfig {
 
   // Etapa 5
   bv_wpp_ativo: boolean;
-  bv_wpp_mensagem: string;
+  bv_wpp_mensagem: string;          // manhã (ou turma única para lançamentos)
+  bv_wpp_mensagem_tarde?: string;   // NPA: sale_paid turma tarde
+  pix_mensagem_template?: string;   // NPA: sale_wait_payment (ambas turmas)
   bv_email_ativo: boolean;
   bv_email_assunto: string;
   bv_email_corpo: string;
@@ -507,12 +509,15 @@ export function buildFunnelVariaveis(config: WizardConfig): Record<string, strin
     if (g.link) vars[`link_grupo_${i + 1}`] = g.link;
   });
 
-  // Para NPA: aliases semânticos por turma
+  // Para NPA: aliases semânticos por turma + templates das mensagens automáticas
   if (config.tipo === 'npa') {
     if (config.grupos[0]?.jid)  vars['grupo_manha']       = config.grupos[0].jid;
     if (config.grupos[0]?.link) vars['link_grupo_manha']  = config.grupos[0].link;
     if (config.grupos[1]?.jid)  vars['grupo_tarde']       = config.grupos[1].jid;
     if (config.grupos[1]?.link) vars['link_grupo_tarde']  = config.grupos[1].link;
+    // Mensagens Vega — lidas pelo vega-webhook
+    if (config.bv_wpp_mensagem)       vars['bv_wpp_manha'] = config.bv_wpp_mensagem;
+    if (config.bv_wpp_mensagem_tarde) vars['bv_wpp_tarde'] = config.bv_wpp_mensagem_tarde;
   }
 
   config.aulas.forEach((a, i) => {
@@ -535,8 +540,22 @@ export function buildFunnelVariaveis(config: WizardConfig): Record<string, strin
 }
 
 export function defaultBoasVindasWpp(config: WizardConfig): string {
-  const g1 = config.grupos[0]?.jid || '{{link_grupo}}';
+  const g1 = config.grupos[0]?.link || config.grupos[0]?.jid || '{{link_grupo}}';
   return `Olá {{nome}}! 🎉\n\nSeja muito bem-vindo(a) ao ${config.nome}!\n\nAcesse o grupo exclusivo:\n${g1}\n\nNos vemos lá! 🚀`;
+}
+
+export function defaultBoasVindasNpaManha(config: WizardConfig): string {
+  const link = config.grupos[0]?.link || '{{link_grupo_manha}}';
+  return `🌟 Bem-vindo(a) ao *${config.nome || '{{evento_nome}}'}* — Turma Manhã!\n\nSua inscrição está confirmada! 🙌\n\n📅 Data: {{data_evento}}\n⏰ Turma: Manhã ☀️\n\n🚨 IMPORTANTE — entre agora no grupo dos alunos:\n👉 ${link}\n\nNo grupo você vai receber:\n🔹 Avisos do dia\n🔹 Materiais complementares\n🔹 Bônus surpresa 🎁\n\nQualquer dúvida, é só me chamar!`;
+}
+
+export function defaultBoasVindasNpaTarde(config: WizardConfig): string {
+  const link = config.grupos[1]?.link || '{{link_grupo_tarde}}';
+  return `🌟 Bem-vindo(a) ao *${config.nome || '{{evento_nome}}'}* — Turma Tarde!\n\nSua inscrição está confirmada! 🙌\n\n📅 Data: {{data_evento}}\n⏰ Turma: Tarde 🌆\n\n🚨 IMPORTANTE — entre agora no grupo dos alunos:\n👉 ${link}\n\nNo grupo você vai receber:\n🔹 Avisos do dia\n🔹 Materiais complementares\n🔹 Bônus surpresa 🎁\n\nQualquer dúvida, é só me chamar!`;
+}
+
+export function defaultPixTemplate(): string {
+  return `Olá {{nome}}! 👋\n\nSeu PIX para o ingresso do *{{evento_nome}}* foi gerado com sucesso.\n\n✔ Pagamento 100% seguro\n✔ Ingresso liberado automaticamente após confirmação\n✔ Você receberá aqui o link do grupo exclusivo\n\nCopie o código PIX logo abaixo e cole no seu banco:\n\nEstamos quase lá! ✨`;
 }
 
 export function defaultBoasVindasEmail(config: WizardConfig): { assunto: string; corpo: string } {

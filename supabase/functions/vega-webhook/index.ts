@@ -156,13 +156,19 @@ async function processVegaWebhook(
       return;
     }
 
-    const bemVindoMsg =
+    // Template por turma configurado no wizard (funnel_configs.variaveis.bv_wpp_manha / bv_wpp_tarde)
+    const bemVindoTpl = turma === 'tarde'
+      ? (variaveis['bv_wpp_tarde'] || variaveis['bv_wpp_manha'])
+      : variaveis['bv_wpp_manha'];
+
+    const bemVindoMsg = bemVindoTpl ||
       `🌟 Bem-vindo(a) ao {{evento_nome}}!\nSua inscrição está confirmada! 🙌\n\n📅 Data do evento: {{data_evento}} — Turma {{turma}}\n\nNas próximas mensagens você receberá:\n\n✔ Link para entrar no Grupo VIP dos alunos\n✔ Informações essenciais sobre o evento\n✔ Conteúdos bônus surpresa 🎁\n\nFique atento às mensagens para não perder nada.\nQualquer dúvida, estamos por aqui!`;
 
     await sendWpp(evoBase, evo.instance_name, evo.api_key, number, fmt(bemVindoMsg, msgVars));
     await sleep(3000);
 
-    if (linkGrupo) {
+    // Só envia mensagem separada de grupo se o template configurado não incluir o link
+    if (linkGrupo && !bemVindoTpl) {
       const grupoMsg =
         `🚨 IMPORTANTE — ENTRE NO GRUPO VIP!\nTodas as orientações do evento, avisos e bônus serão enviados exclusivamente pelo grupo dos alunos.\n\n👉 Entre agora:\n{{link_grupo}}\n\nNo grupo você vai receber:\n🔹 Avisos importantes do dia\n🔹 Materiais complementares\n🔹 Bônus surpresa que só os alunos vão ter acesso 👀\n\nEntrou? Me avise aqui para confirmar!`;
       await sendWpp(evoBase, evo.instance_name, evo.api_key, number, fmt(grupoMsg, msgVars));
