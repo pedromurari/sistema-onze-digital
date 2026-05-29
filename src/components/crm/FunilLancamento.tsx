@@ -22,7 +22,7 @@ import {
   Pencil, Trash2, MessageSquare, Users, Phone, Zap, Calendar,
   GitBranch, Image, Video, Music, FileIcon, BarChart2, Eye,
   AtSign, Upload, Download, X, Settings2,
-  Variable, Link2, ChevronDown, ChevronRight, MoreVertical,
+  Variable, Link2, ChevronDown, ChevronLeft, ChevronRight, MoreVertical,
   Mail, Heart, RefreshCw, CheckCircle, XCircle, Minus,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
@@ -1991,6 +1991,8 @@ function FunnelSection({
 }) {
   const [messages, setMessages] = useState<FunnelMessage[]>([]);
   const [loading, setLoading] = useState(false);
+  const [currentDayIdx, setCurrentDayIdx] = useState(0);
+  const [schedulingDay, setSchedulingDay] = useState(false);
 
   const loadMessages = useCallback(async () => {
     setLoading(true);
@@ -2025,7 +2027,26 @@ function FunnelSection({
     return [...map.entries()].sort((a, b) => a[0] - b[0]);
   }, [messages]);
 
+  // Jump to today (or nearest future day) when messages first load
+  useEffect(() => {
+    if (byDay.length === 0) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const idx = byDay.findIndex(([, msgs]) => (msgs[0]?.scheduled_at ?? '').slice(0, 10) >= todayStr);
+    setCurrentDayIdx(idx >= 0 ? idx : 0);
+  }, [byDay.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const maxDay = byDay.length > 0 ? byDay[byDay.length - 1][0] : 0;
+
+  async function scheduleAllDay(dayMsgs: FunnelMessage[]) {
+    const ids = dayMsgs.filter(m => m.status !== 'scheduled' && m.status !== 'sent').map(m => m.id);
+    if (ids.length === 0) { toast.info('Todas as mensagens deste dia já estão agendadas'); return; }
+    setSchedulingDay(true);
+    const { error } = await supabase.from('funnel_messages').update({ status: 'scheduled' }).in('id', ids);
+    setSchedulingDay(false);
+    if (error) { toast.error(`Erro: ${error.message}`); return; }
+    toast.success(`${ids.length} mensagem(ns) agendada(s)!`);
+    loadMessages();
+  }
   const progress = stats.total > 0 ? Math.round((stats.sent / stats.total) * 100) : 0;
   const hasHeaderImages = !!(
     config.imagem_manha || config.imagem_tarde || config.imagem_noite ||
@@ -2132,40 +2153,102 @@ function FunnelSection({
                 Criar primeira mensagem
               </Button>
             </div>
-          ) : (
-            <div className="space-y-5">
-              {byDay.map(([day, dayMsgs]) => (
-                <div key={day}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <span className="text-[10px] font-bold text-primary">{day}</span>
+          ) : (() => {
+            const safeIdx   = Math.min(currentDayIdx, byDay.length - 1);
+            const [day, dayMsgs] = byDay[safeIdx];
+            const firstDate = dayMsgs[0]?.scheduled_at;
+            const todayStr  = new Date().toISOString().slice(0, 10);
+            const isToday   = firstDate?.slice(0, 10) === todayStr;
+            const scheduledCount = dayMsgs.filter(m => m.status === 'scheduled' || m.status === 'sent').length;
+            const pendingCount   = dayMsgs.filter(m => m.status !== 'scheduled' && m.status !== 'sent').length;
+
+            let dateLbl = '';
+            try {
+              dateLbl = format(parseISO(firstDate), "EEEE, dd 'de' MMMM", { locale: ptBR });
+              dateLbl = dateLbl.charAt(0).toUpperCase() + dateLbl.slice(1);
+            } catch { dateLbl = fmtDate(firstDate); }
+
+            return (
+              <div className="space-y-3">
+                {/* Day navigator */}
+                <div className="flex items-center gap-2 bg-muted/30 rounded-xl px-3 py-2.5">
+                  <button
+                    onClick={() => setCurrentDayIdx(i => Math.max(0, i - 1))}
+                    disabled={safeIdx === 0}
+                    className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 transition-colors flex-shrink-0"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+
+                  <div className="flex-1 min-w-0 text-center">
+                    <div className="flex items-center justify-center gap-2">
+                      <p className="text-sm font-semibold truncate">{dateLbl}</p>
+                      {isToday && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-semibold flex-shrink-0">
+                          Hoje
+                        </span>
+                      )}
                     </div>
-                    <span className="text-sm font-semibold text-foreground">Dia {day}</span>
-                    <span className="text-xs text-muted-foreground">· {fmtDate(dayMsgs[0].scheduled_at)}</span>
-                    <div className="flex-1 border-t border-border/40" />
-                    <Button
-                      variant="ghost" size="sm"
-                      className="h-7 text-xs gap-1 text-primary hover:bg-primary/5"
-                      onClick={() => onCreateMessage(day)}
-                    >
-                      <Plus className="h-3 w-3" /> Adicionar
-                    </Button>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      Dia {safeIdx + 1} de {byDay.length}
+                      {' · '}
+                      <span className={scheduledCount > 0 ? 'text-blue-600 font-medium' : ''}>
+                        {scheduledCount} agendadas
+                      </span>
+                      {pendingCount > 0 && (
+                        <span className="text-amber-600 font-medium"> · {pendingCount} rascunho</span>
+                      )}
+                    </p>
                   </div>
-                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {dayMsgs.map(msg => (
-                      <MsgCard
-                        key={msg.id}
-                        msg={msg}
-                        imagens={config.imagens ?? {}}
-                        onEdit={() => onEditMessage(msg)}
-                        onDelete={() => onDeleteMessage(msg.id)}
-                      />
-                    ))}
-                  </div>
+
+                  <button
+                    onClick={() => setCurrentDayIdx(i => Math.min(byDay.length - 1, i + 1))}
+                    disabled={safeIdx === byDay.length - 1}
+                    className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 transition-colors flex-shrink-0"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
                 </div>
-              ))}
-            </div>
-          )}
+
+                {/* Action bar */}
+                <div className="flex items-center gap-2">
+                  {pendingCount > 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50 flex-1"
+                      disabled={schedulingDay}
+                      onClick={() => scheduleAllDay(dayMsgs)}
+                    >
+                      {schedulingDay
+                        ? <><div className="h-3 w-3 rounded-full border-b-2 border-blue-600 animate-spin" /> Agendando...</>
+                        : <><Calendar className="h-3 w-3" /> Agendar todas do dia ({pendingCount})</>}
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost" size="sm"
+                    className="h-7 text-xs gap-1 text-primary hover:bg-primary/5 flex-shrink-0"
+                    onClick={() => onCreateMessage(day)}
+                  >
+                    <Plus className="h-3 w-3" /> Adicionar
+                  </Button>
+                </div>
+
+                {/* Message grid */}
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 pb-4">
+                  {dayMsgs.map(msg => (
+                    <MsgCard
+                      key={msg.id}
+                      msg={msg}
+                      imagens={config.imagens ?? {}}
+                      onEdit={() => onEditMessage(msg)}
+                      onDelete={() => onDeleteMessage(msg.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 

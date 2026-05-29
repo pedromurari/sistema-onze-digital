@@ -3,7 +3,7 @@
  * Wizard multi-passo para criar/editar lançamentos e NPAs.
  * Configura tudo de uma vez: lancamento, kanban, funil, boas-vindas, grupos.
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { ensureDefaultLancamentoKanbanColumns } from '@/components/crm/kanban/useKanbanColunas';
 import {
