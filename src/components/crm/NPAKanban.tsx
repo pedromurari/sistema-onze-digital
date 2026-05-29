@@ -12,7 +12,8 @@ import {
   Plus, Search, Users, DollarSign, Loader2, Power, Trash2,
   Flame, MessageCircle, Pencil, ShoppingBag, Trophy,
   TrendingUp, BarChart3, Target, ArrowLeft, Award, Percent,
-  CheckCircle2, XCircle,
+  CheckCircle2, XCircle, Send, Play, Square, Pause, X as XIcon,
+  ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useKanbanColunas } from './kanban/useKanbanColunas';
@@ -712,6 +713,284 @@ function MetaTab({
   );
 }
 
+// ─── Disparo Types ────────────────────────────────────────────────────────────
+
+interface NPADisparoLeadStatus {
+  leadId: string;
+  nome: string;
+  whatsapp: string;
+  status: 'pending' | 'sending' | 'done' | 'error';
+  error?: string;
+}
+
+interface NPADisparoItem {
+  id: string;
+  nome: string;
+  faseIds: string[];
+  faseNomes: string[];
+  template: string;
+  typingDelayMs: number;
+  minDelayMs: number;
+  maxDelayMs: number;
+  instanceName: string | null;
+  leads: NPADisparoLeadStatus[];
+  currentIdx: number;
+  status: 'running' | 'paused' | 'done' | 'stopped';
+  startedAt: number;
+  countdownMs: number;
+}
+
+// ─── NPADisparoModal ──────────────────────────────────────────────────────────
+
+function NPADisparoModal({
+  open, onClose, leads, evoInstances, initialFases, onStart,
+}: {
+  open: boolean;
+  onClose: () => void;
+  leads: NPALead[];
+  evoInstances: Array<{ instance_name: string }>;
+  initialFases?: NPAPhase[];
+  onStart: (config: {
+    faseIds: NPAPhase[];
+    template: string;
+    typingDelayMs: number;
+    minDelayMs: number;
+    maxDelayMs: number;
+    instanceName: string | null;
+  }) => void;
+}) {
+  const [selectedFases, setSelectedFases] = useState<Set<string>>(new Set());
+  const [template, setTemplate] = useState('Olá {{nome}}! 👋\n\nTemos uma novidade importante para você. Que tal a gente conversar?');
+  const [typingDelaySecs, setTypingDelaySecs] = useState(3);
+  const [minDelaySecs, setMinDelaySecs] = useState(10);
+  const [maxDelaySecs, setMaxDelaySecs] = useState(25);
+  const [instanceName, setInstanceName] = useState('__priority__');
+  const [activeTab, setActiveTab] = useState<'fases' | 'mensagem' | 'antibano'>('fases');
+
+  useEffect(() => {
+    if (!open) return;
+    if (initialFases && initialFases.length > 0) {
+      setSelectedFases(new Set(initialFases));
+      setActiveTab('mensagem');
+    } else {
+      setSelectedFases(new Set());
+      setActiveTab('fases');
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleFase = (id: string) =>
+    setSelectedFases(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+
+  const selectedLeads = leads.filter(l => selectedFases.has(l.fase) && l.whatsapp);
+  const avgSecs = (minDelaySecs + maxDelaySecs) / 2 + typingDelaySecs;
+  const previewMessage = template
+    .replace(/\{\{nome\}\}/g, 'Maria Silva')
+    .replace(/\{\{whatsapp\}\}/g, '5511999999999');
+
+  const handleStart = () => {
+    if (selectedFases.size === 0) { toast.error('Selecione ao menos uma fase'); return; }
+    if (!template.trim()) { toast.error('Digite a mensagem'); return; }
+    if (minDelaySecs > maxDelaySecs) { toast.error('Delay mínimo não pode ser maior que o máximo'); return; }
+    onStart({
+      faseIds: [...selectedFases] as NPAPhase[],
+      template,
+      typingDelayMs: typingDelaySecs * 1000,
+      minDelayMs: minDelaySecs * 1000,
+      maxDelayMs: maxDelaySecs * 1000,
+      instanceName: instanceName === '__priority__' ? null : instanceName,
+    });
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={o => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-2xl flex flex-col max-h-[90vh]">
+        <DialogHeader className="flex-shrink-0">
+          <DialogTitle className="flex items-center gap-2">
+            <Send className="h-5 w-5 text-blue-600" /> Disparo por Fase — NPA
+          </DialogTitle>
+          <DialogDescription>Selecione as fases, configure o template e dispare com anti-ban.</DialogDescription>
+        </DialogHeader>
+
+        <div className="flex gap-1 border-b border-border flex-shrink-0">
+          {(['fases', 'mensagem', 'antibano'] as const).map(tab => (
+            <button key={tab} onClick={() => setActiveTab(tab)}
+              className={`px-3 py-1.5 text-sm font-medium border-b-2 transition-colors ${activeTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+            >
+              {tab === 'fases' ? '📋 Fases' : tab === 'mensagem' ? '💬 Mensagem' : '🛡️ Anti-Ban'}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-y-auto min-h-0 py-4">
+          {activeTab === 'fases' && (
+            <div className="space-y-2">
+              <p className="text-sm text-gray-500 mb-3">Selecione as fases cujos leads receberão a mensagem. Apenas leads <strong>com WhatsApp</strong> serão disparados.</p>
+              {PHASES.map(phase => {
+                const total = leads.filter(l => l.fase === phase.id).length;
+                const withWpp = leads.filter(l => l.fase === phase.id && l.whatsapp).length;
+                const checked = selectedFases.has(phase.id);
+                return (
+                  <label key={phase.id} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${checked ? 'border-blue-400 bg-blue-50' : 'border-gray-200 hover:border-blue-200 hover:bg-blue-50/30'}`}>
+                    <input type="checkbox" checked={checked} onChange={() => toggleFase(phase.id)} className="w-4 h-4 rounded accent-blue-600" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">{phase.label}</p>
+                      <p className="text-xs text-gray-400">{withWpp} com WhatsApp de {total} lead(s)</p>
+                    </div>
+                    {withWpp === 0 && <span className="text-xs text-amber-500 shrink-0">sem WPP</span>}
+                  </label>
+                );
+              })}
+              {selectedFases.size > 0 && (
+                <div className="mt-3 p-3 rounded-lg bg-green-50 border border-green-200">
+                  <p className="text-sm font-medium text-green-800">✅ {selectedLeads.length} lead(s) com WhatsApp serão disparados</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'mensagem' && (
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs text-gray-500 font-medium block mb-2">Template da mensagem</label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {['{{nome}}', '{{whatsapp}}'].map(v => (
+                    <button key={v} onClick={() => setTemplate(t => t + v)} className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 hover:bg-blue-200 font-mono transition-colors">{v}</button>
+                  ))}
+                </div>
+                <textarea className="w-full h-40 text-sm font-mono border border-gray-200 rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500" value={template} onChange={e => setTemplate(e.target.value)} placeholder="Digite a mensagem..." />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 font-medium block mb-2">Prévia (WhatsApp)</label>
+                <div className="bg-[#e5ddd5] rounded-lg p-4 max-h-52 overflow-y-auto">
+                  <div className="bg-white rounded-lg px-3 py-2 shadow-sm max-w-xs ml-auto">
+                    <p className="text-sm whitespace-pre-wrap text-gray-800">{previewMessage}</p>
+                    <p className="text-[10px] text-gray-400 text-right mt-1">12:00 ✓✓</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'antibano' && (
+            <div className="space-y-4">
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">🛡️ Anti-ban simula comportamento humano com delays aleatórios entre envios.</div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs text-gray-500 font-medium">Delay mínimo (segundos)</label>
+                  <input type="number" min={3} max={300} value={minDelaySecs} onChange={e => setMinDelaySecs(Number(e.target.value))} className="w-full px-3 py-2 rounded-md border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-gray-500 font-medium">Delay máximo (segundos)</label>
+                  <input type="number" min={3} max={300} value={maxDelaySecs} onChange={e => setMaxDelaySecs(Number(e.target.value))} className="w-full px-3 py-2 rounded-md border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-gray-500 font-medium">Digitação (segundos de "digitando…")</label>
+                <input type="number" min={0} max={15} value={typingDelaySecs} onChange={e => setTypingDelaySecs(Number(e.target.value))} className="w-full px-3 py-2 rounded-md border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <p className="text-xs text-gray-400">0 para desativar o indicador de digitação</p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-gray-500 font-medium">Instância Evolution</label>
+                <select value={instanceName} onChange={e => setInstanceName(e.target.value)} className="w-full px-3 py-2 rounded-md border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                  <option value="__priority__">Automático (por prioridade)</option>
+                  {evoInstances.map(inst => <option key={inst.instance_name} value={inst.instance_name}>{inst.instance_name}</option>)}
+                </select>
+              </div>
+              <div className="p-3 rounded-lg border border-gray-200 bg-gray-50">
+                <p className="text-xs text-gray-500"><strong>Estimativa:</strong> {selectedLeads.length} lead(s) × {Math.round(avgSecs)}s médio ≈ <strong>{Math.round((selectedLeads.length * avgSecs) / 60)} minutos</strong></p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-between items-center pt-3 border-t flex-shrink-0">
+          <p className="text-sm text-gray-500">{selectedLeads.length > 0 ? `${selectedLeads.length} lead(s) selecionados` : 'Nenhuma fase selecionada'}</p>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button onClick={handleStart} disabled={selectedFases.size === 0 || selectedLeads.length === 0} className="gap-2 bg-blue-600 hover:bg-blue-700 text-white">
+              <Send className="h-4 w-4" /> Iniciar Disparo
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── NPADisparoPanel ──────────────────────────────────────────────────────────
+
+function NPADisparoPanel({
+  disparos, onPause, onResume, onStop, onDismiss,
+}: {
+  disparos: NPADisparoItem[];
+  onPause: (id: string) => void;
+  onResume: (id: string) => void;
+  onStop: (id: string) => void;
+  onDismiss: (id: string) => void;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  if (disparos.length === 0) return null;
+  const active = disparos.filter(d => d.status === 'running' || d.status === 'paused').length;
+
+  return (
+    <div className="fixed bottom-4 right-4 w-96 z-50 shadow-2xl rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <button className="w-full flex items-center justify-between px-4 py-2.5 bg-blue-600 text-white hover:bg-blue-700 transition-colors" onClick={() => setCollapsed(c => !c)}>
+        <div className="flex items-center gap-2">
+          <Send className="h-4 w-4" />
+          <span className="text-sm font-semibold">Disparos NPA{active > 0 ? ` (${active} ativo${active > 1 ? 's' : ''})` : ' (concluídos)'}</span>
+        </div>
+        {collapsed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+      </button>
+      {!collapsed && (
+        <div className="max-h-[420px] overflow-y-auto divide-y divide-gray-100">
+          {disparos.map(disp => {
+            const done  = disp.leads.filter(l => l.status === 'done' || l.status === 'error').length;
+            const total = disp.leads.length;
+            const pct   = total > 0 ? Math.round((done / total) * 100) : 0;
+            const errors = disp.leads.filter(l => l.status === 'error').length;
+            const sending = disp.leads[disp.currentIdx];
+            return (
+              <div key={disp.id} className="p-3 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{disp.nome}</p>
+                    <p className="text-xs text-gray-400 truncate">{disp.faseNomes.join(' · ')}</p>
+                  </div>
+                  <div className="flex items-center gap-0.5 flex-shrink-0">
+                    {disp.status === 'running' && <button onClick={() => onPause(disp.id)} title="Pausar" className="p-1.5 rounded hover:bg-amber-50 text-amber-600"><Pause className="h-3.5 w-3.5" /></button>}
+                    {disp.status === 'paused' && <button onClick={() => onResume(disp.id)} title="Retomar" className="p-1.5 rounded hover:bg-green-50 text-green-600"><Play className="h-3.5 w-3.5" /></button>}
+                    {(disp.status === 'running' || disp.status === 'paused') && <button onClick={() => onStop(disp.id)} title="Parar" className="p-1.5 rounded hover:bg-red-50 text-red-500"><Square className="h-3.5 w-3.5" /></button>}
+                    {(disp.status === 'done' || disp.status === 'stopped') && <button onClick={() => onDismiss(disp.id)} title="Fechar" className="p-1.5 rounded hover:bg-gray-100 text-gray-400"><XIcon className="h-3.5 w-3.5" /></button>}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-gray-400">
+                    <span>{done}/{total} enviados</span>
+                    <span>
+                      {disp.status === 'running' && disp.countdownMs > 0 ? `⏱ ${Math.ceil(disp.countdownMs / 1000)}s` :
+                       disp.status === 'paused' ? '⏸ Pausado' :
+                       disp.status === 'done' ? '✅ Concluído' :
+                       disp.status === 'stopped' ? '🛑 Parado' : ''}
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                    <div className={`h-full rounded-full transition-all duration-300 ${disp.status === 'done' ? 'bg-green-500' : disp.status === 'stopped' ? 'bg-red-400' : 'bg-blue-500'}`} style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+                {disp.status === 'running' && sending?.status === 'sending' && (
+                  <p className="text-xs text-gray-400 flex items-center gap-1 truncate"><Loader2 className="h-3 w-3 animate-spin shrink-0" />Enviando para {sending.nome}…</p>
+                )}
+                {errors > 0 && <p className="text-xs text-red-500">{errors} erro{errors > 1 ? 's' : ''} de envio</p>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ────────────────────────────────────────────────────────────
 
 export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
@@ -739,6 +1018,14 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
   const [renamingColuna, setRenamingColuna]   = useState<KanbanColuna | null>(null);
   const [deletingColuna, setDeletingColuna]   = useState<KanbanColuna | null>(null);
   const [settingsColuna, setSettingsColuna]   = useState<KanbanColuna | null>(null);
+
+  // Disparo por fase
+  const [disparos, setDisparos]               = useState<NPADisparoItem[]>([]);
+  const [showDisparoModal, setShowDisparoModal] = useState(false);
+  const [preselectFase, setPreselectFase]     = useState<NPAPhase | null>(null);
+  const [evoInstances, setEvoInstances]       = useState<Array<{ instance_name: string }>>([]);
+  const disparosStopMap  = useRef<Map<string, boolean>>(new Map());
+  const disparosPauseMap = useRef<Map<string, boolean>>(new Map());
 
   // Shared column hook
   const {
@@ -1011,6 +1298,112 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
     setDeletingColuna(null);
   };
 
+  // ── Evo instances ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    supabase.from('evolution_config').select('instance_name').eq('ativo', true)
+      .order('prioridade', { ascending: true })
+      .then(({ data }) => setEvoInstances(data ?? []));
+  }, []);
+
+  // ── Disparo funcs ─────────────────────────────────────────────────────────
+  const countdownDelay = async (disparoId: string, ms: number) => {
+    const step = 300;
+    let elapsed = 0;
+    while (elapsed < ms) {
+      if (disparosStopMap.current.get(disparoId)) return;
+      if (disparosPauseMap.current.get(disparoId)) {
+        await new Promise(r => setTimeout(r, step));
+        continue;
+      }
+      setDisparos(prev => prev.map(d => d.id === disparoId ? { ...d, countdownMs: ms - elapsed } : d));
+      await new Promise(r => setTimeout(r, step));
+      elapsed += step;
+    }
+    setDisparos(prev => prev.map(d => d.id === disparoId ? { ...d, countdownMs: 0 } : d));
+  };
+
+  const runDisparo = async (id: string, disp: NPADisparoItem) => {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+    for (let i = 0; i < disp.leads.length; i++) {
+      if (disparosStopMap.current.get(id)) break;
+      while (disparosPauseMap.current.get(id)) {
+        if (disparosStopMap.current.get(id)) break;
+        await new Promise(r => setTimeout(r, 300));
+      }
+      if (disparosStopMap.current.get(id)) break;
+
+      const lead = disp.leads[i];
+      setDisparos(prev => prev.map(d => d.id === id ? {
+        ...d, currentIdx: i,
+        leads: d.leads.map((l, idx) => idx === i ? { ...l, status: 'sending' } : l),
+      } : d));
+
+      const mensagem = disp.template
+        .replace(/\{\{nome\}\}/g, lead.nome)
+        .replace(/\{\{whatsapp\}\}/g, lead.whatsapp);
+
+      try {
+        const res = await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+          body: JSON.stringify({ numero: lead.whatsapp, mensagem, instance_name: disp.instanceName ?? undefined, typing_delay_ms: disp.typingDelayMs }),
+        });
+        const result = await res.json();
+        setDisparos(prev => prev.map(d => d.id === id ? {
+          ...d, currentIdx: i + 1,
+          leads: d.leads.map((l, idx) => idx === i ? { ...l, status: result.ok ? 'done' : 'error', error: result.ok ? undefined : (result.error ?? 'Erro') } : l),
+        } : d));
+      } catch (e: unknown) {
+        setDisparos(prev => prev.map(d => d.id === id ? {
+          ...d, currentIdx: i + 1,
+          leads: d.leads.map((l, idx) => idx === i ? { ...l, status: 'error', error: (e as Error).message } : l),
+        } : d));
+      }
+
+      if (i < disp.leads.length - 1 && !disparosStopMap.current.get(id)) {
+        const delay = Math.round(disp.minDelayMs + Math.random() * (disp.maxDelayMs - disp.minDelayMs));
+        await countdownDelay(id, delay);
+      }
+    }
+
+    setDisparos(prev => prev.map(d => d.id === id ? {
+      ...d, status: disparosStopMap.current.get(id) ? 'stopped' : 'done', countdownMs: 0,
+    } : d));
+  };
+
+  const handleStartDisparo = (config: {
+    faseIds: NPAPhase[];
+    template: string;
+    typingDelayMs: number;
+    minDelayMs: number;
+    maxDelayMs: number;
+    instanceName: string | null;
+  }) => {
+    const campaignLeads = leads
+      .filter(l => config.faseIds.includes(l.fase) && l.whatsapp)
+      .map(l => ({ leadId: l.id, nome: l.nome, whatsapp: l.whatsapp, status: 'pending' as const }));
+
+    const faseNomes = PHASES.filter(p => config.faseIds.includes(p.id)).map(p => p.label);
+    const newId = crypto.randomUUID();
+    const nome = `${faseNomes.join(', ')} · ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+
+    const newDisp: NPADisparoItem = {
+      id: newId, nome, faseIds: config.faseIds, faseNomes,
+      template: config.template, typingDelayMs: config.typingDelayMs,
+      minDelayMs: config.minDelayMs, maxDelayMs: config.maxDelayMs,
+      instanceName: config.instanceName, leads: campaignLeads,
+      currentIdx: 0, status: 'running', startedAt: Date.now(), countdownMs: 0,
+    };
+
+    disparosStopMap.current.set(newId, false);
+    disparosPauseMap.current.set(newId, false);
+    setDisparos(prev => [...prev, newDisp]);
+    runDisparo(newId, newDisp);
+    toast.success(`🚀 Disparo iniciado: ${campaignLeads.length} lead(s)`);
+  };
+
   // ── Salvar metas ──────────────────────────────────────────────────────────
   const handleSaveMetas = async (metas: {
     meta_matriculas: number; meta_faturamento: number;
@@ -1102,6 +1495,17 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
                       onMoveRight={() => moveColuna(coluna.id, 'right')}
                       onOpenSettings={() => setSettingsColuna(coluna)}
                     />
+
+                    {faseKey && phaseLeads.filter(l => l.whatsapp).length > 0 && (
+                      <button
+                        onClick={() => { setPreselectFase(faseKey); setShowDisparoModal(true); }}
+                        className="mt-1 mb-1 w-full flex items-center justify-center gap-1.5 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded-md transition-colors opacity-0 group-hover/col:opacity-100"
+                        title={`Disparar para ${phaseLeads.filter(l => l.whatsapp).length} lead(s) desta fase`}
+                      >
+                        <Send className="h-3 w-3" />
+                        Disparar ({phaseLeads.filter(l => l.whatsapp).length})
+                      </button>
+                    )}
 
                     {/* Faturamento card — só na coluna matrícula */}
                     {faseKey === 'matricula' && (
@@ -1260,6 +1664,15 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
           >
             <BarChart3 className="h-3.5 w-3.5" />
             Relatório
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => { setPreselectFase(null); setShowDisparoModal(true); }}
+            className="gap-1.5 border-blue-200 text-blue-600 hover:bg-blue-50 font-medium"
+          >
+            <Send className="h-3.5 w-3.5" />
+            Disparar
           </Button>
           <Button
             variant="outline"
@@ -1555,6 +1968,25 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Disparo por Fase Modal */}
+      <NPADisparoModal
+        open={showDisparoModal}
+        onClose={() => { setShowDisparoModal(false); setPreselectFase(null); }}
+        leads={leads}
+        evoInstances={evoInstances}
+        initialFases={preselectFase ? [preselectFase] : undefined}
+        onStart={handleStartDisparo}
+      />
+
+      {/* Campanhas de Disparo Panel */}
+      <NPADisparoPanel
+        disparos={disparos}
+        onPause={id => { disparosPauseMap.current.set(id, true); setDisparos(prev => prev.map(d => d.id === id ? { ...d, status: 'paused' } : d)); }}
+        onResume={id => { disparosPauseMap.current.set(id, false); setDisparos(prev => prev.map(d => d.id === id ? { ...d, status: 'running' } : d)); }}
+        onStop={id => { disparosStopMap.current.set(id, true); }}
+        onDismiss={id => setDisparos(prev => prev.filter(d => d.id !== id))}
+      />
     </div>
   );
 }

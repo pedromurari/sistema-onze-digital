@@ -685,6 +685,7 @@ function KanbanDisparoModal({
   leads,
   evoInstances,
   onStart,
+  initialColunaIds,
 }: {
   open: boolean;
   onClose: () => void;
@@ -699,6 +700,7 @@ function KanbanDisparoModal({
     maxDelayMs: number;
     instanceName: string | null;
   }) => void;
+  initialColunaIds?: string[];
 }) {
   const [selectedColIds, setSelectedColIds] = useState<Set<string>>(new Set());
   const [template, setTemplate] = useState(
@@ -709,6 +711,17 @@ function KanbanDisparoModal({
   const [maxDelaySecs, setMaxDelaySecs] = useState(25);
   const [instanceName, setInstanceName] = useState('__priority__');
   const [activeTab, setActiveTab] = useState<'colunas' | 'mensagem' | 'antibano'>('colunas');
+
+  useEffect(() => {
+    if (!open) return;
+    if (initialColunaIds && initialColunaIds.length > 0) {
+      setSelectedColIds(new Set(initialColunaIds));
+      setActiveTab('mensagem');
+    } else {
+      setSelectedColIds(new Set());
+      setActiveTab('colunas');
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleCol = (id: string) =>
     setSelectedColIds(prev => {
@@ -1153,6 +1166,7 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
   // ── Disparo por Coluna (campanhas WPP) ────────────────────────────────────
   const [disparos, setDisparos] = useState<KanbanDisparo[]>([]);
   const [showDisparoModal, setShowDisparoModal] = useState(false);
+  const [preselectColunaId, setPreselectColunaId] = useState<string | null>(null);
   const [evoInstances, setEvoInstances] = useState<Array<{ instance_name: string }>>([]);
   const disparosStopMap  = useRef<Map<string, boolean>>(new Map());
   const disparosPauseMap = useRef<Map<string, boolean>>(new Map());
@@ -2162,6 +2176,16 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
                         onMoveRight={() => moveColuna(coluna.id, 'right')}
                         onOpenSettings={() => setSettingsColuna(coluna)}
                       />
+                      {colLeads.filter(l => l.whatsapp).length > 0 && (
+                        <button
+                          onClick={() => { setPreselectColunaId(coluna.id); setShowDisparoModal(true); }}
+                          className="mt-1 mb-2 w-full flex items-center justify-center gap-1.5 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded-md transition-colors opacity-0 group-hover/col:opacity-100"
+                          title={`Disparar para ${colLeads.filter(l => l.whatsapp).length} lead(s) desta coluna`}
+                        >
+                          <Send className="h-3 w-3" />
+                          Disparar ({colLeads.filter(l => l.whatsapp).length})
+                        </button>
+                      )}
                       <div className="space-y-2 max-h-[600px] overflow-y-auto">
                         {colLeads.map(lead => (
                           <div
@@ -2756,11 +2780,12 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
       {/* ── Disparo por Coluna Modal ── */}
       <KanbanDisparoModal
         open={showDisparoModal}
-        onClose={() => setShowDisparoModal(false)}
+        onClose={() => { setShowDisparoModal(false); setPreselectColunaId(null); }}
         colunas={colunas}
         leads={leads}
         evoInstances={evoInstances}
         onStart={handleStartDisparo}
+        initialColunaIds={preselectColunaId ? [preselectColunaId] : undefined}
       />
 
       {/* ── Campanhas Disparo Panel (floating) ── */}
