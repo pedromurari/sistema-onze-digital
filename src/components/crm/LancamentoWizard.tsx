@@ -685,7 +685,8 @@ function Step3({ config, setConfig, evoInstances }: {
       {/* ── Cards de grupo (totalGrupos = qtd lançamento + 1 oferta) ── */}
       {Array.from({ length: totalGrupos }).map((_, i) => {
         const grupo    = config.grupos[i] ?? { nickname: '', jid: '', participantes: [] };
-        const isCriado = !!grupo.jid;
+        const hasLink  = !!(grupo.link && grupo.link.includes('chat.whatsapp.com/'));
+        const isCriado = !!grupo.jid || hasLink;  // link sozinho é suficiente
         const isLoading = criando[i] ?? false;
         const erro     = erros[i] ?? '';
         const fotoFile = fotoFiles[i] ?? null;
@@ -714,9 +715,13 @@ function Step3({ config, setConfig, evoInstances }: {
                   <p className="text-[10px] text-muted-foreground">{varName}</p>
                 </div>
               </div>
-              {isCriado ? (
+              {grupo.jid ? (
                 <span className="flex items-center gap-1 text-xs text-green-700 bg-green-100 border border-green-200 px-2 py-0.5 rounded-full font-medium">
                   <Check className="h-3 w-3" /> Criado
+                </span>
+              ) : hasLink ? (
+                <span className="flex items-center gap-1 text-xs text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full font-medium">
+                  <Check className="h-3 w-3" /> Link configurado
                 </span>
               ) : (
                 <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">⏳ Pendente</span>
@@ -748,12 +753,14 @@ function Step3({ config, setConfig, evoInstances }: {
               />
             </div>
 
-            {/* Buscar grupo existente */}
-            {!isCriado && (
+            {/* Buscar / criar grupo — mostra se não tem JID ainda */}
+            {!grupo.jid && (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <div className="flex-1 h-px bg-border" />
-                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">selecionar grupo existente</span>
+                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                    {hasLink ? 'vincular JID (opcional)' : 'selecionar grupo existente'}
+                  </span>
                   <div className="flex-1 h-px bg-border" />
                 </div>
                 <button
@@ -786,16 +793,18 @@ function Step3({ config, setConfig, evoInstances }: {
                     ))}
                   </select>
                 )}
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 h-px bg-border" />
-                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">ou criar novo</span>
-                  <div className="flex-1 h-px bg-border" />
-                </div>
+                {!hasLink && (
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-px bg-border" />
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">ou criar novo</span>
+                    <div className="flex-1 h-px bg-border" />
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Participantes */}
-            <div className="space-y-1">
+            {/* Participantes — só mostra quando vai criar novo grupo (sem link e sem JID) */}
+            {!hasLink && <div className="space-y-1">
               <label className="text-[10px] text-muted-foreground uppercase tracking-wide flex items-center gap-1">
                 <Smartphone className="h-3 w-3" />
                 Participantes a adicionar (um número por linha, com DDI+DDD)
@@ -839,9 +848,11 @@ function Step3({ config, setConfig, evoInstances }: {
                   </button>
                 )}
               </div>
-            </div>
+            </div>}
 
-            {/* Foto do grupo */}
+            {/* Foto do grupo — só quando vai criar novo grupo */}
+            {!hasLink && <div className="space-y-1">
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Foto do grupo</label>
             <div className="space-y-1">
               <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Foto do grupo</label>
               {fotoFile ? (
@@ -880,10 +891,10 @@ function Step3({ config, setConfig, evoInstances }: {
                   />
                 </label>
               )}
-            </div>
+            </div>}
 
-            {/* JID exibido após criação/seleção */}
-            {isCriado && (
+            {/* JID exibido após criação */}
+            {grupo.jid && (
               <div className="flex items-center gap-2 px-3 py-2 bg-green-100 border border-green-200 rounded-lg">
                 <Check className="h-3.5 w-3.5 text-green-600 flex-shrink-0" />
                 <span className="text-[11px] text-green-800 font-mono truncate flex-1">{grupo.jid}</span>
@@ -891,10 +902,18 @@ function Step3({ config, setConfig, evoInstances }: {
                   type="button"
                   onClick={() => updateGrupo(i, 'jid', '')}
                   className="text-green-600 hover:text-red-500 transition-colors flex-shrink-0"
-                  title="Remover — selecionar outro grupo"
+                  title="Remover JID"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
+              </div>
+            )}
+
+            {/* Aviso link sem JID */}
+            {hasLink && !grupo.jid && (
+              <div className="flex items-start gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
+                <AlertTriangle className="h-3.5 w-3.5 text-amber-500 flex-shrink-0 mt-0.5" />
+                <p className="text-[11px] text-amber-700">Link salvo. Para verificar automaticamente quem entrou no grupo, selecione o JID via "Buscar grupos do WhatsApp".</p>
               </div>
             )}
 
@@ -906,8 +925,8 @@ function Step3({ config, setConfig, evoInstances }: {
               </div>
             )}
 
-            {/* Botão criar */}
-            {!isCriado && (
+            {/* Botão criar — só quando não tem link nem JID */}
+            {!isCriado && !hasLink && (
               <button
                 type="button"
                 onClick={() => criarGrupo(i)}
@@ -1208,15 +1227,84 @@ function Step5({ config, setConfig }: {
           </div>
         </div>
 
-        <WppTemplateCard
-          emoji="💳" title="PIX Gerado" badge="sale_wait_payment · ambas turmas"
-          subtitle="Enviada quando o cliente escolhe PIX no checkout — inclui o código PIX logo em seguida"
-          bgColor="bg-orange-50/40" borderColor="border-orange-200" headerColor="bg-orange-100" badgeColor="bg-orange-200 text-orange-800"
-          vars={['{{nome}}', '{{evento_nome}}', '{{data_evento}}']}
-          template={config.pix_mensagem_template || ''}
-          onChange={v => set('pix_mensagem_template', v)}
-          placeholder="Olá {{nome}}! Seu PIX foi gerado..."
-        />
+        {/* PIX Gerado — card especial com fluxo de 3 mensagens */}
+        <div className="rounded-xl border-2 border-orange-200 bg-orange-50/40 overflow-hidden">
+          <div className="flex items-center gap-3 px-4 py-3 bg-orange-100 border-b border-orange-200">
+            <span className="text-lg">💳</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-orange-900">PIX Gerado</p>
+              <p className="text-xs text-orange-700 truncate">Enviada quando o cliente escolhe PIX no checkout — envia 3 mensagens em sequência</p>
+            </div>
+            <span className="flex-shrink-0 text-xs bg-orange-200 text-orange-800 px-2 py-0.5 rounded-full font-medium font-mono">sale_wait_payment</span>
+          </div>
+          <div className="p-4 space-y-4">
+            {/* Mensagem 1: configurável */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-orange-800 flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-orange-200 text-orange-800 flex items-center justify-center text-[10px] font-bold">1</span>
+                Mensagem de introdução (editável)
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {['{{nome}}', '{{evento_nome}}', '{{data_evento}}'].map(v => (
+                  <button key={v} type="button" onClick={() => set('pix_mensagem_template', (config.pix_mensagem_template || '') + v)}
+                    className="text-xs px-2 py-0.5 rounded-full bg-white border border-border text-muted-foreground hover:border-primary hover:text-primary font-mono transition-colors">{v}</button>
+                ))}
+              </div>
+              <textarea
+                className="w-full h-32 text-sm font-mono border border-orange-200 rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+                value={config.pix_mensagem_template || ''}
+                onChange={e => set('pix_mensagem_template', e.target.value)}
+                placeholder="Olá {{nome}}! Seu PIX foi gerado..."
+              />
+            </div>
+
+            {/* Mensagem 2: fixa */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-orange-800 flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-orange-200 text-orange-800 flex items-center justify-center text-[10px] font-bold">2</span>
+                Mensagem de instrução <span className="font-normal text-orange-600">(automática — não editável)</span>
+              </p>
+              <div className="bg-[#e5ddd5] rounded-lg p-3">
+                <div className="bg-white rounded-lg px-3 py-2 shadow-sm max-w-[85%] ml-auto">
+                  <p className="text-sm text-gray-800">Segue abaixo o pix copia e cola, é só copiar o código e colocar no seu banco para confirmar o pagamento.</p>
+                  <p className="text-[10px] text-gray-400 text-right mt-1">12:01 ✓✓</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Mensagem 3: código PIX */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-orange-800 flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-orange-200 text-orange-800 flex items-center justify-center text-[10px] font-bold">3</span>
+                Código PIX <span className="font-normal text-orange-600">(gerado automaticamente pelo Vega)</span>
+              </p>
+              <div className="bg-[#e5ddd5] rounded-lg p-3">
+                <div className="bg-white rounded-lg px-3 py-2 shadow-sm max-w-[85%] ml-auto">
+                  <p className="text-xs font-mono text-gray-500 break-all">00020126580014BR.GOV.BCB.PIX01...</p>
+                  <p className="text-[10px] text-gray-400 text-right mt-1">12:02 ✓✓</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Prévia da mensagem 1 */}
+            {config.pix_mensagem_template && (
+              <div className="space-y-1">
+                <p className="text-[10px] text-muted-foreground">Prévia da mensagem 1:</p>
+                <div className="bg-[#e5ddd5] rounded-lg p-3 max-h-40 overflow-y-auto">
+                  <div className="bg-white rounded-lg px-3 py-2 shadow-sm max-w-[85%] ml-auto">
+                    <p className="text-sm whitespace-pre-wrap text-gray-800">
+                      {config.pix_mensagem_template
+                        .replace(/\{\{nome\}\}/g, 'Maria Silva')
+                        .replace(/\{\{evento_nome\}\}/g, 'NPA #14 Santos')
+                        .replace(/\{\{data_evento\}\}/g, '14/06/2025')}
+                    </p>
+                    <p className="text-[10px] text-gray-400 text-right mt-1">12:00 ✓✓</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
 
         <WppTemplateCard
           emoji="☀️" title="Compra Confirmada — Turma Manhã" badge="sale_paid · manhã"
