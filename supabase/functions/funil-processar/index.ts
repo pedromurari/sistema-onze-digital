@@ -82,35 +82,25 @@ serve(async (req) => {
       });
     }
 
+    // Parse body antes de abrir qualquer conexão
+    let body: Record<string, unknown> = {};
+    try { body = await req.json(); } catch { /* cron sem body — ok */ }
+
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // ── Evolution API config (todas as instâncias ativas em ordem de prioridade) ──
-    const { data: evoRows } = await supabase
-      .from('evolution_config')
-      .select('api_url, api_key, instance_name')
-      .eq('ativo', true)
-      .order('prioridade', { ascending: true });
-
-    if (!evoRows?.length) {
-      return new Response(JSON.stringify({ error: 'Evolution API não configurada ou sem instâncias ativas' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const evoInstances = evoRows.map((inst: { api_url: string; instance_name: string; api_key: string }) => {
-      const rawBase = inst.api_url.replace(/\/$/, '');
-      return {
-        base:     /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`,
-        instance: inst.instance_name,
-        apikey:   inst.api_key,
-      };
-    });
-
-    const body = await req.json();
-
-    // ── Quick send (envio imediato pelo UI) ───────────────────────────────────
+    // ── Quick send (envio imediato pelo UI) — processa antes do early-exit ────
     if (body.quick_send) {
       try {
+        const { data: evoRowsQS } = await supabase
+          .from('evolution_config')
+          .select('api_url, api_key, instance_name')
+          .eq('ativo', true)
+          .order('prioridade', { ascending: true });
+        const evoInstancesQS = (evoRowsQS ?? []).map((inst: { api_url: string; instance_name: string; api_key: string }) => {
+          const rawBase = inst.api_url.replace(/\/$/, '');
+          return { base: /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`, instance: inst.instance_name, apikey: inst.api_key };
+        });
+
         const { data: funnelCfg } = await supabase
           .from('funnel_configs')
           .select('*')
@@ -118,7 +108,7 @@ serve(async (req) => {
           .maybeSingle();
 
         let lastErr: Error | null = null;
-        for (const { base, instance, apikey } of evoInstances) {
+        for (const { base, instance, apikey } of evoInstancesQS) {
           try {
             await processMessage(body, base, instance, apikey, supabase, funnelCfg);
             lastErr = null;
@@ -143,7 +133,42 @@ serve(async (req) => {
 
     // ── Scheduled batch (chamado pelo pg_cron ou cron externo) ────────────────
     const now    = new Date();
-    const window = new Date(now.getTime() + 2 * 60 * 1000); // próximos 2 min
+    const window = new Date(now.getTime() + 6 * 60 * 1000); // próximos 6 min (cron a cada 5min)
+
+    // EARLY EXIT: COUNT barato antes de buscar dados ou abrir conexão com Evolution
+    const { count } = await supabase
+      .from('funnel_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'scheduled')
+      .lte('scheduled_at', window.toISOString());
+
+    if (!count) {
+      return new Response(JSON.stringify({ ok: true, processed: 0 }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Só busca Evolution config se há mensagens para enviar
+    const { data: evoRows } = await supabase
+      .from('evolution_config')
+      .select('api_url, api_key, instance_name')
+      .eq('ativo', true)
+      .order('prioridade', { ascending: true });
+
+    if (!evoRows?.length) {
+      return new Response(JSON.stringify({ error: 'Evolution API não configurada ou sem instâncias ativas' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const evoInstances = evoRows.map((inst: { api_url: string; instance_name: string; api_key: string }) => {
+      const rawBase = inst.api_url.replace(/\/$/, '');
+      return {
+        base:     /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`,
+        instance: inst.instance_name,
+        apikey:   inst.api_key,
+      };
+    });
 
     const { data: pending, error: fetchErr } = await supabase
       .from('funnel_messages')
