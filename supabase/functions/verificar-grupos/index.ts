@@ -176,12 +176,11 @@ serve(async (req) => {
     const debugNpa: unknown[] = [];
 
     // ── 1. NPA ───────────────────────────────────────────────────────────────
-    const npasQuery = supabase
-      .from('npa_eventos')
-      .select('id, nome')
-      .eq('ativo', true);
-    if (filterNomeNpa) npasQuery.eq('nome', filterNomeNpa);
-    const { data: npas } = await npasQuery;
+    // Quando filtra por nome (chamada manual): pega o NPA independente de ativo
+    // Quando sem filtro (cron): só ativos
+    const { data: npas } = filterNomeNpa
+      ? await supabase.from('npa_eventos').select('id, nome').eq('nome', filterNomeNpa)
+      : await supabase.from('npa_eventos').select('id, nome').eq('ativo', true);
 
     for (const npa of (npas ?? [])) {
       const { data: fConfig } = await supabase
