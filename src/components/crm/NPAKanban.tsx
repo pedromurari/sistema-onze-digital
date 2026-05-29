@@ -1050,6 +1050,7 @@ function NPAVerificarGruposModal({
           'Authorization': `Bearer ${supabaseKey}`,
           'apikey': supabaseKey,
         },
+        body: JSON.stringify({ nomeNpa: nomeEvento }),
       });
       const data = await res.json();
       if (!res.ok || data.error) { toast.error(data.error || 'Erro na verificação'); return; }
@@ -1134,25 +1135,42 @@ function NPAVerificarGruposModal({
                   </p>
                 </div>
                 {result._debug && (result._debug as any[]).map((d: any, idx: number) => (
-                  <div key={idx} className="p-3 rounded-xl bg-gray-50 border border-gray-200 text-xs space-y-1 font-mono">
-                    <p className="font-bold text-gray-700 font-sans">{d.npa}</p>
+                  <div key={idx} className="p-3 rounded-xl bg-gray-50 border border-gray-200 text-[11px] space-y-1.5 overflow-x-auto">
                     {d.erro ? (
-                      <p className="text-red-600">❌ {d.erro}</p>
+                      <p className="text-red-600 font-medium">❌ {d.erro}</p>
                     ) : (
                       <>
-                        <p className="text-gray-500">JID Manhã: <span className="text-gray-800">{d.jid_manha}</span></p>
-                        <p className="text-gray-500">JID Tarde: <span className="text-gray-800">{d.jid_tarde}</span></p>
-                        <p className={d.participantes_manha_phones > 0 ? 'text-green-700' : 'text-red-600'}>
-                          Manhã: {d.participantes_manha} total → {d.participantes_manha_phones} phones
-                          {d.participantes_manha_amostra?.length > 0 && ` [${d.participantes_manha_amostra.join(', ')}]`}
-                        </p>
-                        <p className={d.participantes_tarde_phones > 0 ? 'text-green-700' : 'text-red-600'}>
-                          Tarde: {d.participantes_tarde} total → {d.participantes_tarde_phones} phones
-                          {d.participantes_tarde_amostra?.length > 0 && ` [${d.participantes_tarde_amostra.join(', ')}]`}
-                        </p>
-                        <p className="text-gray-500">Leads no DB: {d.leads_total}</p>
-                        {d.leads_amostra?.length > 0 && (
-                          <p className="text-gray-500">Amostra leads: {d.leads_amostra.map((l: any) => `${l.wpp}→s8:${l.s8}(${l.turma})`).join(' | ')}</p>
+                        {/* Participantes */}
+                        <div className={`flex items-center gap-2 p-2 rounded-lg ${d.participantes_manha_phones > 0 ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-700'}`}>
+                          <span className="font-semibold">☀️ Manhã:</span>
+                          <span>{d.participantes_manha_phones} telefones encontrados no grupo</span>
+                          {d.participantes_manha_amostra?.length > 0 && <span className="font-mono opacity-70">[{d.participantes_manha_amostra.join(', ')}]</span>}
+                        </div>
+                        <div className={`flex items-center gap-2 p-2 rounded-lg ${d.participantes_tarde_phones > 0 ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-700'}`}>
+                          <span className="font-semibold">🌆 Tarde:</span>
+                          <span>{d.participantes_tarde_phones} telefones encontrados no grupo</span>
+                          {d.participantes_tarde_amostra?.length > 0 && <span className="font-mono opacity-70">[{d.participantes_tarde_amostra.join(', ')}]</span>}
+                        </div>
+                        {/* Leads */}
+                        <div className="p-2 bg-gray-100 rounded-lg text-gray-700">
+                          <span className="font-semibold">Leads no DB:</span> {d.leads_total}
+                          {d.leads_amostra?.length > 0 && (
+                            <div className="mt-1 font-mono text-[10px] text-gray-500 space-y-0.5">
+                              {d.leads_amostra.map((l: any, i: number) => (
+                                <div key={i}>{l.wpp} → suffix8: <b>{l.s8}</b> ({l.turma})</div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {(d.participantes_manha_phones === 0 && d.participantes_tarde_phones === 0) && (
+                          <p className="text-amber-700 text-[11px] p-2 bg-amber-50 rounded-lg">
+                            ⚠️ Nenhum telefone retornado da Evolution API. Verifique se os JIDs estão corretos e se a instância está conectada.
+                          </p>
+                        )}
+                        {(d.participantes_manha_phones > 0 || d.participantes_tarde_phones > 0) && d.leads_total > 0 && d.atualizados === 0 && (
+                          <p className="text-amber-700 text-[11px] p-2 bg-amber-50 rounded-lg">
+                            ⚠️ Participantes encontrados mas nenhum telefone bate com os leads. Compare os suffix8 acima.
+                          </p>
                         )}
                       </>
                     )}

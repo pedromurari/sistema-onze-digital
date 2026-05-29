@@ -146,6 +146,13 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // Aceita filtro opcional por nome do NPA (quando chamado manualmente pela UI)
+    let filterNomeNpa: string | null = null;
+    try {
+      const body = await req.json().catch(() => ({}));
+      filterNomeNpa = (body as any)?.nomeNpa ?? null;
+    } catch { /* sem body — ok */ }
+
     const { data: evoRows } = await supabase
       .from('evolution_config')
       .select('api_url, api_key, instance_name')
@@ -169,10 +176,12 @@ serve(async (req) => {
     const debugNpa: unknown[] = [];
 
     // ── 1. NPA ───────────────────────────────────────────────────────────────
-    const { data: npas } = await supabase
+    const npasQuery = supabase
       .from('npa_eventos')
       .select('id, nome')
       .eq('ativo', true);
+    if (filterNomeNpa) npasQuery.eq('nome', filterNomeNpa);
+    const { data: npas } = await npasQuery;
 
     for (const npa of (npas ?? [])) {
       const { data: fConfig } = await supabase
