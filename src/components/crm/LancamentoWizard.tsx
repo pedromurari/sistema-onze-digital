@@ -824,6 +824,19 @@ function Step4({ config, setConfig }: {
               )}
             </div>
 
+            {/* Título da aula */}
+            <div className="space-y-1">
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                Nome/Título da aula <span className="text-muted-foreground/50">(opcional)</span>
+              </label>
+              <Input
+                placeholder={`Ex: O Despertar, A Cura, A Revelação…`}
+                value={a.titulo ?? ''}
+                onChange={e => updateAula(i, 'titulo', e.target.value)}
+                className="h-8 text-sm"
+              />
+            </div>
+
             {/* Data (read-only, definida no Step 1) + Horário */}
             <div className="flex items-center gap-3">
               <div className="flex-1 space-y-1">
@@ -1377,6 +1390,8 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
           update_group_picture: m.update_group_picture,
           subtipo: m.subtipo || null,
           status: m.status,
+          poll_name: m.poll_name ?? null,
+          poll_options: m.poll_options ?? null,
         }));
         await supabase.from('funnel_messages').insert(rows);
       }
