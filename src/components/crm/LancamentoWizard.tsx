@@ -853,8 +853,6 @@ function Step3({ config, setConfig, evoInstances }: {
             {/* Foto do grupo — só quando vai criar novo grupo */}
             {!hasLink && <div className="space-y-1">
               <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Foto do grupo</label>
-            <div className="space-y-1">
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Foto do grupo</label>
               {fotoFile ? (
                 <div className="flex items-center gap-3 p-2 border border-border rounded-lg bg-muted/30">
                   <img
