@@ -6,58 +6,123 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-key',
 };
 
-// ── Normalize phone to digits only ────────────────────────────────────────────
+// ── Helpers (mesma lógica robusta do sync-grupo) ──────────────────────────────
 
 function normalizePhone(raw: string): string {
-  return raw.replace(/\D/g, '');
+  const digits = raw.replace(/\D/g, '');
+  if ((digits.length === 13 || digits.length === 12) && digits.startsWith('55')) return digits.slice(2);
+  return digits.slice(-11);
 }
 
-/** Returns true if lead's phone matches any representation in the participants set */
-function phoneInSet(leadPhone: string, participants: Set<string>): boolean {
-  const n = normalizePhone(leadPhone);
-  if (!n) return false;
-  if (participants.has(n)) return true;
-  // With Brazil code prefix variations
-  if (n.startsWith('55') && participants.has(n.slice(2))) return true;
-  if (!n.startsWith('55') && participants.has('55' + n)) return true;
-  // Last 9 digits (remove area code variations)
-  const last9 = n.slice(-9);
-  for (const p of participants) {
-    if (p.slice(-9) === last9) return true;
-  }
-  return false;
+function suffix8(phone: string): string {
+  return normalizePhone(phone).slice(-8);
 }
 
-// ── Fetch participants from Evolution API ─────────────────────────────────────
+function isPhoneJid(s: string): boolean {
+  return s.endsWith('@s.whatsapp.net') || s.endsWith('@c.us');
+}
 
-async function fetchParticipants(
-  base: string,
-  instance: string,
-  apikey: string,
-  groupJid: string,
-): Promise<Set<string>> {
-  if (!groupJid || !groupJid.endsWith('@g.us')) return new Set();
+function isLid(s: string): boolean {
+  return s.endsWith('@lid');
+}
+
+function extractJid(p: unknown): string {
+  if (typeof p === 'string') return p;
+  const o = p as Record<string, unknown>;
+  return String(o?.phoneNumber ?? o?.phone ?? o?.number ?? o?.id ?? o?.jid ?? '');
+}
+
+function toRawList(json: unknown): unknown[] {
+  if (Array.isArray(json)) return json;
+  const j = json as Record<string, unknown>;
+  if (Array.isArray(j?.participants)) return j.participants as unknown[];
+  if (Array.isArray(j?.data)) return j.data as unknown[];
+  if (Array.isArray((j?.data as Record<string, unknown>)?.participants))
+    return (j.data as Record<string, unknown>).participants as unknown[];
+  return [];
+}
+
+async function safeFetch(url: string, opts: RequestInit, timeoutMs = 15000): Promise<unknown | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const url = `${base}/group/participants/${instance}?groupJid=${encodeURIComponent(groupJid)}`;
-    const res = await fetch(url, { headers: { apikey } });
-    if (!res.ok) {
-      console.warn(`fetchParticipants: ${res.status} for ${groupJid}`);
-      return new Set();
-    }
-    const data = await res.json();
-    const set = new Set<string>();
-    const list = Array.isArray(data) ? data : (data?.participants ?? []);
-    for (const p of list) {
-      const id = String(p.id ?? p.jid ?? '');
-      const phone = normalizePhone(id.split('@')[0]);
-      if (phone) set.add(phone);
-    }
-    console.log(`fetchParticipants: ${set.size} participantes em ${groupJid}`);
-    return set;
+    const res = await fetch(url, { ...opts, signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) { console.warn(`safeFetch ${res.status} ${url}`); return null; }
+    return await res.json();
   } catch (e) {
-    console.warn(`fetchParticipants error (${groupJid}):`, (e as Error).message);
-    return new Set();
+    clearTimeout(timer);
+    console.warn(`safeFetch timeout/error ${url}:`, (e as Error).message);
+    return null;
   }
+}
+
+async function resolveLidsViaContacts(
+  api_url: string, instance_name: string,
+  evoHeaders: Record<string, string>, lids: string[],
+): Promise<string[]> {
+  let contactList: unknown[] = [];
+  const candidates = [
+    () => safeFetch(`${api_url}/contact/findContacts/${instance_name}`, { method: 'POST', headers: evoHeaders, body: JSON.stringify({ where: {} }) }),
+    () => safeFetch(`${api_url}/contact/fetchContacts/${instance_name}`, { headers: evoHeaders }),
+    () => safeFetch(`${api_url}/contact/findContacts/${instance_name}`, { headers: evoHeaders }),
+  ];
+  for (const attempt of candidates) {
+    const res = await attempt();
+    if (res) { contactList = Array.isArray(res) ? res : toRawList(res); if (contactList.length) break; }
+  }
+  if (!contactList.length) return [];
+  const lidMap = new Map<string, string>();
+  for (const c of contactList) {
+    const contact = c as Record<string, unknown>;
+    const phoneJid = String(contact.id ?? contact.jid ?? '');
+    const lidVal   = String(contact.lid ?? contact.auxiliaryPhoneId ?? '');
+    if (isPhoneJid(phoneJid) && lidVal) {
+      const key = lidVal.includes('@') ? lidVal : `${lidVal}@lid`;
+      lidMap.set(key, phoneJid);
+    }
+  }
+  return lids.map(l => lidMap.get(l) ?? '').filter(Boolean);
+}
+
+async function resolveParticipants(
+  api_url: string, instance_name: string,
+  groupJid: string, evoHeaders: Record<string, string>,
+): Promise<string[]> {
+  if (!groupJid || !groupJid.endsWith('@g.us')) return [];
+  const enc = encodeURIComponent(groupJid);
+
+  // Usa os mesmos dois endpoints do sync-grupo + fallback legado
+  const [info, part] = await Promise.all([
+    safeFetch(`${api_url}/group/findGroupInfos/${instance_name}?groupJid=${enc}`, { headers: evoHeaders }),
+    safeFetch(`${api_url}/group/findParticipants/${instance_name}?groupJid=${enc}`, { headers: evoHeaders }),
+  ]);
+  const legacy = (!info && !part)
+    ? await safeFetch(`${api_url}/group/participants/${instance_name}?groupJid=${enc}`, { headers: evoHeaders })
+    : null;
+
+  const allJids = new Set<string>();
+  for (const json of [info, part, legacy]) {
+    if (!json) continue;
+    toRawList(json).map(extractJid).filter(s => /\d{8,}/.test(s)).forEach(j => allJids.add(j));
+  }
+
+  const phones = [...allJids].filter(isPhoneJid);
+  const lids   = [...allJids].filter(isLid);
+  console.log(`resolveParticipants(${groupJid}): ${phones.length} phones, ${lids.length} @lid`);
+
+  if (phones.length) return phones;
+  if (lids.length) {
+    const resolved = await resolveLidsViaContacts(api_url, instance_name, evoHeaders, lids);
+    if (resolved.length) return resolved;
+    return lids;
+  }
+  return [];
+}
+
+function phoneInSuffix8Set(leadPhone: string, groupSuffix8: Set<string>): boolean {
+  if (!leadPhone) return false;
+  return groupSuffix8.has(suffix8(leadPhone));
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -70,8 +135,7 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const cronSecret  = Deno.env.get('CRON_SECRET') ?? 'funil-processar-internal-2026';
 
-    // Auth: Bearer JWT (UI) ou x-cron-key (pg_cron / cron externo)
-    const authHeader   = req.headers.get('authorization') ?? '';
+    const authHeader    = req.headers.get('authorization') ?? '';
     const cronKeyHeader = req.headers.get('x-cron-key') ?? '';
     const isCron = cronKeyHeader === cronSecret;
     if (!isCron && !authHeader.startsWith('Bearer ')) {
@@ -82,7 +146,6 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // ── Evolution API ─────────────────────────────────────────────────────────
     const { data: evoRows } = await supabase
       .from('evolution_config')
       .select('api_url, api_key, instance_name')
@@ -99,18 +162,18 @@ serve(async (req) => {
     const evo = evoRows[0];
     const rawBase = evo.api_url.replace(/\/$/, '');
     const evoBase = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
+    const evoHeaders = { 'apikey': evo.api_key, 'Content-Type': 'application/json' };
 
     let npaUpdated = 0;
     let lancUpdated = 0;
 
-    // ── 1. NPA: verificar grupos Manhã + Tarde ────────────────────────────────
+    // ── 1. NPA ───────────────────────────────────────────────────────────────
     const { data: npas } = await supabase
       .from('npa_eventos')
       .select('id, nome')
       .eq('ativo', true);
 
     for (const npa of (npas ?? [])) {
-      // Pega funnel_configs para obter os JIDs dos grupos
       const { data: fConfig } = await supabase
         .from('funnel_configs')
         .select('grupo_1_id, grupo_2_id, variaveis')
@@ -123,26 +186,26 @@ serve(async (req) => {
       const jidManha = (fConfig as any).grupo_1_id || variaveis['grupo_manha'] || variaveis['grupo_1'] || '';
       const jidTarde = (fConfig as any).grupo_2_id || variaveis['grupo_tarde'] || variaveis['grupo_2'] || '';
 
-      // Busca participantes de cada grupo
-      const [participantesManha, participantesTarde] = await Promise.all([
-        fetchParticipants(evoBase, evo.instance_name, evo.api_key, jidManha),
-        fetchParticipants(evoBase, evo.instance_name, evo.api_key, jidTarde),
+      const [partsManha, partsTarde] = await Promise.all([
+        resolveParticipants(evoBase, evo.instance_name, jidManha, evoHeaders),
+        resolveParticipants(evoBase, evo.instance_name, jidTarde, evoHeaders),
       ]);
 
-      // Busca leads do NPA
+      const s8Manha = new Set(partsManha.filter(isPhoneJid).map(suffix8));
+      const s8Tarde = new Set(partsTarde.filter(isPhoneJid).map(suffix8));
+      console.log(`NPA "${npa.nome}": manhã=${s8Manha.size} tarde=${s8Tarde.size}`);
+
       const { data: leads } = await supabase
         .from('npa_evento_leads')
         .select('id, whatsapp, turma, no_grupo')
         .eq('npa_evento_id', npa.id);
 
       for (const lead of (leads ?? [])) {
-        const participants = lead.turma === 'tarde'
-          ? participantesTarde
-          : participantesManha.size > 0
-            ? participantesManha
-            : participantesTarde; // fallback para 'unica'
+        const groupSet = lead.turma === 'tarde'
+          ? s8Tarde
+          : s8Manha.size > 0 ? s8Manha : s8Tarde;
 
-        const estaNoGrupo = phoneInSet(lead.whatsapp, participants);
+        const estaNoGrupo = phoneInSuffix8Set(lead.whatsapp, groupSet);
         if (estaNoGrupo !== lead.no_grupo) {
           await supabase
             .from('npa_evento_leads')
@@ -153,38 +216,45 @@ serve(async (req) => {
       }
     }
 
-    // ── 2. Lançamento: verificar grupo de lançamento ──────────────────────────
+    // ── 2. Lançamentos ───────────────────────────────────────────────────────
     const { data: lancamentos } = await supabase
       .from('lancamentos')
       .select('id, nome, grupo_lancamento_jid, grupo_oferta_jid')
       .eq('ativo', true);
 
     for (const lanc of (lancamentos ?? [])) {
-      const jidLanc = (lanc as any).grupo_lancamento_jid || '';
-      if (!jidLanc) continue;
+      const jidLanc   = (lanc as any).grupo_lancamento_jid || '';
+      const jidOferta = (lanc as any).grupo_oferta_jid    || '';
+      if (!jidLanc && !jidOferta) continue;
 
-      const participantes = await fetchParticipants(evoBase, evo.instance_name, evo.api_key, jidLanc);
-      if (participantes.size === 0) continue;
+      const [partsLanc, partsOferta] = await Promise.all([
+        jidLanc   ? resolveParticipants(evoBase, evo.instance_name, jidLanc,   evoHeaders) : Promise.resolve([]),
+        jidOferta ? resolveParticipants(evoBase, evo.instance_name, jidOferta, evoHeaders) : Promise.resolve([]),
+      ]);
 
-      // Busca leads do lançamento
+      const s8Lanc   = new Set(partsLanc.filter(isPhoneJid).map(suffix8));
+      const s8Oferta = new Set(partsOferta.filter(isPhoneJid).map(suffix8));
+      if (!s8Lanc.size && !s8Oferta.size) continue;
+
       const { data: leads } = await supabase
         .from('lancamento_leads')
-        .select('id, whatsapp, no_grupo')
+        .select('id, whatsapp, no_grupo, grupo_oferta')
         .eq('lancamento_id', (lanc as any).id);
 
       for (const lead of (leads ?? [])) {
-        const estaNoGrupo = phoneInSet(lead.whatsapp, participantes);
-        if (estaNoGrupo !== lead.no_grupo) {
+        const noGrupo  = phoneInSuffix8Set(lead.whatsapp, s8Lanc);
+        const noOferta = phoneInSuffix8Set(lead.whatsapp, s8Oferta);
+        if (noGrupo !== lead.no_grupo || noOferta !== (lead as any).grupo_oferta) {
           await supabase
             .from('lancamento_leads')
-            .update({ no_grupo: estaNoGrupo })
+            .update({ no_grupo: noGrupo, grupo_oferta: noOferta })
             .eq('id', lead.id);
           lancUpdated++;
         }
       }
     }
 
-    console.log(`verificar-grupos: NPA atualizados=${npaUpdated}, Lançamento atualizados=${lancUpdated}`);
+    console.log(`verificar-grupos: NPA=${npaUpdated}, Lançamento=${lancUpdated}`);
 
     return new Response(JSON.stringify({ ok: true, npa_updated: npaUpdated, lanc_updated: lancUpdated }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
