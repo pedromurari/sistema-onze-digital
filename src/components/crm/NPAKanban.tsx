@@ -56,6 +56,8 @@ interface NPALead {
   fase: NPAPhase;
   turma: Turma;
   ingresso_pago: boolean;
+  bv_enviado: boolean;
+  bv_enviado_em?: string;
   no_grupo: boolean;
   presente_evento: boolean;
   esteve_no_evento: boolean;
@@ -985,6 +987,128 @@ function NPADisparoPanel({
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── BoasVindasPendentesPanel ─────────────────────────────────────────────────
+
+function BoasVindasPendentesPanel({
+  leads, npaEventoId, nomeEvento,
+}: {
+  leads: NPALead[];
+  npaEventoId: string;
+  nomeEvento: string;
+}) {
+  const pendentes = leads.filter(l => l.ingresso_pago && !l.bv_enviado && l.whatsapp);
+  const [sending, setSending] = useState(false);
+  const [sentIds, setSentIds] = useState<Set<string>>(new Set());
+  const [open, setOpen] = useState(false);
+
+  if (pendentes.length === 0) return null;
+
+  const handleEnviarTodos = async () => {
+    setSending(true);
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+    // Busca o template de boas-vindas do funnel_configs
+    const { data: fConfig } = await supabase
+      .from('funnel_configs')
+      .select('variaveis')
+      .eq('funnel_name', nomeEvento)
+      .maybeSingle();
+
+    const variaveis: Record<string, string> = (fConfig as any)?.variaveis ?? {};
+
+    for (const lead of pendentes) {
+      if (sentIds.has(lead.id)) continue;
+      try {
+        const tpl = lead.turma === 'tarde'
+          ? (variaveis['bv_wpp_tarde'] || variaveis['bv_wpp_manha'])
+          : variaveis['bv_wpp_manha'];
+
+        if (!tpl) { toast.error('Template de boas-vindas não configurado no wizard'); break; }
+
+        const mensagem = tpl
+          .replace(/\{\{nome\}\}/g, lead.nome || 'você')
+          .replace(/\{\{evento_nome\}\}/g, nomeEvento)
+          .replace(/\{\{turma\}\}/g, lead.turma === 'manha' ? 'Manhã' : 'Tarde')
+          .replace(/\{\{link_grupo_manha\}\}/g, variaveis['link_grupo_manha'] || '')
+          .replace(/\{\{link_grupo_tarde\}\}/g, variaveis['link_grupo_tarde'] || '')
+          .replace(/\{\{link_grupo\}\}/g, lead.turma === 'tarde' ? (variaveis['link_grupo_tarde'] || '') : (variaveis['link_grupo_manha'] || ''));
+
+        await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+          body: JSON.stringify({ numero: lead.whatsapp, mensagem }),
+        });
+
+        await supabase.from('npa_evento_leads').update({
+          bv_enviado: true, bv_enviado_em: new Date().toISOString(),
+        }).eq('id', lead.id);
+
+        setSentIds(prev => new Set([...prev, lead.id]));
+        await new Promise(r => setTimeout(r, 2000));
+      } catch (e) {
+        console.error('Erro ao enviar boas-vindas para', lead.nome, e);
+      }
+    }
+
+    setSending(false);
+    toast.success('Boas-vindas enviadas!');
+  };
+
+  const restantes = pendentes.filter(l => !sentIds.has(l.id));
+
+  if (restantes.length === 0 && sentIds.size > 0) return (
+    <div className="flex items-center gap-2 p-3 rounded-xl bg-green-50 border border-green-200 text-sm text-green-800">
+      <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+      Boas-vindas enviadas para todos os {sentIds.size} lead(s) com ingresso pago! ✅
+    </div>
+  );
+
+  return (
+    <div className="rounded-xl border-2 border-amber-300 bg-amber-50 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left"
+      >
+        <span className="text-lg">⚠️</span>
+        <div className="flex-1">
+          <p className="text-sm font-bold text-amber-900">
+            {restantes.length} lead{restantes.length > 1 ? 's' : ''} com ingresso pago nunca recebeu a mensagem de boas-vindas
+          </p>
+          <p className="text-xs text-amber-700">Clique para ver e enviar agora</p>
+        </div>
+        {open ? <ChevronUp className="h-4 w-4 text-amber-700" /> : <ChevronDown className="h-4 w-4 text-amber-700" />}
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-3 border-t border-amber-200">
+          <div className="mt-3 space-y-1.5 max-h-48 overflow-y-auto">
+            {restantes.map(lead => (
+              <div key={lead.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-white border border-amber-200 text-sm">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-gray-800 truncate">{lead.nome}</p>
+                  <p className="text-xs text-gray-500">{lead.whatsapp} · {lead.turma === 'manha' ? '☀️ Manhã' : '🌆 Tarde'}</p>
+                </div>
+                <span className="flex-shrink-0 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">nunca enviado</span>
+              </div>
+            ))}
+          </div>
+          <Button
+            onClick={handleEnviarTodos}
+            disabled={sending}
+            className="w-full bg-amber-600 hover:bg-amber-700 text-white gap-2"
+          >
+            {sending
+              ? <><Loader2 className="h-4 w-4 animate-spin" /> Enviando...</>
+              : <><Send className="h-4 w-4" /> Enviar boas-vindas para todos ({restantes.length})</>}
+          </Button>
         </div>
       )}
     </div>
@@ -2042,6 +2166,9 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
           </div>
         </div>
       )}
+
+      {/* Boas-Vindas Pendentes — leads com ingresso pago que nunca receberam */}
+      <BoasVindasPendentesPanel leads={leads} npaEventoId={npaEventoId} nomeEvento={evento.nome} />
 
       {/* Barra de busca + filtros */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">

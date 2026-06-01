@@ -174,11 +174,14 @@ async function processVegaWebhook(
       await sendWpp(evoBase, evo.instance_name, evo.api_key, number, fmt(grupoMsg, msgVars));
     }
 
+    const agora = new Date().toISOString();
+
     if (leadId) {
       await supabase
         .from('npa_evento_leads')
         .update({
           ingresso_pago: true,
+          bv_enviado: true, bv_enviado_em: agora,
           no_grupo: false, presente_evento: false, esteve_no_evento: false,
           closer: false, follow_up_01: false, follow_up_02: false, follow_up_03: false, matriculado: false,
         })
@@ -187,6 +190,7 @@ async function processVegaWebhook(
       await supabase.from('npa_evento_leads').insert({
         npa_evento_id: npa.id, nome: nome || 'Lead Vega',
         whatsapp: phone, turma, fase: 'ingresso_pago', ingresso_pago: true,
+        bv_enviado: true, bv_enviado_em: agora,
       });
     }
   }
