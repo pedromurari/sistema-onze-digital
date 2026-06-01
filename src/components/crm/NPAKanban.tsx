@@ -1043,7 +1043,7 @@ function BoasVindasPendentesPanel({
         await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
-          body: JSON.stringify({ numero: lead.whatsapp, mensagem }),
+          body: JSON.stringify({ numero: lead.whatsapp, mensagem, typing_delay_ms: 2000 + Math.floor(Math.random() * 2000) }),
         });
 
         await supabase.from('npa_evento_leads').update({
@@ -1051,7 +1051,7 @@ function BoasVindasPendentesPanel({
         }).eq('id', lead.id);
 
         setSentIds(prev => new Set([...prev, lead.id]));
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, 3000 + Math.random() * 4000));
       } catch (e) {
         console.error('Erro ao enviar boas-vindas para', lead.nome, e);
       }
@@ -1331,6 +1331,7 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
   const [evento, setEvento]                     = useState<NPAEvento | null>(null);
   const [leads, setLeads]                       = useState<NPALead[]>([]);
   const [searchWhatsapp, setSearchWhatsapp]     = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading]                   = useState(true);
   const [isAddingLead, setIsAddingLead]         = useState(false);
   const [turmaView, setTurmaView]               = useState<TurmaView>('todas');
@@ -1340,7 +1341,7 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
   const [showAddLeadModal, setShowAddLeadModal] = useState(false);
   const [leadToDelete, setLeadToDelete]         = useState<NPALead | null>(null);
   const [editingLead, setEditingLead]           = useState<NPALead | null>(null);
-  const [editLeadForm, setEditLeadForm]         = useState({ nome: '', whatsapp: '', email: '', observacoes: '' });
+  const [editLeadForm, setEditLeadForm]         = useState({ nome: '', whatsapp: '', email: '', observacoes: '', turma: 'unica' as Turma });
   const [showEditIngressoModal, setShowEditIngressoModal] = useState(false);
   const [novoValorIngresso, setNovoValorIngresso]         = useState('');
   const [savingIngresso, setSavingIngresso]               = useState(false);
@@ -1606,7 +1607,14 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
       whatsapp: lead.whatsapp,
       email: lead.email ?? '',
       observacoes: lead.observacoes ?? '',
+      turma: lead.turma,
     });
+  };
+
+  const handleChangeTurma = async (leadId: string, nova: Turma) => {
+    const { error } = await supabase.from('npa_evento_leads').update({ turma: nova }).eq('id', leadId);
+    if (error) { toast.error('Erro ao trocar turma'); return; }
+    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, turma: nova } : l));
   };
 
   const handleSaveEditLead = async () => {
@@ -1618,6 +1626,7 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
         whatsapp: editLeadForm.whatsapp,
         email: editLeadForm.email || null,
         observacoes: editLeadForm.observacoes || null,
+        turma: editLeadForm.turma,
       })
       .eq('id', editingLead.id);
     if (error) { toast.error('Erro ao salvar lead'); return; }
@@ -1884,13 +1893,26 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
                             </div>
                           </div>
                           <p className="text-xs text-gray-400 mb-2">{lead.whatsapp}</p>
-                          {lead.turma !== 'unica' && (
-                            <div className="mb-2">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${lead.turma === 'manha' ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'}`}>
-                                {lead.turma === 'manha' ? '☀️ Manhã' : '🌆 Tarde'}
-                              </span>
-                            </div>
-                          )}
+                          <div className="mb-2">
+                            <Select
+                              value={lead.turma}
+                              onValueChange={(v) => handleChangeTurma(lead.id, v as Turma)}
+                              disabled={evento?.status === 'finalizado'}
+                            >
+                              <SelectTrigger className={`h-6 text-xs px-2 rounded-full border-0 font-medium w-auto ${
+                                lead.turma === 'manha' ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' :
+                                lead.turma === 'tarde' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' :
+                                'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                              }`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="unica">Turma Única</SelectItem>
+                                <SelectItem value="manha">☀️ Manhã</SelectItem>
+                                <SelectItem value="tarde">🌆 Tarde</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
                           <button
                             onClick={() => handleToggleMaterial(lead.id, lead.comprou_material)}
                             disabled={evento?.status === 'finalizado'}
@@ -2175,9 +2197,10 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
           <Input
+            ref={searchRef}
             placeholder="Buscar por nome ou WhatsApp..."
             value={searchWhatsapp}
-            onChange={(e) => setSearchWhatsapp(e.target.value)}
+            onChange={(e) => { setSearchWhatsapp(e.target.value); requestAnimationFrame(() => searchRef.current?.focus()); }}
             className="pl-9 rounded-xl border-gray-200 bg-white text-sm"
           />
         </div>
@@ -2309,6 +2332,17 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
             <div className="space-y-1">
               <label className="text-xs text-gray-500">Observações</label>
               <Input value={editLeadForm.observacoes} onChange={e => setEditLeadForm(f => ({ ...f, observacoes: e.target.value }))} className="rounded-xl" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-gray-500">Turma</label>
+              <Select value={editLeadForm.turma} onValueChange={(v) => setEditLeadForm(f => ({ ...f, turma: v as Turma }))}>
+                <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unica">Turma Única</SelectItem>
+                  <SelectItem value="manha">☀️ Manhã</SelectItem>
+                  <SelectItem value="tarde">🌆 Tarde</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex justify-end gap-2 mt-2">
               <Button variant="outline" onClick={() => setEditingLead(null)} className="rounded-xl">Cancelar</Button>

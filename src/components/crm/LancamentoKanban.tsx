@@ -16,7 +16,7 @@ import {
   Plus, Search, AlertCircle, Users, Target, DollarSign,
   Loader2, Power, Trash2, Pencil, TrendingUp, BarChart2,
   ChevronUp, ChevronDown, Upload, FileText, UserCheck, Globe, Copy,
-  Send, Play, Square, Pause, X as XIcon,
+  Send, Play, Square, Pause, X as XIcon, CheckCircle2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useKanbanColunas } from './kanban/useKanbanColunas';
@@ -66,6 +66,8 @@ interface LaunchLead {
   follow_up_02?: boolean | string;
   follow_up_03?: boolean | string;
   matriculado: boolean;
+  bv_enviado?: boolean;
+  bv_enviado_em?: string;
   erro?: string;
   observacoes?: string;
   sheets_row_index?: number;
@@ -1112,6 +1114,124 @@ function autoDetectMapping(headers: string[]): { nome: string; whatsapp: string;
   };
 }
 
+// ─── BoasVindasLancamentoPanel ────────────────────────────────────────────────
+
+function BoasVindasLancamentoPanel({
+  leads,
+  lancamento,
+}: {
+  leads: LaunchLead[];
+  lancamento: Launch;
+}) {
+  const pendentes = leads.filter(l => !l.no_grupo && !l.bv_enviado && l.whatsapp);
+  const [sending, setSending] = useState(false);
+  const [sentIds, setSentIds] = useState<Set<string>>(new Set());
+  const [open, setOpen] = useState(false);
+
+  if (pendentes.length === 0) return null;
+
+  const handleEnviarTodos = async () => {
+    setSending(true);
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+    const { data: bvConfig } = await supabase
+      .from('boas_vindas_config')
+      .select('wpp_mensagem, wpp_ativo')
+      .eq('funnel_name', lancamento.nome)
+      .maybeSingle();
+
+    if (!(bvConfig as any)?.wpp_ativo || !(bvConfig as any)?.wpp_mensagem) {
+      toast.error('Template de boas-vindas não configurado para este lançamento');
+      setSending(false);
+      return;
+    }
+
+    for (const lead of pendentes) {
+      if (sentIds.has(lead.id)) continue;
+      try {
+        const mensagem = ((bvConfig as any).wpp_mensagem as string)
+          .replace(/\{\{nome\}\}/g, lead.nome || 'você')
+          .replace(/\{\{lancamento\}\}/g, lancamento.nome);
+
+        await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+          body: JSON.stringify({ numero: lead.whatsapp, mensagem, typing_delay_ms: 2000 + Math.floor(Math.random() * 2000) }),
+        });
+
+        await supabase.from('lancamento_leads').update({
+          bv_enviado: true, bv_enviado_em: new Date().toISOString(),
+        }).eq('id', lead.id);
+
+        setSentIds(prev => new Set([...prev, lead.id]));
+        await new Promise(r => setTimeout(r, 3000 + Math.random() * 4000));
+      } catch (e) {
+        console.error('Erro ao enviar boas-vindas para', lead.nome, e);
+      }
+    }
+
+    setSending(false);
+    toast.success('Boas-vindas enviadas!');
+  };
+
+  const restantes = pendentes.filter(l => !sentIds.has(l.id));
+
+  if (restantes.length === 0 && sentIds.size > 0) return (
+    <div className="flex items-center gap-2 p-3 rounded-xl bg-green-50 border border-green-200 text-sm text-green-800">
+      <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+      Boas-vindas enviadas para todos os {sentIds.size} lead(s) não detectados no grupo! ✅
+    </div>
+  );
+
+  return (
+    <div className="rounded-xl border-2 border-blue-300 bg-blue-50 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left"
+      >
+        <span className="text-lg">💬</span>
+        <div className="flex-1">
+          <p className="text-sm font-bold text-blue-900">
+            {restantes.length} lead{restantes.length > 1 ? 's' : ''} não detectado{restantes.length > 1 ? 's' : ''} no grupo sem boas-vindas
+          </p>
+          <p className="text-xs text-blue-700">Clique para ver e enviar agora</p>
+        </div>
+        {open ? <ChevronUp className="h-4 w-4 text-blue-700" /> : <ChevronDown className="h-4 w-4 text-blue-700" />}
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-3 border-t border-blue-200">
+          <div className="mt-3 space-y-1.5 max-h-48 overflow-y-auto">
+            {restantes.map(lead => (
+              <div key={lead.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-white border border-blue-200 text-sm">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-gray-800 truncate">{lead.nome}</p>
+                  <p className="text-xs text-gray-500">{lead.whatsapp}</p>
+                </div>
+                {sentIds.has(lead.id) && <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />}
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-blue-700">Anti-ban ativo — delay aleatório 3–7s entre envios</p>
+            <Button
+              size="sm"
+              onClick={handleEnviarTodos}
+              disabled={sending}
+              className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white gap-1.5"
+            >
+              {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+              {sending ? 'Enviando...' : `Enviar para ${restantes.length}`}
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ────────────────────────────────────────────────────────────
 
 export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
@@ -1120,6 +1240,7 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
   const [lancamento, setLancamento] = useState<Launch | null>(null);
   const [leads, setLeads] = useState<LaunchLead[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const searchQueryRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [activeView, setActiveView] = useState<ActiveView>('kanban');
   const [isAddingLead, setIsAddingLead] = useState(false);
@@ -2082,14 +2203,18 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
       {/* ── Kanban Tab ── */}
       {activeView === 'kanban' && (
         <>
+          {/* Boas-Vindas para leads não detectados no grupo */}
+          <BoasVindasLancamentoPanel leads={leads} lancamento={lancamento} />
+
           {/* Search and Add */}
           <div className="flex gap-2">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
+                ref={searchQueryRef}
                 placeholder="Buscar por nome ou WhatsApp..."
                 value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
+                onChange={e => { setSearchQuery(e.target.value); requestAnimationFrame(() => searchQueryRef.current?.focus()); }}
                 className="pl-10"
               />
             </div>

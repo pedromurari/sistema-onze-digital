@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { canAccessFinanceiroTurma } from '@/lib/access-control';
@@ -843,6 +843,7 @@ export function Financeiro() {
   const [dueFilter, setDueFilter] = useState<DueFilter>('todos');
   const [showFiltrosAvancados, setShowFiltrosAvancados] = useState(false);
   const [searchAluno, setSearchAluno] = useState('');
+  const searchAlunoRef = useRef<HTMLInputElement>(null);
   const [assigningTurma, setAssigningTurma] = useState<Record<string, boolean>>({});
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [bulkMarking, setBulkMarking] = useState(false);
@@ -1962,9 +1963,10 @@ export function Financeiro() {
             </Card>
             <Card className="p-3 flex-1 flex items-center gap-2">
               <Input
+                ref={searchAlunoRef}
                 placeholder="Buscar por nome, WhatsApp ou email..."
                 value={searchAluno}
-                onChange={e => setSearchAluno(e.target.value)}
+                onChange={e => { setSearchAluno(e.target.value); requestAnimationFrame(() => searchAlunoRef.current?.focus()); }}
                 className="border-0 shadow-none p-0 h-auto text-sm focus-visible:ring-0 flex-1"
               />
               <Button variant="ghost" size="sm" onClick={exportarCSV} title="Exportar lista como CSV" className="shrink-0 h-7 px-2 text-muted-foreground hover:text-foreground">
