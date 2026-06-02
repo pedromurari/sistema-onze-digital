@@ -441,44 +441,50 @@ export function FunilLancamento() {
     const configOk = await ensureFunnelConfig(form.funnel_name);
     if (!configOk) return;
     setSaving(true);
-    const p = buildPayload(form, 'scheduled');
-    const { data, error } = await supabase.functions.invoke('funil-processar', {
-      body: { quick_send: true, ...p },
-    });
-    const invokeError = error?.message ?? (data as any)?.error;
-    if (invokeError && editingId) {
-      await supabase.from('funnel_messages').update({
-        ...p,
-        status: 'error',
-        error_message: invokeError,
-      }).eq('id', editingId);
-    }
-    if (invokeError) {
-      setSaving(false);
-      toast.error(`Erro: ${invokeError}`);
-      loadFunnels();
-      return;
-    }
+    try {
+      const p = buildPayload(form, 'scheduled');
 
-    const sentAt = new Date().toISOString();
-    const sentPayload = {
-      ...p,
-      status: 'sent',
-      sent_at: sentAt,
-      error_message: null,
-    };
-    const { error: persistError } = editingId
-      ? await supabase.from('funnel_messages').update(sentPayload).eq('id', editingId)
-      : await supabase.from('funnel_messages').insert({ ...sentPayload, scheduled_at: sentAt } as any);
-    setSaving(false);
-    if (persistError) {
-      toast.error(`Mensagem enviada, mas falhou ao marcar como enviada: ${persistError.message}`);
-      return;
+      // Timeout de 90s — a edge function pode demorar com troca de foto + imagem de cabeçalho
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Tempo limite excedido (90s). Verifique se a Evolution API está conectada e tente novamente.')), 90_000)
+      );
+      const invokePromise = supabase.functions.invoke('funil-processar', {
+        body: { quick_send: true, ...p },
+      });
+      const { data, error } = await Promise.race([invokePromise, timeoutPromise]);
+
+      const invokeError = error?.message ?? (data as any)?.error;
+      if (invokeError && editingId) {
+        await supabase.from('funnel_messages').update({
+          ...p,
+          status: 'error',
+          error_message: invokeError,
+        }).eq('id', editingId);
+      }
+      if (invokeError) {
+        toast.error(`Erro: ${invokeError}`);
+        loadFunnels();
+        return;
+      }
+
+      const sentAt = new Date().toISOString();
+      const sentPayload = { ...p, status: 'sent', sent_at: sentAt, error_message: null };
+      const { error: persistError } = editingId
+        ? await supabase.from('funnel_messages').update(sentPayload).eq('id', editingId)
+        : await supabase.from('funnel_messages').insert({ ...sentPayload, scheduled_at: sentAt } as any);
+      if (persistError) {
+        toast.error(`Mensagem enviada, mas falhou ao marcar como enviada: ${persistError.message}`);
+        return;
+      }
+      toast.success('Mensagem enviada!');
+      setModalOpen(false);
+      setRefreshTick(t => t + 1);
+      loadFunnels();
+    } catch (e: unknown) {
+      toast.error((e as Error).message ?? 'Erro ao enviar mensagem');
+    } finally {
+      setSaving(false);
     }
-    toast.success('Mensagem enviada!');
-    setModalOpen(false);
-    setRefreshTick(t => t + 1);
-    loadFunnels();
   }
 
   async function handleDelete(id: string) {
@@ -1493,7 +1499,7 @@ function MsgModal({
 
         <DialogFooter className="flex-col sm:flex-row gap-2 pt-3 border-t">
           <Button variant="outline" onClick={onSendNow} disabled={saving} className="gap-2 sm:mr-auto">
-            <Send className="h-4 w-4" /> Enviar agora
+            {saving ? <><Spinner small /> Enviando…</> : <><Send className="h-4 w-4" /> Enviar agora</>}
           </Button>
           <Button variant="outline" onClick={onDraft} disabled={saving}>Rascunho</Button>
           <Button onClick={onSchedule} disabled={saving} className="bg-primary hover:bg-primary/90 gap-2">

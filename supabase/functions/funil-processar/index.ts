@@ -56,6 +56,7 @@ async function sendEvolution(endpoint: string, body: unknown, apikey: string) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`Evolution ${res.status}: ${text}`);
@@ -254,7 +255,7 @@ async function updateGroupPicture(
   imageUrl: string,
 ): Promise<void> {
   const cdnUrl = toCdnUrl(imageUrl);
-  const imgRes = await fetch(cdnUrl, { redirect: 'follow' });
+  const imgRes = await fetch(cdnUrl, { redirect: 'follow', signal: AbortSignal.timeout(15_000) });
   if (!imgRes.ok) {
     console.warn(`updateGroupPicture: falha ao buscar imagem (${imgRes.status}): ${cdnUrl}`);
     return;
