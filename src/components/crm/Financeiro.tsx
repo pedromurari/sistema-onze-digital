@@ -861,16 +861,16 @@ export function Financeiro() {
     setLoading(true);
     try {
       const [turmasRes, alunosRes, pagamentosRes] = await Promise.all([
-        supabase.from('turmas').select('id, nome, produto, tipo, data_inicio, data_fim, valor_mensalidade, total_mensalidades, responsavel_id, created_at').order('created_at', { ascending: false }).limit(200),
-        supabase.from('alunos').select(ALUNOS_SELECT_FULL).order('created_at', { ascending: false }).limit(500),
-        supabase.from('pagamentos').select('id, aluno_id, turma_id, produto, valor, mes_referencia, data_vencimento, data_pagamento, numero_parcela, status, created_at').order('created_at', { ascending: false }).limit(2000),
+        supabase.from('turmas').select('id, nome, produto, tipo, data_inicio, data_fim, valor_mensalidade, total_mensalidades, responsavel_id, created_at').order('created_at', { ascending: false }),
+        supabase.from('alunos').select(ALUNOS_SELECT_FULL).order('created_at', { ascending: false }),
+        supabase.from('pagamentos').select('id, aluno_id, turma_id, produto, valor, mes_referencia, data_vencimento, data_pagamento, numero_parcela, status, created_at').order('created_at', { ascending: false }),
       ]);
       if (turmasRes.data) setTurmas(turmasRes.data);
       if (alunosRes.data) {
         setAlunos(alunosRes.data);
       } else if (alunosRes.error) {
         // Fallback: novas colunas ainda nao existem (migration pendente)
-        const { data: fallback } = await supabase.from('alunos').select(ALUNOS_SELECT_BASE).order('created_at', { ascending: false }).limit(500);
+        const { data: fallback } = await supabase.from('alunos').select(ALUNOS_SELECT_BASE).order('created_at', { ascending: false });
         if (fallback) setAlunos(fallback);
       }
       if (pagamentosRes.data) setPagamentos(pagamentosRes.data);

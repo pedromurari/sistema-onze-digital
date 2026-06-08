@@ -11,10 +11,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   DollarSign, TrendingUp, AlertTriangle, Target, Info, Calendar,
   Users, BarChart3, CheckCircle2, TrendingDown, Pencil, Save, X, Settings2,
+  Layers, Droplets, Plus, Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, differenceInDays, parseISO, subDays, subMonths, startOfWeek, endOfWeek } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ReferenceLine, ResponsiveContainer,
+} from 'recharts';
+import {
+  type Produto, type TaxaDetalhe, type PagamentoComFonte,
+  calcTaxaTransacao, calcLiquidoPorProduto, calcTotaisLiquido,
+  agruparReceitaSemanal, agruparReceitaMensal, agruparReceitaPorMetodo,
+  fmtBRL, mesLabel,
+} from '@/lib/financial-utils';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -43,9 +54,11 @@ interface TurmaResponsavel {
 }
 interface Metas {
   mrr: number; coleta_mes: number; inadimplencia_max: number; receita_hoje: number;
+  cac_estimado: number; gross_margin_pct: number;
 }
 
 type Periodo = 'hoje' | 'semana' | 'mes' | '3m';
+type GranularidadeFluxo = 'diario' | 'semanal' | 'mensal';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -67,8 +80,11 @@ function mesStr(offset = 0) {
 const OWNERS = ['Onze Digital', 'Rodrygo', 'Keila'] as const;
 type Owner = typeof OWNERS[number] | '';
 
-const METAS_KEY = 'cfo_metas_v1';
-const METAS_DEFAULT: Metas = { mrr: 50000, coleta_mes: 40000, inadimplencia_max: 5, receita_hoje: 2000 };
+const METAS_KEY = 'cfo_metas_v2';
+const METAS_DEFAULT: Metas = {
+  mrr: 50000, coleta_mes: 40000, inadimplencia_max: 5, receita_hoje: 2000,
+  cac_estimado: 150, gross_margin_pct: 70,
+};
 
 function loadMetas(): Metas {
   try { return { ...METAS_DEFAULT, ...JSON.parse(localStorage.getItem(METAS_KEY) || '{}') }; }
@@ -198,6 +214,18 @@ export function FinanceiroCFO() {
   const [editingMeta, setEditingMeta] = useState(false);
   const [metasDraft, setMetasDraft]   = useState<Metas>(loadMetas);
 
+  // ── Novos estados: produtos, taxas e receita por fonte ─────────────────────
+  const [produtos, setProdutos]                       = useState<Produto[]>([]);
+  const [taxasDetalhe, setTaxasDetalhe]               = useState<TaxaDetalhe[]>([]);
+  const [taxasDraft, setTaxasDraft]                   = useState<TaxaDetalhe[]>([]);
+  const [editingTaxas, setEditingTaxas]               = useState(false);
+  const [savingTaxas, setSavingTaxas]                 = useState(false);
+  const [pagamentosComFonte, setPagamentosComFonte]   = useState<PagamentoComFonte[]>([]);
+  const [granularidadeFluxo, setGranularidadeFluxo]   = useState<GranularidadeFluxo>('diario');
+  const [produtosDraft, setProdutosDraft]             = useState<Produto[]>([]);
+  const [editingProdutos, setEditingProdutos]         = useState(false);
+  const [savingProdutos, setSavingProdutos]           = useState(false);
+
   // Configuração de responsáveis por turma
   type RespEntry = { owner1: Owner; pct1: number; owner2: Owner; pct2: number };
   const [cfgResp, setCfgResp]       = useState<Record<string, RespEntry>>({});
@@ -212,19 +240,40 @@ export function FinanceiroCFO() {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const [{ data: t }, { data: a }, { data: p }, { data: r }, { data: rl }] = await Promise.all([
-        supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades, responsavel_id'),
-        supabase.from('alunos').select('id, nome, turma_id, status, dia_vencimento, valor_mensalidade, mensalidades_pagas, total_mensalidades').neq('status', 'cancelado'),
-        supabase.from('pagamentos').select('id, aluno_id, turma_id, valor, status, data_pagamento, data_vencimento, mes_referencia'),
-        supabase.from('turma_responsaveis').select('id, turma_id, user_id, nome_ref, percentual'),
-        supabase.from('responsaveis').select('id, nome'),
-      ]);
-      setTurmas(t || []);
-      setAlunos(a || []);
-      setPagamentos(p || []);
-      setResponsaveis(r || []);
-      setResponsaveisList(rl || []);
-      setLoading(false);
+      try {
+        const dataCorte = subDays(new Date(), 90).toISOString().slice(0, 10);
+        const [
+          { data: t }, { data: a }, { data: p }, { data: r }, { data: rl },
+          { data: prod }, { data: taxas }, { data: recFonte },
+        ] = await Promise.all([
+          supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades, responsavel_id'),
+          supabase.from('alunos').select('id, nome, turma_id, status, dia_vencimento, valor_mensalidade, mensalidades_pagas, total_mensalidades').neq('status', 'cancelado'),
+          supabase.from('pagamentos').select('id, aluno_id, turma_id, valor, status, data_pagamento, data_vencimento, mes_referencia'),
+          supabase.from('turma_responsaveis').select('id, turma_id, user_id, nome_ref, percentual'),
+          supabase.from('responsaveis').select('id, nome'),
+          // Produtos configuráveis (não mais hardcoded)
+          supabase.from('produtos').select('id, nome, slug, cor, ativo, ordem').eq('ativo', true).order('ordem'),
+          // Taxas por produto + método de pagamento
+          supabase.from('payment_method_rates').select('*').eq('ativo', true),
+          // Receita dos últimos 90 dias com produto + forma_pagamento (via JOIN view)
+          supabase.from('vw_receita_por_fonte')
+            .select('id, aluno_id, turma_id, valor, data_pagamento, mes_referencia, numero_parcela, produto, forma_pagamento, produto_label')
+            .gte('data_pagamento', dataCorte),
+        ]);
+        setTurmas(t || []);
+        setAlunos(a || []);
+        setPagamentos(p || []);
+        setResponsaveis(r || []);
+        setResponsaveisList(rl || []);
+        setProdutos((prod || []) as Produto[]);
+        setTaxasDetalhe((taxas || []) as TaxaDetalhe[]);
+        setTaxasDraft((taxas || []) as TaxaDetalhe[]);
+        setPagamentosComFonte((recFonte || []) as PagamentoComFonte[]);
+      } catch {
+        toast.error('Erro ao carregar dados financeiros. Recarregue a página.');
+      } finally {
+        setLoading(false);
+      }
     };
     load();
   }, []);
@@ -333,7 +382,7 @@ export function FinanceiroCFO() {
     const counts  = { b0_30: 0, b31_60: 0, b61_90: 0, b90p: 0 };
     for (const pag of atrasados) {
       if (!pag.data_vencimento) continue;
-      const dias = differenceInDays(new Date(hoje), parseISO(pag.data_vencimento));
+      const dias = differenceInDays(parseISO(hoje), parseISO(pag.data_vencimento));
       const share = getOwnerShare(pag.turma_id);
       const val = (pag.valor || 0) * share;
       if (dias <= 30)       { buckets.b0_30  += val; counts.b0_30++; }
@@ -438,6 +487,71 @@ export function FinanceiroCFO() {
     return Object.entries(map).map(([data, valor]) => ({ data, valor }));
   }, [pagamentosPagos, periodo, getOwnerShare]);
 
+  // ── Slugs de produtos (exceto 'geral') ───────────────────────────────────
+  // Fonte: tabela produtos — dinâmico, não hardcoded
+  const slugsProdutos = useMemo(
+    () => produtos.filter(p => p.slug !== 'geral').map(p => p.slug),
+    [produtos]
+  );
+
+  // ── Receita diária com breakdown por produto (para aba Fluxo) ────────────
+  // Fonte: vw_receita_por_fonte × período selecionado
+  const receitaDiariaDetalhada = useMemo(() => {
+    const dias = periodo === 'hoje' ? 1 : periodo === 'semana' ? 7 : periodo === 'mes' ? 30 : 90;
+    const map: Record<string, Record<string, number> & { data: string; total: number }> = {};
+    const d = new Date(); d.setHours(0, 0, 0, 0);
+    for (let i = dias - 1; i >= 0; i--) {
+      const key = subDays(d, i).toISOString().slice(0, 10);
+      map[key] = { data: key, total: 0 };
+      for (const s of slugsProdutos) map[key][s] = 0;
+    }
+    for (const p of pagamentosComFonte) {
+      if (!p.data_pagamento) continue;
+      const dp = p.data_pagamento.slice(0, 10);
+      if (!(dp in map)) continue;
+      const val = (p.valor || 0) * getOwnerShare(p.turma_id);
+      const slug = p.produto || 'outros';
+      if (slug in map[dp]) (map[dp][slug] as number) += val;
+      map[dp].total += val;
+    }
+    return Object.values(map);
+  }, [pagamentosComFonte, periodo, getOwnerShare, slugsProdutos]);
+
+  // ── Receita semanal (últimas 12 semanas, breakdown por produto) ───────────
+  // Fonte: receitaDiaria + vw_receita_por_fonte
+  const receitaSemanal = useMemo(
+    () => agruparReceitaSemanal(receitaDiaria, pagamentosComFonte, slugsProdutos),
+    [receitaDiaria, pagamentosComFonte, slugsProdutos]
+  );
+
+  // ── Receita mensal (últimos 6 meses, breakdown por produto) ───────────────
+  // Fonte: vw_receita_por_fonte × owner share
+  const receitaMensal = useMemo(
+    () => agruparReceitaMensal(pagamentosComFonte, slugsProdutos, getOwnerShare),
+    [pagamentosComFonte, slugsProdutos, getOwnerShare]
+  );
+
+  // ── Líquido por produto (mês atual) ──────────────────────────────────────
+  // Fonte: vw_receita_por_fonte × payment_method_rates
+  // Método: calcTaxaTransacao() — regra mais específica prevalece (produto+forma > *+forma > produto+* > *+*)
+  const liquidoPorProduto = useMemo(
+    () => calcLiquidoPorProduto(pagamentosComFonte, taxasDetalhe, mesAtual, getOwnerShare),
+    [pagamentosComFonte, taxasDetalhe, mesAtual, getOwnerShare]
+  );
+
+  // ── Totais consolidados de líquido ────────────────────────────────────────
+  const totaisLiquido = useMemo(
+    () => calcTotaisLiquido(liquidoPorProduto),
+    [liquidoPorProduto]
+  );
+
+  // ── Receita por forma de pagamento (mês atual) ────────────────────────────
+  // Fonte: vw_receita_por_fonte agrupado por forma_pagamento
+  const receitaPorMetodo = useMemo(
+    () => agruparReceitaPorMetodo(pagamentosComFonte, mesAtual, getOwnerShare),
+    [pagamentosComFonte, mesAtual, getOwnerShare]
+  );
+
   // ── Fluxo por dia de vencimento ───────────────────────────────────────────
 
   const fluxoPorDia = useMemo(() => {
@@ -510,6 +624,59 @@ export function FinanceiroCFO() {
     setResponsaveis(r || []);
     setSavingResp(false);
     toast.success('Distribuição salva!');
+  }
+
+  // ── Produtos handlers ─────────────────────────────────────────────────────
+
+  async function handleSaveProdutos() {
+    setSavingProdutos(true);
+    try {
+      const rows = produtosDraft.map((p, i) => ({ ...p, ordem: i + 1 }));
+      const { error } = await supabase.from('produtos').upsert(rows, { onConflict: 'id' });
+      if (error) throw error;
+      // Desativar produtos removidos do draft (mantém histórico)
+      const removedSlugs = produtos
+        .filter(p => !produtosDraft.find(d => d.id === p.id))
+        .map(p => p.id);
+      if (removedSlugs.length) {
+        await supabase.from('produtos').update({ ativo: false }).in('id', removedSlugs);
+      }
+      const { data: fresh } = await supabase.from('produtos').select('id, nome, slug, cor, ativo, ordem').eq('ativo', true).order('ordem');
+      setProdutos((fresh || []) as Produto[]);
+      setProdutosDraft((fresh || []) as Produto[]);
+      setEditingProdutos(false);
+      toast.success('Produtos salvos!');
+    } catch {
+      toast.error('Erro ao salvar produtos. Tente novamente.');
+    } finally {
+      setSavingProdutos(false);
+    }
+  }
+
+  // ── Taxas handlers ────────────────────────────────────────────────────────
+
+  async function handleSaveTaxas() {
+    setSavingTaxas(true);
+    try {
+      const rows = taxasDraft.map(t => ({ ...t, updated_at: new Date().toISOString() }));
+      const { error } = await supabase.from('payment_method_rates').upsert(rows, { onConflict: 'id' });
+      if (error) throw error;
+      const deletedIds = taxasDetalhe
+        .filter(t => !taxasDraft.find(d => d.id === t.id))
+        .map(t => t.id);
+      if (deletedIds.length) {
+        await supabase.from('payment_method_rates').delete().in('id', deletedIds);
+      }
+      const { data: fresh } = await supabase.from('payment_method_rates').select('*').eq('ativo', true);
+      setTaxasDetalhe((fresh || []) as TaxaDetalhe[]);
+      setTaxasDraft((fresh || []) as TaxaDetalhe[]);
+      setEditingTaxas(false);
+      toast.success('Taxas salvas!');
+    } catch {
+      toast.error('Erro ao salvar taxas. Tente novamente.');
+    } finally {
+      setSavingTaxas(false);
+    }
   }
 
   // ── Metas handlers ────────────────────────────────────────────────────────
@@ -620,12 +787,16 @@ export function FinanceiroCFO() {
       <Tabs defaultValue="receita">
         <TabsList className="bg-muted/40 flex-wrap h-auto gap-1">
           <TabsTrigger value="receita">Receita</TabsTrigger>
+          <TabsTrigger value="fluxo">Fluxo</TabsTrigger>
+          <TabsTrigger value="liquido">Líquido Real</TabsTrigger>
+          <TabsTrigger value="fontes">Fontes</TabsTrigger>
           <TabsTrigger value="turmas">Por Turma</TabsTrigger>
           <TabsTrigger value="responsavel">Responsáveis</TabsTrigger>
           <TabsTrigger value="vencimento">Por Vencimento</TabsTrigger>
           <TabsTrigger value="aging">Inadimplência</TabsTrigger>
           <TabsTrigger value="parcelas">Parcelas</TabsTrigger>
           <TabsTrigger value="metas">Metas</TabsTrigger>
+          <TabsTrigger value="config">Config</TabsTrigger>
         </TabsList>
 
         {/* ── Receita ───────────────────────────────────────────────────────── */}
@@ -1060,6 +1231,498 @@ export function FinanceiroCFO() {
           </Card>
         </TabsContent>
 
+        {/* ── Fluxo ─────────────────────────────────────────────────────────── */}
+        <TabsContent value="fluxo" className="mt-4 space-y-4">
+          <Card className="border border-border/60 bg-white">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <BarChart3 size={14} className="text-muted-foreground" />
+                  Fluxo de Receita
+                  <InfoTip text="Receita efetivamente recebida (status='pago') agrupada por período. Barras empilhadas por produto — dinâmico, baseado na tabela produtos. Linha tracejada amarela = meta MRR (modo Mensal). Fonte: vw_receita_por_fonte." />
+                </CardTitle>
+                <div className="flex gap-1">
+                  {(['diario', 'semanal', 'mensal'] as GranularidadeFluxo[]).map(g => (
+                    <PeriodBtn key={g} active={granularidadeFluxo === g} onClick={() => setGranularidadeFluxo(g)}>
+                      {g === 'diario' ? 'Diário' : g === 'semanal' ? 'Semanal' : 'Mensal'}
+                    </PeriodBtn>
+                  ))}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                const chartData = granularidadeFluxo === 'diario'
+                  ? receitaDiariaDetalhada
+                  : granularidadeFluxo === 'semanal'
+                  ? receitaSemanal
+                  : receitaMensal;
+                const xKey = granularidadeFluxo === 'diario' ? 'data' : granularidadeFluxo === 'semanal' ? 'semana' : 'mes';
+                const prodsFiltrados = produtos.filter(p => p.slug !== 'geral');
+                if (!chartData.length || prodsFiltrados.length === 0) {
+                  return <p className="text-sm text-muted-foreground text-center py-10">Nenhum dado no período. Execute a migration para carregar produtos.</p>;
+                }
+                return (
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={chartData as any[]} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                      <XAxis
+                        dataKey={xKey}
+                        tick={{ fontSize: 11 }}
+                        tickFormatter={granularidadeFluxo === 'diario'
+                          ? (v: string) => { try { return format(parseISO(v), 'dd/MM', { locale: ptBR }); } catch { return v; } }
+                          : undefined}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 11 }}
+                        tickFormatter={(v: number) => v >= 1000 ? `R$${(v / 1000).toFixed(0)}k` : `R$${v}`}
+                      />
+                      <Tooltip
+                        formatter={(value: unknown, name: string) => {
+                          const p = prodsFiltrados.find(pr => pr.slug === name);
+                          return [fmt(value as number), p?.nome || name];
+                        }}
+                        labelFormatter={(label: string) =>
+                          granularidadeFluxo === 'diario'
+                            ? (() => { try { return format(parseISO(label), "dd 'de' MMMM", { locale: ptBR }); } catch { return label; } })()
+                            : label
+                        }
+                      />
+                      <Legend formatter={(value: string) => prodsFiltrados.find(pr => pr.slug === value)?.nome || value} />
+                      {prodsFiltrados.map((produto, i) => (
+                        <Bar
+                          key={produto.slug}
+                          dataKey={produto.slug}
+                          stackId="stack"
+                          fill={produto.cor}
+                          radius={i === prodsFiltrados.length - 1 ? [3, 3, 0, 0] : undefined}
+                        />
+                      ))}
+                      {granularidadeFluxo === 'mensal' && mrrTotal > 0 && (
+                        <ReferenceLine
+                          y={mrrTotal}
+                          stroke="#f59e0b"
+                          strokeDasharray="5 3"
+                          label={{ value: 'Meta MRR', fill: '#f59e0b', fontSize: 10, position: 'insideTopRight' }}
+                        />
+                      )}
+                    </BarChart>
+                  </ResponsiveContainer>
+                );
+              })()}
+            </CardContent>
+          </Card>
+          <Card className="border border-blue-100 bg-blue-50/30">
+            <CardContent className="p-4">
+              <p className="text-xs text-blue-700 font-medium mb-1">📊 Como ler este gráfico</p>
+              <p className="text-xs text-blue-600">
+                Cada barra = receita efetivamente recebida naquele período (<code className="bg-blue-100 px-1 rounded">status='pago'</code>).
+                Cores = produtos configurados em <code className="bg-blue-100 px-1 rounded">produtos</code> — novos produtos aparecem aqui automaticamente.
+                A linha amarela tracejada (modo Mensal) = meta MRR definida na aba Metas.
+              </p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Líquido Real ───────────────────────────────────────────────────── */}
+        <TabsContent value="liquido" className="mt-4 space-y-4">
+          <div className="grid grid-cols-3 gap-3">
+            <Card className="border border-border/60 bg-white">
+              <CardContent className="p-4 text-center">
+                <p className="text-xs text-muted-foreground mb-1 flex items-center justify-center gap-1">
+                  Receita Bruta
+                  <InfoTip text="Soma de todos os pagamentos com status='pago' no mês atual. Fonte: vw_receita_por_fonte (JOIN pagamentos + alunos)." />
+                </p>
+                <p className="text-xl font-bold tabular-nums">{fmtK(totaisLiquido.bruto)}</p>
+                <p className="text-xs text-muted-foreground">{totaisLiquido.count} transações</p>
+              </CardContent>
+            </Card>
+            <Card className="border border-red-100 bg-red-50/30">
+              <CardContent className="p-4 text-center">
+                <p className="text-xs text-muted-foreground mb-1 flex items-center justify-center gap-1">
+                  Taxas Estimadas
+                  <InfoTip text="Calculado transação a transação via payment_method_rates. Boleto PSI = valor×1%+R$1,99. PIX = valor×0,99%. Cartão = valor×3,49%. Edite as taxas abaixo." />
+                </p>
+                <p className="text-xl font-bold tabular-nums text-red-600">−{fmtK(totaisLiquido.taxas)}</p>
+                {totaisLiquido.bruto > 0 && (
+                  <p className="text-xs text-muted-foreground">{((totaisLiquido.taxas / totaisLiquido.bruto) * 100).toFixed(2)}% do bruto</p>
+                )}
+              </CardContent>
+            </Card>
+            <Card className="border border-emerald-100 bg-emerald-50/30">
+              <CardContent className="p-4 text-center">
+                <p className="text-xs text-muted-foreground mb-1 flex items-center justify-center gap-1">
+                  Líquido Real
+                  <InfoTip text="Bruto − Taxas. O que efetivamente fica após pagar os gateways. Use este número para calcular margens — não a receita bruta." />
+                </p>
+                <p className="text-xl font-bold tabular-nums text-emerald-600">{fmtK(totaisLiquido.liquido)}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="border border-border/60 bg-white">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Layers size={14} className="text-muted-foreground" />
+                Breakdown por produto — {mesLabel(mesAtual)}
+                <InfoTip text="Cálculo por produto. Regra de taxa: produto+forma exato > produto+* > *+forma > *+*. Fonte: vw_receita_por_fonte × payment_method_rates." />
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {produtos.filter(p => p.slug !== 'geral').length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-6">Execute a migration para carregar produtos configuráveis</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Produto</TableHead>
+                      <TableHead className="text-right">Bruto</TableHead>
+                      <TableHead className="text-right">Taxas</TableHead>
+                      <TableHead className="text-right">Líquido</TableHead>
+                      <TableHead className="text-right">Transações</TableHead>
+                      <TableHead className="text-right">% Taxa</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {produtos.filter(p => p.slug !== 'geral').map(produto => {
+                      const d = liquidoPorProduto[produto.slug] || { bruto: 0, taxas: 0, liquido: 0, count: 0 };
+                      return (
+                        <TableRow key={produto.id}>
+                          <TableCell>
+                            <span className="px-2 py-0.5 rounded-full text-xs font-bold" style={{ background: produto.cor + '20', color: produto.cor }}>
+                              {produto.nome}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">{fmt(d.bruto)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-red-600">−{fmt(d.taxas)}</TableCell>
+                          <TableCell className="text-right tabular-nums font-bold text-emerald-600">{fmt(d.liquido)}</TableCell>
+                          <TableCell className="text-right text-muted-foreground text-xs">{d.count}</TableCell>
+                          <TableCell className="text-right text-muted-foreground text-xs">
+                            {d.bruto > 0 ? `${((d.taxas / d.bruto) * 100).toFixed(2)}%` : '—'}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    <TableRow className="bg-muted/20">
+                      <TableCell className="font-semibold">Total</TableCell>
+                      <TableCell className="text-right tabular-nums font-semibold">{fmt(totaisLiquido.bruto)}</TableCell>
+                      <TableCell className="text-right tabular-nums font-semibold text-red-600">−{fmt(totaisLiquido.taxas)}</TableCell>
+                      <TableCell className="text-right tabular-nums font-bold text-emerald-600">{fmt(totaisLiquido.liquido)}</TableCell>
+                      <TableCell className="text-right text-muted-foreground text-xs">{totaisLiquido.count}</TableCell>
+                      <TableCell className="text-right text-muted-foreground text-xs">
+                        {totaisLiquido.bruto > 0 ? `${((totaisLiquido.taxas / totaisLiquido.bruto) * 100).toFixed(2)}%` : '—'}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border border-border/60 bg-white">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Settings2 size={14} className="text-muted-foreground" />
+                  Configuração de Taxas
+                  <InfoTip text="Taxas por produto + método + gateway. Regra mais específica prevalece. Editável sem deploy — alterações salvas em payment_method_rates." />
+                </CardTitle>
+                {!editingTaxas ? (
+                  <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => { setTaxasDraft([...taxasDetalhe]); setEditingTaxas(true); }}>
+                    <Pencil className="h-3 w-3" /> Editar taxas
+                  </Button>
+                ) : (
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => { setEditingTaxas(false); setTaxasDraft([...taxasDetalhe]); }}>
+                      <X className="h-3 w-3" /> Cancelar
+                    </Button>
+                    <Button size="sm" className="gap-1.5 text-xs" onClick={handleSaveTaxas} disabled={savingTaxas}>
+                      <Save className="h-3 w-3" /> {savingTaxas ? 'Salvando…' : 'Salvar'}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {editingTaxas ? (
+                <div className="space-y-2">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2 pr-2">Produto</th>
+                          <th className="text-left py-2 pr-2">Método</th>
+                          <th className="text-left py-2 pr-2">Gateway</th>
+                          <th className="text-right py-2 pr-2">% Taxa</th>
+                          <th className="text-right py-2 pr-2">R$ Fixo</th>
+                          <th className="text-left py-2 pr-2">Observação</th>
+                          <th className="py-2" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {taxasDraft.map((taxa, idx) => (
+                          <tr key={taxa.id} className="border-b border-border/40">
+                            <td className="py-1.5 pr-2">
+                              <Select value={taxa.produto_slug} onValueChange={v => setTaxasDraft(prev => prev.map((t, i) => i === idx ? { ...t, produto_slug: v } : t))}>
+                                <SelectTrigger className="h-7 text-xs w-32"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="*">Todos (*)</SelectItem>
+                                  {produtos.map(p => <SelectItem key={p.slug} value={p.slug}>{p.nome}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            </td>
+                            <td className="py-1.5 pr-2">
+                              <Select value={taxa.forma_pagamento} onValueChange={v => setTaxasDraft(prev => prev.map((t, i) => i === idx ? { ...t, forma_pagamento: v } : t))}>
+                                <SelectTrigger className="h-7 text-xs w-24"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="*">Todos (*)</SelectItem>
+                                  <SelectItem value="boleto">Boleto</SelectItem>
+                                  <SelectItem value="cartao">Cartão</SelectItem>
+                                  <SelectItem value="pix">PIX</SelectItem>
+                                  <SelectItem value="avista">À Vista</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </td>
+                            <td className="py-1.5 pr-2">
+                              <Select value={taxa.gateway} onValueChange={v => setTaxasDraft(prev => prev.map((t, i) => i === idx ? { ...t, gateway: v } : t))}>
+                                <SelectTrigger className="h-7 text-xs w-24"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="asaas">Asaas</SelectItem>
+                                  <SelectItem value="vega">Vega</SelectItem>
+                                  <SelectItem value="stripe">Stripe</SelectItem>
+                                  <SelectItem value="outros">Outros</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </td>
+                            <td className="py-1.5 pr-2">
+                              <Input type="number" step="0.01" className="h-7 text-xs w-20 text-right"
+                                value={taxa.percentual}
+                                onChange={e => setTaxasDraft(prev => prev.map((t, i) => i === idx ? { ...t, percentual: parseFloat(e.target.value) || 0 } : t))} />
+                            </td>
+                            <td className="py-1.5 pr-2">
+                              <Input type="number" step="0.01" className="h-7 text-xs w-20 text-right"
+                                value={taxa.fixo_por_transacao}
+                                onChange={e => setTaxasDraft(prev => prev.map((t, i) => i === idx ? { ...t, fixo_por_transacao: parseFloat(e.target.value) || 0 } : t))} />
+                            </td>
+                            <td className="py-1.5 pr-2">
+                              <Input className="h-7 text-xs w-48" value={taxa.observacao || ''}
+                                onChange={e => setTaxasDraft(prev => prev.map((t, i) => i === idx ? { ...t, observacao: e.target.value } : t))}
+                                placeholder="Observação opcional" />
+                            </td>
+                            <td className="py-1.5">
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                                onClick={() => setTaxasDraft(prev => prev.filter((_, i) => i !== idx))}>
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <Button size="sm" variant="outline" className="gap-1.5 text-xs"
+                    onClick={() => setTaxasDraft(prev => [...prev, {
+                      id: crypto.randomUUID(), produto_slug: '*', forma_pagamento: '*', gateway: 'asaas',
+                      percentual: 0, fixo_por_transacao: 0, faixa_min: 0, faixa_max: 999999.99, ativo: true, observacao: '',
+                    }])}>
+                    <Plus className="h-3 w-3" /> Nova taxa
+                  </Button>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left py-2 pr-3">Produto</th>
+                        <th className="text-left py-2 pr-3">Método</th>
+                        <th className="text-left py-2 pr-3">Gateway</th>
+                        <th className="text-right py-2 pr-3">% Taxa</th>
+                        <th className="text-right py-2 pr-3">R$ Fixo</th>
+                        <th className="text-left py-2">Observação</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {taxasDetalhe.map(taxa => (
+                        <tr key={taxa.id} className="border-b border-border/30">
+                          <td className="py-1.5 pr-3 font-medium">
+                            {taxa.produto_slug === '*' ? 'Todos' : (produtos.find(p => p.slug === taxa.produto_slug)?.nome || taxa.produto_slug)}
+                          </td>
+                          <td className="py-1.5 pr-3 capitalize">{taxa.forma_pagamento === '*' ? 'Todos' : taxa.forma_pagamento}</td>
+                          <td className="py-1.5 pr-3 capitalize">{taxa.gateway}</td>
+                          <td className="py-1.5 pr-3 text-right tabular-nums">{taxa.percentual.toFixed(2)}%</td>
+                          <td className="py-1.5 pr-3 text-right tabular-nums">{taxa.fixo_por_transacao > 0 ? `R$ ${taxa.fixo_por_transacao.toFixed(2)}` : '—'}</td>
+                          <td className="py-1.5 text-muted-foreground">{taxa.observacao || '—'}</td>
+                        </tr>
+                      ))}
+                      {taxasDetalhe.length === 0 && (
+                        <tr><td colSpan={6} className="py-6 text-center text-muted-foreground">Nenhuma taxa. Clique em "Editar taxas" para adicionar.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Fontes ─────────────────────────────────────────────────────────── */}
+        <TabsContent value="fontes" className="mt-4 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card className="border border-border/60 bg-white">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Layers size={14} className="text-muted-foreground" />
+                  Por Produto — {mesLabel(mesAtual)}
+                  <InfoTip text="Concentração de receita por produto no mês atual. Concentração > 70% em um produto = risco de dependência. Fonte: vw_receita_por_fonte.produto." />
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {(() => {
+                  const total = Object.values(liquidoPorProduto).reduce((s, v) => s + v.bruto, 0);
+                  const comDados = produtos.filter(p => p.slug !== 'geral' && (liquidoPorProduto[p.slug]?.bruto || 0) > 0);
+                  return comDados.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-6">Sem receita registrada no mês atual</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {comDados.map(produto => {
+                        const val = liquidoPorProduto[produto.slug]?.bruto || 0;
+                        const pctVal = total > 0 ? (val / total) * 100 : 0;
+                        return (
+                          <div key={produto.id} className="space-y-1">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="flex items-center gap-2">
+                                <span className="w-3 h-3 rounded-full inline-block shrink-0" style={{ background: produto.cor }} />
+                                {produto.nome}
+                              </span>
+                              <span className="tabular-nums font-medium">{fmtK(val)} · {pctVal.toFixed(1)}%</span>
+                            </div>
+                            <div className="h-2 bg-muted rounded-full overflow-hidden">
+                              <div className="h-full rounded-full transition-all" style={{ width: `${pctVal}%`, background: produto.cor }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </CardContent>
+            </Card>
+
+            <Card className="border border-border/60 bg-white">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Droplets size={14} className="text-muted-foreground" />
+                  Por Forma de Pagamento — {mesLabel(mesAtual)}
+                  <InfoTip text="Mix de pagamentos do mês. Boleto: R$1,99+1% por emissão — ruim para valores baixos. PIX: 0,99% — mais barato, liquidação imediata. Cartão: 3,49% — menor inadimplência. Fonte: vw_receita_por_fonte.forma_pagamento." />
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {receitaPorMetodo.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">Sem dados de pagamento no mês atual</p>
+                ) : (
+                  <div className="space-y-3">
+                    {receitaPorMetodo.map(({ forma, label, valor, pct: pctVal }) => {
+                      const cor: Record<string, string> = { boleto: '#f59e0b', cartao: '#3b82f6', pix: '#10b981', avista: '#8b5cf6' };
+                      const c = cor[forma] || '#6b7280';
+                      return (
+                        <div key={forma} className="space-y-1">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="flex items-center gap-2">
+                              <span className="w-3 h-3 rounded-full inline-block shrink-0" style={{ background: c }} />
+                              {label}
+                            </span>
+                            <span className="tabular-nums font-medium">{fmtK(valor)} · {pctVal.toFixed(1)}%</span>
+                          </div>
+                          <div className="h-2 bg-muted rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all" style={{ width: `${pctVal}%`, background: c }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="border border-border/60 bg-white">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                Produto × Forma de Pagamento — {mesLabel(mesAtual)}
+                <InfoTip text="Cruzamento receita por produto e forma de pagamento. Soma horizontal = total do produto. Soma vertical = total da forma. Fonte: vw_receita_por_fonte." />
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                const formas = ['boleto', 'cartao', 'pix', 'avista'];
+                const LABELS: Record<string, string> = { boleto: 'Boleto', cartao: 'Cartão', pix: 'PIX', avista: 'À Vista' };
+                const prodsFiltrados = produtos.filter(p => p.slug !== 'geral');
+                const cross: Record<string, Record<string, number>> = {};
+                const colTotais: Record<string, number> = {};
+                for (const p of prodsFiltrados) { cross[p.slug] = {}; for (const f of formas) cross[p.slug][f] = 0; }
+                for (const f of formas) colTotais[f] = 0;
+                for (const pag of pagamentosComFonte.filter(x => x.mes_referencia?.startsWith(mesAtual))) {
+                  const slug = pag.produto || 'outros';
+                  const forma = pag.forma_pagamento || 'boleto';
+                  const val = (pag.valor || 0) * getOwnerShare(pag.turma_id);
+                  if (cross[slug]) {
+                    cross[slug][forma] = (cross[slug][forma] || 0) + val;
+                    colTotais[forma] = (colTotais[forma] || 0) + val;
+                  }
+                }
+                const linhasComDados = prodsFiltrados.filter(p => formas.some(f => (cross[p.slug]?.[f] || 0) > 0));
+                return linhasComDados.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">Sem dados cruzados no mês atual</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Produto</TableHead>
+                          {formas.map(f => <TableHead key={f} className="text-right">{LABELS[f]}</TableHead>)}
+                          <TableHead className="text-right font-semibold">Total</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {linhasComDados.map(produto => {
+                          const row = cross[produto.slug] || {};
+                          const rowTotal = formas.reduce((s, f) => s + (row[f] || 0), 0);
+                          return (
+                            <TableRow key={produto.id}>
+                              <TableCell>
+                                <span className="px-2 py-0.5 rounded-full text-xs font-bold" style={{ background: produto.cor + '20', color: produto.cor }}>
+                                  {produto.nome}
+                                </span>
+                              </TableCell>
+                              {formas.map(f => (
+                                <TableCell key={f} className="text-right tabular-nums text-sm">
+                                  {(row[f] || 0) > 0 ? fmtK(row[f]) : '—'}
+                                </TableCell>
+                              ))}
+                              <TableCell className="text-right tabular-nums font-semibold">{fmtK(rowTotal)}</TableCell>
+                            </TableRow>
+                          );
+                        })}
+                        <TableRow className="bg-muted/20">
+                          <TableCell className="font-semibold">Total</TableCell>
+                          {formas.map(f => (
+                            <TableCell key={f} className="text-right tabular-nums font-semibold">
+                              {colTotais[f] > 0 ? fmtK(colTotais[f]) : '—'}
+                            </TableCell>
+                          ))}
+                          <TableCell className="text-right tabular-nums font-bold">
+                            {fmtK(formas.reduce((s, f) => s + colTotais[f], 0))}
+                          </TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </div>
+                );
+              })()}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* ── Metas ─────────────────────────────────────────────────────────── */}
         <TabsContent value="metas" className="mt-4 space-y-4">
           <Card className="border border-border/60 bg-white">
@@ -1155,6 +1818,113 @@ export function FinanceiroCFO() {
             </CardContent>
           </Card>
         </TabsContent>
+        {/* ── Config ─────────────────────────────────────────────────────────── */}
+        <TabsContent value="config" className="mt-4 space-y-4">
+
+          {/* Produtos */}
+          <Card className="border border-border/60 bg-white">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Layers size={14} className="text-muted-foreground" />
+                  Produtos
+                  <InfoTip text="Lista de produtos configuráveis. Cada produto aparece automaticamente nas abas Fluxo, Fontes e Líquido Real. Novos produtos são adicionados aqui — sem deploy. Fonte: tabela public.produtos." />
+                </CardTitle>
+                {!editingProdutos ? (
+                  <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => { setProdutosDraft([...produtos]); setEditingProdutos(true); }}>
+                    <Pencil className="h-3 w-3" /> Editar produtos
+                  </Button>
+                ) : (
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => { setEditingProdutos(false); setProdutosDraft([...produtos]); }}>
+                      <X className="h-3 w-3" /> Cancelar
+                    </Button>
+                    <Button size="sm" className="gap-1.5 text-xs" onClick={handleSaveProdutos} disabled={savingProdutos}>
+                      <Save className="h-3 w-3" /> {savingProdutos ? 'Salvando…' : 'Salvar'}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {editingProdutos ? (
+                <div className="space-y-2">
+                  {produtosDraft.map((produto, idx) => (
+                    <div key={produto.id} className="flex items-center gap-2 p-2 rounded-lg border border-border/40">
+                      <input
+                        type="color"
+                        value={produto.cor}
+                        onChange={e => setProdutosDraft(prev => prev.map((p, i) => i === idx ? { ...p, cor: e.target.value } : p))}
+                        className="w-8 h-8 rounded border-0 cursor-pointer p-0"
+                        title="Cor do produto"
+                      />
+                      <Input
+                        className="h-8 text-sm flex-1"
+                        value={produto.nome}
+                        onChange={e => setProdutosDraft(prev => prev.map((p, i) => i === idx ? { ...p, nome: e.target.value } : p))}
+                        placeholder="Nome do produto"
+                      />
+                      <Input
+                        className="h-8 text-sm w-36 font-mono text-xs"
+                        value={produto.slug}
+                        onChange={e => setProdutosDraft(prev => prev.map((p, i) => i === idx ? { ...p, slug: e.target.value.toLowerCase().replace(/\s+/g, '-') } : p))}
+                        placeholder="slug-do-produto"
+                        title="Slug (chave única, sem espaços)"
+                      />
+                      {produto.slug !== 'geral' && (
+                        <Button
+                          size="sm" variant="ghost" className="h-8 w-8 p-0 text-red-500 hover:text-red-700 shrink-0"
+                          onClick={() => setProdutosDraft(prev => prev.filter((_, i) => i !== idx))}
+                          title="Remover produto"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                  <Button
+                    size="sm" variant="outline" className="gap-1.5 text-xs mt-1"
+                    onClick={() => setProdutosDraft(prev => [...prev, {
+                      id: crypto.randomUUID(), nome: 'Novo Produto', slug: `produto-${Date.now()}`,
+                      cor: '#6366f1', ativo: true, ordem: prev.length + 1,
+                    }])}
+                  >
+                    <Plus className="h-3 w-3" /> Novo produto
+                  </Button>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    O slug é a chave usada internamente. Mude apenas em novos produtos — alterar o slug de um produto existente quebra o vínculo com dados históricos.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {produtos.map(produto => (
+                    <div key={produto.id} className="flex items-center gap-3 p-2.5 rounded-lg border border-border/30">
+                      <span className="w-4 h-4 rounded-full shrink-0" style={{ background: produto.cor }} />
+                      <span className="flex-1 text-sm font-medium">{produto.nome}</span>
+                      <code className="text-xs text-muted-foreground font-mono bg-muted/40 px-2 py-0.5 rounded">{produto.slug}</code>
+                    </div>
+                  ))}
+                  {produtos.length === 0 && (
+                    <p className="text-sm text-muted-foreground text-center py-6">Nenhum produto. Execute a migration SQL primeiro.</p>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border border-blue-100 bg-blue-50/30">
+            <CardContent className="p-4">
+              <p className="text-xs text-blue-700 font-medium mb-1">📋 Como funciona a escalabilidade de produtos</p>
+              <p className="text-xs text-blue-600">
+                Adicionar um novo produto aqui faz ele aparecer automaticamente nas abas Fluxo (barras no gráfico), Fontes (linhas na tabela) e Líquido Real (breakdown por produto).
+                Configure as taxas do novo produto na aba <strong>Líquido Real → Configuração de Taxas</strong>.
+                Associe turmas ao novo produto pelo campo <code className="bg-blue-100 px-1 rounded">produto</code> na tabela turmas.
+              </p>
+            </CardContent>
+          </Card>
+
+        </TabsContent>
+
       </Tabs>
     </div>
   );

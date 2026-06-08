@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import {
   TrendingUp, TrendingDown, DollarSign, Plus, Trash2,
-  RefreshCw, CheckCircle2, AlertTriangle, XCircle, Settings,
+  RefreshCw, CheckCircle2, AlertTriangle, XCircle, Settings, Info,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -180,25 +180,48 @@ export function Balanco() {
   // Delete
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
+  // Receita real do CRM (vw_receita_por_fonte) para comparação com lançamentos manuais
+  const [receitaRealTotal, setReceitaRealTotal] = useState(0);
+  const [receitaRealPorProduto, setReceitaRealPorProduto] = useState<Record<string, { total: number; nome: string }>>({});
+
   // ─── Load ──────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const [itemsRes, cfgRes] = await Promise.all([
-        supabase.from('balanco_itens').select('*').eq('mes_referencia', mes).order('created_at', { ascending: false }),
-        supabase.from('balanco_config').select('*').eq('id', 'default').single(),
-      ]);
-      setItems((itemsRes.data ?? []) as BalancoItem[]);
-      if (cfgRes.data) {
-        const c: Config = {
-          taxas: Array.isArray(cfgRes.data.taxas) ? cfgRes.data.taxas : [],
-          socios: Array.isArray(cfgRes.data.socios) ? cfgRes.data.socios : [],
-        };
-        setConfig(c);
-        setEditConfig(c);
+      try {
+        const [itemsRes, cfgRes, receitaRealRes] = await Promise.all([
+          supabase.from('balanco_itens').select('*').eq('mes_referencia', mes).order('created_at', { ascending: false }),
+          supabase.from('balanco_config').select('*').eq('id', 'default').single(),
+          // Receita real do CRM — JOIN pagamentos + alunos via view
+          supabase.from('vw_receita_por_fonte').select('valor, produto, produto_label').like('mes_referencia', `${mes}%`),
+        ]);
+        setItems((itemsRes.data ?? []) as BalancoItem[]);
+        if (cfgRes.data) {
+          const c: Config = {
+            taxas: Array.isArray(cfgRes.data.taxas) ? cfgRes.data.taxas : [],
+            socios: Array.isArray(cfgRes.data.socios) ? cfgRes.data.socios : [],
+          };
+          setConfig(c);
+          setEditConfig(c);
+        }
+        // Agrupa receita real por produto para o banner
+        const porProd: Record<string, { total: number; nome: string }> = {};
+        let totalReal = 0;
+        for (const row of (receitaRealRes.data || [])) {
+          const slug = row.produto || 'outros';
+          const nome = row.produto_label || slug;
+          if (!porProd[slug]) porProd[slug] = { total: 0, nome };
+          porProd[slug].total += row.valor || 0;
+          totalReal += row.valor || 0;
+        }
+        setReceitaRealTotal(totalReal);
+        setReceitaRealPorProduto(porProd);
+      } catch {
+        toast.error('Erro ao carregar balanço. Recarregue a página.');
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
     load();
   }, [mes]);
@@ -361,6 +384,42 @@ export function Balanco() {
           {/* ────────────────── OVERVIEW ────────────────── */}
           {view === 'overview' && (
             <div className="space-y-5">
+
+              {/* Banner: receita real do CRM vs lançamentos manuais */}
+              {receitaRealTotal > 0 && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50/50 px-4 py-3">
+                  <div className="flex items-start gap-2 mb-2">
+                    <Info className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-blue-700">
+                        Receita registrada no CRM — {mesLabel(mes)}
+                      </p>
+                      <p className="text-[11px] text-blue-500 mt-0.5">
+                        Pagamentos com status='pago' em <code className="bg-blue-100 px-1 rounded">pagamentos</code> via <code className="bg-blue-100 px-1 rounded">vw_receita_por_fonte</code>. Compare com os lançamentos manuais abaixo.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 pl-6">
+                    {Object.values(receitaRealPorProduto).map(({ nome, total }) => (
+                      <span key={nome} className="text-xs text-blue-700">
+                        {nome}: <strong>R$ {fmt(total)}</strong>
+                      </span>
+                    ))}
+                    <span className="text-xs font-bold text-blue-800 border-l border-blue-200 pl-3">
+                      Total: R$ {fmt(receitaRealTotal)}
+                    </span>
+                  </div>
+                  {Math.abs(receitaRealTotal - calc.receita_bruta) > 1 && calc.receita_bruta > 0 && (
+                    <div className="mt-2 pl-6 flex items-center gap-1.5">
+                      <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />
+                      <p className="text-[11px] text-amber-700">
+                        Divergência de R$ {fmt(Math.abs(receitaRealTotal - calc.receita_bruta))} em relação ao lançamento manual
+                        {receitaRealTotal > calc.receita_bruta ? ' — há pagamentos no CRM não lançados no balanço' : ' — balanço tem entradas extras não refletidas no CRM'}.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* 5 KPI cards */}
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
