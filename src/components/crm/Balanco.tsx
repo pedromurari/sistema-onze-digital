@@ -1,15 +1,18 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
 import {
   TrendingUp, TrendingDown, DollarSign, Plus, Trash2,
   RefreshCw, CheckCircle2, AlertTriangle, XCircle, Settings, Info,
+  CalendarDays, Receipt, UserCheck, ShoppingBag,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { calcTaxaTransacao, type TaxaDetalhe } from '@/lib/financial-utils';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -17,7 +20,7 @@ type Tipo = 'entrada' | 'saida';
 type Categoria =
   | 'matricula' | 'outro_entrada'
   | 'custo_fixo' | 'custo_variavel' | 'ads' | 'alocacao' | 'outro_saida';
-type View = 'overview' | 'entradas' | 'despesas' | 'config';
+type View = 'overview' | 'entradas' | 'despesas' | 'config' | 'diario';
 type Health = 'ok' | 'warn' | 'bad';
 
 interface Taxa { nome: string; percentual: number; }
@@ -37,6 +40,43 @@ interface BalancoItem {
   created_at: string;
 }
 
+// ─── Tipos: Balanço Diário ─────────────────────────────────────────────────────
+
+interface ReceitaHoje {
+  id: string;
+  aluno_id: string | null;
+  turma_id: string | null;
+  valor: number;
+  produto: string | null;
+  produto_label: string;
+  forma_pagamento: string;
+  mes_referencia: string;
+}
+
+interface AlunoNovo {
+  id: string;
+  nome: string;
+  turma_id: string;
+  status: string;
+  forma_pagamento: string | null;
+  valor_mensalidade: number | null;
+  total_mensalidades: number | null;
+  created_at: string;
+}
+
+interface TurmaInfo {
+  id: string;
+  nome: string;
+  produto: string | null;
+  valor_mensalidade: number | null;
+}
+
+interface TurmaResp {
+  turma_id: string;
+  nome_ref: string;
+  percentual: number;
+}
+
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 const fmt = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -51,6 +91,23 @@ function mesAtual() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function todayLabel() {
+  const d = new Date();
+  return d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+}
+const FORMA_LABELS: Record<string, string> = {
+  boleto: 'Boleto', cartao: 'Cartão', pix: 'PIX', avista: 'À Vista',
+};
+const FORMA_COR: Record<string, string> = {
+  boleto: 'bg-amber-50 text-amber-700 border-amber-200',
+  cartao: 'bg-blue-50 text-blue-700 border-blue-200',
+  pix:    'bg-emerald-50 text-emerald-700 border-emerald-200',
+  avista: 'bg-violet-50 text-violet-700 border-violet-200',
+};
 function mesesOpcoes() {
   const hoje = new Date();
   return Array.from({ length: 8 }, (_, i) => {
@@ -184,6 +241,22 @@ export function Balanco() {
   const [receitaRealTotal, setReceitaRealTotal] = useState(0);
   const [receitaRealPorProduto, setReceitaRealPorProduto] = useState<Record<string, { total: number; nome: string }>>({});
 
+  // ─── Estado: Balanço Diário ──────────────────────────────────────────────
+  const [loadingDiario, setLoadingDiario]   = useState(false);
+  const [receitasHoje, setReceitasHoje]     = useState<ReceitaHoje[]>([]);
+  const [alunosHoje, setAlunosHoje]         = useState<AlunoNovo[]>([]);
+  const [turmasInfo, setTurmasInfo]         = useState<TurmaInfo[]>([]);
+  const [turmasResp, setTurmasResp]         = useState<TurmaResp[]>([]);
+  const [taxasRates, setTaxasRates]         = useState<TaxaDetalhe[]>([]);
+  const [gastosHoje, setGastosHoje]         = useState<BalancoItem[]>([]);
+  const [confirmados, setConfirmados]       = useState<Set<string>>(new Set());
+  // draft por aluno: forma_pagamento e valor_mensalidade editáveis
+  const [matriculasDraft, setMatriculasDraft] = useState<Record<string, { forma: string; valor: string }>>({});
+  const [savingAluno, setSavingAluno]       = useState<string | null>(null);
+  // form gasto rápido do dia
+  const [gastoForm, setGastoForm]           = useState({ descricao: '', valor: '', categoria: 'custo_variavel' as Categoria });
+  const [savingGasto, setSavingGasto]       = useState(false);
+
   // ─── Load ──────────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -225,6 +298,62 @@ export function Balanco() {
     };
     load();
   }, [mes]);
+
+  // ─── Load: Balanço Diário ─────────────────────────────────────────────────
+
+  const loadDiario = useCallback(async () => {
+    setLoadingDiario(true);
+    const today = todayStr();
+    try {
+      const [recRes, aluRes, turRes, respRes, taxRes, gasRes] = await Promise.all([
+        // Pagamentos recebidos hoje (produto + forma_pagamento via view)
+        supabase.from('vw_receita_por_fonte')
+          .select('id, aluno_id, turma_id, valor, produto, produto_label, forma_pagamento, mes_referencia')
+          .eq('data_pagamento', today),
+        // Novos alunos cadastrados hoje
+        supabase.from('alunos')
+          .select('id, nome, turma_id, status, forma_pagamento, valor_mensalidade, total_mensalidades, created_at')
+          .gte('created_at', today + 'T00:00:00')
+          .lt('created_at', today + 'T23:59:59'),
+        // Turmas para lookup de produto e nome
+        supabase.from('turmas').select('id, nome, produto, valor_mensalidade'),
+        // Responsáveis por turma
+        supabase.from('turma_responsaveis').select('turma_id, nome_ref, percentual'),
+        // Taxas de processamento
+        supabase.from('payment_method_rates').select('*').eq('ativo', true),
+        // Lançamentos manuais de saída feitos hoje
+        supabase.from('balanco_itens')
+          .select('*')
+          .eq('tipo', 'saida')
+          .gte('created_at', today + 'T00:00:00')
+          .lt('created_at', today + 'T23:59:59'),
+      ]);
+      setReceitasHoje((recRes.data || []) as ReceitaHoje[]);
+      const novos = (aluRes.data || []) as AlunoNovo[];
+      setAlunosHoje(novos);
+      setTurmasInfo((turRes.data || []) as TurmaInfo[]);
+      setTurmasResp((respRes.data || []) as TurmaResp[]);
+      setTaxasRates((taxRes.data || []) as TaxaDetalhe[]);
+      setGastosHoje((gasRes.data || []) as BalancoItem[]);
+      // Inicializa o draft com os valores atuais de cada aluno novo
+      const draft: Record<string, { forma: string; valor: string }> = {};
+      for (const a of novos) {
+        draft[a.id] = {
+          forma: a.forma_pagamento || 'boleto',
+          valor: a.valor_mensalidade ? String(a.valor_mensalidade) : '',
+        };
+      }
+      setMatriculasDraft(draft);
+    } catch {
+      toast.error('Erro ao carregar balanço diário.');
+    } finally {
+      setLoadingDiario(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (view === 'diario') loadDiario();
+  }, [view, loadDiario]);
 
   // ─── Computed ──────────────────────────────────────────────────────────────
 
@@ -332,6 +461,59 @@ export function Balanco() {
     toast.success('Removido!');
   };
 
+  // ─── Actions: Balanço Diário ─────────────────────────────────────────────
+
+  async function handleConfirmarAluno(alunoId: string) {
+    const draft = matriculasDraft[alunoId];
+    if (!draft) return;
+    setSavingAluno(alunoId);
+    const valor = parseFloat(draft.valor.replace(',', '.'));
+    const updates: Record<string, unknown> = { forma_pagamento: draft.forma };
+    if (!isNaN(valor) && valor > 0) updates.valor_mensalidade = valor;
+    const { error } = await supabase.from('alunos').update(updates).eq('id', alunoId);
+    setSavingAluno(null);
+    if (error) { toast.error('Erro ao salvar matrícula.'); return; }
+    setConfirmados(prev => new Set([...prev, alunoId]));
+    setAlunosHoje(prev => prev.map(a => a.id === alunoId
+      ? { ...a, forma_pagamento: draft.forma, valor_mensalidade: !isNaN(valor) ? valor : a.valor_mensalidade }
+      : a
+    ));
+    toast.success('Matrícula confirmada!');
+  }
+
+  async function handleAddGastoHoje() {
+    const valor = parseFloat(gastoForm.valor.replace(',', '.'));
+    if (!gastoForm.descricao.trim() || isNaN(valor) || valor <= 0) {
+      toast.error('Preencha descrição e valor.');
+      return;
+    }
+    setSavingGasto(true);
+    const { data, error } = await supabase.from('balanco_itens').insert({
+      descricao: gastoForm.descricao.trim(),
+      valor,
+      tipo: 'saida',
+      categoria: gastoForm.categoria,
+      produto: 'geral',
+      mes_referencia: mesAtual(),
+      recorrente: false,
+      retorno_realizado: 0,
+    }).select('*').single();
+    setSavingGasto(false);
+    if (error || !data) { toast.error('Erro ao registrar gasto.'); return; }
+    setGastosHoje(prev => [data as BalancoItem, ...prev]);
+    setItems(prev => [data as BalancoItem, ...prev]); // atualiza overview também
+    setGastoForm({ descricao: '', valor: '', categoria: 'custo_variavel' });
+    toast.success('Gasto registrado!');
+  }
+
+  async function handleDeleteGastoHoje(id: string) {
+    const { error } = await supabase.from('balanco_itens').delete().eq('id', id);
+    if (error) { toast.error('Erro ao remover.'); return; }
+    setGastosHoje(prev => prev.filter(g => g.id !== id));
+    setItems(prev => prev.filter(i => i.id !== id));
+    toast.success('Removido!');
+  }
+
   // ─── Render ────────────────────────────────────────────────────────────────
 
   const { receita_bruta, total_taxas, receita_liq, custo_fixo, custo_var, ads, outras, alocacoes,
@@ -339,6 +521,7 @@ export function Balanco() {
     margem, pct_ads, h_margem, h_ads, h_roi, entradas, saidas } = calc;
 
   const tabs: { id: View; label: string }[] = [
+    { id: 'diario',   label: '📅 Hoje' },
     { id: 'overview', label: 'Visão Geral' },
     { id: 'entradas', label: `Entradas (${entradas.length})` },
     { id: 'despesas', label: `Despesas (${saidas.length})` },
@@ -381,6 +564,319 @@ export function Balanco() {
       ) : (
 
         <>
+          {/* ────────────────── HOJE ────────────────── */}
+          {view === 'diario' && (
+            <div className="space-y-5">
+
+              {loadingDiario ? (
+                <div className="flex justify-center py-16">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+                </div>
+              ) : (() => {
+                // ── Computed dentro da view ──────────────────────────────
+                const brutoHoje = receitasHoje.reduce((s, r) => s + r.valor, 0);
+                const taxasHoje = receitasHoje.reduce((s, r) =>
+                  s + calcTaxaTransacao(r.valor, r.produto || '', r.forma_pagamento, taxasRates), 0);
+                const liquidoHoje = brutoHoje - taxasHoje;
+                const saidasHojeTot = gastosHoje.reduce((s, g) => s + g.valor, 0);
+                const saldoHoje = liquidoHoje - saidasHojeTot;
+
+                // agrupa entradas por produto
+                const porProduto: Record<string, { label: string; itens: ReceitaHoje[] }> = {};
+                for (const r of receitasHoje) {
+                  const key = r.produto || 'outros';
+                  if (!porProduto[key]) porProduto[key] = { label: r.produto_label || key, itens: [] };
+                  porProduto[key].itens.push(r);
+                }
+
+                const pendenteCount = alunosHoje.filter(a => !confirmados.has(a.id) && !a.forma_pagamento).length;
+
+                return (
+                  <>
+                    {/* Header do dia */}
+                    <div className="flex items-center gap-2">
+                      <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                      <p className="text-sm font-medium capitalize">{todayLabel()}</p>
+                      <Button size="sm" variant="ghost" className="ml-auto h-7 text-xs gap-1.5" onClick={loadDiario}>
+                        <RefreshCw className="h-3 w-3" /> Atualizar
+                      </Button>
+                    </div>
+
+                    {/* KPI do dia */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {[
+                        { icon: <Receipt className="h-4 w-4" />, label: 'Bruto hoje', value: brutoHoje, cls: 'text-emerald-600' },
+                        { icon: <Info className="h-4 w-4" />, label: 'Taxas', value: taxasHoje, cls: 'text-red-500', prefix: '−' },
+                        { icon: <DollarSign className="h-4 w-4" />, label: 'Líquido hoje', value: liquidoHoje, cls: 'text-sky-600' },
+                        { icon: <ShoppingBag className="h-4 w-4" />, label: 'Saídas', value: saidasHojeTot, cls: 'text-orange-600', prefix: '−' },
+                      ].map(k => (
+                        <Card key={k.label} className="p-4 border-border/60 shadow-none">
+                          <div className="flex items-center gap-1.5 mb-1 text-muted-foreground">{k.icon}<span className="text-[10px] font-semibold uppercase tracking-wide">{k.label}</span></div>
+                          <p className={`text-xl font-bold tabular-nums ${k.cls}`}>{k.prefix || ''}R$ {fmt(k.value)}</p>
+                        </Card>
+                      ))}
+                    </div>
+                    <Card className={`p-4 border shadow-none ${saldoHoje >= 0 ? 'border-emerald-200 bg-emerald-50/40' : 'border-red-200 bg-red-50/30'}`}>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Saldo do dia (líquido − saídas)</p>
+                      <p className={`text-2xl font-bold tabular-nums mt-1 ${saldoHoje >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                        {saldoHoje >= 0 ? '' : '−'}R$ {fmt(Math.abs(saldoHoje))}
+                      </p>
+                    </Card>
+
+                    {/* Entradas do dia por produto */}
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                        <TrendingUp className="h-3.5 w-3.5" /> Entradas hoje — {receitasHoje.length} pagamento{receitasHoje.length !== 1 ? 's' : ''}
+                      </p>
+                      {receitasHoje.length === 0 ? (
+                        <Card className="p-6 text-center border-border/50 shadow-none">
+                          <p className="text-sm text-muted-foreground">Nenhum pagamento recebido hoje</p>
+                        </Card>
+                      ) : (
+                        <div className="space-y-3">
+                          {Object.entries(porProduto).map(([slug, { label, itens }]) => {
+                            const subtotal = itens.reduce((s, r) => s + r.valor, 0);
+                            const subtaxas = itens.reduce((s, r) =>
+                              s + calcTaxaTransacao(r.valor, r.produto || '', r.forma_pagamento, taxasRates), 0);
+                            return (
+                              <Card key={slug} className="border-border/60 shadow-none overflow-hidden">
+                                <div className="bg-muted/30 px-4 py-2 flex items-center justify-between">
+                                  <span className="text-xs font-bold uppercase tracking-wide">{label}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    Bruto <strong>R$ {fmt(subtotal)}</strong> · Taxa <strong className="text-red-500">−R$ {fmt(subtaxas)}</strong> · Líq <strong className="text-emerald-600">R$ {fmt(subtotal - subtaxas)}</strong>
+                                  </span>
+                                </div>
+                                <div className="divide-y divide-border/40">
+                                  {itens.map(r => {
+                                    const taxa = calcTaxaTransacao(r.valor, r.produto || '', r.forma_pagamento, taxasRates);
+                                    const resps = turmasResp.filter(tr => tr.turma_id === r.turma_id);
+                                    const turma = turmasInfo.find(t => t.id === r.turma_id);
+                                    return (
+                                      <div key={r.id} className="px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                                        <span className="font-medium flex-1 min-w-0 truncate">{turma?.nome || '—'}</span>
+                                        <Badge className={`text-[10px] border ${FORMA_COR[r.forma_pagamento] || 'bg-muted text-muted-foreground'}`}>
+                                          {FORMA_LABELS[r.forma_pagamento] || r.forma_pagamento}
+                                        </Badge>
+                                        <span className="tabular-nums font-semibold">R$ {fmt(r.valor)}</span>
+                                        <span className="tabular-nums text-red-500 text-xs">−R$ {fmt(taxa)}</span>
+                                        <span className="tabular-nums text-emerald-600 text-xs font-semibold">R$ {fmt(r.valor - taxa)}</span>
+                                        {resps.length > 0 && (
+                                          <span className="text-xs text-muted-foreground w-full pl-0.5">
+                                            {resps.map(r2 => `${r2.nome_ref} ${r2.percentual}%`).join(' · ')}
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </Card>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Matrículas do dia */}
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                        <UserCheck className="h-3.5 w-3.5" /> Matrículas hoje — {alunosHoje.length} novo{alunosHoje.length !== 1 ? 's' : ''}
+                        {pendenteCount > 0 && (
+                          <Badge className="ml-1 bg-amber-50 text-amber-700 border border-amber-200 text-[10px]">{pendenteCount} pendente{pendenteCount !== 1 ? 's' : ''}</Badge>
+                        )}
+                      </p>
+                      {alunosHoje.length === 0 ? (
+                        <Card className="p-6 text-center border-border/50 shadow-none">
+                          <p className="text-sm text-muted-foreground">Nenhum aluno cadastrado hoje</p>
+                        </Card>
+                      ) : (
+                        <div className="space-y-3">
+                          {alunosHoje.map(aluno => {
+                            const turma = turmasInfo.find(t => t.id === aluno.turma_id);
+                            const resps = turmasResp.filter(tr => tr.turma_id === aluno.turma_id);
+                            const draft = matriculasDraft[aluno.id] || { forma: aluno.forma_pagamento || 'boleto', valor: String(aluno.valor_mensalidade || '') };
+                            const valorNum = parseFloat(draft.valor.replace(',', '.')) || 0;
+                            const taxaEst = calcTaxaTransacao(valorNum, turma?.produto || '', draft.forma, taxasRates);
+                            const jaConfirmado = confirmados.has(aluno.id) || (!!aluno.forma_pagamento && aluno.forma_pagamento !== '');
+                            const produto = turma?.produto || 'geral';
+                            const PROD_COR: Record<string, string> = { psicanalise: '#3b82f6', npa: '#8b5cf6', geral: '#6b7280' };
+
+                            return (
+                              <Card key={aluno.id} className={`border shadow-none ${jaConfirmado ? 'border-emerald-200 bg-emerald-50/20' : 'border-amber-200 bg-amber-50/20'}`}>
+                                <div className="px-4 py-3 space-y-3">
+                                  {/* Header da matrícula */}
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <div className="flex items-center gap-2">
+                                        {jaConfirmado
+                                          ? <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                                          : <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />}
+                                        <span className="font-semibold text-sm">{aluno.nome}</span>
+                                      </div>
+                                      <p className="text-xs text-muted-foreground mt-0.5 pl-6">
+                                        {turma?.nome || 'Turma não encontrada'}
+                                        {produto !== 'geral' && (
+                                          <span className="ml-2 px-1.5 py-0.5 rounded-full text-[10px] font-bold" style={{ background: PROD_COR[produto] + '20', color: PROD_COR[produto] }}>
+                                            {produto === 'psicanalise' ? 'PSI' : produto.toUpperCase()}
+                                          </span>
+                                        )}
+                                      </p>
+                                    </div>
+                                    <Badge className={`text-[10px] shrink-0 ${jaConfirmado ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                                      {jaConfirmado ? '✓ Confirmado' : 'Pendente'}
+                                    </Badge>
+                                  </div>
+
+                                  {/* Responsáveis da turma */}
+                                  {resps.length > 0 && (
+                                    <div className="flex flex-wrap gap-2 pl-6">
+                                      {resps.map(r => (
+                                        <span key={r.nome_ref} className="text-xs bg-muted/50 px-2 py-0.5 rounded-full">
+                                          {r.nome_ref} <strong>{r.percentual}%</strong>
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {/* Campos editáveis */}
+                                  {!jaConfirmado && (
+                                    <div className="pl-6 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                      <div>
+                                        <label className="text-[10px] text-muted-foreground font-medium block mb-1">Forma pgto</label>
+                                        <Select
+                                          value={draft.forma}
+                                          onValueChange={v => setMatriculasDraft(prev => ({ ...prev, [aluno.id]: { ...prev[aluno.id], forma: v } }))}
+                                        >
+                                          <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="boleto">Boleto</SelectItem>
+                                            <SelectItem value="pix">PIX</SelectItem>
+                                            <SelectItem value="cartao">Cartão</SelectItem>
+                                            <SelectItem value="avista">À Vista</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                      <div>
+                                        <label className="text-[10px] text-muted-foreground font-medium block mb-1">Valor parcela (R$)</label>
+                                        <Input
+                                          type="number" step="0.01" className="h-7 text-xs"
+                                          value={draft.valor}
+                                          onChange={e => setMatriculasDraft(prev => ({ ...prev, [aluno.id]: { ...prev[aluno.id], valor: e.target.value } }))}
+                                          placeholder={String(turma?.valor_mensalidade || '')}
+                                        />
+                                      </div>
+                                      <div>
+                                        <label className="text-[10px] text-muted-foreground font-medium block mb-1">Taxa estimada</label>
+                                        <div className="h-7 flex items-center text-xs text-red-500 font-semibold">
+                                          {valorNum > 0 ? `−R$ ${fmt(taxaEst)}` : '—'}
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <label className="text-[10px] text-muted-foreground font-medium block mb-1">Líquido estimado</label>
+                                        <div className="h-7 flex items-center text-xs text-emerald-600 font-semibold">
+                                          {valorNum > 0 ? `R$ ${fmt(valorNum - taxaEst)}` : '—'}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Valores já confirmados */}
+                                  {jaConfirmado && aluno.valor_mensalidade && (
+                                    <div className="pl-6 flex flex-wrap gap-4 text-xs">
+                                      <span>Forma: <strong>{FORMA_LABELS[aluno.forma_pagamento || ''] || aluno.forma_pagamento || '—'}</strong></span>
+                                      <span>Parcela: <strong>R$ {fmt(aluno.valor_mensalidade)}</strong></span>
+                                      {aluno.total_mensalidades && <span>Total: <strong>{aluno.total_mensalidades}x</strong></span>}
+                                    </div>
+                                  )}
+
+                                  {/* Botão confirmar */}
+                                  {!jaConfirmado && (
+                                    <div className="pl-6">
+                                      <Button
+                                        size="sm" className="h-7 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                                        onClick={() => handleConfirmarAluno(aluno.id)}
+                                        disabled={savingAluno === aluno.id}
+                                      >
+                                        <CheckCircle2 className="h-3 w-3" />
+                                        {savingAluno === aluno.id ? 'Salvando…' : 'Confirmar matrícula'}
+                                      </Button>
+                                    </div>
+                                  )}
+                                </div>
+                              </Card>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Saídas do dia */}
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                        <TrendingDown className="h-3.5 w-3.5" /> Saídas hoje
+                      </p>
+                      {/* Quick add */}
+                      <Card className="p-3 border-border/60 shadow-none mb-3">
+                        <p className="text-xs font-medium mb-2">Registrar gasto de hoje</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                          <Input
+                            className="h-8 text-sm sm:col-span-2"
+                            placeholder="Descrição (ex: Almoço equipe)"
+                            value={gastoForm.descricao}
+                            onChange={e => setGastoForm(f => ({ ...f, descricao: e.target.value }))}
+                            onKeyDown={e => e.key === 'Enter' && handleAddGastoHoje()}
+                          />
+                          <Select value={gastoForm.categoria} onValueChange={v => setGastoForm(f => ({ ...f, categoria: v as Categoria }))}>
+                            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="custo_fixo">Custo Fixo</SelectItem>
+                              <SelectItem value="custo_variavel">Custo Variável</SelectItem>
+                              <SelectItem value="ads">Ads / Marketing</SelectItem>
+                              <SelectItem value="alocacao">Alocação</SelectItem>
+                              <SelectItem value="outro_saida">Outro</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <div className="flex gap-2">
+                            <Input
+                              type="number" step="0.01" className="h-8 text-sm flex-1"
+                              placeholder="R$ 0,00"
+                              value={gastoForm.valor}
+                              onChange={e => setGastoForm(f => ({ ...f, valor: e.target.value }))}
+                              onKeyDown={e => e.key === 'Enter' && handleAddGastoHoje()}
+                            />
+                            <Button size="sm" className="h-8 px-3" onClick={handleAddGastoHoje} disabled={savingGasto}>
+                              <Plus className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      </Card>
+                      {/* Lista */}
+                      {gastosHoje.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-3">Nenhuma saída registrada hoje</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {gastosHoje.map(g => (
+                            <div key={g.id} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border/40 bg-white">
+                              <span className="flex-1 text-sm">{g.descricao}</span>
+                              <span className="text-xs text-muted-foreground">{CAT_LABELS[g.categoria]}</span>
+                              <span className="text-sm font-semibold tabular-nums text-red-500">−R$ {fmt(g.valor)}</span>
+                              <button onClick={() => handleDeleteGastoHoje(g.id)} className="text-muted-foreground hover:text-red-500 transition-colors ml-1">
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                          <div className="flex justify-end px-3 pt-1">
+                            <span className="text-sm font-bold text-red-500">Total saídas: −R$ {fmt(saidasHojeTot)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                  </>
+                );
+              })()}
+            </div>
+          )}
+
           {/* ────────────────── OVERVIEW ────────────────── */}
           {view === 'overview' && (
             <div className="space-y-5">
