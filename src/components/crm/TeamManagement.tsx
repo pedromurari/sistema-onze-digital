@@ -38,8 +38,6 @@ const MODULE_PERMISSIONS: Array<{ key: keyof AccessPermissions; label: string; e
   { key: 'canViewLancamentos', label: 'Lançamentos',    emoji: '🚀' },
   { key: 'canViewNpa',         label: 'NPA',            emoji: '📅' },
   { key: 'canViewAulaSecreta', label: 'Aula secreta',   emoji: '🔒' },
-  { key: 'canViewChat',        label: 'Chat',           emoji: '💬' },
-  { key: 'canViewSheets',      label: 'Leads Sheets',   emoji: '📋' },
   { key: 'canViewFinanceiro',    label: 'Financeiro',     emoji: '💰' },
   { key: 'canViewFinanceiroCfo', label: 'Análise CFO',   emoji: '📉' },
   { key: 'canViewBalanco',       label: 'Balanço',        emoji: '📈' },
@@ -47,7 +45,6 @@ const MODULE_PERMISSIONS: Array<{ key: keyof AccessPermissions; label: string; e
   { key: 'canViewOperacoes',   label: 'Operações',      emoji: '🗓️' },
   { key: 'canViewMapaMental',  label: 'Mapa mental',    emoji: '🧠' },
   { key: 'canViewRodrygo',     label: 'Tarefas Rodrygo',emoji: '✅' },
-  { key: 'canViewPedagogico',  label: 'Pedagógico',     emoji: '🎓' },
   { key: 'canViewTeam',        label: 'Equipe',         emoji: '👥' },
   { key: 'canViewSettings',    label: 'Configurações',  emoji: '⚙️' },
 ];
@@ -85,7 +82,6 @@ export function TeamManagement() {
   const [editingUser, setEditingUser] = useState<AppUser | null>(null);
   const [loading, setLoading]     = useState(false);
   const [availableLancamentos, setAvailableLancamentos] = useState<LancamentoOption[]>([]);
-  const [availableTurmas, setAvailableTurmas]           = useState<TurmaOption[]>([]);
   const [availableFinanceiroTurmas, setAvailableFinanceiroTurmas] = useState<TurmaOption[]>([]);
   const [permissions, setPermissions] = useState<AccessPermissions>(getDefaultPermissions('vendedor'));
   const [formData, setFormData]   = useState({
@@ -99,13 +95,11 @@ export function TeamManagement() {
 
   useEffect(() => {
     const load = async () => {
-      const [{ data: l }, { data: t }, { data: ft }] = await Promise.all([
+      const [{ data: l }, { data: ft }] = await Promise.all([
         supabase.from('lancamentos').select('id, nome').order('created_at', { ascending: false }),
-        supabase.from('pedagogico_turmas').select('id, nome').order('created_at', { ascending: false }),
         supabase.from('turmas').select('id, nome').order('created_at', { ascending: false }),
       ]);
       setAvailableLancamentos(l || []);
-      setAvailableTurmas(t || []);
       setAvailableFinanceiroTurmas(ft || []);
     };
     load();
@@ -135,16 +129,13 @@ export function TeamManagement() {
       const next = { ...prev, [key]: checked };
       if (key === 'canViewLancamentos' && !checked) { next.canViewAllLancamentos = false; next.allowedLancamentoIds = []; }
       if (key === 'canViewFinanceiro' && !checked) { next.canViewFinanceiroCfo = false; next.canViewAllFinanceiroTurmas = false; next.allowedFinanceiroTurmaIds = []; }
-      if (key === 'canViewPedagogico' && !checked) { next.canViewAllTurmas = false; next.allowedTurmaIds = []; }
       if (key === 'canViewAllLancamentos' && checked) next.allowedLancamentoIds = [];
       if (key === 'canViewAllFinanceiroTurmas' && checked) next.allowedFinanceiroTurmaIds = [];
-      if (key === 'canViewAllTurmas' && checked) next.allowedTurmaIds = [];
       return next;
     });
   };
 
   const toggleLancamento    = (id: string, checked: boolean) => setPermissions(prev => ({ ...prev, allowedLancamentoIds: checked ? [...new Set([...prev.allowedLancamentoIds, id])] : prev.allowedLancamentoIds.filter(i => i !== id) }));
-  const toggleTurma         = (id: string, checked: boolean) => setPermissions(prev => ({ ...prev, allowedTurmaIds: checked ? [...new Set([...prev.allowedTurmaIds, id])] : prev.allowedTurmaIds.filter(i => i !== id) }));
   const toggleFinanceiroTurma = (id: string, checked: boolean) => setPermissions(prev => ({ ...prev, allowedFinanceiroTurmaIds: checked ? [...new Set([...prev.allowedFinanceiroTurmaIds, id])] : prev.allowedFinanceiroTurmaIds.filter(i => i !== id) }));
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -208,7 +199,6 @@ export function TeamManagement() {
     name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 
   const selectedLancamentosCount       = permissions.canViewAllLancamentos ? availableLancamentos.length : permissions.allowedLancamentoIds.length;
-  const selectedTurmasCount            = permissions.canViewAllTurmas ? availableTurmas.length : permissions.allowedTurmaIds.length;
   const selectedFinanceiroTurmasCount  = permissions.canViewAllFinanceiroTurmas ? availableFinanceiroTurmas.length : permissions.allowedFinanceiroTurmaIds.length;
 
   const openNomen = () => { setNomenDraft({ ...nomenclaturas }); setNomenOpen(true); };
@@ -365,34 +355,6 @@ export function TeamManagement() {
                       </div>
                     )}
 
-                    {permissions.canViewPedagogico && (
-                      <div className="rounded-xl border border-border p-4 space-y-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <h3 className="font-semibold text-foreground">Turmas pedagógicas</h3>
-                            <p className="text-xs text-muted-foreground">Limite a visualização pedagógica por turma.</p>
-                          </div>
-                          <Badge variant="outline">{selectedTurmasCount} liberada(s)</Badge>
-                        </div>
-                        <label className="flex items-center gap-3 text-sm cursor-pointer">
-                          <Checkbox checked={permissions.canViewAllTurmas} onCheckedChange={checked => togglePermission('canViewAllTurmas', checked === true)} disabled={loading} />
-                          <span>Ver todas as turmas</span>
-                        </label>
-                        {!permissions.canViewAllTurmas && (
-                          <ScrollArea className="h-36 rounded-md border border-border p-3">
-                            <div className="space-y-3">
-                              {availableTurmas.map(t => (
-                                <label key={t.id} className="flex items-center gap-3 text-sm cursor-pointer">
-                                  <Checkbox checked={permissions.allowedTurmaIds.includes(t.id)} onCheckedChange={checked => toggleTurma(t.id, checked === true)} disabled={loading} />
-                                  <span>{t.nome}</span>
-                                </label>
-                              ))}
-                              {availableTurmas.length === 0 && <p className="text-xs text-muted-foreground">Nenhuma turma encontrada.</p>}
-                            </div>
-                          </ScrollArea>
-                        )}
-                      </div>
-                    )}
                   </div>
                 </div>
 

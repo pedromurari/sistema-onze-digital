@@ -2,7 +2,6 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { LeadsProvider } from '@/contexts/LeadsContext';
 import { LoginPage } from '@/components/crm/LoginPage';
 import { CRMLayout } from '@/components/crm/CRMLayout';
-import { ProfessoraLayout } from '@/components/pedagogico/ProfessoraLayout';
 import { Loader2 } from 'lucide-react';
 import React from 'react';
 
@@ -53,9 +52,6 @@ function AppContent() {
   }
 
   if (!user) return <LoginPage />;
-
-  // Professoras têm acesso apenas ao módulo pedagógico
-  if (user.tipo === 'professora') return <ProfessoraLayout />;
 
   return (
     <LeadsProvider>

@@ -6,10 +6,10 @@ import { AppView, canAccessLancamento, canAccessView, getDefaultPermissions } fr
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
-  LayoutDashboard, Kanban, Settings, UserCog, FileSpreadsheet,
-  MessageCircle, Rocket, BarChart3, CheckSquare, ChevronDown,
+  LayoutDashboard, Kanban, Settings, UserCog,
+  Rocket, BarChart3, CheckSquare, ChevronDown,
   ChevronLeft, ChevronRight, Plus, Brain, Scale,
-  GraduationCap, GripVertical, Pencil, Check, MessageSquare, TrendingUp, GitBranch, Zap, CalendarDays, ShoppingBag,
+  GripVertical, Pencil, Check, MessageSquare, TrendingUp, GitBranch, CalendarDays, ShoppingBag,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,15 +35,12 @@ const BASE_MENU: MenuItem[] = [
   { key: 'operacoes_calendario_geral', label: 'Calendário',          icon: CalendarDays },
   // CRM
   { key: 'pipeline',                   label: 'Leads Diretos',       icon: Kanban },
-  { key: 'chat',                       label: 'Chat',                icon: MessageCircle },
-  { key: 'sheets',                     label: 'Leads Sheets',        icon: FileSpreadsheet },
   { key: 'produtos',                   label: 'Produtos',            icon: ShoppingBag, adminOnly: true },
   // Eventos & Funis
   { group: 'lancamentos_legado',       label: 'Lancamentos',         icon: Rocket,       children: [] },
   { group: 'npa_dinamico',            label: 'NPA',                  icon: BarChart3,    children: [] },
   { group: 'aula_secreta',            label: 'Aula Secreta',         icon: Rocket,       children: [] },
   { key: 'funil_lancamento',          label: 'Funil de Lançamento',  icon: GitBranch },
-  { key: 'disparo_planilha',          label: 'Disparo de Planilha',  icon: Zap },
   // Financeiro
   { key: 'financeiro',                label: 'Financeiro',           icon: BarChart3 },
   { key: 'financeiro_cfo',           label: 'Análise CFO',           icon: TrendingUp },
@@ -52,7 +49,6 @@ const BASE_MENU: MenuItem[] = [
   // Gestão
   { key: 'mapa_mental',              label: 'Mapa Mental',           icon: Brain },
   { key: 'rodrygo',                  label: 'Tarefas Rodrygo',       icon: CheckSquare },
-  { key: 'pedagogico',              label: 'Pedagógico',              icon: GraduationCap },
   // Admin
   { key: 'team',                    label: 'Equipe',                  icon: UserCog, adminOnly: true },
   { key: 'settings',                label: 'Configurações',           icon: Settings },
@@ -500,7 +496,6 @@ export function MobileNav({ currentView, onViewChange }: MobileNavProps) {
     { key: 'financeiro',                  label: 'Financeiro', icon: BarChart3 },
     { key: 'cobranca',                    label: 'Cobrança',   icon: MessageSquare },
     { key: 'operacoes_calendario_geral',  label: 'Calendário', icon: CalendarDays },
-    { key: 'chat',                        label: 'Chat',       icon: MessageCircle },
     { key: 'settings',           label: 'Config',    icon: Settings },
   ];
 

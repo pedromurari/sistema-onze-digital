@@ -6,8 +6,6 @@ export interface AccessPermissions {
   allowedLancamentoIds: string[];
   canViewNpa: boolean;
   canViewAulaSecreta: boolean;
-  canViewChat: boolean;
-  canViewSheets: boolean;
   canViewFinanceiro: boolean;
   canViewFinanceiroCfo: boolean;
   canViewAllFinanceiroTurmas: boolean;
@@ -17,19 +15,16 @@ export interface AccessPermissions {
   canViewOperacoes: boolean;
   canViewMapaMental: boolean;
   canViewRodrygo: boolean;
-  canViewPedagogico: boolean;
-  canViewAllTurmas: boolean;
-  allowedTurmaIds: string[];
   canViewTeam: boolean;
   canViewSettings: boolean;
 }
 
 export type AppView =
-  | 'dashboard' | 'pipeline' | 'npa_overview' | 'chat' | 'sheets' | 'financeiro' | 'financeiro_cfo' | 'balanco' | 'rodrygo'
+  | 'dashboard' | 'pipeline' | 'npa_overview' | 'financeiro' | 'financeiro_cfo' | 'balanco' | 'rodrygo'
   | 'lancamentos_30' | 'lancamentos_31' | 'lancamentos_32'
-  | 'team' | 'settings' | 'cobranca' | 'funil_lancamento' | 'disparo_planilha'
+  | 'team' | 'settings' | 'cobranca' | 'funil_lancamento'
   | 'operacoes_tarefas' | 'operacoes_calendario_geral' | 'operacoes_calendario_conteudo'
-  | 'mapa_mental' | 'pedagogico' | 'produtos';
+  | 'mapa_mental' | 'produtos';
 
 export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
   canViewDashboard: true,
@@ -39,8 +34,6 @@ export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
   allowedLancamentoIds: [],
   canViewNpa: true,
   canViewAulaSecreta: true,
-  canViewChat: true,
-  canViewSheets: true,
   canViewFinanceiro: true,
   canViewFinanceiroCfo: false,
   canViewAllFinanceiroTurmas: true,
@@ -50,9 +43,6 @@ export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
   canViewOperacoes: true,
   canViewMapaMental: true,
   canViewRodrygo: true,
-  canViewPedagogico: true,
-  canViewAllTurmas: true,
-  allowedTurmaIds: [],
   canViewTeam: false,
   canViewSettings: false,
 };
@@ -81,8 +71,6 @@ export function normalizePermissionsRow(row: any, role?: string): AccessPermissi
     allowedLancamentoIds: Array.isArray(row.allowed_lancamento_ids) ? row.allowed_lancamento_ids.filter(Boolean) : defaults.allowedLancamentoIds,
     canViewNpa: row.can_view_npa ?? defaults.canViewNpa,
     canViewAulaSecreta: row.can_view_aula_secreta ?? defaults.canViewAulaSecreta,
-    canViewChat: row.can_view_chat ?? defaults.canViewChat,
-    canViewSheets: row.can_view_sheets ?? defaults.canViewSheets,
     canViewFinanceiro: row.can_view_financeiro ?? defaults.canViewFinanceiro,
     canViewFinanceiroCfo: row.can_view_financeiro_cfo ?? defaults.canViewFinanceiroCfo,
     canViewAllFinanceiroTurmas: row.can_view_all_financeiro_turmas ?? defaults.canViewAllFinanceiroTurmas,
@@ -92,9 +80,6 @@ export function normalizePermissionsRow(row: any, role?: string): AccessPermissi
     canViewOperacoes: row.can_view_operacoes ?? defaults.canViewOperacoes,
     canViewMapaMental: row.can_view_mapa_mental ?? defaults.canViewMapaMental,
     canViewRodrygo: row.can_view_rodrygo ?? defaults.canViewRodrygo,
-    canViewPedagogico: row.can_view_pedagogico ?? defaults.canViewPedagogico,
-    canViewAllTurmas: row.can_view_all_turmas ?? defaults.canViewAllTurmas,
-    allowedTurmaIds: Array.isArray(row.allowed_turma_ids) ? row.allowed_turma_ids.filter(Boolean) : defaults.allowedTurmaIds,
     canViewTeam: row.can_view_team ?? defaults.canViewTeam,
     canViewSettings: row.can_view_settings ?? defaults.canViewSettings,
   };
@@ -109,8 +94,6 @@ export function permissionsToRow(permissions: AccessPermissions) {
     allowed_lancamento_ids: permissions.allowedLancamentoIds,
     can_view_npa: permissions.canViewNpa,
     can_view_aula_secreta: permissions.canViewAulaSecreta,
-    can_view_chat: permissions.canViewChat,
-    can_view_sheets: permissions.canViewSheets,
     can_view_financeiro: permissions.canViewFinanceiro,
     can_view_financeiro_cfo: permissions.canViewFinanceiroCfo,
     can_view_all_financeiro_turmas: permissions.canViewAllFinanceiroTurmas,
@@ -120,9 +103,6 @@ export function permissionsToRow(permissions: AccessPermissions) {
     can_view_operacoes: permissions.canViewOperacoes,
     can_view_mapa_mental: permissions.canViewMapaMental,
     can_view_rodrygo: permissions.canViewRodrygo,
-    can_view_pedagogico: permissions.canViewPedagogico,
-    can_view_all_turmas: permissions.canViewAllTurmas,
-    allowed_turma_ids: permissions.allowedTurmaIds,
     can_view_team: permissions.canViewTeam,
     can_view_settings: permissions.canViewSettings,
   };
@@ -142,13 +122,6 @@ export function canAccessFinanceiroTurma(permissions: AccessPermissions, turmaId
   );
 }
 
-export function canAccessTurma(permissions: AccessPermissions, turmaId: string) {
-  return permissions.canViewPedagogico && (
-    permissions.canViewAllTurmas ||
-    permissions.allowedTurmaIds.includes(turmaId)
-  );
-}
-
 export function canAccessView(view: string, permissions: AccessPermissions, isAdmin: boolean) {
   if (isAdmin) return true;
 
@@ -164,14 +137,11 @@ export function canAccessView(view: string, permissions: AccessPermissions, isAd
     dashboard: permissions.canViewDashboard,
     pipeline: permissions.canViewPipeline,
     npa_overview: permissions.canViewNpa,
-    chat: permissions.canViewChat,
-    sheets: permissions.canViewSheets,
     financeiro: permissions.canViewFinanceiro,
     financeiro_cfo: permissions.canViewFinanceiroCfo,
     balanco: permissions.canViewBalanco,
     cobranca:         permissions.canViewCobranca,
     funil_lancamento: permissions.canViewCobranca,
-    disparo_planilha: permissions.canViewCobranca,
     rodrygo:          permissions.canViewRodrygo,
     team: permissions.canViewTeam,
     settings: permissions.canViewSettings,
@@ -179,7 +149,6 @@ export function canAccessView(view: string, permissions: AccessPermissions, isAd
     operacoes_calendario_geral: permissions.canViewOperacoes,
     operacoes_calendario_conteudo: permissions.canViewOperacoes,
     mapa_mental: permissions.canViewMapaMental,
-    pedagogico: permissions.canViewPedagogico,
     produtos: false, // admin-only — isAdmin check at top of function already handles it
   };
 
@@ -191,9 +160,6 @@ export function firstAllowedView(permissions: AccessPermissions, isAdmin: boolea
   if (permissions.canViewPipeline) return 'pipeline';
   if (permissions.canViewLancamentos && allowedLaunchIds.length > 0) return `lancamentos_${allowedLaunchIds[0]}` as AppView;
   if (permissions.canViewNpa) return 'npa_overview';
-  if (permissions.canViewChat) return 'chat';
-  if (permissions.canViewSheets) return 'sheets';
   if (permissions.canViewFinanceiro) return 'financeiro';
-  if (permissions.canViewPedagogico) return 'pedagogico';
   return 'dashboard';
 }

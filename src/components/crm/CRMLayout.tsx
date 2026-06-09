@@ -12,8 +12,6 @@ import { Loader2, Lock } from 'lucide-react';
 // Code splitting: cada módulo carrega só quando o usuário navega até ele
 const Dashboard        = lazy(() => import('./Dashboard').then(m => ({ default: m.Dashboard })));
 const Pipeline         = lazy(() => import('./Pipeline').then(m => ({ default: m.Pipeline })));
-const SheetsLeads      = lazy(() => import('./SheetsLeads').then(m => ({ default: m.SheetsLeads })));
-const Chat             = lazy(() => import('./Chat').then(m => ({ default: m.Chat })));
 const TeamManagement   = lazy(() => import('./TeamManagement').then(m => ({ default: m.TeamManagement })));
 const Settings         = lazy(() => import('./Settings').then(m => ({ default: m.Settings })));
 const NPAEventos       = lazy(() => import('./NPAEventos').then(m => ({ default: m.NPAEventos })));
@@ -24,9 +22,7 @@ const Balanco          = lazy(() => import('./Balanco').then(m => ({ default: m.
 const FinanceiroCFO    = lazy(() => import('./FinanceiroCFO').then(m => ({ default: m.FinanceiroCFO })));
 const Cobranca         = lazy(() => import('./Cobranca').then(m => ({ default: m.Cobranca })));
 const FunilLancamento  = lazy(() => import('./FunilLancamento').then(m => ({ default: m.FunilLancamento })));
-const DisparoPlanilha  = lazy(() => import('./DisparoPlanilha'));
 const Rodrygo          = lazy(() => import('./Rodrygo').then(m => ({ default: m.Rodrygo })));
-const Pedagogico       = lazy(() => import('../pedagogico/Pedagogico').then(m => ({ default: m.Pedagogico })));
 const LancamentoKanban = lazy(() => import('./LancamentoKanban').then(m => ({ default: m.LancamentoKanban })));
 const NPAKanban        = lazy(() => import('./NPAKanban'));
 const AulaSecretaKanban = lazy(() => import('./AulaSecretaKanban').then(m => ({ default: m.AulaSecretaKanban })));
@@ -218,14 +214,11 @@ export function CRMLayout() {
       case 'dashboard': return <Dashboard />;
       case 'pipeline': return <Pipeline onEditLead={handleEditLead} />;
       case 'npa_overview': return <NPAEventos />;
-      case 'chat': return <Chat />;
-      case 'sheets': return <SheetsLeads />;
       case 'financeiro': return <Financeiro />;
       case 'financeiro_cfo': return <FinanceiroCFO />;
       case 'balanco': return <Balanco />;
       case 'cobranca':         return permissions.canViewCobranca || isAdmin ? <Cobranca /> : <RestrictedView />;
       case 'funil_lancamento': return permissions.canViewCobranca || isAdmin ? <FunilLancamento /> : <RestrictedView />;
-      case 'disparo_planilha': return permissions.canViewCobranca || isAdmin ? <DisparoPlanilha /> : <RestrictedView />;
       case 'rodrygo': return <Rodrygo />;
       case 'team': return user?.tipo === 'admin' || permissions.canViewTeam ? <TeamManagement /> : <RestrictedView />;
       case 'settings': return permissions.canViewSettings || isAdmin ? <Settings /> : <RestrictedView />;
@@ -233,7 +226,6 @@ export function CRMLayout() {
       case 'operacoes_calendario_geral': return <Operacoes currentPage={currentView} />;
       case 'operacoes_calendario_conteudo': return <Operacoes currentPage={currentView} />;
       case 'mapa_mental': return <MapaMental />;
-      case 'pedagogico': return <Pedagogico />;
       case 'produtos': return isAdmin ? <Produtos /> : <RestrictedView />;
       default: return <Dashboard />;
     }
