@@ -6,6 +6,7 @@ import Index from "./pages/Index";
 import TarefaPublica from "./pages/TarefaPublica";
 import ContratoPublico from "./pages/ContratoPublico";
 import FormularioAluno from "./pages/FormularioAluno";
+import AreaMembros from "./pages/AreaMembros";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -28,6 +29,7 @@ const App = () => (
           <Route path="/forms/tarefa/:tarefaId" element={<TarefaPublica />} />
           <Route path="/formulario/:token" element={<FormularioAluno />} />
           <Route path="/assinar/:token" element={<ContratoPublico />} />
+          <Route path="/membros/:token" element={<AreaMembros />} />
           <Route path="/" element={<Index />} />
           <Route path="*" element={<NotFound />} />
         </Routes>

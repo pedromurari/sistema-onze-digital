@@ -63,6 +63,7 @@ export interface WizardConfig {
   bv_email_ativo: boolean;
   bv_email_assunto: string;
   bv_email_corpo: string;
+  bv_delay_minutos: number;         // delay antes de enviar a boas-vindas (0 = imediato)
 }
 
 export interface TemplateMensagem {

@@ -25,6 +25,8 @@ import {
   KanbanColunaHeader, AddColunaButton,
   RenameColunaModal, ColunaSettingsModal, DeleteColunaModal,
 } from './kanban/KanbanColunasUI';
+import { buildCapturaHTML } from '@/lib/captura-template';
+import type { CapturaTemplateData } from '@/lib/captura-template';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -51,6 +53,8 @@ interface Launch {
   valor_mensalidade_destino?: number;
   dia_vencimento_destino?: number;
   total_mensalidades_destino?: number;
+  foto_grupo_url?: string;
+  data_live?: string;
 }
 
 interface LaunchLead {
@@ -1116,6 +1120,8 @@ function autoDetectMapping(headers: string[]): { nome: string; whatsapp: string;
 
 // ─── BoasVindasLancamentoPanel ────────────────────────────────────────────────
 
+interface FilaStatus { pendente: number; enviado: number; erro: number; }
+
 function BoasVindasLancamentoPanel({
   leads,
   lancamento,
@@ -1123,66 +1129,116 @@ function BoasVindasLancamentoPanel({
   leads: LaunchLead[];
   lancamento: Launch;
 }) {
-  const pendentes = leads.filter(l => !l.no_grupo && !l.bv_enviado && l.whatsapp);
-  const [sending, setSending] = useState(false);
-  const [sentIds, setSentIds] = useState<Set<string>>(new Set());
-  const [open, setOpen] = useState(false);
+  // Só leads na fase planilha (todas as flags de ação são false) sem boas-vindas
+  const pendentes = leads.filter(l =>
+    !l.no_grupo && !l.grupo_oferta && !l.matriculado &&
+    !l.follow_up_01 && !l.follow_up_02 && !l.follow_up_03 &&
+    !l.bv_enviado && l.whatsapp
+  );
 
-  if (pendentes.length === 0) return null;
+  const [open, setOpen]                   = useState(false);
+  const [agendando, setAgendando]         = useState(false);
+  const [agendadosIds, setAgendadosIds]   = useState<Set<string>>(new Set());
+  const [delayMinutos, setDelayMinutos]   = useState(0);
+  const [filaStatus, setFilaStatus]       = useState<FilaStatus | null>(null);
 
-  const handleEnviarTodos = async () => {
-    setSending(true);
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+  const refreshFila = useCallback(async () => {
+    const { data } = await supabase
+      .from('boas_vindas_agendados')
+      .select('status')
+      .eq('lancamento_id', lancamento.id);
+    if (data) {
+      setFilaStatus({
+        pendente: data.filter(r => r.status === 'pendente').length,
+        enviado:  data.filter(r => r.status === 'enviado').length,
+        erro:     data.filter(r => r.status === 'erro').length,
+      });
+    }
+  }, [lancamento.id]);
+
+  useEffect(() => {
+    if (!open) return;
+    const load = async () => {
+      const { data: cfg } = await supabase
+        .from('boas_vindas_config')
+        .select('delay_minutos')
+        .eq('funnel_name', lancamento.nome)
+        .maybeSingle();
+      if ((cfg as any)?.delay_minutos !== undefined) setDelayMinutos((cfg as any).delay_minutos ?? 0);
+      await refreshFila();
+    };
+    load();
+  }, [open, lancamento.nome, refreshFila]);
+
+  const temAtividade = pendentes.length > 0 || (filaStatus?.pendente ?? 0) > 0 ||
+    (filaStatus?.enviado ?? 0) > 0 || (filaStatus?.erro ?? 0) > 0;
+  if (!temAtividade) return null;
+
+  const handleAgendar = async () => {
+    setAgendando(true);
 
     const { data: bvConfig } = await supabase
       .from('boas_vindas_config')
-      .select('wpp_mensagem, wpp_ativo')
+      .select('wpp_mensagem, wpp_ativo, delay_minutos')
       .eq('funnel_name', lancamento.nome)
       .maybeSingle();
 
     if (!(bvConfig as any)?.wpp_ativo || !(bvConfig as any)?.wpp_mensagem) {
       toast.error('Template de boas-vindas não configurado para este lançamento');
-      setSending(false);
+      setAgendando(false);
       return;
     }
 
-    for (const lead of pendentes) {
-      if (sentIds.has(lead.id)) continue;
+    const delay = (bvConfig as any).delay_minutos ?? 0;
+    const agendadoPara = new Date(Date.now() + delay * 60 * 1000).toISOString();
+    const toAgendar = pendentes.filter(l => !agendadosIds.has(l.id));
+
+    for (const lead of toAgendar) {
       try {
         const mensagem = ((bvConfig as any).wpp_mensagem as string)
           .replace(/\{\{nome\}\}/g, lead.nome || 'você')
           .replace(/\{\{lancamento\}\}/g, lancamento.nome);
 
-        await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
-          body: JSON.stringify({ numero: lead.whatsapp, mensagem, typing_delay_ms: 2000 + Math.floor(Math.random() * 2000) }),
+        await supabase.from('boas_vindas_agendados').insert({
+          lancamento_id: lancamento.id,
+          lead_id:       lead.id,
+          lead_tabela:   'lancamento_leads',
+          funnel_name:   lancamento.nome,
+          nome:          lead.nome,
+          whatsapp:      lead.whatsapp,
+          mensagem,
+          agendado_para: agendadoPara,
         });
 
         await supabase.from('lancamento_leads').update({
           bv_enviado: true, bv_enviado_em: new Date().toISOString(),
         }).eq('id', lead.id);
 
-        setSentIds(prev => new Set([...prev, lead.id]));
-        await new Promise(r => setTimeout(r, 3000 + Math.random() * 4000));
+        setAgendadosIds(prev => new Set([...prev, lead.id]));
       } catch (e) {
-        console.error('Erro ao enviar boas-vindas para', lead.nome, e);
+        console.error('Erro ao agendar boas-vindas para', lead.nome, e);
       }
     }
 
-    setSending(false);
-    toast.success('Boas-vindas enviadas!');
+    setAgendando(false);
+    const delayLabel = delay === 0 ? 'agora (fila imediata)' : delay < 60 ? `daqui ${delay} min` : `daqui ${delay / 60}h`;
+    toast.success(`${toAgendar.length} boas-vindas agendadas — ${delayLabel}`);
+    await refreshFila();
   };
 
-  const restantes = pendentes.filter(l => !sentIds.has(l.id));
+  const handleCancelarFila = async () => {
+    if (!confirm('Cancelar todas as boas-vindas pendentes nesta fila?')) return;
+    await supabase
+      .from('boas_vindas_agendados')
+      .delete()
+      .eq('lancamento_id', lancamento.id)
+      .eq('status', 'pendente');
+    await refreshFila();
+    toast.success('Fila cancelada');
+  };
 
-  if (restantes.length === 0 && sentIds.size > 0) return (
-    <div className="flex items-center gap-2 p-3 rounded-xl bg-green-50 border border-green-200 text-sm text-green-800">
-      <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
-      Boas-vindas enviadas para todos os {sentIds.size} lead(s) não detectados no grupo! ✅
-    </div>
-  );
+  const restantes   = pendentes.filter(l => !agendadosIds.has(l.id));
+  const delayLabel  = delayMinutos === 0 ? 'imediato' : delayMinutos < 60 ? `${delayMinutos} min` : `${delayMinutos / 60}h`;
 
   return (
     <div className="rounded-xl border-2 border-blue-300 bg-blue-50 overflow-hidden">
@@ -1194,38 +1250,70 @@ function BoasVindasLancamentoPanel({
         <span className="text-lg">💬</span>
         <div className="flex-1">
           <p className="text-sm font-bold text-blue-900">
-            {restantes.length} lead{restantes.length > 1 ? 's' : ''} não detectado{restantes.length > 1 ? 's' : ''} no grupo sem boas-vindas
+            {restantes.length > 0
+              ? `${restantes.length} lead(s) na planilha sem boas-vindas`
+              : 'Boas-vindas — fila ativa'}
           </p>
-          <p className="text-xs text-blue-700">Clique para ver e enviar agora</p>
+          <p className="text-xs text-blue-700">
+            {filaStatus
+              ? `${filaStatus.pendente} pendente · ${filaStatus.enviado} enviado · ${filaStatus.erro} erro · `
+              : ''}
+            delay: <strong>{delayLabel}</strong>
+          </p>
         </div>
         {open ? <ChevronUp className="h-4 w-4 text-blue-700" /> : <ChevronDown className="h-4 w-4 text-blue-700" />}
       </button>
 
       {open && (
         <div className="px-4 pb-4 space-y-3 border-t border-blue-200">
-          <div className="mt-3 space-y-1.5 max-h-48 overflow-y-auto">
-            {restantes.map(lead => (
-              <div key={lead.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-white border border-blue-200 text-sm">
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-800 truncate">{lead.nome}</p>
-                  <p className="text-xs text-gray-500">{lead.whatsapp}</p>
-                </div>
-                {sentIds.has(lead.id) && <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />}
+          {/* Status da fila */}
+          {filaStatus && (filaStatus.pendente > 0 || filaStatus.enviado > 0 || filaStatus.erro > 0) && (
+            <div className="mt-3 flex flex-wrap items-center gap-3 p-2 rounded-lg bg-white border border-blue-200 text-xs">
+              <span className="font-semibold text-blue-800">Fila atual:</span>
+              {filaStatus.pendente > 0 && <span className="text-amber-700">⏰ {filaStatus.pendente} pendente(s)</span>}
+              {filaStatus.enviado  > 0 && <span className="text-green-700">✓ {filaStatus.enviado} enviado(s)</span>}
+              {filaStatus.erro     > 0 && <span className="text-red-700">✗ {filaStatus.erro} erro(s)</span>}
+              {filaStatus.pendente > 0 && (
+                <button
+                  onClick={handleCancelarFila}
+                  className="ml-auto text-red-600 hover:text-red-800 underline text-[11px]"
+                >
+                  Cancelar fila
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Lista de leads para agendar */}
+          {restantes.length > 0 && (
+            <>
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {restantes.map(lead => (
+                  <div key={lead.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-white border border-blue-200 text-sm">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-gray-800 truncate">{lead.nome}</p>
+                      <p className="text-xs text-gray-500">{lead.whatsapp}</p>
+                    </div>
+                    {agendadosIds.has(lead.id) && <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs text-blue-700">Anti-ban ativo — delay aleatório 3–7s entre envios</p>
-            <Button
-              size="sm"
-              onClick={handleEnviarTodos}
-              disabled={sending}
-              className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white gap-1.5"
-            >
-              {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-              {sending ? 'Enviando...' : `Enviar para ${restantes.length}`}
-            </Button>
-          </div>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-blue-700">
+                  Fase: <strong>planilha</strong> · delay: <strong>{delayLabel}</strong> · anti-ban ativo
+                </p>
+                <Button
+                  size="sm"
+                  onClick={handleAgendar}
+                  disabled={agendando}
+                  className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white gap-1.5"
+                >
+                  {agendando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                  {agendando ? 'Agendando...' : `Agendar ${restantes.length}`}
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -1268,6 +1356,14 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
   // Webhook groups config
   const [showWebhookModal, setShowWebhookModal] = useState(false);
   const [webhookForm, setWebhookForm] = useState({ grupoLancamentoJid: '', grupoOfertaJid: '' });
+
+  // Exportar página de captura
+  const [capturaOpen, setCapturaOpen]       = useState(false);
+  const [capturaFields, setCapturaFields]   = useState<CapturaTemplateData>({
+    titulo: '', subtitulo: '', cta_texto: 'Quero participar',
+    html_extra: '', cor_primaria: '#7C3AED',
+  });
+  const [capturaLinkForm, setCapturaLinkForm] = useState('');
   const [savingWebhook, setSavingWebhook] = useState(false);
   const WEBHOOK_URL = 'https://usqiyekfmwwnvkmkdlej.supabase.co/functions/v1/webhook-grupo';
 
@@ -1932,6 +2028,49 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
     }
   };
 
+  // ── Exportar página de captura ─────────────────────────────────────────────
+  const handleOpenCaptura = async () => {
+    const produto = lancamento?.produto_destino || 'psicanalise';
+    const { data: tpl } = await supabase
+      .from('captura_templates')
+      .select('*')
+      .eq('produto', produto)
+      .eq('ativo', true)
+      .maybeSingle();
+    if (tpl) {
+      setCapturaFields({
+        titulo:       (tpl as any).titulo       || lancamento!.nome,
+        subtitulo:    (tpl as any).subtitulo    || '',
+        cta_texto:    (tpl as any).cta_texto    || 'Quero participar',
+        html_extra:   (tpl as any).html_extra   || '',
+        cor_primaria: (tpl as any).cor_primaria || '#7C3AED',
+      });
+    } else {
+      setCapturaFields({
+        titulo: lancamento!.nome, subtitulo: '',
+        cta_texto: 'Quero participar', html_extra: '', cor_primaria: '#7C3AED',
+      });
+    }
+    setCapturaOpen(true);
+  };
+
+  const handleDownloadCaptura = () => {
+    if (!lancamento) return;
+    const html = buildCapturaHTML(capturaFields, {
+      nome:           lancamento.nome,
+      produto:        lancamento.produto_destino || '',
+      data_live:      lancamento.data_live || undefined,
+      link_formulario: capturaLinkForm || undefined,
+    });
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = `captura-${lancamento.nome.toLowerCase().replace(/\s+/g, '-')}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // ── Delete lancamento ───────────────────────────────────────────────────────
   const handleDeleteLancamento = async () => {
     const { error } = await supabase.from('lancamentos').delete().eq('id', lancamentoId);
@@ -2091,7 +2230,16 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
             </Badge>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="outline" size="sm"
+            onClick={handleOpenCaptura}
+            className="gap-1.5 border-purple-200 text-purple-700 hover:bg-purple-50"
+            title="Exportar página de captura em HTML"
+          >
+            <FileText className="h-4 w-4" />
+            Página de Captura
+          </Button>
           <Button
             variant="outline" size="sm"
             onClick={() => setShowWebhookModal(true)}
@@ -2930,6 +3078,103 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
         }}
         onDismiss={id => setDisparos(prev => prev.filter(d => d.id !== id))}
       />
+
+      {/* ── Exportar Página de Captura Modal ── */}
+      <Dialog open={capturaOpen} onOpenChange={setCapturaOpen}>
+        <DialogContent className="max-w-5xl w-full max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+          <DialogHeader className="px-6 pt-5 pb-3 border-b border-border flex-shrink-0">
+            <DialogTitle>Exportar Página de Captura</DialogTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Edite os campos e baixe o HTML pronto para subir na sua plataforma.
+            </p>
+          </DialogHeader>
+
+          <div className="flex flex-col lg:flex-row flex-1 overflow-hidden min-h-0">
+            {/* ── Painel de edição ── */}
+            <div className="lg:w-72 flex-shrink-0 border-r border-border p-5 overflow-y-auto space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Título principal *</label>
+                <textarea
+                  rows={2}
+                  className="w-full text-sm border border-border rounded-lg p-2 resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+                  value={capturaFields.titulo}
+                  onChange={e => setCapturaFields(f => ({ ...f, titulo: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Subtítulo / promessa</label>
+                <textarea
+                  rows={2}
+                  className="w-full text-sm border border-border rounded-lg p-2 resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+                  value={capturaFields.subtitulo || ''}
+                  onChange={e => setCapturaFields(f => ({ ...f, subtitulo: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Texto do botão CTA</label>
+                <Input
+                  value={capturaFields.cta_texto}
+                  onChange={e => setCapturaFields(f => ({ ...f, cta_texto: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">URL do formulário externo</label>
+                <Input
+                  placeholder="https://..."
+                  value={capturaLinkForm}
+                  onChange={e => setCapturaLinkForm(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Cor primária</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={capturaFields.cor_primaria}
+                    onChange={e => setCapturaFields(f => ({ ...f, cor_primaria: e.target.value }))}
+                    className="w-10 h-8 rounded cursor-pointer border border-border"
+                  />
+                  <span className="text-xs font-mono text-muted-foreground">{capturaFields.cor_primaria}</span>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Bloco extra (HTML livre)</label>
+                <p className="text-[10px] text-muted-foreground">Depoimentos, garantia, sobre o professor…</p>
+                <textarea
+                  rows={6}
+                  className="w-full text-xs font-mono border border-border rounded-lg p-2 resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+                  value={capturaFields.html_extra || ''}
+                  onChange={e => setCapturaFields(f => ({ ...f, html_extra: e.target.value }))}
+                  placeholder="<p>Depoimento...</p>"
+                />
+              </div>
+              <Button
+                onClick={handleDownloadCaptura}
+                className="w-full gap-1.5 bg-purple-600 hover:bg-purple-700 text-white"
+              >
+                <FileText className="h-4 w-4" />
+                Baixar HTML
+              </Button>
+            </div>
+
+            {/* ── Preview ao vivo ── */}
+            <div className="flex-1 min-h-0 bg-gray-100 overflow-hidden">
+              <iframe
+                key={JSON.stringify({ capturaFields, capturaLinkForm })}
+                srcDoc={lancamento ? buildCapturaHTML(capturaFields, {
+                  nome:            lancamento.nome,
+                  produto:         lancamento.produto_destino || '',
+                  data_live:       lancamento.data_live || undefined,
+                  link_formulario: capturaLinkForm || undefined,
+                }) : ''}
+                className="w-full h-full border-0"
+                title="Preview da página de captura"
+                sandbox="allow-same-origin"
+              />
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Webhook Grupos Modal ── */}
       <Dialog open={showWebhookModal} onOpenChange={setShowWebhookModal}>

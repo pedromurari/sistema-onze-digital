@@ -83,6 +83,8 @@ interface Aluno {
   voomp_integrado?: boolean;
   voomp_link?: string;
   contrato_token?: string;
+  token_acesso?: string;
+  link_grupo_whatsapp?: string;
   created_at: string;
 }
 
@@ -854,7 +856,7 @@ export function Financeiro() {
 
   useEffect(() => { loadData(); }, []);
 
-  const ALUNOS_SELECT_FULL = 'id, turma_id, produto, nome, whatsapp, email, cpf, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, valor_mensalidade, forma_pagamento, observacoes, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, contrato_baixado, contrato_arquivo_url, contrato_arquivo_nome, asaas_integrado, asaas_link, voomp_integrado, voomp_link, contrato_token, created_at';
+  const ALUNOS_SELECT_FULL = 'id, turma_id, produto, nome, whatsapp, email, cpf, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, valor_mensalidade, forma_pagamento, observacoes, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, contrato_baixado, contrato_arquivo_url, contrato_arquivo_nome, asaas_integrado, asaas_link, voomp_integrado, voomp_link, contrato_token, token_acesso, link_grupo_whatsapp, created_at';
   const ALUNOS_SELECT_BASE = 'id, turma_id, produto, nome, whatsapp, email, cpf, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, valor_mensalidade, forma_pagamento, observacoes, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, created_at';
 
   const loadData = async () => {
@@ -2704,6 +2706,27 @@ export function Financeiro() {
                       >
                         <MessageSquare className="h-3.5 w-3.5" /> Enviar por WPP
                       </Button>
+
+                      {alunoDetail.token_acesso && (
+                        <Button
+                          size="sm" variant="outline"
+                          className="gap-1.5 text-xs h-8 border-purple-500/40 text-purple-700 hover:bg-purple-50"
+                          onClick={async () => {
+                            const link = `${window.location.origin}/membros/${alunoDetail.token_acesso}`;
+                            const { error } = await supabase.functions.invoke('wpp-enviar', {
+                              body: {
+                                numero: alunoDetail.whatsapp,
+                                mensagem: `Olá, ${alunoDetail.nome.split(' ')[0]}! 🎓\n\nAcesse sua área de membros para ver sua matrícula, pagamentos e o link do grupo:\n\n${link}`,
+                              },
+                            });
+                            if (error) toast({ variant: 'destructive', title: 'Erro ao enviar WPP', description: error.message });
+                            else toast({ title: '✅ Link da área de membros enviado!' });
+                          }}
+                          disabled={!alunoDetail.whatsapp}
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" /> Área de membros
+                        </Button>
+                      )}
 
                       {alunoDetail.autentique_link_assinatura && (
                         <a

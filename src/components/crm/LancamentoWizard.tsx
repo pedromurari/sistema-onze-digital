@@ -67,6 +67,7 @@ function defaultConfig(): WizardConfig {
     bv_wpp_ativo: true, bv_wpp_mensagem: '',
     bv_wpp_mensagem_tarde: '', pix_mensagem_template: '',
     bv_email_ativo: false, bv_email_assunto: '', bv_email_corpo: '',
+    bv_delay_minutos: 0,
   };
 }
 
@@ -478,16 +479,20 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-function Step3({ config, setConfig, evoInstances }: {
+function Step3({ config, setConfig, evoInstances, existingId }: {
   config: WizardConfig;
   setConfig: React.Dispatch<React.SetStateAction<WizardConfig>>;
   evoInstances: EvoInstance[];
+  existingId?: string;
 }) {
   const STORAGE_KEY = 'evo_default_participants';
 
   const [criando, setCriando] = useState<Record<number, boolean>>({});
   const [erros, setErros]     = useState<Record<number, string>>({});
   const [fotoFiles, setFotoFiles] = useState<Record<number, File | null>>({});
+  const [gerandoFoto, setGerandoFoto] = useState<Record<number, boolean>>({});
+  const [fotoGeradaUrl, setFotoGeradaUrl] = useState<Record<number, string>>({});
+  const [aplicandoFoto, setAplicandoFoto] = useState<Record<number, boolean>>({});
   // Inicia partInputs com os números padrão salvos (mesmo valor para todos os grupos)
   const [partInputs, setPartInputs] = useState<Record<number, string>>(() => {
     try {
@@ -890,6 +895,113 @@ function Step3({ config, setConfig, evoInstances }: {
                 </label>
               )}
             </div>}
+
+            {/* Gerar foto com IA */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-px bg-border" />
+                <span className="text-[10px] text-muted-foreground whitespace-nowrap">foto com IA</span>
+                <div className="flex-1 h-px bg-border" />
+              </div>
+              {fotoGeradaUrl[i] ? (
+                <div className="space-y-2">
+                  <img
+                    src={fotoGeradaUrl[i]}
+                    alt="Foto gerada"
+                    className="w-full rounded-xl border border-border object-cover aspect-square"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setFotoGeradaUrl(p => ({ ...p, [i]: '' }))}
+                      className="flex-1 py-1.5 rounded-lg border border-border text-xs text-muted-foreground hover:border-red-300 hover:text-red-600 transition-colors"
+                    >
+                      Descartar
+                    </button>
+                    {grupo.jid && (
+                      <button
+                        type="button"
+                        disabled={aplicandoFoto[i]}
+                        onClick={async () => {
+                          const evo = config.instancia_evolution !== '__priority__'
+                            ? evoInstances.find(e => e.instance_name === config.instancia_evolution)
+                            : evoInstances[0];
+                          if (!evo) { toast.error('Nenhuma instância Evolution ativa'); return; }
+                          setAplicandoFoto(p => ({ ...p, [i]: true }));
+                          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+                          const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+                          try {
+                            const res = await fetch(`${supabaseUrl}/functions/v1/gerar-foto-grupo`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+                              body: JSON.stringify({
+                                mode: 'apply',
+                                lancamento_id: 'wizard',
+                                tipo: config.tipo,
+                                foto_url: fotoGeradaUrl[i],
+                                grupo_jid: grupo.jid,
+                                api_url: evo.api_url,
+                                api_key: evo.api_key,
+                                instance_name: evo.instance_name,
+                              }),
+                            });
+                            const data = await res.json();
+                            if (data.ok) toast.success('Foto aplicada no grupo!');
+                            else toast.error(data.error || 'Erro ao aplicar foto');
+                          } catch { toast.error('Erro ao aplicar foto'); }
+                          setAplicandoFoto(p => ({ ...p, [i]: false }));
+                        }}
+                        className="flex-1 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-medium flex items-center justify-center gap-1 disabled:opacity-50 transition-colors"
+                      >
+                        {aplicandoFoto[i] ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                        {aplicandoFoto[i] ? 'Aplicando...' : '📱 Aplicar no grupo'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : existingId ? (
+                <button
+                  type="button"
+                  disabled={gerandoFoto[i]}
+                  onClick={async () => {
+                    setGerandoFoto(p => ({ ...p, [i]: true }));
+                    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+                    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+                    try {
+                      const res = await fetch(`${supabaseUrl}/functions/v1/gerar-foto-grupo`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+                        body: JSON.stringify({
+                          mode: 'generate',
+                          lancamento_id: existingId,
+                          tipo: config.tipo,
+                          turma_nome: config.nome || 'Turma',
+                          produto: config.produto_destino,
+                          data_evento: config.aulas[0]?.data || undefined,
+                        }),
+                      });
+                      const data = await res.json();
+                      if (data.url) {
+                        setFotoGeradaUrl(p => ({ ...p, [i]: data.url }));
+                        toast.success('Foto gerada e salva!');
+                      } else {
+                        toast.error(data.error || 'Erro ao gerar foto');
+                      }
+                    } catch { toast.error('Erro ao gerar foto'); }
+                    setGerandoFoto(p => ({ ...p, [i]: false }));
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-purple-300 text-sm text-purple-600 hover:border-purple-400 hover:bg-purple-50/50 disabled:opacity-50 transition-colors font-medium"
+                >
+                  {gerandoFoto[i]
+                    ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Gerando com DALL-E (~30s)...</>
+                    : <>✨ Gerar foto do grupo com IA</>}
+                </button>
+              ) : (
+                <p className="text-center text-xs text-muted-foreground py-2">
+                  Salve o lançamento uma vez para habilitar a geração de foto com IA.
+                </p>
+              )}
+            </div>
 
             {/* JID exibido após criação */}
             {grupo.jid && (
@@ -1366,6 +1478,46 @@ function Step5({ config, setConfig }: {
           </div>
         )}
       </div>
+      {/* Delay de envio */}
+      <div className="pt-3 border-t border-border space-y-2">
+        <h3 className="text-sm font-semibold">Delay de envio</h3>
+        <p className="text-xs text-muted-foreground">Quanto tempo após o lead entrar na planilha a mensagem será enviada.</p>
+        <div className="flex flex-wrap gap-2">
+          {[
+            { label: 'Imediato', value: 0 },
+            { label: '30 min', value: 30 },
+            { label: '1 hora', value: 60 },
+            { label: '2 horas', value: 120 },
+          ].map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => set('bv_delay_minutos', opt.value)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                config.bv_delay_minutos === opt.value
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border text-muted-foreground hover:border-primary/40'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Personalizado:</span>
+            <input
+              type="number"
+              min={0}
+              step={5}
+              value={config.bv_delay_minutos}
+              onChange={e => set('bv_delay_minutos', Number(e.target.value))}
+              className="w-20 h-8 text-xs border border-border rounded-lg px-2 focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder="min"
+            />
+            <span className="text-xs text-muted-foreground">min</span>
+          </div>
+        </div>
+      </div>
+
       {/* Email */}
       <div className="space-y-3 pt-3 border-t border-border">
         <div className="flex items-center gap-3">
@@ -1599,6 +1751,7 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
         bv_email_ativo: (bvConfig as any)?.email_ativo ?? false,
         bv_email_assunto: (bvConfig as any)?.email_assunto || '',
         bv_email_corpo: (bvConfig as any)?.email_corpo || '',
+        bv_delay_minutos: (bvConfig as any)?.delay_minutos ?? 0,
       });
       setStep(1);
     };
@@ -1735,6 +1888,7 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
           email_ativo: config.bv_email_ativo,
           email_assunto: config.bv_email_assunto,
           email_corpo: config.bv_email_corpo,
+          delay_minutos: config.bv_delay_minutos ?? 0,
         }, { onConflict: 'funnel_name' });
       }
 
@@ -1813,7 +1967,7 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
         <div className="flex-1 overflow-y-auto px-6 pb-2 min-h-0">
           {step === 1 && <Step1 config={config} setConfig={setConfig} responsaveis={responsaveis} />}
           {step === 2 && <Step2 config={config} setConfig={setConfig} turmas={turmas} setTurmas={setTurmas} />}
-          {step === 3 && <Step3 config={config} setConfig={setConfig} evoInstances={evoInstances} />}
+          {step === 3 && <Step3 config={config} setConfig={setConfig} evoInstances={evoInstances} existingId={existingId} />}
           {step === 4 && <Step4 config={config} setConfig={setConfig} />}
           {step === 5 && <Step5 config={config} setConfig={setConfig} />}
           {step === 6 && <Step6 messages={messages} setMessages={setMessages} config={config} />}

@@ -137,13 +137,20 @@ serve(async (req) => {
     const window = new Date(now.getTime() + 6 * 60 * 1000); // próximos 6 min (cron a cada 5min)
 
     // EARLY EXIT: COUNT barato antes de buscar dados ou abrir conexão com Evolution
-    const { count } = await supabase
-      .from('funnel_messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'scheduled')
-      .lte('scheduled_at', window.toISOString());
+    const [{ count: funnelCount }, { count: bvCount }] = await Promise.all([
+      supabase
+        .from('funnel_messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'scheduled')
+        .lte('scheduled_at', window.toISOString()),
+      supabase
+        .from('boas_vindas_agendados')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pendente')
+        .lte('agendado_para', now.toISOString()),
+    ]);
 
-    if (!count) {
+    if (!funnelCount && !bvCount) {
       return new Response(JSON.stringify({ ok: true, processed: 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -179,14 +186,9 @@ serve(async (req) => {
       .order('scheduled_at', { ascending: true });
 
     if (fetchErr) throw fetchErr;
-    if (!pending?.length) {
-      return new Response(JSON.stringify({ ok: true, processed: 0 }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
 
     let processed = 0;
-    for (const msg of pending) {
+    for (const msg of pending ?? []) {
       try {
         const { data: funnelCfg } = await supabase
           .from('funnel_configs')
@@ -220,6 +222,50 @@ serve(async (req) => {
           .from('funnel_messages')
           .update({ status: 'error', error_message: (e as Error).message })
           .eq('id', msg.id);
+      }
+    }
+
+    // ── Processar boas-vindas agendadas ──────────────────────────────────────
+    if (bvCount) {
+      const { data: bvPendentes } = await supabase
+        .from('boas_vindas_agendados')
+        .select('*')
+        .eq('status', 'pendente')
+        .lte('agendado_para', now.toISOString())
+        .order('agendado_para', { ascending: true })
+        .limit(20); // máx 20 por ciclo (anti-ban)
+
+      for (const bv of bvPendentes ?? []) {
+        try {
+          let lastBvErr: Error | null = null;
+          for (const { base, instance, apikey } of evoInstances) {
+            try {
+              await sendEvolution(`${base}/message/sendText/${instance}`, {
+                number: bv.whatsapp,
+                text:   bv.mensagem,
+                delay:  1200,
+              }, apikey);
+              lastBvErr = null;
+              break;
+            } catch (e) {
+              lastBvErr = e as Error;
+            }
+          }
+          if (lastBvErr) throw lastBvErr;
+
+          await supabase
+            .from('boas_vindas_agendados')
+            .update({ status: 'enviado', enviado_em: new Date().toISOString() })
+            .eq('id', bv.id);
+
+          processed++;
+          await new Promise(r => setTimeout(r, 3000 + Math.random() * 2000)); // anti-ban
+        } catch (e: unknown) {
+          await supabase
+            .from('boas_vindas_agendados')
+            .update({ status: 'erro', erro_msg: (e as Error).message })
+            .eq('id', bv.id);
+        }
       }
     }
 
