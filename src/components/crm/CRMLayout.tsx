@@ -22,6 +22,7 @@ const Balanco          = lazy(() => import('./Balanco').then(m => ({ default: m.
 const FinanceiroCFO    = lazy(() => import('./FinanceiroCFO').then(m => ({ default: m.FinanceiroCFO })));
 const Cobranca         = lazy(() => import('./Cobranca').then(m => ({ default: m.Cobranca })));
 const FunilLancamento  = lazy(() => import('./FunilLancamento').then(m => ({ default: m.FunilLancamento })));
+const DisparosMonitor  = lazy(() => import('./DisparosMonitor').then(m => ({ default: m.DisparosMonitor })));
 const Rodrygo          = lazy(() => import('./Rodrygo').then(m => ({ default: m.Rodrygo })));
 const LancamentoKanban = lazy(() => import('./LancamentoKanban').then(m => ({ default: m.LancamentoKanban })));
 const NPAKanban        = lazy(() => import('./NPAKanban'));
@@ -218,7 +219,10 @@ export function CRMLayout() {
       case 'financeiro_cfo': return <FinanceiroCFO />;
       case 'balanco': return <Balanco />;
       case 'cobranca':         return permissions.canViewCobranca || isAdmin ? <Cobranca /> : <RestrictedView />;
-      case 'funil_lancamento': return permissions.canViewCobranca || isAdmin ? <FunilLancamento /> : <RestrictedView />;
+      case 'funil_lancamento':  return permissions.canViewCobranca || isAdmin ? <FunilLancamento /> : <RestrictedView />;
+      case 'disparos_monitor':  return permissions.canViewCobranca || isAdmin
+        ? <DisparosMonitor onCreateFunnel={() => setCurrentView('funil_lancamento')} />
+        : <RestrictedView />;
       case 'rodrygo': return <Rodrygo />;
       case 'team': return user?.tipo === 'admin' || permissions.canViewTeam ? <TeamManagement /> : <RestrictedView />;
       case 'settings': return permissions.canViewSettings || isAdmin ? <Settings /> : <RestrictedView />;
