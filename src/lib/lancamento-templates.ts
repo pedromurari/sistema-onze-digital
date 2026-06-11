@@ -212,25 +212,229 @@ export function generateLancamentoMessages(config: WizardConfig): TemplateMensag
     // ── 9 dias de aquecimento ─────────────────────────────────────────────────
     const warmupDays = 9;
 
-    // Mensagens únicas de manhã — uma reflexão de psicanálise por dia (day 1..9)
+    // Mensagens únicas de manhã — reflexão de psicanálise por dia com referência de psicanalista (day 1..9)
     const manhasMsgs: Record<number, string> = {
-      1: `${slogan} dia! ☀️\n\n*Existe uma voz dentro de você que opera sem que você perceba.*\n\nEla molda suas decisões, suas reações, seus relacionamentos — tudo isso antes de você formular um único pensamento consciente.\n\nIsso se chama inconsciente. E não é metáfora — é o sistema que governa a maior parte da sua vida.\n\nNessas aulas, vamos abrir esse acesso. Com profundidade. Com direção.\n\n${datesBlock()}\n\nSempre às *${classHora}*, ao vivo no YouTube.\n\nCom ${profDupla}.\n\n👉 Ativa o lembrete: ${aulaLink(1)}\n\nReage com ❤️ pra eu saber que você está aqui!`,
+      // Dia 1 — Inconsciente (Freud)
+      1: `${slogan} dia! ☀️
 
-      2: `${slogan} dia! ☀️\n\n*O padrão não é azar.*\n\nQuando você se pega repetindo o mesmo ciclo — no relacionamento, no trabalho, nas escolhas — não é coincidência.\n\nÉ o que a psicanálise chama de compulsão à repetição: o inconsciente recriando situações antigas na tentativa de resolver o que ficou irresolvido.\n\nEnquanto esse mecanismo não for visto, ele continua rodando nos bastidores.\n\nNossas aulas chegam em breve. Você vai entender por onde começa a saída.\n\n👉 ${aulaLink(1)}\n\nReage com 🔄 se você já se percebeu repetindo um padrão que queria ter quebrado.`,
+Freud disse uma coisa que abalou o mundo científico em 1917:
 
-      3: `${slogan} dia! ☀️\n\n*Você racionaliza. Foge. Ironiza. Minimiza.*\n\nIsso não é fraqueza — é proteção. A mente cria mecanismos para não ter que lidar com o que dói.\n\nO problema é que esses mecanismos de defesa também te impedem de crescer. De sentir. De se conectar de verdade.\n\nA psicanálise não vai te deixar sem proteção — vai te dar acesso ao que está por baixo dela.\n\nNossas aulas chegam logo. Enquanto isso, fica com essa reflexão.\n\n👉 ${aulaLink(1)}\n\nReage com 🛡️ se você se reconhece em algum desses mecanismos.`,
+*"O ego não é senhor em sua própria casa."*
 
-      4: `${slogan} dia! ☀️\n\n*Quem você vê nas pessoas ao seu redor?*\n\nMuitas vezes, o que sentimos por alguém — admiração, mágoa, raiva, amor — não é só sobre aquela pessoa. É sobre quem ela representa no nosso inconsciente.\n\nIsso se chama transferência. E ela está presente em todo relacionamento: afetivo, profissional, terapêutico.\n\nQuando você começa a entender esse mecanismo, suas relações ganham uma clareza que muda tudo.\n\nFaltam poucos dias para nossas aulas. Prepara o olhar.\n\n👉 ${aulaLink(1)}\n\nReage com 👁️ se você já viveu uma relação que te ensinou algo sobre você mesmo.`,
+Antes disso, acreditávamos que nossas decisões vinham de um lugar racional e consciente. Que éramos autores plenos das nossas escolhas.
 
-      5: `${slogan} dia! ☀️\n\n*O sintoma não é o inimigo.*\n\nA ansiedade que não passa. A procrastinação que aparece toda vez. O relacionamento que dói mas você não larga.\n\nIsso são sintomas. E na psicanálise, o sintoma não é um problema a ser eliminado — é uma mensagem. Ele carrega um sentido que o inconsciente ainda não conseguiu dizer de outra forma.\n\nNossas aulas vão te ensinar a escutar o que seus sintomas estão dizendo.\n\n👉 ${aulaLink(1)}\n\nReage com 💭 se você tem um sintoma que já tentou eliminar e ele sempre volta.`,
+Freud mostrou que não. Que a parte mais determinante de quem somos opera nas sombras — sem que a gente perceba, sem que a gente autorize.
 
-      6: `${slogan} dia! ☀️\n\n*Existe uma voz dentro de você que nunca está satisfeita.*\n\nEla compara. Ela cobra. Ela diz que você deveria ser mais, fazer mais, alcançar mais.\n\nIsso é o superego — a instância psíquica que internalizou as exigências do mundo externo e as transformou em autocrítica constante.\n\nEntender de onde vem essa voz não a silencia imediatamente. Mas tira dela o poder de te governar sem que você perceba.\n\nFaltam poucos dias. Fica com essa reflexão.\n\n👉 ${aulaLink(1)}\n\nReage com 🔇 se essa voz fala alto demais dentro de você.`,
+O inconsciente está por trás de cada padrão que você repete, de cada reação que te surpreende, de cada decisão que você não sabe explicar.
 
-      7: `${slogan} dia! ☀️\n\n*Nem sempre o que você persegue é o que você realmente deseja.*\n\nÀs vezes buscamos aprovação quando o desejo real é ser vistos. Buscamos sucesso quando o desejo é ser amados. Buscamos controle quando o desejo é segurança.\n\nO desejo — na psicanálise — nunca é simples. Ele está sempre deslocado, sempre pedindo decifração.\n\nNossas aulas começam em breve. Estamos quase lá.\n\n${datesBlock()}\n\n👉 ${aulaLink(1)}\n\nReage com 🔍 se você sente que busca uma coisa mas no fundo quer outra.`,
+Nessas aulas, vamos abrir esse acesso. Com profundidade. Com direção.
 
-      8: `${slogan} dia! ☀️\n\n*Você que se sabota.*\n\nNão é falta de disciplina. Não é preguiça. É resistência — o inconsciente protegendo o que já conhece, por mais doloroso que seja, do risco do desconhecido.\n\nA mudança ameaça a identidade que construímos. E o psiquismo prefere o familiar — mesmo que machuque — ao que ainda não tem nome.\n\nAmanhã é o último dia antes de começarmos. Prepara o espaço.\n\n👉 ${aulaLink(1)}\n\nReage com 🚧 se você já se percebeu se sabotando quando estava quase chegando lá.`,
+${datesBlock()}
 
-      9: `${slogan} dia! ☀️\n\n*Amanhã começa a ${config.nome}.*\n\nVocê passou por 8 dias de reflexão. Cada mensagem foi uma semente plantada no solo certo.\n\nO inconsciente. A repetição. Os mecanismos de defesa. A transferência. O sintoma. O superego. O desejo. A resistência.\n\nAmanhã, ao vivo, começamos a aprofundar cada um desses fios — juntos.\n\n${profAnchor} conduz essa jornada com participação de ${profConv}.\n\n👉 Ativa o lembrete da Aula 1: ${aulaLink(1)}\n\nReage com um 🙌 se você vai estar ao vivo amanhã!`,
+Sempre às *${classHora}*, ao vivo no YouTube.
+Com ${profDupla}.
+
+👉 Ativa o lembrete e deixa o like:
+${aulaLink(1)}
+
+Reage com ❤️ pra eu saber que você está aqui!`,
+
+      // Dia 2 — Compulsão à repetição (Freud — Além do Princípio do Prazer, 1920)
+      2: `${slogan} dia! ☀️
+
+Em 1920, Freud observou algo perturbador nos seus pacientes:
+
+Eles repetiam situações dolorosas. Não porque queriam sofrer — mas porque o inconsciente insistia em reencenar o que ficou irresolvido.
+
+Chamou isso de *compulsão à repetição*.
+
+Você provavelmente conhece bem esse movimento:
+↳ O mesmo tipo de relacionamento que termina sempre do mesmo jeito
+↳ A mesma autossabotagem toda vez que você estava quase chegando lá
+↳ O mesmo conflito — com pessoas diferentes
+
+Não é azar. Não é coincidência.
+É o inconsciente tentando te dar uma nova chance — do único jeito que sabe.
+
+Nossas aulas chegam em breve. Você vai entender por onde começa a saída.
+
+👉 Ativa o lembrete e deixa o like:
+${aulaLink(1)}
+
+Reage com 🔄 se você já se percebeu repetindo um padrão que queria ter quebrado.`,
+
+      // Dia 3 — Mecanismos de defesa (Anna Freud — O Ego e os Mecanismos de Defesa, 1936)
+      3: `${slogan} dia! ☀️
+
+Anna Freud — filha de Sigmund e psicanalista por direito próprio — passou anos mapeando algo que todo ser humano faz:
+
+*Defender-se do que dói.*
+
+Você racionaliza. Projeta. Nega. Intelectualiza.
+Faz humor sobre o que te machuca antes que alguém perceba que machucou.
+
+Isso não é fraqueza. É o aparelho psíquico fazendo o que foi treinado a fazer: proteger você da dor que ainda não tem como ser processada.
+
+O problema é que esses mecanismos, com o tempo, também te impedem de crescer. De sentir. De se conectar de verdade.
+
+A psicanálise não destrói as defesas. Ela te ajuda a entender o que está por baixo delas — para que você possa *escolher*, em vez de apenas reagir.
+
+👉 Ativa o lembrete e deixa o like:
+${aulaLink(1)}
+
+Reage com 🛡️ se você se reconhece em algum desses mecanismos.`,
+
+      // Dia 4 — Transferência (Freud)
+      4: `${slogan} dia! ☀️
+
+Freud descobriu algo que virou a base de toda a clínica psicanalítica:
+
+O que sentimos pelas pessoas ao nosso redor raramente é *só* sobre elas.
+
+É sobre quem elas *representam* — figuras do passado, imagens internalizadas, afetos que ainda não foram elaborados.
+
+Isso se chama *transferência*.
+
+E ela não acontece só no divã. Ela acontece com seu chefe, seu parceiro, seus filhos — em qualquer relação onde há afeto em jogo.
+
+↳ O julgamento instantâneo de alguém que você mal conhece
+↳ A raiva desproporcional que um comportamento simples desperta
+↳ A admiração que vira dependência antes que você perceba
+
+Tudo isso tem uma história. Tudo isso tem um endereço no inconsciente.
+
+Entender a transferência é começar a se relacionar com mais clareza — e com muito mais liberdade.
+
+👉 Ativa o lembrete e deixa o like:
+${aulaLink(1)}
+
+Reage com 👁️ se você já viveu uma relação que te ensinou algo profundo sobre você mesmo.`,
+
+      // Dia 5 — Sintoma (Lacan — Escritos, 1966)
+      5: `${slogan} dia! ☀️
+
+Jacques Lacan — um dos pensadores mais radicais da psicanálise — disse uma frase que incomoda:
+
+*"O sintoma é uma metáfora."*
+
+Não é filosofia abstrata. É uma observação precisa sobre como o inconsciente funciona.
+
+O sintoma *fala*. Por baixo de cada compulsão, cada bloqueio, cada dor que persiste sem explicação — há algo que o inconsciente não conseguiu dizer de outra forma.
+
+↳ A ansiedade que não passa, mesmo quando "não tem motivo"
+↳ A procrastinação que aparece toda vez que você está perto de algo importante
+↳ O relacionamento que dói mas você não consegue largar
+
+Esses não são defeitos. São mensagens.
+
+Quando você aprende a escutá-las — em vez de silenciá-las — a relação com você mesmo muda completamente.
+
+👉 Ativa o lembrete e deixa o like:
+${aulaLink(1)}
+
+Reage com 💭 se você tem um sintoma que já tentou eliminar e ele sempre volta.`,
+
+      // Dia 6 — Superego (Freud — O Eu e o Id, 1923)
+      6: `${slogan} dia! ☀️
+
+Freud descobriu algo que a maioria das pessoas não quer ouvir:
+
+A voz mais cruel dentro de você não vem de fora. Ela vem de dentro.
+
+Chamou-a de *superego* — a instância psíquica que internalizou as exigências do mundo e as transformou em tribunal interno.
+
+Ela compara. Ela condena. Ela nunca está satisfeita.
+
+E é, muitas vezes, *mais severa* do que qualquer pessoa real jamais foi com você.
+
+_"Não fiz o suficiente. Deveria ser mais. Os outros conseguem — por que eu não?"_
+
+Essa voz não é a verdade. É uma construção — formada nas primeiras experiências de aprovação e rejeição, de amor condicional, de exigência não dita.
+
+Entender de onde ela vem não a silencia de imediato. Mas tira dela o poder de governar sua vida sem que você perceba.
+
+👉 Ativa o lembrete e deixa o like:
+${aulaLink(1)}
+
+Reage com 🔇 se essa voz fala alto demais dentro de você.`,
+
+      // Dia 7 — Desejo (Lacan — Seminário 6: O Desejo e sua Interpretação, 1958-59)
+      7: `${slogan} dia! ☀️
+
+Lacan disse algo que levou anos para eu entender completamente:
+
+*"O desejo é o desejo do Outro."*
+
+Não é filosofia abstrata. É uma observação devastadoramente precisa sobre como vivemos.
+
+Grande parte do que perseguimos — o sucesso, a aprovação, a conquista — não é o que *nós* queremos de verdade.
+
+É o que aprendemos a querer para ser amados. Vistos. Aceitos.
+
+E aí vem o paradoxo que tantos vivem:
+Quando você finalmente conquista aquilo que perseguiu a vida toda, descobre que não era bem isso.
+
+Porque o desejo real estava encoberto pelo desejo que o Outro — a família, a cultura, o olhar social — depositou em você.
+
+Descobrir o que você *realmente* deseja, por baixo de todas essas camadas, é um dos movimentos mais libertadores que a psicanálise pode provocar.
+
+${datesBlock()}
+
+👉 Ativa o lembrete e deixa o like:
+${aulaLink(1)}
+
+Reage com 🔍 se você sente que busca uma coisa mas no fundo quer outra.`,
+
+      // Dia 8 — Resistência (Freud — A Interpretação dos Sonhos, 1900)
+      8: `${slogan} dia! ☀️
+
+Freud notou que seus pacientes — mesmo querendo mudar — resistiam ao próprio tratamento.
+
+Chegavam atrasados. Esqueciam o que haviam dito na sessão anterior. Mudavam de assunto nos momentos de maior avanço.
+
+Chamou isso de *resistência*.
+
+E a descoberta mais importante: a resistência não é fraqueza nem falta de vontade.
+
+É proteção.
+
+O inconsciente prefere o sofrimento *conhecido* ao desconhecido que a mudança traz. Porque mudar significa abandonar uma identidade — por mais dolorosa que seja — antes de saber quem você vai ser do outro lado.
+
+Por isso você se sabota quando está quase chegando.
+Por isso a mudança parece impossível mesmo quando você já sabe o que precisa fazer.
+
+A resistência não precisa ser vencida pela força. Ela precisa ser *compreendida*.
+
+E é exatamente isso que começa amanhã.
+
+👉 Ativa o lembrete e deixa o like:
+${aulaLink(1)}
+
+Reage com 🚧 se você já se percebeu se sabotando quando estava quase chegando lá.`,
+
+      // Dia 9 — Véspera / Self verdadeiro (Winnicott — O Amadurecimento e o Ambiente Facilitador, 1965)
+      9: `${slogan} dia! ☀️
+
+Winnicott — psicanalista inglês que dedicou a vida a entender como nos tornamos quem somos — falou sobre o *self verdadeiro*:
+
+A parte de você que foi se escondendo com o tempo.
+Que aprendeu a performar, a agradar, a caber no espaço que o mundo oferecia.
+
+*Amanhã começa um espaço diferente.*
+
+Você passou por 8 dias de reflexão — cada mensagem foi uma semente plantada no solo certo.
+
+O inconsciente. A repetição. Os mecanismos de defesa.
+A transferência. O sintoma. O superego. O desejo. A resistência.
+
+Amanhã, ao vivo, começamos a aprofundar cada um desses fios — juntos.
+
+${profAnchor} conduz essa jornada com participação de ${profConv}.
+
+👉 Ativa o lembrete e deixa o like — começa amanhã:
+${aulaLink(1)}
+
+Reage com 🙌 se você vai estar ao vivo amanhã!`,
     };
 
     // Enquetes únicas por dia (dias 2,3,5,6,8,9 — os não-áudio)
