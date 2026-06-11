@@ -655,32 +655,6 @@ function TrafegoTab({ lancamento, leads: crmLeads }: {
   );
 }
 
-// ─── Disparo por Coluna — Types ──────────────────────────────────────────────
-
-interface DisparoLeadStatus {
-  leadId: string;
-  nome: string;
-  whatsapp: string;
-  status: 'pending' | 'sending' | 'done' | 'error' | 'skipped';
-  error?: string;
-}
-
-interface KanbanDisparo {
-  id: string;
-  nome: string;
-  colunaIds: string[];
-  colunaNomes: string[];
-  template: string;
-  typingDelayMs: number;
-  minDelayMs: number;
-  maxDelayMs: number;
-  instanceName: string | null;
-  leads: DisparoLeadStatus[];
-  currentIdx: number;
-  status: 'running' | 'paused' | 'done' | 'stopped';
-  startedAt: number;
-  countdownMs: number;
-}
 
 // ─── KanbanDisparoModal ───────────────────────────────────────────────────────
 
@@ -964,7 +938,7 @@ function CampanhasDisparoPanel({
   onStop,
   onDismiss,
 }: {
-  disparos: KanbanDisparo[];
+  disparos: any[];
   onPause: (id: string) => void;
   onResume: (id: string) => void;
   onStop: (id: string) => void;
@@ -1381,12 +1355,9 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
   const [savingMatricula, setSavingMatricula] = useState(false);
 
   // ── Disparo por Coluna (campanhas WPP) ────────────────────────────────────
-  const [disparos, setDisparos] = useState<KanbanDisparo[]>([]);
   const [showDisparoModal, setShowDisparoModal] = useState(false);
   const [preselectColunaId, setPreselectColunaId] = useState<string | null>(null);
-  const [evoInstances, setEvoInstances] = useState<Array<{ instance_name: string }>>([]);
-  const disparosStopMap  = useRef<Map<string, boolean>>(new Map());
-  const disparosPauseMap = useRef<Map<string, boolean>>(new Map());
+  const [evoInstances, setEvoInstances] = useState<Array<{ id: string; instance_name: string }>>([]);
 
   // Shared column hook
   const {
@@ -1439,107 +1410,14 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
   useEffect(() => {
     supabase
       .from('evolution_config')
-      .select('instance_name')
+      .select('id, instance_name')
       .eq('ativo', true)
       .order('prioridade', { ascending: true })
       .then(({ data }) => setEvoInstances(data || []));
   }, []);
 
   // ── Disparo helpers ────────────────────────────────────────────────────────
-  const countdownDelay = async (disparoId: string, ms: number) => {
-    const step = 200;
-    let elapsed = 0;
-    while (elapsed < ms) {
-      if (disparosStopMap.current.get(disparoId)) return;
-      if (disparosPauseMap.current.get(disparoId)) {
-        // Frozen while paused
-        await new Promise(r => setTimeout(r, step));
-        continue;
-      }
-      setDisparos(prev => prev.map(d => d.id === disparoId ? { ...d, countdownMs: ms - elapsed } : d));
-      await new Promise(r => setTimeout(r, step));
-      elapsed += step;
-    }
-    setDisparos(prev => prev.map(d => d.id === disparoId ? { ...d, countdownMs: 0 } : d));
-  };
-
-  const runDisparo = async (id: string, disp: KanbanDisparo) => {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-
-    for (let i = 0; i < disp.leads.length; i++) {
-      if (disparosStopMap.current.get(id)) break;
-
-      // Wait while paused
-      while (disparosPauseMap.current.get(id)) {
-        if (disparosStopMap.current.get(id)) break;
-        await new Promise(r => setTimeout(r, 300));
-      }
-      if (disparosStopMap.current.get(id)) break;
-
-      const lead = disp.leads[i];
-
-      // Mark as sending
-      setDisparos(prev => prev.map(d => d.id === id ? {
-        ...d, currentIdx: i,
-        leads: d.leads.map((l, idx) => idx === i ? { ...l, status: 'sending' } : l),
-      } : d));
-
-      const mensagem = disp.template
-        .replace(/\{\{nome\}\}/g, lead.nome)
-        .replace(/\{\{whatsapp\}\}/g, lead.whatsapp);
-
-      try {
-        const res = await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: supabaseKey,
-            Authorization: `Bearer ${supabaseKey}`,
-          },
-          body: JSON.stringify({
-            numero: lead.whatsapp,
-            mensagem,
-            instance_name: disp.instanceName ?? undefined,
-            typing_delay_ms: disp.typingDelayMs,
-          }),
-        });
-        const result = await res.json();
-        setDisparos(prev => prev.map(d => d.id === id ? {
-          ...d, currentIdx: i + 1,
-          leads: d.leads.map((l, idx) => idx === i ? {
-            ...l,
-            status: result.ok ? 'done' : 'error',
-            error: result.ok ? undefined : (result.error ?? 'Erro desconhecido'),
-          } : l),
-        } : d));
-      } catch (e: unknown) {
-        setDisparos(prev => prev.map(d => d.id === id ? {
-          ...d, currentIdx: i + 1,
-          leads: d.leads.map((l, idx) => idx === i ? {
-            ...l, status: 'error', error: (e as Error).message,
-          } : l),
-        } : d));
-      }
-
-      // Random delay before next send (skip after last)
-      if (i < disp.leads.length - 1 && !disparosStopMap.current.get(id)) {
-        const delay = Math.round(
-          disp.minDelayMs + Math.random() * (disp.maxDelayMs - disp.minDelayMs),
-        );
-        await countdownDelay(id, delay);
-      }
-    }
-
-    // Mark final status
-    setDisparos(prev => prev.map(d => d.id === id ? {
-      ...d,
-      status: disparosStopMap.current.get(id) ? 'stopped' : 'done',
-      countdownMs: 0,
-    } : d));
-  };
-
-  const handleStartDisparo = (config: {
+  const handleStartDisparo = async (config: {
     colunaIds: string[];
     template: string;
     typingDelayMs: number;
@@ -1549,42 +1427,58 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
   }) => {
     const campaignLeads = leads
       .filter(l => config.colunaIds.includes(l.fase) && l.whatsapp)
-      .map(l => ({
-        leadId: l.id,
+      .map((l, i) => ({
+        phone: l.whatsapp,
         nome: l.nome,
-        whatsapp: l.whatsapp,
-        status: 'pending' as const,
+        variaveis: {} as Record<string, string>,
+        ordem: i,
       }));
+
+    if (campaignLeads.length === 0) {
+      toast.error('Nenhum lead com WhatsApp nas colunas selecionadas');
+      return;
+    }
 
     const colunaNomes = colunas
       .filter(c => config.colunaIds.includes(c.id))
       .map(c => c.nome);
 
-    const newId = crypto.randomUUID();
-    const nomeCampanha = `${colunaNomes.join(', ')} · ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+    const nomeCampanha = `${lancamento?.nome ?? 'Campanha'} — ${colunaNomes.join(', ')} · ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
 
-    const newDisp: KanbanDisparo = {
-      id: newId,
-      nome: nomeCampanha,
-      colunaIds: config.colunaIds,
-      colunaNomes,
-      template: config.template,
-      typingDelayMs: config.typingDelayMs,
-      minDelayMs: config.minDelayMs,
-      maxDelayMs: config.maxDelayMs,
-      instanceName: config.instanceName,
-      leads: campaignLeads,
-      currentIdx: 0,
-      status: 'running',
-      startedAt: Date.now(),
-      countdownMs: 0,
-    };
+    const evoId = config.instanceName
+      ? (evoInstances.find(e => e.instance_name === config.instanceName)?.id ?? 'default')
+      : 'default';
 
-    disparosStopMap.current.set(newId, false);
-    disparosPauseMap.current.set(newId, false);
-    setDisparos(prev => [...prev, newDisp]);
-    runDisparo(newId, newDisp);
-    toast.success(`🚀 Campanha iniciada: ${campaignLeads.length} lead(s)`);
+    const { data: camp, error } = await supabase
+      .from('disparo_campanhas')
+      .insert({
+        nome: nomeCampanha,
+        template: config.template,
+        status: 'ativo',
+        delay_min_s: Math.round(config.minDelayMs / 1000),
+        delay_max_s: Math.round(config.maxDelayMs / 1000),
+        leads_total: campaignLeads.length,
+        evolution_config_id: evoId,
+        next_send_at: new Date().toISOString(),
+      })
+      .select('id')
+      .single();
+
+    if (error || !camp) {
+      toast.error('Erro ao criar campanha: ' + (error?.message ?? 'desconhecido'));
+      return;
+    }
+
+    const { error: leadsErr } = await supabase
+      .from('disparo_leads')
+      .insert(campaignLeads.map(l => ({ ...l, campanha_id: camp.id })));
+
+    if (leadsErr) {
+      toast.error('Erro ao inserir leads: ' + leadsErr.message);
+      return;
+    }
+
+    toast.success(`Campanha criada — ${campaignLeads.length} lead(s) na fila. Acompanhe na Central de Disparos.`);
   };
 
   // ── Fetch lancamento + leads ────────────────────────────────────────────────
@@ -3061,23 +2955,6 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
         initialColunaIds={preselectColunaId ? [preselectColunaId] : undefined}
       />
 
-      {/* ── Campanhas Disparo Panel (floating) ── */}
-      <CampanhasDisparoPanel
-        disparos={disparos}
-        onPause={id => {
-          disparosPauseMap.current.set(id, true);
-          setDisparos(prev => prev.map(d => d.id === id ? { ...d, status: 'paused' } : d));
-        }}
-        onResume={id => {
-          disparosPauseMap.current.set(id, false);
-          setDisparos(prev => prev.map(d => d.id === id ? { ...d, status: 'running' } : d));
-        }}
-        onStop={id => {
-          disparosStopMap.current.set(id, true);
-          setDisparos(prev => prev.map(d => d.id === id ? { ...d, status: 'stopped', countdownMs: 0 } : d));
-        }}
-        onDismiss={id => setDisparos(prev => prev.filter(d => d.id !== id))}
-      />
 
       {/* ── Exportar Página de Captura Modal ── */}
       <Dialog open={capturaOpen} onOpenChange={setCapturaOpen}>

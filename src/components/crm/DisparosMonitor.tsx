@@ -7,11 +7,10 @@ import {
   Radio, TableIcon, Kanban, Download, Plus, RefreshCw,
   Clock, CheckCircle2, AlertCircle, FileText,
   MessageSquare, Image, Music, Video, BarChart2,
-  ChevronRight, Search, Filter, Zap,
+  Search, Zap, Pause, Play, Trash2, Send,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -33,8 +32,26 @@ interface Msg {
   error_message?: string;
 }
 
+type CampStatus = 'ativo' | 'pausado' | 'concluido' | 'erro' | 'rascunho';
+
+interface Campanha {
+  id: string;
+  nome: string;
+  template: string;
+  status: CampStatus;
+  leads_total: number;
+  leads_sent: number;
+  leads_error: number;
+  leads_skipped: number;
+  delay_min_s: number;
+  delay_max_s: number;
+  next_send_at: string;
+  created_at: string;
+}
+
 type ViewMode   = 'table' | 'kanban';
 type DateFilter = 'proximos' | 'hoje' | 'semana' | 'todos';
+type MainTab    = 'funil' | 'campanhas';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -43,6 +60,14 @@ const STATUS_CFG: Record<MsgStatus, { label: string; badge: string; icon: React.
   scheduled: { label: 'Agendado', badge: 'bg-blue-50 text-blue-700 border-blue-200',           icon: Clock,        dot: 'bg-blue-500' },
   sent:      { label: 'Enviado',  badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',  icon: CheckCircle2, dot: 'bg-emerald-500' },
   error:     { label: 'Erro',     badge: 'bg-red-50 text-red-700 border-red-200',              icon: AlertCircle,  dot: 'bg-red-500' },
+};
+
+const CAMP_STATUS_CFG: Record<CampStatus, { label: string; badge: string }> = {
+  ativo:    { label: 'Ativo',     badge: 'bg-blue-50 text-blue-700 border-blue-200' },
+  pausado:  { label: 'Pausado',   badge: 'bg-amber-50 text-amber-700 border-amber-200' },
+  concluido:{ label: 'Concluído', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  erro:     { label: 'Erro',      badge: 'bg-red-50 text-red-700 border-red-200' },
+  rascunho: { label: 'Rascunho',  badge: 'bg-gray-100 text-gray-600 border-gray-200' },
 };
 
 const TYPE_ICON: Record<MsgType, React.ElementType> = {
@@ -90,6 +115,47 @@ function funnelBadgeColor(name: string) {
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export function DisparosMonitor({ onCreateFunnel }: { onCreateFunnel: () => void }) {
+  const [mainTab, setMainTab] = useState<MainTab>('funil');
+
+  return (
+    <div className="h-full flex flex-col bg-gray-50/40">
+      {/* Top-level tab bar */}
+      <div className="bg-white border-b px-6 pt-4 flex-none">
+        <div className="flex items-center gap-3 mb-0">
+          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-none">
+            <Radio className="h-4.5 w-4.5 text-primary" />
+          </div>
+          <h1 className="text-lg font-semibold text-foreground">Central de Disparos</h1>
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 ml-4">
+            <button
+              onClick={() => setMainTab('funil')}
+              className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all',
+                mainTab === 'funil' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}
+            >
+              <Clock className="h-3.5 w-3.5" /> Mensagens de Funil
+            </button>
+            <button
+              onClick={() => setMainTab('campanhas')}
+              className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all',
+                mainTab === 'campanhas' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}
+            >
+              <Send className="h-3.5 w-3.5" /> Campanhas de Disparo
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {mainTab === 'funil'
+        ? <FunilTab onCreateFunnel={onCreateFunnel} />
+        : <CampanhasTab />
+      }
+    </div>
+  );
+}
+
+// ── Funil Tab ─────────────────────────────────────────────────────────────────
+
+function FunilTab({ onCreateFunnel }: { onCreateFunnel: () => void }) {
   const [msgs, setMsgs]         = useState<Msg[]>([]);
   const [loading, setLoading]   = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -127,7 +193,6 @@ export function DisparosMonitor({ onCreateFunnel }: { onCreateFunnel: () => void
     setTimeout(load, 3000);
   }
 
-  // ── Stats ──────────────────────────────────────────────────────────────────
   const now      = Date.now();
   const agendados = msgs.filter(m => m.status === 'scheduled');
   const enviados  = msgs.filter(m => m.status === 'sent');
@@ -136,10 +201,8 @@ export function DisparosMonitor({ onCreateFunnel }: { onCreateFunnel: () => void
     .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
   const proximoDisparo = proximos[0];
 
-  // ── Filtering ──────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     let list = msgs;
-
     if (dateFilter === 'proximos') {
       const in7d = now + 7 * 24 * 60 * 60 * 1000;
       list = list.filter(m => new Date(m.scheduled_at).getTime() >= now - 60 * 60 * 1000
@@ -150,12 +213,8 @@ export function DisparosMonitor({ onCreateFunnel }: { onCreateFunnel: () => void
     } else if (dateFilter === 'semana') {
       const in7d = now + 7 * 24 * 60 * 60 * 1000;
       const ago7d = now - 7 * 24 * 60 * 60 * 1000;
-      list = list.filter(m => {
-        const t = new Date(m.scheduled_at).getTime();
-        return t >= ago7d && t <= in7d;
-      });
+      list = list.filter(m => { const t = new Date(m.scheduled_at).getTime(); return t >= ago7d && t <= in7d; });
     }
-
     if (statusFilter !== 'all') list = list.filter(m => m.status === statusFilter);
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -168,71 +227,48 @@ export function DisparosMonitor({ onCreateFunnel }: { onCreateFunnel: () => void
     return list;
   }, [msgs, dateFilter, statusFilter, search, now]);
 
-  // ── CSV export ─────────────────────────────────────────────────────────────
   function exportCSV() {
     const headers = ['Funil', 'Dia', 'Agendado para', 'Tipo', 'Prévia', 'Status', 'Enviado em', 'Erro'];
     const rows = filtered.map(m => [
-      `"${m.funnel_name}"`,
-      m.day_number,
-      `"${fmtDatetime(m.scheduled_at)}"`,
-      m.message_type,
-      `"${preview(m).replace(/"/g, "'")}"`,
-      m.status,
+      `"${m.funnel_name}"`, m.day_number, `"${fmtDatetime(m.scheduled_at)}"`,
+      m.message_type, `"${preview(m).replace(/"/g, "'")}"`, m.status,
       m.sent_at ? `"${fmtDatetime(m.sent_at)}"` : '',
       m.error_message ? `"${m.error_message.replace(/"/g, "'")}"` : '',
     ]);
     const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `disparos_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const a = document.createElement('a'); a.href = url;
+    a.download = `disparos_funil_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="h-full flex flex-col bg-gray-50/40">
-      {/* Header */}
-      <div className="bg-white border-b px-6 py-4 flex-none">
+    <>
+      <div className="bg-white border-b px-6 py-3 flex-none">
+        {/* Sub-header */}
         <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
-              <Radio className="h-4.5 w-4.5 text-primary" />
-            </div>
-            <div>
-              <h1 className="text-lg font-semibold text-foreground leading-none">Central de Disparos</h1>
-              {proximoDisparo ? (
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Próximo disparo {fmtRelative(proximoDisparo.scheduled_at)} — {preview(proximoDisparo, 40)}
-                </p>
-              ) : (
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Nenhum disparo agendado nos próximos dias
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-xs text-muted-foreground">
+            {proximoDisparo
+              ? `Próximo disparo ${fmtRelative(proximoDisparo.scheduled_at)} — ${preview(proximoDisparo, 40)}`
+              : 'Nenhum disparo agendado nos próximos dias'}
+          </p>
+          <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={processNow} disabled={processing} className="gap-1.5">
               <Zap className={cn('h-3.5 w-3.5', processing && 'animate-pulse')} />
               {processing ? 'Processando…' : 'Processar agora'}
             </Button>
             <Button variant="outline" size="sm" onClick={exportCSV} className="gap-1.5">
-              <Download className="h-3.5 w-3.5" />
-              CSV
+              <Download className="h-3.5 w-3.5" /> CSV
             </Button>
             <Button size="sm" onClick={() => setWizardOpen(true)} className="gap-1.5">
-              <Plus className="h-3.5 w-3.5" />
-              Novo Funil
+              <Plus className="h-3.5 w-3.5" /> Novo Funil
             </Button>
           </div>
         </div>
 
         {/* Stats */}
-        <div className="flex items-center gap-3 mt-4 flex-wrap">
+        <div className="flex items-center gap-3 mt-3 flex-wrap">
           {[
             { label: 'Agendados', count: agendados.length, color: 'text-blue-600', bg: 'bg-blue-50', dot: 'bg-blue-500' },
             { label: 'Enviados',  count: enviados.length,  color: 'text-emerald-600', bg: 'bg-emerald-50', dot: 'bg-emerald-500' },
@@ -244,22 +280,14 @@ export function DisparosMonitor({ onCreateFunnel }: { onCreateFunnel: () => void
               {s.count} {s.label}
             </div>
           ))}
-
           <div className="ml-auto flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-            <button
-              onClick={() => setView('table')}
-              className={cn('flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all',
-                view === 'table' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}
-            >
-              <TableIcon className="h-3.5 w-3.5" /> Planilha
-            </button>
-            <button
-              onClick={() => setView('kanban')}
-              className={cn('flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all',
-                view === 'kanban' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}
-            >
-              <Kanban className="h-3.5 w-3.5" /> Kanban
-            </button>
+            {(['table', 'kanban'] as ViewMode[]).map(v => (
+              <button key={v} onClick={() => setView(v)}
+                className={cn('flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all',
+                  view === v ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+                {v === 'table' ? <><TableIcon className="h-3.5 w-3.5" /> Planilha</> : <><Kanban className="h-3.5 w-3.5" /> Kanban</>}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -267,48 +295,31 @@ export function DisparosMonitor({ onCreateFunnel }: { onCreateFunnel: () => void
         <div className="flex items-center gap-2 mt-3 flex-wrap">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Buscar funil ou mensagem…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="pl-8 h-8 w-52 text-sm"
-            />
+            <Input placeholder="Buscar funil ou mensagem…" value={search}
+              onChange={e => setSearch(e.target.value)} className="pl-8 h-8 w-52 text-sm" />
           </div>
-
           <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
             {(['proximos', 'hoje', 'semana', 'todos'] as DateFilter[]).map(d => (
-              <button
-                key={d}
-                onClick={() => setDateFilter(d)}
+              <button key={d} onClick={() => setDateFilter(d)}
                 className={cn('px-2.5 py-1 rounded-md text-xs font-medium transition-all capitalize',
-                  dateFilter === d ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}
-              >
+                  dateFilter === d ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
                 {d === 'proximos' ? 'Próximos 7d' : d === 'hoje' ? 'Hoje' : d === 'semana' ? '±7 dias' : 'Todos'}
               </button>
             ))}
           </div>
-
           <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
-            {(['all', 'scheduled', 'sent', 'error', 'draft'] as const).map(s => {
-              const cfg = s === 'all' ? null : STATUS_CFG[s];
-              return (
-                <button
-                  key={s}
-                  onClick={() => setStatusFilter(s)}
-                  className={cn('px-2.5 py-1 rounded-md text-xs font-medium transition-all',
-                    statusFilter === s ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}
-                >
-                  {s === 'all' ? 'Todos' : cfg!.label}
-                </button>
-              );
-            })}
+            {(['all', 'scheduled', 'sent', 'error', 'draft'] as const).map(s => (
+              <button key={s} onClick={() => setStatusFilter(s)}
+                className={cn('px-2.5 py-1 rounded-md text-xs font-medium transition-all',
+                  statusFilter === s ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+                {s === 'all' ? 'Todos' : STATUS_CFG[s].label}
+              </button>
+            ))}
           </div>
-
           <span className="text-xs text-muted-foreground ml-1">{filtered.length} mensagens</span>
         </div>
       </div>
 
-      {/* Body */}
       <div className="flex-1 overflow-auto p-6">
         {loading ? (
           <div className="flex items-center justify-center h-40">
@@ -327,13 +338,179 @@ export function DisparosMonitor({ onCreateFunnel }: { onCreateFunnel: () => void
       </div>
 
       {wizardOpen && (
-        <LancamentoWizard
-          open={wizardOpen}
-          onClose={() => setWizardOpen(false)}
-          onSuccess={() => { setWizardOpen(false); load(); }}
-        />
+        <LancamentoWizard open={wizardOpen} onClose={() => setWizardOpen(false)}
+          onSuccess={() => { setWizardOpen(false); load(); }} />
       )}
-    </div>
+    </>
+  );
+}
+
+// ── Campanhas Tab ─────────────────────────────────────────────────────────────
+
+function CampanhasTab() {
+  const [campanhas, setCampanhas] = useState<Campanha[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+
+  const load = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('disparo_campanhas')
+      .select('id, nome, template, status, leads_total, leads_sent, leads_error, leads_skipped, delay_min_s, delay_max_s, next_send_at, created_at')
+      .order('created_at', { ascending: false });
+    if (error) { toast.error('Erro ao carregar campanhas'); return; }
+    setCampanhas((data ?? []) as Campanha[]);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const ch = supabase.channel('campanhas_monitor_rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'disparo_campanhas' }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [load]);
+
+  async function updateStatus(id: string, status: CampStatus) {
+    const { error } = await supabase.from('disparo_campanhas').update({ status }).eq('id', id);
+    if (error) { toast.error('Erro: ' + error.message); return; }
+    setCampanhas(prev => prev.map(c => c.id === id ? { ...c, status } : c));
+  }
+
+  async function deleteCampanha(id: string) {
+    if (!confirm('Deletar campanha e todos os leads? Esta ação não pode ser desfeita.')) return;
+    const { error } = await supabase.from('disparo_campanhas').delete().eq('id', id);
+    if (error) { toast.error('Erro: ' + error.message); return; }
+    setCampanhas(prev => prev.filter(c => c.id !== id));
+    toast.success('Campanha deletada');
+  }
+
+  const filtered = search.trim()
+    ? campanhas.filter(c => c.nome.toLowerCase().includes(search.toLowerCase()))
+    : campanhas;
+
+  const ativas    = campanhas.filter(c => c.status === 'ativo').length;
+  const concluidas = campanhas.filter(c => c.status === 'concluido').length;
+  const pausadas  = campanhas.filter(c => c.status === 'pausado').length;
+
+  return (
+    <>
+      <div className="bg-white border-b px-6 py-3 flex-none">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap">
+            {[
+              { label: 'Ativas',     count: ativas,    color: 'text-blue-600',    bg: 'bg-blue-50',    dot: 'bg-blue-500' },
+              { label: 'Pausadas',   count: pausadas,  color: 'text-amber-600',   bg: 'bg-amber-50',   dot: 'bg-amber-500' },
+              { label: 'Concluídas', count: concluidas, color: 'text-emerald-600', bg: 'bg-emerald-50', dot: 'bg-emerald-500' },
+              { label: 'Total',      count: campanhas.length, color: 'text-gray-600', bg: 'bg-gray-100', dot: 'bg-gray-400' },
+            ].map(s => (
+              <div key={s.label} className={cn('flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium', s.bg, s.color)}>
+                <span className={cn('w-1.5 h-1.5 rounded-full', s.dot)} />
+                {s.count} {s.label}
+              </div>
+            ))}
+          </div>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input placeholder="Buscar campanha…" value={search}
+              onChange={e => setSearch(e.target.value)} className="pl-8 h-8 w-52 text-sm" />
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-auto p-6">
+        {loading ? (
+          <div className="flex items-center justify-center h-40">
+            <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-40 text-center">
+            <Send className="h-8 w-8 text-muted-foreground/40 mb-2" />
+            <p className="text-sm text-muted-foreground">
+              {campanhas.length === 0
+                ? 'Nenhuma campanha criada. Use o botão "Disparar" no Kanban de um lançamento.'
+                : 'Nenhuma campanha encontrada.'}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map(c => {
+              const cfg = CAMP_STATUS_CFG[c.status] ?? CAMP_STATUS_CFG.rascunho;
+              const total = c.leads_total || 1;
+              const pct = Math.round((c.leads_sent / total) * 100);
+              const template = c.template?.replace(/\n/g, ' ').slice(0, 100) ?? '';
+              return (
+                <Card key={c.id} className="bg-white shadow-none border hover:shadow-sm transition-shadow">
+                  <CardContent className="p-4">
+                    <div className="flex items-start gap-4">
+                      {/* Progress circle hint */}
+                      <div className="flex-none w-12 h-12 rounded-full border-2 border-gray-100 flex items-center justify-center bg-gray-50">
+                        <span className="text-sm font-bold text-foreground">{pct}%</span>
+                      </div>
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-sm text-foreground truncate">{c.nome}</span>
+                          <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border', cfg.badge)}>
+                            {cfg.label}
+                          </span>
+                        </div>
+
+                        {template && (
+                          <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{template}…</p>
+                        )}
+
+                        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
+                          <span className="text-emerald-600 font-medium">{c.leads_sent} enviados</span>
+                          {c.leads_error > 0 && <span className="text-red-500">{c.leads_error} erros</span>}
+                          {c.leads_skipped > 0 && <span>{c.leads_skipped} pulados</span>}
+                          <span>{c.leads_total} total</span>
+                          <span>delay {c.delay_min_s}–{c.delay_max_s}s</span>
+                          {c.status === 'ativo' && c.next_send_at && (
+                            <span className="text-blue-600">próximo {fmtRelative(c.next_send_at) ?? fmtDatetime(c.next_send_at)}</span>
+                          )}
+                          <span className="ml-auto">{fmtDatetime(c.created_at)}</span>
+                        </div>
+
+                        {/* Progress bar */}
+                        <div className="mt-2 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                          <div
+                            className={cn('h-full rounded-full transition-all',
+                              c.status === 'concluido' ? 'bg-emerald-500' : c.status === 'erro' ? 'bg-red-400' : 'bg-blue-500')}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-1 flex-none">
+                        {c.status === 'ativo' && (
+                          <button onClick={() => updateStatus(c.id, 'pausado')} title="Pausar"
+                            className="p-1.5 rounded hover:bg-amber-50 text-amber-600 transition-colors">
+                            <Pause className="h-4 w-4" />
+                          </button>
+                        )}
+                        {c.status === 'pausado' && (
+                          <button onClick={() => updateStatus(c.id, 'ativo')} title="Retomar"
+                            className="p-1.5 rounded hover:bg-blue-50 text-blue-600 transition-colors">
+                            <Play className="h-4 w-4" />
+                          </button>
+                        )}
+                        <button onClick={() => deleteCampanha(c.id)} title="Deletar"
+                          className="p-1.5 rounded hover:bg-red-50 text-red-500 transition-colors">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -418,10 +595,7 @@ function KanbanView({ msgs }: { msgs: Msg[] }) {
   const byStatus = useMemo(() => {
     const map = new Map<MsgStatus, Msg[]>();
     for (const col of columns) map.set(col.status, []);
-    for (const m of msgs) {
-      const arr = map.get(m.status);
-      if (arr) arr.push(m);
-    }
+    for (const m of msgs) { const arr = map.get(m.status); if (arr) arr.push(m); }
     return map;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [msgs]);
@@ -434,16 +608,17 @@ function KanbanView({ msgs }: { msgs: Msg[] }) {
         const Ic    = cfg.icon;
         return (
           <div key={col.status} className="flex-1 min-w-64 max-w-80">
-            <div className={cn('flex items-center gap-2 px-3 py-2 rounded-t-xl border border-b-0 bg-white')}>
-              <Ic className={cn('h-4 w-4', col.status === 'scheduled' ? 'text-blue-500' : col.status === 'sent' ? 'text-emerald-500' : col.status === 'error' ? 'text-red-500' : 'text-gray-400')} />
+            <div className="flex items-center gap-2 px-3 py-2 rounded-t-xl border border-b-0 bg-white">
+              <Ic className={cn('h-4 w-4',
+                col.status === 'scheduled' ? 'text-blue-500' :
+                col.status === 'sent'      ? 'text-emerald-500' :
+                col.status === 'error'     ? 'text-red-500' : 'text-gray-400')} />
               <span className="font-semibold text-sm text-foreground">{col.label}</span>
               <span className={cn('ml-auto text-xs font-medium px-2 py-0.5 rounded-full border', cfg.badge)}>{cards.length}</span>
             </div>
             <div className="border rounded-b-xl bg-gray-50/60 p-2 space-y-2 min-h-20">
               {cards.map(m => <KanbanCard key={m.id} msg={m} />)}
-              {cards.length === 0 && (
-                <p className="text-xs text-center text-muted-foreground py-4">Vazio</p>
-              )}
+              {cards.length === 0 && <p className="text-xs text-center text-muted-foreground py-4">Vazio</p>}
             </div>
           </div>
         );
@@ -455,7 +630,6 @@ function KanbanView({ msgs }: { msgs: Msg[] }) {
 function KanbanCard({ msg }: { msg: Msg }) {
   const Icon = TYPE_ICON[msg.message_type] ?? MessageSquare;
   const isPast = msg.status === 'scheduled' && new Date(msg.scheduled_at).getTime() < Date.now();
-
   return (
     <Card className={cn('bg-white shadow-none border hover:shadow-sm transition-shadow cursor-default',
       isPast && 'border-orange-200 bg-orange-50/30')}>
@@ -466,26 +640,13 @@ function KanbanCard({ msg }: { msg: Msg }) {
           </span>
           <span className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-500 flex-none">D{msg.day_number}</span>
         </div>
-
-        <p className="text-xs text-foreground/80 leading-snug line-clamp-2">
-          {preview(msg, 100)}
-        </p>
-
-        {msg.error_message && (
-          <p className="text-xs text-red-500 line-clamp-1">{msg.error_message}</p>
-        )}
-
+        <p className="text-xs text-foreground/80 leading-snug line-clamp-2">{preview(msg, 100)}</p>
+        {msg.error_message && <p className="text-xs text-red-500 line-clamp-1">{msg.error_message}</p>}
         <div className="flex items-center gap-2 pt-1">
           <Icon className="h-3 w-3 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground flex-1 truncate">
-            {fmtDatetime(msg.scheduled_at)}
-          </span>
-          {isPast && (
-            <span className="text-xs text-orange-500 font-medium">atrasado</span>
-          )}
-          {msg.sent_at && (
-            <CheckCircle2 className="h-3 w-3 text-emerald-500 flex-none" />
-          )}
+          <span className="text-xs text-muted-foreground flex-1 truncate">{fmtDatetime(msg.scheduled_at)}</span>
+          {isPast && <span className="text-xs text-orange-500 font-medium">atrasado</span>}
+          {msg.sent_at && <CheckCircle2 className="h-3 w-3 text-emerald-500 flex-none" />}
         </div>
       </CardContent>
     </Card>
