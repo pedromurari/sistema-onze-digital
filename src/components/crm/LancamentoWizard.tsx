@@ -47,6 +47,7 @@ function defaultConfig(): WizardConfig {
   return {
     nome: '', tipo: 'lancamento',
     data_live: '', hora_live: '20:00',
+    slogan: 'Excelente', professor_convidado: '',
     meta_leads: 0, meta_matriculas: 0, responsavel_id: '',
     turma_destino_id: '', produto_destino: 'psicanalise',
     valor_mensalidade_destino: 109.90, dia_vencimento_destino: 10,
@@ -124,6 +125,15 @@ function Step1({ config, setConfig, responsaveis }: {
         <div className="sm:col-span-2 space-y-1">
           <label className="text-xs font-medium text-muted-foreground">Nome *</label>
           <Input value={config.nome} onChange={e => set('nome', e.target.value)} placeholder="Ex: Lançamento #35" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Saudação do grupo</label>
+          <Input value={config.slogan ?? 'Excelente'} onChange={e => set('slogan', e.target.value)} placeholder="Ex: Excelente, Bom, Ótimo…" />
+          <p className="text-[10px] text-muted-foreground">Aparece nas mensagens como "Excelente dia! ☀️"</p>
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Professor convidado</label>
+          <Input value={config.professor_convidado ?? ''} onChange={e => set('professor_convidado', e.target.value)} placeholder="Nome do convidado (opcional)" />
         </div>
         <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground">Tipo</label>
@@ -1729,6 +1739,8 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
         tipo: existingTipo || 'lancamento',
         data_live: (lancData as any).data_live?.slice(0, 10) || '',
         hora_live: '20:00',
+        slogan: (lancData as any).slogan || 'Excelente',
+        professor_convidado: (lancData as any).professor_convidado || '',
         meta_leads: (lancData as any).meta_leads || 0,
         meta_matriculas: (lancData as any).meta_matriculas || 0,
         responsavel_id: (lancData as any).responsavel_id || '',
@@ -1819,11 +1831,15 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
           meta_matriculas: config.meta_matriculas || 0,
           grupo_lancamento_jid: grupo1,
           grupo_oferta_jid: grupo2,
+          slogan: config.slogan || 'Excelente',
+          professor_convidado: config.professor_convidado || null,
         } : {
           ...commonFields,
           vega_produto_id:        config.vega_produto_id        || null,
           vega_produto_tarde:     config.vega_produto_tarde     || null,
           pix_mensagem_template:  config.pix_mensagem_template  || null,
+          slogan: config.slogan || 'Excelente',
+          professor_convidado: config.professor_convidado || null,
         };
         await supabase.from(table).update(lancFields).eq('id', existingId);
       } else {
@@ -1846,11 +1862,15 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
           data_live: config.data_live,
           grupo_lancamento_jid: grupo1,
           grupo_oferta_jid: grupo2,
+          slogan: config.slogan || 'Excelente',
+          professor_convidado: config.professor_convidado || null,
         } : {
           ...commonFields,
           vega_produto_id:        config.vega_produto_id        || null,
           vega_produto_tarde:     config.vega_produto_tarde     || null,
           pix_mensagem_template:  config.pix_mensagem_template  || null,
+          slogan: config.slogan || 'Excelente',
+          professor_convidado: config.professor_convidado || null,
         };
         const { data: created, error } = await supabase.from(table).insert(lancFields).select('id').single();
         if (error || !created) { toast.error('Erro ao criar: ' + error?.message); setSaving(false); return; }
