@@ -228,14 +228,14 @@ export function generateLancamentoMessages(config: WizardConfig): TemplateMensag
       // Tarde: a cada 3 dias sugere áudio, outros dias faz enquete
       if (l % 3 === 0) {
         const audioTxt = `${slogan} tarde! ☀️\n\n🎙️ *Áudio sugerido do Prof. ${profAnchor}:*\n\n"${slogan}, pessoal! Estamos chegando muito perto da nossa primeira aula. Quero te encontrar ao vivo no dia ${aulaData(1)}, às ${classHora}, para abrir essa jornada com profundidade e direção."\n\n👉 ${aulaLink(1)}\n\nReage com um ❤️ depois de ouvir!`;
-        msgs.push(textMsg(fn, day, setTime(dayDate, '14:00'), g1, audioTxt,
+        msgs.push(textMsg(fn, day, setTime(dayDate, '15:00'), g1, audioTxt,
           `Dia ${day} — Tarde (Áudio)`, { subtipo: 'audio' }));
       } else {
         const tardeIntro = `${slogan} tarde! ☀️\n\nUma pergunta rápida antes de começarmos essa jornada juntos:\n\n*O que você mais busca em ${produto} neste momento?*\n\nSeleciona a opção que mais combina com você 👇\n\nReage com um 💡 nessa mensagem!`;
-        msgs.push(textMsg(fn, day, setTime(dayDate, '14:00'), g1, tardeIntro,
+        msgs.push(textMsg(fn, day, setTime(dayDate, '15:00'), g1, tardeIntro,
           `Dia ${day} — Enquete (intro)`));
         msgs.push(pollMsg(fn, day,
-          new Date(setTime(dayDate, '14:00').getTime() + 3 * 60 * 1000),
+          new Date(setTime(dayDate, '15:00').getTime() + 3 * 60 * 1000),
           g1,
           `O que você mais busca em ${produto} neste momento?`,
           ['Quero me conhecer melhor', 'Quero ajudar pessoas ao meu redor', `Quero atuar com ${produto}`, 'Quero entender mais antes de decidir'],
@@ -247,7 +247,7 @@ export function generateLancamentoMessages(config: WizardConfig): TemplateMensag
         ? `${slogan} noite! 🌙\n\n*AMANHÃ, ${classHora}. Ao vivo.*\n\nAula 1 - *${aulaTit(1)}*.\n\nSe você ativar só um lembrete agora, que seja esse:\n\n👉 ${aulaLink(1)}\n\nE já aproveita pra ativar os lembretes das próximas aulas:\n${linksBlock()}\n\nReage com um 🚀 - amanhã a gente se encontra!`
         : `${slogan} noite! 🌙\n\nFaltam *${l} dias* pra ${config.nome}.\n\n${numAulas} aulas ao vivo que podem mudar a forma como você se enxerga.\n\n👉 Já ativa os lembretes e deixa o like:\n\n${linksBlock()}\n\nReage com um 🔥 se você já está ansioso pra começar!`;
 
-      const noiteHora = offset === -1 ? (config.hora_live || '20:00') : '22:00';
+      const noiteHora = offset === -1 ? (config.hora_live || '20:00') : '20:00';
       msgs.push(textMsg(fn, day, setTime(dayDate, noiteHora), g1, noiteTxt,
         `Dia ${day} — Noite`, { link_preview: true }));
     }
@@ -265,12 +265,12 @@ export function generateLancamentoMessages(config: WizardConfig): TemplateMensag
         `${aulaTit(i)} — Manhã`, { link_preview: true }));
 
       // Tarde (14h) — enquete
-      msgs.push(textMsg(fn, dayNum, setTime(aulaDateObj, '14:00'), g1,
+      msgs.push(textMsg(fn, dayNum, setTime(aulaDateObj, '15:00'), g1,
         `${slogan} tarde! ☀️\n\nHoje às ${aulaH(i)} temos a Aula ${i} - *${aulaTit(i)}*! 🔴\n\n*Como você está chegando para a aula de hoje?*\n\nSeleciona a sua resposta 👇\n\nReage com um ✨ nessa mensagem!`,
         `${aulaTit(i)} — Enquete (intro)`));
 
       msgs.push(pollMsg(fn, dayNum,
-        new Date(setTime(aulaDateObj, '14:00').getTime() + 3 * 60 * 1000),
+        new Date(setTime(aulaDateObj, '15:00').getTime() + 3 * 60 * 1000),
         g1,
         'Como você está chegando para a aula de hoje?',
         ['Ansioso - mal posso esperar', 'Curioso - quero ver o que vai rolar', 'Reflexivo - já cheguei pensando', 'Pronto - bora viver isso ao vivo'],
