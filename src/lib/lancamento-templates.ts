@@ -590,36 +590,303 @@ Reage com 🙌 se você vai estar ao vivo amanhã!`,
       'Oferta — Encerramento +3', { link_preview: true, mention_everyone: true }));
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // NPA — PRESENCIAL
+  // NPA — PRESENCIAL (7 dias de aquecimento)
   // ═══════════════════════════════════════════════════════════════════════════
   } else {
-    const warmupDays  = 3;
+    const warmupDays  = 7;
     const warmupStart = addDays(new Date(config.data_live + 'T12:00:00'), -warmupDays);
 
     const npaLocal = aula(1)?.link || '{{endereco}}';
     const npaInfo  = `📅 *${aulaDia(1)}, ${aulaData(1)} — ${aulaTit(1)}*\n⏰ ${aulaH(1)}\n📍 ${npaLocal}`;
 
-    const diasNpa = [
+    type DiaNpa = {
+      manhaTxt: string;
+      tarde: { tipo: 'enquete'; intro: string; pollNome: string; pollOps: string[] }
+           | { tipo: 'texto'; txt: string };
+    };
+
+    const diasNpa: DiaNpa[] = [
+
+      // ── Dia 1 — A pergunta que ninguém faz (7 dias antes) ────────────────────
       {
-        manhaTxt: `Você entrou.\n\nE isso já diz muito sobre você.\n\nA maioria das pessoas passa a vida convivendo com padrões que não quer — relacionamentos que se repetem, ansiedades que não passam, autossabotagem toda vez que estava quase chegando lá.\n\nSem nunca parar pra entender de onde isso vem.\n\nVocê escolheu fazer diferente.\n\nEm ${warmupDays} dias, você vai estar presencialmente em um encontro que foi desenhado para ir fundo — não em teoria, mas em experiência real.\n\nNão existe gravação. Não existe replay. O que vai acontecer nesse dia só vai existir para quem estiver lá.\n\n${npaInfo}\n\nFaltam *${warmupDays} dias*.\n\nReaja com ❤️ se você vai aparecer.`,
-        tardeIntro: `Antes de começar, quero te conhecer melhor — responde com honestidade:`,
-        pollNome: 'O que mais te trouxe até aqui?',
-        pollOps: ['Cansaço de repetir os mesmos padrões', 'Relacionamentos que sempre decepcionam', 'Ansiedade que não me deixa em paz', 'Quero me entender de verdade'],
-        noiteTxt: `A maior parte das coisas que nos travam não está no consciente.\n\nEstá no inconsciente — operando nos bastidores de cada decisão, reação e escolha que você faz.\n\nE enquanto ele não for acessado, você pode tentar mudar o quanto quiser. Os padrões voltam.\n\nNo nosso encontro presencial, vamos abrir esse acesso — com profundidade que só o ambiente ao vivo proporciona.\n\n${npaInfo}\n\nFaltam *${warmupDays} dias*. Separa o dia na agenda agora.`,
+        manhaTxt: `${slogan} dia! ☀️
+
+Você sabia que a data do seu nascimento já estava descrevendo o seu maior desafio nessa vida?
+
+Não como profecia. Como estrutura.
+
+Pitágoras — o mesmo matemático que você estudou na escola — desenvolveu um sistema que mapeia a vibração de cada pessoa a partir dos números que ela carrega.
+
+E aqui está o que é mais curioso:
+
+Os desafios que você mais enfrenta, os talentos que você mais subutiliza, os ciclos que se repetem na sua vida...
+
+*Tudo isso tem uma lógica. E essa lógica tem número.*
+
+Nos próximos 7 dias, você vai começar a enxergar essa lógica.
+
+No *${aulaDia(1)}*, você vai entendê-la de dentro.
+
+${npaInfo}
+
+Reage com 🔢 se você está aqui e vai estar lá.`,
+        tarde: {
+          tipo: 'enquete',
+          intro: `${slogan} tarde! ☀️
+
+Uma pergunta rápida pra começar:
+
+Seleciona a opção que mais combina com você 👇
+
+Reage com um 💡 nessa mensagem!`,
+          pollNome: 'Qual é a sua relação atual com Numerologia?',
+          pollOps: ['Nunca ouvi falar — quero descobrir', 'Conheço um pouco — quero aprofundar', 'Já estudei — quero aplicar de verdade', 'Sou cético(a) — mas estou aqui'],
+        },
       },
+
+      // ── Dia 2 — O número que te acompanha (6 dias antes) ─────────────────────
       {
-        manhaTxt: `Você já percebeu que certos padrões se repetem na sua vida — não importa o quanto você tente mudar?\n\nMuda o contexto. Muda a pessoa. Muda o emprego.\nMas a mesma sensação volta.\n\nIsso não é azar. É o inconsciente recriando o que aprendeu — na tentativa de te dar uma nova chance de resolver o que ficou irresolvido.\n\nSem entender esse mecanismo, você vai continuar preso nele.\n\nNo nosso encontro presencial, vamos desmontar esse ciclo juntos.\n\nE quem não estiver lá não vai ter acesso a esse conteúdo em nenhum outro lugar — não existe versão online, não existe gravação.\n\n${npaInfo}\n\nFaltam *2 dias*.\n\nReaja com 🔥 se você já se pegou repetindo um padrão que queria ter quebrado.`,
-        tardeIntro: `A pergunta de hoje vai fundo — responde com sinceridade:`,
-        pollNome: 'Qual situação da sua vida mais se repete de formas diferentes?',
-        pollOps: ['Me saboto quando estou perto do que quero', 'Me envolvo com pessoas que me decepcionam', 'Fico preso(a) em ciclos de ansiedade e controle', 'Me cobro mais do que me aceito'],
-        noiteTxt: `Duas perguntas para você levar pra dormir:\n\n*Por que você reage do jeito que reage?*\n*Por que você escolhe o que escolhe — mesmo quando sabe que vai doer?*\n\nEssas não são perguntas filosóficas. São as perguntas que, quando respondidas, mudam tudo.\n\nAmanhã damos o último passo antes do nosso encontro presencial.\n\n${npaInfo}\n\nFaltam *2 dias*. Confirma com alguém que você vai aparecer — isso aumenta em muito a chance de você realmente ir.`,
+        manhaTxt: `${slogan} dia! ☀️
+
+Existe um número que resume o seu propósito de vida.
+
+Ele foi calculado no dia em que você nasceu — e desde então opera nos bastidores de cada escolha importante que você já fez.
+
+Quando você age alinhado com ele, as coisas fluem.
+Quando você age contra ele, surge aquela sensação de que algo está errado — sem conseguir nomear o quê.
+
+A maioria das pessoas passa a vida inteira sem saber qual é esse número.
+
+E o mais impressionante: quando descobre, a reação quase sempre é a mesma.
+
+_"Isso explica muita coisa."_
+
+No *${aulaDia(1)}*, você descobre o seu.
+
+${npaInfo}
+
+Reage com 🔢 se você quer saber qual é o seu número.`,
+        tarde: {
+          tipo: 'enquete',
+          intro: `${slogan} tarde! ☀️
+
+Uma enquete que vai revelar algo interessante sobre quem está aqui:
+
+Seleciona a opção que mais combina com você 👇
+
+Reage com um 💡 nessa mensagem!`,
+          pollNome: 'Você já viveu um período da sua vida onde tudo parecia fora de lugar — sem causa aparente?',
+          pollOps: ['Sim — e nunca entendi direito por quê', 'Sim — e só passou quando algo grande mudou', 'Estou vivendo isso agora', 'Não — mas conheço alguém assim'],
+        },
       },
+
+      // ── Dia 3 — O nome que vibra (5 dias antes) ──────────────────────────────
       {
-        manhaTxt: `Amanhã é o dia.\n\nVou ser direto:\n\nO que vai acontecer no nosso encontro presencial não é palestra. Não é aula expositiva. Não é conteúdo que você encontra em qualquer lugar.\n\nÉ uma experiência de contato real com o que está por baixo dos seus padrões — com dinâmicas, acolhimento e a profundidade que só o encontro presencial proporciona.\n\nE não existe gravação. Não existe "assisto depois". Não existe segunda chance para esse dia específico.\n\nQuem não aparecer amanhã simplesmente perde. E vai continuar onde estava.\n\n${npaInfo}\n\nFalta *1 dia*.\n\nReaja com 🔥 se você vai estar lá amanhã.`,
-        tardeIntro: `Véspera do nosso encontro. Uma última pergunta:`,
-        pollNome: 'Qual é a maior transformação que você quer sair desse encontro tendo iniciado?',
-        pollOps: ['Parar de me sabotar e agir com mais coragem', 'Ter relacionamentos mais saudáveis e reais', 'Me libertar da ansiedade e do excesso de controle', 'Me aceitar mais e me cobrar menos'],
-        noiteTxt: `Amanhã, às ${aulaH(1)}, é o nosso encontro.\n\nUma pergunta para você dormir pensando:\n\n*Se eu pudesse entender completamente o que me trava — o que mudaria na minha vida?*\n\nChega amanhã com essa pergunta. O que vai acontecer lá vai respondê-la.\n\nTrás caderno, caneta e disposição pra olhar pra dentro.\n\n${npaInfo}\n\nFalta *1 dia*. Não perca — não tem como recuperar o que acontece presencialmente.`,
+        manhaTxt: `${slogan} dia! ☀️
+
+O seu nome não é só uma etiqueta.
+
+Pitágoras descobriu que cada letra carrega um valor numérico — e que a soma das letras do seu nome descreve a frequência que você projeta no mundo.
+
+O nome que seus pais escolheram para você...
+
+Às vezes com intenção.
+Às vezes por intuição.
+Às vezes "porque simplesmente gostaram."
+
+...pode estar descrevendo exatamente quem você veio ser.
+
+Não é misticismo. É matemática aplicada à linguagem.
+
+E quando você aprende a ler — o seu nome nunca mais parece o mesmo.
+
+${npaInfo}
+
+Reage com ✨ se você ficou curioso(a) com isso.`,
+        tarde: {
+          tipo: 'texto',
+          txt: `${slogan} tarde! ☀️
+
+Sabe o que as pessoas mais dizem quando saem de um encontro de *${aulaTit(1)}*?
+
+_"Eu sempre soube que havia algo mais na minha data. Agora eu entendo o quê."_
+
+_"Finalmente algo que explica por que determinadas fases da minha vida foram tão difíceis — e faz sentido, não é vago."_
+
+_"Eu achei que seria sobre previsão do futuro. Não é. É sobre se conhecer de um jeito que muda como você toma decisões."_
+
+Numerologia Pitagórica não prevê o futuro.
+Ela revela a estrutura do presente.
+
+E quando você entende essa estrutura — você para de lutar contra o que é seu e começa a trabalhar *com* ele.
+
+No *${aulaDia(1)}*, em *${config.nome}*, isso chega até você.
+
+${npaInfo}
+
+Reage com 💛 se você já sentiu que estava lutando contra algo que não conseguia nomear.`,
+        },
+      },
+
+      // ── Dia 4 — Os ciclos que ninguém te contou (4 dias antes) ───────────────
+      {
+        manhaTxt: `${slogan} dia! ☀️
+
+Você provavelmente já teve um ano que parecia impossível de atravessar.
+
+Tudo pesado. Decisões difíceis. Sensação de que o chão sumiu.
+
+E provavelmente também já teve um ano onde tudo se encaixou — oportunidades surgindo, energia alta, as coisas andando.
+
+Isso não é sorte.
+
+Na Numerologia Pitagórica, existe uma estrutura chamada Ano Pessoal.
+Cada pessoa vive ciclos de 9 anos — e cada ano dentro desse ciclo tem uma vibração específica, com seus desafios e seus potenciais únicos.
+
+Quando você sabe em qual ano está — você para de nadar contra a maré e começa a navegar com ela.
+
+No *${aulaDia(1)}*, você descobre em qual ciclo você está agora.
+
+Reage com 🌊 se você quer entender o ciclo que está vivendo.`,
+        tarde: {
+          tipo: 'enquete',
+          intro: `${slogan} tarde! ☀️
+
+Estamos na metade do caminho. Uma pergunta direta:
+
+Seleciona a opção que mais combina com você agora 👇
+
+Reage com um 💡 nessa mensagem!`,
+          pollNome: 'Como você descreveria o momento de vida que está vivendo agora?',
+          pollOps: ['Estou num ciclo de colheita — as coisas fluindo', 'Estou num ciclo de transição — muita coisa mudando', 'Estou num ciclo pesado — resistindo sem entender por quê', 'Estou num ciclo de plantio — construindo algo novo'],
+        },
+      },
+
+      // ── Dia 5 — O que muda quando você sabe (3 dias antes) ───────────────────
+      {
+        manhaTxt: `${slogan} dia! ☀️
+
+*3 dias.*
+
+Deixa eu te falar o que muda quando uma pessoa aprende a ler os seus números:
+
+Ela para de se culpar pelos ciclos difíceis.
+Ela para de se comparar com quem está num ciclo diferente.
+Ela começa a tomar decisões alinhadas com o momento que está vivendo.
+Ela entende por que certas áreas da vida sempre exigiram mais esforço.
+
+Não porque ela é menos capaz.
+Mas porque ela estava usando a ferramenta errada no momento errado.
+
+Isso é o que o *${aulaTit(1)}* entrega — não teoria, não previsão, não vagueza.
+
+*Uma leitura precisa de quem você é e do momento que está vivendo.*
+
+${npaInfo}
+
+Reage com 🔥 se você vai estar lá.`,
+        tarde: {
+          tipo: 'texto',
+          txt: `${slogan} tarde! ☀️
+
+Uma coisa que surpreende quem chega pela primeira vez no *${aulaTit(1)}*:
+
+A Numerologia Pitagórica não é sobre acreditar em nada.
+
+Pitágoras era matemático, filósofo, cientista.
+O sistema que ele desenvolveu tem estrutura lógica — você pode verificar, calcular, testar.
+
+Não precisa de fé.
+Precisa só de curiosidade — e de disposição para olhar para os próprios números com honestidade.
+
+O que você vai descobrir no *${aulaDia(1)}* pode ser a primeira vez que você se vê descrito com precisão — sem generalização, sem vagueza.
+
+${npaInfo}
+
+Reage com 💡 se você já está com a curiosidade acesa.`,
+        },
+      },
+
+      // ── Dia 6 — Véspera da véspera (2 dias antes) ────────────────────────────
+      {
+        manhaTxt: `${slogan} dia! ☀️
+
+Dois dias.
+
+Já parou pra pensar por que você está aqui nesse grupo?
+
+Não foi propaganda. Não foi por acaso.
+
+Existe algo em você que reconheceu que esse momento importa — antes mesmo de entender por quê.
+
+Na Numerologia Pitagórica, isso tem nome.
+Tem número.
+E no *${aulaDia(1)}* você vai entender qual parte de você tomou essa decisão.
+
+Hoje, uma preparação simples:
+
+Lembra da sua data de nascimento completa — dia, mês e ano.
+E o nome que está no seu documento.
+
+Você vai precisar deles. 🔢
+
+Reage com 🎯 se você vai estar lá.`,
+        tarde: {
+          tipo: 'enquete',
+          intro: `${slogan} tarde! ☀️
+
+Penúltimo dia — última enquete antes do encontro.
+
+Uma pergunta que vai direto ao ponto:
+
+Seleciona a opção que mais combina com você 👇
+
+Reage com um 💡 nessa mensagem!`,
+          pollNome: 'O que você mais quer descobrir sobre si mesmo no encontro?',
+          pollOps: ['Qual é o meu propósito de vida segundo os números', 'Por que certos ciclos da minha vida foram tão pesados', 'Como usar meus números para tomar decisões melhores', 'O que meu nome e data revelam sobre mim'],
+        },
+      },
+
+      // ── Dia 7 — Véspera (1 dia antes) ────────────────────────────────────────
+      {
+        manhaTxt: `${slogan} dia! ☀️
+
+*Amanhã é o dia.*
+
+Você passou 7 dias recebendo perguntas sem resposta.
+
+Amanhã as respostas chegam — e elas têm o seu nome, a sua data, o seu número.
+
+${profAnchor} preparou esse encontro para exatamente esse momento: quando uma pessoa está pronta para se ver com clareza — e tem coragem de aparecer.
+
+O *${aulaTit(1)}* não é uma palestra sobre numerologia.
+
+É uma leitura ao vivo da sua estrutura numerológica — presencialmente, em grupo, com profundidade que só o encontro ao vivo permite.
+
+E acontece amanhã. Uma vez. Só para quem estiver lá.
+
+${npaInfo}
+
+Reage com 🙌 se você estará lá amanhã.`,
+        tarde: {
+          tipo: 'texto',
+          txt: `${slogan} tarde! ☀️
+
+Última chamada antes do grande dia.
+
+*Tudo que você precisa saber para amanhã:*
+
+${npaInfo}
+
+✅ Chegue com 10–15 min de antecedência
+📝 Traga caderno e caneta
+🔢 Tenha em mente: sua data de nascimento completa e o nome do seu documento
+📵 Celular no silencioso — esse tempo é todo seu
+
+Qualquer dúvida sobre o local, é só chamar aqui.
+
+*Nos vemos amanhã.* 🔢🙏`,
+        },
       },
     ];
 
@@ -628,15 +895,19 @@ Reage com 🙌 se você vai estar ao vivo amanhã!`,
       const dayDate = addDays(warmupStart, i);
       const d       = diasNpa[i];
 
-      msgs.push(textMsg(fn, day, setTime(dayDate, '11:00'), g1,
+      msgs.push(textMsg(fn, day, setTime(dayDate, '08:00'), g1,
         d.manhaTxt, `Dia ${day} — Manhã`, { link_preview: true }));
-      msgs.push(textMsg(fn, day, setTime(dayDate, '17:00'), g1,
-        d.tardeIntro + '\n\n👇', `Dia ${day} — Enquete (intro)`));
-      msgs.push(pollMsg(fn, day,
-        new Date(setTime(dayDate, '17:00').getTime() + 3 * 60 * 1000),
-        g1, d.pollNome, d.pollOps, `Dia ${day} — Enquete`));
-      msgs.push(textMsg(fn, day, setTime(dayDate, '23:00'), g1,
-        d.noiteTxt, `Dia ${day} — Noite`, { link_preview: true }));
+
+      if (d.tarde.tipo === 'enquete') {
+        msgs.push(textMsg(fn, day, setTime(dayDate, '18:00'), g1,
+          d.tarde.intro, `Dia ${day} — Enquete (intro)`));
+        msgs.push(pollMsg(fn, day,
+          new Date(setTime(dayDate, '18:00').getTime() + 3 * 60 * 1000),
+          g1, d.tarde.pollNome, d.tarde.pollOps, `Dia ${day} — Enquete`));
+      } else {
+        msgs.push(textMsg(fn, day, setTime(dayDate, '18:00'), g1,
+          d.tarde.txt, `Dia ${day} — Tarde`, { link_preview: true }));
+      }
     }
 
     const aulaDateObj  = new Date(config.data_live + 'T12:00:00');
