@@ -2,10 +2,11 @@
  * lancamento-templates.ts
  * Gera sequência padrão de mensagens para um lançamento ou NPA.
  *
- * Lançamento — 9 dias de aquecimento (countdown) + dias de aula:
- *   Manhã (~8-10h) — saudação + countdown + datas
- *   Tarde (~14h)   — enquete (intro + poll) ou sugestão de áudio
- *   Noite (~22h)   — countdown + links (véspera usa horário da aula)
+ * Lançamento — 9 dias de aquecimento + dias de aula:
+ *   Manhã (8h)  — reflexão única de psicanálise por dia (inconsciente, repetição,
+ *                 defesas, transferência, sintoma, superego, desejo, resistência, véspera)
+ *   Tarde (15h) — enquete única por dia (dias 2,3,5,6,8,9) ou áudio (dias 1,4,7)
+ *   Noite (20h) — links + countdown (véspera usa horário da aula)
  *
  * Dias de aula: manhã, tarde (enquete), contagem (-3h/-2h/-1h),
  *               ao vivo, provocações (+10/+20/+30/+40min)
@@ -211,34 +212,82 @@ export function generateLancamentoMessages(config: WizardConfig): TemplateMensag
     // ── 9 dias de aquecimento ─────────────────────────────────────────────────
     const warmupDays = 9;
 
+    // Mensagens únicas de manhã — uma reflexão de psicanálise por dia (day 1..9)
+    const manhasMsgs: Record<number, string> = {
+      1: `${slogan} dia! ☀️\n\n*Existe uma voz dentro de você que opera sem que você perceba.*\n\nEla molda suas decisões, suas reações, seus relacionamentos — tudo isso antes de você formular um único pensamento consciente.\n\nIsso se chama inconsciente. E não é metáfora — é o sistema que governa a maior parte da sua vida.\n\nNessas aulas, vamos abrir esse acesso. Com profundidade. Com direção.\n\n${datesBlock()}\n\nSempre às *${classHora}*, ao vivo no YouTube.\n\nCom ${profDupla}.\n\n👉 Ativa o lembrete: ${aulaLink(1)}\n\nReage com ❤️ pra eu saber que você está aqui!`,
+
+      2: `${slogan} dia! ☀️\n\n*O padrão não é azar.*\n\nQuando você se pega repetindo o mesmo ciclo — no relacionamento, no trabalho, nas escolhas — não é coincidência.\n\nÉ o que a psicanálise chama de compulsão à repetição: o inconsciente recriando situações antigas na tentativa de resolver o que ficou irresolvido.\n\nEnquanto esse mecanismo não for visto, ele continua rodando nos bastidores.\n\nNossas aulas chegam em breve. Você vai entender por onde começa a saída.\n\n👉 ${aulaLink(1)}\n\nReage com 🔄 se você já se percebeu repetindo um padrão que queria ter quebrado.`,
+
+      3: `${slogan} dia! ☀️\n\n*Você racionaliza. Foge. Ironiza. Minimiza.*\n\nIsso não é fraqueza — é proteção. A mente cria mecanismos para não ter que lidar com o que dói.\n\nO problema é que esses mecanismos de defesa também te impedem de crescer. De sentir. De se conectar de verdade.\n\nA psicanálise não vai te deixar sem proteção — vai te dar acesso ao que está por baixo dela.\n\nNossas aulas chegam logo. Enquanto isso, fica com essa reflexão.\n\n👉 ${aulaLink(1)}\n\nReage com 🛡️ se você se reconhece em algum desses mecanismos.`,
+
+      4: `${slogan} dia! ☀️\n\n*Quem você vê nas pessoas ao seu redor?*\n\nMuitas vezes, o que sentimos por alguém — admiração, mágoa, raiva, amor — não é só sobre aquela pessoa. É sobre quem ela representa no nosso inconsciente.\n\nIsso se chama transferência. E ela está presente em todo relacionamento: afetivo, profissional, terapêutico.\n\nQuando você começa a entender esse mecanismo, suas relações ganham uma clareza que muda tudo.\n\nFaltam poucos dias para nossas aulas. Prepara o olhar.\n\n👉 ${aulaLink(1)}\n\nReage com 👁️ se você já viveu uma relação que te ensinou algo sobre você mesmo.`,
+
+      5: `${slogan} dia! ☀️\n\n*O sintoma não é o inimigo.*\n\nA ansiedade que não passa. A procrastinação que aparece toda vez. O relacionamento que dói mas você não larga.\n\nIsso são sintomas. E na psicanálise, o sintoma não é um problema a ser eliminado — é uma mensagem. Ele carrega um sentido que o inconsciente ainda não conseguiu dizer de outra forma.\n\nNossas aulas vão te ensinar a escutar o que seus sintomas estão dizendo.\n\n👉 ${aulaLink(1)}\n\nReage com 💭 se você tem um sintoma que já tentou eliminar e ele sempre volta.`,
+
+      6: `${slogan} dia! ☀️\n\n*Existe uma voz dentro de você que nunca está satisfeita.*\n\nEla compara. Ela cobra. Ela diz que você deveria ser mais, fazer mais, alcançar mais.\n\nIsso é o superego — a instância psíquica que internalizou as exigências do mundo externo e as transformou em autocrítica constante.\n\nEntender de onde vem essa voz não a silencia imediatamente. Mas tira dela o poder de te governar sem que você perceba.\n\nFaltam poucos dias. Fica com essa reflexão.\n\n👉 ${aulaLink(1)}\n\nReage com 🔇 se essa voz fala alto demais dentro de você.`,
+
+      7: `${slogan} dia! ☀️\n\n*Nem sempre o que você persegue é o que você realmente deseja.*\n\nÀs vezes buscamos aprovação quando o desejo real é ser vistos. Buscamos sucesso quando o desejo é ser amados. Buscamos controle quando o desejo é segurança.\n\nO desejo — na psicanálise — nunca é simples. Ele está sempre deslocado, sempre pedindo decifração.\n\nNossas aulas começam em breve. Estamos quase lá.\n\n${datesBlock()}\n\n👉 ${aulaLink(1)}\n\nReage com 🔍 se você sente que busca uma coisa mas no fundo quer outra.`,
+
+      8: `${slogan} dia! ☀️\n\n*Você que se sabota.*\n\nNão é falta de disciplina. Não é preguiça. É resistência — o inconsciente protegendo o que já conhece, por mais doloroso que seja, do risco do desconhecido.\n\nA mudança ameaça a identidade que construímos. E o psiquismo prefere o familiar — mesmo que machuque — ao que ainda não tem nome.\n\nAmanhã é o último dia antes de começarmos. Prepara o espaço.\n\n👉 ${aulaLink(1)}\n\nReage com 🚧 se você já se percebeu se sabotando quando estava quase chegando lá.`,
+
+      9: `${slogan} dia! ☀️\n\n*Amanhã começa a ${config.nome}.*\n\nVocê passou por 8 dias de reflexão. Cada mensagem foi uma semente plantada no solo certo.\n\nO inconsciente. A repetição. Os mecanismos de defesa. A transferência. O sintoma. O superego. O desejo. A resistência.\n\nAmanhã, ao vivo, começamos a aprofundar cada um desses fios — juntos.\n\n${profAnchor} conduz essa jornada com participação de ${profConv}.\n\n👉 Ativa o lembrete da Aula 1: ${aulaLink(1)}\n\nReage com um 🙌 se você vai estar ao vivo amanhã!`,
+    };
+
+    // Enquetes únicas por dia (dias 2,3,5,6,8,9 — os não-áudio)
+    const enquetesDias: Record<number, { intro: string; nome: string; opcoes: string[] }> = {
+      2: {
+        intro: `${slogan} tarde! ☀️\n\nHoje falamos sobre compulsão à repetição — os padrões que se repetem sem que a gente perceba.\n\nUma pergunta direta:\n\nSeleciona a opção que mais combina com você 👇\n\nReage com um 💡 nessa mensagem!`,
+        nome: 'O que você mais se pega repetindo na sua vida?',
+        opcoes: ['Relacionamentos que seguem sempre o mesmo roteiro', 'Me saboto quando estou perto de conquistar algo', 'Brigas e conflitos com as mesmas pessoas', 'Promessas que faço e não cumpro pra mim mesmo'],
+      },
+      3: {
+        intro: `${slogan} tarde! ☀️\n\nHoje falamos sobre mecanismos de defesa — as formas que a mente encontra de se proteger do que dói.\n\nAgora a sua vez de olhar para dentro:\n\nSeleciona a opção que mais combina com você 👇\n\nReage com um 💡 nessa mensagem!`,
+        nome: 'Como você reage quando algo te machuca de verdade?',
+        opcoes: ['Finjo que não afetou tanto', 'Racionalizo e tento entender tudo', 'Fico irritado com outras coisas sem perceber', 'Me isolo e processo sozinho'],
+      },
+      5: {
+        intro: `${slogan} tarde! ☀️\n\nO sintoma é uma mensagem do inconsciente — não um defeito a ser eliminado.\n\nQual é o sintoma que mais aparece na sua vida?\n\nSeleciona a opção que mais combina com você 👇\n\nReage com um 💡 nessa mensagem!`,
+        nome: 'Qual sintoma mais aparece na sua vida hoje?',
+        opcoes: ['Ansiedade constante que não consigo parar', 'Procrastinação que me trava na hora de agir', 'Relacionamento que dói mas não consigo largar', 'Sensação de vazio mesmo quando tudo está bem'],
+      },
+      6: {
+        intro: `${slogan} tarde! ☀️\n\nFalamos sobre o superego — a voz interna que cobra, compara e exige mais de você.\n\nDe que forma essa voz aparece mais forte em você?\n\nSeleciona a opção que mais combina com você 👇\n\nReage com um 💡 nessa mensagem!`,
+        nome: 'Como a autocrítica aparece mais forte em você?',
+        opcoes: ['Me comparo com os outros o tempo todo', 'Nunca acho que fiz o suficiente', 'Me cobro por erros que já deveriam ter passado', 'Tenho medo de parecer fraco ou incapaz'],
+      },
+      8: {
+        intro: `${slogan} tarde! ☀️\n\nA resistência é o psiquismo protegendo o familiar — mesmo que seja doloroso.\n\nO que mais te impede de mudar quando você já sabe o que precisa?\n\nSeleciona a opção que mais combina com você 👇\n\nReage com um 💡 nessa mensagem!`,
+        nome: 'O que mais te impede de mudar quando você já sabe o que precisa?',
+        opcoes: ['Medo de falhar de novo', 'Conforto no que é familiar, mesmo que doa', 'Não me sentir pronto ou merecedor', 'Medo do que as pessoas vão pensar'],
+      },
+      9: {
+        intro: `${slogan} tarde! ☀️\n\nAmanhã começa nossa jornada — esta é a última enquete antes das aulas.\n\nUma pergunta que vai te carregar para dentro da primeira aula:\n\nSeleciona a opção que mais combina com você 👇\n\nReage com um 💡 nessa mensagem!`,
+        nome: 'Qual é a maior transformação que você quer carregar das nossas aulas?',
+        opcoes: ['Parar de me sabotar e agir com mais coragem', 'Entender por que repito os mesmos padrões', 'Me libertar da autocrítica que me paralisa', 'Criar relacionamentos mais honestos e reais'],
+      },
+    };
+
     for (let offset = -warmupDays; offset <= -1; offset++) {
       const l       = Math.abs(offset);
       const day     = warmupDays + offset + 1;   // 1..9
       const dayDate = addDays(firstClassDate, offset);
-      const manhaH  = offset <= -7 ? '10:00' : '08:00';
 
-      // Manhã
-      const manhaTxt = offset === -1
-        ? `${slogan} dia! ☀️\n\n*Amanhã começa a ${config.nome}.*\n\nSerão ${numAulas} aulas ao vivo para mexer com a forma como cada pessoa se enxerga.\n\n${profAnchor} conduz essa jornada com participação de ${profConv}.\n\n👉 Ativa o lembrete da Aula 1: ${aulaLink(1)}\n\nReage com um 🙌 se você vai estar ao vivo!`
-        : `${slogan} dia! ☀️\n\nBem-vindo à ${config.nome}!\n\nFaltam *${l} dias* para começarmos essa jornada.\n\n${datesBlock()}\n\nSempre às *${classHora}*, ao vivo no YouTube.\n\nCom ${profDupla}.\n\n👉 Ativa o lembrete da Aula 1: ${aulaLink(1)}\n\nReage com um ❤️ pra eu saber que você está aqui com a gente!`;
-
-      msgs.push(textMsg(fn, day, setTime(dayDate, manhaH), g1, manhaTxt,
+      // Manhã — reflexão única de psicanálise por dia
+      msgs.push(textMsg(fn, day, setTime(dayDate, '08:00'), g1, manhasMsgs[day],
         `Dia ${day} — Manhã`, { link_preview: true }));
 
-      // Tarde: a cada 3 dias sugere áudio, outros dias faz enquete
+      // Tarde: a cada 3 dias sugere áudio (dias 1,4,7 do warmup), outros dias enquete única
       if (l % 3 === 0) {
         const audioTxt = `${slogan} tarde! ☀️\n\n🎙️ *Áudio sugerido do Prof. ${profAnchor}:*\n\n"${slogan}, pessoal! Estamos chegando muito perto da nossa primeira aula. Quero te encontrar ao vivo no dia ${aulaData(1)}, às ${classHora}, para abrir essa jornada com profundidade e direção."\n\n👉 ${aulaLink(1)}\n\nReage com um ❤️ depois de ouvir!`;
         msgs.push(textMsg(fn, day, setTime(dayDate, '15:00'), g1, audioTxt,
           `Dia ${day} — Tarde (Áudio)`, { subtipo: 'audio' }));
       } else {
-        const tardeIntro = `${slogan} tarde! ☀️\n\nUma pergunta rápida antes de começarmos essa jornada juntos:\n\n*O que você mais busca em ${produto} neste momento?*\n\nSeleciona a opção que mais combina com você 👇\n\nReage com um 💡 nessa mensagem!`;
-        msgs.push(textMsg(fn, day, setTime(dayDate, '15:00'), g1, tardeIntro,
+        const eq = enquetesDias[day];
+        msgs.push(textMsg(fn, day, setTime(dayDate, '15:00'), g1, eq.intro,
           `Dia ${day} — Enquete (intro)`));
         msgs.push(pollMsg(fn, day,
           new Date(setTime(dayDate, '15:00').getTime() + 3 * 60 * 1000),
-          g1,
-          `O que você mais busca em ${produto} neste momento?`,
-          ['Quero me conhecer melhor', 'Quero ajudar pessoas ao meu redor', `Quero atuar com ${produto}`, 'Quero entender mais antes de decidir'],
+          g1, eq.nome, eq.opcoes,
           `Dia ${day} — Enquete`));
       }
 
