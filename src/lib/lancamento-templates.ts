@@ -898,22 +898,6 @@ Qualquer dúvida sobre o local, é só chamar aqui.
       msgs.push(textMsg(fn, day, setTime(dayDate, '08:00'), g1,
         d.manhaTxt, `Dia ${day} — Manhã`, { link_preview: true }));
 
-      // 15h — pulso da jornada (mesmo todos os dias)
-      msgs.push(textMsg(fn, day, setTime(dayDate, '15:00'), g1,
-        `${slogan} tarde! ☀️\n\nUma pergunta rápida antes de continuar:\n\nComo você está se sentindo nessa jornada até agora? 👇\n\nReage com um 💡 nessa mensagem!`,
-        `Dia ${day} — Pulso da Jornada (intro)`));
-      msgs.push(pollMsg(fn, day,
-        new Date(setTime(dayDate, '15:00').getTime() + 3 * 60 * 1000),
-        g1,
-        'O que você está achando da jornada até agora?',
-        [
-          'Adorando — cada mensagem faz mais sentido',
-          'Curioso(a) — está levantando perguntas que quero responder',
-          'Com expectativa — mal posso esperar pelo encontro',
-          'Ainda processando — mas estou aqui',
-        ],
-        `Dia ${day} — Pulso da Jornada`));
-
       if (d.tarde.tipo === 'enquete') {
         msgs.push(textMsg(fn, day, setTime(dayDate, '18:00'), g1,
           d.tarde.intro, `Dia ${day} — Enquete (intro)`));
