@@ -133,8 +133,9 @@ serve(async (req) => {
     }
 
     // ── Scheduled batch (chamado pelo pg_cron ou cron externo) ────────────────
-    const now    = new Date();
-    const window = new Date(now.getTime() + 6 * 60 * 1000); // próximos 6 min (cron a cada 5min)
+    const now         = new Date();
+    const windowEnd   = new Date(now.getTime() + 6 * 60 * 1000);   // +6 min (próxima execução do cron)
+    const windowStart = new Date(now.getTime() - 10 * 60 * 1000);  // -10 min (tolerância para atrasos)
 
     // EARLY EXIT: COUNT barato antes de buscar dados ou abrir conexão com Evolution
     const [{ count: funnelCount }, { count: bvCount }] = await Promise.all([
@@ -142,7 +143,8 @@ serve(async (req) => {
         .from('funnel_messages')
         .select('id', { count: 'exact', head: true })
         .eq('status', 'scheduled')
-        .lte('scheduled_at', window.toISOString()),
+        .gte('scheduled_at', windowStart.toISOString())
+        .lte('scheduled_at', windowEnd.toISOString()),
       supabase
         .from('boas_vindas_agendados')
         .select('id', { count: 'exact', head: true })
@@ -182,7 +184,8 @@ serve(async (req) => {
       .from('funnel_messages')
       .select('*')
       .eq('status', 'scheduled')
-      .lte('scheduled_at', window.toISOString())
+      .gte('scheduled_at', windowStart.toISOString())
+      .lte('scheduled_at', windowEnd.toISOString())
       .order('scheduled_at', { ascending: true });
 
     if (fetchErr) throw fetchErr;
