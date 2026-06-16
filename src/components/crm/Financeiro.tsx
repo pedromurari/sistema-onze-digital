@@ -191,6 +191,7 @@ const buildInstallments = ({
   method,
   diaVencimento,
   dataMatricula,
+  dataSegundaParcela,
   existingPaidNumbers = new Set<number>(),
   minTotal,
 }: {
@@ -201,6 +202,7 @@ const buildInstallments = ({
   method: PaymentMethod;
   diaVencimento: number;
   dataMatricula?: string | null;
+  dataSegundaParcela?: Date | null;
   existingPaidNumbers?: Set<number>;
   minTotal?: number;
 }) => {
@@ -212,9 +214,19 @@ const buildInstallments = ({
     const numeroParcela = index + 1;
     if (existingPaidNumbers.has(numeroParcela)) return null;
 
-    const dueDate = index === 0
-      ? matricula
-      : dateWithClampedDay(matricula.getFullYear(), matricula.getMonth() + index, diaVencimento);
+    let dueDate: Date;
+    if (index === 0) {
+      dueDate = matricula;
+    } else if (dataSegundaParcela) {
+      // Âncora na 2ª parcela: parcela 2 = anchor, parcela 3 = anchor+1m, etc.
+      dueDate = dateWithClampedDay(
+        dataSegundaParcela.getFullYear(),
+        dataSegundaParcela.getMonth() + (index - 1),
+        dataSegundaParcela.getDate(),
+      );
+    } else {
+      dueDate = dateWithClampedDay(matricula.getFullYear(), matricula.getMonth() + index, diaVencimento);
+    }
     const dueDateText = formatLocalDate(dueDate);
     const mesReferencia = formatLocalDate(new Date(dueDate.getFullYear(), dueDate.getMonth(), 1, 12, 0, 0));
     const paidByPlan = method === 'cartao' || method === 'avista' || (method === 'boleto' && index === 0);
@@ -1212,6 +1224,7 @@ export function Financeiro() {
     method,
     diaVencimento,
     dataMatricula,
+    dataSegundaParcela,
     valor,
     customTotal,
   }: {
@@ -1221,6 +1234,7 @@ export function Financeiro() {
     method: PaymentMethod;
     diaVencimento: number;
     dataMatricula?: string | null;
+    dataSegundaParcela?: Date | null;
     valor: number;
     customTotal?: number;
   }) => {
@@ -1256,6 +1270,7 @@ export function Financeiro() {
       method,
       diaVencimento,
       dataMatricula,
+      dataSegundaParcela,
       existingPaidNumbers: numerosPagos,
       minTotal: total,
     });
@@ -1339,6 +1354,7 @@ export function Financeiro() {
 
   const openAlunoDetail = (a: Aluno) => {
     setAlunoDetail(a);
+    const parcela2 = (pagamentosPorAluno[a.id] || []).find(p => p.numero_parcela === 2);
     setEditAlunoForm({
       nome: a.nome,
       whatsapp: a.whatsapp || '',
@@ -1376,6 +1392,7 @@ export function Financeiro() {
       voomp_integrado: a.voomp_integrado ?? false,
       voomp_link: a.voomp_link || '',
       total_mensalidades: a.total_mensalidades,
+      data_segunda_parcela: toDateInput(parcela2?.data_vencimento),
       observacoes: a.observacoes || '',
     });
     setShowAlunoDetail(true);
@@ -1402,12 +1419,18 @@ export function Financeiro() {
         return previousValue || nowIso;
       };
       const currentParcelas = pagamentos.filter(p => p.aluno_id === alunoDetail.id);
+      const nextSegundaDate = editAlunoForm.data_segunda_parcela
+        ? parseDateOnly(editAlunoForm.data_segunda_parcela)
+        : null;
+      const currentParcela2 = currentParcelas.find(p => p.numero_parcela === 2);
+      const currentSegundaStr = toDateInput(currentParcela2?.data_vencimento) ?? '';
       const financialChanged =
         nextTurmaId !== alunoDetail.turma_id ||
         nextMethod !== normalizePaymentMethod(alunoDetail.forma_pagamento) ||
         nextDiaVenc !== extractDueDay(alunoDetail.dia_vencimento || alunoDetail.dia_vencimento_contrato) ||
         toDateInput(nextDataMatricula) !== toDateInput(alunoDetail.data_matricula) ||
         Number(nextValorAluno ?? 0) !== Number(alunoDetail.valor_mensalidade ?? 0) ||
+        (editAlunoForm.data_segunda_parcela || '') !== currentSegundaStr ||
         currentParcelas.length === 0 ||
         currentParcelas.length !== targetTotal;
 
@@ -1460,6 +1483,7 @@ export function Financeiro() {
           method: nextMethod,
           diaVencimento: nextDiaVenc,
           dataMatricula: nextDataMatricula,
+          dataSegundaParcela: nextSegundaDate,
           valor: valorEfetivo,
           customTotal: targetTotal,
         });
@@ -2931,6 +2955,16 @@ export function Financeiro() {
                     <div>
                       <label className="text-xs text-muted-foreground">Ato de matricula / 1a parcela</label>
                       <Input type="date" value={editAlunoForm.data_matricula || ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, data_matricula: e.target.value })} className="mt-1 h-8 text-sm" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Data da 2ª parcela</label>
+                      <Input
+                        type="date"
+                        value={editAlunoForm.data_segunda_parcela || ''}
+                        onChange={e => setEditAlunoForm({ ...editAlunoForm, data_segunda_parcela: e.target.value })}
+                        className="mt-1 h-8 text-sm"
+                      />
+                      <p className="text-[10px] text-muted-foreground mt-0.5">Parcelas 3, 4… calculadas mensalmente a partir desta data.</p>
                     </div>
                     <div>
                       <label className="text-xs text-muted-foreground">Data de inicio da turma</label>
