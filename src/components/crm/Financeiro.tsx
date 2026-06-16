@@ -102,6 +102,17 @@ interface Pagamento {
   created_at: string;
 }
 
+interface ParcelaLocal {
+  id: string;
+  numero_parcela: number;
+  valor: number;
+  data_vencimento: string;
+  data_pagamento?: string | null;
+  status: 'pago' | 'pendente' | 'atrasado';
+  isNew?: boolean;
+  deleted?: boolean;
+}
+
 type ProdutoTab = 'psicanalise' | 'numerologia';
 type SubView = 'alunos' | 'turmas' | 'responsaveis';
 type PaymentMethod = 'boleto' | 'cartao' | 'avista';
@@ -866,6 +877,11 @@ export function Financeiro() {
   const [newResponsavelNome, setNewResponsavelNome] = useState('');
   const [savingResponsavel, setSavingResponsavel] = useState(false);
 
+  // Edição manual de parcelas
+  const [parcelasEditMode, setParcelasEditMode] = useState(false);
+  const [parcelasLocais, setParcelasLocais] = useState<ParcelaLocal[]>([]);
+  const [savingParcelas, setSavingParcelas] = useState(false);
+
   useEffect(() => { loadData(); }, []);
 
   const ALUNOS_SELECT_FULL = 'id, turma_id, produto, nome, whatsapp, email, cpf, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, valor_mensalidade, forma_pagamento, observacoes, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, contrato_baixado, contrato_arquivo_url, contrato_arquivo_nome, asaas_integrado, asaas_link, voomp_integrado, voomp_link, contrato_token, token_acesso, link_grupo_whatsapp, created_at';
@@ -1475,7 +1491,7 @@ export function Financeiro() {
       const { error } = await supabase.from('alunos').update(updateData).eq('id', alunoDetail.id);
       if (error) throw error;
 
-      if (financialChanged) {
+      if (financialChanged && !parcelasEditMode) {
         await sincronizarParcelasAluno({
           alunoId: alunoDetail.id,
           turmaId: nextTurmaId,
@@ -1766,6 +1782,59 @@ export function Financeiro() {
     setShowPagoDialog(false);
     setPagoInfo(null);
     loadData();
+  };
+
+  const salvarParcelasManual = async () => {
+    if (!alunoDetail) return;
+    setSavingParcelas(true);
+    try {
+      const toDelete = parcelasLocais.filter(p => p.deleted && !p.isNew).map(p => p.id);
+      const toInsert = parcelasLocais.filter(p => p.isNew && !p.deleted);
+      const toUpdate = parcelasLocais.filter(p => !p.isNew && !p.deleted && p.status !== 'pago');
+
+      if (toDelete.length > 0) {
+        const { error } = await supabase.from('pagamentos').delete().in('id', toDelete);
+        if (error) throw error;
+      }
+      if (toInsert.length > 0) {
+        const rows = toInsert.map(p => ({
+          aluno_id: alunoDetail.id,
+          turma_id: alunoDetail.turma_id,
+          produto: alunoDetail.produto,
+          valor: p.valor,
+          mes_referencia: p.data_vencimento.slice(0, 7) + '-01',
+          data_vencimento: p.data_vencimento,
+          numero_parcela: p.numero_parcela,
+          status: 'pendente' as const,
+          data_pagamento: null,
+        }));
+        const { error } = await supabase.from('pagamentos').insert(rows);
+        if (error) throw error;
+      }
+      for (const p of toUpdate) {
+        const { error } = await supabase.from('pagamentos').update({
+          valor: p.valor,
+          data_vencimento: p.data_vencimento,
+          mes_referencia: p.data_vencimento.slice(0, 7) + '-01',
+        }).eq('id', p.id);
+        if (error) throw error;
+      }
+
+      const surviving = parcelasLocais.filter(p => !p.deleted);
+      const paidCount = surviving.filter(p => p.status === 'pago').length;
+      await supabase.from('alunos').update({
+        total_mensalidades: surviving.length,
+        mensalidades_pagas: paidCount,
+      }).eq('id', alunoDetail.id);
+
+      toast({ title: `Parcelas salvas! ${surviving.length} no total.` });
+      setParcelasEditMode(false);
+      loadData();
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Erro ao salvar parcelas', description: e.message });
+    } finally {
+      setSavingParcelas(false);
+    }
   };
 
   const marcarComoPago = async (pagamentoId: string, alunoId: string) => {
@@ -2641,7 +2710,7 @@ export function Financeiro() {
       </Dialog>
 
       {/* Modal Detalhe/Edicao do Aluno */}
-      <Dialog open={showAlunoDetail} onOpenChange={setShowAlunoDetail}>
+      <Dialog open={showAlunoDetail} onOpenChange={v => { if (!v) { setParcelasEditMode(false); setParcelasLocais([]); } setShowAlunoDetail(v); }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-lg">{alunoDetail?.nome}</DialogTitle>
@@ -2982,62 +3051,230 @@ export function Financeiro() {
                 </div>
 
                 {/* Parcelas */}
-                <div>
-                  <div className="flex items-center justify-between mb-2 pt-1 border-t border-border">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                      Parcelas - {total > 0 ? `${pagas}/${total} pagas` : 'nenhuma gerada'}
-                      {atrasadas > 0 && <span className="ml-2 text-red-600">- {atrasadas} em atraso</span>}
-                    </p>
-                    {total > 0 && valorEfetivo > 0 && (
-                      <span className="text-xs text-muted-foreground">
-                        Total: {formatCurrency(valorEfetivo * total)} - Recebido: {formatCurrency(parcelas.filter(p => p.status === 'pago').reduce((s, p) => s + p.valor, 0))}
-                      </span>
-                    )}
-                  </div>
-                  {total === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-4">Nenhuma parcela gerada. Adicione o aluno com forma de pagamento para gerar automaticamente.</p>
-                  ) : (
-                    <div className="overflow-x-auto rounded-md border border-border">
-                      <table className="w-full text-sm">
-                        <thead className="bg-muted/50">
-                          <tr className="border-b border-border text-muted-foreground">
-                            <th className="text-left py-2 px-2 font-medium text-xs">No.</th>
-                            <th className="text-left py-2 px-2 font-medium text-xs">Vencimento</th>
-                            <th className="text-left py-2 px-2 font-medium text-xs">Pago em</th>
-                            <th className="text-left py-2 px-2 font-medium text-xs">Valor</th>
-                            <th className="text-left py-2 px-2 font-medium text-xs">Status</th>
-                            <th className="text-left py-2 px-3 font-medium">Acoes</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {parcelas.map(p => (
-                            <tr key={p.id} className={`border-b border-border/40 transition-colors ${p.status === 'atrasado' ? 'bg-red-50' : p.status === 'pago' ? 'bg-green-50/60' : 'hover:bg-muted/30'}`}>
-                              <td className="py-2 px-2 font-medium text-xs">{p.numero_parcela}/{total}</td>
-                              <td className="py-2 px-2 text-xs">{safeDate(p.data_vencimento)}</td>
-                              <td className="py-2 px-2 text-xs">
-                                {p.data_pagamento
-                                  ? <span className="text-green-700 font-medium">{safeDate(p.data_pagamento)}</span>
-                                  : <span className="text-muted-foreground">-</span>}
-                              </td>
-                              <td className="py-2 px-2 font-semibold text-xs">{formatCurrency(p.valor)}</td>
-                              <td className="py-2 px-2">
-                                <Badge className={`text-[10px] px-1.5 py-0.5 ${p.status === 'pago' ? 'bg-green-100 text-green-800' : p.status === 'atrasado' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                                  {p.status === 'pago' ? 'Pago' : p.status === 'atrasado' ? 'Atrasado' : 'Pendente'}
-                                </Badge>
-                              </td>
-                              <td className="py-2 px-2">
-                                {p.status === 'pago'
-                                  ? <Button variant="ghost" size="sm" onClick={() => estornarPagamento(p.id, alunoDetail.id)} className="text-orange-500 hover:text-orange-700 h-6 px-2 text-[10px]">Estornar</Button>
-                                  : <Button variant="ghost" size="sm" onClick={() => marcarComoPago(p.id, alunoDetail.id)} className="text-green-600 hover:text-green-800 h-6 px-2 text-[10px] font-semibold">Pago</Button>
-                                }
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                {(() => {
+                  const visiveisLocais = parcelasLocais.filter(p => !p.deleted);
+                  const totalLocal = visiveisLocais.length;
+                  const pagasLocal = visiveisLocais.filter(p => p.status === 'pago').length;
+                  const recebidoLocal = visiveisLocais.filter(p => p.status === 'pago').reduce((s, p) => s + p.valor, 0);
+                  const totalValorLocal = visiveisLocais.reduce((s, p) => s + p.valor, 0);
+
+                  const enterEditMode = () => {
+                    setParcelasLocais(parcelas.map(p => ({
+                      id: p.id,
+                      numero_parcela: p.numero_parcela,
+                      valor: p.valor,
+                      data_vencimento: p.data_vencimento?.split('T')[0] ?? '',
+                      data_pagamento: p.data_pagamento ?? null,
+                      status: p.status,
+                      isNew: false,
+                      deleted: false,
+                    })));
+                    setParcelasEditMode(true);
+                  };
+
+                  const addParcela = () => {
+                    const existentes = parcelasLocais.filter(p => !p.deleted);
+                    const lastNum = existentes.length > 0 ? Math.max(...existentes.map(p => p.numero_parcela)) : 0;
+                    const lastDate = existentes.filter(p => p.data_vencimento).sort((a, b) => b.numero_parcela - a.numero_parcela)[0]?.data_vencimento ?? '';
+                    const nextDate = (() => {
+                      if (!lastDate) return '';
+                      const d = new Date(lastDate + 'T12:00:00');
+                      d.setMonth(d.getMonth() + 1);
+                      return formatLocalDate(d);
+                    })();
+                    const lastValor = existentes.filter(p => p.status !== 'pago').sort((a, b) => b.numero_parcela - a.numero_parcela)[0]?.valor ?? (existentes[0]?.valor ?? 0);
+                    setParcelasLocais(prev => [...prev, {
+                      id: `new_${Date.now()}`,
+                      numero_parcela: lastNum + 1,
+                      valor: lastValor,
+                      data_vencimento: nextDate,
+                      status: 'pendente',
+                      isNew: true,
+                      deleted: false,
+                    }]);
+                  };
+
+                  const updateParcela = (id: string, field: 'valor' | 'data_vencimento', raw: string) => {
+                    setParcelasLocais(prev => prev.map(p =>
+                      p.id === id
+                        ? { ...p, [field]: field === 'valor' ? (parseFloat(raw) || 0) : raw }
+                        : p
+                    ));
+                  };
+
+                  const deleteParcela = (id: string) => {
+                    setParcelasLocais(prev => prev.map(p => p.id === id ? { ...p, deleted: true } : p));
+                  };
+
+                  return (
+                    <div>
+                      <div className="flex items-center justify-between mb-2 pt-1 border-t border-border">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          {parcelasEditMode
+                            ? `Parcelas — editando (${totalLocal} total)`
+                            : <>Parcelas — {total > 0 ? `${pagas}/${total} pagas` : 'nenhuma gerada'}{atrasadas > 0 && <span className="ml-2 text-red-600">- {atrasadas} em atraso</span>}</>
+                          }
+                        </p>
+                        <div className="flex items-center gap-2">
+                          {parcelasEditMode ? (
+                            <>
+                              <span className="text-xs text-muted-foreground">
+                                Total: {formatCurrency(totalValorLocal)} · Recebido: {formatCurrency(recebidoLocal)}
+                              </span>
+                              <Button size="sm" variant="outline" onClick={addParcela} className="h-6 px-2 text-[10px] gap-1">
+                                <Plus className="h-3 w-3" /> Parcela
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => setParcelasEditMode(false)} className="h-6 px-2 text-[10px] text-muted-foreground">
+                                Cancelar
+                              </Button>
+                              <Button size="sm" onClick={salvarParcelasManual} disabled={savingParcelas} className="h-6 px-2 text-[10px] bg-primary text-white">
+                                {savingParcelas ? 'Salvando…' : 'Salvar parcelas'}
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              {total > 0 && valorEfetivo > 0 && (
+                                <span className="text-xs text-muted-foreground">
+                                  Total: {formatCurrency(valorEfetivo * total)} - Recebido: {formatCurrency(parcelas.filter(p => p.status === 'pago').reduce((s, p) => s + p.valor, 0))}
+                                </span>
+                              )}
+                              <Button size="sm" variant="outline" onClick={enterEditMode} className="h-6 px-2 text-[10px] gap-1">
+                                <Pencil className="h-3 w-3" /> Editar parcelas
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Aviso modo edição */}
+                      {parcelasEditMode && (
+                        <div className="mb-2 px-3 py-2 rounded-md bg-amber-50 border border-amber-200 text-xs text-amber-800">
+                          Edite valor e vencimento de cada parcela. Parcelas pagas não podem ser alteradas. Clique <strong>Salvar parcelas</strong> para confirmar.
+                        </div>
+                      )}
+
+                      {/* Tabela modo leitura */}
+                      {!parcelasEditMode && (
+                        total === 0 ? (
+                          <p className="text-sm text-muted-foreground text-center py-4">Nenhuma parcela gerada. Adicione o aluno com forma de pagamento para gerar automaticamente.</p>
+                        ) : (
+                          <div className="overflow-x-auto rounded-md border border-border">
+                            <table className="w-full text-sm">
+                              <thead className="bg-muted/50">
+                                <tr className="border-b border-border text-muted-foreground">
+                                  <th className="text-left py-2 px-2 font-medium text-xs">No.</th>
+                                  <th className="text-left py-2 px-2 font-medium text-xs">Vencimento</th>
+                                  <th className="text-left py-2 px-2 font-medium text-xs">Pago em</th>
+                                  <th className="text-left py-2 px-2 font-medium text-xs">Valor</th>
+                                  <th className="text-left py-2 px-2 font-medium text-xs">Status</th>
+                                  <th className="text-left py-2 px-3 font-medium">Acoes</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {parcelas.map(p => (
+                                  <tr key={p.id} className={`border-b border-border/40 transition-colors ${p.status === 'atrasado' ? 'bg-red-50' : p.status === 'pago' ? 'bg-green-50/60' : 'hover:bg-muted/30'}`}>
+                                    <td className="py-2 px-2 font-medium text-xs">{p.numero_parcela}/{total}</td>
+                                    <td className="py-2 px-2 text-xs">{safeDate(p.data_vencimento)}</td>
+                                    <td className="py-2 px-2 text-xs">
+                                      {p.data_pagamento
+                                        ? <span className="text-green-700 font-medium">{safeDate(p.data_pagamento)}</span>
+                                        : <span className="text-muted-foreground">-</span>}
+                                    </td>
+                                    <td className="py-2 px-2 font-semibold text-xs">{formatCurrency(p.valor)}</td>
+                                    <td className="py-2 px-2">
+                                      <Badge className={`text-[10px] px-1.5 py-0.5 ${p.status === 'pago' ? 'bg-green-100 text-green-800' : p.status === 'atrasado' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                        {p.status === 'pago' ? 'Pago' : p.status === 'atrasado' ? 'Atrasado' : 'Pendente'}
+                                      </Badge>
+                                    </td>
+                                    <td className="py-2 px-2">
+                                      {p.status === 'pago'
+                                        ? <Button variant="ghost" size="sm" onClick={() => estornarPagamento(p.id, alunoDetail.id)} className="text-orange-500 hover:text-orange-700 h-6 px-2 text-[10px]">Estornar</Button>
+                                        : <Button variant="ghost" size="sm" onClick={() => marcarComoPago(p.id, alunoDetail.id)} className="text-green-600 hover:text-green-800 h-6 px-2 text-[10px] font-semibold">Pago</Button>
+                                      }
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )
+                      )}
+
+                      {/* Tabela modo edição */}
+                      {parcelasEditMode && (
+                        <div className="overflow-x-auto rounded-md border border-border">
+                          <table className="w-full text-sm">
+                            <thead className="bg-muted/50">
+                              <tr className="border-b border-border text-muted-foreground">
+                                <th className="text-left py-2 px-2 font-medium text-xs">No.</th>
+                                <th className="text-left py-2 px-2 font-medium text-xs">Vencimento</th>
+                                <th className="text-left py-2 px-2 font-medium text-xs">Pago em</th>
+                                <th className="text-left py-2 px-2 font-medium text-xs">Valor (R$)</th>
+                                <th className="text-left py-2 px-2 font-medium text-xs">Status</th>
+                                <th className="text-left py-2 px-2 font-medium text-xs w-8"></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {visiveisLocais.map((p, idx) => (
+                                <tr key={p.id} className={`border-b border-border/40 ${p.status === 'pago' ? 'bg-green-50/60' : 'bg-white'}`}>
+                                  <td className="py-1.5 px-2 text-xs font-medium text-muted-foreground">{idx + 1}/{totalLocal}</td>
+                                  <td className="py-1.5 px-2">
+                                    {p.status === 'pago'
+                                      ? <span className="text-xs text-muted-foreground">{safeDate(p.data_vencimento)}</span>
+                                      : <input
+                                          type="date"
+                                          value={p.data_vencimento}
+                                          onChange={e => updateParcela(p.id, 'data_vencimento', e.target.value)}
+                                          className="h-7 rounded border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring w-32"
+                                        />
+                                    }
+                                  </td>
+                                  <td className="py-1.5 px-2 text-xs">
+                                    {p.data_pagamento
+                                      ? <span className="text-green-700 font-medium">{safeDate(p.data_pagamento)}</span>
+                                      : <span className="text-muted-foreground">-</span>}
+                                  </td>
+                                  <td className="py-1.5 px-2">
+                                    {p.status === 'pago'
+                                      ? <span className="text-xs font-semibold">{formatCurrency(p.valor)}</span>
+                                      : <input
+                                          type="number"
+                                          min="0"
+                                          step="0.01"
+                                          value={p.valor}
+                                          onChange={e => updateParcela(p.id, 'valor', e.target.value)}
+                                          className="h-7 rounded border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring w-24"
+                                        />
+                                    }
+                                  </td>
+                                  <td className="py-1.5 px-2">
+                                    <Badge className={`text-[10px] px-1.5 py-0.5 ${p.status === 'pago' ? 'bg-green-100 text-green-800' : p.status === 'atrasado' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                      {p.status === 'pago' ? 'Pago' : p.status === 'atrasado' ? 'Atrasado' : 'Pendente'}
+                                    </Badge>
+                                  </td>
+                                  <td className="py-1.5 px-2">
+                                    {p.status !== 'pago' && (
+                                      <button
+                                        onClick={() => deleteParcela(p.id)}
+                                        className="text-muted-foreground hover:text-red-500 transition-colors"
+                                        title="Remover parcela"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {visiveisLocais.length === 0 && (
+                            <p className="text-xs text-muted-foreground text-center py-4">Nenhuma parcela. Clique em "+ Parcela" para adicionar.</p>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
+                  );
+                })()}
 
               </div>
             );
