@@ -888,6 +888,9 @@ export function Financeiro() {
   const [newResponsavelNome, setNewResponsavelNome] = useState('');
   const [savingResponsavel, setSavingResponsavel] = useState(false);
 
+  // Card expandido nos KPIs do financeiro
+  const [expandedCard, setExpandedCard] = useState<'recebido' | 'previsto' | 'aReceber' | 'inadimplentes' | 'ativos' | null>(null);
+
   // Edição manual de parcelas
   const [parcelasEditMode, setParcelasEditMode] = useState(false);
   const [parcelasLocais, setParcelasLocais] = useState<ParcelaLocal[]>([]);
@@ -2006,50 +2009,205 @@ export function Financeiro() {
             )}
           </div>
 
-          {/* Cards resumo */}
+          {/* Cards resumo — clique para ver o detalhamento */}
           {(() => {
             const turmaAtiva = selectedTurmaId !== 'todas' ? filteredTurmas.find(t => t.id === selectedTurmaId) : null;
             const contexto = turmaAtiva ? turmaAtiva.nome : periodoLabel[periodo];
+            const alunosAtivosLocal = filteredAlunos.filter(a => a.status === 'ativo');
+            const pagsPeriodoRecebido = pagamentosEmFoco.filter(p => p.status === 'pago' && periodoFilter(p.data_pagamento));
+            const pagsPrevisto = pagamentosEmFoco.filter(p => periodoFilter(p.data_vencimento));
+            const getNome = (id: string) => alunos.find(a => a.id === id)?.nome || '—';
+            const getTurma = (id: string) => turmas.find(t => t.id === id)?.nome || 'Sem turma';
+            const toggle = (card: typeof expandedCard) => setExpandedCard(expandedCard === card ? null : card);
+            const chevron = (card: typeof expandedCard) => (
+              <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground/50 shrink-0 transition-transform ${expandedCard === card ? 'rotate-180' : ''}`} />
+            );
+
             return (
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                <Card className="p-4 flex items-center gap-3">
-                  <div className="p-2 bg-green-100 rounded-lg"><DollarSign className="h-4 w-4 text-green-600" /></div>
-                  <div>
-                    <p className="text-xs text-muted-foreground truncate max-w-[120px]" title={`Recebido - ${contexto}`}>Recebido - {contexto}</p>
-                    <p className="text-lg font-bold text-green-600">{formatCurrency(receitaMes)}</p>
-                  </div>
-                </Card>
-                <Card className="p-4 flex items-center gap-3">
-                  <div className="p-2 bg-blue-100 rounded-lg"><Target className="h-4 w-4 text-blue-600" /></div>
-                  <div>
-                    <p className="text-xs text-muted-foreground truncate max-w-[120px]" title={`Previsto - ${contexto}`}>Previsto - {contexto}</p>
-                    <p className="text-lg font-bold text-blue-600">{formatCurrency(previstoMes)}</p>
-                  </div>
-                </Card>
-                <Card className="p-4 flex items-center gap-3">
-                  <div className="p-2 bg-yellow-100 rounded-lg"><TrendingUp className="h-4 w-4 text-yellow-600" /></div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">A Receber</p>
-                    <p className="text-lg font-bold text-yellow-700">{formatCurrency(valorAReceber)}</p>
-                    <p className="text-xs text-muted-foreground">{parcelasEmAberto.length} parcela{parcelasEmAberto.length !== 1 ? 's' : ''} em aberto</p>
-                  </div>
-                </Card>
-                <Card className="p-4 flex items-center gap-3 border-red-100">
-                  <div className="p-2 bg-red-100 rounded-lg"><AlertCircle className="h-4 w-4 text-red-600" /></div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Inadimplentes</p>
-                    <p className="text-lg font-bold text-red-600">{inadimplentes.length}</p>
-                    {totalEmAtraso > 0 && <p className="text-xs text-red-500 font-medium">{formatCurrency(totalEmAtraso)} em atraso</p>}
-                  </div>
-                </Card>
-                <Card className="p-4 flex items-center gap-3">
-                  <div className="p-2 bg-purple-100 rounded-lg"><Users className="h-4 w-4 text-purple-600" /></div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Alunos Ativos</p>
-                    <p className="text-lg font-bold text-purple-600">{filteredAlunos.filter(a => a.status === 'ativo').length}</p>
-                    <p className="text-xs text-muted-foreground">{contratosPendentes > 0 ? `${contratosPendentes} sem contrato` : 'Todos c/ contrato'}</p>
-                  </div>
-                </Card>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+
+                  {/* Recebido */}
+                  <Card
+                    className={`p-4 cursor-pointer hover:shadow-md transition-all ${expandedCard === 'recebido' ? 'ring-2 ring-green-400 shadow-md' : ''}`}
+                    onClick={() => toggle('recebido')}
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="p-1.5 bg-green-100 rounded-lg"><DollarSign className="h-3.5 w-3.5 text-green-600" /></div>
+                      {chevron('recebido')}
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-0.5 truncate" title={`Recebido — ${contexto}`}>Recebido — {contexto}</p>
+                    <p className="text-xl font-bold text-green-600">{formatCurrency(receitaMes)}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{pagsPeriodoRecebido.length} pag.</p>
+                  </Card>
+
+                  {/* Previsto */}
+                  <Card
+                    className={`p-4 cursor-pointer hover:shadow-md transition-all ${expandedCard === 'previsto' ? 'ring-2 ring-blue-400 shadow-md' : ''}`}
+                    onClick={() => toggle('previsto')}
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="p-1.5 bg-blue-100 rounded-lg"><Target className="h-3.5 w-3.5 text-blue-600" /></div>
+                      {chevron('previsto')}
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-0.5 truncate" title={`Previsto — ${contexto}`}>Previsto — {contexto}</p>
+                    <p className="text-xl font-bold text-blue-600">{formatCurrency(previstoMes)}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{pagsPrevisto.length} pag.</p>
+                  </Card>
+
+                  {/* A Receber */}
+                  <Card
+                    className={`p-4 cursor-pointer hover:shadow-md transition-all ${expandedCard === 'aReceber' ? 'ring-2 ring-yellow-400 shadow-md' : ''}`}
+                    onClick={() => toggle('aReceber')}
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="p-1.5 bg-yellow-100 rounded-lg"><TrendingUp className="h-3.5 w-3.5 text-yellow-600" /></div>
+                      {chevron('aReceber')}
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-0.5">A Receber</p>
+                    <p className="text-xl font-bold text-yellow-700">{formatCurrency(valorAReceber)}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{parcelasEmAberto.length} parcela{parcelasEmAberto.length !== 1 ? 's' : ''}</p>
+                  </Card>
+
+                  {/* Inadimplentes */}
+                  <Card
+                    className={`p-4 cursor-pointer hover:shadow-md transition-all border-red-100 ${expandedCard === 'inadimplentes' ? 'ring-2 ring-red-400 shadow-md' : ''}`}
+                    onClick={() => toggle('inadimplentes')}
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="p-1.5 bg-red-100 rounded-lg"><AlertCircle className="h-3.5 w-3.5 text-red-600" /></div>
+                      {chevron('inadimplentes')}
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-0.5">Inadimplentes</p>
+                    <p className="text-xl font-bold text-red-600">{inadimplentes.length}</p>
+                    {totalEmAtraso > 0 && <p className="text-xs text-red-500 font-medium mt-0.5">{formatCurrency(totalEmAtraso)} em atraso</p>}
+                  </Card>
+
+                  {/* Alunos Ativos */}
+                  <Card
+                    className={`p-4 cursor-pointer hover:shadow-md transition-all ${expandedCard === 'ativos' ? 'ring-2 ring-purple-400 shadow-md' : ''}`}
+                    onClick={() => toggle('ativos')}
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="p-1.5 bg-purple-100 rounded-lg"><Users className="h-3.5 w-3.5 text-purple-600" /></div>
+                      {chevron('ativos')}
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-0.5">Alunos Ativos</p>
+                    <p className="text-xl font-bold text-purple-600">{alunosAtivosLocal.length}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{contratosPendentes > 0 ? `${contratosPendentes} sem contrato` : 'Todos c/ contrato'}</p>
+                  </Card>
+                </div>
+
+                {/* Painel de detalhamento */}
+                {expandedCard && (
+                  <Card className="border border-border/60 bg-white">
+                    <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-border/50">
+                      <p className="text-sm font-semibold text-foreground">
+                        {expandedCard === 'recebido' && `Pagamentos recebidos — ${contexto} (${pagsPeriodoRecebido.length})`}
+                        {expandedCard === 'previsto' && `Pagamentos previstos — ${contexto} (${pagsPrevisto.length})`}
+                        {expandedCard === 'aReceber' && `Parcelas em aberto (${parcelasEmAberto.length})`}
+                        {expandedCard === 'inadimplentes' && `Alunos inadimplentes (${inadimplentes.length})`}
+                        {expandedCard === 'ativos' && `Alunos ativos (${alunosAtivosLocal.length})`}
+                      </p>
+                      <button onClick={() => setExpandedCard(null)} className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted transition-colors">fechar ×</button>
+                    </div>
+
+                    <div className="overflow-auto max-h-72">
+                      <table className="w-full text-xs">
+                        <thead className="sticky top-0 bg-muted/60 backdrop-blur-sm">
+                          <tr>
+                            <th className="text-left py-2 px-4 font-medium text-muted-foreground">Nome</th>
+                            <th className="text-left py-2 px-3 font-medium text-muted-foreground">Turma</th>
+                            <th className="text-right py-2 px-3 font-medium text-muted-foreground">Valor</th>
+                            <th className="text-right py-2 px-4 font-medium text-muted-foreground">
+                              {expandedCard === 'recebido' ? 'Pago em' :
+                               expandedCard === 'inadimplentes' ? 'Atraso' :
+                               expandedCard === 'ativos' ? 'Mensalidade' : 'Vencimento'}
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {expandedCard === 'recebido' && pagsPeriodoRecebido
+                            .sort((a, b) => (b.data_pagamento || '').localeCompare(a.data_pagamento || ''))
+                            .map(p => (
+                              <tr key={p.id} className="border-t border-border/30 hover:bg-muted/30">
+                                <td className="py-2 px-4 font-medium">{getNome(p.aluno_id)}</td>
+                                <td className="py-2 px-3 text-muted-foreground">{getTurma(p.turma_id)}</td>
+                                <td className="py-2 px-3 text-right font-semibold text-green-700">{formatCurrency(p.valor)}</td>
+                                <td className="py-2 px-4 text-right text-muted-foreground">
+                                  {p.data_pagamento ? format(parseISO(p.data_pagamento), 'dd/MM/yy') : '—'}
+                                </td>
+                              </tr>
+                            ))
+                          }
+                          {expandedCard === 'previsto' && pagsPrevisto
+                            .sort((a, b) => a.data_vencimento.localeCompare(b.data_vencimento))
+                            .map(p => (
+                              <tr key={p.id} className={`border-t border-border/30 hover:bg-muted/30 ${p.status === 'atrasado' ? 'bg-red-50/30' : ''}`}>
+                                <td className="py-2 px-4 font-medium">{getNome(p.aluno_id)}</td>
+                                <td className="py-2 px-3 text-muted-foreground">{getTurma(p.turma_id)}</td>
+                                <td className="py-2 px-3 text-right font-semibold">{formatCurrency(p.valor)}</td>
+                                <td className="py-2 px-4 text-right">
+                                  <span className={`px-1.5 py-0.5 rounded-full text-xs font-medium ${p.status === 'pago' ? 'bg-green-100 text-green-700' : p.status === 'atrasado' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                    {p.status === 'pago' ? 'pago' : format(parseISO(p.data_vencimento), 'dd/MM/yy')}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          }
+                          {expandedCard === 'aReceber' && parcelasEmAberto
+                            .sort((a, b) => a.data_vencimento.localeCompare(b.data_vencimento))
+                            .map(p => (
+                              <tr key={p.id} className={`border-t border-border/30 hover:bg-muted/30 ${p.status === 'atrasado' ? 'bg-red-50/30' : ''}`}>
+                                <td className="py-2 px-4 font-medium">{getNome(p.aluno_id)}</td>
+                                <td className="py-2 px-3 text-muted-foreground">{getTurma(p.turma_id)}</td>
+                                <td className="py-2 px-3 text-right font-semibold text-yellow-700">{formatCurrency(p.valor)}</td>
+                                <td className="py-2 px-4 text-right">
+                                  <span className={`px-1.5 py-0.5 rounded-full text-xs font-medium ${p.status === 'atrasado' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                    {format(parseISO(p.data_vencimento), 'dd/MM/yy')}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          }
+                          {expandedCard === 'inadimplentes' && inadimplentes
+                            .sort((a, b) => (inadimplenciaMap[b.id]?.diasAtraso || 0) - (inadimplenciaMap[a.id]?.diasAtraso || 0))
+                            .map(a => {
+                              const inad = inadimplenciaMap[a.id];
+                              return (
+                                <tr key={a.id} className="border-t border-border/30 hover:bg-muted/30">
+                                  <td className="py-2 px-4 font-medium">{a.nome}</td>
+                                  <td className="py-2 px-3 text-muted-foreground">{getTurma(a.turma_id)}</td>
+                                  <td className="py-2 px-3 text-right font-semibold text-red-700">{inad ? formatCurrency(inad.valorEmAtraso) : '—'}</td>
+                                  <td className="py-2 px-4 text-right">
+                                    {inad ? (
+                                      <span className="px-1.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                                        {inad.diasAtraso}d · {inad.parcelasAtrasadas} parc.
+                                      </span>
+                                    ) : '—'}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          }
+                          {expandedCard === 'ativos' && alunosAtivosLocal
+                            .sort((a, b) => a.nome.localeCompare(b.nome))
+                            .map(a => (
+                              <tr key={a.id} className="border-t border-border/30 hover:bg-muted/30">
+                                <td className="py-2 px-4 font-medium">{a.nome}</td>
+                                <td className="py-2 px-3 text-muted-foreground">{getTurma(a.turma_id)}</td>
+                                <td className="py-2 px-3 text-right text-muted-foreground">{a.valor_mensalidade ? formatCurrency(a.valor_mensalidade) : '—'}</td>
+                                <td className="py-2 px-4 text-right">
+                                  <span className="px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">ativo</span>
+                                </td>
+                              </tr>
+                            ))
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  </Card>
+                )}
               </div>
             );
           })()}
