@@ -42,6 +42,14 @@ interface Responsavel {
   created_at: string;
 }
 
+interface Lancamento {
+  id: string;
+  nome: string;
+  status?: string;
+  data_live?: string;
+  ativo?: boolean;
+}
+
 interface Aluno {
   id: string;
   turma_id: string;
@@ -85,6 +93,7 @@ interface Aluno {
   contrato_token?: string;
   token_acesso?: string;
   link_grupo_whatsapp?: string;
+  lancamento_id?: string;
   created_at: string;
 }
 
@@ -286,6 +295,7 @@ const getEmptyAlunoForm = () => ({
   data_matricula: todayDateInput(),
   dia_vencimento: '10',
   origem: 'direto',
+  lancamento_id: '',
   forma_pagamento: 'boleto' as PaymentMethod,
   valor_mensalidade: '',
   total_parcelas: '',    // vazio = usa padrão do método
@@ -874,6 +884,7 @@ export function Financeiro() {
   const [bulkMarking, setBulkMarking] = useState(false);
   const [duplicataWarning, setDuplicataWarning] = useState<Aluno | null>(null);
   const [responsaveis, setResponsaveis] = useState<Responsavel[]>([]);
+  const [lancamentos, setLancamentos] = useState<Lancamento[]>([]);
   const [newResponsavelNome, setNewResponsavelNome] = useState('');
   const [savingResponsavel, setSavingResponsavel] = useState(false);
 
@@ -884,7 +895,7 @@ export function Financeiro() {
 
   useEffect(() => { loadData(); }, []);
 
-  const ALUNOS_SELECT_FULL = 'id, turma_id, produto, nome, whatsapp, email, cpf, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, valor_mensalidade, forma_pagamento, observacoes, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, contrato_baixado, contrato_arquivo_url, contrato_arquivo_nome, asaas_integrado, asaas_link, voomp_integrado, voomp_link, contrato_token, token_acesso, link_grupo_whatsapp, created_at';
+  const ALUNOS_SELECT_FULL = 'id, turma_id, produto, nome, whatsapp, email, cpf, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, lancamento_id, valor_mensalidade, forma_pagamento, observacoes, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, contrato_baixado, contrato_arquivo_url, contrato_arquivo_nome, asaas_integrado, asaas_link, voomp_integrado, voomp_link, contrato_token, token_acesso, link_grupo_whatsapp, created_at';
   const ALUNOS_SELECT_BASE = 'id, turma_id, produto, nome, whatsapp, email, cpf, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, valor_mensalidade, forma_pagamento, observacoes, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, created_at';
 
   const loadData = async () => {
@@ -907,6 +918,8 @@ export function Financeiro() {
       // Responsaveis e opcional (tabela pode nao existir ainda)
       const respRes = await supabase.from('responsaveis').select('id, nome, created_at').order('nome');
       if (respRes.data) setResponsaveis(respRes.data);
+      const lancRes = await supabase.from('lancamentos').select('id, nome, status, data_live, ativo').order('created_at', { ascending: false });
+      if (lancRes.data) setLancamentos(lancRes.data);
     } catch (e) {
       toast({ variant: 'destructive', title: 'Erro', description: 'Falha ao carregar dados' });
     } finally {
@@ -1342,6 +1355,7 @@ export function Financeiro() {
         data_fim: newAlunoForm.data_fim || null,
         data_matricula: newAlunoForm.data_matricula || todayDateInput(),
         origem_lead: newAlunoForm.origem,
+        lancamento_id: newAlunoForm.lancamento_id || null,
         valor_mensalidade: valorAluno,
         forma_pagamento: method,
         observacoes: newAlunoForm.observacoes || null,
@@ -1389,6 +1403,7 @@ export function Financeiro() {
       data_matricula: a.data_matricula || todayDateInput(),
       status: a.status,
       origem_lead: a.origem_lead || '',
+      lancamento_id: a.lancamento_id || '',
       mensalidades_pagas: a.mensalidades_pagas || 0,
       valor_mensalidade: a.valor_mensalidade ?? undefined,
       forma_pagamento: normalizePaymentMethod(a.forma_pagamento),
@@ -1468,6 +1483,7 @@ export function Financeiro() {
         data_matricula: nextDataMatricula,
         status: editAlunoForm.status || alunoDetail.status,
         origem_lead: editAlunoForm.origem_lead || null,
+        lancamento_id: editAlunoForm.lancamento_id || null,
         valor_mensalidade: nextValorAluno,
         forma_pagamento: nextMethod,
         forms_respondido: editAlunoForm.forms_respondido ?? false,
@@ -2688,15 +2704,30 @@ export function Financeiro() {
             </div>
             <div>
               <label className="text-sm font-medium">Origem</label>
-              <Select value={newAlunoForm.origem} onValueChange={v => setNewAlunoForm({ ...newAlunoForm, origem: v })}>
+              <Select value={newAlunoForm.origem} onValueChange={v => setNewAlunoForm({ ...newAlunoForm, origem: v, lancamento_id: v !== 'lancamento' ? '' : newAlunoForm.lancamento_id })}>
                 <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="direto">Direto</SelectItem>
-                  <SelectItem value="lancamento">Lancamento</SelectItem>
+                  <SelectItem value="lancamento">Lançamento</SelectItem>
                   <SelectItem value="npa">NPA</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            {newAlunoForm.origem === 'lancamento' && (
+              <div>
+                <label className="text-sm font-medium">Lançamento</label>
+                <Select value={newAlunoForm.lancamento_id} onValueChange={v => setNewAlunoForm({ ...newAlunoForm, lancamento_id: v })}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Selecione o lançamento" /></SelectTrigger>
+                  <SelectContent>
+                    {lancamentos.map(l => (
+                      <SelectItem key={l.id} value={l.id}>
+                        {l.nome}{l.data_live ? ` — ${new Date(l.data_live + 'T12:00:00').toLocaleDateString('pt-BR')}` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div>
               <label className="text-sm font-medium">Observacoes</label>
               <Textarea value={newAlunoForm.observacoes} onChange={e => setNewAlunoForm({ ...newAlunoForm, observacoes: e.target.value })} placeholder="Informacoes do contrato, cobranca ou atendimento..." className="mt-1 min-h-16" />
@@ -2959,15 +2990,30 @@ export function Financeiro() {
                     <div className="col-span-2"><label className="text-xs text-muted-foreground">Endereco completo</label><Input value={editAlunoForm.endereco || ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, endereco: e.target.value })} className="mt-1 h-8 text-sm" /></div>
                     <div>
                       <label className="text-xs text-muted-foreground">Origem</label>
-                      <Select value={editAlunoForm.origem_lead || 'direto'} onValueChange={v => setEditAlunoForm({ ...editAlunoForm, origem_lead: v })}>
+                      <Select value={editAlunoForm.origem_lead || 'direto'} onValueChange={v => setEditAlunoForm({ ...editAlunoForm, origem_lead: v, lancamento_id: v !== 'lancamento' ? '' : editAlunoForm.lancamento_id })}>
                         <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="direto">Direto</SelectItem>
-                          <SelectItem value="lancamento">Lancamento</SelectItem>
+                          <SelectItem value="lancamento">Lançamento</SelectItem>
                           <SelectItem value="npa">NPA</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
+                    {editAlunoForm.origem_lead === 'lancamento' && (
+                      <div>
+                        <label className="text-xs text-muted-foreground">Lançamento</label>
+                        <Select value={editAlunoForm.lancamento_id || ''} onValueChange={v => setEditAlunoForm({ ...editAlunoForm, lancamento_id: v })}>
+                          <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue placeholder="Selecione o lançamento" /></SelectTrigger>
+                          <SelectContent>
+                            {lancamentos.map(l => (
+                              <SelectItem key={l.id} value={l.id}>
+                                {l.nome}{l.data_live ? ` — ${new Date(l.data_live + 'T12:00:00').toLocaleDateString('pt-BR')}` : ''}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                     <div className="col-span-2">
                       <label className="text-xs text-muted-foreground">Observacoes</label>
                       <Textarea value={editAlunoForm.observacoes || ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, observacoes: e.target.value })} placeholder="Observacoes sobre contrato, cobranca ou atendimento..." className="mt-1 min-h-16 text-sm" />
