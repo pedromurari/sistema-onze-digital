@@ -59,7 +59,10 @@ export function CRMLayout() {
   const { user } = useAuth();
   const permissions = user?.permissions ?? getDefaultPermissions(user?.tipo);
   const isAdmin = user?.tipo === 'admin';
-  const [currentView, setCurrentView] = useState<View>('dashboard');
+  const [currentView, setCurrentView] = useState<View>(() => {
+    try { return (localStorage.getItem('crm_last_view') as View) || 'dashboard'; }
+    catch { return 'dashboard'; }
+  });
   const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
   const [isFlashLeadModalOpen, setIsFlashLeadModalOpen] = useState(false);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
@@ -73,6 +76,10 @@ export function CRMLayout() {
   const handleAddLead = () => { setEditingLead(null); setIsLeadModalOpen(true); };
   const handleAddFlashLead = () => { setIsFlashLeadModalOpen(true); };
   const handleEditLead = (lead: Lead) => { setEditingLead(lead); setIsLeadModalOpen(true); };
+
+  useEffect(() => {
+    try { localStorage.setItem('crm_last_view', currentView); } catch {}
+  }, [currentView]);
 
   useEffect(() => {
     if (!canAccessView(currentView, permissions, Boolean(isAdmin))) {

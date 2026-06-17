@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   DollarSign, TrendingUp, AlertTriangle, Target, Info, Calendar,
   Users, BarChart3, CheckCircle2, TrendingDown, Pencil, Save, X, Settings2,
-  Layers, Droplets, Plus, Trash2,
+  Layers, Droplets, Plus, Trash2, ChevronDown, Copy, FileText,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, differenceInDays, parseISO, subDays, subMonths, startOfWeek, endOfWeek } from 'date-fns';
@@ -108,13 +108,15 @@ function InfoTip({ text }: { text: string }) {
 // ── KPI Card ──────────────────────────────────────────────────────────────────
 
 function KPICard({
-  icon, label, value, sub, color, progress, meta, fonte,
+  icon, label, value, sub, color, progress, meta, fonte, details,
 }: {
   icon: React.ReactNode; label: string; value: string; sub?: string;
   color: 'blue' | 'emerald' | 'red' | 'violet' | 'amber';
   progress?: number; meta?: { atual: number; alvo: number; label: string };
   fonte?: string;
+  details?: { label: string; value: string; highlight?: boolean }[];
 }) {
+  const [expanded, setExpanded] = useState(false);
   const cls = {
     blue:   'bg-blue-50 text-blue-600',
     emerald:'bg-emerald-50 text-emerald-600',
@@ -128,14 +130,20 @@ function KPICard({
   }[color];
 
   return (
-    <Card className="border border-border/60 shadow-sm bg-white hover:shadow-md transition-shadow">
+    <Card
+      className={`border border-border/60 shadow-sm bg-white transition-shadow hover:shadow-md ${details ? 'cursor-pointer' : ''}`}
+      onClick={() => details && setExpanded(e => !e)}
+    >
       <CardContent className="p-5">
         <div className="flex items-start justify-between mb-3">
           <div className={`p-2 rounded-xl ${cls}`}>{icon}</div>
-          <span className="text-xs text-muted-foreground flex items-center gap-0.5">
-            {label}
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-muted-foreground">{label}</span>
             {fonte && <InfoTip text={fonte} />}
-          </span>
+            {details && (
+              <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground/60 transition-transform ml-0.5 ${expanded ? 'rotate-180' : ''}`} />
+            )}
+          </div>
         </div>
         <p className="text-2xl font-bold text-foreground tabular-nums">{value}</p>
         {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
@@ -163,6 +171,16 @@ function KPICard({
             <p className="text-xs text-muted-foreground mt-1">
               {fmtK(meta.atual)} / meta {fmtK(meta.alvo)}
             </p>
+          </div>
+        )}
+        {expanded && details && (
+          <div className="mt-3 pt-3 border-t border-border/50 space-y-1.5">
+            {details.map((row, i) => (
+              <div key={i} className="flex items-center justify-between text-xs">
+                <span className={row.highlight ? 'font-semibold text-foreground' : 'text-muted-foreground'}>{row.label}</span>
+                <span className={`tabular-nums ${row.highlight ? 'font-bold text-foreground' : 'font-medium'}`}>{row.value}</span>
+              </div>
+            ))}
           </div>
         )}
       </CardContent>
@@ -247,7 +265,7 @@ export function FinanceiroCFO() {
           { data: prod }, { data: taxas }, { data: recFonte },
         ] = await Promise.all([
           supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades, responsavel_id'),
-          supabase.from('alunos').select('id, nome, turma_id, status, dia_vencimento, valor_mensalidade, mensalidades_pagas, total_mensalidades').neq('status', 'cancelado'),
+          supabase.from('alunos').select('id, nome, turma_id, status, dia_vencimento, valor_mensalidade, mensalidades_pagas, total_mensalidades'),
           supabase.from('pagamentos').select('id, aluno_id, turma_id, valor, status, data_pagamento, data_vencimento, mes_referencia'),
           supabase.from('turma_responsaveis').select('id, turma_id, user_id, nome_ref, percentual'),
           supabase.from('responsaveis').select('id, nome'),
@@ -699,6 +717,36 @@ export function FinanceiroCFO() {
     hoje: 'Hoje', semana: 'Esta semana', mes: format(new Date(), 'MMMM', { locale: ptBR }), '3m': 'Últimos 3 meses',
   };
 
+  // ── Métricas complementares ───────────────────────────────────────────────
+  const arr = mrrTotal * 12;
+  const alunosCancelados = alunos.filter(a => a.status === 'cancelado');
+  const churnPct = alunos.length > 0 ? Math.round((alunosCancelados.length / alunos.length) * 100) : 0;
+  const pagsMesCount = pagamentosPagos.filter(p => (p.mes_referencia || '').startsWith(mesAtual)).length;
+  const ticketMedio = pagsMesCount > 0 ? receitaMesAtual / pagsMesCount : 0;
+
+  function gerarRelatorioDiario() {
+    const hoje_ = format(new Date(), "dd/MM/yyyy", { locale: ptBR });
+    const text = [
+      `📊 RELATÓRIO FINANCEIRO — ${hoje_}`,
+      ownerFilter ? `👤 Filtrado por: ${ownerFilter}` : `👥 Visão consolidada`,
+      ``,
+      `MRR Projetado......... ${fmtK(mrrTotal)}`,
+      `ARR (projeção anual).. ${fmtK(arr)}`,
+      `Recebido hoje......... ${fmtK(receitaHoje)}`,
+      `Recebido no mês....... ${fmtK(receitaMesAtual)} (${taxaColeta}% de coleta)`,
+      `Líquido (pós-taxas)... ${fmtK(totaisLiquido.liquido)}`,
+      `Ticket médio.......... ${fmtK(ticketMedio)}`,
+      ``,
+      `Inadimplência......... ${fmtK(inadimplencia.valorTotal)} (${inadimplencia.txInadimplencia}% · ${inadimplencia.totalInadimplentes} alunos)`,
+      `Churn estimado........ ${churnPct}% (${alunosCancelados.length} cancelados)`,
+      `LTV Restante.......... ${fmtK(ltvRestante)}`,
+      ``,
+      `Alunos ativos......... ${alunosAtivos.length}`,
+      `Variação vs mês ant... ${variacaoMensal >= 0 ? '+' : ''}${variacaoMensal.toFixed(1)}%`,
+    ].join('\n');
+    navigator.clipboard.writeText(text).then(() => toast.success('Relatório copiado para a área de transferência!'));
+  }
+
   return (
     <div className="p-4 lg:p-6 space-y-5 max-w-7xl mx-auto pb-20 lg:pb-6">
 
@@ -710,22 +758,29 @@ export function FinanceiroCFO() {
             {format(new Date(), "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR })} · Visão financeira executiva
           </p>
         </div>
-        {/* Owner filter — sempre visível com os 3 donos */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <Users className="h-4 w-4 text-muted-foreground shrink-0" />
-          {(['', ...OWNERS] as const).map(owner => (
-            <button
-              key={owner || '__todos__'}
-              onClick={() => setOwnerFilter(owner === ownerFilter ? '' : owner)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                ownerFilter === owner
-                  ? 'bg-primary text-white shadow-sm'
-                  : 'bg-muted/50 text-muted-foreground hover:bg-muted'
-              }`}
-            >
-              {owner || 'Todos'}
-            </button>
-          ))}
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Owner filter */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <Users className="h-4 w-4 text-muted-foreground shrink-0" />
+            {(['', ...OWNERS] as const).map(owner => (
+              <button
+                key={owner || '__todos__'}
+                onClick={() => setOwnerFilter(owner === ownerFilter ? '' : owner)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                  ownerFilter === owner
+                    ? 'bg-primary text-white shadow-sm'
+                    : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                {owner || 'Todos'}
+              </button>
+            ))}
+          </div>
+          {/* Relatório diário */}
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs shrink-0" onClick={gerarRelatorioDiario}>
+            <Copy className="h-3.5 w-3.5" />
+            Relatório
+          </Button>
         </div>
       </div>
 
@@ -744,7 +799,7 @@ export function FinanceiroCFO() {
         )}
       </div>
 
-      {/* KPI Cards */}
+      {/* KPI Cards — clique para expandir o detalhamento */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard
           icon={<DollarSign className="h-4 w-4" />}
@@ -753,7 +808,13 @@ export function FinanceiroCFO() {
           sub={`${alunosAtivos.length} alunos ativos${ownerFilter ? ` · ${ownerFilter}` : ''}`}
           color="blue"
           meta={{ atual: mrrTotal, alvo: metas.mrr, label: 'Meta MRR' }}
-          fonte={`Soma do valor_mensalidade de todos os alunos com status='ativo'${ownerFilter ? `, ponderado pela % de ${ownerFilter} em turma_responsaveis` : ''}. Fonte: tabelas alunos + turmas${ownerFilter ? ' + turma_responsaveis' : ''}.`}
+          fonte={`Soma do valor_mensalidade de todos os alunos com status='ativo'${ownerFilter ? `, ponderado pela % de ${ownerFilter}` : ''}. Fonte: tabelas alunos + turmas.`}
+          details={[
+            { label: 'Alunos ativos', value: `${alunosAtivos.length}` },
+            ...(mrrPorTurma as any[]).slice(0, 4).map((t: any) => ({ label: t.turma.nome, value: fmtK(t.mrrReal) })),
+            ...((mrrPorTurma as any[]).length > 4 ? [{ label: `+${(mrrPorTurma as any[]).length - 4} outras turmas`, value: fmtK((mrrPorTurma as any[]).slice(4).reduce((s: number, t: any) => s + t.mrrReal, 0)) }] : []),
+            { label: 'Total MRR', value: fmtK(mrrTotal), highlight: true },
+          ]}
         />
         <KPICard
           icon={<TrendingUp className="h-4 w-4" />}
@@ -764,6 +825,13 @@ export function FinanceiroCFO() {
           progress={taxaColeta}
           meta={periodo === 'hoje' ? { atual: receitaHoje, alvo: metas.receita_hoje, label: 'Meta hoje' } : { atual: receitaMesAtual, alvo: metas.coleta_mes, label: 'Meta mês' }}
           fonte={`Pagamentos com status='pago' ${periodo === 'hoje' ? "com data_pagamento = hoje" : periodo === 'semana' ? "dos últimos 7 dias" : periodo === 'mes' ? "com mes_referencia = mês atual" : "dos últimos 3 meses"}${ownerFilter ? `, ponderado pela % de ${ownerFilter}` : ''}. Fonte: tabela pagamentos.`}
+          details={[
+            { label: 'Hoje', value: fmtK(receitaHoje) },
+            { label: `${format(new Date(), 'MMMM', { locale: ptBR })} (atual)`, value: fmtK(receitaMesAtual) },
+            { label: 'Mês anterior', value: fmtK(receitaMesAnterior) },
+            { label: 'Variação mensal', value: `${variacaoMensal >= 0 ? '+' : ''}${variacaoMensal.toFixed(1)}%` },
+            { label: 'Taxa de coleta', value: `${taxaColeta}%`, highlight: true },
+          ]}
         />
         <KPICard
           icon={<AlertTriangle className="h-4 w-4" />}
@@ -771,7 +839,14 @@ export function FinanceiroCFO() {
           value={fmtK(inadimplencia.valorTotal)}
           sub={`${inadimplencia.totalInadimplentes} alunos · ${inadimplencia.txInadimplencia}% da base ativa`}
           color={inadimplencia.txInadimplencia > metas.inadimplencia_max ? 'red' : 'amber'}
-          fonte={`Pagamentos com status='atrasado'. Taxa = inadimplentes / total ativos. Meta máxima: ${metas.inadimplencia_max}%. Fonte: tabela pagamentos (data_vencimento + status).`}
+          fonte={`Pagamentos com status='atrasado'. Taxa = inadimplentes / total ativos. Meta máxima: ${metas.inadimplencia_max}%. Fonte: tabela pagamentos.`}
+          details={[
+            { label: '0–30 dias', value: fmtK(inadimplencia.buckets.b0_30) },
+            { label: '31–60 dias', value: fmtK(inadimplencia.buckets.b31_60) },
+            { label: '61–90 dias', value: fmtK(inadimplencia.buckets.b61_90) },
+            { label: '+90 dias (risco perda)', value: fmtK(inadimplencia.buckets.b90p) },
+            { label: `${inadimplencia.totalInadimplentes} alunos · ${inadimplencia.txInadimplencia}% da base`, value: fmtK(inadimplencia.valorTotal), highlight: true },
+          ]}
         />
         <KPICard
           icon={<Target className="h-4 w-4" />}
@@ -780,6 +855,70 @@ export function FinanceiroCFO() {
           sub={`Parcelas futuras a receber — ${alunosAtivos.length} alunos`}
           color="violet"
           fonte={`(total_mensalidades - mensalidades_pagas) × valor_mensalidade por aluno ativo${ownerFilter ? `, ponderado pela % de ${ownerFilter}` : ''}. Fonte: tabelas alunos + turmas.`}
+          details={[
+            ...(parcelasPorTurma as any[]).slice(0, 4).map((t: any) => ({ label: t.turma.nome, value: fmtK(t.receitaRestante) })),
+            ...((parcelasPorTurma as any[]).length > 4 ? [{ label: `+${(parcelasPorTurma as any[]).length - 4} outras turmas`, value: fmtK((parcelasPorTurma as any[]).slice(4).reduce((s: number, t: any) => s + t.receitaRestante, 0)) }] : []),
+            { label: 'LTV Total', value: fmtK(ltvRestante), highlight: true },
+          ]}
+        />
+      </div>
+
+      {/* KPI Cards — Row 2: métricas complementares */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KPICard
+          icon={<TrendingUp className="h-4 w-4" />}
+          label="ARR (Anual)"
+          value={fmtK(arr)}
+          sub={`MRR × 12 — projeção anual${ownerFilter ? ` · ${ownerFilter}` : ''}`}
+          color="blue"
+          fonte="ARR = MRR Projetado × 12. Representa a receita anual recorrente projetada se a base de alunos se mantiver. Não considera churn ou novas matrículas."
+          details={[
+            { label: 'MRR base', value: fmtK(mrrTotal) },
+            { label: 'Fator', value: '× 12 meses' },
+            { label: 'ARR projetado', value: fmtK(arr), highlight: true },
+          ]}
+        />
+        <KPICard
+          icon={<CheckCircle2 className="h-4 w-4" />}
+          label="Ticket Médio"
+          value={fmtK(ticketMedio)}
+          sub={`${pagsMesCount} pagamentos no mês`}
+          color="emerald"
+          fonte="Ticket médio = receita do mês corrente / número de pagamentos recebidos. Representa o valor médio por transação no mês."
+          details={[
+            { label: 'Receita do mês', value: fmtK(receitaMesAtual) },
+            { label: 'Nº de pagamentos', value: `${pagsMesCount} transações` },
+            { label: 'Ticket médio', value: fmtK(ticketMedio), highlight: true },
+          ]}
+        />
+        <KPICard
+          icon={<TrendingDown className="h-4 w-4" />}
+          label="Churn Estimado"
+          value={`${churnPct}%`}
+          sub={`${alunosCancelados.length} cancelados de ${alunos.length} total`}
+          color={churnPct > 10 ? 'red' : churnPct > 5 ? 'amber' : 'emerald'}
+          fonte="Churn = cancelados / total (ativos + cancelados). Referência: <5% saudável, 5–10% atenção, >10% crítico. Fonte: tabela alunos."
+          details={[
+            { label: 'Ativos', value: `${alunosAtivos.length}` },
+            { label: 'Inadimplentes', value: `${inadimplencia.totalInadimplentes}` },
+            { label: 'Cancelados', value: `${alunosCancelados.length}` },
+            { label: 'Total histórico', value: `${alunos.length}` },
+            { label: 'Churn estimado', value: `${churnPct}%`, highlight: true },
+          ]}
+        />
+        <KPICard
+          icon={<DollarSign className="h-4 w-4" />}
+          label="Líquido Real"
+          value={fmtK(totaisLiquido.liquido)}
+          sub={`Pós-taxas · ${totaisLiquido.bruto > 0 ? `${((totaisLiquido.taxas / totaisLiquido.bruto) * 100).toFixed(1)}% de taxas` : 'sem dados de taxa'}`}
+          color="emerald"
+          fonte="Líquido Real = Receita Bruta − Taxas de gateway (calculadas via payment_method_rates). Use este número para margens reais — não a receita bruta."
+          details={[
+            { label: 'Receita bruta', value: fmtK(totaisLiquido.bruto) },
+            { label: `Taxas (${totaisLiquido.bruto > 0 ? ((totaisLiquido.taxas / totaisLiquido.bruto) * 100).toFixed(1) : 0}%)`, value: `−${fmtK(totaisLiquido.taxas)}` },
+            { label: `${totaisLiquido.count} transações`, value: '' },
+            { label: 'Líquido Real', value: fmtK(totaisLiquido.liquido), highlight: true },
+          ]}
         />
       </div>
 
