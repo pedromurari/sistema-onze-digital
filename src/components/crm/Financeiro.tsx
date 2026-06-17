@@ -2118,7 +2118,7 @@ export function Financeiro() {
                           <tr>
                             <th className="text-left py-2 px-4 font-medium text-muted-foreground">Nome</th>
                             <th className="text-left py-2 px-3 font-medium text-muted-foreground">Turma</th>
-                            <th className="text-right py-2 px-3 font-medium text-muted-foreground">Valor</th>
+                            <th className="text-right py-2 px-3 font-medium text-muted-foreground">Parc. · Valor</th>
                             <th className="text-right py-2 px-4 font-medium text-muted-foreground">
                               {expandedCard === 'recebido' ? 'Pago em' :
                                expandedCard === 'inadimplentes' ? 'Atraso' :
@@ -2127,49 +2127,74 @@ export function Financeiro() {
                           </tr>
                         </thead>
                         <tbody>
-                          {expandedCard === 'recebido' && pagsPeriodoRecebido
-                            .sort((a, b) => (b.data_pagamento || '').localeCompare(a.data_pagamento || ''))
-                            .map(p => (
-                              <tr key={p.id} className="border-t border-border/30 hover:bg-muted/30">
-                                <td className="py-2 px-4 font-medium">{getNome(p.aluno_id)}</td>
-                                <td className="py-2 px-3 text-muted-foreground">{getTurma(p.turma_id)}</td>
-                                <td className="py-2 px-3 text-right font-semibold text-green-700">{formatCurrency(p.valor)}</td>
-                                <td className="py-2 px-4 text-right text-muted-foreground">
-                                  {p.data_pagamento ? format(parseISO(p.data_pagamento), 'dd/MM/yy') : '—'}
-                                </td>
-                              </tr>
-                            ))
-                          }
-                          {expandedCard === 'previsto' && pagsPrevisto
-                            .sort((a, b) => a.data_vencimento.localeCompare(b.data_vencimento))
-                            .map(p => (
-                              <tr key={p.id} className={`border-t border-border/30 hover:bg-muted/30 ${p.status === 'atrasado' ? 'bg-red-50/30' : ''}`}>
-                                <td className="py-2 px-4 font-medium">{getNome(p.aluno_id)}</td>
-                                <td className="py-2 px-3 text-muted-foreground">{getTurma(p.turma_id)}</td>
-                                <td className="py-2 px-3 text-right font-semibold">{formatCurrency(p.valor)}</td>
-                                <td className="py-2 px-4 text-right">
-                                  <span className={`px-1.5 py-0.5 rounded-full text-xs font-medium ${p.status === 'pago' ? 'bg-green-100 text-green-700' : p.status === 'atrasado' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                    {p.status === 'pago' ? 'pago' : format(parseISO(p.data_vencimento), 'dd/MM/yy')}
-                                  </span>
-                                </td>
-                              </tr>
-                            ))
-                          }
-                          {expandedCard === 'aReceber' && parcelasEmAberto
-                            .sort((a, b) => a.data_vencimento.localeCompare(b.data_vencimento))
-                            .map(p => (
-                              <tr key={p.id} className={`border-t border-border/30 hover:bg-muted/30 ${p.status === 'atrasado' ? 'bg-red-50/30' : ''}`}>
-                                <td className="py-2 px-4 font-medium">{getNome(p.aluno_id)}</td>
-                                <td className="py-2 px-3 text-muted-foreground">{getTurma(p.turma_id)}</td>
-                                <td className="py-2 px-3 text-right font-semibold text-yellow-700">{formatCurrency(p.valor)}</td>
-                                <td className="py-2 px-4 text-right">
-                                  <span className={`px-1.5 py-0.5 rounded-full text-xs font-medium ${p.status === 'atrasado' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                    {format(parseISO(p.data_vencimento), 'dd/MM/yy')}
-                                  </span>
-                                </td>
-                              </tr>
-                            ))
-                          }
+                          {expandedCard === 'recebido' && (() => {
+                            const sorted = [...pagsPeriodoRecebido].sort((a, b) => {
+                              const nA = getNome(a.aluno_id); const nB = getNome(b.aluno_id);
+                              return nA !== nB ? nA.localeCompare(nB) : (a.numero_parcela || 0) - (b.numero_parcela || 0);
+                            });
+                            return sorted.map((p, i) => {
+                              const isFirst = i === 0 || sorted[i - 1].aluno_id !== p.aluno_id;
+                              return (
+                                <tr key={p.id} className={`hover:bg-muted/30 ${isFirst && i > 0 ? 'border-t-2 border-border/50' : 'border-t border-border/20'}`}>
+                                  <td className="py-1.5 px-4">{isFirst ? <span className="font-medium">{getNome(p.aluno_id)}</span> : <span className="text-muted-foreground/40 pl-2">↳</span>}</td>
+                                  <td className="py-1.5 px-3 text-muted-foreground">{isFirst ? getTurma(p.turma_id) : ''}</td>
+                                  <td className="py-1.5 px-3 text-right">
+                                    <span className="text-muted-foreground mr-1.5">#{p.numero_parcela}</span>
+                                    <span className="font-semibold text-green-700">{formatCurrency(p.valor)}</span>
+                                  </td>
+                                  <td className="py-1.5 px-4 text-right text-muted-foreground">{p.data_pagamento ? format(parseISO(p.data_pagamento), 'dd/MM/yy') : '—'}</td>
+                                </tr>
+                              );
+                            });
+                          })()}
+                          {expandedCard === 'previsto' && (() => {
+                            const sorted = [...pagsPrevisto].sort((a, b) => {
+                              const nA = getNome(a.aluno_id); const nB = getNome(b.aluno_id);
+                              return nA !== nB ? nA.localeCompare(nB) : a.data_vencimento.localeCompare(b.data_vencimento);
+                            });
+                            return sorted.map((p, i) => {
+                              const isFirst = i === 0 || sorted[i - 1].aluno_id !== p.aluno_id;
+                              return (
+                                <tr key={p.id} className={`hover:bg-muted/30 ${p.status === 'atrasado' ? 'bg-red-50/30' : ''} ${isFirst && i > 0 ? 'border-t-2 border-border/50' : 'border-t border-border/20'}`}>
+                                  <td className="py-1.5 px-4">{isFirst ? <span className="font-medium">{getNome(p.aluno_id)}</span> : <span className="text-muted-foreground/40 pl-2">↳</span>}</td>
+                                  <td className="py-1.5 px-3 text-muted-foreground">{isFirst ? getTurma(p.turma_id) : ''}</td>
+                                  <td className="py-1.5 px-3 text-right">
+                                    <span className="text-muted-foreground mr-1.5">#{p.numero_parcela}</span>
+                                    <span className="font-semibold">{formatCurrency(p.valor)}</span>
+                                  </td>
+                                  <td className="py-1.5 px-4 text-right">
+                                    <span className={`px-1.5 py-0.5 rounded-full font-medium ${p.status === 'pago' ? 'bg-green-100 text-green-700' : p.status === 'atrasado' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                      {p.status === 'pago' ? 'pago' : format(parseISO(p.data_vencimento), 'dd/MM/yy')}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            });
+                          })()}
+                          {expandedCard === 'aReceber' && (() => {
+                            const sorted = [...parcelasEmAberto].sort((a, b) => {
+                              const nA = getNome(a.aluno_id); const nB = getNome(b.aluno_id);
+                              return nA !== nB ? nA.localeCompare(nB) : a.data_vencimento.localeCompare(b.data_vencimento);
+                            });
+                            return sorted.map((p, i) => {
+                              const isFirst = i === 0 || sorted[i - 1].aluno_id !== p.aluno_id;
+                              return (
+                                <tr key={p.id} className={`hover:bg-muted/30 ${p.status === 'atrasado' ? 'bg-red-50/30' : ''} ${isFirst && i > 0 ? 'border-t-2 border-border/50' : 'border-t border-border/20'}`}>
+                                  <td className="py-1.5 px-4">{isFirst ? <span className="font-medium">{getNome(p.aluno_id)}</span> : <span className="text-muted-foreground/40 pl-2">↳</span>}</td>
+                                  <td className="py-1.5 px-3 text-muted-foreground">{isFirst ? getTurma(p.turma_id) : ''}</td>
+                                  <td className="py-1.5 px-3 text-right">
+                                    <span className="text-muted-foreground mr-1.5">#{p.numero_parcela}</span>
+                                    <span className="font-semibold text-yellow-700">{formatCurrency(p.valor)}</span>
+                                  </td>
+                                  <td className="py-1.5 px-4 text-right">
+                                    <span className={`px-1.5 py-0.5 rounded-full font-medium ${p.status === 'atrasado' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                      {format(parseISO(p.data_vencimento), 'dd/MM/yy')}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            });
+                          })()}
                           {expandedCard === 'inadimplentes' && inadimplentes
                             .sort((a, b) => (inadimplenciaMap[b.id]?.diasAtraso || 0) - (inadimplenciaMap[a.id]?.diasAtraso || 0))
                             .map(a => {
