@@ -1132,7 +1132,7 @@ export function Financeiro() {
       const tb = turmas.find(t => t.id === b)?.nome || '';
       return ta.localeCompare(tb);
     });
-  }, [filteredAlunos, turmas]);
+  }, [alunosVisiveis, turmas]);
 
   // CRUD turma
   const createTurma = async () => {
