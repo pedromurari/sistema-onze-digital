@@ -2292,7 +2292,7 @@ export function Financeiro() {
                 ref={searchAlunoRef}
                 placeholder="Buscar por nome, WhatsApp ou email..."
                 value={searchAluno}
-                onChange={e => { setSearchAluno(e.target.value); requestAnimationFrame(() => searchAlunoRef.current?.focus()); }}
+                onChange={e => setSearchAluno(e.target.value)}
                 className="border-0 shadow-none p-0 h-auto text-sm focus-visible:ring-0 flex-1"
               />
               <Button variant="ghost" size="sm" onClick={exportarCSV} title="Exportar lista como CSV" className="shrink-0 h-7 px-2 text-muted-foreground hover:text-foreground">
@@ -2320,6 +2320,12 @@ export function Financeiro() {
               <Users className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
               <p className="text-muted-foreground">Nenhum aluno cadastrado</p>
               {isAdmin && <Button onClick={() => setShowAlunoDialog(true)} className="mt-3 bg-primary text-white"><Plus className="h-4 w-4 mr-1" />Adicionar Aluno</Button>}
+            </Card>
+          ) : alunosVisiveis.length === 0 ? (
+            <Card className="p-12 text-center">
+              <Users className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+              <p className="text-muted-foreground">Nenhum aluno encontrado para "<span className="font-medium">{searchAluno}</span>"</p>
+              <Button variant="ghost" onClick={() => setSearchAluno('')} className="mt-2 text-sm text-primary">Limpar busca</Button>
             </Card>
           ) : (
             <div className="space-y-4">
