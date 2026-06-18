@@ -272,7 +272,7 @@ const buildInstallments = ({
 const statusColors: Record<string, string> = {
   ativo: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
   inadimplente: 'bg-red-50 text-red-700 border border-red-200',
-  cancelado: 'bg-zinc-100 text-zinc-600 border border-zinc-200',
+  cancelado: 'bg-zinc-200 text-zinc-600 border border-zinc-300',
   concluido: 'bg-sky-50 text-sky-700 border border-sky-200',
 };
 
@@ -1812,8 +1812,31 @@ export function Financeiro() {
   const quickAssignTurma = async (alunoId: string, turmaId: string) => {
     setAssigningTurma(prev => ({ ...prev, [alunoId]: true }));
     const { error } = await supabase.from('alunos').update({ turma_id: turmaId }).eq('id', alunoId);
+    if (error) {
+      setAssigningTurma(prev => ({ ...prev, [alunoId]: false }));
+      toast({ variant: 'destructive', title: 'Erro', description: error.message });
+      return;
+    }
+    const aluno = alunos.find(a => a.id === alunoId);
+    if (aluno) {
+      const method = normalizePaymentMethod(aluno.forma_pagamento);
+      const diaVenc = extractDueDay(aluno.dia_vencimento || aluno.dia_vencimento_contrato);
+      const valorEfetivo = getValorEfetivo(turmaId, aluno.valor_mensalidade ?? null);
+      const isIsento = aluno.tipo_pagamento === 'bolsa' || aluno.tipo_pagamento === 'cortesia';
+      await sincronizarParcelasAluno({
+        alunoId,
+        turmaId,
+        produto: aluno.produto,
+        method,
+        diaVencimento: diaVenc,
+        dataMatricula: aluno.data_matricula || todayDateInput(),
+        dataSegundaParcela: null,
+        valor: valorEfetivo,
+        customTotal: aluno.total_mensalidades,
+        isIsento,
+      });
+    }
     setAssigningTurma(prev => ({ ...prev, [alunoId]: false }));
-    if (error) { toast({ variant: 'destructive', title: 'Erro', description: error.message }); return; }
     toast({ title: 'Turma atribuida!' });
     loadData();
   };
@@ -2389,6 +2412,7 @@ export function Financeiro() {
                                   : 'bg-zinc-100 text-zinc-500 border border-zinc-200';
                             const hoje2 = parseDateOnly(todayDateInput())!;
                             const urgDot = (() => {
+                              if (aluno.status === 'cancelado') return { cls: 'bg-zinc-300', tip: 'Cancelado' };
                               if (method !== 'boleto') return { cls: 'bg-zinc-300', tip: 'Quitado' };
                               if (abertas.length === 0) return { cls: 'bg-emerald-500', tip: 'Quitado' };
                               if (!proximoVencimento) return { cls: 'bg-zinc-400', tip: '-' };
@@ -2400,12 +2424,12 @@ export function Financeiro() {
                               return { cls: 'bg-emerald-500', tip: `Vence em ${diff}d` };
                             })();
                             return (
-                              <tr key={aluno.id} className={`border-b border-border/30 transition-colors ${selectedRows.has(aluno.id) ? 'bg-primary/5' : inad ? 'bg-red-50/60 border-l-[3px] border-l-red-400' : 'hover:bg-muted/25'}`}>
+                              <tr key={aluno.id} className={`border-b border-border/30 transition-colors ${selectedRows.has(aluno.id) ? 'bg-primary/5' : inad ? 'bg-red-50/60 border-l-[3px] border-l-red-400' : aluno.status === 'cancelado' ? 'bg-zinc-50 border-l-[3px] border-l-zinc-400 opacity-70' : 'hover:bg-muted/25'}`}>
                                 <td className="py-2.5 px-2"><input type="checkbox" className="cursor-pointer" checked={selectedRows.has(aluno.id)} onChange={() => toggleRowSelection(aluno.id)} /></td>
                                 <td className="py-2.5 px-3 font-medium">
                                   <div className="flex items-center gap-1.5">
                                     <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${urgDot.cls}`} title={urgDot.tip} />
-                                    <span className="font-medium text-foreground">{aluno.nome}</span>
+                                    <span className={`font-medium ${aluno.status === 'cancelado' ? 'text-muted-foreground line-through' : 'text-foreground'}`}>{aluno.nome}</span>
                                   </div>
                                   {aluno.observacoes && (
                                     <p className="text-[11px] text-muted-foreground font-normal mt-0.5 leading-tight max-w-[180px] truncate" title={aluno.observacoes}>
