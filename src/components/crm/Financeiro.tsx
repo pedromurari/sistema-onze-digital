@@ -66,6 +66,7 @@ interface Aluno {
   dia_vencimento?: number;
   dia_vencimento_contrato?: string;
   status: 'ativo' | 'inadimplente' | 'cancelado' | 'concluido';
+  tipo_pagamento?: 'mensalidade' | 'bolsa' | 'cortesia';
   mensalidades_pagas?: number;
   total_mensalidades?: number;
   data_inicio?: string;
@@ -107,7 +108,7 @@ interface Pagamento {
   data_vencimento: string;
   data_pagamento?: string;
   numero_parcela: number;
-  status: 'pago' | 'pendente' | 'atrasado';
+  status: 'pago' | 'pendente' | 'atrasado' | 'isento';
   created_at: string;
 }
 
@@ -117,7 +118,7 @@ interface ParcelaLocal {
   valor: number;
   data_vencimento: string;
   data_pagamento?: string | null;
-  status: 'pago' | 'pendente' | 'atrasado';
+  status: 'pago' | 'pendente' | 'atrasado' | 'isento';
   isNew?: boolean;
   deleted?: boolean;
 }
@@ -214,6 +215,7 @@ const buildInstallments = ({
   dataSegundaParcela,
   existingPaidNumbers = new Set<number>(),
   minTotal,
+  isIsento = false,
 }: {
   alunoId: string;
   turmaId: string;
@@ -225,6 +227,7 @@ const buildInstallments = ({
   dataSegundaParcela?: Date | null;
   existingPaidNumbers?: Set<number>;
   minTotal?: number;
+  isIsento?: boolean;
 }) => {
   const matricula = parseDateOnly(dataMatricula) || new Date();
   const targetTotal = (minTotal != null && minTotal > 0) ? minTotal : paymentMethodTotal(method);
@@ -255,12 +258,12 @@ const buildInstallments = ({
       aluno_id: alunoId,
       turma_id: turmaId,
       produto,
-      valor,
+      valor: isIsento ? 0 : valor,
       mes_referencia: mesReferencia,
       data_vencimento: dueDateText,
       numero_parcela: numeroParcela,
-      status: paidByPlan ? 'pago' : 'pendente',
-      data_pagamento: paidByPlan ? matriculaDate : null,
+      status: isIsento ? 'isento' : (paidByPlan ? 'pago' : 'pendente'),
+      data_pagamento: isIsento ? null : (paidByPlan ? matriculaDate : null),
       observacoes: index === 0 ? 'Ato de matricula' : null,
     };
   }).filter(Boolean);
@@ -296,9 +299,10 @@ const getEmptyAlunoForm = () => ({
   dia_vencimento: '10',
   origem: 'direto',
   lancamento_id: '',
+  tipo_pagamento: 'mensalidade' as 'mensalidade' | 'bolsa' | 'cortesia',
   forma_pagamento: 'boleto' as PaymentMethod,
   valor_mensalidade: '',
-  total_parcelas: '',    // vazio = usa padrão do método
+  total_parcelas: '',
   observacoes: '',
 });
 
@@ -948,7 +952,7 @@ export function Financeiro() {
     return tabs.length > 0 ? tabs : ['psicanalise'];
   }, [turmas, permissions, isAdmin]);
 
-  const filteredPagamentos = useMemo(() => pagamentos.filter(p => p.produto === activeTab), [pagamentos, activeTab]);
+  const filteredPagamentos = useMemo(() => pagamentos.filter(p => p.produto === activeTab && p.status !== 'isento'), [pagamentos, activeTab]);
   const pagamentosPorAluno = useMemo(() => {
     const map: Record<string, Pagamento[]> = {};
     filteredPagamentos.forEach(p => {
@@ -967,6 +971,7 @@ export function Financeiro() {
       const aluno = alunos.find(a => a.id === p.aluno_id);
       if (!aluno) return;
       if (aluno.status === 'cancelado' || aluno.status === 'concluido') return;
+      if (aluno.tipo_pagamento === 'bolsa' || aluno.tipo_pagamento === 'cortesia') return;
       if (normalizePaymentMethod(aluno.forma_pagamento) !== 'boleto') return;
 
       if (p.status !== 'pago') {
@@ -1259,6 +1264,7 @@ export function Financeiro() {
     dataSegundaParcela,
     valor,
     customTotal,
+    isIsento = false,
   }: {
     alunoId: string;
     turmaId: string;
@@ -1269,10 +1275,28 @@ export function Financeiro() {
     dataSegundaParcela?: Date | null;
     valor: number;
     customTotal?: number;
+    isIsento?: boolean;
   }) => {
     const existentes = pagamentos
       .filter(p => p.aluno_id === alunoId)
       .sort((a, b) => (a.numero_parcela || 0) - (b.numero_parcela || 0));
+
+    if (isIsento) {
+      if (existentes.length > 0) {
+        const { error } = await supabase.from('pagamentos').delete().in('id', existentes.map(p => p.id));
+        if (error) throw error;
+      }
+      const total = (customTotal && customTotal > 0) ? customTotal : paymentMethodTotal(method);
+      const rows = buildInstallments({ alunoId, turmaId, produto, valor: 0, method, diaVencimento, dataMatricula, dataSegundaParcela, minTotal: total, isIsento: true });
+      if (rows.length > 0) {
+        const { error } = await supabase.from('pagamentos').insert(rows as any[]);
+        if (error) throw error;
+      }
+      const { error } = await supabase.from('alunos').update({ mensalidades_pagas: 0, total_mensalidades: total }).eq('id', alunoId);
+      if (error) throw error;
+      return;
+    }
+
     const pagas = existentes.filter(p => p.status === 'pago');
     const numerosPagos = new Set(pagas.map(p => p.numero_parcela || 0).filter(Boolean));
     const maiorParcelaPaga = Math.max(0, ...Array.from(numerosPagos));
@@ -1337,6 +1361,7 @@ export function Financeiro() {
       const totalMens = customTotal > 0 ? customTotal : paymentMethodTotal(method);
       const valorAluno = newAlunoForm.valor_mensalidade ? parseFloat(newAlunoForm.valor_mensalidade) : null;
       const valorEfetivo = getValorEfetivo(newAlunoForm.turma_id, valorAluno);
+      const isIsento = newAlunoForm.tipo_pagamento === 'bolsa' || newAlunoForm.tipo_pagamento === 'cortesia';
       const { data: inserted, error } = await supabase.from('alunos').insert({
         turma_id: newAlunoForm.turma_id,
         produto: activeTab,
@@ -1352,7 +1377,8 @@ export function Financeiro() {
         dia_vencimento: diaVenc,
         dia_vencimento_contrato: `dia ${diaVenc}`,
         status: 'ativo',
-        mensalidades_pagas: method === 'boleto' ? 1 : totalMens,
+        tipo_pagamento: newAlunoForm.tipo_pagamento,
+        mensalidades_pagas: isIsento ? 0 : (method === 'boleto' ? 1 : totalMens),
         total_mensalidades: totalMens,
         data_inicio: newAlunoForm.data_inicio || null,
         data_fim: newAlunoForm.data_fim || null,
@@ -1373,6 +1399,7 @@ export function Financeiro() {
         diaVencimento: diaVenc,
         dataMatricula: newAlunoForm.data_matricula || todayDateInput(),
         minTotal: totalMens,
+        isIsento,
       });
       const { error: pagamentosError } = await supabase.from('pagamentos').insert(rows as any[]);
       if (pagamentosError) throw pagamentosError;
@@ -1409,6 +1436,7 @@ export function Financeiro() {
       lancamento_id: a.lancamento_id || '',
       mensalidades_pagas: a.mensalidades_pagas || 0,
       valor_mensalidade: a.valor_mensalidade ?? undefined,
+      tipo_pagamento: (a.tipo_pagamento || 'mensalidade') as 'mensalidade' | 'bolsa' | 'cortesia',
       forma_pagamento: normalizePaymentMethod(a.forma_pagamento),
       forms_respondido: a.forms_respondido ?? false,
       forms_respondido_em: toDateInput(a.forms_respondido_em),
@@ -1485,6 +1513,7 @@ export function Financeiro() {
         data_fim: editAlunoForm.data_fim || null,
         data_matricula: nextDataMatricula,
         status: editAlunoForm.status || alunoDetail.status,
+        tipo_pagamento: editAlunoForm.tipo_pagamento || 'mensalidade',
         origem_lead: editAlunoForm.origem_lead || null,
         lancamento_id: editAlunoForm.lancamento_id || null,
         valor_mensalidade: nextValorAluno,
@@ -1510,7 +1539,9 @@ export function Financeiro() {
       const { error } = await supabase.from('alunos').update(updateData).eq('id', alunoDetail.id);
       if (error) throw error;
 
-      if (financialChanged && !parcelasEditMode) {
+      const nextIsIsento = (editAlunoForm.tipo_pagamento || 'mensalidade') !== 'mensalidade';
+      const tipoPagamentoChanged = (editAlunoForm.tipo_pagamento || 'mensalidade') !== (alunoDetail.tipo_pagamento || 'mensalidade');
+      if ((financialChanged || tipoPagamentoChanged) && !parcelasEditMode) {
         await sincronizarParcelasAluno({
           alunoId: alunoDetail.id,
           turmaId: nextTurmaId,
@@ -1521,6 +1552,7 @@ export function Financeiro() {
           dataSegundaParcela: nextSegundaDate,
           valor: valorEfetivo,
           customTotal: targetTotal,
+          isIsento: nextIsIsento,
         });
       } else {
         await atualizarContadoresAluno(alunoDetail.id);
@@ -2860,6 +2892,17 @@ export function Financeiro() {
                 <SelectContent>{[1,5,10,15,20,25,28,30].map(d => <SelectItem key={d} value={String(d)}>Dia {d}</SelectItem>)}</SelectContent>
               </Select>
             </div>
+            <div>
+              <label className="text-sm font-medium">Tipo de pagamento</label>
+              <Select value={newAlunoForm.tipo_pagamento} onValueChange={v => setNewAlunoForm({ ...newAlunoForm, tipo_pagamento: v as 'mensalidade' | 'bolsa' | 'cortesia' })}>
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mensalidade">Mensalidade (pagante)</SelectItem>
+                  <SelectItem value="bolsa">Bolsa de estudo (isento)</SelectItem>
+                  <SelectItem value="cortesia">Cortesia (isento)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-sm font-medium">Forma de Pagamento</label>
@@ -3213,6 +3256,17 @@ export function Financeiro() {
                       <Select value={editAlunoForm.turma_id || ''} onValueChange={v => setEditAlunoForm({ ...editAlunoForm, turma_id: v })}>
                         <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue /></SelectTrigger>
                         <SelectContent>{turmas.filter(t => t.produto === activeTab || t.tipo === activeTab).map(t => <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Tipo de pagamento</label>
+                      <Select value={editAlunoForm.tipo_pagamento || 'mensalidade'} onValueChange={v => setEditAlunoForm({ ...editAlunoForm, tipo_pagamento: v as 'mensalidade' | 'bolsa' | 'cortesia' })}>
+                        <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="mensalidade">Mensalidade</SelectItem>
+                          <SelectItem value="bolsa">Bolsa de estudo</SelectItem>
+                          <SelectItem value="cortesia">Cortesia</SelectItem>
+                        </SelectContent>
                       </Select>
                     </div>
                     <div>

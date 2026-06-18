@@ -37,7 +37,7 @@ const BASE_MENU: MenuItem[] = [
   { key: 'pipeline',                   label: 'Leads Diretos',       icon: Kanban },
   { key: 'produtos',                   label: 'Produtos',            icon: ShoppingBag, adminOnly: true },
   // Eventos & Funis
-  { group: 'lancamentos_legado',       label: 'Lancamentos',         icon: Rocket,       children: [] },
+  { group: 'lancamentos_legado',       label: 'Semana do Despertar', icon: Rocket,       children: [] },
   { group: 'npa_dinamico',            label: 'IDM Pelo Brasil',       icon: BarChart3,    children: [] },
   { group: 'aula_secreta',            label: 'Aula Secreta',         icon: Rocket,       children: [] },
   { key: 'funil_lancamento',          label: 'Funil de Lançamento',  icon: GitBranch },
@@ -381,7 +381,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
                         onClick={() => openWizardNew('lancamento')}
                         className="w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs text-primary hover:bg-primary/10 mt-1 font-600"
                       >
-                        <Plus className="h-4 w-4" /> Novo Lançamento
+                        <Plus className="h-4 w-4" /> Nova Semana do Despertar
                       </button>
                     )}
 
