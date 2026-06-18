@@ -2433,24 +2433,36 @@ export function Financeiro() {
                                 </td>
                                 <td className="py-2.5 px-3">
                                   <div className="flex flex-col gap-1">
-                                    <Badge className={pgBadge[method]}>{method === 'boleto' ? paymentLabels[method] : `${paymentLabels[method]} pago`}</Badge>
-                                    <span className="text-[10px] text-muted-foreground">{method === 'boleto' ? `Dia ${dueDay}` : 'Quitado'}</span>
+                                    {aluno.tipo_pagamento === 'bolsa'
+                                      ? <Badge className="bg-purple-50 text-purple-700 border border-purple-200">Bolsa</Badge>
+                                      : aluno.tipo_pagamento === 'cortesia'
+                                        ? <Badge className="bg-orange-50 text-orange-600 border border-orange-200">Cortesia</Badge>
+                                        : <Badge className={pgBadge[method]}>{method === 'boleto' ? paymentLabels[method] : `${paymentLabels[method]} pago`}</Badge>
+                                    }
+                                    <span className="text-[10px] text-muted-foreground">
+                                      {aluno.tipo_pagamento && aluno.tipo_pagamento !== 'mensalidade' ? 'Isento' : (method === 'boleto' ? `Dia ${dueDay}` : 'Quitado')}
+                                    </span>
                                   </div>
                                 </td>
                                 <td className="py-2.5 px-3">
-                                  <div className="flex items-center gap-2">
-                                    <span>{pagas}/{total}</span>
-                                    <Progress value={total ? (pagas / total) * 100 : 0} className="w-16 h-1.5" />
-                                  </div>
+                                  {aluno.tipo_pagamento && aluno.tipo_pagamento !== 'mensalidade'
+                                    ? <span className="text-xs text-purple-500 font-medium">Isento</span>
+                                    : <div className="flex items-center gap-2">
+                                        <span>{pagas}/{total}</span>
+                                        <Progress value={total ? (pagas / total) * 100 : 0} className="w-16 h-1.5" />
+                                      </div>
+                                  }
                                 </td>
                                 <td className="py-2.5 px-3 text-xs text-muted-foreground">
-                                  {method !== 'boleto'
-                                    ? 'Quitado'
-                                    : parcelasAluno.length === 0
-                                      ? <span className="text-orange-400">Sem parcelas</span>
-                                      : proximoVencimento
-                                        ? safeDate(proximoVencimento)
-                                        : <span className="text-green-600 font-medium">Quitado</span>}
+                                  {aluno.tipo_pagamento && aluno.tipo_pagamento !== 'mensalidade'
+                                    ? <span className="text-purple-400">—</span>
+                                    : method !== 'boleto'
+                                      ? 'Quitado'
+                                      : parcelasAluno.length === 0
+                                        ? <span className="text-orange-400">Sem parcelas</span>
+                                        : proximoVencimento
+                                          ? safeDate(proximoVencimento)
+                                          : <span className="text-green-600 font-medium">Quitado</span>}
                                 </td>
                                 <td className="py-2.5 px-3">
                                   <Badge className={contratoClass}>{contratoLabel}</Badge>
