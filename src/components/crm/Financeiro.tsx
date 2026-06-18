@@ -2776,8 +2776,8 @@ export function Financeiro() {
               {visibleTabs.includes('numerologia') && <TabsTrigger value="numerologia">Numerologia</TabsTrigger>}
             </TabsList>
           )}
-          <TabsContent value="psicanalise"><ProdutoContent /></TabsContent>
-          <TabsContent value="numerologia"><ProdutoContent /></TabsContent>
+          <TabsContent value="psicanalise">{ProdutoContent()}</TabsContent>
+          <TabsContent value="numerologia">{ProdutoContent()}</TabsContent>
         </Tabs>
       </div>
 
