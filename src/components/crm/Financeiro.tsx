@@ -2769,16 +2769,17 @@ export function Financeiro() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 lg:p-6">
-        <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as ProdutoTab); setSubView('alunos'); setSelectedTurmaId('todas'); }}>
-          {visibleTabs.length > 1 && (
-            <TabsList className={`grid w-full max-w-xs mb-4`} style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, 1fr)` }}>
-              {visibleTabs.includes('psicanalise') && <TabsTrigger value="psicanalise">Psicanalise</TabsTrigger>}
-              {visibleTabs.includes('numerologia') && <TabsTrigger value="numerologia">Numerologia</TabsTrigger>}
-            </TabsList>
-          )}
-          <TabsContent value="psicanalise">{ProdutoContent()}</TabsContent>
-          <TabsContent value="numerologia">{ProdutoContent()}</TabsContent>
-        </Tabs>
+        {visibleTabs.length > 1 && (
+          <div className="mb-4">
+            <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as ProdutoTab); setSubView('alunos'); setSelectedTurmaId('todas'); }}>
+              <TabsList className={`grid w-full max-w-xs`} style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, 1fr)` }}>
+                {visibleTabs.includes('psicanalise') && <TabsTrigger value="psicanalise">Psicanalise</TabsTrigger>}
+                {visibleTabs.includes('numerologia') && <TabsTrigger value="numerologia">Numerologia</TabsTrigger>}
+              </TabsList>
+            </Tabs>
+          </div>
+        )}
+        {ProdutoContent()}
       </div>
 
       {/* Modal Disparo de Turma */}
