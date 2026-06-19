@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { validateWebhookUrl, WebhookUrlValidationError } from '@/lib/webhook';
 import { supabase } from '@/integrations/supabase/client';
-import { Webhook, BookOpen, Globe, Plus, Trash2, Send, Smartphone, RefreshCw, Loader2, CheckCircle2, XCircle, QrCode, FileText, Copy, ExternalLink, ChevronRight } from 'lucide-react';
+import { Webhook, BookOpen, Globe, Plus, Trash2, Send, Smartphone, RefreshCw, Loader2, CheckCircle2, XCircle, QrCode, FileText, Copy, ExternalLink, ChevronRight, MessageSquare, Zap } from 'lucide-react';
 import { EvolutionTaskPanel } from './EvolutionTaskPanel';
 
 interface EvolutionInstance {
@@ -99,6 +99,156 @@ function ConnStateBadge({ state }: { state: ConnState }) {
   if (state === 'connecting') return <Badge variant="outline" className="gap-1 text-yellow-700 border-yellow-300 bg-yellow-50"><Loader2 className="h-3 w-3 animate-spin" />Conectando</Badge>;
   if (state === 'close') return <Badge variant="outline" className="gap-1 text-red-700 border-red-300 bg-red-50"><XCircle className="h-3 w-3" />Desconectado</Badge>;
   return <Badge variant="outline" className="text-muted-foreground">Desconhecido</Badge>;
+}
+
+const EVO_RESPOSTA_URL = `https://usqiyekfmwwnvkmkdlej.supabase.co/functions/v1/evo-resposta`;
+
+type ConfigState = 'idle' | 'loading' | 'ok' | 'error';
+
+function WebhookRespostasCard({ instances }: { instances: EvolutionInstance[] }) {
+  const [states, setStates] = useState<Record<string, ConfigState>>({});
+  const { toast } = useToast();
+
+  async function configurarInstancia(inst: EvolutionInstance) {
+    setStates(prev => ({ ...prev, [inst.id]: 'loading' }));
+
+    const baseUrl = inst.api_url.replace(/\/$/, '');
+    const headers = { apikey: inst.api_key, 'Content-Type': 'application/json' };
+    const payload = {
+      enabled: true,
+      url: EVO_RESPOSTA_URL,
+      webhookByEvents: false,
+      events: ['MESSAGES_UPSERT'],
+    };
+
+    // Tenta v2 (PUT /webhook/{instance}) primeiro, depois v1 (POST /webhook/set/{instance})
+    let ok = false;
+    try {
+      const r = await fetch(`${baseUrl}/webhook/${inst.instance_name}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(10_000),
+      });
+      ok = r.ok;
+    } catch { /* ignora, tenta v1 */ }
+
+    if (!ok) {
+      try {
+        const r = await fetch(`${baseUrl}/webhook/set/${inst.instance_name}`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ webhook: payload }),
+          signal: AbortSignal.timeout(10_000),
+        });
+        ok = r.ok;
+      } catch { /* falhou nos dois */ }
+    }
+
+    const next: ConfigState = ok ? 'ok' : 'error';
+    setStates(prev => ({ ...prev, [inst.id]: next }));
+
+    if (ok) {
+      toast({ title: `Webhook configurado — ${inst.instance_name}`, description: 'Respostas de leads da planilha serão capturadas automaticamente.' });
+    } else {
+      toast({ variant: 'destructive', title: 'Erro ao configurar', description: `Não foi possível registrar o webhook em ${inst.instance_name}. Verifique a URL e a API key.` });
+    }
+  }
+
+  async function configurarTodas() {
+    for (const inst of instances.filter(i => i.ativo)) {
+      await configurarInstancia(inst);
+    }
+  }
+
+  return (
+    <Card className="p-6 bg-card border-border space-y-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-primary" />
+            Webhook de Respostas (Evolution API)
+          </h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Captura mensagens recebidas e registra apenas as de leads que estão na planilha do lançamento.
+          </p>
+        </div>
+        <Button size="sm" variant="outline" onClick={configurarTodas} className="gap-1.5 shrink-0">
+          <Zap className="h-3.5 w-3.5" />
+          Configurar todas
+        </Button>
+      </div>
+
+      {/* URL do webhook */}
+      <div className="space-y-1.5">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">URL do Webhook</p>
+        <div className="flex items-center gap-2 bg-muted/60 rounded-lg px-3 py-2 font-mono text-xs break-all">
+          <span className="flex-1 text-foreground">{EVO_RESPOSTA_URL}</span>
+          <button
+            onClick={() => { navigator.clipboard.writeText(EVO_RESPOSTA_URL); toast({ title: 'URL copiada!' }); }}
+            className="p-1 hover:bg-muted rounded flex-none"
+            title="Copiar URL"
+          >
+            <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Evento a registrar: <code className="bg-muted px-1 py-0.5 rounded">MESSAGES_UPSERT</code>
+        </p>
+      </div>
+
+      {/* Por instância */}
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Configurar por instância</p>
+        {instances.map(inst => {
+          const st = states[inst.id] ?? 'idle';
+          return (
+            <div key={inst.id} className="flex items-center gap-3 p-3 rounded-lg border bg-muted/20">
+              <Smartphone className="h-4 w-4 text-muted-foreground flex-none" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{inst.instance_name}</p>
+                {!inst.ativo && <p className="text-xs text-amber-600">instância inativa</p>}
+              </div>
+              {st === 'ok' && (
+                <span className="flex items-center gap-1 text-xs text-emerald-700 font-medium">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Configurado
+                </span>
+              )}
+              {st === 'error' && (
+                <span className="flex items-center gap-1 text-xs text-red-600 font-medium">
+                  <XCircle className="h-3.5 w-3.5" /> Erro
+                </span>
+              )}
+              <Button
+                size="sm"
+                variant={st === 'ok' ? 'outline' : 'default'}
+                disabled={st === 'loading' || !inst.ativo}
+                onClick={() => configurarInstancia(inst)}
+                className="gap-1.5 shrink-0"
+              >
+                {st === 'loading'
+                  ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Configurando…</>
+                  : st === 'ok'
+                    ? <><RefreshCw className="h-3.5 w-3.5" />Reconfigurar</>
+                    : <><Zap className="h-3.5 w-3.5" />Configurar</>}
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Como funciona */}
+      <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 space-y-1">
+        <p className="text-xs font-semibold text-sky-800">Como funciona</p>
+        <ul className="text-xs text-sky-700 space-y-0.5 list-disc list-inside">
+          <li>A Evolution API envia cada mensagem recebida para este webhook</li>
+          <li>Mensagens enviadas por você e mensagens de grupo são <strong>ignoradas</strong></li>
+          <li>Só processa se o telefone estiver em algum lançamento da planilha</li>
+          <li>A resposta fica salva em <code className="bg-sky-100 px-0.5 rounded">lead_respostas</code> e aparece no card do lead</li>
+        </ul>
+      </div>
+    </Card>
+  );
 }
 
 function EvolutionTab() {
@@ -205,6 +355,11 @@ function EvolutionTab() {
           )}
         </div>
       </Card>
+
+      {/* Webhook de Respostas */}
+      {instances.length > 0 && (
+        <WebhookRespostasCard instances={instances} />
+      )}
 
       {/* Prioridade por serviço */}
       {instances.length > 0 && (
