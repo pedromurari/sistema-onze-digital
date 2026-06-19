@@ -11,8 +11,9 @@ import {
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger
 } from '@/components/ui/dialog';
-import { Plus, Search, AlertCircle, Users, DollarSign, Loader2, Power } from 'lucide-react';
+import { Plus, Search, AlertCircle, Users, DollarSign, Loader2, Power, Calendar, ChevronRight } from 'lucide-react';
 import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 type NPAPhase = 'novo' | 'ingresso_pago' | 'evento' | 'closer' | 'follow_up_01' | 'follow_up_02' | 'follow_up_03' | 'matricula';
 type NPAStatus = 'em_andamento' | 'finalizado';
@@ -45,6 +46,15 @@ interface NPAEventoLead {
   created_at: string;
 }
 
+interface EventoCalendario {
+  id: string;
+  titulo: string;
+  descricao?: string;
+  data_inicio: string;
+  data_fim?: string;
+  cor: string;
+}
+
 export function NPAEventos() {
   const { user, users } = useAuth();
   const [eventos, setEventos] = useState<NPAEvento[]>([]);
@@ -55,32 +65,58 @@ export function NPAEventos() {
   const [isAddingLead, setIsAddingLead] = useState(false);
   const [isCreatingEvento, setIsCreatingEvento] = useState(false);
   const [newLeadForm, setNewLeadForm] = useState({ nome: '', whatsapp: '', email: '' });
-  const [newEventoForm, setNewEventoForm] = useState({
-    nome: '',
-    data_evento: '',
-  });
+  const [newEventoForm, setNewEventoForm] = useState({ nome: '', data_evento: '' });
+
+  // Eventos do calendário geral para vincular ao criar novo NPA
+  const [eventosCalendario, setEventosCalendario] = useState<EventoCalendario[]>([]);
+  const [loadingCalendario, setLoadingCalendario] = useState(false);
+  const [calendarioSearch, setCalendarioSearch] = useState('');
+  const [eventoCalSelecionado, setEventoCalSelecionado] = useState<EventoCalendario | null>(null);
+  const [modoCreate, setModoCreate] = useState<'vincular' | 'novo'>('vincular');
 
   const vinicius = users.find(u => u.nome?.toLowerCase().includes('vinicius'));
 
-  // Fetch eventos
+  // Fetch eventos NPA
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('npa_eventos')
         .select('*')
         .order('created_at', { ascending: false });
-      
       if (data) {
         setEventos(data as NPAEvento[]);
-        if (data.length > 0 && !currentEventoId) {
-          setCurrentEventoId(data[0].id);
-        }
+        if (data.length > 0 && !currentEventoId) setCurrentEventoId(data[0].id);
       }
       setLoading(false);
     };
     load();
   }, []);
+
+  // Abrir dialog de criar evento — carrega eventos do calendário
+  const abrirDialogCriar = async () => {
+    setModoCreate('vincular');
+    setEventoCalSelecionado(null);
+    setCalendarioSearch('');
+    setNewEventoForm({ nome: '', data_evento: '' });
+    setIsCreatingEvento(true);
+    setLoadingCalendario(true);
+    const { data } = await supabase
+      .from('eventos_calendario')
+      .select('id, titulo, descricao, data_inicio, data_fim, cor')
+      .order('data_inicio', { ascending: false })
+      .limit(100);
+    setEventosCalendario((data || []) as EventoCalendario[]);
+    setLoadingCalendario(false);
+  };
+
+  const selecionarEventoCalendario = (ev: EventoCalendario) => {
+    setEventoCalSelecionado(ev);
+    setNewEventoForm({
+      nome: ev.titulo,
+      data_evento: ev.data_inicio ? ev.data_inicio.slice(0, 10) : '',
+    });
+  };
 
   // Fetch evento leads when current evento changes
   useEffect(() => {
@@ -168,11 +204,12 @@ export function NPAEventos() {
     }
   };
 
+  const [salvandoEvento, setSalvandoEvento] = useState(false);
+
   const handleCreateEvento = async () => {
     if (!newEventoForm.nome) return;
-    
-    setIsCreatingEvento(true);
-    const { data, error } = await supabase.from('npa_eventos').insert({
+    setSalvandoEvento(true);
+    const { data } = await supabase.from('npa_eventos').insert({
       nome: newEventoForm.nome,
       data_evento: newEventoForm.data_evento || null,
       status: 'em_andamento',
@@ -184,8 +221,9 @@ export function NPAEventos() {
       setEventos([data as NPAEvento, ...eventos]);
       setCurrentEventoId(data.id);
       setNewEventoForm({ nome: '', data_evento: '' });
+      setIsCreatingEvento(false);
     }
-    setIsCreatingEvento(false);
+    setSalvandoEvento(false);
   };
 
   const handleToggleActive = async (eventoId: string) => {
@@ -269,35 +307,141 @@ export function NPAEventos() {
             <h2 className="text-lg font-600 text-foreground">Eventos NPA</h2>
             <p className="text-xs text-muted-foreground mt-1">Total: {eventos.length} | Ativos: {eventos.filter(e => e.ativo).length}</p>
           </div>
+          <Button className="gap-2 bg-green-600 hover:bg-green-700" onClick={abrirDialogCriar}>
+            <Plus className="h-4 w-4" />
+            Novo Evento
+          </Button>
+
           <Dialog open={isCreatingEvento} onOpenChange={setIsCreatingEvento}>
-            <DialogTrigger asChild>
-              <Button className="gap-2 bg-green-600 hover:bg-green-700">
-                <Plus className="h-4 w-4" />
-                Novo Evento
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Novo Evento NPA</DialogTitle>
-                <DialogDescription>Crie um novo evento NPA</DialogDescription>
+                <DialogDescription>Vincule a um evento do calendário ou crie do zero</DialogDescription>
               </DialogHeader>
-              <div className="space-y-4">
-                <input
-                  placeholder="Nome (ex: NPA #03)"
-                  value={newEventoForm.nome}
-                  onChange={e => setNewEventoForm({ ...newEventoForm, nome: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg"
-                />
-                <input
-                  type="date"
-                  value={newEventoForm.data_evento}
-                  onChange={e => setNewEventoForm({ ...newEventoForm, data_evento: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg"
-                />
-                <Button onClick={handleCreateEvento} className="w-full">
-                  Criar Evento
-                </Button>
+
+              {/* Tabs: vincular vs novo */}
+              <div className="flex gap-1 p-1 rounded-lg border border-border bg-muted/30">
+                <button
+                  onClick={() => setModoCreate('vincular')}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded text-sm font-medium transition-all ${modoCreate === 'vincular' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  <Calendar className="h-3.5 w-3.5" />
+                  Selecionar do Calendário
+                </button>
+                <button
+                  onClick={() => { setModoCreate('novo'); setEventoCalSelecionado(null); }}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded text-sm font-medium transition-all ${modoCreate === 'novo' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Criar Novo
+                </button>
               </div>
+
+              {/* Modo: Vincular a calendário */}
+              {modoCreate === 'vincular' && (
+                <div className="space-y-3">
+                  <Input
+                    placeholder="Buscar evento do calendário..."
+                    value={calendarioSearch}
+                    onChange={e => setCalendarioSearch(e.target.value)}
+                    className="h-9"
+                  />
+                  {loadingCalendario ? (
+                    <div className="flex justify-center py-6">
+                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                      {eventosCalendario
+                        .filter(ev => !calendarioSearch || ev.titulo.toLowerCase().includes(calendarioSearch.toLowerCase()))
+                        .map(ev => {
+                          const sel = eventoCalSelecionado?.id === ev.id;
+                          const dataLabel = ev.data_inicio
+                            ? format(new Date(ev.data_inicio), "dd/MM/yyyy", { locale: ptBR })
+                            : '';
+                          return (
+                            <button
+                              key={ev.id}
+                              onClick={() => selecionarEventoCalendario(ev)}
+                              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-all ${
+                                sel ? 'border-primary bg-primary/5 shadow-sm' : 'border-border hover:border-primary/40 hover:bg-muted/30'
+                              }`}
+                            >
+                              <div className="w-3 h-3 rounded-full shrink-0" style={{ background: ev.cor || '#6b7280' }} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">{ev.titulo}</p>
+                                {dataLabel && <p className="text-xs text-muted-foreground">{dataLabel}</p>}
+                              </div>
+                              {sel && <ChevronRight className="h-4 w-4 text-primary shrink-0" />}
+                            </button>
+                          );
+                        })}
+                      {!loadingCalendario && eventosCalendario.filter(ev => !calendarioSearch || ev.titulo.toLowerCase().includes(calendarioSearch.toLowerCase())).length === 0 && (
+                        <p className="text-sm text-muted-foreground text-center py-4">Nenhum evento encontrado no calendário</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Evento selecionado — ajuste de nome/data */}
+                  {eventoCalSelecionado && (
+                    <div className="border border-primary/30 rounded-lg p-3 space-y-2 bg-primary/5">
+                      <p className="text-xs font-semibold text-primary">Evento selecionado — confirme ou ajuste</p>
+                      <div>
+                        <label className="text-[11px] text-muted-foreground">Nome do evento NPA</label>
+                        <Input
+                          value={newEventoForm.nome}
+                          onChange={e => setNewEventoForm(f => ({ ...f, nome: e.target.value }))}
+                          className="mt-1 h-8 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] text-muted-foreground">Data do evento</label>
+                        <Input
+                          type="date"
+                          value={newEventoForm.data_evento}
+                          onChange={e => setNewEventoForm(f => ({ ...f, data_evento: e.target.value }))}
+                          className="mt-1 h-8 text-sm"
+                        />
+                      </div>
+                      <Button onClick={handleCreateEvento} disabled={salvandoEvento || !newEventoForm.nome} className="w-full h-9">
+                        {salvandoEvento ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Criar Evento NPA'}
+                      </Button>
+                    </div>
+                  )}
+
+                  {!eventoCalSelecionado && !loadingCalendario && (
+                    <p className="text-xs text-muted-foreground text-center">← Selecione um evento acima para pré-preencher os dados</p>
+                  )}
+                </div>
+              )}
+
+              {/* Modo: Criar do zero */}
+              {modoCreate === 'novo' && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground font-medium">Nome do evento</label>
+                    <Input
+                      placeholder="Ex: Semana do Despertar #04"
+                      value={newEventoForm.nome}
+                      onChange={e => setNewEventoForm(f => ({ ...f, nome: e.target.value }))}
+                      className="mt-1 h-9"
+                      onKeyDown={e => e.key === 'Enter' && handleCreateEvento()}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground font-medium">Data do evento</label>
+                    <Input
+                      type="date"
+                      value={newEventoForm.data_evento}
+                      onChange={e => setNewEventoForm(f => ({ ...f, data_evento: e.target.value }))}
+                      className="mt-1 h-9"
+                    />
+                  </div>
+                  <Button onClick={handleCreateEvento} disabled={salvandoEvento || !newEventoForm.nome} className="w-full h-9">
+                    {salvandoEvento ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Criar Evento'}
+                  </Button>
+                </div>
+              )}
             </DialogContent>
           </Dialog>
         </div>
