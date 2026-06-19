@@ -172,7 +172,7 @@ const normalizePaymentMethod = (value?: string | null): PaymentMethod => {
 
 const paymentMethodTotal = (method?: string | null) => {
   const normalized = normalizePaymentMethod(method);
-  if (normalized === 'cartao') return 12;
+  if (normalized === 'cartao') return 1;
   if (normalized === 'avista') return 1;
   return 15;
 };
@@ -1648,7 +1648,7 @@ export function Financeiro() {
       try { const [y, m, dd] = d.split('T')[0].split('-'); return `${dd}/${m}/${y}`; } catch { return d; }
     };
     const fmtStatus = (s: string) => ({ pago: 'Pago', atrasado: 'Atrasado', pendente: 'Pendente' }[s] || s);
-    const fmtMethod = (m?: string | null) => ({ boleto: 'Boleto — 15 mensalidades', cartao: 'Cartão — 12x', avista: 'À vista — 1x' }[m || ''] || m || '—');
+    const fmtMethod = (m?: string | null) => ({ boleto: 'Boleto — 15 mensalidades', cartao: 'Cartão — 1x (pagamento único)', avista: 'À vista — 1x' }[m || ''] || m || '—');
 
     const contratoStatus = editAlunoForm.contrato_assinado
       ? 'Assinado'
@@ -2477,10 +2477,23 @@ export function Financeiro() {
                                 <td className="py-2.5 px-3">
                                   {aluno.tipo_pagamento && aluno.tipo_pagamento !== 'mensalidade'
                                     ? <span className="text-xs text-purple-500 font-medium">Isento</span>
-                                    : <div className="flex items-center gap-2">
-                                        <span>{pagas}/{total}</span>
-                                        <Progress value={total ? (pagas / total) * 100 : 0} className="w-16 h-1.5" />
-                                      </div>
+                                    : method !== 'boleto'
+                                      ? (() => {
+                                          const valorCartao = parcelasAluno.reduce((s, p) => s + p.valor, 0) || aluno.valor_mensalidade || 0;
+                                          return (
+                                            <div className="flex flex-col gap-0.5">
+                                              <div className="flex items-center gap-2">
+                                                <span>1/1</span>
+                                                <Progress value={100} className="w-16 h-1.5" />
+                                              </div>
+                                              {valorCartao > 0 && <span className="text-[10px] text-muted-foreground font-medium">{formatCurrency(valorCartao)}</span>}
+                                            </div>
+                                          );
+                                        })()
+                                      : <div className="flex items-center gap-2">
+                                          <span>{pagas}/{total}</span>
+                                          <Progress value={total ? (pagas / total) * 100 : 0} className="w-16 h-1.5" />
+                                        </div>
                                   }
                                 </td>
                                 <td className="py-2.5 px-3 text-xs text-muted-foreground">
@@ -2953,7 +2966,7 @@ export function Financeiro() {
                   <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="boleto">Boleto - 15 mensalidades</SelectItem>
-                    <SelectItem value="cartao">Cartao - 12x</SelectItem>
+                    <SelectItem value="cartao">Cartao - 1x (pagamento único)</SelectItem>
                     <SelectItem value="avista">A vista - 1/1</SelectItem>
                   </SelectContent>
                 </Select>
@@ -3318,7 +3331,7 @@ export function Financeiro() {
                         <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue placeholder="Selecione" /></SelectTrigger>
                         <SelectContent>
                   <SelectItem value="boleto">Boleto - 15 mensalidades</SelectItem>
-                  <SelectItem value="cartao">Cartao - 12x</SelectItem>
+                  <SelectItem value="cartao">Cartao - 1x (pagamento único)</SelectItem>
                   <SelectItem value="avista">A vista - 1/1</SelectItem>
                         </SelectContent>
                       </Select>
