@@ -22,6 +22,16 @@ type Categoria =
   | 'custo_fixo' | 'custo_variavel' | 'ads' | 'alocacao' | 'outro_saida';
 type View = 'overview' | 'entradas' | 'despesas' | 'config' | 'diario';
 type Health = 'ok' | 'warn' | 'bad';
+type Empresa = 'onze_digital' | 'idm';
+
+const EMPRESA_LABELS: Record<Empresa, string> = { onze_digital: 'Onze Digital', idm: 'IDM' };
+const EMPRESA_COR: Record<Empresa, { badge: string; ring: string }> = {
+  onze_digital: { badge: 'bg-blue-50 text-blue-700 border-blue-200',   ring: 'ring-blue-500' },
+  idm:          { badge: 'bg-violet-50 text-violet-700 border-violet-200', ring: 'ring-violet-500' },
+};
+function produtoToEmpresa(produto: string | null | undefined): Empresa {
+  return produto === 'npa' ? 'idm' : 'onze_digital';
+}
 
 interface Taxa { nome: string; percentual: number; }
 interface Socio { nome: string; percentual: number; }
@@ -37,6 +47,7 @@ interface BalancoItem {
   mes_referencia: string;
   recorrente: boolean;
   retorno_realizado: number;
+  empresa: Empresa;
   created_at: string;
 }
 
@@ -223,6 +234,7 @@ function ItemsTable({ items, onDelete, showRetorno }: {
 export function Balanco() {
   const [mes, setMes] = useState(mesAtual());
   const [view, setView] = useState<View>('overview');
+  const [empresa, setEmpresa] = useState<Empresa>('onze_digital');
   const [items, setItems] = useState<BalancoItem[]>([]);
   const [config, setConfig] = useState<Config>(DEFAULT_CONFIG);
   const [editConfig, setEditConfig] = useState<Config>(DEFAULT_CONFIG);
@@ -250,8 +262,8 @@ export function Balanco() {
   const [taxasRates, setTaxasRates]         = useState<TaxaDetalhe[]>([]);
   const [gastosHoje, setGastosHoje]         = useState<BalancoItem[]>([]);
   const [confirmados, setConfirmados]       = useState<Set<string>>(new Set());
-  // draft por aluno: forma_pagamento e valor_mensalidade editáveis
-  const [matriculasDraft, setMatriculasDraft] = useState<Record<string, { forma: string; valor: string }>>({});
+  // draft por aluno: forma_pagamento, valor e empresa editáveis
+  const [matriculasDraft, setMatriculasDraft] = useState<Record<string, { forma: string; valor: string; empresa: Empresa }>>({});
   const [savingAluno, setSavingAluno]       = useState<string | null>(null);
   // form gasto rápido do dia
   const [gastoForm, setGastoForm]           = useState({ descricao: '', valor: '', categoria: 'custo_variavel' as Categoria });
@@ -264,8 +276,8 @@ export function Balanco() {
       setLoading(true);
       try {
         const [itemsRes, cfgRes, receitaRealRes] = await Promise.all([
-          supabase.from('balanco_itens').select('*').eq('mes_referencia', mes).order('created_at', { ascending: false }),
-          supabase.from('balanco_config').select('*').eq('id', 'default').single(),
+          supabase.from('balanco_itens').select('*').eq('mes_referencia', mes).eq('empresa', empresa).order('created_at', { ascending: false }),
+          supabase.from('balanco_config').select('*').eq('id', empresa).single(),
           // Receita real do CRM — JOIN pagamentos + alunos via view
           supabase.from('vw_receita_por_fonte').select('valor, produto, produto_label').like('mes_referencia', `${mes}%`),
         ]);
@@ -297,7 +309,7 @@ export function Balanco() {
       }
     };
     load();
-  }, [mes]);
+  }, [mes, empresa]);
 
   // ─── Load: Balanço Diário ─────────────────────────────────────────────────
 
@@ -336,11 +348,14 @@ export function Balanco() {
       setTaxasRates((taxRes.data || []) as TaxaDetalhe[]);
       setGastosHoje((gasRes.data || []) as BalancoItem[]);
       // Inicializa o draft com os valores atuais de cada aluno novo
-      const draft: Record<string, { forma: string; valor: string }> = {};
+      const turmasList = (turRes.data || []) as TurmaInfo[];
+      const draft: Record<string, { forma: string; valor: string; empresa: Empresa }> = {};
       for (const a of novos) {
+        const turmaInfo = turmasList.find(t => t.id === a.turma_id);
         draft[a.id] = {
           forma: a.forma_pagamento || 'boleto',
           valor: a.valor_mensalidade ? String(a.valor_mensalidade) : '',
+          empresa: produtoToEmpresa(turmaInfo?.produto),
         };
       }
       setMatriculasDraft(draft);
@@ -406,7 +421,7 @@ export function Balanco() {
   const saveConfig = async () => {
     setSavingConfig(true);
     const { error } = await supabase.from('balanco_config').upsert(
-      { id: 'default', taxas: editConfig.taxas, socios: editConfig.socios, updated_at: new Date().toISOString() },
+      { id: empresa, taxas: editConfig.taxas, socios: editConfig.socios, updated_at: new Date().toISOString() },
       { onConflict: 'id' },
     );
     setSavingConfig(false);
@@ -442,6 +457,7 @@ export function Balanco() {
         mes_referencia: mes,
         recorrente: addForm.recorrente,
         retorno_realizado: retorno,
+        empresa,
       })
       .select('*')
       .single();
@@ -470,15 +486,38 @@ export function Balanco() {
     const valor = parseFloat(draft.valor.replace(',', '.'));
     const updates: Record<string, unknown> = { forma_pagamento: draft.forma };
     if (!isNaN(valor) && valor > 0) updates.valor_mensalidade = valor;
+
     const { error } = await supabase.from('alunos').update(updates).eq('id', alunoId);
+    if (error) { setSavingAluno(null); toast.error('Erro ao salvar matrícula.'); return; }
+
+    // Inserir na balanco_itens como entrada de matrícula
+    if (!isNaN(valor) && valor > 0) {
+      const aluno = alunosHoje.find(a => a.id === alunoId);
+      const turma = turmasInfo.find(t => t.id === aluno?.turma_id);
+      const produto = turma?.produto || 'geral';
+      const prodNorm = produto === 'psicanalise' ? 'psicanalise' : produto === 'npa' ? 'npa' : 'geral';
+      const desc = `Matrícula — ${aluno?.nome ?? 'Aluno'} — ${turma?.nome ?? 'Sem turma'}`;
+
+      await supabase.from('balanco_itens').insert({
+        descricao: desc,
+        valor,
+        tipo: 'entrada',
+        categoria: 'matricula',
+        produto: prodNorm,
+        mes_referencia: mesAtual(),
+        recorrente: false,
+        retorno_realizado: 0,
+        empresa: draft.empresa,
+      });
+    }
+
     setSavingAluno(null);
-    if (error) { toast.error('Erro ao salvar matrícula.'); return; }
     setConfirmados(prev => new Set([...prev, alunoId]));
     setAlunosHoje(prev => prev.map(a => a.id === alunoId
       ? { ...a, forma_pagamento: draft.forma, valor_mensalidade: !isNaN(valor) ? valor : a.valor_mensalidade }
       : a
     ));
-    toast.success('Matrícula confirmada!');
+    toast.success(`Matrícula confirmada e adicionada ao balanço ${EMPRESA_LABELS[draft.empresa]}!`);
   }
 
   async function handleAddGastoHoje() {
@@ -497,6 +536,7 @@ export function Balanco() {
       mes_referencia: mesAtual(),
       recorrente: false,
       retorno_realizado: 0,
+      empresa,
     }).select('*').single();
     setSavingGasto(false);
     if (error || !data) { toast.error('Erro ao registrar gasto.'); return; }
@@ -532,17 +572,35 @@ export function Balanco() {
     <div className="p-4 lg:p-6 space-y-5 pb-20 lg:pb-6 overflow-y-auto h-full bg-white">
 
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border pb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Balanço</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{mesLabel(mes)} · Saúde financeira</p>
+      <div className="flex flex-col gap-3 border-b border-border pb-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Balanço</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">{mesLabel(mes)} · {EMPRESA_LABELS[empresa]}</p>
+          </div>
+          <Select value={mes} onValueChange={setMes}>
+            <SelectTrigger className="w-36 h-9"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {mesesOpcoes().map(m => <SelectItem key={m} value={m}>{mesLabel(m)}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
-        <Select value={mes} onValueChange={setMes}>
-          <SelectTrigger className="w-36 h-9"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {mesesOpcoes().map(m => <SelectItem key={m} value={m}>{mesLabel(m)}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        {/* Toggle Empresa */}
+        <div className="flex gap-1 p-1 rounded-lg border border-border bg-muted/30 w-fit">
+          {(['onze_digital', 'idm'] as Empresa[]).map(e => (
+            <button
+              key={e}
+              onClick={() => setEmpresa(e)}
+              className={`px-5 py-1.5 rounded text-sm font-semibold transition-all ${
+                empresa === e
+                  ? `bg-white shadow-sm ${e === 'onze_digital' ? 'text-blue-700' : 'text-violet-700'}`
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {EMPRESA_LABELS[e]}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Tabs */}
@@ -706,19 +764,19 @@ export function Balanco() {
                                   {/* Header da matrícula */}
                                   <div className="flex items-start justify-between gap-3">
                                     <div>
-                                      <div className="flex items-center gap-2">
+                                      <div className="flex items-center gap-2 flex-wrap">
                                         {jaConfirmado
                                           ? <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
                                           : <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />}
                                         <span className="font-semibold text-sm">{aluno.nome}</span>
-                                      </div>
-                                      <p className="text-xs text-muted-foreground mt-0.5 pl-6">
-                                        {turma?.nome || 'Turma não encontrada'}
                                         {produto !== 'geral' && (
-                                          <span className="ml-2 px-1.5 py-0.5 rounded-full text-[10px] font-bold" style={{ background: PROD_COR[produto] + '20', color: PROD_COR[produto] }}>
+                                          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold" style={{ background: PROD_COR[produto] + '20', color: PROD_COR[produto] }}>
                                             {produto === 'psicanalise' ? 'PSI' : produto.toUpperCase()}
                                           </span>
                                         )}
+                                      </div>
+                                      <p className="text-xs text-muted-foreground mt-0.5 pl-6">
+                                        {turma?.nome || 'Turma não encontrada'}
                                       </p>
                                     </div>
                                     <Badge className={`text-[10px] shrink-0 ${jaConfirmado ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
@@ -739,41 +797,62 @@ export function Balanco() {
 
                                   {/* Campos editáveis */}
                                   {!jaConfirmado && (
-                                    <div className="pl-6 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                      <div>
-                                        <label className="text-[10px] text-muted-foreground font-medium block mb-1">Forma pgto</label>
-                                        <Select
-                                          value={draft.forma}
-                                          onValueChange={v => setMatriculasDraft(prev => ({ ...prev, [aluno.id]: { ...prev[aluno.id], forma: v } }))}
-                                        >
-                                          <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-                                          <SelectContent>
-                                            <SelectItem value="boleto">Boleto</SelectItem>
-                                            <SelectItem value="pix">PIX</SelectItem>
-                                            <SelectItem value="cartao">Cartão</SelectItem>
-                                            <SelectItem value="avista">À Vista</SelectItem>
-                                          </SelectContent>
-                                        </Select>
-                                      </div>
-                                      <div>
-                                        <label className="text-[10px] text-muted-foreground font-medium block mb-1">Valor parcela (R$)</label>
-                                        <Input
-                                          type="number" step="0.01" className="h-7 text-xs"
-                                          value={draft.valor}
-                                          onChange={e => setMatriculasDraft(prev => ({ ...prev, [aluno.id]: { ...prev[aluno.id], valor: e.target.value } }))}
-                                          placeholder={String(turma?.valor_mensalidade || '')}
-                                        />
-                                      </div>
-                                      <div>
-                                        <label className="text-[10px] text-muted-foreground font-medium block mb-1">Taxa estimada</label>
-                                        <div className="h-7 flex items-center text-xs text-red-500 font-semibold">
-                                          {valorNum > 0 ? `−R$ ${fmt(taxaEst)}` : '—'}
+                                    <div className="pl-6 space-y-2">
+                                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                        <div>
+                                          <label className="text-[10px] text-muted-foreground font-medium block mb-1">Forma pgto</label>
+                                          <Select
+                                            value={draft.forma}
+                                            onValueChange={v => setMatriculasDraft(prev => ({ ...prev, [aluno.id]: { ...prev[aluno.id], forma: v } }))}
+                                          >
+                                            <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="boleto">Boleto</SelectItem>
+                                              <SelectItem value="pix">PIX</SelectItem>
+                                              <SelectItem value="cartao">Cartão</SelectItem>
+                                              <SelectItem value="avista">À Vista</SelectItem>
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                        <div>
+                                          <label className="text-[10px] text-muted-foreground font-medium block mb-1">Valor parcela (R$)</label>
+                                          <Input
+                                            type="number" step="0.01" className="h-7 text-xs"
+                                            value={draft.valor}
+                                            onChange={e => setMatriculasDraft(prev => ({ ...prev, [aluno.id]: { ...prev[aluno.id], valor: e.target.value } }))}
+                                            placeholder={String(turma?.valor_mensalidade || '')}
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="text-[10px] text-muted-foreground font-medium block mb-1">Taxa estimada</label>
+                                          <div className="h-7 flex items-center text-xs text-red-500 font-semibold">
+                                            {valorNum > 0 ? `−R$ ${fmt(taxaEst)}` : '—'}
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <label className="text-[10px] text-muted-foreground font-medium block mb-1">Líquido estimado</label>
+                                          <div className="h-7 flex items-center text-xs text-emerald-600 font-semibold">
+                                            {valorNum > 0 ? `R$ ${fmt(valorNum - taxaEst)}` : '—'}
+                                          </div>
                                         </div>
                                       </div>
+                                      {/* Empresa destino */}
                                       <div>
-                                        <label className="text-[10px] text-muted-foreground font-medium block mb-1">Líquido estimado</label>
-                                        <div className="h-7 flex items-center text-xs text-emerald-600 font-semibold">
-                                          {valorNum > 0 ? `R$ ${fmt(valorNum - taxaEst)}` : '—'}
+                                        <label className="text-[10px] text-muted-foreground font-medium block mb-1">Adicionar ao balanço de</label>
+                                        <div className="flex gap-1.5">
+                                          {(['onze_digital', 'idm'] as Empresa[]).map(e => (
+                                            <button
+                                              key={e}
+                                              onClick={() => setMatriculasDraft(prev => ({ ...prev, [aluno.id]: { ...prev[aluno.id], empresa: e } }))}
+                                              className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition-all ${
+                                                draft.empresa === e
+                                                  ? EMPRESA_COR[e].badge + ' shadow-sm'
+                                                  : 'bg-muted/40 text-muted-foreground border-border'
+                                              }`}
+                                            >
+                                              {EMPRESA_LABELS[e]}
+                                            </button>
+                                          ))}
                                         </div>
                                       </div>
                                     </div>
@@ -781,10 +860,15 @@ export function Balanco() {
 
                                   {/* Valores já confirmados */}
                                   {jaConfirmado && aluno.valor_mensalidade && (
-                                    <div className="pl-6 flex flex-wrap gap-4 text-xs">
+                                    <div className="pl-6 flex flex-wrap gap-4 text-xs items-center">
                                       <span>Forma: <strong>{FORMA_LABELS[aluno.forma_pagamento || ''] || aluno.forma_pagamento || '—'}</strong></span>
                                       <span>Parcela: <strong>R$ {fmt(aluno.valor_mensalidade)}</strong></span>
                                       {aluno.total_mensalidades && <span>Total: <strong>{aluno.total_mensalidades}x</strong></span>}
+                                      {confirmados.has(aluno.id) && draft?.empresa && (
+                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${EMPRESA_COR[draft.empresa].badge}`}>
+                                          ✓ {EMPRESA_LABELS[draft.empresa]}
+                                        </span>
+                                      )}
                                     </div>
                                   )}
 
