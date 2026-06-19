@@ -988,7 +988,8 @@ export function Financeiro() {
     return map;
   }, [filteredPagamentos, alunos]);
 
-  const alunosNoEscopo = useMemo(() => {
+  // Base: produto + turma + permissões apenas — sem statusFilter/paymentFilter/dueFilter
+  const alunosBase = useMemo(() => {
     let r = alunos.filter(a => {
       if (a.produto !== activeTab) return false;
       if (isAdmin) return true;
@@ -996,12 +997,17 @@ export function Financeiro() {
       return canAccessFinanceiroTurma(permissions, a.turma_id);
     });
     if (selectedTurmaId !== 'todas') r = r.filter(a => a.turma_id === selectedTurmaId);
+    return r;
+  }, [alunos, activeTab, selectedTurmaId, permissions, isAdmin]);
+
+  const alunosNoEscopo = useMemo(() => {
+    let r = [...alunosBase];
     if (statusFilter !== 'todos') {
       if (statusFilter === 'inadimplente') r = r.filter(a => inadimplenciaMap[a.id] || a.status === 'inadimplente');
       else r = r.filter(a => a.status === statusFilter);
     }
     return r;
-  }, [alunos, activeTab, selectedTurmaId, permissions, isAdmin, statusFilter, inadimplenciaMap]);
+  }, [alunosBase, statusFilter, inadimplenciaMap]);
 
   const paymentCounts = useMemo(() => {
     return alunosNoEscopo.reduce<Record<PaymentMethod, number>>((acc, aluno) => {
@@ -1101,7 +1107,7 @@ export function Financeiro() {
   const parcelasEmAberto = useMemo(() => pagamentosEmFoco.filter(p => p.status !== 'pago'), [pagamentosEmFoco]);
   const valorAReceber = useMemo(() => parcelasEmAberto.reduce((s, p) => s + p.valor, 0), [parcelasEmAberto]);
 
-  const inadimplentes = useMemo(() => filteredAlunos.filter(a => inadimplenciaMap[a.id] || a.status === 'inadimplente'), [filteredAlunos, inadimplenciaMap]);
+  const inadimplentes = useMemo(() => alunosBase.filter(a => inadimplenciaMap[a.id] || a.status === 'inadimplente'), [alunosBase, inadimplenciaMap]);
   const totalEmAtraso = useMemo(() => inadimplentes.reduce((s, a) => s + (inadimplenciaMap[a.id]?.valorEmAtraso || 0), 0), [inadimplentes, inadimplenciaMap]);
   const contratosPendentes = useMemo(() => filteredAlunos.filter(a => !a.contrato_assinado && a.status === 'ativo').length, [filteredAlunos]);
   const alunosSemTurma = useMemo(() => alunos.filter(a => a.produto === activeTab && !a.turma_id), [alunos, activeTab]);
@@ -2401,7 +2407,8 @@ export function Financeiro() {
                             const proximoVencimento = abertas[0]?.data_vencimento;
                             const pgBadge: Record<PaymentMethod, string> = { boleto: 'bg-zinc-100 text-zinc-700 border border-zinc-200', cartao: 'bg-blue-50 text-blue-600 border border-blue-200', avista: 'bg-emerald-50 text-emerald-700 border border-emerald-200' };
 
-                            const inad = method === 'boleto' ? inadimplenciaMap[aluno.id] : undefined;
+                            const inad = inadimplenciaMap[aluno.id];
+                            const isInad = !!inad || aluno.status === 'inadimplente';
                             const contratoLabel = aluno.contrato_assinado ? 'Assinado' : aluno.contrato_enviado ? 'Enviado' : aluno.forms_respondido ? 'Forms ok' : 'Pendente';
                             const contratoClass = aluno.contrato_assinado
                               ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
@@ -2413,6 +2420,7 @@ export function Financeiro() {
                             const hoje2 = parseDateOnly(todayDateInput())!;
                             const urgDot = (() => {
                               if (aluno.status === 'cancelado') return { cls: 'bg-zinc-300', tip: 'Cancelado' };
+                              if (isInad && method !== 'boleto') return { cls: 'bg-red-600 ring-2 ring-red-200', tip: 'Inadimplente' };
                               if (method !== 'boleto') return { cls: 'bg-zinc-300', tip: 'Quitado' };
                               if (abertas.length === 0) return { cls: 'bg-emerald-500', tip: 'Quitado' };
                               if (!proximoVencimento) return { cls: 'bg-zinc-400', tip: '-' };
@@ -2424,7 +2432,7 @@ export function Financeiro() {
                               return { cls: 'bg-emerald-500', tip: `Vence em ${diff}d` };
                             })();
                             return (
-                              <tr key={aluno.id} className={`border-b border-border/30 transition-colors ${selectedRows.has(aluno.id) ? 'bg-primary/5' : inad ? 'bg-red-50/60 border-l-[3px] border-l-red-400' : aluno.status === 'cancelado' ? 'bg-zinc-50 border-l-[3px] border-l-zinc-400 opacity-70' : 'hover:bg-muted/25'}`}>
+                              <tr key={aluno.id} className={`border-b border-border/30 transition-colors ${selectedRows.has(aluno.id) ? 'bg-primary/5' : isInad ? 'bg-red-50/60 border-l-[3px] border-l-red-400' : aluno.status === 'cancelado' ? 'bg-zinc-50 border-l-[3px] border-l-zinc-400 opacity-70' : 'hover:bg-muted/25'}`}>
                                 <td className="py-2.5 px-2"><input type="checkbox" className="cursor-pointer" checked={selectedRows.has(aluno.id)} onChange={() => toggleRowSelection(aluno.id)} /></td>
                                 <td className="py-2.5 px-3 font-medium">
                                   <div className="flex items-center gap-1.5">
@@ -2512,8 +2520,8 @@ export function Financeiro() {
                                 </td>
                                 <td className="py-2.5 px-3">
                                   <div className="flex flex-col gap-1">
-                                    <Badge className={inad ? 'bg-red-50 text-red-700 border border-red-200' : statusColors[aluno.status] || 'bg-zinc-100 text-zinc-600 border border-zinc-200'}>
-                                      {inad ? 'inadimplente' : aluno.status}
+                                    <Badge className={isInad ? 'bg-red-50 text-red-700 border border-red-200' : statusColors[aluno.status] || 'bg-zinc-100 text-zinc-600 border border-zinc-200'}>
+                                      {isInad ? 'inadimplente' : aluno.status}
                                     </Badge>
                                     {inad && (
                                       <span className="text-[10px] text-red-600 font-medium leading-tight mt-0.5 flex items-center gap-1">
