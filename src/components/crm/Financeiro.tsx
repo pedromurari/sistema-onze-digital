@@ -1591,14 +1591,31 @@ export function Financeiro() {
   const marcarPagoEmMassa = async () => {
     setBulkMarking(true);
     const hoje = todayDateInput();
-    let count = 0;
+
+    // Coletar IDs das próximas parcelas + alunoId associado em uma única passagem
+    const toMark: { parcelaId: string; alunoId: string }[] = [];
     for (const alunoId of Array.from(selectedRows)) {
-      const proxima = (pagamentosPorAluno[alunoId] || []).filter(p => p.status !== 'pago').sort((a, b) => (a.numero_parcela || 0) - (b.numero_parcela || 0))[0];
-      if (proxima) {
-        const { error } = await supabase.from('pagamentos').update({ status: 'pago', data_pagamento: hoje }).eq('id', proxima.id);
-        if (!error) { await atualizarContadoresAluno(alunoId); count++; }
+      const proxima = (pagamentosPorAluno[alunoId] || [])
+        .filter(p => p.status !== 'pago')
+        .sort((a, b) => (a.numero_parcela || 0) - (b.numero_parcela || 0))[0];
+      if (proxima) toMark.push({ parcelaId: proxima.id, alunoId });
+    }
+
+    let count = 0;
+    if (toMark.length) {
+      // 1 query para atualizar todos ao invés de N queries sequenciais
+      const { error } = await supabase
+        .from('pagamentos')
+        .update({ status: 'pago', data_pagamento: hoje })
+        .in('id', toMark.map(m => m.parcelaId));
+
+      if (!error) {
+        count = toMark.length;
+        // Atualizar contadores em paralelo ao invés de sequencial
+        await Promise.all(toMark.map(({ alunoId }) => atualizarContadoresAluno(alunoId)));
       }
     }
+
     setBulkMarking(false);
     setSelectedRows(new Set());
     toast({ title: `${count} pagamento${count !== 1 ? 's' : ''} confirmado${count !== 1 ? 's' : ''}!` });
