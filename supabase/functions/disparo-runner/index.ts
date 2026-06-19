@@ -1,0 +1,217 @@
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', {
+      headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' },
+    });
+  }
+
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase    = createClient(supabaseUrl, supabaseKey);
+
+    const allInstances = await getAllInstances(supabase);
+
+    if (!allInstances?.length) {
+      return new Response(JSON.stringify({ ok: false, reason: 'no_instances' }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const now = new Date();
+    const brazilHour = (now.getUTCHours() - 3 + 24) % 24;
+
+    const { data: campaigns } = await supabase
+      .from('disparo_campanhas')
+      .select('*')
+      .eq('status', 'ativo')
+      .lte('next_send_at', now.toISOString());
+
+    if (!campaigns?.length) {
+      return new Response(JSON.stringify({ ok: true, processed: 0 }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    let processed = 0;
+
+    for (const camp of campaigns) {
+      if (brazilHour < camp.safe_hour_start || brazilHour >= camp.safe_hour_end) {
+        const hoursUntilSafe = ((camp.safe_hour_start + 3 - now.getUTCHours() + 24) % 24) || 24;
+        const nextSafe = new Date(now.getTime() + hoursUntilSafe * 60 * 60 * 1000);
+        await supabase.from('disparo_campanhas')
+          .update({ next_send_at: nextSafe.toISOString() })
+          .eq('id', camp.id);
+        continue;
+      }
+
+      const todayBR = new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const { count: sentToday } = await supabase
+        .from('disparo_leads')
+        .select('*', { count: 'exact', head: true })
+        .eq('campanha_id', camp.id)
+        .eq('status', 'enviado')
+        .gte('sent_at', todayBR + 'T00:00:00+00:00');
+
+      if ((sentToday ?? 0) >= camp.daily_limit) {
+        const tomorrow = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+        tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+        tomorrow.setUTCHours((camp.safe_hour_start + 3) % 24, 0, 0, 0);
+        await supabase.from('disparo_campanhas')
+          .update({ next_send_at: tomorrow.toISOString() })
+          .eq('id', camp.id);
+        continue;
+      }
+
+      const { data: lead } = await supabase
+        .from('disparo_leads')
+        .select('*')
+        .eq('campanha_id', camp.id)
+        .eq('status', 'pendente')
+        .order('ordem', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (!lead) {
+        await supabase.from('disparo_campanhas')
+          .update({ status: 'concluido' })
+          .eq('id', camp.id);
+        continue;
+      }
+
+      const phone = formatPhone(lead.phone);
+      if (!phone) {
+        await supabase.from('disparo_leads')
+          .update({ status: 'pulado', error_msg: 'Telefone inválido', sent_at: now.toISOString() })
+          .eq('id', lead.id);
+        await supabase.from('disparo_campanhas')
+          .update({ leads_skipped: (camp.leads_skipped ?? 0) + 1 })
+          .eq('id', camp.id);
+        continue;
+      }
+
+      const campInstances = camp.evolution_config_id
+        ? (() => {
+            const specific = allInstances.filter((r: { id: string }) => r.id === camp.evolution_config_id);
+            return specific.length ? specific : allInstances;
+          })()
+        : allInstances;
+
+      const vars: Record<string, string> = {
+        nome:  lead.nome ?? '',
+        phone: lead.phone,
+        ...(lead.variaveis ?? {}),
+      };
+      const message = applyTemplate(camp.template ?? '', vars);
+
+      let sendOk    = false;
+      let sendError = '';
+
+      for (const inst of campInstances) {
+        const rawBase = (inst.api_url as string).replace(/\/$/, '');
+        const base    = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
+        try {
+          if (camp.message_type && camp.message_type !== 'text') {
+            const res = await fetch(`${base}/message/sendMedia/${inst.instance_name}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', apikey: inst.api_key },
+              body: JSON.stringify({
+                number:    phone,
+                mediatype: camp.message_type,
+                media:     camp.media_url,
+                caption:   message || undefined,
+                delay:     1200,
+              }),
+            });
+            if (!res.ok) {
+              const txt = await res.text();
+              throw new Error(`${res.status}: ${txt.slice(0, 200)}`);
+            }
+          } else {
+            const res = await fetch(`${base}/message/sendText/${inst.instance_name}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', apikey: inst.api_key },
+              body: JSON.stringify({ number: phone, text: message, delay: 1200 }),
+            });
+            if (!res.ok) {
+              const txt = await res.text();
+              throw new Error(`${res.status}: ${txt.slice(0, 200)}`);
+            }
+          }
+          sendOk = true;
+          break;
+        } catch (e: unknown) {
+          sendError = `[${inst.instance_name}] ${(e as Error).message}`;
+          console.warn(`disparo-runner: ${inst.instance_name} falhou, tentando próxima...`);
+        }
+      }
+
+      const sentAt = now.toISOString();
+      // Delay só se enviou com sucesso — erro passa pro próximo lead imediatamente
+      const delayS     = camp.delay_min_s + Math.random() * (camp.delay_max_s - camp.delay_min_s);
+      const nextSendAt = new Date(now.getTime() + delayS * 1000).toISOString();
+
+      if (sendOk) {
+        await supabase.from('disparo_leads')
+          .update({ status: 'enviado', sent_at: sentAt, error_msg: null })
+          .eq('id', lead.id);
+        await supabase.from('disparo_campanhas')
+          .update({ leads_sent: (camp.leads_sent ?? 0) + 1, consecutive_errors: 0, next_send_at: nextSendAt })
+          .eq('id', camp.id);
+      } else {
+        const newErrors = (camp.consecutive_errors ?? 0) + 1;
+        await supabase.from('disparo_leads')
+          .update({ status: 'erro', error_msg: sendError, sent_at: sentAt })
+          .eq('id', lead.id);
+        await supabase.from('disparo_campanhas')
+          .update({
+            leads_error:        (camp.leads_error ?? 0) + 1,
+            consecutive_errors: newErrors,
+            // sem delay — próximo lead é processado no cron seguinte sem espera
+            next_send_at:       sentAt,
+            ...(newErrors >= camp.max_errors_seq ? { status: 'erro' } : {}),
+          })
+          .eq('id', camp.id);
+      }
+
+      processed++;
+    }
+
+    return new Response(JSON.stringify({ ok: true, processed }), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+  } catch (e: unknown) {
+    console.error('disparo-runner error:', e);
+    return new Response(JSON.stringify({ ok: false, error: (e as Error).message }), {
+      status: 500, headers: { 'Content-Type': 'application/json' },
+    });
+  }
+});
+
+function formatPhone(raw: string): string | null {
+  const d = raw.replace(/\D/g, '');
+  if (d.length === 13 && d.startsWith('55')) return d;
+  if (d.length === 12 && d.startsWith('55')) return d;
+  if (d.length === 11) return '55' + d;
+  if (d.length === 10) return '55' + d;
+  return null;
+}
+
+function applyTemplate(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
+}
+
+async function getAllInstances(
+  db: ReturnType<typeof createClient>,
+): Promise<Array<{ id: string; api_url: string; api_key: string; instance_name: string }>> {
+  const { data: rows } = await db
+    .from('evolution_config')
+    .select('id, api_url, api_key, instance_name')
+    .eq('ativo', true)
+    .order('prioridade', { ascending: true });
+  return rows ?? [];
+}
