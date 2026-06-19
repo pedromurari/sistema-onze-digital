@@ -8,6 +8,8 @@ import {
   Clock, CheckCircle2, AlertCircle, FileText,
   MessageSquare, Image, Music, Video, BarChart2,
   Search, Zap, Pause, Play, Trash2, Send,
+  ChevronDown, ChevronRight, Flame, Thermometer, Snowflake,
+  Users, Shield,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +19,7 @@ import { Card, CardContent } from '@/components/ui/card';
 
 type MsgStatus = 'draft' | 'scheduled' | 'sent' | 'error';
 type MsgType   = 'text' | 'image' | 'video' | 'audio' | 'document' | 'poll';
+type Temperatura = 'quente' | 'morno' | 'frio';
 
 interface Msg {
   id: string;
@@ -47,6 +50,20 @@ interface Campanha {
   delay_max_s: number;
   next_send_at: string;
   created_at: string;
+  safe_hour_start: number;
+  safe_hour_end: number;
+  daily_limit: number;
+}
+
+interface DisparoLead {
+  id: string;
+  nome: string | null;
+  phone: string;
+  status: string;
+  sent_at: string | null;
+  error_msg: string | null;
+  temperatura: Temperatura;
+  ordem: number | null;
 }
 
 type ViewMode   = 'table' | 'kanban';
@@ -62,12 +79,18 @@ const STATUS_CFG: Record<MsgStatus, { label: string; badge: string; icon: React.
   error:     { label: 'Erro',     badge: 'bg-red-50 text-red-700 border-red-200',              icon: AlertCircle,  dot: 'bg-red-500' },
 };
 
-const CAMP_STATUS_CFG: Record<CampStatus, { label: string; badge: string }> = {
-  ativo:    { label: 'Ativo',     badge: 'bg-blue-50 text-blue-700 border-blue-200' },
-  pausado:  { label: 'Pausado',   badge: 'bg-amber-50 text-amber-700 border-amber-200' },
-  concluido:{ label: 'Concluído', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  erro:     { label: 'Erro',      badge: 'bg-red-50 text-red-700 border-red-200' },
-  rascunho: { label: 'Rascunho',  badge: 'bg-gray-100 text-gray-600 border-gray-200' },
+const CAMP_STATUS_CFG: Record<CampStatus, { label: string; badge: string; dot: string }> = {
+  ativo:    { label: 'Ativo',     badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
+  pausado:  { label: 'Pausado',   badge: 'bg-amber-50 text-amber-700 border-amber-200',       dot: 'bg-amber-400' },
+  concluido:{ label: 'Concluído', badge: 'bg-blue-50 text-blue-700 border-blue-200',          dot: 'bg-blue-500' },
+  erro:     { label: 'Erro',      badge: 'bg-red-50 text-red-700 border-red-200',             dot: 'bg-red-500' },
+  rascunho: { label: 'Rascunho',  badge: 'bg-gray-100 text-gray-600 border-gray-200',         dot: 'bg-gray-400' },
+};
+
+const TEMP_CFG: Record<Temperatura, { label: string; icon: React.ElementType; color: string; bg: string; border: string; dot: string }> = {
+  quente: { label: 'Quente', icon: Flame,       color: 'text-red-600',    bg: 'bg-red-50',    border: 'border-red-200',    dot: 'bg-red-500' },
+  morno:  { label: 'Morno',  icon: Thermometer, color: 'text-amber-600',  bg: 'bg-amber-50',  border: 'border-amber-200',  dot: 'bg-amber-400' },
+  frio:   { label: 'Frio',   icon: Snowflake,   color: 'text-sky-600',    bg: 'bg-sky-50',    border: 'border-sky-200',    dot: 'bg-sky-400' },
 };
 
 const TYPE_ICON: Record<MsgType, React.ElementType> = {
@@ -83,6 +106,12 @@ function fmtDatetime(iso: string) {
       day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
     });
   } catch { return iso; }
+}
+
+function fmtTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  } catch { return '—'; }
 }
 
 function fmtRelative(iso: string) {
@@ -112,6 +141,29 @@ function funnelBadgeColor(name: string) {
   return colors[hash % colors.length];
 }
 
+function maskPhone(phone: string) {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length >= 11) return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}–****`;
+  return phone.slice(0, 6) + '****';
+}
+
+/** Retorna o próximo horário válido dentro do horário comercial */
+function nextCommercialSlot(safeStart: number, safeEnd: number): Date {
+  const now = new Date();
+  const h = now.getHours();
+  const result = new Date(now);
+
+  if (h < safeStart) {
+    result.setHours(safeStart, 0, 30, 0);
+  } else if (h >= safeEnd) {
+    result.setDate(result.getDate() + 1);
+    result.setHours(safeStart, 0, 30, 0);
+  } else {
+    result.setTime(now.getTime() + 30_000);
+  }
+  return result;
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export function DisparosMonitor({ onCreateFunnel }: { onCreateFunnel: () => void }) {
@@ -119,7 +171,6 @@ export function DisparosMonitor({ onCreateFunnel }: { onCreateFunnel: () => void
 
   return (
     <div className="h-full flex flex-col bg-gray-50/40">
-      {/* Top-level tab bar */}
       <div className="bg-white border-b px-6 pt-4 flex-none">
         <div className="flex items-center gap-3 mb-0">
           <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-none">
@@ -246,7 +297,6 @@ function FunilTab({ onCreateFunnel }: { onCreateFunnel: () => void }) {
   return (
     <>
       <div className="bg-white border-b px-6 py-3 flex-none">
-        {/* Sub-header */}
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <p className="text-xs text-muted-foreground">
             {proximoDisparo
@@ -267,7 +317,6 @@ function FunilTab({ onCreateFunnel }: { onCreateFunnel: () => void }) {
           </div>
         </div>
 
-        {/* Stats */}
         <div className="flex items-center gap-3 mt-3 flex-wrap">
           {[
             { label: 'Agendados', count: agendados.length, color: 'text-blue-600', bg: 'bg-blue-50', dot: 'bg-blue-500' },
@@ -291,7 +340,6 @@ function FunilTab({ onCreateFunnel }: { onCreateFunnel: () => void }) {
           </div>
         </div>
 
-        {/* Filters */}
         <div className="flex items-center gap-2 mt-3 flex-wrap">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -351,11 +399,14 @@ function CampanhasTab() {
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [leads, setLeads] = useState<Record<string, DisparoLead[]>>({});
+  const [loadingLeads, setLoadingLeads] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     const { data, error } = await supabase
       .from('disparo_campanhas')
-      .select('id, nome, template, status, leads_total, leads_sent, leads_error, leads_skipped, delay_min_s, delay_max_s, next_send_at, created_at')
+      .select('id, nome, template, status, leads_total, leads_sent, leads_error, leads_skipped, delay_min_s, delay_max_s, next_send_at, created_at, safe_hour_start, safe_hour_end, daily_limit')
       .order('created_at', { ascending: false });
     if (error) { toast.error('Erro ao carregar campanhas'); return; }
     setCampanhas((data ?? []) as Campanha[]);
@@ -371,10 +422,51 @@ function CampanhasTab() {
     return () => { supabase.removeChannel(ch); };
   }, [load]);
 
-  async function updateStatus(id: string, status: CampStatus) {
-    const { error } = await supabase.from('disparo_campanhas').update({ status }).eq('id', id);
+  async function loadLeads(campanhaId: string) {
+    if (leads[campanhaId] || loadingLeads.has(campanhaId)) return;
+    setLoadingLeads(prev => new Set(prev).add(campanhaId));
+    const { data, error } = await supabase
+      .from('disparo_leads')
+      .select('id, nome, phone, status, sent_at, error_msg, temperatura, ordem')
+      .eq('campanha_id', campanhaId)
+      .order('ordem', { ascending: true, nullsFirst: false });
+    setLoadingLeads(prev => { const s = new Set(prev); s.delete(campanhaId); return s; });
+    if (error) { toast.error('Erro ao carregar leads'); return; }
+    setLeads(prev => ({ ...prev, [campanhaId]: (data ?? []) as DisparoLead[] }));
+  }
+
+  function toggleExpand(id: string) {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+        loadLeads(id);
+      }
+      return next;
+    });
+  }
+
+  async function pauseCampanha(id: string) {
+    const { error } = await supabase.from('disparo_campanhas').update({ status: 'pausado' }).eq('id', id);
     if (error) { toast.error('Erro: ' + error.message); return; }
-    setCampanhas(prev => prev.map(c => c.id === id ? { ...c, status } : c));
+    setCampanhas(prev => prev.map(c => c.id === id ? { ...c, status: 'pausado' } : c));
+    toast.success('Campanha pausada');
+  }
+
+  async function resumeCampanha(campanha: Campanha) {
+    const nextSlot = nextCommercialSlot(campanha.safe_hour_start, campanha.safe_hour_end);
+    const { error } = await supabase.from('disparo_campanhas')
+      .update({ status: 'ativo', next_send_at: nextSlot.toISOString() })
+      .eq('id', campanha.id);
+    if (error) { toast.error('Erro: ' + error.message); return; }
+    setCampanhas(prev => prev.map(c =>
+      c.id === campanha.id ? { ...c, status: 'ativo', next_send_at: nextSlot.toISOString() } : c
+    ));
+    const h = nextSlot.getHours();
+    const min = String(nextSlot.getMinutes()).padStart(2, '0');
+    toast.success(`Campanha retomada — próximo envio às ${h}:${min}`);
   }
 
   async function deleteCampanha(id: string) {
@@ -389,9 +481,9 @@ function CampanhasTab() {
     ? campanhas.filter(c => c.nome.toLowerCase().includes(search.toLowerCase()))
     : campanhas;
 
-  const ativas    = campanhas.filter(c => c.status === 'ativo').length;
+  const ativas     = campanhas.filter(c => c.status === 'ativo').length;
   const concluidas = campanhas.filter(c => c.status === 'concluido').length;
-  const pausadas  = campanhas.filter(c => c.status === 'pausado').length;
+  const pausadas   = campanhas.filter(c => c.status === 'pausado').length;
 
   return (
     <>
@@ -399,9 +491,9 @@ function CampanhasTab() {
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3 flex-wrap">
             {[
-              { label: 'Ativas',     count: ativas,    color: 'text-blue-600',    bg: 'bg-blue-50',    dot: 'bg-blue-500' },
-              { label: 'Pausadas',   count: pausadas,  color: 'text-amber-600',   bg: 'bg-amber-50',   dot: 'bg-amber-500' },
-              { label: 'Concluídas', count: concluidas, color: 'text-emerald-600', bg: 'bg-emerald-50', dot: 'bg-emerald-500' },
+              { label: 'Ativas',     count: ativas,    color: 'text-emerald-700', bg: 'bg-emerald-50', dot: 'bg-emerald-500' },
+              { label: 'Pausadas',   count: pausadas,  color: 'text-amber-700',   bg: 'bg-amber-50',   dot: 'bg-amber-400' },
+              { label: 'Concluídas', count: concluidas, color: 'text-blue-700',   bg: 'bg-blue-50',    dot: 'bg-blue-500' },
               { label: 'Total',      count: campanhas.length, color: 'text-gray-600', bg: 'bg-gray-100', dot: 'bg-gray-400' },
             ].map(s => (
               <div key={s.label} className={cn('flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium', s.bg, s.color)}>
@@ -434,83 +526,210 @@ function CampanhasTab() {
           </div>
         ) : (
           <div className="space-y-3">
-            {filtered.map(c => {
-              const cfg = CAMP_STATUS_CFG[c.status] ?? CAMP_STATUS_CFG.rascunho;
-              const total = c.leads_total || 1;
-              const pct = Math.round((c.leads_sent / total) * 100);
-              const template = c.template?.replace(/\n/g, ' ').slice(0, 100) ?? '';
-              return (
-                <Card key={c.id} className="bg-white shadow-none border hover:shadow-sm transition-shadow">
-                  <CardContent className="p-4">
-                    <div className="flex items-start gap-4">
-                      {/* Progress circle hint */}
-                      <div className="flex-none w-12 h-12 rounded-full border-2 border-gray-100 flex items-center justify-center bg-gray-50">
-                        <span className="text-sm font-bold text-foreground">{pct}%</span>
-                      </div>
-
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-sm text-foreground truncate">{c.nome}</span>
-                          <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border', cfg.badge)}>
-                            {cfg.label}
-                          </span>
-                        </div>
-
-                        {template && (
-                          <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{template}…</p>
-                        )}
-
-                        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
-                          <span className="text-emerald-600 font-medium">{c.leads_sent} enviados</span>
-                          {c.leads_error > 0 && <span className="text-red-500">{c.leads_error} erros</span>}
-                          {c.leads_skipped > 0 && <span>{c.leads_skipped} pulados</span>}
-                          <span>{c.leads_total} total</span>
-                          <span>delay {c.delay_min_s}–{c.delay_max_s}s</span>
-                          {c.status === 'ativo' && c.next_send_at && (
-                            <span className="text-blue-600">próximo {fmtRelative(c.next_send_at) ?? fmtDatetime(c.next_send_at)}</span>
-                          )}
-                          <span className="ml-auto">{fmtDatetime(c.created_at)}</span>
-                        </div>
-
-                        {/* Progress bar */}
-                        <div className="mt-2 h-1.5 rounded-full bg-gray-100 overflow-hidden">
-                          <div
-                            className={cn('h-full rounded-full transition-all',
-                              c.status === 'concluido' ? 'bg-emerald-500' : c.status === 'erro' ? 'bg-red-400' : 'bg-blue-500')}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex items-center gap-1 flex-none">
-                        {c.status === 'ativo' && (
-                          <button onClick={() => updateStatus(c.id, 'pausado')} title="Pausar"
-                            className="p-1.5 rounded hover:bg-amber-50 text-amber-600 transition-colors">
-                            <Pause className="h-4 w-4" />
-                          </button>
-                        )}
-                        {c.status === 'pausado' && (
-                          <button onClick={() => updateStatus(c.id, 'ativo')} title="Retomar"
-                            className="p-1.5 rounded hover:bg-blue-50 text-blue-600 transition-colors">
-                            <Play className="h-4 w-4" />
-                          </button>
-                        )}
-                        <button onClick={() => deleteCampanha(c.id)} title="Deletar"
-                          className="p-1.5 rounded hover:bg-red-50 text-red-500 transition-colors">
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+            {filtered.map(c => (
+              <CampanhaCard
+                key={c.id}
+                campanha={c}
+                isExpanded={expanded.has(c.id)}
+                onToggle={() => toggleExpand(c.id)}
+                leads={leads[c.id] ?? null}
+                loadingLeads={loadingLeads.has(c.id)}
+                onPause={() => pauseCampanha(c.id)}
+                onResume={() => resumeCampanha(c)}
+                onDelete={() => deleteCampanha(c.id)}
+              />
+            ))}
           </div>
         )}
       </div>
     </>
+  );
+}
+
+// ── Campanha Card ─────────────────────────────────────────────────────────────
+
+interface CampanhaCardProps {
+  campanha: Campanha;
+  isExpanded: boolean;
+  onToggle: () => void;
+  leads: DisparoLead[] | null;
+  loadingLeads: boolean;
+  onPause: () => void;
+  onResume: () => void;
+  onDelete: () => void;
+}
+
+function CampanhaCard({ campanha: c, isExpanded, onToggle, leads, loadingLeads, onPause, onResume, onDelete }: CampanhaCardProps) {
+  const cfg   = CAMP_STATUS_CFG[c.status] ?? CAMP_STATUS_CFG.rascunho;
+  const total = c.leads_total || 1;
+  const pct   = Math.round((c.leads_sent / total) * 100);
+  const isWithinHours = (() => {
+    const h = new Date().getHours();
+    return h >= c.safe_hour_start && h < c.safe_hour_end;
+  })();
+
+  const byTemp = useMemo<Record<Temperatura, DisparoLead[]>>(() => {
+    const base: Record<Temperatura, DisparoLead[]> = { quente: [], morno: [], frio: [] };
+    for (const l of leads ?? []) base[l.temperatura]?.push(l);
+    return base;
+  }, [leads]);
+
+  return (
+    <Card className={cn('bg-white shadow-none border transition-shadow', isExpanded ? 'shadow-sm' : 'hover:shadow-sm')}>
+      {/* ── Header row ── */}
+      <CardContent className="p-0">
+        <div
+          className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none"
+          onClick={onToggle}
+        >
+          {/* Expand icon */}
+          <div className="flex-none text-muted-foreground">
+            {isExpanded
+              ? <ChevronDown className="h-4 w-4" />
+              : <ChevronRight className="h-4 w-4" />}
+          </div>
+
+          {/* Progress ring */}
+          <div className="flex-none w-10 h-10 rounded-full border-2 border-gray-100 flex items-center justify-center bg-gray-50">
+            <span className="text-xs font-bold text-foreground">{pct}%</span>
+          </div>
+
+          {/* Name + badges */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-sm text-foreground truncate">{c.nome}</span>
+              <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border', cfg.badge)}>
+                <span className={cn('w-1.5 h-1.5 rounded-full', cfg.dot)} />
+                {cfg.label}
+              </span>
+              {/* Horário comercial */}
+              <span className={cn(
+                'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border',
+                isWithinHours
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : 'bg-gray-50 text-gray-500 border-gray-200'
+              )}>
+                <Clock className="h-3 w-3" />
+                {c.safe_hour_start}h–{c.safe_hour_end}h
+                {isWithinHours && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ml-0.5 animate-pulse" />}
+              </span>
+            </div>
+
+            {/* Stats row */}
+            <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
+              <span className="font-medium text-foreground">{c.leads_sent}/{c.leads_total}</span>
+              {c.leads_error > 0 && <span className="text-red-500">{c.leads_error} erros</span>}
+              {c.leads_skipped > 0 && <span>{c.leads_skipped} pulados</span>}
+              <span className="text-muted-foreground/60">·</span>
+              <span>delay {c.delay_min_s}–{c.delay_max_s}s</span>
+              <span className="text-muted-foreground/60">·</span>
+              <span><Shield className="inline h-3 w-3 mr-0.5 mb-0.5" />{c.daily_limit}/dia</span>
+              {c.status === 'ativo' && c.next_send_at && (
+                <span className="text-blue-600 font-medium">
+                  próximo {fmtRelative(c.next_send_at) ?? fmtTime(c.next_send_at)}
+                </span>
+              )}
+              {c.status === 'pausado' && c.next_send_at && (
+                <span className="text-amber-600">
+                  retoma às {fmtTime(c.next_send_at)}
+                </span>
+              )}
+            </div>
+
+            {/* Progress bar */}
+            <div className="mt-2 h-1 rounded-full bg-gray-100 overflow-hidden">
+              <div
+                className={cn('h-full rounded-full transition-all duration-500',
+                  c.status === 'concluido' ? 'bg-blue-500' :
+                  c.status === 'erro'      ? 'bg-red-400'  : 'bg-emerald-500')}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-1 flex-none" onClick={e => e.stopPropagation()}>
+            {c.status === 'ativo' && (
+              <button onClick={onPause} title="Pausar"
+                className="p-1.5 rounded hover:bg-amber-50 text-amber-600 transition-colors">
+                <Pause className="h-4 w-4" />
+              </button>
+            )}
+            {c.status === 'pausado' && (
+              <button onClick={onResume} title="Retomar"
+                className="p-1.5 rounded hover:bg-emerald-50 text-emerald-600 transition-colors">
+                <Play className="h-4 w-4" />
+              </button>
+            )}
+            <button onClick={onDelete} title="Deletar"
+              className="p-1.5 rounded hover:bg-red-50 text-red-400 transition-colors">
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* ── Expanded panel ── */}
+        {isExpanded && (
+          <div className="border-t bg-gray-50/60 px-4 pb-4 pt-3">
+            {loadingLeads ? (
+              <div className="flex items-center justify-center h-24">
+                <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
+              </div>
+            ) : !leads || leads.length === 0 ? (
+              <div className="flex items-center justify-center h-16 text-sm text-muted-foreground gap-2">
+                <Users className="h-4 w-4" /> Nenhum lead nesta campanha
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-3">
+                {(['quente', 'morno', 'frio'] as Temperatura[]).map(temp => {
+                  const tcfg  = TEMP_CFG[temp];
+                  const TIcon = tcfg.icon;
+                  const list  = byTemp[temp];
+                  return (
+                    <div key={temp} className={cn('rounded-lg border bg-white overflow-hidden', tcfg.border)}>
+                      {/* Temperature header */}
+                      <div className={cn('flex items-center gap-2 px-3 py-2 border-b', tcfg.bg, tcfg.border)}>
+                        <TIcon className={cn('h-3.5 w-3.5', tcfg.color)} />
+                        <span className={cn('text-xs font-semibold', tcfg.color)}>{tcfg.label}</span>
+                        <span className={cn('ml-auto text-xs font-bold', tcfg.color)}>{list.length}</span>
+                      </div>
+
+                      {/* Lead list */}
+                      <div className="max-h-52 overflow-y-auto divide-y divide-gray-50">
+                        {list.length === 0 ? (
+                          <p className="text-xs text-muted-foreground text-center py-4">Vazio</p>
+                        ) : list.map(lead => (
+                          <LeadRow key={lead.id} lead={lead} />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function LeadRow({ lead }: { lead: DisparoLead }) {
+  const statusDot =
+    lead.status === 'enviado' ? 'bg-emerald-500' :
+    lead.status === 'erro'    ? 'bg-red-500'     :
+    'bg-gray-300';
+
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50/80 transition-colors">
+      <span className={cn('w-1.5 h-1.5 rounded-full flex-none', statusDot)} />
+      <span className="text-xs text-foreground/80 truncate flex-1">
+        {lead.nome ?? maskPhone(lead.phone)}
+      </span>
+      <span className="text-xs text-muted-foreground flex-none">
+        {lead.status === 'enviado' && lead.sent_at ? fmtTime(lead.sent_at) : lead.status === 'erro' ? 'erro' : '—'}
+      </span>
+    </div>
   );
 }
 
