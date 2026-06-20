@@ -141,6 +141,23 @@ serve(async (req) => {
       saved.push(lead.id);
     }
 
+    // Marca como quente em disparo_leads para qualquer campanha que tenha esse telefone
+    // Busca por sufixo dos últimos 8 dígitos (mesmo padrão de normalização)
+    const { data: disparoLeads } = await supabase
+      .from('disparo_leads')
+      .select('id, phone, temperatura')
+      .filter('phone', 'ilike', `%${s8}`)
+      .neq('temperatura', 'quente');
+
+    if (disparoLeads?.length) {
+      const ids = disparoLeads.map((l: { id: string }) => l.id);
+      await supabase
+        .from('disparo_leads')
+        .update({ temperatura: 'quente' })
+        .in('id', ids);
+      console.log(`temperatura=quente aplicada em ${ids.length} disparo_leads para phone suffix=${s8}`);
+    }
+
     return ok({ ok: true, saved: saved.length, leads: saved });
 
   } catch (e: unknown) {
