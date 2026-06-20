@@ -9,7 +9,7 @@ import {
   MessageSquare, Image, Music, Video, BarChart2,
   Search, Zap, Pause, Play, Trash2, Send,
   ChevronDown, ChevronRight, Flame, Thermometer, Snowflake,
-  Users, Shield,
+  Users, Shield, Webhook, Mail, Link, Copy, X, Info,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -53,6 +53,8 @@ interface Campanha {
   safe_hour_start: number;
   safe_hour_end: number;
   daily_limit: number;
+  email_contato?: string | null;
+  callback_url?: string | null;
 }
 
 interface DisparoLead {
@@ -393,6 +395,248 @@ function FunilTab({ onCreateFunnel }: { onCreateFunnel: () => void }) {
   );
 }
 
+// ── Nova Campanha Modal ───────────────────────────────────────────────────────
+
+const SUPABASE_URL = 'https://usqiyekfmwwnvkmkdlej.supabase.co';
+
+interface NovaCampanhaForm {
+  nome: string;
+  email: string;
+  callback_url: string;
+  delay_min_s: number;
+  delay_max_s: number;
+  daily_limit: number;
+  safe_hour_start: number;
+  safe_hour_end: number;
+}
+
+function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [form, setForm] = useState<NovaCampanhaForm>({
+    nome: '', email: '', callback_url: '',
+    delay_min_s: 30, delay_max_s: 90,
+    daily_limit: 200, safe_hour_start: 8, safe_hour_end: 21,
+  });
+  const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const webhookUrl = `${SUPABASE_URL}/functions/v1/disparo-runner`;
+
+  function set<K extends keyof NovaCampanhaForm>(k: K, v: NovaCampanhaForm[K]) {
+    setForm(prev => ({ ...prev, [k]: v }));
+  }
+
+  function copyText(text: string, key: string) {
+    navigator.clipboard.writeText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(null), 2000);
+  }
+
+  async function handleSave() {
+    if (!form.nome.trim()) { toast.error('Informe um nome para a campanha'); return; }
+    setSaving(true);
+    const { error } = await supabase.from('disparo_campanhas').insert({
+      nome: form.nome.trim(),
+      template: form.callback_url.trim() || null,
+      email_contato: form.email.trim() || null,
+      callback_url: form.callback_url.trim() || null,
+      status: 'pausado',
+      leads_total: 0, leads_sent: 0, leads_error: 0, leads_skipped: 0,
+      delay_min_s: form.delay_min_s,
+      delay_max_s: form.delay_max_s,
+      daily_limit: form.daily_limit,
+      safe_hour_start: form.safe_hour_start,
+      safe_hour_end: form.safe_hour_end,
+      next_send_at: new Date().toISOString(),
+    });
+    setSaving(false);
+    if (error) { toast.error('Erro ao criar campanha: ' + error.message); return; }
+    toast.success('Campanha criada!');
+    onCreated();
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b sticky top-0 bg-white rounded-t-2xl">
+          <div>
+            <h2 className="text-lg font-bold text-foreground">Nova Campanha de Disparo</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Configure o fluxo n8n e os parâmetros de envio</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
+            <X className="h-4 w-4 text-muted-foreground" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-6">
+
+          {/* Dados básicos */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-foreground">Dados da Campanha</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Nome da campanha *</label>
+                <Input value={form.nome} onChange={e => set('nome', e.target.value)}
+                  placeholder="Ex: Turma #38 — Lista de Espera" className="h-9 text-sm" />
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs font-medium text-muted-foreground mb-1 block flex items-center gap-1">
+                  <Mail className="h-3.5 w-3.5" /> E-mail de notificação
+                </label>
+                <Input value={form.email} onChange={e => set('email', e.target.value)}
+                  placeholder="seu@email.com" type="email" className="h-9 text-sm" />
+                <p className="text-xs text-muted-foreground mt-1">Recebe alertas quando a campanha concluir ou tiver erros.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Webhook entrada (n8n → sistema) */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-full bg-violet-100 flex items-center justify-center flex-none">
+                <span className="text-xs font-bold text-violet-700">1</span>
+              </div>
+              <h3 className="text-sm font-semibold text-foreground">Webhook de Entrada</h3>
+              <span className="text-xs text-muted-foreground">(n8n → sistema)</span>
+            </div>
+            <div className="bg-violet-50 border border-violet-200 rounded-xl p-4 space-y-3">
+              <p className="text-xs text-violet-800 leading-relaxed">
+                Configure no seu fluxo n8n um nó <strong>HTTP Request</strong> com método <code className="bg-violet-100 px-1 py-0.5 rounded">POST</code> para esta URL.
+                Envie os leads nesse endpoint e o sistema os enfileira automaticamente.
+              </p>
+              <div>
+                <label className="text-xs font-medium text-violet-700 mb-1.5 block">URL do Webhook</label>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 bg-white border border-violet-200 rounded-lg px-3 py-2 flex items-center gap-2 font-mono text-xs text-foreground overflow-x-auto">
+                    <Webhook className="h-3.5 w-3.5 text-violet-500 flex-none" />
+                    <span className="truncate">{webhookUrl}</span>
+                  </div>
+                  <button
+                    onClick={() => copyText(webhookUrl, 'webhook')}
+                    className="flex-none flex items-center gap-1 px-3 py-2 bg-violet-600 text-white rounded-lg text-xs font-medium hover:bg-violet-700 transition-colors">
+                    {copied === 'webhook' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    {copied === 'webhook' ? 'Copiado!' : 'Copiar'}
+                  </button>
+                </div>
+              </div>
+              <div className="bg-white border border-violet-100 rounded-lg p-3">
+                <p className="text-xs font-semibold text-foreground mb-2">Payload esperado (JSON):</p>
+                <pre className="text-xs text-muted-foreground leading-relaxed overflow-x-auto">{`{
+  "campanha_id": "<id da campanha>",
+  "leads": [
+    { "nome": "João Silva", "phone": "5511999999999", "temperatura": "quente" },
+    { "nome": "Maria",      "phone": "5521888888888", "temperatura": "morno"  }
+  ]
+}`}</pre>
+              </div>
+              <div className="flex items-start gap-2 text-xs text-violet-700 bg-violet-100 rounded-lg px-3 py-2">
+                <Info className="h-3.5 w-3.5 flex-none mt-0.5" />
+                <span><strong>temperatura</strong>: <code>quente</code> | <code>morno</code> | <code>frio</code> — define a ordem de prioridade no disparo.</span>
+              </div>
+            </div>
+          </div>
+
+          {/* HTTP Callback (sistema → n8n) */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center flex-none">
+                <span className="text-xs font-bold text-emerald-700">2</span>
+              </div>
+              <h3 className="text-sm font-semibold text-foreground">Callback HTTP de Retorno</h3>
+              <span className="text-xs text-muted-foreground">(sistema → n8n)</span>
+            </div>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 space-y-3">
+              <p className="text-xs text-emerald-800 leading-relaxed">
+                Após cada envio, o sistema chama esta URL com o resultado. Configure um nó <strong>Webhook</strong> no n8n para receber e processar o retorno.
+              </p>
+              <div>
+                <label className="text-xs font-medium text-emerald-700 mb-1.5 block">URL de Callback (n8n Webhook)</label>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 relative">
+                    <Link className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-emerald-500" />
+                    <Input
+                      value={form.callback_url}
+                      onChange={e => set('callback_url', e.target.value)}
+                      placeholder="https://seu-n8n.com/webhook/disparo-retorno"
+                      className="h-9 text-sm pl-8 border-emerald-200 focus:border-emerald-400"
+                    />
+                  </div>
+                  {form.callback_url && (
+                    <button
+                      onClick={() => copyText(form.callback_url, 'callback')}
+                      className="flex-none flex items-center gap-1 px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs font-medium hover:bg-emerald-700 transition-colors">
+                      {copied === 'callback' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      {copied === 'callback' ? 'Copiado!' : 'Copiar'}
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="bg-white border border-emerald-100 rounded-lg p-3">
+                <p className="text-xs font-semibold text-foreground mb-2">Payload do retorno (JSON):</p>
+                <pre className="text-xs text-muted-foreground leading-relaxed overflow-x-auto">{`{
+  "campanha_id": "<id>",
+  "lead_id":     "<id>",
+  "phone":       "5511999999999",
+  "nome":        "João Silva",
+  "status":      "enviado" | "erro",
+  "sent_at":     "2026-06-21T08:05:00Z",
+  "error_msg":   null
+}`}</pre>
+              </div>
+            </div>
+          </div>
+
+          {/* Configurações de envio */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-foreground">Configurações de Envio</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Delay mínimo (seg)</label>
+                <Input type="number" value={form.delay_min_s} min={10} max={3600}
+                  onChange={e => set('delay_min_s', Number(e.target.value))} className="h-9 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Delay máximo (seg)</label>
+                <Input type="number" value={form.delay_max_s} min={10} max={3600}
+                  onChange={e => set('delay_max_s', Number(e.target.value))} className="h-9 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Limite diário</label>
+                <Input type="number" value={form.daily_limit} min={1} max={1000}
+                  onChange={e => set('daily_limit', Number(e.target.value))} className="h-9 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Horário seguro</label>
+                <div className="flex items-center gap-2">
+                  <Input type="number" value={form.safe_hour_start} min={0} max={23}
+                    onChange={e => set('safe_hour_start', Number(e.target.value))} className="h-9 text-sm w-16 text-center" />
+                  <span className="text-xs text-muted-foreground">às</span>
+                  <Input type="number" value={form.safe_hour_end} min={0} max={23}
+                    onChange={e => set('safe_hour_end', Number(e.target.value))} className="h-9 text-sm w-16 text-center" />
+                  <span className="text-xs text-muted-foreground">h</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t bg-gray-50 rounded-b-2xl flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">A campanha inicia <strong>pausada</strong> — ative após configurar o fluxo no n8n.</p>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>Cancelar</Button>
+            <Button size="sm" onClick={handleSave} disabled={saving} className="bg-violet-600 hover:bg-violet-700 text-white">
+              {saving ? <><RefreshCw className="h-3.5 w-3.5 animate-spin mr-1" /> Criando…</> : <><Plus className="h-3.5 w-3.5 mr-1" /> Criar Campanha</>}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Campanhas Tab ─────────────────────────────────────────────────────────────
 
 function CampanhasTab() {
@@ -402,6 +646,7 @@ function CampanhasTab() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [leads, setLeads] = useState<Record<string, DisparoLead[]>>({});
   const [loadingLeads, setLoadingLeads] = useState<Set<string>>(new Set());
+  const [novaModal, setNovaModal] = useState(false);
 
   const load = useCallback(async () => {
     const { data, error } = await supabase
@@ -502,13 +747,23 @@ function CampanhasTab() {
               </div>
             ))}
           </div>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input placeholder="Buscar campanha…" value={search}
-              onChange={e => setSearch(e.target.value)} className="pl-8 h-8 w-52 text-sm" />
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input placeholder="Buscar campanha…" value={search}
+                onChange={e => setSearch(e.target.value)} className="pl-8 h-8 w-52 text-sm" />
+            </div>
+            <Button size="sm" onClick={() => setNovaModal(true)}
+              className="h-8 bg-violet-600 hover:bg-violet-700 text-white gap-1.5 text-xs font-medium">
+              <Plus className="h-3.5 w-3.5" /> Nova Campanha
+            </Button>
           </div>
         </div>
       </div>
+
+      {novaModal && (
+        <NovaCampanhaModal onClose={() => setNovaModal(false)} onCreated={load} />
+      )}
 
       <div className="flex-1 overflow-auto p-6">
         {loading ? (
