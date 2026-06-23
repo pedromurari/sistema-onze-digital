@@ -979,16 +979,6 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
 
 // ── Editar Campanha Modal ─────────────────────────────────────────────────────
 
-interface EditCampanhaForm {
-  nome: string;
-  template: string;
-  delay_min_s: number;
-  delay_max_s: number;
-  safe_hour_start: number;
-  safe_hour_end: number;
-  daily_limit: number;
-}
-
 function EditCampanhaModal({
   campanha,
   onClose,
@@ -998,32 +988,32 @@ function EditCampanhaModal({
   onClose: () => void;
   onSaved: (updated: Partial<Campanha>) => void;
 }) {
-  const [form, setForm] = useState<EditCampanhaForm>({
-    nome:            campanha.nome,
-    template:        campanha.template ?? '',
-    delay_min_s:     campanha.delay_min_s,
-    delay_max_s:     campanha.delay_max_s,
-    safe_hour_start: campanha.safe_hour_start,
-    safe_hour_end:   campanha.safe_hour_end,
-    daily_limit:     campanha.daily_limit,
-  });
-  const [saving, setSaving] = useState(false);
-
-  function set<K extends keyof EditCampanhaForm>(k: K, v: EditCampanhaForm[K]) {
-    setForm(prev => ({ ...prev, [k]: v }));
-  }
+  const [nome, setNome]               = useState(campanha.nome);
+  const [template, setTemplate]       = useState(campanha.template ?? '');
+  const [msgType, setMsgType]         = useState<'text'|'image'|'audio'|'video'|'document'>((campanha.message_type as 'text'|'image'|'audio'|'video'|'document') || 'text');
+  const [mediaUrl, setMediaUrl]       = useState(campanha.media_url ?? '');
+  const [mentionAll, setMentionAll]   = useState((campanha as any).mention_everyone ?? false);
+  const [delayMin, setDelayMin]       = useState(campanha.delay_min_s);
+  const [delayMax, setDelayMax]       = useState(campanha.delay_max_s);
+  const [hourStart, setHourStart]     = useState(campanha.safe_hour_start);
+  const [hourEnd, setHourEnd]         = useState(campanha.safe_hour_end);
+  const [dailyLimit, setDailyLimit]   = useState(campanha.daily_limit);
+  const [saving, setSaving]           = useState(false);
 
   async function handleSave() {
-    if (!form.nome.trim()) { toast.error('Informe um nome'); return; }
+    if (!nome.trim()) { toast.error('Informe um nome'); return; }
     setSaving(true);
     const payload = {
-      nome:            form.nome.trim(),
-      template:        form.template.trim() || null,
-      delay_min_s:     form.delay_min_s,
-      delay_max_s:     form.delay_max_s,
-      safe_hour_start: form.safe_hour_start,
-      safe_hour_end:   form.safe_hour_end,
-      daily_limit:     form.daily_limit,
+      nome:             nome.trim(),
+      template:         template.trim() || null,
+      message_type:     msgType,
+      media_url:        msgType !== 'text' ? (mediaUrl.trim() || null) : null,
+      mention_everyone: mentionAll,
+      delay_min_s:      delayMin,
+      delay_max_s:      delayMax,
+      safe_hour_start:  hourStart,
+      safe_hour_end:    hourEnd,
+      daily_limit:      dailyLimit,
     };
     const { error } = await supabase.from('disparo_campanhas').update(payload).eq('id', campanha.id);
     setSaving(false);
@@ -1050,51 +1040,95 @@ function EditCampanhaModal({
           {/* Nome */}
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1 block">Nome da campanha</label>
-            <Input value={form.nome} onChange={e => set('nome', e.target.value)} className="h-9 text-sm" />
+            <Input value={nome} onChange={e => setNome(e.target.value)} className="h-9 text-sm" />
           </div>
 
-          {/* Mensagem */}
+          {/* Tipo de mensagem */}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-2 block">Tipo de mensagem</label>
+            <div className="grid grid-cols-5 gap-1.5">
+              {([
+                { key: 'text'     as const, icon: MessageSquare, label: 'Texto'   },
+                { key: 'image'    as const, icon: Image,         label: 'Imagem'  },
+                { key: 'audio'    as const, icon: Music,         label: 'Áudio'   },
+                { key: 'video'    as const, icon: Video,         label: 'Vídeo'   },
+                { key: 'document' as const, icon: FileText,      label: 'Arquivo' },
+              ]).map(({ key, icon: Icon, label }) => (
+                <button key={key} type="button"
+                  onClick={() => { setMsgType(key); if (key === 'text') setMediaUrl(''); }}
+                  className={cn(
+                    'flex flex-col items-center gap-1 py-2.5 rounded-xl border text-xs font-medium transition-all',
+                    msgType === key
+                      ? 'border-primary bg-primary/5 text-primary shadow-sm'
+                      : 'border-border text-muted-foreground hover:border-primary/40 hover:text-foreground',
+                  )}>
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* URL mídia */}
+          {msgType !== 'text' && (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                URL da {msgType === 'image' ? 'imagem' : msgType === 'audio' ? 'áudio' : msgType === 'video' ? 'vídeo' : 'arquivo'}
+                <span className="font-normal opacity-60 ml-1">— link público direto</span>
+              </label>
+              <Input value={mediaUrl} onChange={e => setMediaUrl(e.target.value)}
+                placeholder="https://..." className="h-9 text-sm font-mono" />
+            </div>
+          )}
+
+          {/* Mensagem / legenda */}
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1 block">
-              Mensagem (template)
-              <span className="ml-2 text-muted-foreground/60 font-normal">use {'{{nome}}'} para o nome do lead</span>
+              {msgType === 'text' ? 'Mensagem (template)' : 'Legenda (caption)'}
+              <span className="ml-2 text-muted-foreground/60 font-normal">use {'{{nome}}'} para o nome</span>
             </label>
-            <Textarea
-              value={form.template}
-              onChange={e => set('template', e.target.value)}
-              rows={6}
-              className="text-sm resize-y"
-              placeholder="Olá {{nome}}, temos uma oferta especial para você..."
-            />
+            <Textarea value={template} onChange={e => setTemplate(e.target.value)}
+              rows={msgType === 'text' ? 6 : 3} className="text-sm resize-y"
+              placeholder={msgType === 'text' ? 'Olá {{nome}}, ...' : 'Legenda opcional...'} />
           </div>
 
-          {/* Delay e Horário */}
+          {/* Mencionar todos */}
+          <label className="flex items-center gap-3 p-3 rounded-xl border border-border hover:border-primary/40 cursor-pointer transition-colors select-none">
+            <input type="checkbox" checked={mentionAll} onChange={e => setMentionAll(e.target.checked)}
+              className="h-4 w-4 rounded accent-primary flex-none" />
+            <div>
+              <p className="text-sm font-medium text-foreground">Marcar todos os membros (@todos)</p>
+              <p className="text-xs text-muted-foreground">Ao enviar no grupo, menciona cada membro</p>
+            </div>
+          </label>
+
+          {/* Configurações de envio */}
           <div>
             <h3 className="text-sm font-semibold text-foreground mb-3">Configurações de Envio</h3>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Delay mínimo (seg)</label>
-                <Input type="number" value={form.delay_min_s} min={10} max={3600}
-                  onChange={e => set('delay_min_s', Number(e.target.value))} className="h-9 text-sm" />
+                <Input type="number" value={delayMin} min={10} max={3600}
+                  onChange={e => setDelayMin(Number(e.target.value))} className="h-9 text-sm" />
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Delay máximo (seg)</label>
-                <Input type="number" value={form.delay_max_s} min={10} max={3600}
-                  onChange={e => set('delay_max_s', Number(e.target.value))} className="h-9 text-sm" />
+                <Input type="number" value={delayMax} min={10} max={3600}
+                  onChange={e => setDelayMax(Number(e.target.value))} className="h-9 text-sm" />
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Limite diário</label>
-                <Input type="number" value={form.daily_limit} min={1} max={1000}
-                  onChange={e => set('daily_limit', Number(e.target.value))} className="h-9 text-sm" />
+                <Input type="number" value={dailyLimit} min={1} max={1000}
+                  onChange={e => setDailyLimit(Number(e.target.value))} className="h-9 text-sm" />
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Horário seguro</label>
                 <div className="flex items-center gap-2">
-                  <Input type="number" value={form.safe_hour_start} min={0} max={23}
-                    onChange={e => set('safe_hour_start', Number(e.target.value))} className="h-9 text-sm w-16 text-center" />
+                  <Input type="number" value={hourStart} min={0} max={23}
+                    onChange={e => setHourStart(Number(e.target.value))} className="h-9 text-sm w-16 text-center" />
                   <span className="text-xs text-muted-foreground">às</span>
-                  <Input type="number" value={form.safe_hour_end} min={0} max={23}
-                    onChange={e => set('safe_hour_end', Number(e.target.value))} className="h-9 text-sm w-16 text-center" />
+                  <Input type="number" value={hourEnd} min={0} max={23}
+                    onChange={e => setHourEnd(Number(e.target.value))} className="h-9 text-sm w-16 text-center" />
                   <span className="text-xs text-muted-foreground">h</span>
                 </div>
               </div>
@@ -1127,7 +1161,7 @@ function CampanhasTab() {
   const load = useCallback(async () => {
     const { data, error } = await supabase
       .from('disparo_campanhas')
-      .select('id, nome, template, status, leads_total, leads_sent, leads_error, leads_skipped, delay_min_s, delay_max_s, next_send_at, created_at, safe_hour_start, safe_hour_end, daily_limit, email_contato, callback_url')
+      .select('id, nome, template, status, leads_total, leads_sent, leads_error, leads_skipped, delay_min_s, delay_max_s, next_send_at, created_at, safe_hour_start, safe_hour_end, daily_limit, email_contato, callback_url, message_type, media_url, mention_everyone')
       .order('created_at', { ascending: false });
     if (error) { toast.error('Erro ao carregar campanhas'); return; }
     setCampanhas((data ?? []) as Campanha[]);
