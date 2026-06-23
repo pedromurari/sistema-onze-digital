@@ -134,7 +134,12 @@ serve(async (req) => {
             const res = await fetch(`${base}/message/sendText/${inst.instance_name}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', apikey: inst.api_key },
-              body: JSON.stringify({ number: phone, text: message, delay: 1200 }),
+              body: JSON.stringify({
+                number: phone,
+                text: message,
+                delay: 1200,
+                ...(camp.mention_everyone ? { mentionEveryone: true } : {}),
+              }),
             });
             if (!res.ok) {
               const txt = await res.text();

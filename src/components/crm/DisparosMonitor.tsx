@@ -425,6 +425,7 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
   const [template, setTemplate]       = useState('');
   const [msgType, setMsgType]         = useState<'text'|'image'|'audio'|'video'|'document'>('text');
   const [mediaUrl, setMediaUrl]       = useState('');
+  const [mentionAll, setMentionAll]   = useState(false);
   const [delayMin, setDelayMin]       = useState(30);
   const [delayMax, setDelayMax]       = useState(90);
   const [hourStart, setHourStart]     = useState(8);
@@ -491,9 +492,43 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
   function confirmGroups() {
     const selected = wppGroups.filter(g => g.selected);
     if (!selected.length) return;
-    // Cada grupo vira um "lead" — o phone é o JID do grupo (ex: 1203...@g.us)
     setLeads(selected.map(g => ({ nome: g.subject, phone: g.id, temperatura: 'quente' })));
     toast.success(`${selected.length} grupo(s) adicionados como destino`);
+  }
+
+  const [loadingPartic, setLoadingPartic] = useState(false);
+  async function loadMembersFromGroups() {
+    const selected = wppGroups.filter(g => g.selected);
+    if (!selected.length) return;
+    const inst = evoInstances.find(e => e.id === selectedEvoId);
+    if (!inst) return;
+    setLoadingPartic(true);
+    const base = inst.api_url.replace(/\/$/, '').replace(/^(?!https?:\/\/)/i, 'https://');
+    const allLeads: LeadPreview[] = [];
+    const seen = new Set<string>();
+    for (const grp of selected) {
+      try {
+        const res = await fetch(`${base}/group/participants/${inst.instance_name}?groupJid=${encodeURIComponent(grp.id)}`, {
+          headers: { apikey: inst.api_key },
+        });
+        if (!res.ok) continue;
+        const data = await res.json();
+        const participants: { id: string; pushName?: string }[] = Array.isArray(data) ? data : (data?.participants ?? []);
+        for (const p of participants) {
+          const phone = (p.id ?? '').replace('@s.whatsapp.net', '').replace(/\D/g, '');
+          if (!phone || seen.has(phone)) continue;
+          seen.add(phone);
+          allLeads.push({ nome: p.pushName ?? '', phone, temperatura: 'morno' });
+        }
+      } catch { /* ignora grupo com erro */ }
+    }
+    setLoadingPartic(false);
+    if (allLeads.length) {
+      setLeads(allLeads);
+      toast.success(`${allLeads.length} membros carregados (sem duplicatas)`);
+    } else {
+      toast.error('Nenhum membro encontrado nos grupos selecionados');
+    }
   }
 
   async function loadFromLancamento(id: string) {
@@ -557,6 +592,7 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
       template: template.trim() || null,
       message_type: msgType,
       media_url: msgType !== 'text' ? (mediaUrl.trim() || null) : null,
+      mention_everyone: mentionAll,
       status: startActive ? 'ativo' : 'pausado',
       leads_total: leads.length, leads_sent: 0, leads_error: 0, leads_skipped: 0,
       delay_min_s: delayMin, delay_max_s: delayMax,
@@ -674,6 +710,17 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
                 className="text-sm resize-y"
                 placeholder={msgType === 'text' ? `Olá {{nome}}! 👋\n\nSua mensagem aqui...` : 'Legenda opcional da mídia...'} />
             </div>
+
+            {/* Mencionar todos */}
+            <label className="flex items-center gap-3 p-3 rounded-xl border border-border hover:border-primary/40 cursor-pointer transition-colors select-none">
+              <input type="checkbox" checked={mentionAll} onChange={e => setMentionAll(e.target.checked)}
+                className="h-4 w-4 rounded accent-primary flex-none" />
+              <div>
+                <p className="text-sm font-medium text-foreground">Marcar todos os membros (@todos)</p>
+                <p className="text-xs text-muted-foreground">Ao enviar no grupo, menciona cada membro — eles recebem notificação</p>
+              </div>
+            </label>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Delay mínimo (seg)</label>
@@ -759,13 +806,17 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
                 {/* Lista de grupos */}
                 {wppGroups.length > 0 && (
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground">{wppGroups.length} grupos encontrados — marque os que deseja usar</span>
-                      <div className="flex gap-2">
-                        <button onClick={() => setWppGroups(p => p.map(g => ({ ...g, selected: true })))}
-                          className="text-xs text-primary hover:underline">Todos</button>
-                        <button onClick={() => setWppGroups(p => p.map(g => ({ ...g, selected: false })))}
-                          className="text-xs text-muted-foreground hover:underline">Nenhum</button>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-muted-foreground">{wppGroups.length} grupos — marque os que deseja usar</span>
+                      <div className="flex gap-1.5">
+                        <button onClick={() => { setWppGroups(p => p.map(g => ({ ...g, selected: true }))); setLeads([]); }}
+                          className="px-2.5 py-1 rounded-md border border-primary text-xs text-primary font-medium hover:bg-primary/10 transition-colors">
+                          ✓ Todos
+                        </button>
+                        <button onClick={() => { setWppGroups(p => p.map(g => ({ ...g, selected: false }))); setLeads([]); }}
+                          className="px-2.5 py-1 rounded-md border border-border text-xs text-muted-foreground font-medium hover:bg-gray-100 transition-colors">
+                          ✗ Nenhum
+                        </button>
                       </div>
                     </div>
                     <div className="border rounded-lg overflow-hidden max-h-52 overflow-y-auto">
