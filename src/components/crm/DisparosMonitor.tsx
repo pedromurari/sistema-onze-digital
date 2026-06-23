@@ -9,8 +9,9 @@ import {
   MessageSquare, Image, Music, Video, BarChart2,
   Search, Zap, Pause, Play, Trash2, Send,
   ChevronDown, ChevronRight, Flame, Thermometer, Snowflake,
-  Users, Shield, Webhook, Mail, Link, Copy, X, Info,
+  Users, Shield, Webhook, Mail, Link, Copy, X, Info, Pencil, Upload, Check,
 } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -410,187 +411,461 @@ interface NovaCampanhaForm {
   safe_hour_end: number;
 }
 
+type CampStep   = 'config' | 'leads' | 'review';
+type LeadSource = 'lancamento' | 'turma' | 'csv';
+interface LeadPreview { nome: string; phone: string; temperatura: 'quente' | 'morno' | 'frio'; }
+
 function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-  const [form, setForm] = useState<NovaCampanhaForm>({
-    nome: '', email: '', callback_url: '',
-    delay_min_s: 30, delay_max_s: 90,
-    daily_limit: 200, safe_hour_start: 8, safe_hour_end: 21,
-  });
-  const [saving, setSaving] = useState(false);
-  const [copied, setCopied] = useState<string | null>(null);
+  const [step, setStep]   = useState<CampStep>('config');
+  const [campNome, setCampNome]       = useState('');
+  const [template, setTemplate]       = useState('');
+  const [delayMin, setDelayMin]       = useState(30);
+  const [delayMax, setDelayMax]       = useState(90);
+  const [hourStart, setHourStart]     = useState(8);
+  const [hourEnd, setHourEnd]         = useState(21);
+  const [dailyLimit, setDailyLimit]   = useState(200);
 
-  const webhookUrl = `${SUPABASE_URL}/functions/v1/disparo-runner`;
+  const [source, setSource]                     = useState<LeadSource>('lancamento');
+  const [lancamentos, setLancamentos]           = useState<{ id: string; nome: string }[]>([]);
+  const [turmas, setTurmas]                     = useState<{ id: string; nome: string }[]>([]);
+  const [selectedLancId, setSelectedLancId]     = useState('');
+  const [selectedTurmaId, setSelectedTurmaId]   = useState('');
+  const [leads, setLeads]                       = useState<LeadPreview[]>([]);
+  const [loadingLeads, setLoadingLeads]         = useState(false);
+  const [csvError, setCsvError]                 = useState('');
+  const [saving, setSaving]                     = useState(false);
 
-  function set<K extends keyof NovaCampanhaForm>(k: K, v: NovaCampanhaForm[K]) {
-    setForm(prev => ({ ...prev, [k]: v }));
-  }
-
-  function copyText(text: string, key: string) {
-    navigator.clipboard.writeText(text);
-    setCopied(key);
-    setTimeout(() => setCopied(null), 2000);
-  }
-
-  async function handleSave() {
-    if (!form.nome.trim()) { toast.error('Informe um nome para a campanha'); return; }
-    setSaving(true);
-    const { error } = await supabase.from('disparo_campanhas').insert({
-      nome: form.nome.trim(),
-      template: form.callback_url.trim() || null,
-      email_contato: form.email.trim() || null,
-      callback_url: form.callback_url.trim() || null,
-      status: 'pausado',
-      leads_total: 0, leads_sent: 0, leads_error: 0, leads_skipped: 0,
-      delay_min_s: form.delay_min_s,
-      delay_max_s: form.delay_max_s,
-      daily_limit: form.daily_limit,
-      safe_hour_start: form.safe_hour_start,
-      safe_hour_end: form.safe_hour_end,
-      next_send_at: new Date().toISOString(),
+  useEffect(() => {
+    Promise.all([
+      supabase.from('lancamentos').select('id, nome').order('created_at', { ascending: false }),
+      supabase.from('turmas').select('id, nome').order('nome'),
+    ]).then(([l, t]) => {
+      setLancamentos((l.data ?? []) as { id: string; nome: string }[]);
+      setTurmas((t.data ?? []) as { id: string; nome: string }[]);
     });
-    setSaving(false);
-    if (error) { toast.error('Erro ao criar campanha: ' + error.message); return; }
-    toast.success('Campanha criada!');
-    onCreated();
-    onClose();
+  }, []);
+
+  async function loadFromLancamento(id: string) {
+    if (!id) { setLeads([]); return; }
+    setLoadingLeads(true);
+    const { data } = await supabase
+      .from('lancamento_leads').select('nome, whatsapp, fase')
+      .eq('lancamento_id', id).not('whatsapp', 'is', null);
+    setLeads((data ?? []).map(r => ({
+      nome: r.nome ?? '',
+      phone: r.whatsapp ?? '',
+      temperatura: (r.fase === 'matriculado' ? 'quente' : r.fase === 'oferta' ? 'morno' : 'frio') as LeadPreview['temperatura'],
+    })));
+    setLoadingLeads(false);
   }
+
+  async function loadFromTurma(id: string) {
+    if (!id) { setLeads([]); return; }
+    setLoadingLeads(true);
+    const { data } = await supabase
+      .from('alunos').select('nome, whatsapp')
+      .eq('turma_id', id).eq('status', 'ativo').not('whatsapp', 'is', null);
+    setLeads((data ?? []).map(r => ({ nome: r.nome ?? '', phone: r.whatsapp ?? '', temperatura: 'quente' as const })));
+    setLoadingLeads(false);
+  }
+
+  function parseCSV(file: File) {
+    setCsvError('');
+    const reader = new FileReader();
+    reader.onload = e => {
+      const text = (e.target?.result as string) ?? '';
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      if (lines.length < 2) { setCsvError('Arquivo vazio ou sem dados'); return; }
+      const header = lines[0].split(/[;,\t]/).map(h => h.trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+      const nomeIdx  = header.findIndex(h => h.includes('nome'));
+      const phoneIdx = header.findIndex(h => h.includes('whatsapp') || h.includes('telefone') || h.includes('phone') || h.includes('celular'));
+      if (phoneIdx === -1) { setCsvError('Coluna de telefone não encontrada. Use: "Whatsapp", "Telefone" ou "Phone"'); return; }
+      const parsed: LeadPreview[] = [];
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(/[;,\t]/);
+        const phone = (cols[phoneIdx] ?? '').replace(/\D/g, '');
+        if (phone.length < 10) continue;
+        parsed.push({
+          nome: nomeIdx >= 0 ? (cols[nomeIdx] ?? '').trim() : '',
+          phone: phone.length === 11 ? '55' + phone : phone,
+          temperatura: 'morno',
+        });
+      }
+      if (parsed.length === 0) { setCsvError('Nenhum telefone válido encontrado'); return; }
+      setLeads(parsed);
+    };
+    reader.readAsText(file, 'UTF-8');
+  }
+
+  async function handleCreate(startActive = false) {
+    if (!campNome.trim()) { toast.error('Informe um nome'); return; }
+    if (leads.length === 0) { toast.error('Adicione pelo menos 1 lead'); return; }
+    setSaving(true);
+    const { data: camp, error } = await supabase.from('disparo_campanhas').insert({
+      nome: campNome.trim(),
+      template: template.trim() || null,
+      status: startActive ? 'ativo' : 'pausado',
+      leads_total: leads.length, leads_sent: 0, leads_error: 0, leads_skipped: 0,
+      delay_min_s: delayMin, delay_max_s: delayMax,
+      safe_hour_start: hourStart, safe_hour_end: hourEnd,
+      daily_limit: dailyLimit,
+      next_send_at: new Date().toISOString(),
+    }).select('id').single();
+    if (error || !camp) { toast.error('Erro: ' + error?.message); setSaving(false); return; }
+    const rows = leads.map((l, idx) => ({
+      campanha_id: camp.id, nome: l.nome || null, phone: l.phone,
+      status: 'pendente', temperatura: l.temperatura, ordem: idx + 1,
+    }));
+    for (let i = 0; i < rows.length; i += 200) {
+      await supabase.from('disparo_leads').insert(rows.slice(i, i + 200));
+    }
+    setSaving(false);
+    toast.success(`Campanha criada com ${leads.length} leads! ${startActive ? '🟢 Ativa' : '⏸ Pausada'}`);
+    onCreated(); onClose();
+  }
+
+  const canGoLeads = !!campNome.trim() && !!template.trim();
+  const canReview  = leads.length > 0;
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b sticky top-0 bg-white rounded-t-2xl">
+        <div className="flex items-center justify-between px-6 py-4 border-b flex-none">
           <div>
             <h2 className="text-lg font-bold text-foreground">Nova Campanha de Disparo</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Configure o fluxo n8n e os parâmetros de envio</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {step === 'config' ? 'Etapa 1 de 3 — Configurações' : step === 'leads' ? 'Etapa 2 de 3 — Fonte dos Leads' : 'Etapa 3 de 3 — Revisão'}
+            </p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
             <X className="h-4 w-4 text-muted-foreground" />
           </button>
         </div>
 
-        <div className="px-6 py-5 space-y-6">
+        {/* Stepper */}
+        <div className="px-6 pt-4 flex-none">
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+            {(['config', 'leads', 'review'] as CampStep[]).map((s, i) => (
+              <button key={s}
+                onClick={() => { if (s === 'leads' && !canGoLeads) return; if (s === 'review' && !canReview) return; setStep(s); }}
+                className={cn('flex-1 py-1.5 rounded-md text-xs font-medium transition-all',
+                  step === s ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground/70')}>
+                {i + 1}. {s === 'config' ? 'Configuração' : s === 'leads' ? 'Leads' : 'Revisão'}
+              </button>
+            ))}
+          </div>
+        </div>
 
-          {/* Dados básicos */}
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-foreground">Dados da Campanha</h3>
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+
+          {/* ── STEP 1 ── */}
+          {step === 'config' && (<>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Nome da campanha *</label>
+              <Input value={campNome} onChange={e => setCampNome(e.target.value)} placeholder="Ex: Follow-up Turma #39" className="h-9 text-sm" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                Mensagem (template) * <span className="font-normal opacity-60">— use {`{{nome}}`} para o nome</span>
+              </label>
+              <Textarea value={template} onChange={e => setTemplate(e.target.value)} rows={5} className="text-sm resize-y" placeholder={`Olá {{nome}}! 👋\n\nSua mensagem aqui...`} />
+            </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Nome da campanha *</label>
-                <Input value={form.nome} onChange={e => set('nome', e.target.value)}
-                  placeholder="Ex: Turma #38 — Lista de Espera" className="h-9 text-sm" />
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Delay mínimo (seg)</label>
+                <Input type="number" value={delayMin} min={10} onChange={e => setDelayMin(Number(e.target.value))} className="h-9 text-sm" />
               </div>
-              <div className="col-span-2">
-                <label className="text-xs font-medium text-muted-foreground mb-1 block flex items-center gap-1">
-                  <Mail className="h-3.5 w-3.5" /> E-mail de notificação
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Delay máximo (seg)</label>
+                <Input type="number" value={delayMax} min={10} onChange={e => setDelayMax(Number(e.target.value))} className="h-9 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Horário seguro</label>
+                <div className="flex items-center gap-2">
+                  <Input type="number" value={hourStart} min={0} max={23} onChange={e => setHourStart(Number(e.target.value))} className="h-9 text-sm w-16 text-center" />
+                  <span className="text-xs text-muted-foreground">às</span>
+                  <Input type="number" value={hourEnd} min={0} max={23} onChange={e => setHourEnd(Number(e.target.value))} className="h-9 text-sm w-16 text-center" />
+                  <span className="text-xs text-muted-foreground">h</span>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Limite diário</label>
+                <Input type="number" value={dailyLimit} min={1} onChange={e => setDailyLimit(Number(e.target.value))} className="h-9 text-sm" />
+              </div>
+            </div>
+          </>)}
+
+          {/* ── STEP 2 ── */}
+          {step === 'leads' && (<>
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+              {([
+                { key: 'lancamento' as LeadSource, label: '📋 Lançamento' },
+                { key: 'turma'      as LeadSource, label: '🎓 Turma/Alunos' },
+                { key: 'csv'        as LeadSource, label: '📂 Upload CSV' },
+              ]).map(({ key, label }) => (
+                <button key={key} onClick={() => { setSource(key); setLeads([]); setCsvError(''); }}
+                  className={cn('flex-1 py-1.5 rounded-md text-xs font-medium transition-all',
+                    source === key ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground/70')}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {source === 'lancamento' && (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">Carrega leads da planilha do lançamento que têm WhatsApp cadastrado.</p>
+                <select value={selectedLancId}
+                  onChange={e => { setSelectedLancId(e.target.value); loadFromLancamento(e.target.value); }}
+                  className="w-full px-3 py-2 rounded-md border border-border text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring">
+                  <option value="">— Selecionar lançamento —</option>
+                  {lancamentos.map(l => <option key={l.id} value={l.id}>{l.nome}</option>)}
+                </select>
+              </div>
+            )}
+
+            {source === 'turma' && (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">Carrega alunos ativos da turma com WhatsApp cadastrado.</p>
+                <select value={selectedTurmaId}
+                  onChange={e => { setSelectedTurmaId(e.target.value); loadFromTurma(e.target.value); }}
+                  className="w-full px-3 py-2 rounded-md border border-border text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring">
+                  <option value="">— Selecionar turma —</option>
+                  {turmas.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+                </select>
+              </div>
+            )}
+
+            {source === 'csv' && (
+              <div className="space-y-3">
+                <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-800 space-y-1">
+                  <p className="font-semibold">Formato esperado (CSV):</p>
+                  <p>Coluna obrigatória: <code className="bg-blue-100 px-1 rounded">Whatsapp</code> ou <code className="bg-blue-100 px-1 rounded">Telefone</code></p>
+                  <p>Coluna opcional: <code className="bg-blue-100 px-1 rounded">Nome</code></p>
+                  <p>Separador: vírgula, ponto-e-vírgula ou tab. Primeira linha = cabeçalho.</p>
+                </div>
+                <label className="flex flex-col items-center gap-2 p-6 border-2 border-dashed border-border rounded-xl cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors">
+                  <Upload className="h-8 w-8 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Clique para selecionar o arquivo CSV</span>
+                  <input type="file" accept=".csv,.txt" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) parseCSV(f); }} />
                 </label>
-                <Input value={form.email} onChange={e => set('email', e.target.value)}
-                  placeholder="seu@email.com" type="email" className="h-9 text-sm" />
-                <p className="text-xs text-muted-foreground mt-1">Recebe alertas quando a campanha concluir ou tiver erros.</p>
+                {csvError && <p className="text-xs text-red-500">{csvError}</p>}
               </div>
-            </div>
-          </div>
+            )}
 
-          {/* Webhook entrada (n8n → sistema) */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-full bg-violet-100 flex items-center justify-center flex-none">
-                <span className="text-xs font-bold text-violet-700">1</span>
+            {loadingLeads && (
+              <div className="flex items-center justify-center py-6 gap-2 text-muted-foreground text-sm">
+                <RefreshCw className="h-4 w-4 animate-spin" /> Carregando leads...
               </div>
-              <h3 className="text-sm font-semibold text-foreground">Webhook de Entrada</h3>
-              <span className="text-xs text-muted-foreground">(n8n → sistema)</span>
-            </div>
-            <div className="bg-violet-50 border border-violet-200 rounded-xl p-4 space-y-3">
-              <p className="text-xs text-violet-800 leading-relaxed">
-                Configure no seu fluxo n8n um nó <strong>HTTP Request</strong> com método <code className="bg-violet-100 px-1 py-0.5 rounded">POST</code> para esta URL.
-                Envie os leads nesse endpoint e o sistema os enfileira automaticamente.
-              </p>
-              <div>
-                <label className="text-xs font-medium text-violet-700 mb-1.5 block">URL do Webhook</label>
+            )}
+
+            {!loadingLeads && leads.length > 0 && (
+              <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <div className="flex-1 bg-white border border-violet-200 rounded-lg px-3 py-2 flex items-center gap-2 font-mono text-xs text-foreground overflow-x-auto">
-                    <Webhook className="h-3.5 w-3.5 text-violet-500 flex-none" />
-                    <span className="truncate">{webhookUrl}</span>
+                  <span className="text-sm font-semibold text-foreground">{leads.length} leads carregados</span>
+                  <div className="flex gap-1 ml-auto">
+                    {(['quente','morno','frio'] as const).map(t => {
+                      const count = leads.filter(l => l.temperatura === t).length;
+                      if (!count) return null;
+                      const cfg = TEMP_CFG[t];
+                      return (
+                        <span key={t} className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border', cfg.bg, cfg.color, cfg.border)}>
+                          <cfg.icon className="h-3 w-3" /> {count}
+                        </span>
+                      );
+                    })}
                   </div>
-                  <button
-                    onClick={() => copyText(webhookUrl, 'webhook')}
-                    className="flex-none flex items-center gap-1 px-3 py-2 bg-violet-600 text-white rounded-lg text-xs font-medium hover:bg-violet-700 transition-colors">
-                    {copied === 'webhook' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                    {copied === 'webhook' ? 'Copiado!' : 'Copiar'}
-                  </button>
+                </div>
+                <div className="border rounded-lg overflow-hidden max-h-52 overflow-y-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50 border-b">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">#</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Nome</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Telefone</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Temp.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {leads.slice(0, 100).map((l, i) => {
+                        const cfg = TEMP_CFG[l.temperatura];
+                        return (
+                          <tr key={i} className="border-b last:border-0 hover:bg-gray-50/60">
+                            <td className="px-3 py-1.5 text-muted-foreground">{i+1}</td>
+                            <td className="px-3 py-1.5 font-medium truncate max-w-[140px]">{l.nome || '—'}</td>
+                            <td className="px-3 py-1.5 font-mono text-muted-foreground">{maskPhone(l.phone)}</td>
+                            <td className="px-3 py-1.5">
+                              <span className={cn('inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium', cfg.bg, cfg.color)}>
+                                <cfg.icon className="h-2.5 w-2.5" />{cfg.label}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {leads.length > 100 && (
+                        <tr><td colSpan={4} className="px-3 py-2 text-center text-muted-foreground">... e mais {leads.length - 100} leads</td></tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-              <div className="bg-white border border-violet-100 rounded-lg p-3">
-                <p className="text-xs font-semibold text-foreground mb-2">Payload esperado (JSON):</p>
-                <pre className="text-xs text-muted-foreground leading-relaxed overflow-x-auto">{`{
-  "campanha_id": "<id da campanha>",
-  "leads": [
-    { "nome": "João Silva", "phone": "5511999999999", "temperatura": "quente" },
-    { "nome": "Maria",      "phone": "5521888888888", "temperatura": "morno"  }
-  ]
-}`}</pre>
-              </div>
-              <div className="flex items-start gap-2 text-xs text-violet-700 bg-violet-100 rounded-lg px-3 py-2">
-                <Info className="h-3.5 w-3.5 flex-none mt-0.5" />
-                <span><strong>temperatura</strong>: <code>quente</code> | <code>morno</code> | <code>frio</code> — define a ordem de prioridade no disparo.</span>
-              </div>
-            </div>
-          </div>
+            )}
+          </>)}
 
-          {/* HTTP Callback (sistema → n8n) */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center flex-none">
-                <span className="text-xs font-bold text-emerald-700">2</span>
-              </div>
-              <h3 className="text-sm font-semibold text-foreground">Callback HTTP de Retorno</h3>
-              <span className="text-xs text-muted-foreground">(sistema → n8n)</span>
-            </div>
-            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 space-y-3">
-              <p className="text-xs text-emerald-800 leading-relaxed">
-                Após cada envio, o sistema chama esta URL com o resultado. Configure um nó <strong>Webhook</strong> no n8n para receber e processar o retorno.
-              </p>
-              <div>
-                <label className="text-xs font-medium text-emerald-700 mb-1.5 block">URL de Callback (n8n Webhook)</label>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 relative">
-                    <Link className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-emerald-500" />
-                    <Input
-                      value={form.callback_url}
-                      onChange={e => set('callback_url', e.target.value)}
-                      placeholder="https://seu-n8n.com/webhook/disparo-retorno"
-                      className="h-9 text-sm pl-8 border-emerald-200 focus:border-emerald-400"
-                    />
+          {/* ── STEP 3 ── */}
+          {step === 'review' && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-gray-50 border space-y-3">
+                <h3 className="text-sm font-semibold text-foreground">Resumo da Campanha</h3>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                  <div><span className="text-muted-foreground text-xs block">Nome</span><p className="font-medium">{campNome}</p></div>
+                  <div><span className="text-muted-foreground text-xs block">Leads</span><p className="font-medium">{leads.length} contatos</p></div>
+                  <div><span className="text-muted-foreground text-xs block">Delay</span><p className="font-medium">{delayMin}s – {delayMax}s</p></div>
+                  <div><span className="text-muted-foreground text-xs block">Horário</span><p className="font-medium">{hourStart}h às {hourEnd}h</p></div>
+                  <div><span className="text-muted-foreground text-xs block">Limite/dia</span><p className="font-medium">{dailyLimit}</p></div>
+                  <div><span className="text-muted-foreground text-xs block">Tempo estimado</span>
+                    <p className="font-medium">~{Math.ceil((leads.length * ((delayMin + delayMax) / 2)) / 60)} min</p>
                   </div>
-                  {form.callback_url && (
-                    <button
-                      onClick={() => copyText(form.callback_url, 'callback')}
-                      className="flex-none flex items-center gap-1 px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs font-medium hover:bg-emerald-700 transition-colors">
-                      {copied === 'callback' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                      {copied === 'callback' ? 'Copiado!' : 'Copiar'}
-                    </button>
-                  )}
                 </div>
               </div>
-              <div className="bg-white border border-emerald-100 rounded-lg p-3">
-                <p className="text-xs font-semibold text-foreground mb-2">Payload do retorno (JSON):</p>
-                <pre className="text-xs text-muted-foreground leading-relaxed overflow-x-auto">{`{
-  "campanha_id": "<id>",
-  "lead_id":     "<id>",
-  "phone":       "5511999999999",
-  "nome":        "João Silva",
-  "status":      "enviado" | "erro",
-  "sent_at":     "2026-06-21T08:05:00Z",
-  "error_msg":   null
-}`}</pre>
+              <div className="p-3 rounded-lg bg-gray-50 border">
+                <p className="text-xs font-medium text-muted-foreground mb-1">Prévia da mensagem:</p>
+                <p className="text-sm whitespace-pre-wrap text-foreground/80">
+                  {template.replace(/\{\{nome\}\}/g, leads[0]?.nome || 'Nome').slice(0, 300)}{template.length > 300 ? '…' : ''}
+                </p>
               </div>
             </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t bg-gray-50 rounded-b-2xl flex items-center justify-between gap-3 flex-none">
+          <Button variant="outline" size="sm"
+            onClick={() => step === 'config' ? onClose() : setStep(step === 'review' ? 'leads' : 'config')}>
+            {step === 'config' ? 'Cancelar' : '← Voltar'}
+          </Button>
+          <div className="flex gap-2">
+            {step === 'config' && (
+              <Button size="sm" onClick={() => setStep('leads')} disabled={!canGoLeads}>
+                Próximo → Leads
+              </Button>
+            )}
+            {step === 'leads' && (
+              <Button size="sm" onClick={() => setStep('review')} disabled={!canReview}>
+                Próximo → Revisão
+              </Button>
+            )}
+            {step === 'review' && (<>
+              <Button variant="outline" size="sm" onClick={() => handleCreate(false)} disabled={saving}>
+                {saving ? <RefreshCw className="h-3.5 w-3.5 animate-spin mr-1" /> : null} Criar Pausada
+              </Button>
+              <Button size="sm" onClick={() => handleCreate(true)} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                {saving ? <RefreshCw className="h-3.5 w-3.5 animate-spin mr-1" /> : <Play className="h-3.5 w-3.5 mr-1" />} Criar e Ativar
+              </Button>
+            </>)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Editar Campanha Modal ─────────────────────────────────────────────────────
+
+interface EditCampanhaForm {
+  nome: string;
+  template: string;
+  delay_min_s: number;
+  delay_max_s: number;
+  safe_hour_start: number;
+  safe_hour_end: number;
+  daily_limit: number;
+}
+
+function EditCampanhaModal({
+  campanha,
+  onClose,
+  onSaved,
+}: {
+  campanha: Campanha;
+  onClose: () => void;
+  onSaved: (updated: Partial<Campanha>) => void;
+}) {
+  const [form, setForm] = useState<EditCampanhaForm>({
+    nome:            campanha.nome,
+    template:        campanha.template ?? '',
+    delay_min_s:     campanha.delay_min_s,
+    delay_max_s:     campanha.delay_max_s,
+    safe_hour_start: campanha.safe_hour_start,
+    safe_hour_end:   campanha.safe_hour_end,
+    daily_limit:     campanha.daily_limit,
+  });
+  const [saving, setSaving] = useState(false);
+
+  function set<K extends keyof EditCampanhaForm>(k: K, v: EditCampanhaForm[K]) {
+    setForm(prev => ({ ...prev, [k]: v }));
+  }
+
+  async function handleSave() {
+    if (!form.nome.trim()) { toast.error('Informe um nome'); return; }
+    setSaving(true);
+    const payload = {
+      nome:            form.nome.trim(),
+      template:        form.template.trim() || null,
+      delay_min_s:     form.delay_min_s,
+      delay_max_s:     form.delay_max_s,
+      safe_hour_start: form.safe_hour_start,
+      safe_hour_end:   form.safe_hour_end,
+      daily_limit:     form.daily_limit,
+    };
+    const { error } = await supabase.from('disparo_campanhas').update(payload).eq('id', campanha.id);
+    setSaving(false);
+    if (error) { toast.error('Erro ao salvar: ' + error.message); return; }
+    toast.success('Campanha atualizada!');
+    onSaved(payload);
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b sticky top-0 bg-white rounded-t-2xl">
+          <div>
+            <h2 className="text-lg font-bold text-foreground">Editar Campanha</h2>
+            <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-xs">{campanha.nome}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
+            <X className="h-4 w-4 text-muted-foreground" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-5">
+          {/* Nome */}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Nome da campanha</label>
+            <Input value={form.nome} onChange={e => set('nome', e.target.value)} className="h-9 text-sm" />
           </div>
 
-          {/* Configurações de envio */}
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-foreground">Configurações de Envio</h3>
+          {/* Mensagem */}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              Mensagem (template)
+              <span className="ml-2 text-muted-foreground/60 font-normal">use {'{{nome}}'} para o nome do lead</span>
+            </label>
+            <Textarea
+              value={form.template}
+              onChange={e => set('template', e.target.value)}
+              rows={6}
+              className="text-sm resize-y"
+              placeholder="Olá {{nome}}, temos uma oferta especial para você..."
+            />
+          </div>
+
+          {/* Delay e Horário */}
+          <div>
+            <h3 className="text-sm font-semibold text-foreground mb-3">Configurações de Envio</h3>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Delay mínimo (seg)</label>
@@ -622,15 +897,11 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="px-6 py-4 border-t bg-gray-50 rounded-b-2xl flex items-center justify-between gap-3">
-          <p className="text-xs text-muted-foreground">A campanha inicia <strong>pausada</strong> — ative após configurar o fluxo no n8n.</p>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>Cancelar</Button>
-            <Button size="sm" onClick={handleSave} disabled={saving} className="bg-violet-600 hover:bg-violet-700 text-white">
-              {saving ? <><RefreshCw className="h-3.5 w-3.5 animate-spin mr-1" /> Criando…</> : <><Plus className="h-3.5 w-3.5 mr-1" /> Criar Campanha</>}
-            </Button>
-          </div>
+        <div className="px-6 py-4 border-t bg-gray-50 rounded-b-2xl flex justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>Cancelar</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving}>
+            {saving ? <><RefreshCw className="h-3.5 w-3.5 animate-spin mr-1" /> Salvando…</> : 'Salvar alterações'}
+          </Button>
         </div>
       </div>
     </div>
@@ -651,7 +922,7 @@ function CampanhasTab() {
   const load = useCallback(async () => {
     const { data, error } = await supabase
       .from('disparo_campanhas')
-      .select('id, nome, template, status, leads_total, leads_sent, leads_error, leads_skipped, delay_min_s, delay_max_s, next_send_at, created_at, safe_hour_start, safe_hour_end, daily_limit')
+      .select('id, nome, template, status, leads_total, leads_sent, leads_error, leads_skipped, delay_min_s, delay_max_s, next_send_at, created_at, safe_hour_start, safe_hour_end, daily_limit, email_contato, callback_url')
       .order('created_at', { ascending: false });
     if (error) { toast.error('Erro ao carregar campanhas'); return; }
     setCampanhas((data ?? []) as Campanha[]);
@@ -792,6 +1063,7 @@ function CampanhasTab() {
                 onPause={() => pauseCampanha(c.id)}
                 onResume={() => resumeCampanha(c)}
                 onDelete={() => deleteCampanha(c.id)}
+                onUpdate={updated => setCampanhas(prev => prev.map(x => x.id === c.id ? { ...x, ...updated } : x))}
               />
             ))}
           </div>
@@ -812,9 +1084,11 @@ interface CampanhaCardProps {
   onPause: () => void;
   onResume: () => void;
   onDelete: () => void;
+  onUpdate: (updated: Partial<Campanha>) => void;
 }
 
-function CampanhaCard({ campanha: c, isExpanded, onToggle, leads, loadingLeads, onPause, onResume, onDelete }: CampanhaCardProps) {
+function CampanhaCard({ campanha: c, isExpanded, onToggle, leads, loadingLeads, onPause, onResume, onDelete, onUpdate }: CampanhaCardProps) {
+  const [editOpen, setEditOpen] = useState(false);
   const cfg   = CAMP_STATUS_CFG[c.status] ?? CAMP_STATUS_CFG.rascunho;
   const total = c.leads_total || 1;
   const pct   = Math.round((c.leads_sent / total) * 100);
@@ -823,9 +1097,12 @@ function CampanhaCard({ campanha: c, isExpanded, onToggle, leads, loadingLeads, 
     return h >= c.safe_hour_start && h < c.safe_hour_end;
   })();
 
-  const byTemp = useMemo<Record<Temperatura, DisparoLead[]>>(() => {
-    const base: Record<Temperatura, DisparoLead[]> = { quente: [], morno: [], frio: [] };
-    for (const l of leads ?? []) base[l.temperatura]?.push(l);
+  const byStatus = useMemo<Record<string, DisparoLead[]>>(() => {
+    const base: Record<string, DisparoLead[]> = { pendente: [], enviado: [], erro: [] };
+    for (const l of leads ?? []) {
+      const key = l.status in base ? l.status : 'pendente';
+      base[key].push(l);
+    }
     return base;
   }, [leads]);
 
@@ -904,6 +1181,10 @@ function CampanhaCard({ campanha: c, isExpanded, onToggle, leads, loadingLeads, 
 
           {/* Actions */}
           <div className="flex items-center gap-1 flex-none" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setEditOpen(true)} title="Editar"
+              className="p-1.5 rounded hover:bg-blue-50 text-blue-500 transition-colors">
+              <Pencil className="h-4 w-4" />
+            </button>
             {c.status === 'ativo' && (
               <button onClick={onPause} title="Pausar"
                 className="p-1.5 rounded hover:bg-amber-50 text-amber-600 transition-colors">
@@ -923,6 +1204,14 @@ function CampanhaCard({ campanha: c, isExpanded, onToggle, leads, loadingLeads, 
           </div>
         </div>
 
+        {editOpen && (
+          <EditCampanhaModal
+            campanha={c}
+            onClose={() => setEditOpen(false)}
+            onSaved={updated => { onUpdate(updated); setEditOpen(false); }}
+          />
+        )}
+
         {/* ── Expanded panel ── */}
         {isExpanded && (
           <div className="border-t bg-gray-50/60 px-4 pb-4 pt-3">
@@ -936,20 +1225,19 @@ function CampanhaCard({ campanha: c, isExpanded, onToggle, leads, loadingLeads, 
               </div>
             ) : (
               <div className="grid grid-cols-3 gap-3">
-                {(['quente', 'morno', 'frio'] as Temperatura[]).map(temp => {
-                  const tcfg  = TEMP_CFG[temp];
-                  const TIcon = tcfg.icon;
-                  const list  = byTemp[temp];
+                {([
+                  { key: 'pendente', label: 'Falta Receber', icon: Clock,        color: 'text-gray-600',    bg: 'bg-gray-50',    border: 'border-gray-200' },
+                  { key: 'enviado',  label: 'Recebeu',       icon: CheckCircle2, color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
+                  { key: 'erro',     label: 'Erro',          icon: AlertCircle,  color: 'text-red-600',     bg: 'bg-red-50',     border: 'border-red-200' },
+                ] as const).map(({ key, label, icon: Icon, color, bg, border }) => {
+                  const list = byStatus[key] ?? [];
                   return (
-                    <div key={temp} className={cn('rounded-lg border bg-white overflow-hidden', tcfg.border)}>
-                      {/* Temperature header */}
-                      <div className={cn('flex items-center gap-2 px-3 py-2 border-b', tcfg.bg, tcfg.border)}>
-                        <TIcon className={cn('h-3.5 w-3.5', tcfg.color)} />
-                        <span className={cn('text-xs font-semibold', tcfg.color)}>{tcfg.label}</span>
-                        <span className={cn('ml-auto text-xs font-bold', tcfg.color)}>{list.length}</span>
+                    <div key={key} className={cn('rounded-lg border bg-white overflow-hidden', border)}>
+                      <div className={cn('flex items-center gap-2 px-3 py-2 border-b', bg, border)}>
+                        <Icon className={cn('h-3.5 w-3.5', color)} />
+                        <span className={cn('text-xs font-semibold', color)}>{label}</span>
+                        <span className={cn('ml-auto text-xs font-bold', color)}>{list.length}</span>
                       </div>
-
-                      {/* Lead list */}
                       <div className="max-h-52 overflow-y-auto divide-y divide-gray-50">
                         {list.length === 0 ? (
                           <p className="text-xs text-muted-foreground text-center py-4">Vazio</p>
