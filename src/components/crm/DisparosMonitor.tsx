@@ -56,6 +56,8 @@ interface Campanha {
   daily_limit: number;
   email_contato?: string | null;
   callback_url?: string | null;
+  message_type?: string | null;
+  media_url?: string | null;
 }
 
 interface DisparoLead {
@@ -419,6 +421,8 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
   const [step, setStep]   = useState<CampStep>('config');
   const [campNome, setCampNome]       = useState('');
   const [template, setTemplate]       = useState('');
+  const [msgType, setMsgType]         = useState<'text'|'image'|'audio'|'video'|'document'>('text');
+  const [mediaUrl, setMediaUrl]       = useState('');
   const [delayMin, setDelayMin]       = useState(30);
   const [delayMax, setDelayMax]       = useState(90);
   const [hourStart, setHourStart]     = useState(8);
@@ -504,6 +508,8 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
     const { data: camp, error } = await supabase.from('disparo_campanhas').insert({
       nome: campNome.trim(),
       template: template.trim() || null,
+      message_type: msgType,
+      media_url: msgType !== 'text' ? (mediaUrl.trim() || null) : null,
       status: startActive ? 'ativo' : 'pausado',
       leads_total: leads.length, leads_sent: 0, leads_error: 0, leads_skipped: 0,
       delay_min_s: delayMin, delay_max_s: delayMax,
@@ -524,7 +530,7 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
     onCreated(); onClose();
   }
 
-  const canGoLeads = !!campNome.trim() && !!template.trim();
+  const canGoLeads = !!campNome.trim() && (msgType === 'text' ? !!template.trim() : !!mediaUrl.trim());
   const canReview  = leads.length > 0;
 
   return (
@@ -567,11 +573,59 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
               <label className="text-xs font-medium text-muted-foreground mb-1 block">Nome da campanha *</label>
               <Input value={campNome} onChange={e => setCampNome(e.target.value)} placeholder="Ex: Follow-up Turma #39" className="h-9 text-sm" />
             </div>
+
+            {/* Tipo de mensagem */}
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-2 block">Tipo de mensagem</label>
+              <div className="grid grid-cols-5 gap-1.5">
+                {([
+                  { key: 'text'     as const, icon: MessageSquare, label: 'Texto'     },
+                  { key: 'image'    as const, icon: Image,         label: 'Imagem'    },
+                  { key: 'audio'    as const, icon: Music,         label: 'Áudio'     },
+                  { key: 'video'    as const, icon: Video,         label: 'Vídeo'     },
+                  { key: 'document' as const, icon: FileText,      label: 'Arquivo'   },
+                ]).map(({ key, icon: Icon, label }) => (
+                  <button key={key} type="button"
+                    onClick={() => { setMsgType(key); if (key === 'text') setMediaUrl(''); }}
+                    className={cn(
+                      'flex flex-col items-center gap-1 py-2.5 rounded-xl border text-xs font-medium transition-all',
+                      msgType === key
+                        ? 'border-primary bg-primary/5 text-primary shadow-sm'
+                        : 'border-border text-muted-foreground hover:border-primary/40 hover:text-foreground',
+                    )}>
+                    <Icon className="h-4 w-4" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* URL da mídia (quando não for texto) */}
+            {msgType !== 'text' && (
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                  URL da {msgType === 'image' ? 'imagem' : msgType === 'audio' ? 'áudio' : msgType === 'video' ? 'vídeo' : 'arquivo'} *
+                  <span className="font-normal opacity-60 ml-1">— link público direto para o arquivo</span>
+                </label>
+                <Input value={mediaUrl} onChange={e => setMediaUrl(e.target.value)}
+                  placeholder={
+                    msgType === 'image'    ? 'https://exemplo.com/imagem.jpg' :
+                    msgType === 'audio'    ? 'https://exemplo.com/audio.mp3'  :
+                    msgType === 'video'    ? 'https://exemplo.com/video.mp4'  :
+                                             'https://exemplo.com/arquivo.pdf'
+                  }
+                  className="h-9 text-sm font-mono" />
+              </div>
+            )}
+
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                Mensagem (template) * <span className="font-normal opacity-60">— use {`{{nome}}`} para o nome</span>
+                {msgType === 'text' ? 'Mensagem *' : 'Legenda (caption)'}{' '}
+                <span className="font-normal opacity-60">— use {`{{nome}}`} para o nome</span>
               </label>
-              <Textarea value={template} onChange={e => setTemplate(e.target.value)} rows={5} className="text-sm resize-y" placeholder={`Olá {{nome}}! 👋\n\nSua mensagem aqui...`} />
+              <Textarea value={template} onChange={e => setTemplate(e.target.value)} rows={msgType === 'text' ? 5 : 3}
+                className="text-sm resize-y"
+                placeholder={msgType === 'text' ? `Olá {{nome}}! 👋\n\nSua mensagem aqui...` : 'Legenda opcional da mídia...'} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -721,6 +775,7 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
                 <h3 className="text-sm font-semibold text-foreground">Resumo da Campanha</h3>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
                   <div><span className="text-muted-foreground text-xs block">Nome</span><p className="font-medium">{campNome}</p></div>
+                  <div><span className="text-muted-foreground text-xs block">Tipo</span><p className="font-medium capitalize">{msgType}</p></div>
                   <div><span className="text-muted-foreground text-xs block">Leads</span><p className="font-medium">{leads.length} contatos</p></div>
                   <div><span className="text-muted-foreground text-xs block">Delay</span><p className="font-medium">{delayMin}s – {delayMax}s</p></div>
                   <div><span className="text-muted-foreground text-xs block">Horário</span><p className="font-medium">{hourStart}h às {hourEnd}h</p></div>
