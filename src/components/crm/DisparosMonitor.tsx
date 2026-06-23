@@ -147,6 +147,7 @@ function funnelBadgeColor(name: string) {
 }
 
 function maskPhone(phone: string) {
+  if (phone.includes('@g.us')) return '💬 grupo';
   const digits = phone.replace(/\D/g, '');
   if (digits.length >= 11) return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}–****`;
   return phone.slice(0, 6) + '****';
@@ -445,7 +446,6 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
   const [selectedEvoId, setSelectedEvoId] = useState('');
   const [wppGroups, setWppGroups]       = useState<WppGroup[]>([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
-  const [loadingPartic, setLoadingPartic] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -488,35 +488,12 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
     setLeads([]); // limpa leads ao mudar seleção
   }
 
-  async function loadFromGroups() {
+  function confirmGroups() {
     const selected = wppGroups.filter(g => g.selected);
     if (!selected.length) return;
-    const inst = evoInstances.find(e => e.id === selectedEvoId);
-    if (!inst) return;
-    setLoadingPartic(true);
-    const base = inst.api_url.replace(/\/$/, '').replace(/^(?!https?:\/\/)/i, 'https://');
-    const allLeads: LeadPreview[] = [];
-    const seen = new Set<string>();
-    for (const grp of selected) {
-      try {
-        const res = await fetch(`${base}/group/participants/${inst.instance_name}?groupJid=${encodeURIComponent(grp.id)}`, {
-          headers: { apikey: inst.api_key },
-        });
-        if (!res.ok) continue;
-        const data = await res.json();
-        const participants: { id: string; pushName?: string }[] = Array.isArray(data) ? data : (data?.participants ?? []);
-        for (const p of participants) {
-          const phone = p.id?.replace('@s.whatsapp.net', '').replace(/\D/g, '');
-          if (!phone || seen.has(phone)) continue;
-          seen.add(phone);
-          allLeads.push({ nome: p.pushName ?? '', phone, temperatura: 'morno' });
-        }
-      } catch { /* ignora grupo com erro */ }
-    }
-    setLeads(allLeads);
-    setLoadingPartic(false);
-    if (allLeads.length) toast.success(`${allLeads.length} participantes carregados (sem duplicatas)`);
-    else toast.error('Nenhum participante encontrado nos grupos selecionados');
+    // Cada grupo vira um "lead" — o phone é o JID do grupo (ex: 1203...@g.us)
+    setLeads(selected.map(g => ({ nome: g.subject, phone: g.id, temperatura: 'quente' })));
+    toast.success(`${selected.length} grupo(s) adicionados como destino`);
   }
 
   async function loadFromLancamento(id: string) {
@@ -804,10 +781,9 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
                       ))}
                     </div>
                     {wppGroups.some(g => g.selected) && (
-                      <Button size="sm" onClick={loadFromGroups} disabled={loadingPartic} className="w-full gap-1.5">
-                        {loadingPartic
-                          ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Carregando participantes...</>
-                          : <><Users className="h-3.5 w-3.5" /> Carregar participantes ({wppGroups.filter(g => g.selected).length} grupos)</>}
+                      <Button size="sm" onClick={confirmGroups} className="w-full gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white">
+                        <Check className="h-3.5 w-3.5" />
+                        Confirmar {wppGroups.filter(g => g.selected).length} grupo(s) como destino
                       </Button>
                     )}
                   </div>

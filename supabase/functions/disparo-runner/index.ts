@@ -193,6 +193,8 @@ serve(async (req) => {
 });
 
 function formatPhone(raw: string): string | null {
+  // JID de grupo — passa direto sem reformatar
+  if (raw.includes('@g.us')) return raw;
   const d = raw.replace(/\D/g, '');
   if (d.length === 13 && d.startsWith('55')) return d;
   if (d.length === 12 && d.startsWith('55')) return d;
