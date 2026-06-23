@@ -414,8 +414,9 @@ interface NovaCampanhaForm {
 }
 
 type CampStep   = 'config' | 'leads' | 'review';
-type LeadSource = 'lancamento' | 'turma' | 'csv';
+type LeadSource = 'lancamento' | 'turma' | 'csv' | 'grupos';
 interface LeadPreview { nome: string; phone: string; temperatura: 'quente' | 'morno' | 'frio'; }
+interface WppGroup { id: string; subject: string; size: number; selected: boolean; }
 
 function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [step, setStep]   = useState<CampStep>('config');
@@ -439,15 +440,84 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
   const [csvError, setCsvError]                 = useState('');
   const [saving, setSaving]                     = useState(false);
 
+  // Grupos WPP
+  const [evoInstances, setEvoInstances] = useState<{ id: string; api_url: string; api_key: string; instance_name: string }[]>([]);
+  const [selectedEvoId, setSelectedEvoId] = useState('');
+  const [wppGroups, setWppGroups]       = useState<WppGroup[]>([]);
+  const [loadingGroups, setLoadingGroups] = useState(false);
+  const [loadingPartic, setLoadingPartic] = useState(false);
+
   useEffect(() => {
     Promise.all([
       supabase.from('lancamentos').select('id, nome').order('created_at', { ascending: false }),
       supabase.from('turmas').select('id, nome').order('nome'),
-    ]).then(([l, t]) => {
+      supabase.from('evolution_config').select('id, api_url, api_key, instance_name').eq('ativo', true).order('prioridade'),
+    ]).then(([l, t, e]) => {
       setLancamentos((l.data ?? []) as { id: string; nome: string }[]);
       setTurmas((t.data ?? []) as { id: string; nome: string }[]);
+      const evos = (e.data ?? []) as typeof evoInstances;
+      setEvoInstances(evos);
+      if (evos.length) setSelectedEvoId(evos[0].id);
     });
   }, []);
+
+  async function fetchWppGroups(evoId: string) {
+    const inst = evoInstances.find(e => e.id === evoId);
+    if (!inst) return;
+    setLoadingGroups(true);
+    setWppGroups([]);
+    try {
+      const base = inst.api_url.replace(/\/$/, '').replace(/^(?!https?:\/\/)/i, 'https://');
+      const res = await fetch(`${base}/group/fetchAllGroups/${inst.instance_name}?getParticipants=false`, {
+        headers: { apikey: inst.api_key },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const groups: WppGroup[] = (Array.isArray(data) ? data : []).map((g: { id: string; subject: string; size?: number }) => ({
+        id: g.id, subject: g.subject ?? g.id, size: g.size ?? 0, selected: false,
+      }));
+      setWppGroups(groups.sort((a, b) => a.subject.localeCompare(b.subject)));
+    } catch (err) {
+      toast.error('Erro ao buscar grupos: ' + (err as Error).message.slice(0, 80));
+    }
+    setLoadingGroups(false);
+  }
+
+  function toggleGroup(id: string) {
+    setWppGroups(prev => prev.map(g => g.id === id ? { ...g, selected: !g.selected } : g));
+    setLeads([]); // limpa leads ao mudar seleção
+  }
+
+  async function loadFromGroups() {
+    const selected = wppGroups.filter(g => g.selected);
+    if (!selected.length) return;
+    const inst = evoInstances.find(e => e.id === selectedEvoId);
+    if (!inst) return;
+    setLoadingPartic(true);
+    const base = inst.api_url.replace(/\/$/, '').replace(/^(?!https?:\/\/)/i, 'https://');
+    const allLeads: LeadPreview[] = [];
+    const seen = new Set<string>();
+    for (const grp of selected) {
+      try {
+        const res = await fetch(`${base}/group/participants/${inst.instance_name}?groupJid=${encodeURIComponent(grp.id)}`, {
+          headers: { apikey: inst.api_key },
+        });
+        if (!res.ok) continue;
+        const data = await res.json();
+        const participants: { id: string; pushName?: string }[] = Array.isArray(data) ? data : (data?.participants ?? []);
+        for (const p of participants) {
+          const phone = p.id?.replace('@s.whatsapp.net', '').replace(/\D/g, '');
+          if (!phone || seen.has(phone)) continue;
+          seen.add(phone);
+          allLeads.push({ nome: p.pushName ?? '', phone, temperatura: 'morno' });
+        }
+      } catch { /* ignora grupo com erro */ }
+    }
+    setLeads(allLeads);
+    setLoadingPartic(false);
+    if (allLeads.length) toast.success(`${allLeads.length} participantes carregados (sem duplicatas)`);
+    else toast.error('Nenhum participante encontrado nos grupos selecionados');
+  }
 
   async function loadFromLancamento(id: string) {
     if (!id) { setLeads([]); return; }
@@ -654,11 +724,12 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
 
           {/* ── STEP 2 ── */}
           {step === 'leads' && (<>
-            <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-1 flex-wrap">
               {([
                 { key: 'lancamento' as LeadSource, label: '📋 Lançamento' },
                 { key: 'turma'      as LeadSource, label: '🎓 Turma/Alunos' },
-                { key: 'csv'        as LeadSource, label: '📂 Upload CSV' },
+                { key: 'grupos'     as LeadSource, label: '💬 Grupos WPP' },
+                { key: 'csv'        as LeadSource, label: '📂 CSV' },
               ]).map(({ key, label }) => (
                 <button key={key} onClick={() => { setSource(key); setLeads([]); setCsvError(''); }}
                   className={cn('flex-1 py-1.5 rounded-md text-xs font-medium transition-all',
@@ -689,6 +760,58 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
                   <option value="">— Selecionar turma —</option>
                   {turmas.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
                 </select>
+              </div>
+            )}
+
+            {source === 'grupos' && (
+              <div className="space-y-3">
+                {/* Seletor de instância */}
+                <div className="flex items-center gap-2">
+                  <select value={selectedEvoId}
+                    onChange={e => { setSelectedEvoId(e.target.value); setWppGroups([]); setLeads([]); }}
+                    className="flex-1 px-3 py-2 rounded-md border border-border text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring">
+                    {evoInstances.map(e => <option key={e.id} value={e.id}>{e.instance_name}</option>)}
+                  </select>
+                  <Button size="sm" variant="outline" onClick={() => fetchWppGroups(selectedEvoId)}
+                    disabled={loadingGroups || !selectedEvoId} className="gap-1.5 whitespace-nowrap">
+                    {loadingGroups ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+                    {loadingGroups ? 'Buscando...' : 'Buscar grupos'}
+                  </Button>
+                </div>
+
+                {/* Lista de grupos */}
+                {wppGroups.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">{wppGroups.length} grupos encontrados — marque os que deseja usar</span>
+                      <div className="flex gap-2">
+                        <button onClick={() => setWppGroups(p => p.map(g => ({ ...g, selected: true })))}
+                          className="text-xs text-primary hover:underline">Todos</button>
+                        <button onClick={() => setWppGroups(p => p.map(g => ({ ...g, selected: false })))}
+                          className="text-xs text-muted-foreground hover:underline">Nenhum</button>
+                      </div>
+                    </div>
+                    <div className="border rounded-lg overflow-hidden max-h-52 overflow-y-auto">
+                      {wppGroups.map(g => (
+                        <label key={g.id}
+                          className={cn('flex items-center gap-3 px-3 py-2 cursor-pointer border-b last:border-0 transition-colors',
+                            g.selected ? 'bg-primary/5' : 'hover:bg-gray-50')}>
+                          <input type="checkbox" checked={g.selected} onChange={() => toggleGroup(g.id)}
+                            className="rounded border-border h-4 w-4 accent-primary" />
+                          <span className="flex-1 text-sm font-medium truncate">{g.subject}</span>
+                          {g.size > 0 && <span className="text-xs text-muted-foreground flex-none">{g.size} membros</span>}
+                        </label>
+                      ))}
+                    </div>
+                    {wppGroups.some(g => g.selected) && (
+                      <Button size="sm" onClick={loadFromGroups} disabled={loadingPartic} className="w-full gap-1.5">
+                        {loadingPartic
+                          ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Carregando participantes...</>
+                          : <><Users className="h-3.5 w-3.5" /> Carregar participantes ({wppGroups.filter(g => g.selected).length} grupos)</>}
+                      </Button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
