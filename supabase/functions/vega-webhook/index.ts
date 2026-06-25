@@ -62,7 +62,7 @@ async function processVegaWebhook(
   // ── Encontra NPA ──────────────────────────────────────────────────────────
   const { data: npas } = await supabase
     .from('npa_eventos')
-    .select('id, nome, data_live, vega_produto_id, vega_produto_tarde, pix_mensagem_template')
+    .select('id, nome, data_evento, vega_produto_id, vega_produto_tarde, pix_mensagem_template')
     .or(`vega_produto_id.eq.${produtoTitle},vega_produto_tarde.eq.${produtoTitle}`);
 
   if (!npas?.length) {
@@ -114,7 +114,7 @@ async function processVegaWebhook(
   const msgVars: Record<string, string> = {
     nome:        nome || lead?.nome || 'você',
     evento_nome: npa.nome,
-    data_evento: dateLabel(npa.data_live),
+    data_evento: dateLabel(npa.data_evento),
     link_grupo:  linkGrupo,
     turma:       turma === 'manha' ? 'Manhã' : 'Tarde',
   };

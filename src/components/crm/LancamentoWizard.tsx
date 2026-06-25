@@ -1783,7 +1783,7 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
       setConfig({
         nome: lancData.nome || '',
         tipo: existingTipo || 'lancamento',
-        data_live: (lancData as any).data_live?.slice(0, 10) || aulas[0]?.data || '',
+        data_live: ((lancData as any).data_live || (lancData as any).data_evento)?.slice(0, 10) || aulas[0]?.data || '',
         hora_live: '20:00',
         slogan: (lancData as any).slogan || 'Excelente',
         professor_convidado: (lancData as any).professor_convidado || '',
@@ -1861,7 +1861,7 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
       const grupo1 = config.grupos[0]?.jid || null;
       const grupo2 = config.grupos[1]?.jid || null;
 
-      const commonFields = {
+      const lancCommon = {
         nome: config.nome,
         responsavel_id: config.responsavel_id || null,
         turma_destino_id: config.turma_destino_id || null,
@@ -1872,17 +1872,24 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
         slogan: config.slogan || 'Excelente',
         professor_convidado: config.professor_convidado || null,
       };
+      const npaCommon = {
+        nome: config.nome,
+        responsavel_id: config.responsavel_id || null,
+        turma_destino_id: config.turma_destino_id || null,
+        slogan: config.slogan || 'Excelente',
+        professor_convidado: config.professor_convidado || null,
+      };
 
       let lancId = existingId;
       if (existingId) {
         const lancFields = config.tipo === 'lancamento'
-          ? { ...commonFields, data_live: config.data_live, meta_leads: config.meta_leads || 0, meta_matriculas: config.meta_matriculas || 0, grupo_lancamento_jid: grupo1, grupo_oferta_jid: grupo2 }
-          : { ...commonFields, data_live: config.data_live || null, vega_produto_id: config.vega_produto_id || null, vega_produto_tarde: config.vega_produto_tarde || null, pix_mensagem_template: config.pix_mensagem_template || null };
+          ? { ...lancCommon, data_live: config.data_live, meta_leads: config.meta_leads || 0, meta_matriculas: config.meta_matriculas || 0, grupo_lancamento_jid: grupo1, grupo_oferta_jid: grupo2 }
+          : { ...npaCommon, data_evento: config.data_live || null, vega_produto_id: config.vega_produto_id || null, vega_produto_tarde: config.vega_produto_tarde || null, pix_mensagem_template: config.pix_mensagem_template || null };
         await supabase.from(table).update(lancFields).eq('id', existingId);
       } else {
         const lancFields = config.tipo === 'lancamento'
-          ? { ...commonFields, status: 'planejamento' as const, ativo: false, data_live: config.data_live, meta_leads: config.meta_leads || 0, meta_matriculas: config.meta_matriculas || 0, grupo_lancamento_jid: grupo1, grupo_oferta_jid: grupo2, created_at: new Date().toISOString() }
-          : { ...commonFields, status: 'planejamento' as const, ativo: false, data_live: config.data_live || null, vega_produto_id: config.vega_produto_id || null, vega_produto_tarde: config.vega_produto_tarde || null, pix_mensagem_template: config.pix_mensagem_template || null, created_at: new Date().toISOString() };
+          ? { ...lancCommon, status: 'planejamento' as const, ativo: false, data_live: config.data_live, meta_leads: config.meta_leads || 0, meta_matriculas: config.meta_matriculas || 0, grupo_lancamento_jid: grupo1, grupo_oferta_jid: grupo2, created_at: new Date().toISOString() }
+          : { ...npaCommon, status: 'planejamento' as const, ativo: false, data_evento: config.data_live || null, vega_produto_id: config.vega_produto_id || null, vega_produto_tarde: config.vega_produto_tarde || null, pix_mensagem_template: config.pix_mensagem_template || null, created_at: new Date().toISOString() };
         const { data: created, error } = await supabase.from(table).insert(lancFields).select('id').single();
         if (error || !created) { toast.error('Erro ao criar: ' + error?.message); setSaving(false); return; }
         lancId = created.id;
@@ -1945,7 +1952,7 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
       // 1. Create/update lancamento
       let lancId = existingId;
       if (existingId) {
-        const commonFields = {
+        const lancFields = config.tipo === 'lancamento' ? {
           nome: config.nome,
           responsavel_id: config.responsavel_id || null,
           turma_destino_id: config.turma_destino_id || null,
@@ -1953,9 +1960,6 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
           valor_mensalidade_destino: config.valor_mensalidade_destino || null,
           dia_vencimento_destino: config.dia_vencimento_destino || null,
           total_mensalidades_destino: config.total_mensalidades_destino || null,
-        };
-        const lancFields = config.tipo === 'lancamento' ? {
-          ...commonFields,
           data_live: config.data_live,
           meta_leads: config.meta_leads || 0,
           meta_matriculas: config.meta_matriculas || 0,
@@ -1964,17 +1968,19 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
           slogan: config.slogan || 'Excelente',
           professor_convidado: config.professor_convidado || null,
         } : {
-          ...commonFields,
-          data_live: config.data_live || null,
+          nome: config.nome,
+          responsavel_id: config.responsavel_id || null,
+          turma_destino_id: config.turma_destino_id || null,
+          slogan: config.slogan || 'Excelente',
+          professor_convidado: config.professor_convidado || null,
+          data_evento: config.data_live || null,
           vega_produto_id:        config.vega_produto_id        || null,
           vega_produto_tarde:     config.vega_produto_tarde     || null,
           pix_mensagem_template:  config.pix_mensagem_template  || null,
-          slogan: config.slogan || 'Excelente',
-          professor_convidado: config.professor_convidado || null,
         };
         await supabase.from(table).update(lancFields).eq('id', existingId);
       } else {
-        const commonFields = {
+        const lancFields = config.tipo === 'lancamento' ? {
           nome: config.nome,
           status: 'planejamento' as const,
           ativo: false,
@@ -1985,9 +1991,6 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
           dia_vencimento_destino: config.dia_vencimento_destino || null,
           total_mensalidades_destino: config.total_mensalidades_destino || null,
           created_at: new Date().toISOString(),
-        };
-        const lancFields = config.tipo === 'lancamento' ? {
-          ...commonFields,
           meta_matriculas: config.meta_matriculas || 0,
           meta_leads: config.meta_leads || 0,
           data_live: config.data_live,
@@ -1996,13 +1999,18 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
           slogan: config.slogan || 'Excelente',
           professor_convidado: config.professor_convidado || null,
         } : {
-          ...commonFields,
-          data_live: config.data_live || null,
+          nome: config.nome,
+          status: 'planejamento' as const,
+          ativo: false,
+          responsavel_id: config.responsavel_id || null,
+          turma_destino_id: config.turma_destino_id || null,
+          slogan: config.slogan || 'Excelente',
+          professor_convidado: config.professor_convidado || null,
+          created_at: new Date().toISOString(),
+          data_evento: config.data_live || null,
           vega_produto_id:        config.vega_produto_id        || null,
           vega_produto_tarde:     config.vega_produto_tarde     || null,
           pix_mensagem_template:  config.pix_mensagem_template  || null,
-          slogan: config.slogan || 'Excelente',
-          professor_convidado: config.professor_convidado || null,
         };
         const { data: created, error } = await supabase.from(table).insert(lancFields).select('id').single();
         if (error || !created) { toast.error('Erro ao criar: ' + error?.message); setSaving(false); return; }
