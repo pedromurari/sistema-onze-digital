@@ -1877,12 +1877,12 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
       if (existingId) {
         const lancFields = config.tipo === 'lancamento'
           ? { ...commonFields, data_live: config.data_live, meta_leads: config.meta_leads || 0, meta_matriculas: config.meta_matriculas || 0, grupo_lancamento_jid: grupo1, grupo_oferta_jid: grupo2 }
-          : { ...commonFields, vega_produto_id: config.vega_produto_id || null, vega_produto_tarde: config.vega_produto_tarde || null, pix_mensagem_template: config.pix_mensagem_template || null };
+          : { ...commonFields, data_live: config.data_live || null, vega_produto_id: config.vega_produto_id || null, vega_produto_tarde: config.vega_produto_tarde || null, pix_mensagem_template: config.pix_mensagem_template || null };
         await supabase.from(table).update(lancFields).eq('id', existingId);
       } else {
         const lancFields = config.tipo === 'lancamento'
           ? { ...commonFields, status: 'planejamento' as const, ativo: false, data_live: config.data_live, meta_leads: config.meta_leads || 0, meta_matriculas: config.meta_matriculas || 0, grupo_lancamento_jid: grupo1, grupo_oferta_jid: grupo2, created_at: new Date().toISOString() }
-          : { ...commonFields, status: 'planejamento' as const, ativo: false, vega_produto_id: config.vega_produto_id || null, vega_produto_tarde: config.vega_produto_tarde || null, pix_mensagem_template: config.pix_mensagem_template || null, created_at: new Date().toISOString() };
+          : { ...commonFields, status: 'planejamento' as const, ativo: false, data_live: config.data_live || null, vega_produto_id: config.vega_produto_id || null, vega_produto_tarde: config.vega_produto_tarde || null, pix_mensagem_template: config.pix_mensagem_template || null, created_at: new Date().toISOString() };
         const { data: created, error } = await supabase.from(table).insert(lancFields).select('id').single();
         if (error || !created) { toast.error('Erro ao criar: ' + error?.message); setSaving(false); return; }
         lancId = created.id;
@@ -1965,6 +1965,7 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
           professor_convidado: config.professor_convidado || null,
         } : {
           ...commonFields,
+          data_live: config.data_live || null,
           vega_produto_id:        config.vega_produto_id        || null,
           vega_produto_tarde:     config.vega_produto_tarde     || null,
           pix_mensagem_template:  config.pix_mensagem_template  || null,
@@ -1996,6 +1997,7 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
           professor_convidado: config.professor_convidado || null,
         } : {
           ...commonFields,
+          data_live: config.data_live || null,
           vega_produto_id:        config.vega_produto_id        || null,
           vega_produto_tarde:     config.vega_produto_tarde     || null,
           pix_mensagem_template:  config.pix_mensagem_template  || null,
