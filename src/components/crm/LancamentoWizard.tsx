@@ -589,7 +589,33 @@ function Step3({ config, setConfig, evoInstances, existingId }: {
   };
 
   const updateGrupo = (i: number, field: keyof GrupoConfig, val: string) =>
-    setConfig(c => ({ ...c, grupos: c.grupos.map((g, idx) => idx === i ? { ...g, [field]: val } : g) }));
+    setConfig(c => {
+      const grupos = [...c.grupos];
+      // Garante que o slot existe antes de atualizar
+      while (grupos.length <= i) grupos.push({ nickname: '', jid: '', link: '', participantes: [] });
+      grupos[i] = { ...grupos[i], [field]: val };
+      return { ...c, grupos };
+    });
+
+  const fetchInviteLink = async (cardIdx: number, jid: string) => {
+    const evo = config.instancia_evolution !== '__priority__'
+      ? evoInstances.find(e => e.instance_name === config.instancia_evolution)
+      : evoInstances[0];
+    if (!evo) return;
+    try {
+      const rawBase = evo.api_url.replace(/\/$/, '');
+      const base = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
+      const res = await fetch(`${base}/group/inviteCode/${evo.instance_name}?groupJid=${encodeURIComponent(jid)}`, {
+        headers: { apikey: evo.api_key },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const code = data?.inviteCode || data?.code || data?.invite_code;
+      if (code) {
+        updateGrupo(cardIdx, 'link', `https://chat.whatsapp.com/${code}`);
+      }
+    } catch { /* silencioso — link é opcional */ }
+  };
 
   const parseNumeros = (raw: string) =>
     raw.split(/[\n,;]+/).map(p => p.trim().replace(/\D/g, '')).filter(p => p.length >= 10);
@@ -796,6 +822,7 @@ function Step3({ config, setConfig, evoInstances, existingId }: {
                       if (!g) return;
                       updateGrupo(i, 'jid', g.id);
                       if (!grupo.nickname?.trim()) updateGrupo(i, 'nickname', g.subject);
+                      fetchInviteLink(i, g.id);
                     }}
                     defaultValue=""
                     className="w-full px-3 py-2 rounded-lg border border-primary/40 bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
@@ -1706,27 +1733,46 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
       const grupos: GrupoConfig[] = [];
       let gi = 1;
       // grupo_1_id e grupo_2_id são colunas dedicadas
-      if ((fConfig as any)?.grupo_1_id) grupos.push({ nickname: 'Grupo 1', jid: (fConfig as any).grupo_1_id });
-      if ((fConfig as any)?.grupo_2_id) grupos.push({ nickname: 'Grupo 2', jid: (fConfig as any).grupo_2_id });
+      if ((fConfig as any)?.grupo_1_id) grupos.push({
+        nickname: 'Grupo 1',
+        jid: (fConfig as any).grupo_1_id,
+        link: variaveis['link_grupo_1'] || '',
+      });
+      if ((fConfig as any)?.grupo_2_id) grupos.push({
+        nickname: 'Grupo 2',
+        jid: (fConfig as any).grupo_2_id,
+        link: variaveis['link_grupo_2'] || '',
+      });
       // grupo_3+ em variaveis
       while (variaveis[`grupo_${gi + grupos.length}`]) {
-        grupos.push({ nickname: `Grupo ${gi + grupos.length}`, jid: variaveis[`grupo_${gi + grupos.length}`] });
+        const idx = gi + grupos.length;
+        grupos.push({ nickname: `Grupo ${idx}`, jid: variaveis[`grupo_${idx}`], link: variaveis[`link_grupo_${idx}`] || '' });
         gi++;
       }
 
+      // Ano base para reconstruir datas antigas (formato DD/MM sem ano)
+      const anoBase = ((lancData as any).data_live?.slice(0, 4)) || new Date().getFullYear().toString();
+
       const aulas: AulaConfig[] = [];
       let ai = 1;
-      while (variaveis[`link_aula_${ai}`] || variaveis[`data_aula_${ai}`]) {
+      while (variaveis[`link_aula_${ai}`] || variaveis[`data_aula_iso_${ai}`] || variaveis[`data_aula_${ai}`]) {
+        // Tenta ISO primeiro; fallback: reconstrói DD/MM → YYYY-MM-DD usando anoBase
+        let dataAula = variaveis[`data_aula_iso_${ai}`] || '';
+        if (!dataAula && variaveis[`data_aula_${ai}`]) {
+          const [dd, mm] = variaveis[`data_aula_${ai}`].split('/');
+          if (dd && mm) dataAula = `${anoBase}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
+        }
         aulas.push({
-          data: variaveis[`data_aula_${ai}`] ? '' : '',
-          hora: variaveis[`hora_aula_${ai}`] || '20:00',
-          link: variaveis[`link_aula_${ai}`] || '',
+          data:      dataAula,
+          hora:      variaveis[`hora_aula_${ai}`] || '20:00',
+          link:      variaveis[`link_aula_${ai}`] || '',
           professor: variaveis[`professor_${ai}`] || '',
+          titulo:    variaveis[`titulo_aula_${ai}`] || '',
         });
         ai++;
       }
 
-      const INTERNAL_VAR_PREFIXES = ['grupo_', 'data_aula_', 'link_aula_', 'hora_aula_', 'professor_', 'titulo_aula_', 'link_grupo_', 'bv_wpp_'];
+      const INTERNAL_VAR_PREFIXES = ['grupo_', 'data_aula_', 'data_aula_iso_', 'link_aula_', 'hora_aula_', 'professor_', 'titulo_aula_', 'link_grupo_', 'bv_wpp_'];
       const INTERNAL_VAR_KEYS = new Set(['grupo_manha', 'grupo_tarde']);
       const links_extras = Object.entries(variaveis)
         .filter(([k]) => !INTERNAL_VAR_PREFIXES.some(p => k.startsWith(p)) && !INTERNAL_VAR_KEYS.has(k))
@@ -1802,6 +1848,90 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
   const canNext = () => {
     if (step === 1) return !!config.nome.trim() && !!config.data_live;
     return true;
+  };
+
+  const canSave = () => !!config.nome.trim() && !!config.data_live;
+
+  /** Salva lancamento + funnel_config + boas_vindas SEM gerar mensagens (save parcial) */
+  const handleSavePartial = async () => {
+    if (!canSave()) { toast.error('Preencha o nome e a data do lançamento'); return; }
+    setSaving(true);
+    try {
+      const table  = config.tipo === 'npa' ? 'npa_eventos' : 'lancamentos';
+      const grupo1 = config.grupos[0]?.jid || null;
+      const grupo2 = config.grupos[1]?.jid || null;
+
+      const commonFields = {
+        nome: config.nome,
+        responsavel_id: config.responsavel_id || null,
+        turma_destino_id: config.turma_destino_id || null,
+        produto_destino: config.produto_destino || null,
+        valor_mensalidade_destino: config.valor_mensalidade_destino || null,
+        dia_vencimento_destino: config.dia_vencimento_destino || null,
+        total_mensalidades_destino: config.total_mensalidades_destino || null,
+        slogan: config.slogan || 'Excelente',
+        professor_convidado: config.professor_convidado || null,
+      };
+
+      let lancId = existingId;
+      if (existingId) {
+        const lancFields = config.tipo === 'lancamento'
+          ? { ...commonFields, data_live: config.data_live, meta_leads: config.meta_leads || 0, meta_matriculas: config.meta_matriculas || 0, grupo_lancamento_jid: grupo1, grupo_oferta_jid: grupo2 }
+          : { ...commonFields, vega_produto_id: config.vega_produto_id || null, vega_produto_tarde: config.vega_produto_tarde || null, pix_mensagem_template: config.pix_mensagem_template || null };
+        await supabase.from(table).update(lancFields).eq('id', existingId);
+      } else {
+        const lancFields = config.tipo === 'lancamento'
+          ? { ...commonFields, status: 'planejamento' as const, ativo: false, data_live: config.data_live, meta_leads: config.meta_leads || 0, meta_matriculas: config.meta_matriculas || 0, grupo_lancamento_jid: grupo1, grupo_oferta_jid: grupo2, created_at: new Date().toISOString() }
+          : { ...commonFields, status: 'planejamento' as const, ativo: false, vega_produto_id: config.vega_produto_id || null, vega_produto_tarde: config.vega_produto_tarde || null, pix_mensagem_template: config.pix_mensagem_template || null, created_at: new Date().toISOString() };
+        const { data: created, error } = await supabase.from(table).insert(lancFields).select('id').single();
+        if (error || !created) { toast.error('Erro ao criar: ' + error?.message); setSaving(false); return; }
+        lancId = created.id;
+        if (config.tipo === 'lancamento') { try { await ensureDefaultLancamentoKanbanColumns(lancId!); } catch {} }
+      }
+
+      // funnel_configs
+      const variaveis = buildFunnelVariaveis(config);
+      config.grupos.slice(2).forEach((g, i) => { if (g.jid) variaveis[`grupo_${i + 3}`] = g.jid; });
+      await supabase.from('funnel_configs').upsert({
+        funnel_name: config.nome,
+        grupo_1_id: grupo1 || '',
+        grupo_2_id: grupo2 || '',
+        imagem_manha: '', imagem_tarde: '', imagem_noite: '',
+        variaveis, imagens: {},
+      }, { onConflict: 'funnel_name' });
+
+      // boas_vindas_config
+      if (config.bv_wpp_mensagem || config.bv_email_ativo) {
+        await supabase.from('boas_vindas_config').upsert({
+          funnel_name: config.nome,
+          ativo: true,
+          wpp_ativo: config.bv_wpp_ativo,
+          wpp_mensagem: config.bv_wpp_mensagem,
+          wpp_instance_name: config.instancia_evolution === '__priority__' ? null : config.instancia_evolution,
+          email_ativo: config.bv_email_ativo,
+          email_assunto: config.bv_email_assunto,
+          email_corpo: config.bv_email_corpo,
+          delay_minutos: config.bv_delay_minutos ?? 0,
+        }, { onConflict: 'funnel_name' });
+      }
+
+      // calendário
+      const aulaComData = config.aulas.filter(a => a.data);
+      if (aulaComData.length > 0) {
+        if (existingId) await supabase.from('eventos_calendario').delete().ilike('titulo', `${config.nome} — Aula%`);
+        const cor = config.tipo === 'npa' ? '#7C3AED' : '#EA580C';
+        await supabase.from('eventos_calendario').insert(
+          aulaComData.map((a, i) => ({ titulo: `${config.nome} — Aula ${i + 1}`, data_inicio: `${a.data}T${a.hora || '20:00'}:00`, cor, tipo: config.tipo }))
+        );
+      }
+
+      toast.success('Configurações salvas! ✅');
+      onSuccess(lancId!, config.tipo);
+    } catch (e: unknown) {
+      toast.error('Erro: ' + (e as Error).message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSave = async () => {
@@ -1997,7 +2127,15 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
           <Button variant="outline" size="sm" onClick={() => step > 1 ? setStep(s => s - 1) : onClose()}>
             <ChevronLeft className="h-4 w-4 mr-1" /> {step === 1 ? 'Cancelar' : 'Voltar'}
           </Button>
-          <span className="text-xs text-muted-foreground">Etapa {step} de {STEPS.length}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Etapa {step} de {STEPS.length}</span>
+            {step < 6 && canSave() && (
+              <Button variant="outline" size="sm" onClick={handleSavePartial} disabled={saving} className="gap-1.5 text-xs">
+                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                Salvar
+              </Button>
+            )}
+          </div>
           {step < 6 ? (
             <Button size="sm" onClick={handleNext} disabled={!canNext()}>
               Próximo <ChevronRight className="h-4 w-4 ml-1" />

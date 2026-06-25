@@ -964,10 +964,11 @@ export function buildFunnelVariaveis(config: WizardConfig): Record<string, strin
 
   config.aulas.forEach((a, i) => {
     const n = i + 1;
-    if (a.titulo)    vars[`titulo_aula_${n}`] = a.titulo;
+    if (a.titulo)    vars[`titulo_aula_${n}`]     = a.titulo;
     if (a.data) {
       const [, mo, dy] = a.data.split('-');
-      vars[`data_aula_${n}`] = `${dy}/${mo}`;
+      vars[`data_aula_${n}`]     = `${dy}/${mo}`;
+      vars[`data_aula_iso_${n}`] = a.data; // data completa para restaurar no wizard
     }
     if (a.hora)      vars[`hora_aula_${n}`]   = a.hora;
     if (a.link)      vars[`link_aula_${n}`]   = a.link;
