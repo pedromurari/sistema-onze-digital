@@ -1783,7 +1783,7 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
       setConfig({
         nome: lancData.nome || '',
         tipo: existingTipo || 'lancamento',
-        data_live: (lancData as any).data_live?.slice(0, 10) || '',
+        data_live: (lancData as any).data_live?.slice(0, 10) || aulas[0]?.data || '',
         hora_live: '20:00',
         slogan: (lancData as any).slogan || 'Excelente',
         professor_convidado: (lancData as any).professor_convidado || '',
