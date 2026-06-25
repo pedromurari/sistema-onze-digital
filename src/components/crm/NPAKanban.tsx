@@ -1719,7 +1719,7 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
     } : d));
   };
 
-  const handleStartDisparo = (config: {
+  const handleStartDisparo = async (config: {
     faseIds: NPAPhase[];
     template: string;
     typingDelayMs: number;
@@ -1729,25 +1729,50 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
   }) => {
     const campaignLeads = leads
       .filter(l => config.faseIds.includes(l.fase) && l.whatsapp)
-      .map(l => ({ leadId: l.id, nome: l.nome, whatsapp: l.whatsapp, status: 'pending' as const }));
+      .map((l, i) => ({ nome: l.nome, phone: l.whatsapp, status: 'pendente', temperatura: 'morno', ordem: i }));
+
+    if (campaignLeads.length === 0) { toast.error('Nenhum lead com WhatsApp nas fases selecionadas'); return; }
 
     const faseNomes = PHASES.filter(p => config.faseIds.includes(p.id)).map(p => p.label);
-    const newId = crypto.randomUUID();
-    const nome = `${faseNomes.join(', ')} · ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+    const nomeEvento = evento?.nome ?? 'NPA';
+    const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const nomeCampanha = `${nomeEvento} — ${faseNomes.join(', ')} ${hora}`;
 
-    const newDisp: NPADisparoItem = {
-      id: newId, nome, faseIds: config.faseIds, faseNomes,
-      template: config.template, typingDelayMs: config.typingDelayMs,
-      minDelayMs: config.minDelayMs, maxDelayMs: config.maxDelayMs,
-      instanceName: config.instanceName, leads: campaignLeads,
-      currentIdx: 0, status: 'running', startedAt: Date.now(), countdownMs: 0,
-    };
+    // Descobre o evolution_config_id se o usuário escolheu uma instância específica
+    let evolutionConfigId: string | null = null;
+    if (config.instanceName) {
+      const { data: evRow } = await supabase
+        .from('evolution_config')
+        .select('id')
+        .eq('instance_name', config.instanceName)
+        .maybeSingle();
+      evolutionConfigId = evRow?.id ?? null;
+    }
 
-    disparosStopMap.current.set(newId, false);
-    disparosPauseMap.current.set(newId, false);
-    setDisparos(prev => [...prev, newDisp]);
-    runDisparo(newId, newDisp);
-    toast.success(`🚀 Disparo iniciado: ${campaignLeads.length} lead(s)`);
+    const { data: camp, error: campErr } = await supabase
+      .from('disparo_campanhas')
+      .insert({
+        nome: nomeCampanha,
+        template: config.template,
+        status: 'ativo',
+        delay_min_s: Math.round(config.minDelayMs / 1000),
+        delay_max_s: Math.round(config.maxDelayMs / 1000),
+        safe_hour_start: 8,
+        safe_hour_end: 21,
+        daily_limit: 200,
+        message_type: 'text',
+        ...(evolutionConfigId ? { evolution_config_id: evolutionConfigId } : {}),
+      })
+      .select('id')
+      .single();
+
+    if (campErr || !camp) { toast.error('Erro ao criar campanha: ' + campErr?.message); return; }
+
+    const leadsToInsert = campaignLeads.map(l => ({ ...l, campanha_id: camp.id }));
+    const { error: leadsErr } = await supabase.from('disparo_leads').insert(leadsToInsert);
+    if (leadsErr) { toast.error('Erro ao inserir leads: ' + leadsErr.message); return; }
+
+    toast.success(`✅ Campanha criada com ${campaignLeads.length} lead(s) — acompanhe na Central de Disparos`);
   };
 
   // ── Salvar metas ──────────────────────────────────────────────────────────
