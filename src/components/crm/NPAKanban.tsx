@@ -136,6 +136,50 @@ function getPhasePayload(newPhase: NPAPhase): Record<string, boolean> {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+const BOAS_VINDAS_FALLBACK = `🌟 Bem-vindo(a) ao {{evento_nome}}!\nSua inscrição está confirmada! 🙌\n\nAguarde as próximas mensagens com informações do evento.\n\nQualquer dúvida, estamos por aqui!`;
+
+async function sendBoasVindasLead(
+  lead: { id: string; nome: string; whatsapp: string; turma: string },
+  nomeEvento: string,
+  onSent: (patch: { bv_enviado: boolean; bv_enviado_em: string }) => Promise<void>,
+) {
+  try {
+    const { data: fConfig } = await supabase
+      .from('funnel_configs')
+      .select('variaveis')
+      .eq('funnel_name', nomeEvento)
+      .maybeSingle();
+
+    const variaveis: Record<string, string> = (fConfig as any)?.variaveis ?? {};
+    const tpl = lead.turma === 'tarde'
+      ? (variaveis['bv_wpp_tarde'] || variaveis['bv_wpp_manha'])
+      : variaveis['bv_wpp_manha'];
+
+    const mensagem = (tpl || BOAS_VINDAS_FALLBACK)
+      .replace(/\{\{nome\}\}/g, lead.nome || 'você')
+      .replace(/\{\{evento_nome\}\}/g, nomeEvento)
+      .replace(/\{\{turma\}\}/g, lead.turma === 'manha' ? 'Manhã' : 'Tarde')
+      .replace(/\{\{link_grupo_manha\}\}/g, variaveis['link_grupo_manha'] || '')
+      .replace(/\{\{link_grupo_tarde\}\}/g, variaveis['link_grupo_tarde'] || '')
+      .replace(/\{\{link_grupo\}\}/g, lead.turma === 'tarde'
+        ? (variaveis['link_grupo_tarde'] || variaveis['link_grupo_manha'] || '')
+        : (variaveis['link_grupo_manha'] || ''));
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+    await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+      body: JSON.stringify({ numero: lead.whatsapp, mensagem, typing_delay_ms: 2000 }),
+    });
+
+    await onSent({ bv_enviado: true, bv_enviado_em: new Date().toISOString() });
+  } catch (e) {
+    console.error('sendBoasVindasLead error:', (e as Error).message);
+  }
+}
+
 const fmt = (v: number) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -1011,50 +1055,14 @@ function BoasVindasPendentesPanel({
 
   const handleEnviarTodos = async () => {
     setSending(true);
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-
-    // Busca o template de boas-vindas do funnel_configs
-    const { data: fConfig } = await supabase
-      .from('funnel_configs')
-      .select('variaveis')
-      .eq('funnel_name', nomeEvento)
-      .maybeSingle();
-
-    const variaveis: Record<string, string> = (fConfig as any)?.variaveis ?? {};
 
     for (const lead of pendentes) {
       if (sentIds.has(lead.id)) continue;
-      try {
-        const tpl = lead.turma === 'tarde'
-          ? (variaveis['bv_wpp_tarde'] || variaveis['bv_wpp_manha'])
-          : variaveis['bv_wpp_manha'];
-
-        if (!tpl) { toast.error('Template de boas-vindas não configurado no wizard'); break; }
-
-        const mensagem = tpl
-          .replace(/\{\{nome\}\}/g, lead.nome || 'você')
-          .replace(/\{\{evento_nome\}\}/g, nomeEvento)
-          .replace(/\{\{turma\}\}/g, lead.turma === 'manha' ? 'Manhã' : 'Tarde')
-          .replace(/\{\{link_grupo_manha\}\}/g, variaveis['link_grupo_manha'] || '')
-          .replace(/\{\{link_grupo_tarde\}\}/g, variaveis['link_grupo_tarde'] || '')
-          .replace(/\{\{link_grupo\}\}/g, lead.turma === 'tarde' ? (variaveis['link_grupo_tarde'] || '') : (variaveis['link_grupo_manha'] || ''));
-
-        await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
-          body: JSON.stringify({ numero: lead.whatsapp, mensagem, typing_delay_ms: 2000 + Math.floor(Math.random() * 2000) }),
-        });
-
-        await supabase.from('npa_evento_leads').update({
-          bv_enviado: true, bv_enviado_em: new Date().toISOString(),
-        }).eq('id', lead.id);
-
+      await sendBoasVindasLead(lead, nomeEvento, async (patch) => {
+        await supabase.from('npa_evento_leads').update(patch).eq('id', lead.id);
         setSentIds(prev => new Set([...prev, lead.id]));
-        await new Promise(r => setTimeout(r, 3000 + Math.random() * 4000));
-      } catch (e) {
-        console.error('Erro ao enviar boas-vindas para', lead.nome, e);
-      }
+      });
+      await new Promise(r => setTimeout(r, 3000 + Math.random() * 4000));
     }
 
     setSending(false);
@@ -1374,7 +1382,9 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
   // ── pendingUpdates guard ──────────────────────────────────────────────────
   const pendingUpdates = useRef<Map<string, NPAPhase>>(new Map());
   const leadsRef       = useRef<NPALead[]>([]);
+  const eventoRef      = useRef<NPAEvento | null>(null);
   useEffect(() => { leadsRef.current = leads; }, [leads]);
+  useEffect(() => { eventoRef.current = evento; }, [evento]);
 
   // ── Load evento ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1524,6 +1534,21 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
     setTimeout(() => {
       pendingUpdates.current.delete(leadId);
     }, 5000);
+
+    // 7. Auto-envio de boas-vindas ao mover para ingresso_pago
+    if (newPhase === 'ingresso_pago' && !(updated as NPALead).bv_enviado) {
+      const nomeEvento = eventoRef.current?.nome ?? '';
+      if (nomeEvento && (updated as NPALead).whatsapp) {
+        void sendBoasVindasLead(
+          updated as NPALead,
+          nomeEvento,
+          async (patch) => {
+            await supabase.from('npa_evento_leads').update(patch).eq('id', leadId);
+            setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, ...patch } : l));
+          },
+        );
+      }
+    }
   }, []);
 
   // ── Toggle material ───────────────────────────────────────────────────────
