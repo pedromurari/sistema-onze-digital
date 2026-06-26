@@ -16,7 +16,7 @@ import {
   Plus, Search, AlertCircle, Users, Target, DollarSign,
   Loader2, Power, Trash2, Pencil, TrendingUp, BarChart2,
   ChevronUp, ChevronDown, Upload, FileText, UserCheck, Globe, Copy,
-  Send, Play, Square, Pause, X as XIcon, CheckCircle2,
+  Send, Play, Square, Pause, X as XIcon, CheckCircle2, RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useKanbanColunas } from './kanban/useKanbanColunas';
@@ -1354,6 +1354,16 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
   });
   const [savingMatricula, setSavingMatricula] = useState(false);
 
+  // ── Adicionar ao Grupo ────────────────────────────────────────────────────
+  const [showAddGrupoModal, setShowAddGrupoModal] = useState(false);
+  const [addGrupoJobs, setAddGrupoJobs] = useState<Array<{
+    id: string; lead_id: string; scheduled_at: string; done_at: string | null;
+    result: string | null; result_detail: string | null;
+    lancamento_leads: { nome: string; whatsapp: string } | null;
+  }>>([]);
+  const [loadingAddGrupoJobs, setLoadingAddGrupoJobs] = useState(false);
+  const [creatingAddGrupoJobs, setCreatingAddGrupoJobs] = useState(false);
+
   // ── Disparo por Coluna (campanhas WPP) ────────────────────────────────────
   const [showDisparoModal, setShowDisparoModal] = useState(false);
   const [preselectColunaId, setPreselectColunaId] = useState<string | null>(null);
@@ -1802,6 +1812,82 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
       setLeads(normalized);
       toast.success(`${inserted} leads importados!`);
     }
+  };
+
+  // ── Adicionar ao Grupo: cria fila com delay 15-23 min entre cada lead ──────
+  const loadAddGrupoJobs = async () => {
+    if (!lancamento) return;
+    setLoadingAddGrupoJobs(true);
+    const { data } = await supabase
+      .from('grupo_add_jobs')
+      .select('id, lead_id, scheduled_at, done_at, result, result_detail, lancamento_leads(nome, whatsapp)')
+      .eq('lancamento_id', lancamento.id)
+      .order('scheduled_at', { ascending: true });
+    setAddGrupoJobs((data as any[]) ?? []);
+    setLoadingAddGrupoJobs(false);
+  };
+
+  const handleCriarFilaGrupo = async () => {
+    if (!lancamento?.grupo_lancamento_jid) {
+      toast.error('Configure o JID do grupo primeiro em Webhook Grupos');
+      return;
+    }
+
+    // Leads da coluna "Planilha" (primeira coluna) ainda sem job criado
+    const planilhaColuna = colunas.find(c => c.nome.toLowerCase().includes('planilha'));
+    if (!planilhaColuna) { toast.error('Coluna Planilha não encontrada'); return; }
+
+    const planilhaLeads = leads.filter(l => l.fase === planilhaColuna.id && l.whatsapp);
+    if (!planilhaLeads.length) { toast.error('Nenhum lead com WhatsApp na coluna Planilha'); return; }
+
+    // Descobre quais já têm job
+    const { data: existingJobs } = await supabase
+      .from('grupo_add_jobs')
+      .select('lead_id')
+      .eq('lancamento_id', lancamento.id);
+    const alreadyQueued = new Set((existingJobs ?? []).map((j: any) => j.lead_id));
+
+    const novosLeads = planilhaLeads.filter(l => !alreadyQueued.has(l.id));
+    if (!novosLeads.length) { toast.info('Todos os leads já estão na fila'); await loadAddGrupoJobs(); return; }
+
+    setCreatingAddGrupoJobs(true);
+    try {
+      // Cria jobs com delay acumulado aleatório de 15-23 min entre cada lead
+      const now = Date.now();
+      let acumulado = 0;
+      const rows = novosLeads.map(lead => {
+        const delaySecs = (15 + Math.random() * 8) * 60; // 15-23 min em segundos
+        acumulado += delaySecs * 1000;
+        return {
+          lancamento_id: lancamento.id,
+          lead_id: lead.id,
+          scheduled_at: new Date(now + acumulado).toISOString(),
+        };
+      });
+
+      const { error } = await supabase.from('grupo_add_jobs').insert(rows);
+      if (error) throw new Error(error.message);
+
+      const duracaoHoras = (acumulado / 1000 / 3600).toFixed(1);
+      toast.success(`${rows.length} leads adicionados à fila. Duração estimada: ~${duracaoHoras}h`);
+      await loadAddGrupoJobs();
+    } catch (e: unknown) {
+      toast.error('Erro ao criar fila: ' + (e as Error).message);
+    } finally {
+      setCreatingAddGrupoJobs(false);
+    }
+  };
+
+  const handleCancelarFilaGrupo = async () => {
+    if (!lancamento) return;
+    if (!confirm('Cancelar todos os jobs pendentes?')) return;
+    await supabase
+      .from('grupo_add_jobs')
+      .delete()
+      .eq('lancamento_id', lancamento.id)
+      .is('done_at', null);
+    await loadAddGrupoJobs();
+    toast.success('Fila cancelada');
   };
 
   // ── Sync WhatsApp group ─────────────────────────────────────────────────────
@@ -2281,6 +2367,20 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
               <Send className="h-4 w-4" />
               Disparar
             </Button>
+            {lancamento?.grupo_lancamento_jid && (() => {
+              const planilhaCol = colunas.find(c => c.nome.toLowerCase().includes('planilha'));
+              const planilhaCount = planilhaCol ? leads.filter(l => l.fase === planilhaCol.id).length : 0;
+              return planilhaCount > 0 ? (
+                <Button
+                  variant="outline"
+                  className="gap-2 border-green-300 text-green-700 hover:bg-green-50"
+                  onClick={() => { setShowAddGrupoModal(true); loadAddGrupoJobs(); }}
+                >
+                  <Users className="h-4 w-4" />
+                  Adicionar ao Grupo ({planilhaCount})
+                </Button>
+              ) : null;
+            })()}
           </div>
 
           {/* Search Results (flat list) */}
@@ -2564,6 +2664,132 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
               <Button onClick={() => setShowImportModal(false)}>Fechar</Button>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Adicionar ao Grupo Modal ── */}
+      <Dialog open={showAddGrupoModal} onOpenChange={setShowAddGrupoModal}>
+        <DialogContent className="max-w-2xl flex flex-col max-h-[85vh]">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-green-600" />
+              Adicionar ao Grupo de Lançamento
+            </DialogTitle>
+            <DialogDescription>
+              Cada lead será adicionado ao grupo via Evolution API. Se não for possível, recebe o link por mensagem. Delay: 15–23 min entre cada lead.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto min-h-0 space-y-4 py-2">
+            {/* Stats */}
+            {(() => {
+              const total   = addGrupoJobs.length;
+              const done    = addGrupoJobs.filter(j => j.done_at).length;
+              const pending = total - done;
+              const added   = addGrupoJobs.filter(j => j.result === 'adicionado').length;
+              const msg     = addGrupoJobs.filter(j => j.result === 'mensagem_enviada').length;
+              const erro    = addGrupoJobs.filter(j => j.result === 'erro').length;
+              const nextJob = addGrupoJobs.find(j => !j.done_at);
+              const nextAt  = nextJob ? new Date(nextJob.scheduled_at) : null;
+
+              return total > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="rounded-lg bg-gray-50 border p-3 text-center">
+                    <div className="text-2xl font-bold text-gray-800">{total}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">Total na fila</div>
+                  </div>
+                  <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-center">
+                    <div className="text-2xl font-bold text-green-700">{added}</div>
+                    <div className="text-xs text-green-600 mt-0.5">Adicionados</div>
+                  </div>
+                  <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-center">
+                    <div className="text-2xl font-bold text-blue-700">{msg}</div>
+                    <div className="text-xs text-blue-600 mt-0.5">Link enviado</div>
+                  </div>
+                  <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-center">
+                    <div className="text-2xl font-bold text-red-700">{erro}</div>
+                    <div className="text-xs text-red-600 mt-0.5">Erro</div>
+                  </div>
+                  {pending > 0 && nextAt && (
+                    <div className="col-span-2 sm:col-span-4 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
+                      <span><strong>{pending}</strong> pendentes · Próximo às {nextAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} ({nextAt.toLocaleDateString('pt-BR')})</span>
+                    </div>
+                  )}
+                  {pending === 0 && total > 0 && (
+                    <div className="col-span-2 sm:col-span-4 rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-800 flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+                      Fila concluída! {added} adicionados ao grupo, {msg} receberam o link por mensagem.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 text-sm text-blue-800">
+                  <p className="font-medium mb-1">Como funciona:</p>
+                  <ul className="list-disc list-inside space-y-1 text-blue-700">
+                    <li>Tenta adicionar cada lead ao grupo via Evolution API</li>
+                    <li>Se não conseguir (privacidade, número inválido), envia o link por mensagem</li>
+                    <li>Delay aleatório de 15–23 minutos entre cada lead para segurança do WhatsApp</li>
+                    <li>Roda em background — você pode fechar esta janela</li>
+                  </ul>
+                </div>
+              );
+            })()}
+
+            {/* Lista de jobs */}
+            {addGrupoJobs.length > 0 && (
+              <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                {addGrupoJobs.map(job => (
+                  <div key={job.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg border text-sm ${
+                    !job.done_at ? 'bg-white border-gray-200' :
+                    job.result === 'adicionado' ? 'bg-green-50 border-green-200' :
+                    job.result === 'mensagem_enviada' ? 'bg-blue-50 border-blue-200' :
+                    'bg-red-50 border-red-200'
+                  }`}>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-gray-800 truncate">{(job.lancamento_leads as any)?.nome ?? job.lead_id}</p>
+                      <p className="text-xs text-gray-500">{(job.lancamento_leads as any)?.whatsapp}</p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      {!job.done_at ? (
+                        <span className="text-xs text-gray-500">
+                          {new Date(job.scheduled_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      ) : (
+                        <span className={`text-xs font-medium ${
+                          job.result === 'adicionado' ? 'text-green-700' :
+                          job.result === 'mensagem_enviada' ? 'text-blue-700' : 'text-red-700'
+                        }`}>
+                          {job.result === 'adicionado' ? '✓ Adicionado' :
+                           job.result === 'mensagem_enviada' ? '✉ Link enviado' : '✗ Erro'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-2 pt-2 border-t flex-shrink-0">
+            <Button variant="outline" onClick={loadAddGrupoJobs} disabled={loadingAddGrupoJobs} className="gap-2">
+              {loadingAddGrupoJobs ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Atualizar
+            </Button>
+            {addGrupoJobs.some(j => !j.done_at) && (
+              <Button variant="outline" className="gap-2 border-red-300 text-red-700 hover:bg-red-50" onClick={handleCancelarFilaGrupo}>
+                Cancelar pendentes
+              </Button>
+            )}
+            <Button
+              className="gap-2 bg-green-600 hover:bg-green-700 text-white ml-auto"
+              onClick={handleCriarFilaGrupo}
+              disabled={creatingAddGrupoJobs}
+            >
+              {creatingAddGrupoJobs ? <Loader2 className="h-4 w-4 animate-spin" /> : <Users className="h-4 w-4" />}
+              {addGrupoJobs.length > 0 ? 'Adicionar novos à fila' : 'Iniciar'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
