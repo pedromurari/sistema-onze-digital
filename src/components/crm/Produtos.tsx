@@ -1,11 +1,14 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { format, differenceInYears } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Search, Users, ShoppingCart, MessageSquare, TrendingUp, ChevronLeft, ChevronRight, X, CheckCircle2, XCircle } from 'lucide-react';
+import { Search, Users, ShoppingCart, MessageSquare, TrendingUp, ChevronLeft, ChevronRight, X, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+
+const SeuNumerologoKanban = lazy(() => import('./SeuNumerologoKanban').then(m => ({ default: m.SeuNumerologoKanban })));
+
+// ── Types ────────────────────────────────────────────────────────────────────
 
 type QuizLead = {
   id: string;
@@ -75,7 +78,9 @@ function StatCard({ icon: Icon, label, value, color }: { icon: React.ElementType
   );
 }
 
-export function Produtos() {
+// ── Quiz IDM tab ─────────────────────────────────────────────────────────────
+
+function QuizIDMTab() {
   const [leads, setLeads] = useState<QuizLead[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -89,7 +94,6 @@ export function Produtos() {
   const [descontos, setDescontos] = useState<string[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load aggregate stats once
   useEffect(() => {
     Promise.all([
       supabase.from('idm_quiz_leads' as any).select('id', { count: 'exact', head: true }),
@@ -130,10 +134,8 @@ export function Produtos() {
     setLoading(false);
   }, [search, filterPerfil, filterDesconto, filterCheckout]);
 
-  // Reset page when filters change
   useEffect(() => { setPage(0); }, [search, filterPerfil, filterDesconto, filterCheckout]);
 
-  // Debounced reload on search + immediate on filter changes
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => loadLeads(page), search ? 350 : 0);
@@ -150,19 +152,13 @@ export function Produtos() {
   ].filter(Boolean) as { label: string; clear: () => void }[];
 
   return (
-    <div className="p-6 space-y-6 max-w-[1600px]">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Produtos</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Leads do Quiz IDM — análise de conversão e perfis</p>
-      </div>
-
+    <div className="space-y-6">
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={Users}        label="Total de Leads"     value={stats.total.toLocaleString('pt-BR')} color="bg-blue-50 text-blue-600" />
-        <StatCard icon={ShoppingCart} label="Clicaram Checkout"  value={stats.checkouts.toLocaleString('pt-BR')} color="bg-emerald-50 text-emerald-600" />
+        <StatCard icon={Users}         label="Total de Leads"    value={stats.total.toLocaleString('pt-BR')} color="bg-blue-50 text-blue-600" />
+        <StatCard icon={ShoppingCart}  label="Clicaram Checkout" value={stats.checkouts.toLocaleString('pt-BR')} color="bg-emerald-50 text-emerald-600" />
         <StatCard icon={MessageSquare} label="Popup Submetido"   value={stats.popups.toLocaleString('pt-BR')} color="bg-violet-50 text-violet-600" />
-        <StatCard icon={TrendingUp}   label="Taxa de Checkout"   value={`${checkoutRate}%`} color="bg-orange-50 text-orange-600" />
+        <StatCard icon={TrendingUp}    label="Taxa de Checkout"  value={`${checkoutRate}%`} color="bg-orange-50 text-orange-600" />
       </div>
 
       {/* Filters */}
@@ -266,25 +262,16 @@ export function Produtos() {
               ) : (
                 leads.map((lead, i) => (
                   <tr key={lead.id} className={cn('transition-colors hover:bg-muted/20', i % 2 === 0 ? 'bg-white' : 'bg-muted/10')}>
-                    {/* Data */}
                     <td className="px-4 py-3 whitespace-nowrap text-xs text-muted-foreground">
                       {format(new Date(lead.created_at), "dd/MM/yy HH:mm", { locale: ptBR })}
                     </td>
-
-                    {/* Mãe */}
-                    <td className="px-4 py-3 whitespace-nowrap font-medium text-foreground">
-                      {lead.mae_nome || '—'}
-                    </td>
-
-                    {/* Filho */}
+                    <td className="px-4 py-3 whitespace-nowrap font-medium text-foreground">{lead.mae_nome || '—'}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className="font-medium text-foreground">{lead.filho_nome || '—'}</span>
                       {lead.filho_nascimento && (
                         <span className="ml-1.5 text-xs text-muted-foreground">({age(lead.filho_nascimento)})</span>
                       )}
                     </td>
-
-                    {/* Perfil */}
                     <td className="px-4 py-3 whitespace-nowrap">
                       {lead.perfil_nome ? (
                         <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border', perfilColor(lead.perfil_numero))}>
@@ -293,15 +280,11 @@ export function Produtos() {
                         </span>
                       ) : '—'}
                     </td>
-
-                    {/* Pontuação */}
                     <td className="px-4 py-3 whitespace-nowrap">
                       {lead.pontuacao != null ? (
                         <span className="font-mono font-semibold text-foreground">{lead.pontuacao}</span>
                       ) : '—'}
                     </td>
-
-                    {/* Desconto */}
                     <td className="px-4 py-3 whitespace-nowrap">
                       {lead.desconto_pct ? (
                         <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border capitalize', descontoColor(lead.desconto_pct))}>
@@ -309,35 +292,19 @@ export function Produtos() {
                         </span>
                       ) : '—'}
                     </td>
-
-                    {/* Checkout */}
                     <td className="px-4 py-3 whitespace-nowrap">
                       {lead.checkout_clicked
                         ? <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                         : <XCircle className="h-4 w-4 text-muted-foreground/40" />}
                     </td>
-
-                    {/* Popup */}
                     <td className="px-4 py-3 whitespace-nowrap">
                       {lead.lead_popup_submitted
                         ? <CheckCircle2 className="h-4 w-4 text-violet-500" />
                         : <XCircle className="h-4 w-4 text-muted-foreground/40" />}
                     </td>
-
-                    {/* Email */}
-                    <td className="px-4 py-3 text-xs text-muted-foreground max-w-[180px] truncate">
-                      {lead.email || '—'}
-                    </td>
-
-                    {/* Telefone */}
-                    <td className="px-4 py-3 whitespace-nowrap text-xs text-muted-foreground">
-                      {lead.phone_number || '—'}
-                    </td>
-
-                    {/* Origem */}
-                    <td className="px-4 py-3 whitespace-nowrap text-xs text-muted-foreground">
-                      {lead.utm_source || '—'}
-                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground max-w-[180px] truncate">{lead.email || '—'}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-xs text-muted-foreground">{lead.phone_number || '—'}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-xs text-muted-foreground">{lead.utm_source || '—'}</td>
                   </tr>
                 ))
               )}
@@ -345,7 +312,7 @@ export function Produtos() {
           </table>
         </div>
 
-        {/* Pagination footer */}
+        {/* Pagination */}
         <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-muted/20">
           <p className="text-xs text-muted-foreground">
             {total === 0 ? 'Nenhum resultado' : `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} de ${total.toLocaleString('pt-BR')} leads`}
@@ -371,6 +338,58 @@ export function Produtos() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+
+const TABS = [
+  { key: 'quiz', label: 'Quiz IDM' },
+  { key: 'mapa', label: 'Mapa 7 Esperas' },
+] as const;
+
+type Tab = typeof TABS[number]['key'];
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+
+export function Produtos() {
+  const [tab, setTab] = useState<Tab>('quiz');
+
+  return (
+    <div className={cn('flex flex-col', tab === 'mapa' ? 'h-full' : 'p-6 space-y-6 max-w-[1600px]')}>
+      {/* Header + tabs */}
+      <div className={cn(tab === 'mapa' && 'px-6 pt-6')}>
+        <h1 className="text-2xl font-bold text-foreground">Produtos</h1>
+        <div className="flex gap-1 border-b mt-4">
+          {TABS.map(t => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={cn(
+                'px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
+                tab === t.key
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Content */}
+      {tab === 'quiz' && (
+        <QuizIDMTab />
+      )}
+      {tab === 'mapa' && (
+        <div className="flex-1 overflow-hidden">
+          <Suspense fallback={<div className="flex items-center justify-center h-full"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>}>
+            <SeuNumerologoKanban />
+          </Suspense>
+        </div>
+      )}
     </div>
   );
 }

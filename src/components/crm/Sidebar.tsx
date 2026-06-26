@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Kanban, Settings, UserCog,
   Rocket, BarChart3, CheckSquare, ChevronDown,
   ChevronLeft, ChevronRight, Plus, Brain, Scale,
-  GripVertical, Pencil, Check, MessageSquare, TrendingUp, GitBranch, CalendarDays, ShoppingBag, Radio, MapPin,
+  GripVertical, Pencil, Check, MessageSquare, TrendingUp, GitBranch, CalendarDays, ShoppingBag, Radio,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,7 +42,6 @@ const BASE_MENU: MenuItem[] = [
   { group: 'aula_secreta',            label: 'Aula Secreta',         icon: Rocket,       children: [] },
   { key: 'funil_lancamento',          label: 'Funil de Lançamento',  icon: GitBranch },
   { key: 'disparos_monitor',          label: 'Central de Disparos',  icon: Radio },
-  { key: 'seu_numerologo',            label: 'Mapa 7 Esperas',       icon: MapPin },
   // Financeiro
   { key: 'financeiro',                label: 'Financeiro',           icon: BarChart3 },
   { key: 'financeiro_cfo',           label: 'Análise CFO',           icon: TrendingUp },
