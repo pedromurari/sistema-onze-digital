@@ -1329,7 +1329,7 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
 
   // Webhook groups config
   const [showWebhookModal, setShowWebhookModal] = useState(false);
-  const [webhookForm, setWebhookForm] = useState({ grupoLancamentoJid: '', grupoOfertaJid: '' });
+  const [webhookForm, setWebhookForm] = useState({ grupoLancamentoJid: '', grupoOfertaJid: '', n8nBvWebhook: '' });
 
   // Exportar página de captura
   const [capturaOpen, setCapturaOpen]       = useState(false);
@@ -1516,9 +1516,18 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
           localStorage.removeItem(lsKey);
         }
         setLancamento(merged as Launch);
+        // Carrega n8n_bv_webhook do funnel_configs
+        const { data: fcData } = await supabase
+          .from('funnel_configs')
+          .select('variaveis')
+          .eq('funnel_name', (merged as Launch).nome)
+          .maybeSingle();
+        const fcVars: Record<string, string> = (fcData as any)?.variaveis ?? {};
+
         setWebhookForm({
           grupoLancamentoJid: (merged as Launch).grupo_lancamento_jid ?? '',
           grupoOfertaJid:     (merged as Launch).grupo_oferta_jid      ?? '',
+          n8nBvWebhook:       fcVars['n8n_bv_webhook'] ?? '',
         });
       }
 
@@ -2063,6 +2072,8 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
   // ── Save webhook group config ───────────────────────────────────────────────
   const handleSaveWebhook = async () => {
     setSavingWebhook(true);
+
+    // Salva JIDs dos grupos na tabela lancamentos
     const { error } = await supabase
       .from('lancamentos')
       .update({
@@ -2070,14 +2081,33 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
         grupo_oferta_jid:     webhookForm.grupoOfertaJid.trim()     || null,
       })
       .eq('id', lancamentoId);
+
+    if (error) { setSavingWebhook(false); toast.error('Erro ao salvar: ' + error.message); return; }
+
+    // Salva n8n_bv_webhook no funnel_configs via upsert de variaveis
+    if (lancamento) {
+      const { data: fcData } = await supabase
+        .from('funnel_configs')
+        .select('id, variaveis')
+        .eq('funnel_name', lancamento.nome)
+        .maybeSingle();
+
+      const updatedVars = { ...((fcData as any)?.variaveis ?? {}), n8n_bv_webhook: webhookForm.n8nBvWebhook.trim() || null };
+
+      if (fcData) {
+        await supabase.from('funnel_configs').update({ variaveis: updatedVars }).eq('id', (fcData as any).id);
+      } else {
+        await supabase.from('funnel_configs').insert({ funnel_name: lancamento.nome, variaveis: updatedVars });
+      }
+    }
+
     setSavingWebhook(false);
-    if (error) { toast.error('Erro ao salvar: ' + error.message); return; }
     setLancamento(prev => prev ? {
       ...prev,
       grupo_lancamento_jid: webhookForm.grupoLancamentoJid.trim() || undefined,
       grupo_oferta_jid:     webhookForm.grupoOfertaJid.trim()     || undefined,
     } : prev);
-    toast.success('Configuração de webhook salva!');
+    toast.success('Configuração salva!');
     setShowWebhookModal(false);
   };
 
@@ -3353,6 +3383,26 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
               />
               <p className="text-xs text-muted-foreground">
                 Quando alguém entrar neste grupo: marca <code className="bg-muted px-1 rounded">grupo_oferta = true</code> e move para <em>Grupo Oferta</em>.
+              </p>
+            </div>
+          </div>
+
+            {/* n8n Boas-Vindas Email */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">
+                Webhook n8n — E-mail de Boas-Vindas
+                {webhookForm.n8nBvWebhook && (
+                  <span className="ml-2 text-xs font-normal text-green-600">● configurado</span>
+                )}
+              </label>
+              <input
+                className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="https://seu-n8n.com/webhook/..."
+                value={webhookForm.n8nBvWebhook}
+                onChange={e => setWebhookForm(f => ({ ...f, n8nBvWebhook: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">
+                Quando um novo lead se cadastrar com e-mail, o sistema envia um POST para esta URL com: <code className="bg-muted px-1 rounded">nome</code>, <code className="bg-muted px-1 rounded">email</code>, <code className="bg-muted px-1 rounded">whatsapp</code>, <code className="bg-muted px-1 rounded">link_grupo</code>, datas e horários das aulas.
               </p>
             </div>
           </div>
