@@ -3385,7 +3385,6 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
                 Quando alguém entrar neste grupo: marca <code className="bg-muted px-1 rounded">grupo_oferta = true</code> e move para <em>Grupo Oferta</em>.
               </p>
             </div>
-          </div>
 
             {/* n8n Boas-Vindas Email */}
             <div className="space-y-1.5">
