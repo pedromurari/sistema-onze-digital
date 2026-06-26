@@ -1,0 +1,105 @@
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { status: 200 });
+
+  try {
+    const { lead_id } = await req.json();
+    if (!lead_id) return new Response(JSON.stringify({ error: 'lead_id required' }), { status: 200 });
+
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    );
+
+    // ── Busca o lead ───────────────────────────────────────────────────────
+    const { data: lead } = await supabase
+      .from('npa_evento_leads')
+      .select('id, nome, whatsapp, turma, npa_evento_id, bv_enviado, ingresso_pago')
+      .eq('id', lead_id)
+      .single();
+
+    if (!lead?.ingresso_pago || lead.bv_enviado || !lead.whatsapp) {
+      return new Response(JSON.stringify({ skipped: true }), { status: 200 });
+    }
+
+    // ── Busca o evento ─────────────────────────────────────────────────────
+    const { data: evento } = await supabase
+      .from('npa_eventos')
+      .select('nome')
+      .eq('id', lead.npa_evento_id)
+      .single();
+
+    if (!evento) return new Response(JSON.stringify({ error: 'evento not found' }), { status: 200 });
+
+    // ── Busca funnel_configs ───────────────────────────────────────────────
+    const { data: fConfig } = await supabase
+      .from('funnel_configs')
+      .select('variaveis')
+      .eq('funnel_name', evento.nome)
+      .maybeSingle();
+
+    const vars: Record<string, string> = (fConfig as any)?.variaveis ?? {};
+
+    const tpl = lead.turma === 'tarde'
+      ? (vars['bv_wpp_tarde'] || vars['bv_wpp_manha'])
+      : vars['bv_wpp_manha'];
+
+    const fallback = `🌟 Bem-vindo(a) ao ${evento.nome}!\nSua inscrição está confirmada! 🙌\n\nAguarde as próximas mensagens com todas as informações do evento.\n\nQualquer dúvida, estamos por aqui!`;
+
+    const linkGrupo = lead.turma === 'tarde'
+      ? (vars['link_grupo_tarde'] || vars['link_grupo_2'] || vars['link_grupo_manha'] || '')
+      : (vars['link_grupo_manha'] || vars['link_grupo_1'] || '');
+
+    const mensagem = (tpl || fallback)
+      .replace(/\{\{nome\}\}/g, lead.nome || 'você')
+      .replace(/\{\{evento_nome\}\}/g, evento.nome)
+      .replace(/\{\{turma\}\}/g, lead.turma === 'manha' ? 'Manhã' : 'Tarde')
+      .replace(/\{\{link_grupo\}\}/g, linkGrupo)
+      .replace(/\{\{link_grupo_manha\}\}/g, vars['link_grupo_manha'] || vars['link_grupo_1'] || '')
+      .replace(/\{\{link_grupo_tarde\}\}/g, vars['link_grupo_tarde'] || vars['link_grupo_2'] || '');
+
+    // ── Busca Evolution API ────────────────────────────────────────────────
+    const { data: evoRows } = await supabase
+      .from('evolution_config')
+      .select('api_url, api_key, instance_name')
+      .eq('ativo', true)
+      .order('prioridade', { ascending: true })
+      .limit(1);
+
+    if (!evoRows?.length) {
+      console.warn('npa-bv-trigger: nenhuma instância Evolution ativa');
+      return new Response(JSON.stringify({ error: 'no evolution config' }), { status: 200 });
+    }
+
+    const evo = evoRows[0];
+    const rawBase = (evo.api_url as string).replace(/\/$/, '');
+    const evoBase = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
+    const phone = lead.whatsapp.replace(/\D/g, '');
+    const number = `${phone}@whatsapp.net`;
+
+    // ── Envia WPP ─────────────────────────────────────────────────────────
+    const res = await fetch(`${evoBase}/message/sendText/${evo.instance_name}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: evo.api_key as string },
+      body: JSON.stringify({ number, text: mensagem, delay: 1200 }),
+    });
+
+    const sent = res.ok;
+    console.log(`npa-bv-trigger: lead=${lead_id} evento="${evento.nome}" sent=${sent} status=${res.status}`);
+
+    if (sent) {
+      await supabase
+        .from('npa_evento_leads')
+        .update({ bv_enviado: true, bv_enviado_em: new Date().toISOString() })
+        .eq('id', lead_id);
+    }
+
+    return new Response(JSON.stringify({ ok: sent }), { status: 200 });
+
+  } catch (e: unknown) {
+    console.error('npa-bv-trigger error:', (e as Error).message);
+    return new Response(JSON.stringify({ error: (e as Error).message }), { status: 200 });
+  }
+});
