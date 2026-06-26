@@ -1837,13 +1837,12 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
   };
 
   // Auto-refresh a cada 30s quando o modal está aberto e há jobs pendentes
-  React.useEffect(() => {
-    if (!showAddGrupoModal) return;
-    const hasPending = addGrupoJobs.some(j => !j.done_at);
-    if (!hasPending) return;
-    const t = setInterval(() => loadAddGrupoJobs(), 30_000);
+  const hasPendingGrupoJobs = addGrupoJobs.some(j => !j.done_at);
+  useEffect(() => {
+    if (!showAddGrupoModal || !hasPendingGrupoJobs) return;
+    const t = setInterval(loadAddGrupoJobs, 30_000);
     return () => clearInterval(t);
-  }, [showAddGrupoModal, addGrupoJobs]);
+  }, [showAddGrupoModal, hasPendingGrupoJobs]);
 
   const handleCriarFilaGrupo = async () => {
     if (!lancamento?.grupo_lancamento_jid) {
