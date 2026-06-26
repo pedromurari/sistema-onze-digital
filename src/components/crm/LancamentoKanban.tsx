@@ -1829,12 +1829,21 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
     setLoadingAddGrupoJobs(true);
     const { data } = await supabase
       .from('grupo_add_jobs')
-      .select('id, lead_id, scheduled_at, done_at, result, result_detail, lancamento_leads(nome, whatsapp)')
+      .select('id, lead_id, action, scheduled_at, done_at, result, result_detail, lancamento_leads(nome, whatsapp)')
       .eq('lancamento_id', lancamento.id)
       .order('scheduled_at', { ascending: true });
     setAddGrupoJobs((data as any[]) ?? []);
     setLoadingAddGrupoJobs(false);
   };
+
+  // Auto-refresh a cada 30s quando o modal está aberto e há jobs pendentes
+  React.useEffect(() => {
+    if (!showAddGrupoModal) return;
+    const hasPending = addGrupoJobs.some(j => !j.done_at);
+    if (!hasPending) return;
+    const t = setInterval(() => loadAddGrupoJobs(), 30_000);
+    return () => clearInterval(t);
+  }, [showAddGrupoModal, addGrupoJobs]);
 
   const handleCriarFilaGrupo = async () => {
     if (!lancamento?.grupo_lancamento_jid) {
@@ -2703,58 +2712,83 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
               Adicionar ao Grupo de Lançamento
             </DialogTitle>
             <DialogDescription>
-              Tenta adicionar todos ao grupo imediatamente. Quem não entrar recebe o link por mensagem com delay de 15–23 min entre cada envio.
+              7 leads adicionados a cada 7 min · delay 3–6s entre cada · quem não entrar recebe o link (15–23 min entre envios)
             </DialogDescription>
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto min-h-0 space-y-4 py-2">
-            {/* Stats */}
             {(() => {
-              const total        = addGrupoJobs.length;
-              const done         = addGrupoJobs.filter(j => j.done_at).length;
+              const allJobs      = addGrupoJobs.filter((j: any) => j.action === 'add_grupo');
+              const total        = allJobs.length;
+              const done         = allJobs.filter(j => j.done_at).length;
               const pending      = total - done;
-              const added        = addGrupoJobs.filter(j => j.result === 'adicionado').length;
-              const msg          = addGrupoJobs.filter(j => j.result === 'mensagem_enviada').length;
+              const added        = allJobs.filter(j => j.result === 'adicionado').length;
+              const falhouAdd    = allJobs.filter(j => j.result === 'falhou_add').length;
+              const msgJobs      = addGrupoJobs.filter((j: any) => j.action === 'send_msg');
+              const msgPending   = msgJobs.filter(j => !j.done_at).length;
+              const msgEnviada   = msgJobs.filter(j => j.result === 'mensagem_enviada').length;
               const erro         = addGrupoJobs.filter(j => j.result === 'erro').length;
-              const pendingAddGrupo = addGrupoJobs.filter(j => !j.done_at && (j as any).action === 'add_grupo').length;
-              const pendingMsg   = addGrupoJobs.filter(j => !j.done_at && (j as any).action === 'send_msg').length;
-              const nextMsgJob   = addGrupoJobs.find(j => !j.done_at && (j as any).action === 'send_msg');
+              const pct          = total > 0 ? Math.round((done / total) * 100) : 0;
+              const nextMsgJob   = msgJobs.filter(j => !j.done_at).sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime())[0];
               const nextAt       = nextMsgJob ? new Date(nextMsgJob.scheduled_at) : null;
+              // Estimativa: (pending / 7) rodadas × 7 min
+              const etaMin       = pending > 0 ? Math.ceil((pending / 7) * 7) : 0;
 
               return total > 0 ? (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="rounded-lg bg-gray-50 border p-3 text-center">
-                    <div className="text-2xl font-bold text-gray-800">{total}</div>
-                    <div className="text-xs text-gray-500 mt-0.5">Total na fila</div>
-                  </div>
-                  <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-center">
-                    <div className="text-2xl font-bold text-green-700">{added}</div>
-                    <div className="text-xs text-green-600 mt-0.5">Adicionados</div>
-                  </div>
-                  <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-center">
-                    <div className="text-2xl font-bold text-blue-700">{msg}</div>
-                    <div className="text-xs text-blue-600 mt-0.5">Link enviado</div>
-                  </div>
-                  <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-center">
-                    <div className="text-2xl font-bold text-red-700">{erro}</div>
-                    <div className="text-xs text-red-600 mt-0.5">Erro</div>
-                  </div>
-                  {pendingAddGrupo > 0 && (
-                    <div className="col-span-2 sm:col-span-4 rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800 flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
-                      <span>Adicionando ao grupo: <strong>{pendingAddGrupo}</strong> pendentes (processando a cada 2 min)</span>
+                <div className="space-y-3">
+                  {/* Barra de progresso */}
+                  {total > 0 && (
+                    <div>
+                      <div className="flex justify-between text-xs text-gray-500 mb-1">
+                        <span>{done} de {total} processados</span>
+                        <span>{pct}%{pending > 0 ? ` · ~${etaMin} min restantes` : ''}</span>
+                      </div>
+                      <div className="w-full bg-gray-100 rounded-full h-2">
+                        <div
+                          className="bg-green-500 h-2 rounded-full transition-all duration-500"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
                     </div>
                   )}
-                  {pendingMsg > 0 && nextAt && (
-                    <div className="col-span-2 sm:col-span-4 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 flex items-center gap-2">
+
+                  {/* Cards de stats */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="rounded-lg bg-gray-50 border p-3 text-center">
+                      <div className="text-2xl font-bold text-gray-800">{total}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">Total na fila</div>
+                    </div>
+                    <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-center">
+                      <div className="text-2xl font-bold text-green-700">{added}</div>
+                      <div className="text-xs text-green-600 mt-0.5">Adicionados</div>
+                    </div>
+                    <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-center">
+                      <div className="text-2xl font-bold text-blue-700">{msgEnviada}</div>
+                      <div className="text-xs text-blue-600 mt-0.5">Link enviado</div>
+                    </div>
+                    <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-center">
+                      <div className="text-2xl font-bold text-red-700">{erro}</div>
+                      <div className="text-xs text-red-600 mt-0.5">Erro</div>
+                    </div>
+                  </div>
+
+                  {/* Banners de status */}
+                  {pending > 0 && (
+                    <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800 flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
-                      <span>Envio de links: <strong>{pendingMsg}</strong> na fila · Próxima às {nextAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} ({nextAt.toLocaleDateString('pt-BR')})</span>
+                      <span>Adicionando ao grupo: <strong>{pending}</strong> pendentes · 7 por rodada a cada 7 min</span>
                     </div>
                   )}
-                  {pending === 0 && total > 0 && (
-                    <div className="col-span-2 sm:col-span-4 rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-800 flex items-center gap-2">
+                  {falhouAdd > 0 && msgPending > 0 && nextAt && (
+                    <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
+                      <span><strong>{msgPending}</strong> receberão o link · próximo envio às {nextAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                  )}
+                  {pending === 0 && msgPending === 0 && total > 0 && (
+                    <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-800 flex items-center gap-2">
                       <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
-                      Fila concluída! {added} adicionados ao grupo, {msg} receberam o link por mensagem.
+                      Concluído! {added} no grupo, {msgEnviada} receberam o link, {falhouAdd - msgEnviada > 0 ? `${falhouAdd - msgEnviada} pendentes de envio` : ''}.
                     </div>
                   )}
                 </div>
@@ -2762,41 +2796,44 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
                 <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 text-sm text-blue-800">
                   <p className="font-medium mb-1">Como funciona:</p>
                   <ul className="list-disc list-inside space-y-1 text-blue-700">
-                    <li>Tenta adicionar cada lead ao grupo via Evolution API</li>
-                    <li>Se não conseguir (privacidade, número inválido), envia o link por mensagem</li>
-                    <li>Delay aleatório de 15–23 minutos entre cada lead para segurança do WhatsApp</li>
-                    <li>Roda em background — você pode fechar esta janela</li>
+                    <li>Adiciona 7 leads ao grupo a cada 7 minutos</li>
+                    <li>Delay de 3–6s entre cada adição (anti-ban)</li>
+                    <li>Quem não entrar recebe o link por mensagem (15–23 min entre envios)</li>
+                    <li>Roda em background — pode fechar esta janela</li>
                   </ul>
                 </div>
               );
             })()}
 
-            {/* Lista de jobs */}
-            {addGrupoJobs.length > 0 && (
-              <div className="space-y-1.5 max-h-72 overflow-y-auto">
-                {addGrupoJobs.map(job => (
+            {/* Lista de jobs — só add_grupo, concluídos primeiro depois pendentes */}
+            {addGrupoJobs.filter((j: any) => j.action === 'add_grupo').length > 0 && (
+              <div className="space-y-1 max-h-64 overflow-y-auto">
+                {[
+                  ...addGrupoJobs.filter((j: any) => j.action === 'add_grupo' && j.done_at),
+                  ...addGrupoJobs.filter((j: any) => j.action === 'add_grupo' && !j.done_at),
+                ].map(job => (
                   <div key={job.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg border text-sm ${
                     !job.done_at ? 'bg-white border-gray-200' :
                     job.result === 'adicionado' ? 'bg-green-50 border-green-200' :
-                    job.result === 'mensagem_enviada' ? 'bg-blue-50 border-blue-200' :
+                    job.result === 'falhou_add' ? 'bg-amber-50 border-amber-200' :
                     'bg-red-50 border-red-200'
                   }`}>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-gray-800 truncate">{(job.lancamento_leads as any)?.nome ?? job.lead_id}</p>
-                      <p className="text-xs text-gray-500">{(job.lancamento_leads as any)?.whatsapp}</p>
+                      <p className="text-xs text-gray-400">{(job.lancamento_leads as any)?.whatsapp}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
                       {!job.done_at ? (
-                        <span className="text-xs text-gray-500">
-                          {new Date(job.scheduled_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        <span className="text-xs text-gray-400 flex items-center gap-1">
+                          <Loader2 className="h-3 w-3 animate-spin" /> aguardando
                         </span>
                       ) : (
                         <span className={`text-xs font-medium ${
                           job.result === 'adicionado' ? 'text-green-700' :
-                          job.result === 'mensagem_enviada' ? 'text-blue-700' : 'text-red-700'
+                          job.result === 'falhou_add' ? 'text-amber-700' : 'text-red-700'
                         }`}>
-                          {job.result === 'adicionado' ? '✓ Adicionado' :
-                           job.result === 'mensagem_enviada' ? '✉ Link enviado' : '✗ Erro'}
+                          {job.result === 'adicionado' ? '✓ No grupo' :
+                           job.result === 'falhou_add' ? '✉ Link na fila' : '✗ Erro'}
                         </span>
                       )}
                     </div>

@@ -35,7 +35,7 @@ serve(async (req) => {
       .lte('scheduled_at', new Date().toISOString())
       .order('action', { ascending: false }) // add_grupo antes de send_msg
       .order('scheduled_at', { ascending: true })
-      .limit(10);
+      .limit(7);
 
     if (jobsErr) throw new Error(jobsErr.message);
     if (!jobs?.length) return ok({ processed: 0, message: 'nenhum job pendente' });
@@ -83,26 +83,47 @@ serve(async (req) => {
         let addDetail  = '';
 
         try {
-          const addRes = await fetch(`${evoBase}/group/updateParticipant/${evo.instance_name}`, {
-            method: 'PUT',
-            headers,
-            body: JSON.stringify({
-              groupJid: grupoJid,
-              action: 'add',
-              participants: [`${phone}@s.whatsapp.net`],
-            }),
+          const tryAdd = async (method: string, url: string, body: object): Promise<{ ok: boolean; status: number; rawBody: string; json: unknown }> => {
+            const r = await fetch(url, { method, headers, body: JSON.stringify(body) });
+            const rawBody = await r.text();
+            console.log(`grupo-add-worker ${method} ${url}: status=${r.status} body=${rawBody.slice(0, 300)}`);
+            let json: unknown = {};
+            try { json = JSON.parse(rawBody); } catch { /* */ }
+            return { ok: r.ok, status: r.status, rawBody, json };
+          };
+
+          // Tenta v2 PUT
+          let res = await tryAdd('PUT', `${evoBase}/group/updateParticipant/${evo.instance_name}`, {
+            groupJid: grupoJid, action: 'add', participants: [`${phone}@s.whatsapp.net`],
           });
 
-          const addBody = await addRes.json().catch(() => ({}));
+          // Tenta v2 POST se 404
+          if (res.status === 404) {
+            res = await tryAdd('POST', `${evoBase}/group/updateParticipant/${evo.instance_name}`, {
+              groupJid: grupoJid, action: 'add', participants: [`${phone}@s.whatsapp.net`],
+            });
+          }
+
+          // Tenta v1 addParticipant se ainda 404
+          if (res.status === 404) {
+            res = await tryAdd('POST', `${evoBase}/group/addParticipant/${evo.instance_name}`, {
+              groupJid: grupoJid, participants: [`${phone}@s.whatsapp.net`],
+            });
+          }
+
+          const addBody = res.json;
           const pResult = Array.isArray(addBody)
-            ? addBody[0]
-            : (Array.isArray(addBody?.participants) ? addBody.participants[0] : null);
+            ? (addBody as any[])[0]
+            : (Array.isArray((addBody as any)?.participants) ? (addBody as any).participants[0] : null);
           const status = String(pResult?.status ?? pResult?.content ?? '').toLowerCase();
 
-          adicionado = addRes.ok && !status.includes('error') && !status.includes('not-authorized') && !status.includes('participant');
-          addDetail  = `status=${addRes.status} content="${status}"`;
+          adicionado = res.ok && !status.includes('error') && !status.includes('not-authorized') && !status.includes('participant');
+          addDetail  = `status=${res.status} content="${status}"`;
 
           console.log(`grupo-add-worker [add_grupo]: lead=${job.lead_id} phone=${phone} adicionado=${adicionado} ${addDetail}`);
+
+          // Delay anti-ban entre cada adição (3-6 segundos)
+          await new Promise(r => setTimeout(r, 3000 + Math.random() * 3000));
         } catch (e) {
           addDetail = `exception: ${(e as Error).message}`;
           console.warn('grupo-add-worker: erro ao adicionar', addDetail);
