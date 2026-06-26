@@ -1861,24 +1861,21 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
 
     setCreatingAddGrupoJobs(true);
     try {
-      // Cria jobs com delay acumulado aleatório de 15-23 min entre cada lead
-      const now = Date.now();
-      let acumulado = 0;
-      const rows = novosLeads.map(lead => {
-        const delaySecs = (15 + Math.random() * 8) * 60; // 15-23 min em segundos
-        acumulado += delaySecs * 1000;
-        return {
-          lancamento_id: lancamento.id,
-          lead_id: lead.id,
-          scheduled_at: new Date(now + acumulado).toISOString(),
-        };
-      });
+      // Todos os jobs de add_grupo com scheduled_at = agora (imediato)
+      // O worker tenta adicionar ao grupo sem delay.
+      // Quem falhar vira job send_msg com delay 15-23 min (gerado pelo worker)
+      const now = new Date().toISOString();
+      const rows = novosLeads.map(lead => ({
+        lancamento_id: lancamento.id,
+        lead_id: lead.id,
+        action: 'add_grupo',
+        scheduled_at: now,
+      }));
 
       const { error } = await supabase.from('grupo_add_jobs').insert(rows);
       if (error) throw new Error(error.message);
 
-      const duracaoHoras = (acumulado / 1000 / 3600).toFixed(1);
-      toast.success(`${rows.length} leads adicionados à fila. Duração estimada: ~${duracaoHoras}h`);
+      toast.success(`${rows.length} leads na fila — adicionando ao grupo agora. Quem não entrar receberá o link por mensagem (delay 15-23 min entre cada).`);
       await loadAddGrupoJobs();
     } catch (e: unknown) {
       toast.error('Erro ao criar fila: ' + (e as Error).message);
@@ -2706,21 +2703,23 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
               Adicionar ao Grupo de Lançamento
             </DialogTitle>
             <DialogDescription>
-              Cada lead será adicionado ao grupo via Evolution API. Se não for possível, recebe o link por mensagem. Delay: 15–23 min entre cada lead.
+              Tenta adicionar todos ao grupo imediatamente. Quem não entrar recebe o link por mensagem com delay de 15–23 min entre cada envio.
             </DialogDescription>
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto min-h-0 space-y-4 py-2">
             {/* Stats */}
             {(() => {
-              const total   = addGrupoJobs.length;
-              const done    = addGrupoJobs.filter(j => j.done_at).length;
-              const pending = total - done;
-              const added   = addGrupoJobs.filter(j => j.result === 'adicionado').length;
-              const msg     = addGrupoJobs.filter(j => j.result === 'mensagem_enviada').length;
-              const erro    = addGrupoJobs.filter(j => j.result === 'erro').length;
-              const nextJob = addGrupoJobs.find(j => !j.done_at);
-              const nextAt  = nextJob ? new Date(nextJob.scheduled_at) : null;
+              const total        = addGrupoJobs.length;
+              const done         = addGrupoJobs.filter(j => j.done_at).length;
+              const pending      = total - done;
+              const added        = addGrupoJobs.filter(j => j.result === 'adicionado').length;
+              const msg          = addGrupoJobs.filter(j => j.result === 'mensagem_enviada').length;
+              const erro         = addGrupoJobs.filter(j => j.result === 'erro').length;
+              const pendingAddGrupo = addGrupoJobs.filter(j => !j.done_at && (j as any).action === 'add_grupo').length;
+              const pendingMsg   = addGrupoJobs.filter(j => !j.done_at && (j as any).action === 'send_msg').length;
+              const nextMsgJob   = addGrupoJobs.find(j => !j.done_at && (j as any).action === 'send_msg');
+              const nextAt       = nextMsgJob ? new Date(nextMsgJob.scheduled_at) : null;
 
               return total > 0 ? (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -2740,10 +2739,16 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
                     <div className="text-2xl font-bold text-red-700">{erro}</div>
                     <div className="text-xs text-red-600 mt-0.5">Erro</div>
                   </div>
-                  {pending > 0 && nextAt && (
+                  {pendingAddGrupo > 0 && (
+                    <div className="col-span-2 sm:col-span-4 rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800 flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
+                      <span>Adicionando ao grupo: <strong>{pendingAddGrupo}</strong> pendentes (processando a cada 2 min)</span>
+                    </div>
+                  )}
+                  {pendingMsg > 0 && nextAt && (
                     <div className="col-span-2 sm:col-span-4 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
-                      <span><strong>{pending}</strong> pendentes · Próximo às {nextAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} ({nextAt.toLocaleDateString('pt-BR')})</span>
+                      <span>Envio de links: <strong>{pendingMsg}</strong> na fila · Próxima às {nextAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} ({nextAt.toLocaleDateString('pt-BR')})</span>
                     </div>
                   )}
                   {pending === 0 && total > 0 && (
