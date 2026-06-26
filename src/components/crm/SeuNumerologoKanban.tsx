@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
-import { Loader2, Settings, RefreshCw, MapPin, Phone, Mail, Calendar, CheckCircle2, Clock, Send, User } from 'lucide-react';
+import { Loader2, Settings, RefreshCw, MapPin, Phone, Mail, Calendar, CheckCircle2, Clock, Send, User, FileText, Link } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -29,6 +29,7 @@ type Lead = {
   ano_pessoal: number | null;
   status: string | null;
   mapa_enviado: boolean | null;
+  link_mapa: string | null;
   created_at: string | null;
   comprou_at: string | null;
   pago_at: string | null;
@@ -155,23 +156,40 @@ function LeadModal({
   onUpdate: (id: string, patch: Partial<Lead>) => void;
 }) {
   const [saving, setSaving] = useState(false);
-  const [obs, setObs] = useState('');
+  const [linkMapa, setLinkMapa] = useState('');
+
+  useEffect(() => {
+    if (lead) setLinkMapa(lead.link_mapa ?? '');
+  }, [lead?.id]);
 
   if (!lead) return null;
 
   const nums: (keyof Lead)[] = ['alma', 'imagem', 'expressao', 'talento', 'psiquico', 'destino', 'ano_pessoal'];
 
   const handleMarkMapaEnviado = async () => {
+    if (!linkMapa.trim()) { toast.error('Insira o link do PDF antes de marcar como enviado'); return; }
     setSaving(true);
     const { error } = await supabase
       .from('seu_numerologo_leads')
-      .update({ mapa_enviado: true })
+      .update({ mapa_enviado: true, link_mapa: linkMapa.trim() })
       .eq('id', lead.id);
     setSaving(false);
     if (error) { toast.error('Erro ao atualizar'); return; }
     toast.success('Mapa marcado como enviado!');
-    onUpdate(lead.id, { mapa_enviado: true });
+    onUpdate(lead.id, { mapa_enviado: true, link_mapa: linkMapa.trim() });
     onClose();
+  };
+
+  const handleSaveLink = async () => {
+    setSaving(true);
+    const { error } = await supabase
+      .from('seu_numerologo_leads')
+      .update({ link_mapa: linkMapa.trim() || null })
+      .eq('id', lead.id);
+    setSaving(false);
+    if (error) { toast.error('Erro ao salvar'); return; }
+    toast.success('Link salvo!');
+    onUpdate(lead.id, { link_mapa: linkMapa.trim() || null });
   };
 
   return (
@@ -240,18 +258,44 @@ function LeadModal({
             </div>
           )}
 
-          {!lead.mapa_enviado && lead.pago_at && (
-            <Button onClick={handleMarkMapaEnviado} disabled={saving} className="w-full gap-2">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              Marcar Mapa como Enviado
-            </Button>
-          )}
-          {lead.mapa_enviado && (
+          {/* PDF link */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+              <FileText className="w-3.5 h-3.5" /> Link do PDF
+            </label>
+            <div className="flex gap-2">
+              <Input
+                placeholder="https://drive.google.com/..."
+                value={linkMapa}
+                onChange={e => setLinkMapa(e.target.value)}
+                className="flex-1 text-sm"
+              />
+              {linkMapa.trim() && linkMapa !== (lead.link_mapa ?? '') && (
+                <Button variant="outline" size="sm" onClick={handleSaveLink} disabled={saving}>
+                  Salvar
+                </Button>
+              )}
+              {lead.link_mapa && (
+                <a href={lead.link_mapa} target="_blank" rel="noopener noreferrer">
+                  <Button variant="outline" size="sm" className="gap-1">
+                    <Link className="w-3.5 h-3.5" /> Abrir
+                  </Button>
+                </a>
+              )}
+            </div>
+          </div>
+
+          {lead.mapa_enviado ? (
             <div className="flex items-center gap-2 text-emerald-600 text-sm font-medium">
               <CheckCircle2 className="w-4 h-4" />
               Mapa já enviado
             </div>
-          )}
+          ) : lead.pago_at ? (
+            <Button onClick={handleMarkMapaEnviado} disabled={saving || !linkMapa.trim()} className="w-full gap-2">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              Marcar Mapa como Enviado
+            </Button>
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>
@@ -314,7 +358,7 @@ function ConfigModal({
     { key: 'compra' as const, label: 'Compra Confirmada', field: 'mensagem_compra_template' as keyof Config,
       hint: 'Enviada quando o pagamento é confirmado. Variáveis: {{nome}}' },
     { key: 'mapa' as const, label: 'Envio do Mapa', field: 'mensagem_envio_mapa' as keyof Config,
-      hint: 'Template para envio do mapa. Variáveis: {{nome}}, {{alma}}, {{imagem}}, {{expressao}}, {{talento}}, {{psiquico}}, {{destino}}, {{ano_pessoal}}' },
+      hint: 'Template para envio do PDF. Variáveis: {{nome}}, {{link_mapa}}, {{alma}}, {{imagem}}, {{expressao}}, {{talento}}, {{psiquico}}, {{destino}}, {{ano_pessoal}}' },
   ];
 
   const activeTabData = tabs.find(t => t.key === activeTab)!;
