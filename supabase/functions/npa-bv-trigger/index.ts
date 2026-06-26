@@ -80,14 +80,26 @@ serve(async (req) => {
     const number = `${phone}@whatsapp.net`;
 
     // ── Envia WPP ─────────────────────────────────────────────────────────
-    const res = await fetch(`${evoBase}/message/sendText/${evo.instance_name}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: evo.api_key as string },
-      body: JSON.stringify({ number, text: mensagem, delay: 1200 }),
-    });
+    const sendMsg = async (text: string) => {
+      const r = await fetch(`${evoBase}/message/sendText/${evo.instance_name}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: evo.api_key as string },
+        body: JSON.stringify({ number, text, delay: 1200 }),
+      });
+      if (!r.ok) console.warn(`npa-bv-trigger sendMsg ${r.status}`);
+      return r.ok;
+    };
 
-    const sent = res.ok;
-    console.log(`npa-bv-trigger: lead=${lead_id} evento="${evento.nome}" sent=${sent} status=${res.status}`);
+    const sent = await sendMsg(mensagem);
+    console.log(`npa-bv-trigger: lead=${lead_id} evento="${evento.nome}" sent=${sent}`);
+
+    // Envia link do grupo separado se o template não incluiu o link
+    if (sent && linkGrupo && !mensagem.includes(linkGrupo)) {
+      await new Promise(r => setTimeout(r, 2000));
+      await sendMsg(
+        `🚨 IMPORTANTE — ENTRE NO GRUPO VIP!\nTodas as orientações do evento serão enviadas pelo grupo dos alunos.\n\n👉 Entre agora:\n${linkGrupo}`,
+      );
+    }
 
     if (sent) {
       await supabase

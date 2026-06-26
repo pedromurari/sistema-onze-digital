@@ -138,11 +138,22 @@ function getPhasePayload(newPhase: NPAPhase): Record<string, boolean> {
 
 const BOAS_VINDAS_FALLBACK = `🌟 Bem-vindo(a) ao {{evento_nome}}!\nSua inscrição está confirmada! 🙌\n\nAguarde as próximas mensagens com informações do evento.\n\nQualquer dúvida, estamos por aqui!`;
 
+async function sendWppDirect(numero: string, mensagem: string): Promise<boolean> {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+  const res = await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+    body: JSON.stringify({ numero, mensagem, typing_delay_ms: 2000 }),
+  });
+  return res.ok;
+}
+
 async function sendBoasVindasLead(
   lead: { id: string; nome: string; whatsapp: string; turma: string },
   nomeEvento: string,
   onSent: (patch: { bv_enviado: boolean; bv_enviado_em: string }) => Promise<void>,
-) {
+): Promise<boolean> {
   try {
     const { data: fConfig } = await supabase
       .from('funnel_configs')
@@ -155,28 +166,39 @@ async function sendBoasVindasLead(
       ? (variaveis['bv_wpp_tarde'] || variaveis['bv_wpp_manha'])
       : variaveis['bv_wpp_manha'];
 
+    const linkGrupo = lead.turma === 'tarde'
+      ? (variaveis['link_grupo_tarde'] || variaveis['link_grupo_2'] || variaveis['link_grupo_manha'] || '')
+      : (variaveis['link_grupo_manha'] || variaveis['link_grupo_1'] || '');
+
     const mensagem = (tpl || BOAS_VINDAS_FALLBACK)
       .replace(/\{\{nome\}\}/g, lead.nome || 'você')
       .replace(/\{\{evento_nome\}\}/g, nomeEvento)
       .replace(/\{\{turma\}\}/g, lead.turma === 'manha' ? 'Manhã' : 'Tarde')
-      .replace(/\{\{link_grupo_manha\}\}/g, variaveis['link_grupo_manha'] || '')
-      .replace(/\{\{link_grupo_tarde\}\}/g, variaveis['link_grupo_tarde'] || '')
-      .replace(/\{\{link_grupo\}\}/g, lead.turma === 'tarde'
-        ? (variaveis['link_grupo_tarde'] || variaveis['link_grupo_manha'] || '')
-        : (variaveis['link_grupo_manha'] || ''));
+      .replace(/\{\{link_grupo_manha\}\}/g, variaveis['link_grupo_manha'] || variaveis['link_grupo_1'] || '')
+      .replace(/\{\{link_grupo_tarde\}\}/g, variaveis['link_grupo_tarde'] || variaveis['link_grupo_2'] || '')
+      .replace(/\{\{link_grupo\}\}/g, linkGrupo);
 
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+    const ok = await sendWppDirect(lead.whatsapp, mensagem);
+    if (!ok) {
+      toast.error(`Erro ao enviar para ${lead.nome} — verifique o WhatsApp`);
+      return false;
+    }
 
-    await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
-      body: JSON.stringify({ numero: lead.whatsapp, mensagem, typing_delay_ms: 2000 }),
-    });
+    // Envia link do grupo separado se o template não incluiu {{link_grupo}}
+    if (linkGrupo && !mensagem.includes(linkGrupo)) {
+      await new Promise(r => setTimeout(r, 2000));
+      await sendWppDirect(
+        lead.whatsapp,
+        `🚨 IMPORTANTE — ENTRE NO GRUPO VIP!\nTodas as orientações do evento serão enviadas pelo grupo dos alunos.\n\n👉 Entre agora:\n${linkGrupo}`,
+      );
+    }
 
     await onSent({ bv_enviado: true, bv_enviado_em: new Date().toISOString() });
+    return true;
   } catch (e) {
     console.error('sendBoasVindasLead error:', (e as Error).message);
+    toast.error(`Erro ao enviar para ${lead.nome}: ${(e as Error).message}`);
+    return false;
   }
 }
 
