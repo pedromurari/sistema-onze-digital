@@ -431,6 +431,7 @@ export function SeuNumerologoKanban() {
       supabase
         .from('seu_numerologo_leads')
         .select('*')
+        .eq('produto', 'Mapa Numerológico Pitagórico Aplicado - SN')
         .order('created_at', { ascending: false }),
       supabase
         .from('seu_numerologo_config')
