@@ -911,7 +911,7 @@ export function Financeiro() {
       const [turmasRes, alunosRes, pagamentosRes] = await Promise.all([
         supabase.from('turmas').select('id, nome, produto, tipo, data_inicio, data_fim, valor_mensalidade, total_mensalidades, responsavel_id, created_at').order('created_at', { ascending: false }),
         supabase.from('alunos').select(ALUNOS_SELECT_FULL).order('created_at', { ascending: false }),
-        supabase.from('pagamentos').select('id, aluno_id, turma_id, produto, valor, mes_referencia, data_vencimento, data_pagamento, numero_parcela, status, created_at').order('created_at', { ascending: false }),
+        supabase.from('pagamentos').select('id, aluno_id, turma_id, produto, valor, mes_referencia, data_vencimento, data_pagamento, numero_parcela, status, created_at').order('created_at', { ascending: false }).limit(10000),
       ]);
       if (turmasRes.data) setTurmas(turmasRes.data);
       if (alunosRes.data) {
