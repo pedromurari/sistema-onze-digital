@@ -1295,8 +1295,12 @@ export function Financeiro() {
     customTotal?: number;
     isIsento?: boolean;
   }) => {
-    const existentes = pagamentos
-      .filter(p => p.aluno_id === alunoId)
+    // Busca direto do banco para garantir estado atual completo (evita duplicatas por estado React desatualizado)
+    const { data: dbPagamentos } = await supabase
+      .from('pagamentos')
+      .select('id, aluno_id, turma_id, produto, valor, mes_referencia, data_vencimento, data_pagamento, numero_parcela, status, created_at')
+      .eq('aluno_id', alunoId);
+    const existentes = (dbPagamentos ?? [])
       .sort((a, b) => (a.numero_parcela || 0) - (b.numero_parcela || 0));
 
     if (isIsento) {
