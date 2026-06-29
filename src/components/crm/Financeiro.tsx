@@ -2427,9 +2427,9 @@ export function Financeiro() {
                             const dueDay = getAlunoDueDay(aluno, parcelasAluno);
                             const expectedTotal = paymentMethodTotal(method);
                             const total = method === 'boleto'
-                              ? (parcelasAluno.length || aluno.total_mensalidades || turma?.total_mensalidades || expectedTotal)
+                              ? (aluno.total_mensalidades || turma?.total_mensalidades || parcelasAluno.length || expectedTotal)
                               : expectedTotal;
-                            const pagas = method === 'boleto' ? parcelasAluno.filter(p => p.status === 'pago').length : expectedTotal;
+                            const pagas = method === 'boleto' ? (aluno.mensalidades_pagas ?? parcelasAluno.filter(p => p.status === 'pago').length) : expectedTotal;
                             const abertas = method === 'boleto'
                               ? parcelasAluno.filter(p => p.status !== 'pago').sort((a, b) => String(a.data_vencimento).localeCompare(String(b.data_vencimento)))
                               : [];
