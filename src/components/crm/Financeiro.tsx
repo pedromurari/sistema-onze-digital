@@ -1105,9 +1105,11 @@ export function Financeiro() {
   };
 
   const pagamentosEmFoco = useMemo(() => {
-    if (selectedTurmaId === 'todas') return filteredPagamentos;
-    return filteredPagamentos.filter(p => p.turma_id === selectedTurmaId);
-  }, [filteredPagamentos, selectedTurmaId]);
+    const alunosAtivos = new Set(alunos.filter(a => a.status !== 'cancelado').map(a => a.id));
+    const base = filteredPagamentos.filter(p => alunosAtivos.has(p.aluno_id));
+    if (selectedTurmaId === 'todas') return base;
+    return base.filter(p => p.turma_id === selectedTurmaId);
+  }, [filteredPagamentos, selectedTurmaId, alunos]);
 
   const receitaMes = useMemo(() => pagamentosEmFoco.filter(p => p.status === 'pago' && periodoFilter(p.data_pagamento)).reduce((s, p) => s + p.valor, 0), [pagamentosEmFoco, periodo]);
   const previstoMes = useMemo(() => pagamentosEmFoco.filter(p => periodoFilter(p.data_vencimento)).reduce((s, p) => s + p.valor, 0), [pagamentosEmFoco, periodo]);
