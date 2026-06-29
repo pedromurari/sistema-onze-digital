@@ -40,6 +40,7 @@ export function CalendarioGeralView({ tarefas, lancamentos, npaEventos, eventosC
   const [showCreateEvento, setShowCreateEvento] = useState(false);
   const [criando, setCriando] = useState(false);
   const [eventoForm, setEventoForm] = useState({ titulo: '', descricao: '', data_inicio: '', data_fim: '', cor: '#3b82f6' });
+  const [diaClickadoKey, setDiaClickadoKey] = useState<string | null>(null);
 
   const [selectedEvento, setSelectedEvento] = useState<EventoDia | null>(null);
   const [showEventoModal, setShowEventoModal] = useState(false);
@@ -126,6 +127,8 @@ export function CalendarioGeralView({ tarefas, lancamentos, npaEventos, eventosC
   };
 
   const handleDiaClick = (dia: Date) => {
+    const key = format(dia, 'yyyy-MM-dd');
+    setDiaClickadoKey(key);
     setEventoForm({ titulo: '', descricao: '', data_inicio: format(dia, "yyyy-MM-dd'T'HH:mm"), data_fim: format(dia, "yyyy-MM-dd'T'HH:mm"), cor: '#3b82f6' });
     setShowCreateEvento(true);
   };
@@ -372,6 +375,30 @@ export function CalendarioGeralView({ tarefas, lancamentos, npaEventos, eventosC
             <DialogHeader className="mb-4">
               <DialogTitle className="text-lg font-bold">Novo Evento</DialogTitle>
             </DialogHeader>
+
+            {/* Eventos já existentes neste dia */}
+            {diaClickadoKey && (() => {
+              const existentes = (getEventosPorDia[diaClickadoKey] ?? []).filter(e => e.tipo !== 'tarefa');
+              if (!existentes.length) return null;
+              return (
+                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                  <p className="text-xs font-semibold text-amber-700 mb-2">Já existe neste dia — selecione para abrir:</p>
+                  <div className="space-y-1.5">
+                    {existentes.map(ev => (
+                      <button key={ev.id}
+                        className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm text-left hover:bg-amber-100 transition-colors"
+                        onClick={() => { setShowCreateEvento(false); handleEventoClick(ev); }}>
+                        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: ev.cor }}/>
+                        <span className="font-medium truncate">{ev.titulo}</span>
+                        <span className="ml-auto text-[10px] text-amber-500 uppercase font-medium flex-shrink-0">{TIPO_LABEL[ev.tipo]}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-amber-500 mt-2">Ou crie um novo evento abaixo ↓</p>
+                </div>
+              );
+            })()}
+
             <div className="space-y-3">
               <div>
                 <label className="text-xs font-medium text-gray-500 mb-1 block">Título *</label>
