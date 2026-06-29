@@ -908,10 +908,9 @@ export function Financeiro() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [turmasRes, alunosRes, pagamentosRes] = await Promise.all([
+      const [turmasRes, alunosRes] = await Promise.all([
         supabase.from('turmas').select('id, nome, produto, tipo, data_inicio, data_fim, valor_mensalidade, total_mensalidades, responsavel_id, created_at').order('created_at', { ascending: false }),
         supabase.from('alunos').select(ALUNOS_SELECT_FULL).order('created_at', { ascending: false }),
-        supabase.from('pagamentos').select('id, aluno_id, turma_id, produto, valor, mes_referencia, data_vencimento, data_pagamento, numero_parcela, status, created_at').order('created_at', { ascending: false }).limit(10000),
       ]);
       if (turmasRes.data) setTurmas(turmasRes.data);
       if (alunosRes.data) {
@@ -921,7 +920,20 @@ export function Financeiro() {
         const { data: fallback } = await supabase.from('alunos').select(ALUNOS_SELECT_BASE).order('created_at', { ascending: false });
         if (fallback) setAlunos(fallback);
       }
-      if (pagamentosRes.data) setPagamentos(pagamentosRes.data);
+      // Busca todos os pagamentos em lotes de 1000 para contornar limite do servidor
+      const PAGE = 1000;
+      const allPags: any[] = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data } = await supabase
+          .from('pagamentos')
+          .select('id, aluno_id, turma_id, produto, valor, mes_referencia, data_vencimento, data_pagamento, numero_parcela, status, created_at')
+          .order('created_at', { ascending: false })
+          .range(from, from + PAGE - 1);
+        if (!data?.length) break;
+        allPags.push(...data);
+        if (data.length < PAGE) break;
+      }
+      setPagamentos(allPags);
       // Responsaveis e opcional (tabela pode nao existir ainda)
       const respRes = await supabase.from('responsaveis').select('id, nome, created_at').order('nome');
       if (respRes.data) setResponsaveis(respRes.data);
