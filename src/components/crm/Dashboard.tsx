@@ -345,19 +345,40 @@ export function Dashboard() {
 
   const taxaColeta = mrrEfetivo > 0 ? Math.round((recebidoMes / mrrEfetivo) * 100) : 0;
 
-  const alunoInadimplentesIds = useMemo(() =>
-    new Set(pagamentos.filter(p => p.status === 'atrasado').map(p => p.aluno_id)),
-  [pagamentos]);
+  const hojeStr = useMemo(() => {
+    const d = new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0, 10);
+  }, []);
 
-  const inadimplentesCount = useMemo(() =>
-    alunos.filter(a => a.status === 'inadimplente' && (!ownerAlunoIds || ownerAlunoIds.has(a.id))).length,
-  [alunos, ownerAlunoIds]);
+  const pagamentosAtrasados = useMemo(() =>
+    pagamentos.filter(p =>
+      p.status === 'atrasado' ||
+      (p.status === 'pendente' && p.data_vencimento && p.data_vencimento < hojeStr)
+    ),
+  [pagamentos, hojeStr]);
+
+  const alunoInadimplentesIds = useMemo(() =>
+    new Set(pagamentosAtrasados.map(p => p.aluno_id)),
+  [pagamentosAtrasados]);
+
+  const ativosIds = useMemo(() =>
+    new Set(alunos.filter(a => a.status === 'ativo').map(a => a.id)),
+  [alunos]);
+
+  const inadimplentesCount = useMemo(() => {
+    let count = 0;
+    for (const id of alunoInadimplentesIds) {
+      if (!ativosIds.has(id)) continue;
+      if (ownerAlunoIds && !ownerAlunoIds.has(id)) continue;
+      count++;
+    }
+    return count;
+  }, [alunoInadimplentesIds, ativosIds, ownerAlunoIds]);
 
   const valorInadimplente = useMemo(() =>
-    pagamentos
-      .filter(p => p.status === 'atrasado' && (!ownerAlunoIds || ownerAlunoIds.has(p.aluno_id)))
+    pagamentosAtrasados
+      .filter(p => (!ownerAlunoIds || ownerAlunoIds.has(p.aluno_id)))
       .reduce((s, p) => s + p.valor, 0),
-  [pagamentos, ownerAlunoIds]);
+  [pagamentosAtrasados, ownerAlunoIds]);
 
   // Receita restante (parcelas futuras ainda a receber)
   const receitaRestante = useMemo(() => {
