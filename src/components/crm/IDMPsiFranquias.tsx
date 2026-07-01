@@ -180,10 +180,11 @@ export function IDMPsiFranquias() {
   // ── Actions ─────────────────────────────────────────────────────────────
 
   const pegarLead = async (leadId: string, vendedorId: string) => {
-    const { error } = await supabase.from('franquia_leads').update({ vendedor_id: vendedorId }).eq('id', leadId);
+    const vid = vendedorId || null;
+    const { error } = await supabase.from('franquia_leads').update({ vendedor_id: vid }).eq('id', leadId);
     if (error) { toast.error('Erro ao atribuir lead'); return; }
-    toast.success('Lead atribuído!');
-    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, vendedor_id: vendedorId } : l));
+    toast.success(vid ? 'Lead atribuído!' : 'Vendedor removido');
+    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, vendedor_id: vid as any } : l));
   };
 
   const mudarFase = async (leadId: string, novaFase: Fase) => {
@@ -354,6 +355,72 @@ export function IDMPsiFranquias() {
           <Badge variant="outline" className="gap-1 border-green-200 text-green-700">{leadsAtribuidos.length} atribuídos</Badge>
         </div>
       </div>
+
+      {/* ── Tabela de Leads ─────────────────────────────────────────────── */}
+      <Card className="border border-border overflow-hidden">
+        <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
+          <p className="text-sm font-semibold text-foreground">Todos os Leads</p>
+          <Badge variant="outline">{filteredLeads.length} leads</Badge>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/20">
+                <th className="px-4 py-2 text-left font-medium text-muted-foreground">Nome</th>
+                <th className="px-4 py-2 text-left font-medium text-muted-foreground">WhatsApp</th>
+                <th className="px-4 py-2 text-left font-medium text-muted-foreground">Email</th>
+                <th className="px-4 py-2 text-left font-medium text-muted-foreground">Cidade/UF</th>
+                <th className="px-4 py-2 text-left font-medium text-muted-foreground">Fase</th>
+                <th className="px-4 py-2 text-left font-medium text-muted-foreground">Vendedor</th>
+                <th className="px-4 py-2 text-left font-medium text-muted-foreground">Entrada</th>
+                <th className="px-4 py-2 w-10"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredLeads.length === 0 ? (
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">Nenhum lead encontrado</td></tr>
+              ) : filteredLeads.map(lead => {
+                const faseInfo = FASE_MAP[lead.fase];
+                return (
+                  <tr key={lead.id} className="border-b border-border/50 hover:bg-muted/10 cursor-pointer" onClick={() => setEditLead(lead)}>
+                    <td className="px-4 py-2.5 font-medium text-foreground">{lead.nome}</td>
+                    <td className="px-4 py-2.5 text-muted-foreground">{lead.whatsapp || '—'}</td>
+                    <td className="px-4 py-2.5 text-muted-foreground">{lead.email || '—'}</td>
+                    <td className="px-4 py-2.5 text-muted-foreground">{lead.cidade ? `${lead.cidade}${lead.estado ? `/${lead.estado}` : ''}` : '—'}</td>
+                    <td className="px-4 py-2.5">
+                      <Select value={lead.fase} onValueChange={(v) => { mudarFase(lead.id, v as Fase); }}>
+                        <SelectTrigger className={`h-7 text-xs w-[140px] border ${faseInfo?.bg || ''} ${faseInfo?.color || ''}`} onClick={e => e.stopPropagation()}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {FASES.map(f => <SelectItem key={f.key} value={f.key}>{f.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <Select value={lead.vendedor_id || 'nenhum'} onValueChange={(v) => { pegarLead(lead.id, v === 'nenhum' ? '' : v); }}>
+                        <SelectTrigger className="h-7 text-xs w-[130px] border-border" onClick={e => e.stopPropagation()}>
+                          <SelectValue placeholder="Atribuir..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="nenhum">Sem vendedor</SelectItem>
+                          {vendedores.map(v => <SelectItem key={v.id} value={v.id}>{v.nome}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-muted-foreground">{new Date(lead.created_at).toLocaleDateString('pt-BR')}</td>
+                    <td className="px-4 py-2.5">
+                      <button onClick={(e) => { e.stopPropagation(); setEditLead(lead); }} className="p-1 rounded hover:bg-muted">
+                        <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
       {/* ── Pool de Leads Não Atribuídos ─────────────────────────────────── */}
       {leadsNaoAtribuidos.length > 0 && (
