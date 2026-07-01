@@ -40,6 +40,7 @@ const BASE_MENU: MenuItem[] = [
   { group: 'lancamentos_legado',       label: 'Semana do Despertar', icon: Rocket,       children: [] },
   { group: 'npa_dinamico',            label: 'IDM Pelo Brasil',       icon: BarChart3,    children: [] },
   { group: 'aula_secreta',            label: 'Aula Secreta',         icon: Rocket,       children: [] },
+  { key: 'franquia_psi',              label: 'IDM PSI Franquias',    icon: TrendingUp },
   { key: 'funil_lancamento',          label: 'Funil de Lançamento',  icon: GitBranch },
   { key: 'disparos_monitor',          label: 'Central de Disparos',  icon: Radio },
   // Financeiro
