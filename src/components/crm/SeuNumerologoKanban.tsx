@@ -31,6 +31,7 @@ type Lead = {
   mapa_enviado: boolean | null;
   link_mapa: string | null;
   created_at: string | null;
+  calculou_at: string | null;
   comprou_at: string | null;
   pago_at: string | null;
   utm_campaign: string | null;
@@ -46,16 +47,18 @@ type Config = {
 // ── Column config ────────────────────────────────────────────────────────────
 
 const COLUMNS: { key: string; label: string; color: string; bg: string }[] = [
-  { key: 'lead',                  label: 'Leads',                  color: 'text-slate-600',   bg: 'bg-slate-50 border-slate-200' },
-  { key: 'aguardando_pagamento',  label: 'Aguardando Pagamento',   color: 'text-amber-600',   bg: 'bg-amber-50 border-amber-200' },
-  { key: 'pago',                  label: 'Pago — Mapa Pendente',   color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200' },
-  { key: 'mapa_enviado',          label: 'Mapa Enviado',           color: 'text-violet-600',  bg: 'bg-violet-50 border-violet-200' },
+  { key: 'lead',       label: 'Leads',                color: 'text-slate-600',   bg: 'bg-slate-50 border-slate-200' },
+  { key: 'calculou',   label: 'Calculou',             color: 'text-sky-600',     bg: 'bg-sky-50 border-sky-200' },
+  { key: 'checkout',   label: 'Aguardando Pagamento', color: 'text-amber-600',   bg: 'bg-amber-50 border-amber-200' },
+  { key: 'pago',       label: 'Pago — Mapa Pendente', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200' },
+  { key: 'mapa_enviado', label: 'Mapa Enviado',       color: 'text-violet-600',  bg: 'bg-violet-50 border-violet-200' },
 ];
 
 function getColumn(lead: Lead): string {
   if (lead.mapa_enviado) return 'mapa_enviado';
   if (lead.pago_at) return 'pago';
-  if (lead.status === 'aguardando_pagamento' || lead.comprou_at) return 'aguardando_pagamento';
+  if (lead.status === 'checkout') return 'checkout';
+  if (lead.status === 'calculou' || lead.calculou_at) return 'calculou';
   return 'lead';
 }
 
@@ -89,7 +92,8 @@ function NumBadge({ k, v }: { k: string; v: number | null }) {
 
 function LeadCard({ lead, onClick }: { lead: Lead; onClick: () => void }) {
   const nums: (keyof Lead)[] = ['alma', 'imagem', 'expressao', 'talento', 'psiquico', 'destino', 'ano_pessoal'];
-  const hasNumbers = nums.some(k => lead[k] != null);
+  const col = getColumn(lead);
+  const showNumbers = col !== 'lead' && nums.some(k => lead[k] != null);
 
   return (
     <div
@@ -103,8 +107,8 @@ function LeadCard({ lead, onClick }: { lead: Lead; onClick: () => void }) {
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-foreground truncate">{lead.nome || 'Sem nome'}</p>
-            {lead.produto && (
-              <p className="text-[10px] text-muted-foreground truncate">{lead.produto}</p>
+            {lead.data_nascimento && (
+              <p className="text-[10px] text-muted-foreground truncate">{lead.data_nascimento}</p>
             )}
           </div>
         </div>
@@ -113,14 +117,7 @@ function LeadCard({ lead, onClick }: { lead: Lead; onClick: () => void }) {
         )}
       </div>
 
-      {lead.data_nascimento && (
-        <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-          <Calendar className="w-3 h-3" />
-          {lead.data_nascimento}
-        </div>
-      )}
-
-      {hasNumbers && (
+      {showNumbers && (
         <div className="flex flex-wrap gap-1">
           {nums.map(k => (
             <NumBadge key={k as string} k={k as string} v={lead[k] as number | null} />
@@ -133,6 +130,12 @@ function LeadCard({ lead, onClick }: { lead: Lead; onClick: () => void }) {
           <Clock className="w-2.5 h-2.5" />
           {lead.created_at ? new Date(lead.created_at).toLocaleDateString('pt-BR') : '—'}
         </span>
+        {lead.calculou_at && col === 'calculou' && (
+          <span className="text-sky-600 font-medium flex items-center gap-0.5">
+            <Clock className="w-2.5 h-2.5" />
+            {new Date(lead.calculou_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+          </span>
+        )}
         {lead.pago_at && (
           <span className="text-emerald-600 font-medium flex items-center gap-0.5">
             <CheckCircle2 className="w-2.5 h-2.5" />
@@ -236,13 +239,17 @@ function LeadModal({
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2 text-xs">
+          <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="bg-muted/40 rounded p-2">
               <p className="text-muted-foreground mb-0.5">Criado em</p>
               <p className="font-medium">{lead.created_at ? new Date(lead.created_at).toLocaleDateString('pt-BR') : '—'}</p>
             </div>
             <div className="bg-muted/40 rounded p-2">
-              <p className="text-muted-foreground mb-0.5">Comprou em</p>
+              <p className="text-muted-foreground mb-0.5">Calculou em</p>
+              <p className="font-medium">{lead.calculou_at ? new Date(lead.calculou_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</p>
+            </div>
+            <div className="bg-muted/40 rounded p-2">
+              <p className="text-muted-foreground mb-0.5">Checkout em</p>
               <p className="font-medium">{lead.comprou_at ? new Date(lead.comprou_at).toLocaleDateString('pt-BR') : '—'}</p>
             </div>
             <div className="bg-muted/40 rounded p-2">
@@ -470,7 +477,7 @@ export function SeuNumerologoKanban() {
             <MapPin className="w-5 h-5 text-violet-500" />
             Mapa 7 Esperas
           </h1>
-          <p className="text-xs text-muted-foreground">{leads.length} comprador{leads.length !== 1 ? 'es' : ''}</p>
+          <p className="text-xs text-muted-foreground">{leads.length} lead{leads.length !== 1 ? 's' : ''}</p>
         </div>
         <div className="flex items-center gap-2">
           <Input
@@ -514,7 +521,7 @@ export function SeuNumerologoKanban() {
                   <div className={cn('flex-1 overflow-y-auto rounded-b-lg border p-2 space-y-2 min-h-[300px]', col.bg)}>
                     {items.length === 0 ? (
                       <div className="flex items-center justify-center h-24 text-muted-foreground/50 text-xs">
-                        Nenhum comprador
+                        Nenhum lead
                       </div>
                     ) : (
                       items.map(lead => (

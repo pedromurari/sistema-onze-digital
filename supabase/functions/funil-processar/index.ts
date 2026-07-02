@@ -135,7 +135,7 @@ serve(async (req) => {
     // ── Scheduled batch (chamado pelo pg_cron ou cron externo) ────────────────
     const now         = new Date();
     const windowEnd   = new Date(now.getTime() + 6 * 60 * 1000);   // +6 min (próxima execução do cron)
-    const windowStart = new Date(now.getTime() - 10 * 60 * 1000);  // -10 min (tolerância para atrasos)
+    const windowStart = new Date(now.getTime() - 30 * 60 * 1000);  // -30 min (tolerância para atrasos + retries)
 
     // EARLY EXIT: COUNT barato antes de buscar dados ou abrir conexão com Evolution
     const [{ count: funnelCount }, { count: bvCount }] = await Promise.all([
@@ -192,6 +192,18 @@ serve(async (req) => {
 
     let processed = 0;
     for (const msg of pending ?? []) {
+      // Claim atômico: marca como 'sent' ANTES de enviar — evita duplicata se o cron sobrepõe
+      const { data: claimedRows } = await supabase
+        .from('funnel_messages')
+        .update({ status: 'sent', sent_at: new Date().toISOString(), error_message: null })
+        .eq('id', msg.id)
+        .eq('status', 'scheduled')
+        .select('id');
+
+      if (!claimedRows?.length) {
+        continue;
+      }
+
       try {
         const { data: funnelCfg } = await supabase
           .from('funnel_configs')
@@ -200,10 +212,12 @@ serve(async (req) => {
           .maybeSingle();
 
         let lastErr: Error | null = null;
+        let usedInstance = '';
         for (const { base, instance, apikey } of evoInstances) {
           try {
             await processMessage(msg, base, instance, apikey, supabase, funnelCfg);
             lastErr = null;
+            usedInstance = instance;
             break;
           } catch (e) {
             lastErr = e as Error;
@@ -214,17 +228,30 @@ serve(async (req) => {
 
         await supabase
           .from('funnel_messages')
-          .update({ status: 'sent', sent_at: new Date().toISOString(), error_message: null })
+          .update({ error_message: `ok:${usedInstance}` })
           .eq('id', msg.id);
 
         processed++;
-        // Pequena pausa entre mensagens para não sobrecarregar a API
         await new Promise(r => setTimeout(r, 1500));
       } catch (e: unknown) {
-        await supabase
-          .from('funnel_messages')
-          .update({ status: 'error', error_message: (e as Error).message })
-          .eq('id', msg.id);
+        const errMsg = (e as Error).message;
+        const prevRetries = (msg.error_message ?? '').match(/\[retry (\d+)\]/);
+        const retryCount = prevRetries ? parseInt(prevRetries[1]) : 0;
+        const scheduledTime = new Date(msg.scheduled_at).getTime();
+        const maxRetryWindow = 30 * 60 * 1000;
+
+        if (retryCount < 3 && (now.getTime() - scheduledTime) < maxRetryWindow) {
+          await supabase
+            .from('funnel_messages')
+            .update({ status: 'scheduled', sent_at: null, error_message: `[retry ${retryCount + 1}] ${errMsg}` })
+            .eq('id', msg.id);
+          console.warn(`funil-processar: msg ${msg.id} falhou, retry ${retryCount + 1}/3`);
+        } else {
+          await supabase
+            .from('funnel_messages')
+            .update({ status: 'error', error_message: errMsg })
+            .eq('id', msg.id);
+        }
       }
     }
 

@@ -33,10 +33,105 @@ function fmt(tpl: string, vars: Record<string, string>): string {
 function dateLabel(iso: string | null | undefined): string {
   if (!iso) return '';
   try {
-    return new Date(iso).toLocaleDateString('pt-BR', {
+    // Append T12:00:00 to avoid UTC midnight shifting to previous day in America/Sao_Paulo
+    const d = new Date(iso.includes('T') ? iso : `${iso}T12:00:00`);
+    return d.toLocaleDateString('pt-BR', {
       timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric',
     });
   } catch { return iso; }
+}
+
+// ── Seu Numerólogo handler ────────────────────────────────────────────────────
+
+async function processNumerologa(opts: {
+  supabase: ReturnType<typeof createClient>;
+  eventType: string;
+  phone: string;
+  nome: string;
+  email: string | null;
+  pixCode: string;
+}) {
+  const { supabase, eventType, phone, nome, email, pixCode } = opts;
+
+  // Config (mensagens)
+  const { data: cfgRows } = await supabase
+    .from('seu_numerologo_config')
+    .select('mensagem_pix_template, mensagem_compra_template')
+    .limit(1);
+  const cfg = cfgRows?.[0] ?? null;
+
+  // Evolution API
+  const { data: evoRows } = await supabase
+    .from('evolution_config')
+    .select('api_url, api_key, instance_name')
+    .eq('ativo', true)
+    .order('prioridade', { ascending: true })
+    .limit(1);
+
+  if (!evoRows?.length) { console.warn('vega-webhook/numerologo: Evolution API não configurada'); return; }
+
+  const evo     = evoRows[0];
+  const rawBase = evo.api_url.replace(/\/$/, '');
+  const evoBase = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
+  const number  = `${phone}@whatsapp.net`;
+  const nomeVar = nome || 'você';
+
+  // Lead existente
+  const { data: leadRows } = await supabase
+    .from('seu_numerologo_leads')
+    .select('id, status, comprou_at, pago_at')
+    .or(`whatsapp.eq.${phone},whatsapp.eq.+${phone}`)
+    .limit(1);
+  const lead = leadRows?.[0] ?? null;
+
+  if (eventType === 'sale_wait_payment') {
+    if (!pixCode) { console.warn('vega-webhook/numerologo: pix_code ausente'); return; }
+
+    const pixTpl = cfg?.mensagem_pix_template ||
+      `Olá, {{nome}}! 👋\n\nSeu PIX para o *Mapa Numerológico Pitagórico* foi gerado com sucesso.\n\n✅ Pagamento 100% seguro\n✅ Acesso liberado automaticamente após confirmação\n\nAguardando confirmação para liberar o seu mapa. ✨`;
+
+    await sendWpp(evoBase, evo.instance_name, evo.api_key, number,
+      pixTpl.replace('{{nome}}', nomeVar));
+    await sleep(2000);
+    await sendWpp(evoBase, evo.instance_name, evo.api_key, number,
+      'Segue abaixo o PIX copia e cola — é só copiar o código e colar no seu banco para confirmar o pagamento:');
+    await sleep(2000);
+    await sendWpp(evoBase, evo.instance_name, evo.api_key, number, pixCode);
+
+    if (lead) {
+      await supabase.from('seu_numerologo_leads')
+        .update({ status: 'checkout', comprou_at: new Date().toISOString(), ...(email ? { email } : {}) })
+        .eq('id', lead.id);
+    } else {
+      await supabase.from('seu_numerologo_leads').insert({
+        nome: nomeVar, whatsapp: phone, email: email ?? null,
+        produto: 'Mapa Numerológico Pitagórico Aplicado - SN',
+        status: 'checkout', comprou_at: new Date().toISOString(),
+      });
+    }
+    return;
+  }
+
+  if (eventType === 'sale_paid') {
+    const compraTpl = cfg?.mensagem_compra_template ||
+      `🎉 Pagamento confirmado, {{nome}}!\n\nSeu *Mapa Numerológico Pitagórico* está sendo preparado com carinho.\n\nEm breve você receberá o seu mapa aqui mesmo. Fique de olho nas próximas mensagens! ✨`;
+
+    await sendWpp(evoBase, evo.instance_name, evo.api_key, number,
+      compraTpl.replace('{{nome}}', nomeVar));
+
+    if (lead) {
+      await supabase.from('seu_numerologo_leads')
+        .update({ status: 'pago', pago_at: new Date().toISOString(), ...(email ? { email } : {}) })
+        .eq('id', lead.id);
+    } else {
+      await supabase.from('seu_numerologo_leads').insert({
+        nome: nomeVar, whatsapp: phone, email: email ?? null,
+        produto: 'Mapa Numerológico Pitagórico Aplicado - SN',
+        status: 'pago', pago_at: new Date().toISOString(),
+      });
+    }
+    return;
+  }
 }
 
 // ── background processing ─────────────────────────────────────────────────────
@@ -51,6 +146,7 @@ async function processVegaWebhook(
 
   const phoneRaw     = String(body?.customer?.phone ?? body?.phone ?? '');
   const nome         = String(body?.customer?.name  ?? body?.name  ?? '');
+  const email        = String(body?.customer?.email ?? body?.email ?? '') || null;
   const produtoTitle = String((body?.plans as any)?.[0]?.products?.[0]?.title ?? body?.produto ?? '');
   const pixCode      = String(body?.pix_code ?? '');
 
@@ -58,6 +154,13 @@ async function processVegaWebhook(
 
   const phone = normalizePhone(phoneRaw);
   console.log(`vega-webhook: event=${eventType} produto="${produtoTitle}" phone=${phone}`);
+
+  // ── Branch: Seu Numerólogo ────────────────────────────────────────────────
+  const NUMEROLOGO_PRODUTO = 'Mapa Numerológico Pitagórico Aplicado - SN';
+  if (produtoTitle === NUMEROLOGO_PRODUTO) {
+    await processNumerologa({ supabase, eventType, phone, nome, email, pixCode });
+    return;
+  }
 
   // ── Encontra NPA ──────────────────────────────────────────────────────────
   const { data: npas } = await supabase
@@ -142,7 +245,7 @@ async function processVegaWebhook(
     if (leadId) {
       await supabase
         .from('npa_evento_leads')
-        .update({ pix_enviado: true, pix_codigo: pixCode, pix_enviado_em: new Date().toISOString() })
+        .update({ pix_enviado: true, pix_codigo: pixCode, pix_enviado_em: new Date().toISOString(), ...(email ? { email } : {}) })
         .eq('id', leadId);
     }
     return;
@@ -184,12 +287,14 @@ async function processVegaWebhook(
           bv_enviado: true, bv_enviado_em: agora,
           no_grupo: false, presente_evento: false, esteve_no_evento: false,
           closer: false, follow_up_01: false, follow_up_02: false, follow_up_03: false, matriculado: false,
+          ...(email ? { email } : {}),
         })
         .eq('id', leadId);
     } else if (phone) {
       await supabase.from('npa_evento_leads').insert({
         npa_evento_id: npa.id, nome: nome || 'Lead Vega',
-        whatsapp: phone, turma, fase: 'ingresso_pago', ingresso_pago: true,
+        whatsapp: phone, email: email ?? null,
+        turma, fase: 'ingresso_pago', ingresso_pago: true,
         bv_enviado: true, bv_enviado_em: agora,
       });
     }

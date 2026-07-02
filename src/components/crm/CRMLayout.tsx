@@ -29,6 +29,7 @@ const NPAKanban        = lazy(() => import('./NPAKanban'));
 const AulaSecretaKanban = lazy(() => import('./AulaSecretaKanban').then(m => ({ default: m.AulaSecretaKanban })));
 const Produtos          = lazy(() => import('./Produtos').then(m => ({ default: m.Produtos })));
 const IDMPsiFranquias   = lazy(() => import('./IDMPsiFranquias').then(m => ({ default: m.IDMPsiFranquias })));
+const Posts             = lazy(() => import('./Posts').then(m => ({ default: m.Posts })));
 
 function ModuleLoader() {
   return (
@@ -239,6 +240,7 @@ export function CRMLayout() {
       case 'operacoes_calendario_conteudo': return <Operacoes currentPage={currentView} />;
       case 'mapa_mental': return <MapaMental />;
       case 'produtos': return isAdmin ? <Produtos /> : <RestrictedView />;
+      case 'posts': return isAdmin ? <Posts /> : <RestrictedView />;
       case 'franquia_psi': return <IDMPsiFranquias />;
       default: return <Dashboard />;
     }

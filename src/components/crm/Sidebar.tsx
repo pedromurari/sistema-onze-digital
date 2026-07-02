@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Kanban, Settings, UserCog,
   Rocket, BarChart3, CheckSquare, ChevronDown,
   ChevronLeft, ChevronRight, Plus, Brain, Scale,
-  GripVertical, Pencil, Check, MessageSquare, TrendingUp, GitBranch, CalendarDays, ShoppingBag, Radio,
+  GripVertical, Pencil, Check, MessageSquare, TrendingUp, GitBranch, CalendarDays, ShoppingBag, Radio, Image,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,6 +36,7 @@ const BASE_MENU: MenuItem[] = [
   // CRM
   { key: 'pipeline',                   label: 'Leads Diretos',       icon: Kanban },
   { key: 'produtos',                   label: 'Produtos',            icon: ShoppingBag, adminOnly: true },
+  { key: 'posts',                      label: 'Post',                 icon: Image,       adminOnly: true },
   // Eventos & Funis
   { group: 'lancamentos_legado',       label: 'Semana do Despertar', icon: Rocket,       children: [] },
   { group: 'npa_dinamico',            label: 'IDM Pelo Brasil',       icon: BarChart3,    children: [] },

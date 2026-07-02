@@ -1,6 +1,10 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+function applyVars(text: string, vars: Record<string, string>): string {
+  return text.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`);
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { status: 200 });
 
@@ -16,7 +20,7 @@ serve(async (req) => {
     // ── Busca o lead ───────────────────────────────────────────────────────
     const { data: lead } = await supabase
       .from('npa_evento_leads')
-      .select('id, nome, whatsapp, turma, npa_evento_id, bv_enviado, ingresso_pago')
+      .select('id, nome, email, whatsapp, turma, npa_evento_id, bv_enviado, ingresso_pago')
       .eq('id', lead_id)
       .single();
 
@@ -27,7 +31,7 @@ serve(async (req) => {
     // ── Busca o evento ─────────────────────────────────────────────────────
     const { data: evento } = await supabase
       .from('npa_eventos')
-      .select('nome')
+      .select('nome, data_evento')
       .eq('id', lead.npa_evento_id)
       .single();
 
@@ -52,13 +56,21 @@ serve(async (req) => {
       ? (vars['link_grupo_tarde'] || vars['link_grupo_2'] || vars['link_grupo_manha'] || '')
       : (vars['link_grupo_manha'] || vars['link_grupo_1'] || '');
 
-    const mensagem = (tpl || fallback)
-      .replace(/\{\{nome\}\}/g, lead.nome || 'você')
-      .replace(/\{\{evento_nome\}\}/g, evento.nome)
-      .replace(/\{\{turma\}\}/g, lead.turma === 'manha' ? 'Manhã' : 'Tarde')
-      .replace(/\{\{link_grupo\}\}/g, linkGrupo)
-      .replace(/\{\{link_grupo_manha\}\}/g, vars['link_grupo_manha'] || vars['link_grupo_1'] || '')
-      .replace(/\{\{link_grupo_tarde\}\}/g, vars['link_grupo_tarde'] || vars['link_grupo_2'] || '');
+    const dataEvento = evento.data_evento
+      ? new Date(evento.data_evento).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Sao_Paulo' })
+      : '';
+
+    const templateVars: Record<string, string> = {
+      nome: lead.nome || 'você',
+      evento_nome: evento.nome,
+      turma: lead.turma === 'manha' ? 'Manhã' : 'Tarde',
+      link_grupo: linkGrupo,
+      link_grupo_manha: vars['link_grupo_manha'] || vars['link_grupo_1'] || '',
+      link_grupo_tarde: vars['link_grupo_tarde'] || vars['link_grupo_2'] || '',
+      data_evento: dataEvento,
+    };
+
+    const mensagem = applyVars(tpl || fallback, templateVars);
 
     // ── Busca Evolution API ────────────────────────────────────────────────
     const { data: evoRows } = await supabase
@@ -101,6 +113,39 @@ serve(async (req) => {
       );
     }
 
+    // ── Envia Email (se configurado em boas_vindas_config) ────────────────
+    let emailStatus = 'skipped';
+    if (lead.email) {
+      const { data: bvCfg } = await supabase
+        .from('boas_vindas_config')
+        .select('email_ativo, email_assunto, email_corpo')
+        .eq('funnel_name', evento.nome)
+        .maybeSingle();
+
+      if (bvCfg?.email_ativo && bvCfg.email_assunto && bvCfg.email_corpo) {
+        try {
+          const assunto = applyVars(bvCfg.email_assunto, templateVars);
+          const corpo   = applyVars(bvCfg.email_corpo,   templateVars);
+
+          const { data: emailRes } = await supabase.functions.invoke('email-enviar', {
+            body: {
+              to:      lead.email,
+              to_name: lead.nome || undefined,
+              subject: assunto,
+              html:    corpo,
+            },
+          });
+
+          if ((emailRes as any)?.error) throw new Error((emailRes as any).error);
+          emailStatus = 'sent';
+          console.log(`npa-bv-trigger: email sent to ${lead.email}`);
+        } catch (e: unknown) {
+          emailStatus = 'error';
+          console.error(`npa-bv-trigger email error: ${(e as Error).message}`);
+        }
+      }
+    }
+
     if (sent) {
       await supabase
         .from('npa_evento_leads')
@@ -108,7 +153,7 @@ serve(async (req) => {
         .eq('id', lead_id);
     }
 
-    return new Response(JSON.stringify({ ok: sent }), { status: 200 });
+    return new Response(JSON.stringify({ ok: sent, email_status: emailStatus }), { status: 200 });
 
   } catch (e: unknown) {
     console.error('npa-bv-trigger error:', (e as Error).message);
