@@ -212,26 +212,71 @@ export function Posts() {
       )}
 
       <Dialog open={!!detailPost} onOpenChange={(open) => !open && setDetailPost(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-[420px] p-0 gap-0 overflow-hidden rounded-xl">
           {detailPost && (
             <>
-              <DialogHeader>
+              <DialogHeader className="sr-only">
                 <DialogTitle>{detailPost.conteudo_clientes?.nome} · {detailPost.tema}</DialogTitle>
-                <DialogDescription>{format(new Date(detailPost.data_post), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}</DialogDescription>
+                <DialogDescription>Preview do post</DialogDescription>
               </DialogHeader>
-              {detailPost.imagem_feed_url && (
-                <img src={detailPost.imagem_feed_url} alt={detailPost.tema ?? ''} className="w-full rounded-lg border border-border" />
-              )}
-              <div className="space-y-1">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Legenda</p>
-                <p className="text-sm text-foreground whitespace-pre-wrap">{detailPost.legenda}</p>
-              </div>
-              {detailPost.tema_fonte && (
-                <div className="space-y-1">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Fonte do tema</p>
-                  <p className="text-xs text-muted-foreground">{detailPost.tema_fonte}</p>
+
+              {/* Instagram-style header */}
+              <div className="flex items-center gap-2.5 px-3.5 py-2.5 border-b border-border">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                  {(detailPost.conteudo_clientes?.nome ?? 'C')[0].toUpperCase()}
                 </div>
-              )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-foreground truncate">{detailPost.conteudo_clientes?.nome ?? 'Cliente'}</p>
+                  <p className="text-[11px] text-muted-foreground leading-tight">{detailPost.tema ?? 'Post'}</p>
+                </div>
+                <Badge variant="outline" className={STATUS_CONFIG[detailPost.status].className + ' text-[10px]'}>
+                  {STATUS_CONFIG[detailPost.status].label}
+                </Badge>
+              </div>
+
+              {/* Image — square aspect ratio */}
+              <div className="aspect-square w-full bg-black overflow-hidden">
+                {detailPost.imagem_feed_url
+                  ? <img src={detailPost.imagem_feed_url} alt={detailPost.tema ?? ''} className="w-full h-full object-contain" />
+                  : <div className="w-full h-full flex items-center justify-center text-muted-foreground"><ImageIcon className="h-12 w-12" /></div>}
+              </div>
+
+              {/* Caption area */}
+              <div className="px-3.5 py-3 space-y-2 max-h-[200px] overflow-y-auto border-t border-border">
+                <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                  <span className="font-semibold">{detailPost.conteudo_clientes?.slug ?? detailPost.conteudo_clientes?.nome?.toLowerCase().replace(/\s+/g, '') ?? 'cliente'}</span>{' '}
+                  {detailPost.legenda ?? 'Sem legenda'}
+                </p>
+                <p className="text-[11px] text-muted-foreground uppercase">
+                  {format(new Date(detailPost.data_post), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                </p>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex gap-1.5 px-3.5 py-2.5 border-t border-border bg-muted/30">
+                <Button
+                  size="sm" variant="outline" className="flex-1 h-8 text-xs"
+                  disabled={actingId === detailPost.id || detailPost.status === 'aprovado'}
+                  onClick={() => { updateStatus(detailPost, 'aprovado'); setDetailPost(null); }}
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Aprovar
+                </Button>
+                <Button
+                  size="sm" variant="outline" className="flex-1 h-8 text-xs"
+                  disabled={actingId === detailPost.id || detailPost.status === 'publicado'}
+                  onClick={() => { updateStatus(detailPost, 'publicado'); setDetailPost(null); }}
+                >
+                  <Send className="h-3.5 w-3.5 mr-1" /> Publicado
+                </Button>
+                <Button
+                  size="sm" variant="ghost" className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
+                  disabled={actingId === detailPost.id}
+                  onClick={() => { updateStatus(detailPost, 'rejeitado'); setDetailPost(null); }}
+                  title="Rejeitar"
+                >
+                  <XCircle className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </>
           )}
         </DialogContent>
