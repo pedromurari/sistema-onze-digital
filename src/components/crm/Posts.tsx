@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Image as ImageIcon, Clock, CheckCircle2, Send, XCircle, Loader2 } from 'lucide-react';
+import { Image as ImageIcon, Clock, CheckCircle2, Send, XCircle, Loader2, Download, Copy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -127,6 +127,32 @@ export function Posts() {
     loadStats();
   };
 
+  const downloadImage = async (url: string, filename: string) => {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      toast.error('Erro ao baixar a imagem.');
+    }
+  };
+
+  const copyLegenda = async (legenda: string) => {
+    try {
+      await navigator.clipboard.writeText(legenda);
+      toast.success('Legenda copiada!');
+    } catch {
+      toast.error('Erro ao copiar a legenda.');
+    }
+  };
+
   return (
     <div className="p-6 space-y-5">
       <div>
@@ -167,7 +193,7 @@ export function Posts() {
             const statusCfg = STATUS_CONFIG[post.status];
             return (
               <div key={post.id} className="bg-white border border-border rounded-xl overflow-hidden flex flex-col">
-                <button className="aspect-square bg-muted overflow-hidden w-full" onClick={() => setDetailPost(post)}>
+                <button className="aspect-[4/5] bg-muted overflow-hidden w-full" onClick={() => setDetailPost(post)}>
                   {post.imagem_feed_url
                     ? <img src={post.imagem_feed_url} alt={post.tema ?? 'Criativo'} className="w-full h-full object-cover" />
                     : <div className="w-full h-full flex items-center justify-center text-muted-foreground"><ImageIcon className="h-8 w-8" /></div>}
@@ -234,11 +260,32 @@ export function Posts() {
                 </Badge>
               </div>
 
-              {/* Image — square aspect ratio */}
-              <div className="aspect-square w-full bg-black overflow-hidden">
+              {/* Image — formato 4:5 do feed do Instagram */}
+              <div className="aspect-[4/5] w-full bg-black overflow-hidden">
                 {detailPost.imagem_feed_url
                   ? <img src={detailPost.imagem_feed_url} alt={detailPost.tema ?? ''} className="w-full h-full object-contain" />
                   : <div className="w-full h-full flex items-center justify-center text-muted-foreground"><ImageIcon className="h-12 w-12" /></div>}
+              </div>
+
+              {/* Baixar imagem / copiar legenda */}
+              <div className="flex gap-1.5 px-3.5 py-2 border-t border-border">
+                <Button
+                  size="sm" variant="outline" className="flex-1 h-8 text-xs"
+                  disabled={!detailPost.imagem_feed_url}
+                  onClick={() => detailPost.imagem_feed_url && downloadImage(
+                    detailPost.imagem_feed_url,
+                    `${detailPost.conteudo_clientes?.slug ?? 'post'}-${detailPost.data_post}.png`,
+                  )}
+                >
+                  <Download className="h-3.5 w-3.5 mr-1" /> Baixar imagem
+                </Button>
+                <Button
+                  size="sm" variant="outline" className="flex-1 h-8 text-xs"
+                  disabled={!detailPost.legenda}
+                  onClick={() => detailPost.legenda && copyLegenda(detailPost.legenda)}
+                >
+                  <Copy className="h-3.5 w-3.5 mr-1" /> Copiar legenda
+                </Button>
               </div>
 
               {/* Caption area */}
