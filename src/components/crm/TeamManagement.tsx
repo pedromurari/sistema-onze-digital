@@ -66,6 +66,7 @@ function getRoleLabel(tipo: string, nomen: Record<string, string>): string {
   if (nomen[tipo]) return nomen[tipo];
   if (tipo === 'admin') return 'Administrador';
   if (tipo === 'professora') return 'Professora';
+  if (tipo === 'parceiro') return 'Parceiro(a)';
   return 'Vendedor';
 }
 
@@ -250,7 +251,7 @@ export function TeamManagement() {
                     {!editingUser && (
                       <div className="space-y-2">
                         <Label htmlFor="senha">Senha *</Label>
-                        <Input id="senha" type="password" value={formData.senha} onChange={e => setFormData({ ...formData, senha: e.target.value })} placeholder="Mínimo 6 caracteres" required disabled={loading} minLength={6} />
+                        <Input id="senha" type="password" value={formData.senha} onChange={e => setFormData({ ...formData, senha: e.target.value })} placeholder="Mínimo 12 caracteres" required disabled={loading} minLength={12} />
                       </div>
                     )}
                     <div className="space-y-2">
@@ -260,6 +261,7 @@ export function TeamManagement() {
                         <SelectContent className="bg-card border-border z-50">
                           <SelectItem value="vendedor">{getRoleLabel('vendedor', nomenclaturas)}</SelectItem>
                           <SelectItem value="admin">Administrador</SelectItem>
+                          <SelectItem value="parceiro">Parceiro(a)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -277,6 +279,14 @@ export function TeamManagement() {
 
                   {/* Right: permissions */}
                   <div className="space-y-4">
+                    {formData.tipo === 'parceiro' ? (
+                      <div className="rounded-xl border border-border p-4 space-y-2 bg-muted/30">
+                        <h3 className="font-semibold text-foreground">Sem permissões de módulo</h3>
+                        <p className="text-xs text-muted-foreground">
+                          Parceira(o) não acessa o CRM — o login cai direto no Portal da Parceira, mostrando só os produtos, o desempenho e as entregas dela. Essas permissões de módulo não se aplicam a esse tipo de acesso.
+                        </p>
+                      </div>
+                    ) : (
                     <div className="rounded-xl border border-border p-4 space-y-3">
                       <div>
                         <h3 className="font-semibold text-foreground">Permissões de módulos</h3>
@@ -296,8 +306,9 @@ export function TeamManagement() {
                         ))}
                       </div>
                     </div>
+                    )}
 
-                    {permissions.canViewLancamentos && (
+                    {formData.tipo !== 'parceiro' && permissions.canViewLancamentos && (
                       <div className="rounded-xl border border-border p-4 space-y-3">
                         <div className="flex items-center justify-between gap-3">
                           <div>
@@ -326,7 +337,7 @@ export function TeamManagement() {
                       </div>
                     )}
 
-                    {permissions.canViewFinanceiro && (
+                    {formData.tipo !== 'parceiro' && permissions.canViewFinanceiro && (
                       <div className="rounded-xl border border-border p-4 space-y-3">
                         <div className="flex items-center justify-between gap-3">
                           <div>
@@ -410,7 +421,11 @@ export function TeamManagement() {
               </div>
 
               {/* Permissions grid */}
-              {u.tipo !== 'admin' && (
+              {u.tipo === 'parceiro' ? (
+                <div className="border rounded-lg p-3 bg-muted/30">
+                  <p className="text-xs text-muted-foreground">Portal da Parceira — sem módulos de CRM.</p>
+                </div>
+              ) : u.tipo !== 'admin' && (
                 <div className="border rounded-lg p-3 bg-muted/30 space-y-2">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                     Módulos ({enabledModules.length}/{MODULE_PERMISSIONS.length})
