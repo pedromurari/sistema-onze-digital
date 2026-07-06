@@ -30,6 +30,7 @@ const AulaSecretaKanban = lazy(() => import('./AulaSecretaKanban').then(m => ({ 
 const Produtos          = lazy(() => import('./Produtos').then(m => ({ default: m.Produtos })));
 const IDMPsiFranquias   = lazy(() => import('./IDMPsiFranquias').then(m => ({ default: m.IDMPsiFranquias })));
 const Posts             = lazy(() => import('./Posts').then(m => ({ default: m.Posts })));
+const Parceiros         = lazy(() => import('./Parceiros').then(m => ({ default: m.Parceiros })));
 
 function ModuleLoader() {
   return (
@@ -241,6 +242,7 @@ export function CRMLayout() {
       case 'mapa_mental': return <MapaMental />;
       case 'produtos': return isAdmin ? <Produtos /> : <RestrictedView />;
       case 'posts': return isAdmin ? <Posts /> : <RestrictedView />;
+      case 'parceiros': return isAdmin ? <Parceiros /> : <RestrictedView />;
       case 'franquia_psi': return <IDMPsiFranquias />;
       default: return <Dashboard />;
     }

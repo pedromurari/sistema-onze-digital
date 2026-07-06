@@ -1,0 +1,433 @@
+import React, { useEffect, useState, useCallback } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import {
+  Loader2, Plus, Upload, CheckCircle2, XCircle, PlayCircle, PauseCircle, RotateCcw, Users, ShoppingBag,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { toast } from 'sonner';
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
+type Parceiro = {
+  id: string;
+  nome: string;
+  whatsapp: string | null;
+  email: string | null;
+  status_contrato: 'pendente' | 'assinado';
+  ativo: boolean;
+};
+
+type ProdutoStatus = 'em_analise' | 'aprovado' | 'ativo' | 'pausado' | 'reprovado';
+
+type Produto = {
+  id: string;
+  parceiro_id: string;
+  nome: string;
+  descricao: string | null;
+  preco: number | null;
+  status: ProdutoStatus;
+  comissao_idm_pct: number | null;
+  comissao_parceiro_pct: number | null;
+  comissao_afiliado_padrao_pct: number | null;
+  material_url: string | null;
+  created_at: string;
+  parceiros: { id: string; nome: string } | null;
+};
+
+const STATUS_CONFIG: Record<ProdutoStatus, { label: string; className: string }> = {
+  em_analise: { label: 'Em análise', className: 'bg-amber-100 text-amber-700 border-amber-200' },
+  aprovado:   { label: 'Aprovado',   className: 'bg-blue-100 text-blue-700 border-blue-200' },
+  ativo:      { label: 'Ativo',      className: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+  pausado:    { label: 'Pausado',    className: 'bg-gray-100 text-gray-700 border-gray-200' },
+  reprovado:  { label: 'Reprovado',  className: 'bg-red-100 text-red-700 border-red-200' },
+};
+
+const EMPTY_FORM = {
+  parceiro_id: '',
+  nome: '',
+  preco: '',
+  descricao: '',
+  comissao_idm_pct: '',
+  comissao_parceiro_pct: '',
+  comissao_afiliado_padrao_pct: '',
+};
+
+function StatCard({ icon: Icon, label, value, color }: { icon: React.ElementType; label: string; value: number | string; color: string }) {
+  return (
+    <div className="bg-white border border-border rounded-xl p-4 flex items-center gap-3">
+      <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0', color)}>
+        <Icon className="h-5 w-5" />
+      </div>
+      <div>
+        <p className="text-xs text-muted-foreground font-medium">{label}</p>
+        <p className="text-xl font-bold text-foreground leading-tight">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Produtos tab ─────────────────────────────────────────────────────────────
+
+function ProdutosTab() {
+  const { user } = useAuth();
+  const [parceiros, setParceiros] = useState<Parceiro[]>([]);
+  const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [actingId, setActingId] = useState<string | null>(null);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [materialUrl, setMaterialUrl] = useState('');
+  const [materialNome, setMaterialNome] = useState('');
+
+  const loadParceiros = useCallback(async () => {
+    const { data } = await supabase.from('parceiros' as any).select('id, nome, whatsapp, email, status_contrato, ativo').eq('ativo', true).order('nome');
+    setParceiros((data as any) || []);
+  }, []);
+
+  const loadProdutos = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await (supabase.from('parceiros_produtos' as any) as any)
+      .select('id, parceiro_id, nome, descricao, preco, status, comissao_idm_pct, comissao_parceiro_pct, comissao_afiliado_padrao_pct, material_url, created_at, parceiros(id, nome)')
+      .order('created_at', { ascending: false });
+    if (error) {
+      toast.error(`Erro ao carregar produtos: ${error.message}`);
+      setLoading(false);
+      return;
+    }
+    setProdutos((data as any) || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadParceiros(); }, [loadParceiros]);
+  useEffect(() => { loadProdutos(); }, [loadProdutos]);
+
+  const handleMaterialUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    setUploading(true);
+    const ext = file.name.split('.').pop() || 'bin';
+    const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const { error } = await supabase.storage.from('parceiros-materiais').upload(path, file, { upsert: true });
+    setUploading(false);
+    if (error) {
+      toast.error(`Erro no upload: ${error.message}`);
+      return;
+    }
+    const { data } = supabase.storage.from('parceiros-materiais').getPublicUrl(path);
+    setMaterialUrl(data.publicUrl);
+    setMaterialNome(file.name);
+    toast.success('Material anexado.');
+  };
+
+  const resetForm = () => {
+    setForm(EMPTY_FORM);
+    setMaterialUrl('');
+    setMaterialNome('');
+  };
+
+  const criarProduto = async () => {
+    if (!form.parceiro_id || !form.nome.trim()) {
+      toast.error('Selecione a parceira e informe o nome do produto.');
+      return;
+    }
+    setSaving(true);
+    const { error } = await (supabase.from('parceiros_produtos' as any) as any).insert({
+      parceiro_id: form.parceiro_id,
+      nome: form.nome.trim(),
+      descricao: form.descricao.trim() || null,
+      preco: form.preco ? Number(form.preco) : null,
+      comissao_idm_pct: form.comissao_idm_pct ? Number(form.comissao_idm_pct) : null,
+      comissao_parceiro_pct: form.comissao_parceiro_pct ? Number(form.comissao_parceiro_pct) : null,
+      comissao_afiliado_padrao_pct: form.comissao_afiliado_padrao_pct ? Number(form.comissao_afiliado_padrao_pct) : null,
+      material_url: materialUrl || null,
+      status: 'em_analise',
+    });
+    setSaving(false);
+    if (error) {
+      toast.error(`Erro ao salvar produto: ${error.message}`);
+      return;
+    }
+    toast.success('Produto cadastrado e enviado para análise.');
+    resetForm();
+    loadProdutos();
+  };
+
+  const updateStatus = async (produto: Produto, status: ProdutoStatus) => {
+    setActingId(produto.id);
+    const patch: Record<string, unknown> = { status };
+    if (status === 'aprovado') {
+      patch.aprovado_por = user?.id ?? null;
+      patch.aprovado_em = new Date().toISOString();
+    }
+    const { error } = await (supabase.from('parceiros_produtos' as any) as any).update(patch).eq('id', produto.id);
+    setActingId(null);
+    if (error) {
+      toast.error(`Erro ao atualizar status: ${error.message}`);
+      return;
+    }
+    toast.success(`Produto marcado como "${STATUS_CONFIG[status].label}".`);
+    loadProdutos();
+  };
+
+  const stats = {
+    emAnalise: produtos.filter(p => p.status === 'em_analise').length,
+    aprovados: produtos.filter(p => p.status === 'aprovado').length,
+    ativos: produtos.filter(p => p.status === 'ativo').length,
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <StatCard icon={Loader2} label="Em análise" value={stats.emAnalise} color="bg-amber-50 text-amber-600" />
+        <StatCard icon={CheckCircle2} label="Aprovados" value={stats.aprovados} color="bg-blue-50 text-blue-600" />
+        <StatCard icon={ShoppingBag} label="Ativos" value={stats.ativos} color="bg-emerald-50 text-emerald-600" />
+      </div>
+
+      <div className="bg-white border border-border rounded-xl p-4 space-y-3">
+        <p className="text-sm font-semibold text-foreground">Novo produto de parceria</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Parceira</Label>
+            <Select value={form.parceiro_id} onValueChange={v => setForm(f => ({ ...f, parceiro_id: v }))}>
+              <SelectTrigger className="h-9"><SelectValue placeholder="Selecionar parceira..." /></SelectTrigger>
+              <SelectContent>
+                {parceiros.map(p => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Nome do produto</Label>
+            <Input className="h-9" placeholder="Ex: Mentoria Foco Total" value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Preço (R$)</Label>
+            <Input className="h-9" placeholder="497,00" value={form.preco} onChange={e => setForm(f => ({ ...f, preco: e.target.value }))} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Comissão IDM (%)</Label>
+            <Input className="h-9" placeholder="30" value={form.comissao_idm_pct} onChange={e => setForm(f => ({ ...f, comissao_idm_pct: e.target.value }))} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Comissão parceira (%)</Label>
+            <Input className="h-9" placeholder="70" value={form.comissao_parceiro_pct} onChange={e => setForm(f => ({ ...f, comissao_parceiro_pct: e.target.value }))} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Comissão afiliada padrão (%)</Label>
+            <Input className="h-9" placeholder="20" value={form.comissao_afiliado_padrao_pct} onChange={e => setForm(f => ({ ...f, comissao_afiliado_padrao_pct: e.target.value }))} />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Descrição</Label>
+          <Textarea rows={2} placeholder="Resumo do produto para a página de vendas" value={form.descricao} onChange={e => setForm(f => ({ ...f, descricao: e.target.value }))} />
+        </div>
+        <div className="flex flex-wrap items-center gap-3 pt-1">
+          <label className="inline-flex items-center gap-1.5 text-xs h-9 px-3 border border-border rounded-md cursor-pointer hover:bg-muted transition-colors">
+            {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+            {materialNome || 'Anexar material'}
+            <input type="file" className="hidden" onChange={handleMaterialUpload} disabled={uploading} />
+          </label>
+          <Button className="ml-auto" disabled={saving} onClick={criarProduto}>
+            <Plus className="h-4 w-4 mr-1" /> {saving ? 'Salvando...' : 'Enviar para análise'}
+          </Button>
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold text-foreground">Produtos cadastrados</p>
+          <span className="text-xs text-muted-foreground">{produtos.length} produto{produtos.length === 1 ? '' : 's'}</span>
+        </div>
+        {loading ? (
+          <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        ) : produtos.length === 0 ? (
+          <div className="text-center py-16 text-muted-foreground text-sm">Nenhum produto cadastrado ainda.</div>
+        ) : (
+          <div className="bg-white border border-border rounded-xl divide-y divide-border">
+            {produtos.map(produto => {
+              const cfg = STATUS_CONFIG[produto.status];
+              const acting = actingId === produto.id;
+              return (
+                <div key={produto.id} className="flex items-center gap-3 p-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{produto.nome}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {produto.parceiros?.nome ?? 'Parceira'}
+                      {produto.preco != null && <> &middot; R$ {Number(produto.preco).toFixed(2)}</>}
+                      {' · '}{format(new Date(produto.created_at), "dd/MM/yy", { locale: ptBR })}
+                    </p>
+                  </div>
+                  <Badge variant="outline" className={cfg.className}>{cfg.label}</Badge>
+                  <div className="flex gap-1.5">
+                    {produto.status === 'em_analise' && (
+                      <>
+                        <Button size="sm" variant="outline" className="h-8 text-xs" disabled={acting} onClick={() => updateStatus(produto, 'aprovado')}>
+                          <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Aprovar
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50" disabled={acting} onClick={() => updateStatus(produto, 'reprovado')} title="Reprovar">
+                          <XCircle className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
+                    )}
+                    {produto.status === 'aprovado' && (
+                      <Button size="sm" variant="outline" className="h-8 text-xs" disabled={acting} onClick={() => updateStatus(produto, 'ativo')}>
+                        <PlayCircle className="h-3.5 w-3.5 mr-1" /> Ativar
+                      </Button>
+                    )}
+                    {produto.status === 'ativo' && (
+                      <Button size="sm" variant="outline" className="h-8 text-xs" disabled={acting} onClick={() => updateStatus(produto, 'pausado')}>
+                        <PauseCircle className="h-3.5 w-3.5 mr-1" /> Pausar
+                      </Button>
+                    )}
+                    {(produto.status === 'pausado' || produto.status === 'reprovado') && (
+                      <Button size="sm" variant="outline" className="h-8 text-xs" disabled={acting} onClick={() => updateStatus(produto, 'em_analise')}>
+                        <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reabrir
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Parceiros (cadastro) tab ─────────────────────────────────────────────────
+
+function ParceirosTab() {
+  const [parceiros, setParceiros] = useState<Parceiro[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [nome, setNome] = useState('');
+  const [whatsapp, setWhatsapp] = useState('');
+  const [email, setEmail] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase.from('parceiros' as any).select('id, nome, whatsapp, email, status_contrato, ativo').order('nome');
+    setParceiros((data as any) || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const criarParceiro = async () => {
+    if (!nome.trim()) {
+      toast.error('Informe o nome da parceira.');
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase.from('parceiros' as any).insert({
+      nome: nome.trim(),
+      whatsapp: whatsapp.trim() || null,
+      email: email.trim() || null,
+    });
+    setSaving(false);
+    if (error) {
+      toast.error(`Erro ao salvar parceira: ${error.message}`);
+      return;
+    }
+    toast.success('Parceira cadastrada.');
+    setNome(''); setWhatsapp(''); setEmail('');
+    load();
+  };
+
+  const toggleContrato = async (p: Parceiro) => {
+    const novo = p.status_contrato === 'assinado' ? 'pendente' : 'assinado';
+    const { error } = await supabase.from('parceiros' as any).update({ status_contrato: novo }).eq('id', p.id);
+    if (error) {
+      toast.error(`Erro ao atualizar contrato: ${error.message}`);
+      return;
+    }
+    load();
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="bg-white border border-border rounded-xl p-4 space-y-3">
+        <p className="text-sm font-semibold text-foreground">Nova parceira</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Input className="h-9" placeholder="Nome completo" value={nome} onChange={e => setNome(e.target.value)} />
+          <Input className="h-9" placeholder="WhatsApp" value={whatsapp} onChange={e => setWhatsapp(e.target.value)} />
+          <Input className="h-9" placeholder="E-mail" value={email} onChange={e => setEmail(e.target.value)} />
+        </div>
+        <Button disabled={saving} onClick={criarParceiro}>
+          <Plus className="h-4 w-4 mr-1" /> {saving ? 'Salvando...' : 'Cadastrar parceira'}
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+      ) : (
+        <div className="bg-white border border-border rounded-xl divide-y divide-border">
+          {parceiros.map(p => (
+            <div key={p.id} className="flex items-center gap-3 p-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground truncate">{p.nome}</p>
+                <p className="text-xs text-muted-foreground truncate">{[p.whatsapp, p.email].filter(Boolean).join(' · ') || 'Sem contato cadastrado'}</p>
+              </div>
+              <Badge
+                variant="outline"
+                className={cn('cursor-pointer', p.status_contrato === 'assinado' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-amber-100 text-amber-700 border-amber-200')}
+                onClick={() => toggleContrato(p)}
+              >
+                {p.status_contrato === 'assinado' ? 'Contrato assinado' : 'Contrato pendente'}
+              </Badge>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+
+const TABS = [
+  { key: 'produtos', label: 'Produtos', icon: ShoppingBag },
+  { key: 'parceiros', label: 'Parceiras', icon: Users },
+] as const;
+
+type Tab = typeof TABS[number]['key'];
+
+export function Parceiros() {
+  const [tab, setTab] = useState<Tab>('produtos');
+
+  return (
+    <div className="p-6 space-y-6 max-w-[1200px]">
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">Parceiros</h1>
+        <p className="text-sm text-muted-foreground">Cadastro manual de produtos de parceria e aprovação para uso do Selo IDM.</p>
+        <div className="flex gap-1 border-b mt-4">
+          {TABS.map(t => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={cn(
+                'flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
+                tab === t.key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <t.icon className="h-4 w-4" /> {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tab === 'produtos' ? <ProdutosTab /> : <ParceirosTab />}
+    </div>
+  );
+}
