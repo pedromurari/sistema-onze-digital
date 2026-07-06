@@ -11,6 +11,7 @@ const TarefaPublica   = React.lazy(() => import("./pages/TarefaPublica"));
 const ContratoPublico = React.lazy(() => import("./pages/ContratoPublico"));
 const FormularioAluno = React.lazy(() => import("./pages/FormularioAluno"));
 const AreaMembros     = React.lazy(() => import("./pages/AreaMembros"));
+const Checkout        = React.lazy(() => import("./pages/Checkout"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -79,6 +80,7 @@ const App = () => (
               <Route path="/formulario/:token"      element={<FormularioAluno />} />
               <Route path="/assinar/:token"         element={<ContratoPublico />} />
               <Route path="/membros/:token"         element={<AreaMembros />} />
+              <Route path="/comprar/:produtoId"     element={<Checkout />} />
               <Route path="/"                       element={<Index />} />
               <Route path="*"                       element={<NotFound />} />
             </Routes>
