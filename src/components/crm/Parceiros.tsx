@@ -4,8 +4,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
-  Loader2, Plus, Upload, CheckCircle2, XCircle, PlayCircle, PauseCircle, RotateCcw, Users, ShoppingBag, KeyRound,
+  Loader2, Plus, Upload, CheckCircle2, XCircle, PlayCircle, PauseCircle, RotateCcw, Users, ShoppingBag, KeyRound, TrendingUp, Settings2,
 } from 'lucide-react';
+import { DesempenhoParceiros } from './DesempenhoParceiros';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,6 +48,9 @@ type Produto = {
   material_url: string | null;
   created_at: string;
   parceiros: { id: string; nome: string } | null;
+  meta_campaign_id: string | null;
+  meta_ad_account_id: string | null;
+  meta_access_token: string | null;
 };
 
 const STATUS_CONFIG: Record<ProdutoStatus, { label: string; className: string }> = {
@@ -94,6 +98,9 @@ function ProdutosTab() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [materialUrl, setMaterialUrl] = useState('');
   const [materialNome, setMaterialNome] = useState('');
+  const [adsDialog, setAdsDialog] = useState<Produto | null>(null);
+  const [adsForm, setAdsForm] = useState({ meta_campaign_id: '', meta_ad_account_id: '', meta_access_token: '' });
+  const [savingAds, setSavingAds] = useState(false);
 
   const loadParceiros = useCallback(async () => {
     const { data } = await supabase.from('parceiros' as any).select('id, nome, whatsapp, email, status_contrato, ativo').eq('ativo', true).order('nome');
@@ -103,7 +110,7 @@ function ProdutosTab() {
   const loadProdutos = useCallback(async () => {
     setLoading(true);
     const { data, error } = await (supabase.from('parceiros_produtos' as any) as any)
-      .select('id, parceiro_id, nome, descricao, preco, status, comissao_idm_pct, comissao_parceiro_pct, comissao_afiliado_padrao_pct, material_url, created_at, parceiros(id, nome)')
+      .select('id, parceiro_id, nome, descricao, preco, status, comissao_idm_pct, comissao_parceiro_pct, comissao_afiliado_padrao_pct, material_url, created_at, parceiros(id, nome), meta_campaign_id, meta_ad_account_id, meta_access_token')
       .order('created_at', { ascending: false });
     if (error) {
       toast.error(`Erro ao carregar produtos: ${error.message}`);
@@ -183,6 +190,30 @@ function ProdutosTab() {
       return;
     }
     toast.success(`Produto marcado como "${STATUS_CONFIG[status].label}".`);
+    loadProdutos();
+  };
+
+  const abrirDialogAds = (produto: Produto) => {
+    setAdsDialog(produto);
+    setAdsForm({
+      meta_campaign_id: produto.meta_campaign_id || '',
+      meta_ad_account_id: produto.meta_ad_account_id || '',
+      meta_access_token: produto.meta_access_token || '',
+    });
+  };
+
+  const salvarAds = async () => {
+    if (!adsDialog) return;
+    setSavingAds(true);
+    const { error } = await (supabase.from('parceiros_produtos' as any) as any).update({
+      meta_campaign_id: adsForm.meta_campaign_id.trim() || null,
+      meta_ad_account_id: adsForm.meta_ad_account_id.trim() || null,
+      meta_access_token: adsForm.meta_access_token.trim() || null,
+    }).eq('id', adsDialog.id);
+    setSavingAds(false);
+    if (error) { toast.error(`Erro ao salvar campanha: ${error.message}`); return; }
+    toast.success('Campanha vinculada.');
+    setAdsDialog(null);
     loadProdutos();
   };
 
@@ -300,6 +331,13 @@ function ProdutosTab() {
                         <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reabrir
                       </Button>
                     )}
+                    <Button
+                      size="sm" variant="ghost" className="h-8 w-8 p-0"
+                      title={produto.meta_campaign_id ? 'Campanha Meta Ads vinculada' : 'Vincular campanha Meta Ads'}
+                      onClick={() => abrirDialogAds(produto)}
+                    >
+                      <Settings2 className={cn('h-3.5 w-3.5', produto.meta_campaign_id ? 'text-blue-500' : 'text-muted-foreground')} />
+                    </Button>
                   </div>
                 </div>
               );
@@ -307,6 +345,35 @@ function ProdutosTab() {
           </div>
         )}
       </div>
+
+      <Dialog open={!!adsDialog} onOpenChange={(open) => !open && setAdsDialog(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Campanha Meta Ads — {adsDialog?.nome}</DialogTitle>
+            <DialogDescription>
+              Vincule a campanha de Meta Ads deste produto pra ver CPC e custo por lead reais no Dashboard de Desempenho.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">ID da campanha</Label>
+              <Input placeholder="ex: 120202XXXXXXXXX" value={adsForm.meta_campaign_id} onChange={e => setAdsForm(f => ({ ...f, meta_campaign_id: e.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">ID da conta de anúncios</Label>
+              <Input placeholder="ex: act_XXXXXXXXXX" value={adsForm.meta_ad_account_id} onChange={e => setAdsForm(f => ({ ...f, meta_ad_account_id: e.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Token de acesso (Sistema de Usuários Meta)</Label>
+              <Input type="password" placeholder="Token do Usuário do Sistema Meta" value={adsForm.meta_access_token} onChange={e => setAdsForm(f => ({ ...f, meta_access_token: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAdsDialog(null)}>Cancelar</Button>
+            <Button disabled={savingAds} onClick={salvarAds}>{savingAds ? 'Salvando...' : 'Salvar'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -490,6 +557,7 @@ function ParceirosTab() {
 const TABS = [
   { key: 'produtos', label: 'Produtos', icon: ShoppingBag },
   { key: 'parceiros', label: 'Parceiras', icon: Users },
+  { key: 'desempenho', label: 'Desempenho', icon: TrendingUp },
 ] as const;
 
 type Tab = typeof TABS[number]['key'];
@@ -518,7 +586,9 @@ export function Parceiros() {
         </div>
       </div>
 
-      {tab === 'produtos' ? <ProdutosTab /> : <ParceirosTab />}
+      {tab === 'produtos' && <ProdutosTab />}
+      {tab === 'parceiros' && <ParceirosTab />}
+      {tab === 'desempenho' && <DesempenhoParceiros />}
     </div>
   );
 }

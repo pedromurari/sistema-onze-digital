@@ -6,6 +6,7 @@ import { ptBR } from 'date-fns/locale';
 import { Loader2, LogOut, ShoppingBag, BarChart3, ClipboardList } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { DesempenhoParceiros } from './DesempenhoParceiros';
 
 type ProdutoStatus = 'em_analise' | 'aprovado' | 'ativo' | 'pausado' | 'reprovado';
 
@@ -140,7 +141,7 @@ export function ParceiroPortal() {
         ) : (
           <>
             {tab === 'produtos' && <MeusProdutos parceiraId={parceiraId} />}
-            {tab === 'desempenho' && <EmBreve titulo="Dashboard de Desempenho" />}
+            {tab === 'desempenho' && <DesempenhoParceiros scopedParceiroId={parceiraId} />}
             {tab === 'entregas' && <EmBreve titulo="Gestão de Entregas" />}
           </>
         )}
