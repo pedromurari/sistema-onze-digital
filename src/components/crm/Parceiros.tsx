@@ -29,6 +29,7 @@ type Parceiro = {
   status_contrato: 'pendente' | 'assinado';
   ativo: boolean;
   user_id: string | null;
+  mp_connected_at: string | null;
 };
 
 function gerarSenhaProvisoria() {
@@ -396,7 +397,7 @@ function ParceirosTab() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from('parceiros' as any).select('id, nome, whatsapp, email, status_contrato, ativo, user_id').order('nome');
+    const { data } = await supabase.from('parceiros' as any).select('id, nome, whatsapp, email, status_contrato, ativo, user_id, mp_connected_at').order('nome');
     setParceiros((data as any) || []);
     setLoading(false);
   }, []);
@@ -521,6 +522,9 @@ function ParceirosTab() {
                   <KeyRound className="h-3.5 w-3.5 mr-1" /> Criar acesso
                 </Button>
               )}
+              <Badge variant="outline" className={p.mp_connected_at ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-gray-100 text-gray-500 border-gray-200'}>
+                {p.mp_connected_at ? 'Mercado Pago conectado' : 'Mercado Pago pendente'}
+              </Badge>
             </div>
           ))}
         </div>

@@ -3,11 +3,21 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Loader2, LogOut, ShoppingBag, BarChart3, ClipboardList } from 'lucide-react';
+import { Loader2, LogOut, ShoppingBag, BarChart3, ClipboardList, Wallet, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import { DesempenhoParceiros } from './DesempenhoParceiros';
 import { EntregasParceiros } from './EntregasParceiros';
+
+function conectarMercadoPago(parceiraId: string) {
+  const clientId = import.meta.env.VITE_MP_CLIENT_ID;
+  if (!clientId) { toast.error('Conexão com Mercado Pago ainda não configurada pelo time do IDM.'); return; }
+  const redirectUri = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mp-oauth-callback`;
+  const url = `https://auth.mercadopago.com.br/authorization?client_id=${clientId}&response_type=code&platform_id=mp&state=${parceiraId}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+  window.location.href = url;
+}
 
 type ProdutoStatus = 'em_analise' | 'aprovado' | 'ativo' | 'pausado' | 'reprovado';
 
@@ -79,17 +89,27 @@ export function ParceiroPortal() {
   const [tab, setTab] = useState<Tab>('produtos');
   const [parceiraId, setParceiraId] = useState<string | null>(null);
   const [nomeParceira, setNomeParceira] = useState('');
+  const [mpConectado, setMpConectado] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!user) return;
-    supabase.from('parceiros' as any).select('id, nome').eq('user_id', user.id).maybeSingle()
+    supabase.from('parceiros' as any).select('id, nome, mp_connected_at').eq('user_id', user.id).maybeSingle()
       .then(({ data }) => {
         setParceiraId((data as any)?.id ?? null);
         setNomeParceira((data as any)?.nome ?? user.nome);
+        setMpConectado(!!(data as any)?.mp_connected_at);
         setLoading(false);
       });
   }, [user]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mp = params.get('mp');
+    if (mp === 'ok') { toast.success('Mercado Pago conectado com sucesso!'); setMpConectado(true); }
+    if (mp === 'erro') toast.error('Não deu pra conectar o Mercado Pago. Tente novamente.');
+    if (mp) window.history.replaceState({}, '', window.location.pathname);
+  }, []);
 
   return (
     <div className="min-h-screen bg-muted/20">
@@ -109,6 +129,28 @@ export function ParceiroPortal() {
       </header>
 
       <main className="max-w-4xl mx-auto px-6 py-6">
+        {parceiraId && !loading && (
+          <div className={cn(
+            'flex items-center justify-between gap-3 rounded-xl border p-4 mb-6',
+            mpConectado ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200',
+          )}>
+            <div className="flex items-center gap-2">
+              {mpConectado ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : <Wallet className="h-5 w-5 text-amber-600" />}
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  {mpConectado ? 'Mercado Pago conectado' : 'Conecte sua conta do Mercado Pago'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {mpConectado ? 'Sua parte das vendas e comissões cai direto na sua conta.' : 'Sem isso você não recebe automaticamente as vendas e comissões.'}
+                </p>
+              </div>
+            </div>
+            {!mpConectado && (
+              <Button size="sm" onClick={() => conectarMercadoPago(parceiraId)}>Conectar</Button>
+            )}
+          </div>
+        )}
+
         <div className="flex gap-1 border-b mb-6">
           {TABS.map(t => (
             <button
