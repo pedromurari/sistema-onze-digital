@@ -7,6 +7,7 @@ import { Loader2, LogOut, ShoppingBag, BarChart3, ClipboardList } from 'lucide-r
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { DesempenhoParceiros } from './DesempenhoParceiros';
+import { EntregasParceiros } from './EntregasParceiros';
 
 type ProdutoStatus = 'em_analise' | 'aprovado' | 'ativo' | 'pausado' | 'reprovado';
 
@@ -34,15 +35,6 @@ const TABS = [
 ] as const;
 
 type Tab = typeof TABS[number]['key'];
-
-function EmBreve({ titulo }: { titulo: string }) {
-  return (
-    <div className="text-center py-20 text-muted-foreground text-sm">
-      <p className="font-medium text-foreground mb-1">{titulo}</p>
-      <p>Em breve por aqui.</p>
-    </div>
-  );
-}
 
 function MeusProdutos({ parceiraId }: { parceiraId: string }) {
   const [produtos, setProdutos] = useState<MeuProduto[]>([]);
@@ -142,7 +134,7 @@ export function ParceiroPortal() {
           <>
             {tab === 'produtos' && <MeusProdutos parceiraId={parceiraId} />}
             {tab === 'desempenho' && <DesempenhoParceiros scopedParceiroId={parceiraId} />}
-            {tab === 'entregas' && <EmBreve titulo="Gestão de Entregas" />}
+            {tab === 'entregas' && <EntregasParceiros scopedParceiroId={parceiraId} />}
           </>
         )}
       </main>

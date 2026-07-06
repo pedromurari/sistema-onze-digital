@@ -4,9 +4,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
-  Loader2, Plus, Upload, CheckCircle2, XCircle, PlayCircle, PauseCircle, RotateCcw, Users, ShoppingBag, KeyRound, TrendingUp, Settings2,
+  Loader2, Plus, Upload, CheckCircle2, XCircle, PlayCircle, PauseCircle, RotateCcw, Users, ShoppingBag, KeyRound, TrendingUp, Settings2, ClipboardList,
 } from 'lucide-react';
 import { DesempenhoParceiros } from './DesempenhoParceiros';
+import { EntregasParceiros } from './EntregasParceiros';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -558,6 +559,7 @@ const TABS = [
   { key: 'produtos', label: 'Produtos', icon: ShoppingBag },
   { key: 'parceiros', label: 'Parceiras', icon: Users },
   { key: 'desempenho', label: 'Desempenho', icon: TrendingUp },
+  { key: 'entregas', label: 'Entregas', icon: ClipboardList },
 ] as const;
 
 type Tab = typeof TABS[number]['key'];
@@ -589,6 +591,7 @@ export function Parceiros() {
       {tab === 'produtos' && <ProdutosTab />}
       {tab === 'parceiros' && <ParceirosTab />}
       {tab === 'desempenho' && <DesempenhoParceiros />}
+      {tab === 'entregas' && <EntregasParceiros />}
     </div>
   );
 }
