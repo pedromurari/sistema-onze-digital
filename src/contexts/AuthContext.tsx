@@ -3,7 +3,7 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { AccessPermissions, getDefaultPermissions, normalizePermissionsRow, permissionsToRow } from '@/lib/access-control';
 
-export type UserRole = 'admin' | 'vendedor' | 'professora';
+export type UserRole = 'admin' | 'vendedor' | 'professora' | 'parceiro';
 
 export interface Profile {
   id: string;

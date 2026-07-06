@@ -2,6 +2,7 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { LeadsProvider } from '@/contexts/LeadsContext';
 import { LoginPage } from '@/components/crm/LoginPage';
 import { CRMLayout } from '@/components/crm/CRMLayout';
+import { ParceiroPortal } from '@/components/crm/ParceiroPortal';
 import { Loader2 } from 'lucide-react';
 import React from 'react';
 
@@ -52,6 +53,8 @@ function AppContent() {
   }
 
   if (!user) return <LoginPage />;
+
+  if (user.tipo === 'parceiro') return <ParceiroPortal />;
 
   return (
     <LeadsProvider>

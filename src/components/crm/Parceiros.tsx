@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
-  Loader2, Plus, Upload, CheckCircle2, XCircle, PlayCircle, PauseCircle, RotateCcw, Users, ShoppingBag,
+  Loader2, Plus, Upload, CheckCircle2, XCircle, PlayCircle, PauseCircle, RotateCcw, Users, ShoppingBag, KeyRound,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -24,7 +25,12 @@ type Parceiro = {
   email: string | null;
   status_contrato: 'pendente' | 'assinado';
   ativo: boolean;
+  user_id: string | null;
 };
+
+function gerarSenhaProvisoria() {
+  return `Idm${Math.random().toString(36).slice(2, 8)}${Math.floor(Math.random() * 100)}!`;
+}
 
 type ProdutoStatus = 'em_analise' | 'aprovado' | 'ativo' | 'pausado' | 'reprovado';
 
@@ -314,10 +320,14 @@ function ParceirosTab() {
   const [nome, setNome] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [email, setEmail] = useState('');
+  const [acessoDialog, setAcessoDialog] = useState<Parceiro | null>(null);
+  const [acessoEmail, setAcessoEmail] = useState('');
+  const [acessoSenha, setAcessoSenha] = useState('');
+  const [criandoAcesso, setCriandoAcesso] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from('parceiros' as any).select('id, nome, whatsapp, email, status_contrato, ativo').order('nome');
+    const { data } = await supabase.from('parceiros' as any).select('id, nome, whatsapp, email, status_contrato, ativo, user_id').order('nome');
     setParceiros((data as any) || []);
     setLoading(false);
   }, []);
@@ -355,6 +365,55 @@ function ParceirosTab() {
     load();
   };
 
+  const abrirDialogAcesso = (p: Parceiro) => {
+    setAcessoDialog(p);
+    setAcessoEmail(p.email || '');
+    setAcessoSenha(gerarSenhaProvisoria());
+  };
+
+  const criarAcesso = async () => {
+    if (!acessoDialog) return;
+    if (!acessoEmail.trim()) { toast.error('Informe o e-mail da parceira.'); return; }
+    setCriandoAcesso(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) { toast.error('Sessão expirada. Entre novamente.'); setCriandoAcesso(false); return; }
+
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-create-user`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ nome: acessoDialog.nome, email: acessoEmail.trim(), password: acessoSenha, tipo: 'parceiro' }),
+      });
+      const created = await res.json().catch(() => ({}));
+      if (!res.ok || !created?.success) {
+        toast.error(created?.error || 'Erro ao criar acesso.');
+        setCriandoAcesso(false);
+        return;
+      }
+
+      const { error: linkError } = await supabase.from('parceiros' as any)
+        .update({ user_id: created.user.id, email: acessoEmail.trim() })
+        .eq('id', acessoDialog.id);
+      if (linkError) {
+        toast.error(`Acesso criado, mas não vinculei à parceira: ${linkError.message}`);
+        setCriandoAcesso(false);
+        return;
+      }
+
+      toast.success('Acesso criado! Anote a senha provisória antes de fechar — ela não aparece de novo.');
+      setCriandoAcesso(false);
+      load();
+    } catch (e: any) {
+      toast.error(e?.message || 'Erro ao criar acesso.');
+      setCriandoAcesso(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <div className="bg-white border border-border rounded-xl p-4 space-y-3">
@@ -386,10 +445,42 @@ function ParceirosTab() {
               >
                 {p.status_contrato === 'assinado' ? 'Contrato assinado' : 'Contrato pendente'}
               </Badge>
+              {p.user_id ? (
+                <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-200">Acesso criado</Badge>
+              ) : (
+                <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => abrirDialogAcesso(p)}>
+                  <KeyRound className="h-3.5 w-3.5 mr-1" /> Criar acesso
+                </Button>
+              )}
             </div>
           ))}
         </div>
       )}
+
+      <Dialog open={!!acessoDialog} onOpenChange={(open) => !open && setAcessoDialog(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Criar acesso — {acessoDialog?.nome}</DialogTitle>
+            <DialogDescription>
+              Ela vai poder logar só na área restrita de parceira (produtos, desempenho e entregas dela). Anote a senha provisória e repasse por um canal seguro — ela não aparece de novo depois de fechar esta janela.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">E-mail de login</Label>
+              <Input value={acessoEmail} onChange={e => setAcessoEmail(e.target.value)} placeholder="parceira@email.com" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Senha provisória</Label>
+              <Input value={acessoSenha} onChange={e => setAcessoSenha(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAcessoDialog(null)}>Cancelar</Button>
+            <Button disabled={criandoAcesso} onClick={criarAcesso}>{criandoAcesso ? 'Criando...' : 'Criar acesso'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
