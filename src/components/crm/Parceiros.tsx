@@ -4,10 +4,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
-  Loader2, Plus, Upload, CheckCircle2, XCircle, PlayCircle, PauseCircle, RotateCcw, Users, ShoppingBag, KeyRound, TrendingUp, Settings2, ClipboardList,
+  Loader2, Plus, Upload, CheckCircle2, XCircle, PlayCircle, PauseCircle, RotateCcw, Users, ShoppingBag, KeyRound, TrendingUp, Settings2, ClipboardList, Ticket,
 } from 'lucide-react';
 import { DesempenhoParceiros } from './DesempenhoParceiros';
 import { EntregasParceiros } from './EntregasParceiros';
+import { CuponsParceiros } from './CuponsParceiros';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -560,6 +561,7 @@ const TABS = [
   { key: 'parceiros', label: 'Parceiras', icon: Users },
   { key: 'desempenho', label: 'Desempenho', icon: TrendingUp },
   { key: 'entregas', label: 'Entregas', icon: ClipboardList },
+  { key: 'cupons', label: 'Cupons', icon: Ticket },
 ] as const;
 
 type Tab = typeof TABS[number]['key'];
@@ -592,6 +594,7 @@ export function Parceiros() {
       {tab === 'parceiros' && <ParceirosTab />}
       {tab === 'desempenho' && <DesempenhoParceiros />}
       {tab === 'entregas' && <EntregasParceiros />}
+      {tab === 'cupons' && <CuponsParceiros />}
     </div>
   );
 }
