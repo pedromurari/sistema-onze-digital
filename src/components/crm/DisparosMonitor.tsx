@@ -1373,6 +1373,7 @@ function CampanhasTab() {
                 onResume={() => resumeCampanha(c)}
                 onDelete={() => deleteCampanha(c.id)}
                 onUpdate={updated => setCampanhas(prev => prev.map(x => x.id === c.id ? { ...x, ...updated } : x))}
+                instanceNames={instanceNames}
               />
             ))}
           </div>
@@ -1394,9 +1395,10 @@ interface CampanhaCardProps {
   onResume: () => void;
   onDelete: () => void;
   onUpdate: (updated: Partial<Campanha>) => void;
+  instanceNames: Record<string, string>;
 }
 
-function CampanhaCard({ campanha: c, isExpanded, onToggle, leads, loadingLeads, onPause, onResume, onDelete, onUpdate }: CampanhaCardProps) {
+function CampanhaCard({ campanha: c, isExpanded, onToggle, leads, loadingLeads, onPause, onResume, onDelete, onUpdate, instanceNames }: CampanhaCardProps) {
   const [editOpen, setEditOpen] = useState(false);
   const cfg   = CAMP_STATUS_CFG[c.status] ?? CAMP_STATUS_CFG.rascunho;
   const total = c.leads_total || 1;
