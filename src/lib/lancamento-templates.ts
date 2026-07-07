@@ -16,6 +16,7 @@ export interface AulaConfig {
   titulo?: string;
   data: string;      // 'YYYY-MM-DD'
   hora: string;      // 'HH:MM'
+  hora_fim?: string; // 'HH:MM' — usado nas sessões do NPA (manhã/tarde)
   link: string;
   professor: string;
 }
@@ -588,353 +589,164 @@ Reage com 🙌 se você vai estar ao vivo amanhã!`,
       'Oferta — Encerramento +3', { link_preview: true, mention_everyone: true }));
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // NPA — PRESENCIAL (7 dias de aquecimento)
+  // NPA — PRESENCIAL (10 dias de expectativa, 2 grupos escalonados, 2 sessões
+  // no dia do evento — manhã e tarde — e oferta pós-evento em 3 níveis)
   // ═══════════════════════════════════════════════════════════════════════════
   } else {
-    const warmupDays  = 7;
+    const warmupDays  = 10;
     const warmupStart = addDays(new Date(config.data_live + 'T12:00:00'), -warmupDays);
-
-    const npaLocal = aula(1)?.link || '{{endereco}}';
-    const npaInfo  = `📅 *${aulaDia(1)}, ${aulaData(1)} — ${aulaTit(1)}*\n⏰ ${aulaH(1)}\n📍 ${npaLocal}`;
-    const npaProfessor = aula(1)?.professor?.trim() || '';
-
-    type DiaNpa = {
-      manhaTxt: string;
-      tarde: { tipo: 'enquete'; intro: string; pollNome: string; pollOps: string[] }
-           | { tipo: 'texto'; txt: string };
-    };
-
-    const diasNpa: DiaNpa[] = [
-
-      // ── Dia 1 — A pergunta que ninguém faz (7 dias antes) ────────────────────
-      {
-        manhaTxt: `${slogan} dia! ☀️
-
-Você sabia que a data do seu nascimento já estava descrevendo o seu maior desafio nessa vida?
-
-Não como profecia. Como estrutura.
-
-Pitágoras — o mesmo matemático que você estudou na escola — desenvolveu um sistema que mapeia a vibração de cada pessoa a partir dos números que ela carrega.
-
-E aqui está o que é mais curioso:
-
-Os desafios que você mais enfrenta, os talentos que você mais subutiliza, os ciclos que se repetem na sua vida...
-
-*Tudo isso tem uma lógica. E essa lógica tem número.*
-
-Nos próximos 7 dias, você vai começar a enxergar essa lógica.
-
-No *${aulaDia(1)}*, você vai entendê-la de dentro.
-
-${npaInfo}
-
-Reage com 🔢 se você está aqui e vai estar lá.`,
-        tarde: {
-          tipo: 'enquete',
-          intro: `${slogan} tarde! ☀️
-
-Uma pergunta rápida pra começar:
-
-Seleciona a opção que mais combina com você 👇
-
-Reage com um 💡 nessa mensagem!`,
-          pollNome: 'Qual é a sua relação atual com Numerologia?',
-          pollOps: ['Nunca ouvi falar — quero descobrir', 'Conheço um pouco — quero aprofundar', 'Já estudei — quero aplicar de verdade', 'Sou cético(a) — mas estou aqui'],
-        },
-      },
-
-      // ── Dia 2 — O número que te acompanha (6 dias antes) ─────────────────────
-      {
-        manhaTxt: `${slogan} dia! ☀️
-
-Existe um número que resume o seu propósito de vida.
-
-Ele foi calculado no dia em que você nasceu — e desde então opera nos bastidores de cada escolha importante que você já fez.
-
-Quando você age alinhado com ele, as coisas fluem.
-Quando você age contra ele, surge aquela sensação de que algo está errado — sem conseguir nomear o quê.
-
-A maioria das pessoas passa a vida inteira sem saber qual é esse número.
-
-E o mais impressionante: quando descobre, a reação quase sempre é a mesma.
-
-_"Isso explica muita coisa."_
-
-No *${aulaDia(1)}*, você descobre o seu.
-
-${npaInfo}
-
-Reage com 🔢 se você quer saber qual é o seu número.`,
-        tarde: {
-          tipo: 'enquete',
-          intro: `${slogan} tarde! ☀️
-
-Uma enquete que vai revelar algo interessante sobre quem está aqui:
-
-Seleciona a opção que mais combina com você 👇
-
-Reage com um 💡 nessa mensagem!`,
-          pollNome: 'Você já viveu um período da sua vida onde tudo parecia fora de lugar — sem causa aparente?',
-          pollOps: ['Sim — e nunca entendi direito por quê', 'Sim — e só passou quando algo grande mudou', 'Estou vivendo isso agora', 'Não — mas conheço alguém assim'],
-        },
-      },
-
-      // ── Dia 3 — O nome que vibra (5 dias antes) ──────────────────────────────
-      {
-        manhaTxt: `${slogan} dia! ☀️
-
-O seu nome não é só uma etiqueta.
-
-Pitágoras descobriu que cada letra carrega um valor numérico — e que a soma das letras do seu nome descreve a frequência que você projeta no mundo.
-
-O nome que seus pais escolheram para você...
-
-Às vezes com intenção.
-Às vezes por intuição.
-Às vezes "porque simplesmente gostaram."
-
-...pode estar descrevendo exatamente quem você veio ser.
-
-Não é misticismo. É matemática aplicada à linguagem.
-
-E quando você aprende a ler — o seu nome nunca mais parece o mesmo.
-
-${npaInfo}
-
-Reage com ✨ se você ficou curioso(a) com isso.`,
-        tarde: {
-          tipo: 'texto',
-          txt: `${slogan} tarde! ☀️
-
-Sabe o que as pessoas mais dizem quando saem de um encontro de *${aulaTit(1)}*?
-
-_"Eu sempre soube que havia algo mais na minha data. Agora eu entendo o quê."_
-
-_"Finalmente algo que explica por que determinadas fases da minha vida foram tão difíceis — e faz sentido, não é vago."_
-
-_"Eu achei que seria sobre previsão do futuro. Não é. É sobre se conhecer de um jeito que muda como você toma decisões."_
-
-Numerologia Pitagórica não prevê o futuro.
-Ela revela a estrutura do presente.
-
-E quando você entende essa estrutura — você para de lutar contra o que é seu e começa a trabalhar *com* ele.
-
-No *${aulaDia(1)}*, em *${config.nome}*, isso chega até você.
-
-${npaInfo}
-
-Reage com 💛 se você já sentiu que estava lutando contra algo que não conseguia nomear.`,
-        },
-      },
-
-      // ── Dia 4 — Os ciclos que ninguém te contou (4 dias antes) ───────────────
-      {
-        manhaTxt: `${slogan} dia! ☀️
-
-Você provavelmente já teve um ano que parecia impossível de atravessar.
-
-Tudo pesado. Decisões difíceis. Sensação de que o chão sumiu.
-
-E provavelmente também já teve um ano onde tudo se encaixou — oportunidades surgindo, energia alta, as coisas andando.
-
-Isso não é sorte.
-
-Na Numerologia Pitagórica, existe uma estrutura chamada Ano Pessoal.
-Cada pessoa vive ciclos de 9 anos — e cada ano dentro desse ciclo tem uma vibração específica, com seus desafios e seus potenciais únicos.
-
-Quando você sabe em qual ano está — você para de nadar contra a maré e começa a navegar com ela.
-
-No *${aulaDia(1)}*, você descobre em qual ciclo você está agora.
-
-Reage com 🌊 se você quer entender o ciclo que está vivendo.`,
-        tarde: {
-          tipo: 'enquete',
-          intro: `${slogan} tarde! ☀️
-
-Estamos na metade do caminho. Uma pergunta direta:
-
-Seleciona a opção que mais combina com você agora 👇
-
-Reage com um 💡 nessa mensagem!`,
-          pollNome: 'Como você descreveria o momento de vida que está vivendo agora?',
-          pollOps: ['Estou num ciclo de colheita — as coisas fluindo', 'Estou num ciclo de transição — muita coisa mudando', 'Estou num ciclo pesado — resistindo sem entender por quê', 'Estou num ciclo de plantio — construindo algo novo'],
-        },
-      },
-
-      // ── Dia 5 — O que muda quando você sabe (3 dias antes) ───────────────────
-      {
-        manhaTxt: `${slogan} dia! ☀️
-
-*3 dias.*
-
-Deixa eu te falar o que muda quando uma pessoa aprende a ler os seus números:
-
-Ela para de se culpar pelos ciclos difíceis.
-Ela para de se comparar com quem está num ciclo diferente.
-Ela começa a tomar decisões alinhadas com o momento que está vivendo.
-Ela entende por que certas áreas da vida sempre exigiram mais esforço.
-
-Não porque ela é menos capaz.
-Mas porque ela estava usando a ferramenta errada no momento errado.
-
-Isso é o que o *${aulaTit(1)}* entrega — não teoria, não previsão, não vagueza.
-
-*Uma leitura precisa de quem você é e do momento que está vivendo.*
-
-${npaInfo}
-
-Reage com 🔥 se você vai estar lá.`,
-        tarde: {
-          tipo: 'texto',
-          txt: `${slogan} tarde! ☀️
-
-Uma coisa que surpreende quem chega pela primeira vez no *${aulaTit(1)}*:
-
-A Numerologia Pitagórica não é sobre acreditar em nada.
-
-Pitágoras era matemático, filósofo, cientista.
-O sistema que ele desenvolveu tem estrutura lógica — você pode verificar, calcular, testar.
-
-Não precisa de fé.
-Precisa só de curiosidade — e de disposição para olhar para os próprios números com honestidade.
-
-O que você vai descobrir no *${aulaDia(1)}* pode ser a primeira vez que você se vê descrito com precisão — sem generalização, sem vagueza.
-
-${npaInfo}
-
-Reage com 💡 se você já está com a curiosidade acesa.`,
-        },
-      },
-
-      // ── Dia 6 — Véspera da véspera (2 dias antes) ────────────────────────────
-      {
-        manhaTxt: `${slogan} dia! ☀️
-
-Dois dias.
-
-Já parou pra pensar por que você está aqui nesse grupo?
-
-Não foi propaganda. Não foi por acaso.
-
-Existe algo em você que reconheceu que esse momento importa — antes mesmo de entender por quê.
-
-Na Numerologia Pitagórica, isso tem nome.
-Tem número.
-E no *${aulaDia(1)}* você vai entender qual parte de você tomou essa decisão.
-
-Hoje, uma preparação simples:
-
-Lembra da sua data de nascimento completa — dia, mês e ano.
-E o nome que está no seu documento.
-
-Você vai precisar deles. 🔢
-
-Reage com 🎯 se você vai estar lá.`,
-        tarde: {
-          tipo: 'enquete',
-          intro: `${slogan} tarde! ☀️
-
-Penúltimo dia — última enquete antes do encontro.
-
-Uma pergunta que vai direto ao ponto:
-
-Seleciona a opção que mais combina com você 👇
-
-Reage com um 💡 nessa mensagem!`,
-          pollNome: 'O que você mais quer descobrir sobre si mesmo no encontro?',
-          pollOps: ['Qual é o meu propósito de vida segundo os números', 'Por que certos ciclos da minha vida foram tão pesados', 'Como usar meus números para tomar decisões melhores', 'O que meu nome e data revelam sobre mim'],
-        },
-      },
-
-      // ── Dia 7 — Véspera (1 dia antes) ────────────────────────────────────────
-      {
-        manhaTxt: `${slogan} dia! ☀️
-
-*Amanhã é o dia.*
-
-Você passou 7 dias recebendo perguntas sem resposta.
-
-Amanhã as respostas chegam — e elas têm o seu nome, a sua data, o seu número.
-
-${npaProfessor ? `${npaProfessor} preparou esse encontro para exatamente esse momento: quando uma pessoa está pronta para se ver com clareza — e tem coragem de aparecer.\n\n` : ''}O *${aulaTit(1)}* não é uma palestra sobre numerologia.
-
-É uma leitura ao vivo da sua estrutura numerológica — presencialmente, em grupo, com profundidade que só o encontro ao vivo permite.
-
-E acontece amanhã. Uma vez. Só para quem estiver lá.
-
-${npaInfo}
-
-Reage com 🙌 se você estará lá amanhã.`,
-        tarde: {
-          tipo: 'texto',
-          txt: `${slogan} tarde! ☀️
-
-Última chamada antes do grande dia.
-
-*Tudo que você precisa saber para amanhã:*
-
-${npaInfo}
-
-✅ Chegue com 10–15 min de antecedência
-📝 Traga caderno e caneta
-🔢 Tenha em mente: sua data de nascimento completa e o nome do seu documento
-📵 Celular no silencioso — esse tempo é todo seu
-
-Qualquer dúvida sobre o local, é só chamar aqui.
-
-*Nos vemos amanhã.* 🔢🙏`,
-        },
-      },
+    const STAGGER_MS  = 5 * 60 * 1000; // intervalo grupo 1 → grupo 2 (anti-ban)
+
+    const manhaSessao  = aula(1);
+    const tardeSessao  = aula(2);
+    const npaLocal     = manhaSessao?.link || '{{endereco}}';
+    const manhaHoraIni = manhaSessao?.hora || '09:00';
+    const manhaHoraFim = manhaSessao?.hora_fim || '13:00';
+    const tardeHoraIni = tardeSessao?.hora || '14:00';
+    const tardeHoraFim = tardeSessao?.hora_fim || '18:00';
+    const nomeEvento   = config.nome || '{{evento_nome}}';
+    const temGrupo2    = g2 !== g1;
+
+    // Envia o mesmo texto pros 2 grupos (grupo 2 sempre STAGGER_MS depois do grupo 1)
+    function pushEscalonado(day: number, at: Date, text: string, labelBase: string, opts: Partial<TemplateMensagem> = {}) {
+      msgs.push(textMsg(fn, day, at, g1, text, `${labelBase} (Grupo 1)`, opts));
+      if (temGrupo2) {
+        msgs.push(textMsg(fn, day, new Date(at.getTime() + STAGGER_MS), g2, text, `${labelBase} (Grupo 2)`, opts));
+      }
+    }
+
+    // ── 10 temas únicos de expectativa — nunca repete, nunca ensina de fato,
+    //    só planta curiosidade genuína pro encontro presencial ──────────────
+    // Endereço só entra a partir de "faltam 5 dias" (dia 6), por orientação de
+    // manter o clima de mistério do evento high-ticket antes disso.
+    const temasManha: string[] = [
+      // Dia 1 — faltam 10 — O código
+      `${slogan} dia! ☀️\n\nExiste um código que você carrega desde o dia em que nasceu.\n\nNão é astrologia. Não é sorte. É matemática — a mesma que Pitágoras usava pra decifrar padrões no universo, aplicada a você.\n\nSeu nome. Sua data. As escolhas que se repetem. Tudo isso tem uma lógica numérica por trás — e a maioria das pessoas nunca chega perto de enxergar essa lógica.\n\nNos próximos dias, vamos te dar alguns sinais dela. Só sinais.\n\nA leitura completa é outra coisa — e ela vai acontecer ao vivo, presencialmente, em *${nomeEvento}*.\n\nReage com 🔢 se você está curioso(a).`,
+
+      // Dia 2 — faltam 9 — Caminho de Vida
+      `${slogan} dia! ☀️\n\nExiste um único número, calculado a partir da sua data de nascimento, que descreve o motivo real de você estar aqui.\n\nChama-se Número do Caminho de Vida.\n\nQuando alguém entende o próprio Caminho de Vida, coisas que pareciam sem explicação — escolhas erradas, portas que insistiam em fechar, direções que nunca faziam sentido — começam a se encaixar.\n\nO seu já está calculado. Só falta você ouvir o que ele diz.\n\nReage com 🧭 se você quer descobrir o seu.`,
+
+      // Dia 3 — faltam 8 — Nome
+      `${slogan} dia! ☀️\n\nSeu nome não foi escolhido por acaso — mesmo que quem escolheu não soubesse disso.\n\nCada letra carrega um valor numérico. E a soma dessas letras revela algo que você projeta no mundo o tempo todo, sem perceber.\n\nTem gente que carrega um nome que combina perfeitamente com quem é. E tem gente carregando um nome que puxa pra outra direção — gerando um atrito silencioso que dura a vida inteira.\n\nQual dos dois é o seu caso? Isso só a leitura completa revela.\n\nReage com ✨ se isso mexeu com você.`,
+
+      // Dia 4 — faltam 7 — Ciclos de 9 anos
+      `${slogan} dia! ☀️\n\nVocê já teve um ano que pareceu simplesmente impossível — e um outro em que tudo fluiu sem esforço?\n\nIsso não foi coincidência.\n\nExiste um ciclo de 9 anos que rege a vida de cada pessoa — e cada ano dentro dele tem uma vibração própria, com desafios e potenciais específicos.\n\nQuando você sabe em qual ano do ciclo está, para de nadar contra a maré e começa a usar a correnteza a seu favor.\n\nReage com 🌊 se você já sentiu isso na pele.`,
+
+      // Dia 5 — faltam 6 — Números Mestres
+      `${slogan} dia! ☀️\n\nExistem três números que a Numerologia Pitagórica trata como raros: 11, 22 e 33.\n\nChamam-se Números Mestres. Quem carrega um deles sente isso a vida inteira — uma intensidade maior, uma sensibilidade fora da curva, uma cobrança interna que os outros não entendem.\n\nÉ um dom. Mas é também um peso, se ninguém nunca te explicou o que ele significa.\n\nReage com 🔮 se você suspeita que pode carregar um.`,
+
+      // Dia 6 — faltam 5 — Dívidas cármicas (a partir daqui já pode citar local)
+      `${slogan} dia! ☀️\n\nTem gente que vive tropeçando no mesmo tipo de problema — trocam as pessoas, trocam o emprego, trocam a cidade, e o padrão continua idêntico.\n\nNa Numerologia Pitagórica, isso pode ter nome: dívida cármica. Um número que carrega uma lição não resolvida, repetindo-se até ser encarada de frente.\n\nNão é castigo. É um convite pra parar de repetir e começar a resolver.\n\n📍 *${nomeEvento}* — ${npaLocal}\n\nReage com 🔁 se você reconhece um padrão que insiste em voltar.`,
+
+      // Dia 7 — faltam 4 — Compatibilidade
+      `${slogan} dia! ☀️\n\nVocê já esteve perto de alguém e sentiu uma sintonia que não conseguia explicar? Ou o oposto — um desconforto instantâneo, sem motivo aparente?\n\nA vibração numérica de duas pessoas se encontra do mesmo jeito que duas notas musicais — ou formam harmonia, ou formam dissonância.\n\nIsso não decide um relacionamento. Mas explica muito do que você já viveu.\n\n📍 *${nomeEvento}* — ${npaLocal}\n\nReage com 💫 se já sentiu essa sintonia (ou dissonância) instantânea com alguém.`,
+
+      // Dia 8 — faltam 3 — Dia de nascimento (hoje também tem enquete de presença, mensagem separada)
+      `${slogan} dia! ☀️\n\nAlém do Caminho de Vida, existe um segundo número — mais simples, mais direto — calculado só a partir do DIA em que você nasceu.\n\nEle aponta um talento natural. Uma habilidade que você já tem, mas que provavelmente nunca valorizou por achar "óbvia demais".\n\nFaltam 3 dias. E precisamos confirmar uma coisa com você — olha a próxima mensagem 👇`,
+
+      // Dia 9 — faltam 2 — Transformação real
+      `${slogan} dia! ☀️\n\nFaltam 2 dias.\n\nO que muda quando uma pessoa aprende a ler os próprios números não é uma sensação passageira de "aula legal".\n\nÉ decisão tomada com mais clareza. É parar de se culpar por ciclos difíceis. É entender, finalmente, por que certas coisas sempre custaram mais caro pra você do que pareciam custar pros outros.\n\nIsso não é teoria. É estrutura — e você vai sair de lá com a sua.\n\n📍 *${nomeEvento}* — ${npaLocal}\n\nReage com 🔥 se você já sabe que vai estar lá.`,
+
+      // Dia 10 — véspera — urgência + logística
+      `${slogan} dia! ☀️\n\n*Amanhã é o dia.*\n\nDez dias de sinais, perguntas e pequenas provocações — e amanhã tudo isso ganha nome, número e direção.\n\nEssa não é uma aula que fica gravada. É um encontro presencial, ao vivo, uma vez só.\n\n📅 *${nomeEvento}*\n📍 ${npaLocal}\n🕐 Manhã: ${manhaHoraIni} às ${manhaHoraFim} | Tarde: ${tardeHoraIni} às ${tardeHoraFim}\n\nTraga caderno e caneta. Chegue com alguns minutos de antecedência.\n\nReage com 🙌 se amanhã é o seu dia.`,
+    ];
+
+    // ── Contagem regressiva da noite — tom muda conforme o dia se aproxima ──
+    const temasNoite: string[] = [
+      `🌙 Boa noite!\n\nFaltam *10 dias* para *${nomeEvento}*.\n\nA contagem começou — e cada dia dessas mensagens vai revelar um pedacinho de algo maior.\n\nSe você chegou até aqui, alguma parte de você já sabe que vale a pena estar lá.`,
+      `🌙 Boa noite!\n\nFaltam *9 dias*.\n\nEnquanto você lê essa mensagem, seus números já estão contando uma história — só falta você ouvir de perto.`,
+      `🌙 Boa noite!\n\nFaltam *8 dias* para *${nomeEvento}*.\n\nEssa semana passa rápido. Guarda o compromisso com você mesmo.`,
+      `🌙 Boa noite!\n\nFaltam *7 dias*.\n\nUma semana. É o tempo que separa você de uma leitura que muita gente nunca teve coragem de fazer.`,
+      `🌙 Boa noite!\n\nFaltam *6 dias* para *${nomeEvento}*.\n\nA cada mensagem que você lê nessa semana, um número diferente da sua vida está sendo mencionado. Em breve, todos eles se juntam.`,
+      `🌙 Boa noite!\n\nFaltam *5 dias*.\n\n📍 ${npaLocal}\n\nJá reserva esse dia — de verdade, na agenda.`,
+      `🌙 Boa noite!\n\nFaltam *4 dias* para *${nomeEvento}*.\n\nQuem já decidiu que vai — reage com 🙋.`,
+      `🌙 Boa noite!\n\nFaltam *3 dias*.\n\nSe você ainda não respondeu a enquete de hoje, responde agora — ela importa pra gente organizar tudo direitinho.`,
+      `🌙 Boa noite!\n\nFaltam *2 dias* para *${nomeEvento}*.\n\nA ansiedade boa já começou pra quem vai estar lá.`,
+      `🌙 Boa noite!\n\n*Amanhã é o dia.*\n\n📍 ${npaLocal}\n🕐 Manhã: ${manhaHoraIni} às ${manhaHoraFim} | Tarde: ${tardeHoraIni} às ${tardeHoraFim}\n\nDurma bem. Amanhã é um dia diferente.`,
     ];
 
     for (let i = 0; i < warmupDays; i++) {
       const day     = i + 1;
       const dayDate = addDays(warmupStart, i);
-      const d       = diasNpa[i];
 
-      msgs.push(textMsg(fn, day, setTime(dayDate, '08:00'), g1,
-        d.manhaTxt, `Dia ${day} — Manhã`, { link_preview: true }));
+      pushEscalonado(day, setTime(dayDate, '08:00'), temasManha[i], `Dia ${day} — Manhã`);
 
-      if (d.tarde.tipo === 'enquete') {
-        msgs.push(textMsg(fn, day, setTime(dayDate, '18:00'), g1,
-          d.tarde.intro, `Dia ${day} — Enquete (intro)`));
-        msgs.push(pollMsg(fn, day,
-          new Date(setTime(dayDate, '18:00').getTime() + 3 * 60 * 1000),
-          g1, d.tarde.pollNome, d.tarde.pollOps, `Dia ${day} — Enquete`));
-      } else {
-        msgs.push(textMsg(fn, day, setTime(dayDate, '18:00'), g1,
-          d.tarde.txt, `Dia ${day} — Tarde`, { link_preview: true }));
+      // Dia 8 (faltam 3) — enquete de confirmação de presença, além do teaser da manhã
+      if (day === warmupDays - 2) {
+        const pollIntro = `${slogan}! 👋\n\nAntes de continuar — precisamos saber quem vai estar com a gente.\n\nResponde rapidinho 👇`;
+        const pollNome  = `Você confirma sua presença em ${nomeEvento} (${aulaData(1)})?`;
+        const pollOps   = ['Sim, confirmado! 🙌', 'Ainda não sei', 'Não vou conseguir ir'];
+        const pollAt    = setTime(dayDate, '11:00');
+
+        msgs.push(textMsg(fn, day, pollAt, g1, pollIntro, `Dia ${day} — Enquete (intro, Grupo 1)`));
+        msgs.push(pollMsg(fn, day, new Date(pollAt.getTime() + 3 * 60 * 1000), g1, pollNome, pollOps, `Dia ${day} — Enquete (Grupo 1)`));
+        if (temGrupo2) {
+          const pollAt2 = new Date(pollAt.getTime() + STAGGER_MS);
+          msgs.push(textMsg(fn, day, pollAt2, g2, pollIntro, `Dia ${day} — Enquete (intro, Grupo 2)`));
+          msgs.push(pollMsg(fn, day, new Date(pollAt2.getTime() + 3 * 60 * 1000), g2, pollNome, pollOps, `Dia ${day} — Enquete (Grupo 2)`));
+        }
       }
+
+      pushEscalonado(day, setTime(dayDate, '20:00'), temasNoite[i], `Dia ${day} — Noite`);
     }
 
-    const aulaDateObj  = new Date(config.data_live + 'T12:00:00');
-    const aulaDateHora = setTime(aulaDateObj, aulaHora(1));
-    const dayNum       = warmupDays + 1;
+    // ── Dia do evento — 2 sessões (manhã e tarde), cada grupo com seus horários ──
+    const eventDateObj = new Date(config.data_live + 'T12:00:00');
+    const dayNum        = warmupDays + 1;
+    const manhaHora     = setTime(eventDateObj, manhaHoraIni);
+    const tardeHora     = setTime(eventDateObj, tardeHoraIni);
 
-    msgs.push(textMsg(fn, dayNum, setTime(aulaDateObj, '08:00'), g1,
-      `*HOJE É O DIA.*\n\nDaqui algumas horas você vai estar em um lugar que muito pouca gente tem coragem de ir — dentro de si mesmo, de verdade.\n\nO encontro começa às ${aulaH(1)}. Organize sua manhã com calma e chegue no horário — o início é parte da experiência.\n\nNão existe gravação. O que vai acontecer hoje existe só hoje, só para quem estiver lá.\n\nTrás caderno e caneta.\n\n${npaInfo}\n\nReage com ❤️ se você vai aparecer hoje.`,
-      'Dia do Evento — Manhã', { link_preview: true }));
+    msgs.push(textMsg(fn, dayNum, setTime(eventDateObj, '07:05'), g1,
+      `*HOJE É O DIA.*\n\nDez dias de sinais — e agora eles ganham nome e número, ao vivo, com você presente.\n\n🕐 Sua sessão é de manhã: ${manhaHoraIni} às ${manhaHoraFim}.\n\nOrganize sua manhã com calma e chegue com antecedência — o início é parte da experiência.\n\nNão existe gravação. O que vai acontecer hoje existe só hoje, só pra quem estiver lá.\n\nTraga caderno e caneta.\n\n📍 ${npaLocal}\n\nReage com ❤️ se você vai aparecer hoje.`,
+      'Dia do Evento — Manhã (Grupo 1)', { mention_everyone: true }));
 
-    msgs.push(textMsg(fn, dayNum,
-      new Date(aulaDateHora.getTime() - 2 * 60 * 60 * 1000), g1,
-      `⏰ *Faltam 2 horas para o ${aulaTit(1)}.*\n\nSe você ainda não saiu de casa — começa a se preparar agora.\n\nConsidere o trânsito. Chegue com antecedência. O início é fundamental — não adianta chegar na metade.\n\n📍 ${npaLocal}\n\nReage com 🔥 se você já está a caminho!`,
-      'Dia do Evento — -2h', { link_preview: true, mention_everyone: true }));
+    if (temGrupo2) {
+      msgs.push(textMsg(fn, dayNum, new Date(setTime(eventDateObj, '07:05').getTime() + STAGGER_MS), g2,
+        `*HOJE É O DIA.*\n\nDez dias de sinais — e agora eles ganham nome e número, ao vivo, com você presente.\n\n🕐 Sua sessão é de tarde: ${tardeHoraIni} às ${tardeHoraFim}.\n\nOrganize seu dia com calma e chegue com antecedência — o início é parte da experiência.\n\nNão existe gravação. O que vai acontecer hoje existe só hoje, só pra quem estiver lá.\n\nTraga caderno e caneta.\n\n📍 ${npaLocal}\n\nReage com ❤️ se você vai aparecer hoje.`,
+        'Dia do Evento — Manhã (Grupo 2)', { mention_everyone: true }));
+    }
 
-    msgs.push(textMsg(fn, dayNum,
-      new Date(aulaDateHora.getTime() - 30 * 60 * 1000), g1,
-      `⏰ *Faltam 30 minutos.*\n\nSe você ainda não saiu — sai AGORA.\n\nChegar no horário faz parte do respeito com você mesmo e com quem já está lá.\n\n📍 ${npaLocal}`,
-      'Dia do Evento — -30min', { mention_everyone: true }));
+    // Sessão da manhã → só grupo 1
+    msgs.push(textMsg(fn, dayNum, new Date(manhaHora.getTime() - 2 * 60 * 60 * 1000), g1,
+      `⏰ *Faltam 2 horas para a sua sessão.*\n\nSe você ainda não saiu de casa — começa a se preparar agora.\n\nConsidere o trânsito. Chegue com antecedência.\n\n📍 ${npaLocal}\n\nReage com 🔥 se você já está a caminho!`,
+      'Dia do Evento — Manhã -2h', { mention_everyone: true }));
 
-    msgs.push(textMsg(fn, dayNum, aulaDateHora, g1,
-      `🔔 *O ${aulaTit(1).toUpperCase()} COMEÇOU.*\n\nQuem está aqui — bem-vindo. Isso exige coragem, e você veio.\n\nPara quem ainda está chegando: entra com respeito e sem interrupções.\n\nPara quem não pôde vir: isso fica para a próxima turma — não existe gravação.\n\n📍 ${npaLocal}`,
-      'Dia do Evento — Início', { mention_everyone: true }));
+    msgs.push(textMsg(fn, dayNum, new Date(manhaHora.getTime() - 30 * 60 * 1000), g1,
+      `⏰ *Faltam 30 minutos.*\n\nSe você ainda não saiu — sai AGORA.\n\n📍 ${npaLocal}`,
+      'Dia do Evento — Manhã -30min', { mention_everyone: true }));
 
-    const diaOferta    = addDays(new Date(config.data_live + 'T12:00:00'), 1);
-    const linkCheckout = config.links_extras.find(l => l.key === 'link_checkout')?.value || '{{link_checkout}}';
+    msgs.push(textMsg(fn, dayNum, manhaHora, g1,
+      `🔔 *COMEÇOU.*\n\nQuem está aqui — bem-vindo. Isso exige coragem, e você veio.\n\nPara quem ainda está chegando: entra com respeito e sem interrupções.\n\nPara quem não pôde vir: isso fica pra próxima turma — não existe gravação.\n\n📍 ${npaLocal}`,
+      'Dia do Evento — Manhã Início', { mention_everyone: true }));
 
-    msgs.push(textMsg(fn, dayNum + 1, setTime(diaOferta, '10:00'), g2,
-      `Como você está depois de ontem?\n\nO que acontece em um encontro presencial como esse não cabe em palavra. Mas você sabe o que foi.\n\nAlguma coisa em você virou ontem. E agora você tem uma escolha:\n\nDeixa isso como uma boa experiência — ou usa isso como ponto de partida para uma transformação real.\n\nPara quem quer continuar esse trabalho com estrutura, profundidade e acompanhamento:\n\nAs matrículas estão abertas. São vagas limitadas e quem esteve no evento tem prioridade.\n\n👉 ${linkCheckout}\n\nNão existe o momento perfeito. Existe a decisão que você toma antes de estar completamente pronto.`,
-      'Oferta Pós-NPA', { link_preview: true, mention_everyone: true }));
+    // Sessão da tarde → só grupo 2 (se existir; senão cai no mesmo grupo 1)
+    const gTarde = temGrupo2 ? g2 : g1;
+    msgs.push(textMsg(fn, dayNum, new Date(tardeHora.getTime() - 2 * 60 * 60 * 1000), gTarde,
+      `⏰ *Faltam 2 horas para a sua sessão.*\n\nSe você ainda não saiu de casa — começa a se preparar agora.\n\nConsidere o trânsito. Chegue com antecedência.\n\n📍 ${npaLocal}\n\nReage com 🔥 se você já está a caminho!`,
+      'Dia do Evento — Tarde -2h', { mention_everyone: true }));
+
+    msgs.push(textMsg(fn, dayNum, new Date(tardeHora.getTime() - 30 * 60 * 1000), gTarde,
+      `⏰ *Faltam 30 minutos.*\n\nSe você ainda não saiu — sai AGORA.\n\n📍 ${npaLocal}`,
+      'Dia do Evento — Tarde -30min', { mention_everyone: true }));
+
+    msgs.push(textMsg(fn, dayNum, tardeHora, gTarde,
+      `🔔 *COMEÇOU.*\n\nQuem está aqui — bem-vindo. Isso exige coragem, e você veio.\n\nPara quem ainda está chegando: entra com respeito e sem interrupções.\n\nPara quem não pôde vir: isso fica pra próxima turma — não existe gravação.\n\n📍 ${npaLocal}`,
+      'Dia do Evento — Tarde Início', { mention_everyone: true }));
+
+    // ── Oferta pós-evento — 3 níveis, mensagens separadas, sem link (só "chama aqui") ──
+    const tier1Preco = config.links_extras.find(l => l.key === 'oferta_ebook_preco')?.value || '21';
+    const tier2Preco = config.links_extras.find(l => l.key === 'oferta_mapa_preco')?.value || '47';
+    const tier3Preco = config.links_extras.find(l => l.key === 'oferta_mentoria_preco')?.value || '397';
+
+    const ofertaTier1 = `Hoje você viveu, ao vivo, uma introdução real ao seu próprio código numérico.\n\nMas o que rolou na sala não precisa ficar só na memória.\n\nPreparamos as *telas completas da aula de hoje* + um *eBook exclusivo* de Numerologia Pitagórica, pra você revisitar (e aplicar) tudo com calma, no seu tempo.\n\n📕 Telas da aula + eBook — por *R$ ${tier1Preco}*\n\nÉ o primeiro passo pra levar isso a sério. Chama aqui pra garantir o seu.`;
+    const ofertaTier2 = `Ontem você teve um gostinho. Hoje a pergunta é: você quer o mapa inteiro?\n\nO *Mapa Numerológico Completo* é a sua leitura pessoal e detalhada — Caminho de Vida, Número do Nome, Ano Pessoal, Números Mestres (se você tiver) — tudo calculado especificamente pra você, num material que é seu pra sempre.\n\n🗺️ Mapa Numerológico Completo — por *R$ ${tier2Preco}*\n\nNão é o genérico que você viveu em grupo. É o seu, individual, com profundidade.`;
+    const ofertaTier3 = `Última mensagem sobre isso.\n\nSe o que você viveu nesses dias abriu uma porta que você não quer fechar de novo — existe um caminho pra ir além da leitura pontual.\n\nA *Mentoria NPA* é o acompanhamento pra quem quer aplicar a Numerologia Pitagórica na prática, com direção, estrutura e suporte contínuo.\n\n🎓 Mentoria NPA — por *R$ ${tier3Preco}*\n\nVagas limitadas. Prioridade pra quem esteve com a gente no presencial.\n\nChama aqui se você sente que é a hora de ir além.`;
+
+    const diaOfertaTier2e3 = addDays(eventDateObj, 1);
+
+    pushEscalonado(dayNum, setTime(eventDateObj, '19:00'), ofertaTier1, 'Oferta — eBook + Telas (R$' + tier1Preco + ')', { mention_everyone: true });
+    pushEscalonado(dayNum + 1, setTime(diaOfertaTier2e3, '10:00'), ofertaTier2, 'Oferta — Mapa Completo (R$' + tier2Preco + ')', { mention_everyone: true });
+    pushEscalonado(dayNum + 1, setTime(diaOfertaTier2e3, '19:00'), ofertaTier3, 'Oferta — Mentoria NPA (R$' + tier3Preco + ')', { mention_everyone: true });
   }
 
   return msgs.map(m => ({ ...m, status: m.hasUnresolvedVar ? 'draft' : 'scheduled' }));
