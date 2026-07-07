@@ -58,6 +58,7 @@ interface Campanha {
   callback_url?: string | null;
   message_type?: string | null;
   media_url?: string | null;
+  evolution_config_ids?: string[] | null;
 }
 
 interface DisparoLead {
@@ -447,6 +448,7 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
   const [selectedEvoId, setSelectedEvoId] = useState('');
   const [wppGroups, setWppGroups]       = useState<WppGroup[]>([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
+  const [rodizioIds, setRodizioIds]     = useState<string[]>([]);
 
   useEffect(() => {
     Promise.all([
@@ -459,8 +461,13 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
       const evos = (e.data ?? []) as typeof evoInstances;
       setEvoInstances(evos);
       if (evos.length) setSelectedEvoId(evos[0].id);
+      setRodizioIds(evos.map(ev => ev.id));
     });
   }, []);
+
+  function toggleRodizio(id: string) {
+    setRodizioIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  }
 
   async function fetchWppGroups(evoId: string) {
     const inst = evoInstances.find(e => e.id === evoId);
@@ -598,6 +605,7 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
       delay_min_s: delayMin, delay_max_s: delayMax,
       safe_hour_start: hourStart, safe_hour_end: hourEnd,
       daily_limit: dailyLimit,
+      evolution_config_ids: rodizioIds,
       next_send_at: new Date().toISOString(),
     }).select('id').single();
     if (error || !camp) { toast.error('Erro: ' + error?.message); setSaving(false); return; }
@@ -744,6 +752,24 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
                 <Input type="number" value={dailyLimit} min={1} onChange={e => setDailyLimit(Number(e.target.value))} className="h-9 text-sm" />
               </div>
             </div>
+
+            {evoInstances.length > 1 && (
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                  Instâncias no rodízio
+                  <span className="font-normal opacity-60 ml-1">— alterna 1 mensagem por número, respeitando o delay acima</span>
+                </label>
+                <div className="space-y-1.5">
+                  {evoInstances.map(inst => (
+                    <label key={inst.id} className="flex items-center gap-2.5 p-2 rounded-lg border border-border hover:border-primary/40 cursor-pointer transition-colors select-none">
+                      <input type="checkbox" checked={rodizioIds.includes(inst.id)} onChange={() => toggleRodizio(inst.id)}
+                        className="h-4 w-4 rounded accent-primary flex-none" />
+                      <span className="text-sm text-foreground">{inst.instance_name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </>)}
 
           {/* ── STEP 2 ── */}
@@ -1000,20 +1026,37 @@ function EditCampanhaModal({
   const [dailyLimit, setDailyLimit]   = useState(campanha.daily_limit);
   const [saving, setSaving]           = useState(false);
 
+  const [evoInstances, setEvoInstances] = useState<{ id: string; instance_name: string }[]>([]);
+  const [rodizioIds, setRodizioIds]     = useState<string[]>(campanha.evolution_config_ids ?? []);
+
+  useEffect(() => {
+    supabase.from('evolution_config').select('id, instance_name').eq('ativo', true).order('prioridade')
+      .then(({ data }) => {
+        const evos = (data ?? []) as { id: string; instance_name: string }[];
+        setEvoInstances(evos);
+        setRodizioIds(prev => prev.length ? prev : evos.map(e => e.id));
+      });
+  }, []);
+
+  function toggleRodizio(id: string) {
+    setRodizioIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  }
+
   async function handleSave() {
     if (!nome.trim()) { toast.error('Informe um nome'); return; }
     setSaving(true);
     const payload = {
-      nome:             nome.trim(),
-      template:         template.trim() || null,
-      message_type:     msgType,
-      media_url:        msgType !== 'text' ? (mediaUrl.trim() || null) : null,
-      mention_everyone: mentionAll,
-      delay_min_s:      delayMin,
-      delay_max_s:      delayMax,
-      safe_hour_start:  hourStart,
-      safe_hour_end:    hourEnd,
-      daily_limit:      dailyLimit,
+      nome:                 nome.trim(),
+      template:             template.trim() || null,
+      message_type:         msgType,
+      media_url:            msgType !== 'text' ? (mediaUrl.trim() || null) : null,
+      mention_everyone:     mentionAll,
+      delay_min_s:          delayMin,
+      delay_max_s:          delayMax,
+      safe_hour_start:      hourStart,
+      safe_hour_end:        hourEnd,
+      daily_limit:          dailyLimit,
+      evolution_config_ids: rodizioIds,
     };
     const { error } = await supabase.from('disparo_campanhas').update(payload).eq('id', campanha.id);
     setSaving(false);
@@ -1134,6 +1177,24 @@ function EditCampanhaModal({
               </div>
             </div>
           </div>
+
+          {evoInstances.length > 1 && (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                Instâncias no rodízio
+                <span className="font-normal opacity-60 ml-1">— alterna 1 mensagem por número, respeitando o delay acima</span>
+              </label>
+              <div className="space-y-1.5">
+                {evoInstances.map(inst => (
+                  <label key={inst.id} className="flex items-center gap-2.5 p-2 rounded-lg border border-border hover:border-primary/40 cursor-pointer transition-colors select-none">
+                    <input type="checkbox" checked={rodizioIds.includes(inst.id)} onChange={() => toggleRodizio(inst.id)}
+                      className="h-4 w-4 rounded accent-primary flex-none" />
+                    <span className="text-sm text-foreground">{inst.instance_name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="px-6 py-4 border-t bg-gray-50 rounded-b-2xl flex justify-end gap-2">
@@ -1157,11 +1218,20 @@ function CampanhasTab() {
   const [leads, setLeads] = useState<Record<string, DisparoLead[]>>({});
   const [loadingLeads, setLoadingLeads] = useState<Set<string>>(new Set());
   const [novaModal, setNovaModal] = useState(false);
+  const [instanceNames, setInstanceNames] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    supabase.from('evolution_config').select('id, instance_name').then(({ data }) => {
+      const map: Record<string, string> = {};
+      for (const row of (data ?? []) as { id: string; instance_name: string }[]) map[row.id] = row.instance_name;
+      setInstanceNames(map);
+    });
+  }, []);
 
   const load = useCallback(async () => {
     const { data, error } = await supabase
       .from('disparo_campanhas')
-      .select('id, nome, template, status, leads_total, leads_sent, leads_error, leads_skipped, delay_min_s, delay_max_s, next_send_at, created_at, safe_hour_start, safe_hour_end, daily_limit, email_contato, callback_url, message_type, media_url, mention_everyone')
+      .select('id, nome, template, status, leads_total, leads_sent, leads_error, leads_skipped, delay_min_s, delay_max_s, next_send_at, created_at, safe_hour_start, safe_hour_end, daily_limit, email_contato, callback_url, message_type, media_url, mention_everyone, evolution_config_ids')
       .order('created_at', { ascending: false });
     if (error) { toast.error('Erro ao carregar campanhas'); return; }
     setCampanhas((data ?? []) as Campanha[]);
@@ -1395,6 +1465,15 @@ function CampanhaCard({ campanha: c, isExpanded, onToggle, leads, loadingLeads, 
               <span>delay {c.delay_min_s}–{c.delay_max_s}s</span>
               <span className="text-muted-foreground/60">·</span>
               <span><Shield className="inline h-3 w-3 mr-0.5 mb-0.5" />{c.daily_limit}/dia</span>
+              {(c.evolution_config_ids?.length ?? 0) > 1 && (
+                <>
+                  <span className="text-muted-foreground/60">·</span>
+                  <span title={c.evolution_config_ids!.map(id => instanceNames[id] ?? id).join(', ')}>
+                    <Zap className="inline h-3 w-3 mr-0.5 mb-0.5" />
+                    rodízio: {c.evolution_config_ids!.map(id => instanceNames[id] ?? id).join(', ')}
+                  </span>
+                </>
+              )}
               {c.status === 'ativo' && c.next_send_at && (
                 <span className="text-blue-600 font-medium">
                   próximo {fmtRelative(c.next_send_at) ?? fmtTime(c.next_send_at)}
