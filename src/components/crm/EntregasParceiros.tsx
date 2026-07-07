@@ -4,13 +4,12 @@ import { supabase } from '@/integrations/supabase/client';
 import { useGoogleDriveUpload } from '@/hooks/useGoogleDriveUpload';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Loader2, Plus, Upload, Send, FileText, Mic, Video as VideoIcon, ExternalLink } from 'lucide-react';
+import { Loader2, Plus, Upload, Send, FileText, Mic, Video as VideoIcon, ExternalLink, Youtube, Instagram, Music2, Megaphone, Clapperboard } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { toast } from 'sonner';
@@ -45,7 +44,45 @@ const COLUNAS: { key: EntregaStatus; label: string }[] = [
   { key: 'publicado', label: 'Publicado' },
 ];
 
-const DESTINOS_OPCOES = ['reels', 'tiktok', 'youtube'];
+const FORMATO_OPCOES: { key: string; label: string; icon: React.ElementType; color: string }[] = [
+  { key: 'youtube', label: 'Vídeo YB', icon: Youtube, color: '#CC0000' },
+  { key: 'shorts', label: 'Shorts', icon: Clapperboard, color: '#4F46E5' },
+  { key: 'reels', label: 'Reels', icon: Instagram, color: '#C13584' },
+  { key: 'tiktok', label: 'TikTok', icon: Music2, color: '#1F2937' },
+  { key: 'audio', label: 'Áudio', icon: Mic, color: '#7C3AED' },
+  { key: 'anuncio', label: 'Anúncio', icon: Megaphone, color: '#D97706' },
+];
+
+function FormatoChip({ formatoKey, selected, onClick }: { formatoKey: string; selected: boolean; onClick?: () => void }) {
+  const opt = FORMATO_OPCOES.find(o => o.key === formatoKey);
+  if (!opt) return null;
+  const Icon = opt.icon;
+  const Comp = onClick ? 'button' : 'span';
+  return (
+    <Comp
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium border transition-colors',
+        onClick && 'cursor-pointer',
+        selected ? 'text-white border-transparent' : 'border-border text-muted-foreground hover:bg-muted',
+      )}
+      style={selected ? { backgroundColor: opt.color } : undefined}
+    >
+      <Icon className="h-3 w-3" /> {opt.label}
+    </Comp>
+  );
+}
+
+function FormatoPicker({ selecionados, onToggle }: { selecionados: string[]; onToggle: (key: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {FORMATO_OPCOES.map(opt => (
+        <FormatoChip key={opt.key} formatoKey={opt.key} selected={selecionados.includes(opt.key)} onClick={() => onToggle(opt.key)} />
+      ))}
+    </div>
+  );
+}
 
 const EMPTY_FORM = { parceiro_id: '', produto_id: '', titulo: '', tipo: 'video' as 'audio' | 'video', destinos: [] as string[], roteiro: '' };
 
@@ -140,7 +177,7 @@ export function EntregasParceiros({ scopedParceiroId }: { scopedParceiroId?: str
                     </div>
                     {admin && <p className="text-xs text-muted-foreground">{e.parceiros?.nome ?? 'Parceira'}</p>}
                     <div className="flex flex-wrap gap-1">
-                      {e.destinos?.map(d => <Badge key={d} variant="outline" className="text-[10px] px-1.5 py-0 capitalize">{d}</Badge>)}
+                      {e.destinos?.map(d => <FormatoChip key={d} formatoKey={d} selected />)}
                     </div>
                   </button>
                 ))}
@@ -184,21 +221,11 @@ export function EntregasParceiros({ scopedParceiroId }: { scopedParceiroId?: str
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Destino</Label>
-              <div className="flex gap-2">
-                {DESTINOS_OPCOES.map(d => {
-                  const ativo = form.destinos.includes(d);
-                  return (
-                    <button
-                      key={d} type="button"
-                      onClick={() => setForm(f => ({ ...f, destinos: ativo ? f.destinos.filter(x => x !== d) : [...f.destinos, d] }))}
-                      className={cn('px-3 py-1.5 rounded-md border text-xs capitalize transition-colors', ativo ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground hover:bg-muted')}
-                    >
-                      {d}
-                    </button>
-                  );
-                })}
-              </div>
+              <Label className="text-xs text-muted-foreground">Formato (um ou vários)</Label>
+              <FormatoPicker
+                selecionados={form.destinos}
+                onToggle={(key) => setForm(f => ({ ...f, destinos: f.destinos.includes(key) ? f.destinos.filter(x => x !== key) : [...f.destinos, key] }))}
+              />
             </div>
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">Roteiro completo</Label>
@@ -229,6 +256,16 @@ function DetalheEntrega({ entrega, admin, onMover }: { entrega: Entrega; admin: 
   const [novoComentario, setNovoComentario] = useState('');
   const [enviandoComentario, setEnviandoComentario] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [destinos, setDestinos] = useState<string[]>(entrega.destinos || []);
+
+  useEffect(() => { setDestinos(entrega.destinos || []); }, [entrega.id, entrega.destinos]);
+
+  const toggleFormato = async (key: string) => {
+    const novo = destinos.includes(key) ? destinos.filter(x => x !== key) : [...destinos, key];
+    setDestinos(novo);
+    const { error } = await supabase.from('parceiros_entregas' as any).update({ destinos: novo }).eq('id', entrega.id);
+    if (error) { toast.error(`Erro ao atualizar formato: ${error.message}`); setDestinos(entrega.destinos || []); }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -278,9 +315,20 @@ function DetalheEntrega({ entrega, admin, onMover }: { entrega: Entrega; admin: 
         <DialogTitle>{entrega.titulo}</DialogTitle>
         <DialogDescription>
           {entrega.parceiros?.nome ?? 'Parceira'} · {entrega.tipo === 'audio' ? 'Áudio' : 'Vídeo'}
-          {entrega.destinos?.length ? ` · ${entrega.destinos.join(', ')}` : ''}
         </DialogDescription>
       </DialogHeader>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">Formato</Label>
+        {admin ? (
+          <FormatoPicker selecionados={destinos} onToggle={toggleFormato} />
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {destinos.length === 0 && <span className="text-xs text-muted-foreground/60">Nenhum formato definido ainda.</span>}
+            {destinos.map(d => <FormatoChip key={d} formatoKey={d} selected />)}
+          </div>
+        )}
+      </div>
 
       {admin && (
         <div className="flex items-center gap-2">
