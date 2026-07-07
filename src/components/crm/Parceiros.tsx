@@ -56,7 +56,19 @@ type Produto = {
   meta_campaign_id: string | null;
   meta_ad_account_id: string | null;
   meta_access_token: string | null;
+  bump_ativo: boolean;
+  bump_nome: string | null;
+  bump_descricao: string | null;
+  bump_preco: number | null;
 };
+
+function conectarMercadoPago(parceiraId: string) {
+  const clientId = import.meta.env.VITE_MP_CLIENT_ID;
+  if (!clientId) { toast.error('Conexão com Mercado Pago ainda não configurada.'); return; }
+  const redirectUri = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mp-oauth-callback`;
+  const url = `https://auth.mercadopago.com.br/authorization?client_id=${clientId}&response_type=code&platform_id=mp&state=${parceiraId}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+  window.location.href = url;
+}
 
 const STATUS_CONFIG: Record<ProdutoStatus, { label: string; className: string }> = {
   em_analise: { label: 'Em análise', className: 'bg-amber-100 text-amber-700 border-amber-200' },
@@ -106,6 +118,9 @@ function ProdutosTab() {
   const [adsDialog, setAdsDialog] = useState<Produto | null>(null);
   const [adsForm, setAdsForm] = useState({ meta_campaign_id: '', meta_ad_account_id: '', meta_access_token: '' });
   const [savingAds, setSavingAds] = useState(false);
+  const [bumpDialog, setBumpDialog] = useState<Produto | null>(null);
+  const [bumpForm, setBumpForm] = useState({ bump_ativo: false, bump_nome: '', bump_descricao: '', bump_preco: '' });
+  const [savingBump, setSavingBump] = useState(false);
 
   const loadParceiros = useCallback(async () => {
     const { data } = await supabase.from('parceiros' as any).select('id, nome, whatsapp, email, status_contrato, ativo').eq('ativo', true).order('nome');
@@ -115,7 +130,7 @@ function ProdutosTab() {
   const loadProdutos = useCallback(async () => {
     setLoading(true);
     const { data, error } = await (supabase.from('parceiros_produtos' as any) as any)
-      .select('id, parceiro_id, nome, descricao, preco, status, comissao_idm_pct, comissao_parceiro_pct, comissao_afiliado_padrao_pct, material_url, created_at, parceiros(id, nome), meta_campaign_id, meta_ad_account_id, meta_access_token')
+      .select('id, parceiro_id, nome, descricao, preco, status, comissao_idm_pct, comissao_parceiro_pct, comissao_afiliado_padrao_pct, material_url, created_at, parceiros(id, nome), meta_campaign_id, meta_ad_account_id, meta_access_token, bump_ativo, bump_nome, bump_descricao, bump_preco')
       .order('created_at', { ascending: false });
     if (error) {
       toast.error(`Erro ao carregar produtos: ${error.message}`);
@@ -219,6 +234,36 @@ function ProdutosTab() {
     if (error) { toast.error(`Erro ao salvar campanha: ${error.message}`); return; }
     toast.success('Campanha vinculada.');
     setAdsDialog(null);
+    loadProdutos();
+  };
+
+  const abrirDialogBump = (produto: Produto) => {
+    setBumpDialog(produto);
+    setBumpForm({
+      bump_ativo: produto.bump_ativo,
+      bump_nome: produto.bump_nome || '',
+      bump_descricao: produto.bump_descricao || '',
+      bump_preco: produto.bump_preco != null ? String(produto.bump_preco) : '',
+    });
+  };
+
+  const salvarBump = async () => {
+    if (!bumpDialog) return;
+    if (bumpForm.bump_ativo && (!bumpForm.bump_nome.trim() || !bumpForm.bump_preco)) {
+      toast.error('Informe nome e preço do order bump antes de ativar.');
+      return;
+    }
+    setSavingBump(true);
+    const { error } = await (supabase.from('parceiros_produtos' as any) as any).update({
+      bump_ativo: bumpForm.bump_ativo,
+      bump_nome: bumpForm.bump_nome.trim() || null,
+      bump_descricao: bumpForm.bump_descricao.trim() || null,
+      bump_preco: bumpForm.bump_preco ? Number(bumpForm.bump_preco) : null,
+    }).eq('id', bumpDialog.id);
+    setSavingBump(false);
+    if (error) { toast.error(`Erro ao salvar order bump: ${error.message}`); return; }
+    toast.success('Order bump atualizado.');
+    setBumpDialog(null);
     loadProdutos();
   };
 
@@ -338,6 +383,13 @@ function ProdutosTab() {
                     )}
                     <Button
                       size="sm" variant="ghost" className="h-8 w-8 p-0"
+                      title={produto.bump_ativo ? 'Order bump ativo' : 'Configurar order bump'}
+                      onClick={() => abrirDialogBump(produto)}
+                    >
+                      <Plus className={cn('h-3.5 w-3.5', produto.bump_ativo ? 'text-emerald-500' : 'text-muted-foreground')} />
+                    </Button>
+                    <Button
+                      size="sm" variant="ghost" className="h-8 w-8 p-0"
                       title={produto.meta_campaign_id ? 'Campanha Meta Ads vinculada' : 'Vincular campanha Meta Ads'}
                       onClick={() => abrirDialogAds(produto)}
                     >
@@ -350,6 +402,39 @@ function ProdutosTab() {
           </div>
         )}
       </div>
+
+      <Dialog open={!!bumpDialog} onOpenChange={(open) => !open && setBumpDialog(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Order bump — {bumpDialog?.nome}</DialogTitle>
+            <DialogDescription>
+              Oferta extra mostrada no checkout, além do produto principal. O comprador marca uma caixinha pra adicionar por um valor a mais.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={bumpForm.bump_ativo} onChange={e => setBumpForm(f => ({ ...f, bump_ativo: e.target.checked }))} />
+              Ativar order bump neste produto
+            </label>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Nome do item extra</Label>
+              <Input placeholder="Ex: Mentoria em grupo" value={bumpForm.bump_nome} onChange={e => setBumpForm(f => ({ ...f, bump_nome: e.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Descrição</Label>
+              <Textarea rows={2} placeholder="O que a pessoa ganha ao adicionar" value={bumpForm.bump_descricao} onChange={e => setBumpForm(f => ({ ...f, bump_descricao: e.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Preço extra (R$)</Label>
+              <Input placeholder="97,00" value={bumpForm.bump_preco} onChange={e => setBumpForm(f => ({ ...f, bump_preco: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBumpDialog(null)}>Cancelar</Button>
+            <Button disabled={savingBump} onClick={salvarBump}>{savingBump ? 'Salvando...' : 'Salvar'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!adsDialog} onOpenChange={(open) => !open && setAdsDialog(null)}>
         <DialogContent className="max-w-md">
@@ -524,9 +609,13 @@ function ParceirosTab() {
                   <KeyRound className="h-3.5 w-3.5 mr-1" /> Criar acesso
                 </Button>
               )}
-              <Badge variant="outline" className={p.mp_connected_at ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-gray-100 text-gray-500 border-gray-200'}>
-                {p.mp_connected_at ? 'Mercado Pago conectado' : 'Mercado Pago pendente'}
-              </Badge>
+              {p.mp_connected_at ? (
+                <Badge variant="outline" className="bg-emerald-100 text-emerald-700 border-emerald-200">Mercado Pago conectado</Badge>
+              ) : (
+                <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => conectarMercadoPago(p.id)}>
+                  Conectar Mercado Pago
+                </Button>
+              )}
             </div>
           ))}
         </div>

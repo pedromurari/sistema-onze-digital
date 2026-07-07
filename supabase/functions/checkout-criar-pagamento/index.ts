@@ -34,6 +34,7 @@ serve(async (req) => {
     const cupomCodigo = body?.cupom_codigo ? String(body.cupom_codigo).trim().toUpperCase() : null;
     const comprador = body?.comprador ?? {};
     const pagamento = body?.pagamento ?? {};
+    const incluirBump = Boolean(body?.incluir_bump);
 
     if (!produtoId || !comprador?.email || !comprador?.nome) {
       return new Response(JSON.stringify({ error: 'Dados obrigatórios ausentes.' }), {
@@ -43,7 +44,7 @@ serve(async (req) => {
 
     const { data: produto, error: produtoErr } = await supabase
       .from('parceiros_produtos')
-      .select('id, nome, preco, status, parceiro_id, comissao_idm_pct')
+      .select('id, nome, preco, status, parceiro_id, comissao_idm_pct, bump_ativo, bump_nome, bump_preco')
       .eq('id', produtoId).eq('status', 'ativo').maybeSingle();
 
     if (produtoErr || !produto) {
@@ -69,7 +70,8 @@ serve(async (req) => {
       cupom = cupomData ?? null;
     }
 
-    const valorBruto = Number(produto.preco);
+    const bumpIncluido = incluirBump && produto.bump_ativo && produto.bump_preco != null;
+    const valorBruto = round2(Number(produto.preco) + (bumpIncluido ? Number(produto.bump_preco) : 0));
     const comissaoIdm = round2(valorBruto * ((produto.comissao_idm_pct ?? 0) / 100));
     const comissaoAfiliado = cupom ? round2(valorBruto * ((cupom.comissao_pct ?? 0) / 100)) : 0;
     const applicationFee = round2(comissaoIdm + comissaoAfiliado);
@@ -78,9 +80,11 @@ serve(async (req) => {
     const [firstName, ...rest] = String(comprador.nome).trim().split(' ');
     const lastName = rest.join(' ') || firstName;
 
+    const descricaoPagamento = bumpIncluido ? `${produto.nome} + ${produto.bump_nome}` : produto.nome;
+
     const mpPayload: Record<string, unknown> = {
       transaction_amount: valorBruto,
-      description: produto.nome,
+      description: descricaoPagamento,
       application_fee: applicationFee,
       payer: {
         email: comprador.email,
@@ -132,6 +136,7 @@ serve(async (req) => {
       valor_liquido: valorLiquido,
       comissao_idm: comissaoIdm,
       comissao_afiliado: comissaoAfiliado,
+      bump_incluido: bumpIncluido,
       mp_payment_id: String(mpData.id),
       status,
     });
