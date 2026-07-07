@@ -182,16 +182,17 @@ export function generateLancamentoMessages(config: WizardConfig): TemplateMensag
     : 1;
 
   const msgs: TemplateMensagem[] = [];
+  const slogan = config.slogan || 'Excelente';
 
   // ═══════════════════════════════════════════════════════════════════════════
   // LANÇAMENTO
   // ═══════════════════════════════════════════════════════════════════════════
   if (config.tipo === 'lancamento') {
 
-    const slogan    = config.slogan || 'Excelente';
-    const profAnchor = config.aulas[0]?.professor || '{{professor}}';
-    const profConv   = config.professor_convidado?.trim() || 'Convidado(a) especial';
-    const profDupla  = `${profAnchor} e ${profConv}`;
+    const profAnchor = config.aulas[0]?.professor?.trim() || '';
+    const profConv   = config.professor_convidado?.trim() || '';
+    const hasProfessor = !!profAnchor;
+    const profDupla  = profConv ? `${profAnchor} e ${profConv}` : profAnchor;
     const classHora  = fmtHora(config.hora_live || '20:00');
     const produto    = config.produto_destino || 'psicanálise';
 
@@ -231,8 +232,7 @@ Nessas aulas, vamos abrir esse acesso. Com profundidade. Com direção.
 
 ${datesBlock()}
 
-Sempre às *${classHora}*, ao vivo no YouTube.
-Com ${profDupla}.
+Sempre às *${classHora}*, ao vivo no YouTube.${hasProfessor ? `\nCom ${profDupla}.` : ''}
 
 👉 Ativa o lembrete e deixa o like:
 ${aulaLink(1)}
@@ -429,9 +429,7 @@ A transferência. O sintoma. O superego. O desejo. A resistência.
 
 Amanhã, ao vivo, começamos a aprofundar cada um desses fios — juntos.
 
-${profAnchor} conduz essa jornada com participação de ${profConv}.
-
-👉 Ativa o lembrete e deixa o like — começa amanhã:
+${hasProfessor ? `${profConv ? `${profAnchor} conduz essa jornada com participação de ${profConv}.` : `${profAnchor} conduz essa jornada.`}\n\n` : ''}👉 Ativa o lembrete e deixa o like — começa amanhã:
 ${aulaLink(1)}
 
 Reage com 🙌 se você vai estar ao vivo amanhã!`,
@@ -482,7 +480,7 @@ Reage com 🙌 se você vai estar ao vivo amanhã!`,
 
       // Tarde: a cada 3 dias sugere áudio (dias 1,4,7 do warmup), outros dias enquete única
       if (l % 3 === 0) {
-        const audioTxt = `${slogan} tarde! ☀️\n\n🎙️ *Áudio sugerido do Prof. ${profAnchor}:*\n\n"${slogan}, pessoal! Estamos chegando muito perto da nossa primeira aula. Quero te encontrar ao vivo no dia ${aulaData(1)}, às ${classHora}, para abrir essa jornada com profundidade e direção."\n\n👉 ${aulaLink(1)}\n\nReage com um ❤️ depois de ouvir!`;
+        const audioTxt = `${slogan} tarde! ☀️\n\n🎙️ *Áudio sugerido${hasProfessor ? ` do Prof. ${profAnchor}` : ''}:*\n\n"${slogan}, pessoal! Estamos chegando muito perto da nossa primeira aula. Quero te encontrar ao vivo no dia ${aulaData(1)}, às ${classHora}, para abrir essa jornada com profundidade e direção."\n\n👉 ${aulaLink(1)}\n\nReage com um ❤️ depois de ouvir!`;
         msgs.push(textMsg(fn, day, setTime(dayDate, '15:00'), g1, audioTxt,
           `Dia ${day} — Tarde (Áudio)`, { subtipo: 'audio' }));
       } else {
@@ -514,7 +512,7 @@ Reage com 🙌 se você vai estar ao vivo amanhã!`,
 
       // Manhã (8h)
       msgs.push(textMsg(fn, dayNum, setTime(aulaDateObj, '08:00'), g1,
-        `${slogan} dia! ☀️\n\n*HOJE é o dia.*\n\nHoje às ${aulaH(i)} começa a Aula ${i} - *${aulaTit(i)}*.\n\n${profDupla} vão ao vivo conduzir essa experiência.\n\nSepara o caderno. Avisa a família. Hoje você tem um compromisso com você mesmo.\n\n👉 ${aulaLink(i)}\n\nReage com um 🔥 se você vai estar lá HOJE!`,
+        `${slogan} dia! ☀️\n\n*HOJE é o dia.*\n\nHoje às ${aulaH(i)} começa a Aula ${i} - *${aulaTit(i)}*.\n\n${hasProfessor ? `${profDupla} ${profConv ? 'vão' : 'vai'} ao vivo conduzir essa experiência.\n\n` : ''}Separa o caderno. Avisa a família. Hoje você tem um compromisso com você mesmo.\n\n👉 ${aulaLink(i)}\n\nReage com um 🔥 se você vai estar lá HOJE!`,
         `${aulaTit(i)} — Manhã`, { link_preview: true }));
 
       // Tarde (14h) — enquete
@@ -538,7 +536,7 @@ Reage com 🙌 se você vai estar ao vivo amanhã!`,
           `⏰ *Faltam 2 HORAS!*\n\nJá separa o caderno, o fone e um lugar tranquilo. Essa aula pede atenção total.\n\n👉 ${aulaLink(i)}\n\nReage com um 📝!`,
           `${aulaTit(i)} — -2h`],
         [-1,
-          `⏰ *Falta 1 HORA pra começar!*\n\nDaqui a 60 minutos, ${profDupla} entram ao vivo.\n\n👉 ${aulaLink(i)}\n\nReage com um 🚀 se já está se preparando!`,
+          `⏰ *Falta 1 HORA pra começar!*\n\nDaqui a 60 minutos, ${hasProfessor ? `${profDupla} ${profConv ? 'entram' : 'entra'}` : 'a aula entra'} ao vivo.\n\n👉 ${aulaLink(i)}\n\nReage com um 🚀 se já está se preparando!`,
           `${aulaTit(i)} — -1h`],
       ];
 
@@ -557,7 +555,7 @@ Reage com 🙌 se você vai estar ao vivo amanhã!`,
       // Provocações (+10, +20, +30, +40 min)
       const provocacoes: [number, string, string][] = [
         [10, `⚡ A aula já começou e a energia está absurda!\n\nSe você ainda não entrou, esse é o momento. Vem 👇\n👉 ${aulaLink(i)}`, `${aulaTit(i)} — Provocação 1`],
-        [20, `🧠 ${profAnchor} está ao vivo conduzindo pontos profundos agora.\n\nNão deixa pra depois - entra agora 👇\n👉 ${aulaLink(i)}`, `${aulaTit(i)} — Provocação 2`],
+        [20, `🧠 ${hasProfessor ? `${profAnchor} está ao vivo conduzindo pontos profundos agora` : 'A aula está ao vivo com pontos profundos sendo conduzidos agora'}.\n\nNão deixa pra depois - entra agora 👇\n👉 ${aulaLink(i)}`, `${aulaTit(i)} — Provocação 2`],
         [30, `🌟 O ao vivo tem algo que o replay nunca vai te dar: a experiência de viver isso em tempo real.\n\nAinda dá tempo. Entra 👇\n👉 ${aulaLink(i)}`, `${aulaTit(i)} — Provocação 3`],
         [40, `🎁 Atenção! Vai rolar *SORTEIO* pra quem está ao vivo!\n\nEntra agora e ainda dá tempo de participar 👇\n👉 ${aulaLink(i)}`, `${aulaTit(i)} — Provocação 4`],
       ];
@@ -598,6 +596,7 @@ Reage com 🙌 se você vai estar ao vivo amanhã!`,
 
     const npaLocal = aula(1)?.link || '{{endereco}}';
     const npaInfo  = `📅 *${aulaDia(1)}, ${aulaData(1)} — ${aulaTit(1)}*\n⏰ ${aulaH(1)}\n📍 ${npaLocal}`;
+    const npaProfessor = aula(1)?.professor?.trim() || '';
 
     type DiaNpa = {
       manhaTxt: string;
@@ -857,9 +856,7 @@ Você passou 7 dias recebendo perguntas sem resposta.
 
 Amanhã as respostas chegam — e elas têm o seu nome, a sua data, o seu número.
 
-${profAnchor} preparou esse encontro para exatamente esse momento: quando uma pessoa está pronta para se ver com clareza — e tem coragem de aparecer.
-
-O *${aulaTit(1)}* não é uma palestra sobre numerologia.
+${npaProfessor ? `${npaProfessor} preparou esse encontro para exatamente esse momento: quando uma pessoa está pronta para se ver com clareza — e tem coragem de aparecer.\n\n` : ''}O *${aulaTit(1)}* não é uma palestra sobre numerologia.
 
 É uma leitura ao vivo da sua estrutura numerológica — presencialmente, em grupo, com profundidade que só o encontro ao vivo permite.
 
