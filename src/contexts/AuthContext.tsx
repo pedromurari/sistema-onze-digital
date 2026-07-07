@@ -237,7 +237,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ nome: userData.nome, email, password: userData.senha, tipo: userRole === 'admin' ? 'admin' : 'vendedor', cor: userData.cor }),
+        body: JSON.stringify({ nome: userData.nome, email, password: userData.senha, tipo: userRole === 'admin' ? 'admin' : userRole === 'parceiro' ? 'parceiro' : 'vendedor', cor: userData.cor }),
       });
 
       let createdData: any = null;

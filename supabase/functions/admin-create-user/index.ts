@@ -155,12 +155,16 @@ serve(async (req) => {
     }
 
     // Audit log (non-blocking)
-    supabaseAdmin.from("audit_logs").insert({
-      actor_id: userData.user.id,
-      action: "create_user",
-      target_id: newUserId,
-      details: { email, nome, tipo, created_by: userData.user.email },
-    }).catch(() => {});
+    try {
+      await supabaseAdmin.from("audit_logs").insert({
+        actor_id: userData.user.id,
+        action: "create_user",
+        target_id: newUserId,
+        details: { email, nome, tipo, created_by: userData.user.email },
+      });
+    } catch (auditErr) {
+      console.error("Audit log error (non-blocking):", auditErr);
+    }
 
     return new Response(
       JSON.stringify({

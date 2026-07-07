@@ -11,7 +11,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, AlertCircle, CheckCircle2, Tag } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle2, Tag, Plus } from 'lucide-react';
 
 declare global {
   interface Window { MercadoPago: any; }
@@ -24,6 +24,10 @@ interface ProdutoCheckout {
   preco: number;
   parceiro_id: string;
   mp_public_key: string | null;
+  bump_ativo: boolean;
+  bump_nome: string | null;
+  bump_descricao: string | null;
+  bump_preco: number | null;
 }
 
 function ScreenLoading() {
@@ -53,10 +57,12 @@ export default function Checkout() {
   const [nome, setNome] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [cupom, setCupom] = useState('');
+  const [incluirBump, setIncluirBump] = useState(false);
   const [pago, setPago] = useState(false);
   const [erro, setErro] = useState('');
   const brickContainerRef = useRef<HTMLDivElement>(null);
   const brickCriado = useRef(false);
+  const brickControllerRef = useRef<any>(null);
 
   useEffect(() => {
     if (!produtoId) return;
@@ -64,27 +70,22 @@ export default function Checkout() {
       .then(({ data }) => { setProduto((data as any) ?? null); setLoading(false); });
   }, [produtoId]);
 
-  useEffect(() => {
-    if (!produto?.mp_public_key || brickCriado.current || !nome.trim()) return;
+  const totalAmount = produto ? produto.preco + (incluirBump && produto.bump_ativo && produto.bump_preco ? produto.bump_preco : 0) : 0;
 
-    const iniciarBrick = async () => {
-      if (!window.MercadoPago) {
-        const script = document.createElement('script');
-        script.src = 'https://sdk.mercadopago.com/js/v2';
-        script.onload = criarBrick;
-        document.body.appendChild(script);
-      } else {
-        criarBrick();
-      }
-    };
+  useEffect(() => {
+    if (!produto?.mp_public_key || !nome.trim()) return;
 
     const criarBrick = async () => {
-      if (brickCriado.current || !brickContainerRef.current) return;
+      if (!brickContainerRef.current) return;
+      if (brickControllerRef.current) {
+        await brickControllerRef.current.unmount();
+        brickControllerRef.current = null;
+      }
       brickCriado.current = true;
       const mp = new window.MercadoPago(produto.mp_public_key, { locale: 'pt-BR' });
       const bricksBuilder = mp.bricks();
-      await bricksBuilder.create('payment', brickContainerRef.current.id, {
-        initialization: { amount: produto.preco },
+      brickControllerRef.current = await bricksBuilder.create('payment', brickContainerRef.current.id, {
+        initialization: { amount: totalAmount },
         customization: { paymentMethods: { creditCard: 'all', pix: 'all' } },
         callbacks: {
           onReady: () => {},
@@ -97,6 +98,7 @@ export default function Checkout() {
               body: JSON.stringify({
                 produto_id: produto.id,
                 cupom_codigo: cupom.trim() || undefined,
+                incluir_bump: incluirBump,
                 comprador: {
                   nome,
                   email: formData.payer?.email,
@@ -124,8 +126,15 @@ export default function Checkout() {
       });
     };
 
-    iniciarBrick();
-  }, [produto, nome, whatsapp, cupom]);
+    if (!window.MercadoPago) {
+      const script = document.createElement('script');
+      script.src = 'https://sdk.mercadopago.com/js/v2';
+      script.onload = criarBrick;
+      document.body.appendChild(script);
+    } else {
+      criarBrick();
+    }
+  }, [produto, nome, whatsapp, cupom, incluirBump]);
 
   if (loading) return <ScreenLoading />;
   if (!produto) return <ScreenNotFound />;
@@ -152,6 +161,33 @@ export default function Checkout() {
             {produto.preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
           </p>
         </div>
+
+        {produto.bump_ativo && produto.bump_preco != null && (
+          <label className={`flex items-start gap-3 rounded-xl border-2 p-4 cursor-pointer transition-colors ${incluirBump ? 'border-emerald-400 bg-emerald-50' : 'border-dashed border-gray-300'}`}>
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4"
+              checked={incluirBump}
+              onChange={e => setIncluirBump(e.target.checked)}
+            />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-gray-900 flex items-center gap-1">
+                <Plus className="h-3.5 w-3.5" /> Adicionar: {produto.bump_nome}
+              </p>
+              {produto.bump_descricao && <p className="text-xs text-gray-500 mt-0.5">{produto.bump_descricao}</p>}
+              <p className="text-sm font-bold text-emerald-600 mt-1">
+                + {produto.bump_preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </p>
+            </div>
+          </label>
+        )}
+
+        {incluirBump && (
+          <div className="flex items-center justify-between text-sm border-t border-gray-100 pt-3">
+            <span className="text-gray-500">Total</span>
+            <span className="font-bold text-gray-900">{totalAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+          </div>
+        )}
 
         <div className="space-y-3">
           <input
