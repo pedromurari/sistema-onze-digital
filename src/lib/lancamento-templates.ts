@@ -665,6 +665,47 @@ Reage com 🙌 se você vai estar ao vivo amanhã!`,
       `🌙 Boa noite!\n\n*Amanhã é o dia.*\n\n📍 ${npaLocal}\n🕐 Manhã: ${manhaHoraIni} às ${manhaHoraFim} | Tarde: ${tardeHoraIni} às ${tardeHoraFim}\n\nDurma bem. Amanhã é um dia diferente.`,
     ];
 
+    // ── Enquetes temáticas intercaladas em alguns dias (além da confirmação de
+    //    presença no dia 8) — ligadas ao assunto do teaser daquele dia ──────
+    const enquetesDias: Record<number, { intro: string; nome: string; opcoes: string[] }> = {
+      1: {
+        intro: `${slogan}! 👋\n\nAntes de seguir, uma pergunta rápida 👇`,
+        nome: 'Qual é a sua relação atual com Numerologia?',
+        opcoes: ['Nunca ouvi falar — quero descobrir', 'Conheço um pouco — quero aprofundar', 'Já estudei — quero aplicar de verdade', 'Sou cético(a) — mas estou aqui'],
+      },
+      3: {
+        intro: `${slogan}! 👋\n\nUma pergunta rápida sobre o que você acabou de ler 👇`,
+        nome: 'Você sente que seu nome combina com quem você é?',
+        opcoes: ['Sim, sinto que combina perfeitamente', 'Não muito — sinto um estranhamento', 'Nunca parei pra pensar nisso', 'Quero descobrir com a leitura completa'],
+      },
+      5: {
+        intro: `${slogan}! 👋\n\nUma pergunta direta 👇`,
+        nome: 'Você já sentiu uma intensidade ou sensibilidade que os outros não pareciam entender?',
+        opcoes: ['Sim, a vida inteira', 'Às vezes, em fases específicas', 'Não muito', 'Quero descobrir se carrego um Número Mestre'],
+      },
+      7: {
+        intro: `${slogan}! 👋\n\nEnquete rápida 👇`,
+        nome: 'Você já sentiu uma sintonia instantânea (ou o oposto) com alguém, sem explicação?',
+        opcoes: ['Sim, sintonia forte logo de cara', 'Sim, mas foi estranhamento/desconforto', 'Já vivi os dois', 'Nunca reparei nisso'],
+      },
+      9: {
+        intro: `${slogan}! 👋\n\nÚltima pergunta antes do grande dia 👇`,
+        nome: 'Qual é a maior transformação que você quer carregar do encontro?',
+        opcoes: ['Parar de me sabotar', 'Entender por que repito os mesmos padrões', 'Ter mais clareza sobre minhas decisões', 'Só estar presente e ver no que dá'],
+      },
+    };
+
+    // Envia intro + enquete pros 2 grupos (grupo 2 sempre STAGGER_MS depois do grupo 1)
+    function pushEnquete(day: number, at: Date, intro: string, nome: string, opcoes: string[], labelBase: string) {
+      msgs.push(textMsg(fn, day, at, g1, intro, `${labelBase} (intro, Grupo 1)`));
+      msgs.push(pollMsg(fn, day, new Date(at.getTime() + 3 * 60 * 1000), g1, nome, opcoes, `${labelBase} (Grupo 1)`));
+      if (temGrupo2) {
+        const at2 = new Date(at.getTime() + STAGGER_MS);
+        msgs.push(textMsg(fn, day, at2, g2, intro, `${labelBase} (intro, Grupo 2)`));
+        msgs.push(pollMsg(fn, day, new Date(at2.getTime() + 3 * 60 * 1000), g2, nome, opcoes, `${labelBase} (Grupo 2)`));
+      }
+    }
+
     for (let i = 0; i < warmupDays; i++) {
       const day     = i + 1;
       const dayDate = addDays(warmupStart, i);
@@ -673,18 +714,14 @@ Reage com 🙌 se você vai estar ao vivo amanhã!`,
 
       // Dia 8 (faltam 3) — enquete de confirmação de presença, além do teaser da manhã
       if (day === warmupDays - 2) {
-        const pollIntro = `${slogan}! 👋\n\nAntes de continuar — precisamos saber quem vai estar com a gente.\n\nResponde rapidinho 👇`;
-        const pollNome  = `Você confirma sua presença em ${nomeEvento} (${aulaData(1)})?`;
-        const pollOps   = ['Sim, confirmado! 🙌', 'Ainda não sei', 'Não vou conseguir ir'];
-        const pollAt    = setTime(dayDate, '11:00');
-
-        msgs.push(textMsg(fn, day, pollAt, g1, pollIntro, `Dia ${day} — Enquete (intro, Grupo 1)`));
-        msgs.push(pollMsg(fn, day, new Date(pollAt.getTime() + 3 * 60 * 1000), g1, pollNome, pollOps, `Dia ${day} — Enquete (Grupo 1)`));
-        if (temGrupo2) {
-          const pollAt2 = new Date(pollAt.getTime() + STAGGER_MS);
-          msgs.push(textMsg(fn, day, pollAt2, g2, pollIntro, `Dia ${day} — Enquete (intro, Grupo 2)`));
-          msgs.push(pollMsg(fn, day, new Date(pollAt2.getTime() + 3 * 60 * 1000), g2, pollNome, pollOps, `Dia ${day} — Enquete (Grupo 2)`));
-        }
+        pushEnquete(day, setTime(dayDate, '11:00'),
+          `${slogan}! 👋\n\nAntes de continuar — precisamos saber quem vai estar com a gente.\n\nResponde rapidinho 👇`,
+          `Você confirma sua presença em ${nomeEvento} (${aulaData(1)})?`,
+          ['Sim, confirmado! 🙌', 'Ainda não sei', 'Não vou conseguir ir'],
+          `Dia ${day} — Enquete Presença`);
+      } else if (enquetesDias[day]) {
+        const e = enquetesDias[day];
+        pushEnquete(day, setTime(dayDate, '11:00'), e.intro, e.nome, e.opcoes, `Dia ${day} — Enquete`);
       }
 
       pushEscalonado(day, setTime(dayDate, '20:00'), temasNoite[i], `Dia ${day} — Noite`);
