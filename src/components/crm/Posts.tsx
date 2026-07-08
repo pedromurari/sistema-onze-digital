@@ -589,6 +589,17 @@ export function Posts() {
                 >
                   <Download className="h-3.5 w-3.5 mr-1" /> Baixar imagem
                 </Button>
+                {detailPost.imagem_stories_url && (
+                  <Button
+                    size="sm" variant="outline" className="flex-1 h-8 text-xs"
+                    onClick={() => detailPost.imagem_stories_url && downloadImage(
+                      detailPost.imagem_stories_url,
+                      `${detailPost.conteudo_clientes?.slug ?? 'post'}-${detailPost.data_post}-stories.png`,
+                    )}
+                  >
+                    <Download className="h-3.5 w-3.5 mr-1" /> Baixar stories
+                  </Button>
+                )}
                 <Button
                   size="sm" variant="outline" className="flex-1 h-8 text-xs"
                   disabled={!detailPost.legenda}
