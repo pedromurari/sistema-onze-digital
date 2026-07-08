@@ -90,16 +90,22 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
-  // Auth: Bearer JWT (chamada do painel) ou x-cron-key (chamada interna do equipe-11ds-diario).
-  // O secret nao fica em nenhuma variavel de ambiente/codigo — e' lido do Supabase Vault.
+  // Auth: Bearer JWT valido de usuario logado (chamada do painel) ou x-cron-key
+  // (chamada interna do equipe-11ds-diario). O secret nao fica em nenhuma variavel
+  // de ambiente/codigo — e' lido do Supabase Vault. O Bearer e' validado de verdade
+  // contra o Supabase Auth (nao basta so comecar com "Bearer ").
   const authHeader    = req.headers.get('authorization') ?? '';
   const cronKeyHeader = req.headers.get('x-cron-key') ?? '';
-  let isCron = false;
+  let authorized = false;
   if (cronKeyHeader) {
     const { data: cronSecret } = await supabase.rpc('get_equipe_11ds_cron_secret');
-    isCron = Boolean(cronSecret) && cronKeyHeader === cronSecret;
+    authorized = Boolean(cronSecret) && cronKeyHeader === cronSecret;
   }
-  if (!isCron && !authHeader.startsWith('Bearer ')) {
+  if (!authorized && authHeader.startsWith('Bearer ')) {
+    const { data: { user } } = await supabase.auth.getUser(authHeader.slice(7));
+    authorized = Boolean(user);
+  }
+  if (!authorized) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
