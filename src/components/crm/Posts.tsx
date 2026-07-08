@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 
@@ -21,13 +22,26 @@ type PostStatus = 'rascunho' | 'aprovado' | 'publicado' | 'rejeitado';
 
 type ConteudoCliente = { id: string; slug: string; nome: string };
 
+type EstiloVisual = 'manchete' | 'editorial';
+
 type ConteudoClienteFull = {
   id: string;
   slug: string;
   nome: string;
   nicho: string | null;
+  publico_alvo: string | null;
   tom_de_voz: string | null;
   cta_padrao: string | null;
+  cor_primaria: string | null;
+  cor_secundaria: string | null;
+  logo_url: string | null;
+  hashtags_fixas: string[] | null;
+  temas_evitar: string[] | null;
+  pilares_conteudo: string[] | null;
+  estilo_visual: EstiloVisual;
+  formula_headline: string | null;
+  arquetipos_visuais_preferidos: string[] | null;
+  arquetipos_visuais_evitar: string[] | null;
   ativo: boolean;
 };
 
@@ -75,7 +89,17 @@ function slugify(nome: string) {
     .replace(/(^-|-$)/g, '');
 }
 
-const CLIENTE_VAZIO = { nome: '', slug: '', nicho: '', tom_de_voz: '', cta_padrao: '', ativo: true };
+const CLIENTE_VAZIO = {
+  nome: '', slug: '', nicho: '', publico_alvo: '', tom_de_voz: '', cta_padrao: '',
+  cor_primaria: '', cor_secundaria: '', logo_url: '',
+  hashtags_fixas: '', temas_evitar: '', pilares_conteudo: '',
+  estilo_visual: 'manchete' as EstiloVisual, formula_headline: '',
+  arquetipos_visuais_preferidos: '', arquetipos_visuais_evitar: '',
+  ativo: true,
+};
+
+const arrParaTexto = (arr: string[] | null | undefined) => (arr ?? []).join(', ');
+const textoParaArr = (texto: string) => texto.split(',').map(s => s.trim()).filter(Boolean);
 
 function ClientesTab({ onClientesChanged }: { onClientesChanged: () => void }) {
   const [clientes, setClientes] = useState<ConteudoClienteFull[]>([]);
@@ -84,11 +108,12 @@ function ClientesTab({ onClientesChanged }: { onClientesChanged: () => void }) {
   const [editing, setEditing] = useState<ConteudoClienteFull | null>(null);
   const [form, setForm] = useState(CLIENTE_VAZIO);
   const [saving, setSaving] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   const loadClientes = useCallback(async () => {
     setLoading(true);
     const { data, error } = await (supabase.from('conteudo_clientes' as any) as any)
-      .select('id, slug, nome, nicho, tom_de_voz, cta_padrao, ativo')
+      .select('id, slug, nome, nicho, publico_alvo, tom_de_voz, cta_padrao, cor_primaria, cor_secundaria, logo_url, hashtags_fixas, temas_evitar, pilares_conteudo, estilo_visual, formula_headline, arquetipos_visuais_preferidos, arquetipos_visuais_evitar, ativo')
       .order('nome');
     if (error) { toast.error(`Erro ao carregar clientes: ${error.message}`); setLoading(false); return; }
     setClientes((data as any) || []);
@@ -100,15 +125,52 @@ function ClientesTab({ onClientesChanged }: { onClientesChanged: () => void }) {
   const abrirNovo = () => { setEditing(null); setForm(CLIENTE_VAZIO); setDialogOpen(true); };
   const abrirEdicao = (c: ConteudoClienteFull) => {
     setEditing(c);
-    setForm({ nome: c.nome, slug: c.slug, nicho: c.nicho ?? '', tom_de_voz: c.tom_de_voz ?? '', cta_padrao: c.cta_padrao ?? '', ativo: c.ativo });
+    setForm({
+      nome: c.nome, slug: c.slug, nicho: c.nicho ?? '', publico_alvo: c.publico_alvo ?? '',
+      tom_de_voz: c.tom_de_voz ?? '', cta_padrao: c.cta_padrao ?? '',
+      cor_primaria: c.cor_primaria ?? '', cor_secundaria: c.cor_secundaria ?? '', logo_url: c.logo_url ?? '',
+      hashtags_fixas: arrParaTexto(c.hashtags_fixas), temas_evitar: arrParaTexto(c.temas_evitar),
+      pilares_conteudo: arrParaTexto(c.pilares_conteudo), estilo_visual: c.estilo_visual,
+      formula_headline: c.formula_headline ?? '',
+      arquetipos_visuais_preferidos: arrParaTexto(c.arquetipos_visuais_preferidos),
+      arquetipos_visuais_evitar: arrParaTexto(c.arquetipos_visuais_evitar),
+      ativo: c.ativo,
+    });
     setDialogOpen(true);
+  };
+
+  const uploadLogo = async (file: File) => {
+    setUploadingLogo(true);
+    const path = `${Date.now()}-${file.name}`;
+    const { error } = await supabase.storage.from('conteudo-clientes-logos').upload(path, file);
+    if (error) { toast.error(`Erro ao subir logo: ${error.message}`); setUploadingLogo(false); return; }
+    const { data: { publicUrl } } = supabase.storage.from('conteudo-clientes-logos').getPublicUrl(path);
+    setForm(f => ({ ...f, logo_url: publicUrl }));
+    setUploadingLogo(false);
   };
 
   const salvar = async () => {
     if (!form.nome.trim()) { toast.error('Nome é obrigatório'); return; }
     const slug = form.slug.trim() || slugify(form.nome);
     setSaving(true);
-    const payload = { nome: form.nome.trim(), slug, nicho: form.nicho.trim() || null, tom_de_voz: form.tom_de_voz.trim() || null, cta_padrao: form.cta_padrao.trim() || null, ativo: form.ativo };
+    const payload = {
+      nome: form.nome.trim(), slug,
+      nicho: form.nicho.trim() || null,
+      publico_alvo: form.publico_alvo.trim() || null,
+      tom_de_voz: form.tom_de_voz.trim() || null,
+      cta_padrao: form.cta_padrao.trim() || null,
+      cor_primaria: form.cor_primaria.trim() || null,
+      cor_secundaria: form.cor_secundaria.trim() || null,
+      logo_url: form.logo_url.trim() || null,
+      hashtags_fixas: textoParaArr(form.hashtags_fixas),
+      temas_evitar: textoParaArr(form.temas_evitar),
+      pilares_conteudo: textoParaArr(form.pilares_conteudo),
+      estilo_visual: form.estilo_visual,
+      formula_headline: form.formula_headline.trim() || null,
+      arquetipos_visuais_preferidos: textoParaArr(form.arquetipos_visuais_preferidos),
+      arquetipos_visuais_evitar: textoParaArr(form.arquetipos_visuais_evitar),
+      ativo: form.ativo,
+    };
     const { error } = editing
       ? await (supabase.from('conteudo_clientes' as any) as any).update(payload).eq('id', editing.id)
       : await (supabase.from('conteudo_clientes' as any) as any).insert(payload);
@@ -175,35 +237,103 @@ function ClientesTab({ onClientesChanged }: { onClientesChanged: () => void }) {
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editing ? 'Editar cliente' : 'Novo cliente'}</DialogTitle>
             <DialogDescription>Clientes ativos recebem post diário automático da Equipe 11DS.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="cliente-nome">Nome</Label>
-              <Input id="cliente-nome" value={form.nome} onChange={(e) => setForm(f => ({ ...f, nome: e.target.value }))} placeholder="Ex: Instituto Despertamente" />
+          <div className="space-y-5">
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="cliente-nome">Nome</Label>
+                <Input id="cliente-nome" value={form.nome} onChange={(e) => setForm(f => ({ ...f, nome: e.target.value }))} placeholder="Ex: Instituto Despertamente" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="cliente-slug">Slug</Label>
+                <Input id="cliente-slug" value={form.slug} onChange={(e) => setForm(f => ({ ...f, slug: e.target.value }))} placeholder={form.nome ? slugify(form.nome) : 'gerado a partir do nome'} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="cliente-nicho">Nicho</Label>
+                <Input id="cliente-nicho" value={form.nicho} onChange={(e) => setForm(f => ({ ...f, nicho: e.target.value }))} placeholder="Ex: autoconhecimento, psicanálise..." />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="cliente-publico">Público-alvo</Label>
+                <Input id="cliente-publico" value={form.publico_alvo} onChange={(e) => setForm(f => ({ ...f, publico_alvo: e.target.value }))} placeholder="Ex: mulheres 30-45 anos buscando autoconhecimento" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="cliente-tom">Tom de voz</Label>
+                <Input id="cliente-tom" value={form.tom_de_voz} onChange={(e) => setForm(f => ({ ...f, tom_de_voz: e.target.value }))} placeholder="Ex: acolhedor, direto, inspirador..." />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="cliente-cta">CTA padrão</Label>
+                <Input id="cliente-cta" value={form.cta_padrao} onChange={(e) => setForm(f => ({ ...f, cta_padrao: e.target.value }))} placeholder="Ex: Chama no direct pra saber mais" />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="cliente-slug">Slug</Label>
-              <Input id="cliente-slug" value={form.slug} onChange={(e) => setForm(f => ({ ...f, slug: e.target.value }))} placeholder={form.nome ? slugify(form.nome) : 'gerado a partir do nome'} />
+
+            <div className="space-y-3 border-t border-border pt-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Identidade visual</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="cliente-cor1">Cor primária</Label>
+                  <Input id="cliente-cor1" value={form.cor_primaria} onChange={(e) => setForm(f => ({ ...f, cor_primaria: e.target.value }))} placeholder="#4C1D95" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="cliente-cor2">Cor secundária</Label>
+                  <Input id="cliente-cor2" value={form.cor_secundaria} onChange={(e) => setForm(f => ({ ...f, cor_secundaria: e.target.value }))} placeholder="#F59E0B" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Logo</Label>
+                <div className="flex items-center gap-2">
+                  {form.logo_url && <img src={form.logo_url} alt="Logo" className="h-9 w-9 rounded object-contain border border-border" />}
+                  <Input type="file" accept="image/*" disabled={uploadingLogo}
+                    onChange={(e) => e.target.files?.[0] && uploadLogo(e.target.files[0])} className="text-xs" />
+                  {uploadingLogo && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="cliente-estilo">Estilo visual do headline</Label>
+                <Select value={form.estilo_visual} onValueChange={(v) => setForm(f => ({ ...f, estilo_visual: v as EstiloVisual }))}>
+                  <SelectTrigger id="cliente-estilo"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="manchete">Manchete (caixa alta, direto, provocador)</SelectItem>
+                    <SelectItem value="editorial">Editorial (contemplativo, poético)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="cliente-formula">Fórmula de headline (opcional)</Label>
+                <Textarea id="cliente-formula" value={form.formula_headline} onChange={(e) => setForm(f => ({ ...f, formula_headline: e.target.value }))} placeholder="Ex: sempre uma pergunta que confronta uma crença limitante" className="min-h-[60px] text-sm" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="cliente-arq-pref">Arquétipos visuais preferidos</Label>
+                <Input id="cliente-arq-pref" value={form.arquetipos_visuais_preferidos} onChange={(e) => setForm(f => ({ ...f, arquetipos_visuais_preferidos: e.target.value }))} placeholder="especialista em ação, retrato com expressão, still life..." />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="cliente-arq-evitar">Arquétipos visuais a evitar</Label>
+                <Input id="cliente-arq-evitar" value={form.arquetipos_visuais_evitar} onChange={(e) => setForm(f => ({ ...f, arquetipos_visuais_evitar: e.target.value }))} placeholder="ambientes vazios, ilustração flat..." />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="cliente-nicho">Nicho</Label>
-              <Input id="cliente-nicho" value={form.nicho} onChange={(e) => setForm(f => ({ ...f, nicho: e.target.value }))} placeholder="Ex: autoconhecimento, psicanálise..." />
+
+            <div className="space-y-3 border-t border-border pt-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Estratégia de conteúdo</p>
+              <div className="space-y-1.5">
+                <Label htmlFor="cliente-pilares">Pilares de conteúdo</Label>
+                <Input id="cliente-pilares" value={form.pilares_conteudo} onChange={(e) => setForm(f => ({ ...f, pilares_conteudo: e.target.value }))} placeholder="autoconhecimento, bastidores, prova social, educacional..." />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="cliente-hashtags">Hashtags fixas</Label>
+                <Input id="cliente-hashtags" value={form.hashtags_fixas} onChange={(e) => setForm(f => ({ ...f, hashtags_fixas: e.target.value }))} placeholder="#autoconhecimento, #psicanalise" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="cliente-evitar">Temas a evitar (brand safety)</Label>
+                <Input id="cliente-evitar" value={form.temas_evitar} onChange={(e) => setForm(f => ({ ...f, temas_evitar: e.target.value }))} placeholder="política, religião..." />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="cliente-tom">Tom de voz</Label>
-              <Input id="cliente-tom" value={form.tom_de_voz} onChange={(e) => setForm(f => ({ ...f, tom_de_voz: e.target.value }))} placeholder="Ex: acolhedor, direto, inspirador..." />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="cliente-cta">CTA padrão</Label>
-              <Input id="cliente-cta" value={form.cta_padrao} onChange={(e) => setForm(f => ({ ...f, cta_padrao: e.target.value }))} placeholder="Ex: Chama no direct pra saber mais" />
-            </div>
-            <div className="flex items-center justify-between pt-1">
-              <Label htmlFor="cliente-ativo">Ativo (entra na rotina diária)</Label>
-              <Switch id="cliente-ativo" checked={form.ativo} onCheckedChange={(v) => setForm(f => ({ ...f, ativo: v }))} />
+
+            <div className="flex items-center justify-between pt-1 border-t border-border">
+              <Label htmlFor="cliente-ativo" className="pt-3">Ativo (entra na rotina diária)</Label>
+              <Switch id="cliente-ativo" checked={form.ativo} onCheckedChange={(v) => setForm(f => ({ ...f, ativo: v }))} className="mt-3" />
             </div>
           </div>
           <DialogFooter>

@@ -6,32 +6,140 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-key',
 };
 
+type EstiloVisual = 'manchete' | 'editorial';
+
+type ClienteContexto = {
+  nome: string;
+  nicho?: string | null;
+  publico_alvo?: string | null;
+  tom_de_voz?: string | null;
+  cta_padrao?: string | null;
+  cor_primaria?: string | null;
+  cor_secundaria?: string | null;
+  hashtags_fixas?: string[] | null;
+  temas_evitar?: string[] | null;
+  pilares_conteudo?: string[] | null;
+  estilo_visual?: EstiloVisual;
+  formula_headline?: string | null;
+  arquetipos_visuais_preferidos?: string[] | null;
+  arquetipos_visuais_evitar?: string[] | null;
+};
+
+type HistoricoRecente = { temas: string[]; pilares: string[]; arquetipos: string[] };
+
 type ExecResultado = {
   resposta: string;
   gerar_imagem: boolean;
   prompt_imagem?: string;
+  headline?: string;
   tema?: string;
   legenda?: string;
+  pilar?: string;
+  arquetipo_visual?: string;
 };
 
-type ClienteContexto = { nome: string; nicho?: string | null; tom_de_voz?: string | null; cta_padrao?: string | null };
+// ── Pesquisa de tendencia (web search nativo da OpenAI, via Responses API) ────
 
-async function interpretarOrdem(openaiKey: string, cargo: string, tipo: string, ordemTexto: string, cliente?: ClienteContexto): Promise<ExecResultado> {
-  const systemPrompt = [
-    `Voce e um agente de IA que trabalha no time "${cargo}" da agencia 11 Digital Strategy.`,
-    `Responda sempre em portugues do Brasil, em tom profissional e direto.`,
-    tipo === 'post_cliente'
-      ? [
-          `A ordem e para criar um post de rede social para o cliente "${cliente?.nome ?? ''}".`,
-          cliente?.nicho ? `Nicho do cliente: ${cliente.nicho}.` : '',
-          cliente?.tom_de_voz ? `Tom de voz do cliente: ${cliente.tom_de_voz}.` : '',
-          cliente?.cta_padrao ? `Encerre a legenda com uma variacao deste CTA padrao do cliente: "${cliente.cta_padrao}".` : '',
-          `Gere um tema curto e uma legenda pronta para publicar.`,
-        ].filter(Boolean).join(' ')
-      : `A ordem e uma tarefa avulsa (ex: foto de capa de grupo, criativo de anuncio, imagem promocional).`,
-    `Decida se a tarefa precisa de uma imagem gerada. Se precisar, escreva um prompt de imagem em ingles, detalhado, para o DALL-E.`,
-    `Responda SOMENTE com um JSON no formato: {"resposta": string, "gerar_imagem": boolean, "prompt_imagem"?: string, "tema"?: string, "legenda"?: string}`,
-  ].join(' ');
+function extrairTextoResponses(data: any): string {
+  if (typeof data.output_text === 'string' && data.output_text.trim()) return data.output_text;
+  const output = Array.isArray(data.output) ? data.output : [];
+  for (const item of output) {
+    if (item?.type === 'message' && Array.isArray(item.content)) {
+      const texto = item.content.find((c: any) => c.type === 'output_text')?.text;
+      if (texto) return texto;
+    }
+  }
+  return '';
+}
+
+async function pesquisarTendencia(openaiKey: string, cliente: ClienteContexto, historico: HistoricoRecente): Promise<string> {
+  const prompt = [
+    `Pesquise na web o que esta em alta AGORA (conversas, tendencias da semana, eventos recentes) relacionado ao nicho "${cliente.nicho ?? ''}".`,
+    cliente.publico_alvo ? `Publico-alvo: ${cliente.publico_alvo}.` : '',
+    cliente.temas_evitar?.length ? `NUNCA sugira nada relacionado a: ${cliente.temas_evitar.join(', ')}.` : '',
+    historico.temas.length ? `Ja foram usados recentemente (evite repetir a mesma familia de assunto): ${historico.temas.join(' | ')}.` : '',
+    `Liste 2-3 assuntos candidatos. Para cada um: o gancho atual (o que esta acontecendo agora de verdade) e uma ideia de angulo pessoal que faca o publico se reconhecer.`,
+  ].filter(Boolean).join(' ');
+
+  try {
+    const res = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openaiKey}` },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        tools: [{ type: 'web_search' }],
+        input: prompt,
+      }),
+      signal: AbortSignal.timeout(45_000),
+    });
+    if (!res.ok) {
+      console.error(`Pesquisa de tendencia falhou (${res.status}):`, (await res.text()).slice(0, 300));
+      return '';
+    }
+    const data = await res.json();
+    return extrairTextoResponses(data);
+  } catch (e) {
+    console.error('Pesquisa de tendencia falhou:', (e as Error).message);
+    return '';
+  }
+}
+
+// ── Historico recente (pra nao repetir tema/pilar/arquetipo) ──────────────────
+
+async function buscarHistoricoRecente(supabase: any, clienteId: string): Promise<HistoricoRecente> {
+  const { data } = await supabase
+    .from('conteudo_posts')
+    .select('tema, pilar, arquetipo_visual')
+    .eq('cliente_id', clienteId)
+    .order('data_post', { ascending: false })
+    .limit(7);
+  const linhas = (data ?? []) as { tema: string | null; pilar: string | null; arquetipo_visual: string | null }[];
+  return {
+    temas: linhas.map(l => l.tema).filter((t): t is string => Boolean(t)),
+    pilares: linhas.map(l => l.pilar).filter((t): t is string => Boolean(t)),
+    arquetipos: linhas.map(l => l.arquetipo_visual).filter((t): t is string => Boolean(t)),
+  };
+}
+
+// ── Interpretacao da ordem (GPT, modo JSON) ───────────────────────────────────
+
+async function interpretarOrdem(
+  openaiKey: string, cargo: string, tipo: string, ordemTexto: string,
+  cliente?: ClienteContexto, pesquisa?: string, historico?: HistoricoRecente,
+): Promise<ExecResultado> {
+  const systemPrompt = tipo === 'post_cliente'
+    ? [
+        `Voce e a Nina, agente de IA do time "${cargo}" da agencia 11 Digital Strategy. Responda sempre em portugues do Brasil.`,
+        `Post diario para o cliente "${cliente?.nome ?? ''}". Nicho: ${cliente?.nicho ?? 'nao informado'}.`,
+        cliente?.publico_alvo ? `Publico-alvo: ${cliente.publico_alvo}.` : '',
+        cliente?.tom_de_voz ? `Tom de voz: ${cliente.tom_de_voz}.` : '',
+        cliente?.pilares_conteudo?.length ? `Pilares de conteudo do cliente (gire entre eles, nao repita o mesmo pilar dos ultimos posts): ${cliente.pilares_conteudo.join(', ')}.` : '',
+        historico?.pilares.length ? `Pilares usados recentemente: ${historico.pilares.join(', ')}. Escolha um "pilar" diferente destes se possivel.` : '',
+        historico?.temas.length ? `Temas ja usados recentemente (o tema de hoje TEM que ser de uma familia de assunto diferente): ${historico.temas.join(' | ')}.` : '',
+        cliente?.temas_evitar?.length ? `NUNCA fale sobre: ${cliente.temas_evitar.join(', ')} (brand safety).` : '',
+        pesquisa ? `Pesquisa de tendencia feita agora: ${pesquisa}` : '',
+        `O tema escolhido precisa ser as duas coisas ao mesmo tempo: (1) um gancho atual de verdade (algo acontecendo agora, nao um conceito de manual reciclado) e (2) ter relevancia pessoal imediata (o publico tem que se reconhecer, nao so ler um fato). O mecanismo/conceito central da area precisa aparecer no proprio gancho, nao so ser colado na legenda depois.`,
+        `Legenda: escreva como uma pessoa real falando (especialista em primeira pessoa, "eu ja vi isso"), nao como comunicado institucional. Estrutura: (1) gancho textual curto reforcando o gancho visual, (2) corpo explicando o assunto com contexto/dado real, (3) fechamento com pergunta ou CTA que puxa comunidade${cliente?.cta_padrao ? ` (pode usar uma variacao de "${cliente.cta_padrao}")` : ''}, (4) hashtags combinando${cliente?.hashtags_fixas?.length ? ` as fixas do cliente (${cliente.hashtags_fixas.join(' ')})` : ''} com 3-5 especificas do tema.`,
+        `NUNCA use travessao (—) na legenda — e o maior tique de "escrito por IA" que existe. Frases curtas e diretas, pontuacao simples (. , ? !).`,
+        `Headline (frase curta que vai aparecer escrita DENTRO da imagem): estilo "${cliente?.estilo_visual ?? 'manchete'}".`,
+        cliente?.estilo_visual === 'editorial'
+          ? `Estilo editorial: frase unica, poetica/reflexiva, 8-14 palavras, tom contemplativo.`
+          : `Estilo manchete: pergunta ou afirmacao direta e provocadora, 6-12 palavras, tom impactante.`,
+        cliente?.formula_headline ? `Formula de headline deste cliente (seguir a risca): ${cliente.formula_headline}.` : '',
+        `Sempre acentuacao correta em portugues (VOCÊ, É, NÃO, etc).`,
+        `Prompt de imagem: pense antes num UNICO MOMENTO decisivo que faria alguem parar de rolar o feed (um gesto, uma expressao, uma tensao visual) — nao uma lista de termos tecnicos soltos. Descreva esse momento numa frase com ideia, depois traduza pra vocabulario tecnico: luz (low-key/rim light pra separar do fundo, nunca luz frontal de camera), enquadramento (rule of thirds, espaco negativo generoso na parte de baixo pro headline), fundo (NUNCA vazio/liso — sempre um ambiente desfocado que sugere contexto, nomeando o que esta desfocado). Sempre fotografia realista (editorial/advertising photography, photorealistic), nunca ilustracao/flat/aquarela. Evite telas, monitores, relogios, placas ou qualquer texto/numero pequeno em primeiro plano (a IA de imagem erra esses detalhes). Evite duas maos entrelacadas em close-up (risco de anatomia errada) — prefira uma mao so ou o rosto como foco emocional. Se aparecer pessoa, o genero/idade deve combinar com o publico-alvo. Escreva o prompt em ingles, 25-40 palavras, so a cena/composicao (o texto do headline e adicionado depois automaticamente, nao descreva texto no prompt).`,
+        `Escolha um "arquetipo_visual" pra essa cena (ex: especialista em acao, still life de objetos em acao, retrato com expressao forte, duas pessoas em interacao, ambiente com drama visual proprio).`,
+        historico?.arquetipos.length ? `Arquetipos visuais usados recentemente (varie, nao repita 2 dias seguidos): ${historico.arquetipos.join(', ')}.` : '',
+        cliente?.arquetipos_visuais_preferidos?.length ? `Arquetipos preferidos deste cliente: ${cliente.arquetipos_visuais_preferidos.join(', ')}.` : '',
+        cliente?.arquetipos_visuais_evitar?.length ? `NUNCA use estes arquetipos: ${cliente.arquetipos_visuais_evitar.join(', ')}.` : '',
+        `Responda SOMENTE com um JSON: {"resposta": string, "gerar_imagem": true, "prompt_imagem": string, "headline": string, "tema": string, "legenda": string, "pilar": string, "arquetipo_visual": string}`,
+      ].filter(Boolean).join(' ')
+    : [
+        `Voce e a Nina, agente de IA do time "${cargo}" da agencia 11 Digital Strategy. Responda sempre em portugues do Brasil, tom profissional e direto.`,
+        `A ordem e uma tarefa avulsa (ex: foto de capa de grupo, criativo de anuncio, imagem promocional).`,
+        `Decida se precisa de imagem. Se precisar, escreva um "headline" curto (se fizer sentido ter texto na imagem) e um "prompt_imagem" em ingles descrevendo a cena/composicao/estilo visual, foco no momento/ideia central, nao em lista de termos tecnicos soltos.`,
+        `Responda SOMENTE com um JSON: {"resposta": string, "gerar_imagem": boolean, "prompt_imagem"?: string, "headline"?: string, "tema"?: string, "legenda"?: string}`,
+      ].join(' ');
 
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -43,7 +151,7 @@ async function interpretarOrdem(openaiKey: string, cargo: string, tipo: string, 
         { role: 'user', content: ordemTexto },
       ],
       response_format: { type: 'json_object' },
-      temperature: 0.7,
+      temperature: 0.8,
     }),
     signal: AbortSignal.timeout(45_000),
   });
@@ -57,6 +165,23 @@ async function interpretarOrdem(openaiKey: string, cargo: string, tipo: string, 
   const raw = data.choices[0]?.message?.content;
   if (!raw) throw new Error('OpenAI nao retornou conteudo');
   return JSON.parse(raw) as ExecResultado;
+}
+
+// Reforca identidade visual (cores da marca) e o texto que tem que aparecer na
+// imagem — nao confia so no que o GPT lembrou de colocar no prompt_imagem.
+function montarPromptFinal(promptBase: string, headline: string | undefined, cliente?: ClienteContexto): string {
+  const partes = [promptBase];
+  if (headline) {
+    partes.push(`The image MUST have this exact headline text rendered directly on it, in bold, highly legible Portuguese typography, positioned prominently (lower third or centered, with a solid or semi-transparent background band behind the text so it stays readable): "${headline}"`);
+  }
+  if (cliente?.cor_primaria) {
+    partes.push(`Use ${cliente.cor_primaria} as the dominant brand color of the design`);
+  }
+  if (cliente?.cor_secundaria) {
+    partes.push(`${cliente.cor_secundaria} as a secondary accent color`);
+  }
+  partes.push('Professional social media creative, square 1:1 format, scroll-stopping design, modern flat/editorial style, high contrast, no watermarks, no random extra text besides the headline.');
+  return partes.join('. ');
 }
 
 async function gerarImagem(openaiKey: string, prompt: string): Promise<Uint8Array> {
@@ -152,13 +277,19 @@ serve(async (req) => {
     if (agenteErr || !agente) throw new Error(`Agente nao encontrado: ${agenteErr?.message ?? agenteId}`);
 
     let cliente: ClienteContexto | undefined;
+    let historico: HistoricoRecente = { temas: [], pilares: [], arquetipos: [] };
     if (tarefa.tipo === 'post_cliente' && tarefa.cliente_id) {
-      const { data } = await supabase.from('conteudo_clientes').select('nome, nicho, tom_de_voz, cta_padrao').eq('id', tarefa.cliente_id).single();
+      const { data } = await supabase
+        .from('conteudo_clientes')
+        .select('nome, nicho, publico_alvo, tom_de_voz, cta_padrao, cor_primaria, cor_secundaria, hashtags_fixas, temas_evitar, pilares_conteudo, estilo_visual, formula_headline, arquetipos_visuais_preferidos, arquetipos_visuais_evitar')
+        .eq('id', tarefa.cliente_id)
+        .single();
       cliente = data ?? undefined;
+      historico = await buscarHistoricoRecente(supabase, tarefa.cliente_id);
     }
 
     const statusTexto = tarefa.tipo === 'post_cliente'
-      ? `Criando post para ${cliente?.nome ?? 'cliente'}...`
+      ? `Pesquisando tendencias pro post de ${cliente?.nome ?? 'cliente'}...`
       : `${tarefa.ordem_texto.slice(0, 60)}${tarefa.ordem_texto.length > 60 ? '...' : ''}`;
 
     await supabase.from('equipe_11ds_tarefas').update({ status: 'em_andamento', iniciado_em: new Date().toISOString() }).eq('id', tarefaId);
@@ -167,11 +298,18 @@ serve(async (req) => {
     const openaiKey = Deno.env.get('OPENAI_API_KEY');
     if (!openaiKey) throw new Error('OPENAI_API_KEY nao configurada nos Supabase Secrets');
 
-    const resultado = await interpretarOrdem(openaiKey, agente.cargo ?? 'Posts & Criativos', tarefa.tipo, tarefa.ordem_texto, cliente);
+    let pesquisa = '';
+    if (tarefa.tipo === 'post_cliente' && cliente) {
+      pesquisa = await pesquisarTendencia(openaiKey, cliente, historico);
+      await supabase.from('equipe_11ds_agentes').update({ status_texto: `Criando post para ${cliente.nome}...`, updated_at: new Date().toISOString() }).eq('id', agenteId);
+    }
+
+    const resultado = await interpretarOrdem(openaiKey, agente.cargo ?? 'Posts & Criativos', tarefa.tipo, tarefa.ordem_texto, cliente, pesquisa, historico);
 
     const anexos: { tipo: string; url: string }[] = [];
     if (resultado.gerar_imagem && resultado.prompt_imagem) {
-      const bytes = await gerarImagem(openaiKey, resultado.prompt_imagem);
+      const promptFinal = montarPromptFinal(resultado.prompt_imagem, resultado.headline, cliente);
+      const bytes = await gerarImagem(openaiKey, promptFinal);
       const storagePath = `${tarefaId}.png`;
       const { error: uploadErr } = await supabase.storage.from('equipe-11ds-criativos').upload(storagePath, bytes, { contentType: 'image/png', upsert: true });
       if (uploadErr) throw new Error(`Storage upload error: ${uploadErr.message}`);
@@ -189,6 +327,8 @@ serve(async (req) => {
           tema_fonte: 'equipe_11ds',
           legenda: resultado.legenda ?? resultado.resposta,
           imagem_feed_url: anexos[0]?.url ?? null,
+          pilar: resultado.pilar ?? null,
+          arquetipo_visual: resultado.arquetipo_visual ?? null,
           status: 'rascunho',
         })
         .select('id')

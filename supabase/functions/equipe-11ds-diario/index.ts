@@ -58,7 +58,7 @@ serve(async (req) => {
     if (agenteErr || !agente) throw new Error(`Agente Posts & Criativos nao encontrado: ${agenteErr?.message}`);
 
     const hoje = hojeSaoPaulo();
-    const tarefasCriadas: { id: string; executorFunction: string }[] = [];
+    const tarefasCriadas: { id: string; agenteId: string; executorFunction: string }[] = [];
 
     // ── 1. Rotina de posts diarios para clientes ativos ──────────────────────
     const { data: clientes, error: clientesErr } = await supabase
@@ -96,7 +96,7 @@ serve(async (req) => {
           console.error(`Falha ao criar tarefa diaria para ${cliente.nome}:`, insertErr?.message);
           continue;
         }
-        tarefasCriadas.push({ id: tarefa.id, executorFunction: 'equipe-11ds-executar' });
+        tarefasCriadas.push({ id: tarefa.id, agenteId: agente.id, executorFunction: 'equipe-11ds-executar' });
       }
     }
 
@@ -135,18 +135,29 @@ serve(async (req) => {
         continue;
       }
       const executorFunction = rec.equipe_11ds_agentes?.executor_function ?? 'equipe-11ds-executar';
-      tarefasCriadas.push({ id: tarefa.id, executorFunction });
+      tarefasCriadas.push({ id: tarefa.id, agenteId: rec.agente_id, executorFunction });
     }
 
-    // Dispara a execução de cada tarefa em background, sem bloquear a resposta do cron.
-    const execucoes = tarefasCriadas.map(({ id: tarefaId, executorFunction }) =>
-      fetch(`${supabaseUrl}/functions/v1/${executorFunction}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-cron-key': cronSecret },
-        body: JSON.stringify({ tarefa_id: tarefaId }),
-      }).catch(e => console.error(`Falha ao executar tarefa ${tarefaId}:`, e?.message ?? e)),
-    );
-    const task = Promise.all(execucoes);
+    // Um agente so pode estar fazendo uma coisa por vez — executa as tarefas de
+    // cada agente em sequencia (senao o status/balao dele vira uma corrida entre
+    // as chamadas concorrentes). Agentes diferentes rodam em paralelo entre si.
+    const porAgente = new Map<string, typeof tarefasCriadas>();
+    for (const t of tarefasCriadas) {
+      if (!porAgente.has(t.agenteId)) porAgente.set(t.agenteId, []);
+      porAgente.get(t.agenteId)!.push(t);
+    }
+
+    const executarSequencial = async (fila: typeof tarefasCriadas) => {
+      for (const { id: tarefaId, executorFunction } of fila) {
+        await fetch(`${supabaseUrl}/functions/v1/${executorFunction}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-cron-key': cronSecret },
+          body: JSON.stringify({ tarefa_id: tarefaId }),
+        }).catch(e => console.error(`Falha ao executar tarefa ${tarefaId}:`, e?.message ?? e));
+      }
+    };
+
+    const task = Promise.all(Array.from(porAgente.values()).map(executarSequencial));
     try { EdgeRuntime.waitUntil(task); } catch { await task; }
 
     return new Response(JSON.stringify({ ok: true, criadas: tarefasCriadas.length }), {
