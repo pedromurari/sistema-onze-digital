@@ -32,6 +32,7 @@ type Agente = {
   avatar_url: string | null;
   status: AgenteStatus;
   status_texto: string | null;
+  executor_function: string;
 };
 
 type Time = {
@@ -164,7 +165,7 @@ function TarefaDetalhe({ tarefa, onNavigateToPosts }: { tarefa: Tarefa; onNaviga
         <p className="text-xs text-red-600 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> {tarefa.erro_mensagem}</p>
       )}
       {tarefa.resposta_texto && (
-        <p className="text-sm text-foreground bg-white border border-border rounded-lg p-2">{tarefa.resposta_texto}</p>
+        <p className="text-sm text-foreground bg-white border border-border rounded-lg p-2 whitespace-pre-wrap">{tarefa.resposta_texto}</p>
       )}
       {tarefa.anexos?.filter(a => a.tipo === 'imagem').map((a, i) => (
         <div key={i} className="relative">
@@ -276,7 +277,7 @@ function AgentePanel({ agente, onClose, onNavigateToPosts }: { agente: Agente; o
     setRepetirDiariamente(false);
     loadTarefas();
 
-    const { error: fnError } = await supabase.functions.invoke('equipe-11ds-executar', { body: { tarefa_id: data.id } });
+    const { error: fnError } = await supabase.functions.invoke(agente.executor_function, { body: { tarefa_id: data.id } });
     setEnviando(false);
     if (fnError) toast.error(`Erro ao executar tarefa: ${fnError.message}`);
     loadTarefas();
@@ -295,7 +296,7 @@ function AgentePanel({ agente, onClose, onNavigateToPosts }: { agente: Agente; o
     setRodandoDiaria(false);
     if (error) { toast.error(`Erro ao rodar rotina diária: ${error.message}`); return; }
     const criadas = (data as any)?.criadas ?? 0;
-    toast.success(criadas > 0 ? `${criadas} post(s) diário(s) iniciado(s)!` : 'Nenhum post novo — todos os clientes ativos já têm post hoje.');
+    toast.success(criadas > 0 ? `${criadas} tarefa(s) diária(s) iniciada(s)!` : 'Nada novo pra rodar agora — tudo já foi feito hoje.');
     loadTarefas();
   };
 
@@ -324,15 +325,16 @@ function AgentePanel({ agente, onClose, onNavigateToPosts }: { agente: Agente; o
               <AlertDialogTrigger asChild>
                 <Button size="sm" variant="outline" className="gap-1.5 mr-6" disabled={rodandoDiaria}>
                   {rodandoDiaria ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                  Rodar posts diários
+                  Rodar rotina diária
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Rodar a rotina diária agora?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Isso gera e publica como rascunho o post de hoje para cada cliente ativo que ainda não tem post no dia.
-                    Normalmente isso roda sozinho às 08h — use isso só se quiser testar ou não quiser esperar.
+                    Isso roda de uma vez a rotina diária de todos os agentes: posts de hoje pros clientes ativos e todas
+                    as tarefas recorrentes cadastradas. Normalmente isso roda sozinho às 08h — use isso só se quiser
+                    testar ou não quiser esperar.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -444,7 +446,7 @@ export function Equipe11ds({ onNavigateToPosts }: { onNavigateToPosts?: () => vo
 
   const loadTimes = useCallback(async () => {
     const { data, error } = await (supabase.from('equipe_11ds_times' as any) as any)
-      .select('id, nome, emoji, equipe_11ds_agentes(id, nome, cargo, avatar_url, status, status_texto)')
+      .select('id, nome, emoji, equipe_11ds_agentes(id, nome, cargo, avatar_url, status, status_texto, executor_function)')
       .order('ordem');
     if (error) { toast.error(`Erro ao carregar equipe: ${error.message}`); setLoading(false); return; }
     setTimes((data as any) || []);

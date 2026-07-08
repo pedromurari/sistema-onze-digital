@@ -53,7 +53,7 @@ serve(async (req) => {
     if (agenteErr || !agente) throw new Error(`Agente Posts & Criativos nao encontrado: ${agenteErr?.message}`);
 
     const hoje = hojeSaoPaulo();
-    const tarefasCriadas: string[] = [];
+    const tarefasCriadas: { id: string; executorFunction: string }[] = [];
 
     // ── 1. Rotina de posts diarios para clientes ativos ──────────────────────
     const { data: clientes, error: clientesErr } = await supabase
@@ -91,19 +91,18 @@ serve(async (req) => {
           console.error(`Falha ao criar tarefa diaria para ${cliente.nome}:`, insertErr?.message);
           continue;
         }
-        tarefasCriadas.push(tarefa.id);
+        tarefasCriadas.push({ id: tarefa.id, executorFunction: 'equipe-11ds-executar' });
       }
     }
 
-    // ── 2. Tarefas recorrentes cadastradas manualmente ────────────────────────
+    // ── 2. Tarefas recorrentes cadastradas manualmente (de qualquer agente) ──
     const { data: recorrentes, error: recorrentesErr } = await supabase
       .from('equipe_11ds_recorrentes')
-      .select('id, tipo, cliente_id, ordem_texto')
-      .eq('agente_id', agente.id)
+      .select('id, agente_id, tipo, cliente_id, ordem_texto, equipe_11ds_agentes(executor_function)')
       .eq('ativo', true);
     if (recorrentesErr) console.error('Falha ao listar recorrentes:', recorrentesErr.message);
 
-    for (const rec of recorrentes ?? []) {
+    for (const rec of (recorrentes ?? []) as any[]) {
       const { data: jaExecutou } = await supabase
         .from('equipe_11ds_tarefas')
         .select('id')
@@ -116,7 +115,7 @@ serve(async (req) => {
       const { data: tarefa, error: insertErr } = await supabase
         .from('equipe_11ds_tarefas')
         .insert({
-          agente_id: agente.id,
+          agente_id: rec.agente_id,
           criado_por: null,
           tipo: rec.tipo,
           cliente_id: rec.cliente_id,
@@ -130,12 +129,13 @@ serve(async (req) => {
         console.error(`Falha ao criar tarefa recorrente ${rec.id}:`, insertErr?.message);
         continue;
       }
-      tarefasCriadas.push(tarefa.id);
+      const executorFunction = rec.equipe_11ds_agentes?.executor_function ?? 'equipe-11ds-executar';
+      tarefasCriadas.push({ id: tarefa.id, executorFunction });
     }
 
     // Dispara a execução de cada tarefa em background, sem bloquear a resposta do cron.
-    const execucoes = tarefasCriadas.map(tarefaId =>
-      fetch(`${supabaseUrl}/functions/v1/equipe-11ds-executar`, {
+    const execucoes = tarefasCriadas.map(({ id: tarefaId, executorFunction }) =>
+      fetch(`${supabaseUrl}/functions/v1/${executorFunction}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-cron-key': cronSecret },
         body: JSON.stringify({ tarefa_id: tarefaId }),
