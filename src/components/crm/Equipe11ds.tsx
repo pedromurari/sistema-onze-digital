@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Bot, Loader2, Download, Send, ArrowUpRight, AlertTriangle, RefreshCw, Repeat, X } from 'lucide-react';
+import { Bot, Loader2, Download, Send, ArrowUpRight, AlertTriangle, RefreshCw, Repeat, X, MessageCircle, CheckCircle2, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -42,6 +42,26 @@ type Time = {
   equipe_11ds_agentes: Agente[];
 };
 
+type ItemFinanceiro = {
+  pagamento_id: string;
+  aluno_id: string | null;
+  nome: string;
+  valor: number;
+  telefone: string | null;
+  data_vencimento: string | null;
+  data_pagamento: string | null;
+  numero_parcela: number | null;
+  dias_atraso: number | null;
+  cobranca_contatado_em: string | null;
+};
+
+type DadosFinanceiro = {
+  pagosHoje: ItemFinanceiro[];
+  inadimplentes: ItemFinanceiro[];
+  vencendo7: ItemFinanceiro[];
+  vencendo1: ItemFinanceiro[];
+};
+
 type Tarefa = {
   id: string;
   agente_id: string;
@@ -54,6 +74,7 @@ type Tarefa = {
   conteudo_post_id: string | null;
   erro_mensagem: string | null;
   created_at: string;
+  dados: DadosFinanceiro | null;
 };
 
 type Cliente = { id: string; nome: string };
@@ -148,9 +169,94 @@ function TarefaChip({ tarefa, onClick }: { tarefa: Tarefa; onClick: () => void }
   );
 }
 
+// ── Lista financeira interativa ─────────────────────────────────────────────
+
+function whatsappLink(telefone: string) {
+  const digitos = telefone.replace(/\D/g, '');
+  const comDdi = digitos.length <= 11 ? `55${digitos}` : digitos;
+  return `https://wa.me/${comDdi}`;
+}
+
+function ItemFinanceiroRow({ item, comAtraso, onNavigateToAluno, onMarcarContatado }: {
+  item: ItemFinanceiro;
+  comAtraso: boolean;
+  onNavigateToAluno?: (alunoId: string) => void;
+  onMarcarContatado: (pagamentoId: string, contatar: boolean) => void;
+}) {
+  const contatado = Boolean(item.cobranca_contatado_em);
+  return (
+    <div className="flex items-center gap-2 border border-border rounded-lg px-2.5 py-2 text-xs bg-white">
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-foreground truncate">{item.nome}</p>
+        <p className="text-muted-foreground">
+          {item.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          {item.numero_parcela ? ` · parcela ${item.numero_parcela}` : ''}
+          {comAtraso && item.dias_atraso != null ? ` · ${item.dias_atraso}d atraso` : ''}
+          {!comAtraso && item.data_vencimento ? ` · vence ${format(new Date(`${item.data_vencimento}T00:00:00`), 'dd/MM')}` : ''}
+        </p>
+      </div>
+      {item.telefone && (
+        <a href={whatsappLink(item.telefone)} target="_blank" rel="noreferrer" title="Chamar no WhatsApp" className="text-emerald-600 hover:opacity-70 flex-shrink-0">
+          <MessageCircle className="h-4 w-4" />
+        </a>
+      )}
+      {item.aluno_id && onNavigateToAluno && (
+        <button onClick={() => onNavigateToAluno(item.aluno_id!)} title="Ver aluno no Financeiro" className="text-primary hover:opacity-70 flex-shrink-0">
+          <ExternalLink className="h-4 w-4" />
+        </button>
+      )}
+      <button
+        onClick={() => onMarcarContatado(item.pagamento_id, !contatado)}
+        title={contatado ? 'Já cobrado — clique para desmarcar' : 'Marcar como já cobrado'}
+        className={cn('flex-shrink-0', contatado ? 'text-emerald-600' : 'text-gray-300 hover:text-gray-400')}
+      >
+        <CheckCircle2 className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
+function ListaFinanceira({ titulo, itens, comAtraso, onNavigateToAluno, onMarcarContatado }: {
+  titulo: string;
+  itens: ItemFinanceiro[];
+  comAtraso: boolean;
+  onNavigateToAluno?: (alunoId: string) => void;
+  onMarcarContatado: (pagamentoId: string, contatar: boolean) => void;
+}) {
+  if (itens.length === 0) return null;
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-semibold text-foreground">{titulo} ({itens.length})</p>
+      <div className="space-y-1.5">
+        {itens.map(item => (
+          <ItemFinanceiroRow key={item.pagamento_id} item={item} comAtraso={comAtraso} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={onMarcarContatado} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Detalhe da tarefa ────────────────────────────────────────────────────────
 
-function TarefaDetalhe({ tarefa, onNavigateToPosts }: { tarefa: Tarefa; onNavigateToPosts?: () => void }) {
+function TarefaDetalhe({ tarefa, onNavigateToPosts, onNavigateToAluno }: { tarefa: Tarefa; onNavigateToPosts?: () => void; onNavigateToAluno?: (alunoId: string) => void }) {
+  const [dados, setDados] = useState(tarefa.dados);
+  useEffect(() => { setDados(tarefa.dados); }, [tarefa.dados]);
+
+  const marcarContatado = async (pagamentoId: string, contatar: boolean) => {
+    const valor = contatar ? new Date().toISOString() : null;
+    const { error } = await supabase.from('pagamentos').update({ cobranca_contatado_em: valor }).eq('id', pagamentoId);
+    if (error) { toast.error(`Erro ao atualizar: ${error.message}`); return; }
+    setDados(prev => {
+      if (!prev) return prev;
+      const atualizarLista = (lista: ItemFinanceiro[]) => lista.map(i => i.pagamento_id === pagamentoId ? { ...i, cobranca_contatado_em: valor } : i);
+      return {
+        pagosHoje: atualizarLista(prev.pagosHoje),
+        inadimplentes: atualizarLista(prev.inadimplentes),
+        vencendo7: atualizarLista(prev.vencendo7),
+        vencendo1: atualizarLista(prev.vencendo1),
+      };
+    });
+  };
   return (
     <div className="border border-border rounded-xl p-3 space-y-2 bg-muted/30">
       <div className="flex items-center justify-between">
@@ -166,6 +272,14 @@ function TarefaDetalhe({ tarefa, onNavigateToPosts }: { tarefa: Tarefa; onNaviga
       )}
       {tarefa.resposta_texto && (
         <p className="text-sm text-foreground bg-white border border-border rounded-lg p-2 whitespace-pre-wrap">{tarefa.resposta_texto}</p>
+      )}
+      {dados && (
+        <div className="space-y-3 pt-1">
+          <ListaFinanceira titulo="💰 Pagamentos de hoje — confira se bateu" itens={dados.pagosHoje} comAtraso={false} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
+          <ListaFinanceira titulo="⚠️ Inadimplentes" itens={dados.inadimplentes} comAtraso={true} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
+          <ListaFinanceira titulo="🔔 Vencendo em 7 dias" itens={dados.vencendo7} comAtraso={false} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
+          <ListaFinanceira titulo="🔴 Vencendo amanhã" itens={dados.vencendo1} comAtraso={false} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
+        </div>
       )}
       {tarefa.anexos?.filter(a => a.tipo === 'imagem').map((a, i) => (
         <div key={i} className="relative">
@@ -186,7 +300,7 @@ function TarefaDetalhe({ tarefa, onNavigateToPosts }: { tarefa: Tarefa; onNaviga
 
 // ── Painel do agente ─────────────────────────────────────────────────────────
 
-function AgentePanel({ agente, onClose, onNavigateToPosts }: { agente: Agente; onClose: () => void; onNavigateToPosts?: () => void }) {
+function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: { agente: Agente; onClose: () => void; onNavigateToPosts?: () => void; onNavigateToAluno?: (alunoId: string) => void }) {
   const { user } = useAuth();
   const [tarefas, setTarefas] = useState<Tarefa[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -201,7 +315,7 @@ function AgentePanel({ agente, onClose, onNavigateToPosts }: { agente: Agente; o
 
   const loadTarefas = useCallback(async () => {
     const { data, error } = await (supabase.from('equipe_11ds_tarefas' as any) as any)
-      .select('id, agente_id, tipo, cliente_id, ordem_texto, status, resposta_texto, anexos, conteudo_post_id, erro_mensagem, created_at')
+      .select('id, agente_id, tipo, cliente_id, ordem_texto, status, resposta_texto, anexos, conteudo_post_id, erro_mensagem, created_at, dados')
       .eq('agente_id', agente.id)
       .order('created_at', { ascending: false })
       .limit(50);
@@ -382,7 +496,7 @@ function AgentePanel({ agente, onClose, onNavigateToPosts }: { agente: Agente; o
                   </div>
                   {items.filter(t => t.id === selecionada).map(t => (
                     <div key={t.id} className="mt-2">
-                      <TarefaDetalhe tarefa={t} onNavigateToPosts={onNavigateToPosts} />
+                      <TarefaDetalhe tarefa={t} onNavigateToPosts={onNavigateToPosts} onNavigateToAluno={onNavigateToAluno} />
                     </div>
                   ))}
                 </div>
@@ -436,7 +550,7 @@ function AgentePanel({ agente, onClose, onNavigateToPosts }: { agente: Agente; o
 
 // ── Módulo principal ─────────────────────────────────────────────────────────
 
-export function Equipe11ds({ onNavigateToPosts }: { onNavigateToPosts?: () => void }) {
+export function Equipe11ds({ onNavigateToPosts, onNavigateToAluno }: { onNavigateToPosts?: () => void; onNavigateToAluno?: (alunoId: string) => void }) {
   const [times, setTimes] = useState<Time[]>([]);
   const [loading, setLoading] = useState(true);
   const [agenteAbertoId, setAgenteAbertoId] = useState<string | null>(null);
@@ -492,6 +606,7 @@ export function Equipe11ds({ onNavigateToPosts }: { onNavigateToPosts?: () => vo
           agente={agenteAberto}
           onClose={() => setAgenteAbertoId(null)}
           onNavigateToPosts={onNavigateToPosts}
+          onNavigateToAluno={onNavigateToAluno}
         />
       )}
     </div>

@@ -222,6 +222,10 @@ export function CRMLayout() {
       return <AulaSecretaKanban aulaSecretaId={aulaSecretaId} />;
     }
 
+    if (typeof currentView === 'string' && currentView.startsWith('financeiro_aluno_')) {
+      return <Financeiro initialAlunoId={currentView.replace('financeiro_aluno_', '')} />;
+    }
+
     switch (currentView) {
       case 'dashboard': return <Dashboard />;
       case 'pipeline': return <Pipeline onEditLead={handleEditLead} />;
@@ -244,7 +248,9 @@ export function CRMLayout() {
       case 'produtos': return isAdmin ? <Produtos /> : <RestrictedView />;
       case 'posts': return isAdmin ? <Posts /> : <RestrictedView />;
       case 'parceiros': return isAdmin ? <Parceiros /> : <RestrictedView />;
-      case 'equipe_11ds': return isAdmin ? <Equipe11ds onNavigateToPosts={() => setCurrentView('posts')} /> : <RestrictedView />;
+      case 'equipe_11ds': return isAdmin
+        ? <Equipe11ds onNavigateToPosts={() => setCurrentView('posts')} onNavigateToAluno={(alunoId) => setCurrentView(`financeiro_aluno_${alunoId}` as View)} />
+        : <RestrictedView />;
       case 'franquia_psi': return <IDMPsiFranquias />;
       default: return <Dashboard />;
     }

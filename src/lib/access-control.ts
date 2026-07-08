@@ -132,6 +132,7 @@ export function canAccessView(view: string, permissions: AccessPermissions, isAd
 
   if (view.startsWith('npa_')) return permissions.canViewNpa;
   if (view.startsWith('aula_secreta_')) return permissions.canViewAulaSecreta;
+  if (view.startsWith('financeiro_aluno_')) return permissions.canViewFinanceiro;
 
   const permissionByView: Partial<Record<AppView, boolean>> = {
     dashboard: permissions.canViewDashboard,

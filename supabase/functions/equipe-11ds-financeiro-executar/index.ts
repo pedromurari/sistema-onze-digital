@@ -26,40 +26,43 @@ function diasEntre(deISO: string, ateISO: string): number {
   return Math.round((ate - de) / 86_400_000);
 }
 
-function formatDataBR(iso: string): string {
-  const [y, m, d] = iso.split('-');
-  return `${d}/${m}/${y}`;
-}
-
-function formatValor(v: number | null): string {
-  return (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-type PagamentoLinha = {
+type PagamentoRaw = {
+  id: string;
+  aluno_id: string | null;
   valor: number | null;
   data_pagamento: string | null;
   data_vencimento: string | null;
   numero_parcela: number | null;
+  cobranca_contatado_em: string | null;
   alunos: { nome: string; whatsapp: string | null; cobranca_telefone: string | null } | null;
 };
 
-function formatLista(itens: PagamentoLinha[], hoje: string, comAtraso: boolean, limite = 25): string {
-  if (itens.length === 0) return '  Nenhum.';
-  const linhas = itens.slice(0, limite).map(p => {
-    const nome = p.alunos?.nome ?? 'Aluno';
-    const tel = p.alunos?.cobranca_telefone || p.alunos?.whatsapp || 'sem telefone';
-    const parcela = p.numero_parcela ? ` (parcela ${p.numero_parcela})` : '';
-    if (comAtraso && p.data_vencimento) {
-      const atraso = diasEntre(p.data_vencimento, hoje);
-      return `  • ${nome} — ${formatValor(p.valor)}${parcela}, venceu ${formatDataBR(p.data_vencimento)} (${atraso} dia${atraso === 1 ? '' : 's'} de atraso) — ${tel}`;
-    }
-    if (p.data_vencimento) {
-      return `  • ${nome} — ${formatValor(p.valor)}${parcela}, vence ${formatDataBR(p.data_vencimento)} — ${tel}`;
-    }
-    return `  • ${nome} — ${formatValor(p.valor)}${parcela} — pago em ${p.data_pagamento ? formatDataBR(p.data_pagamento) : '?'}`;
-  });
-  if (itens.length > limite) linhas.push(`  ... e mais ${itens.length - limite}.`);
-  return linhas.join('\n');
+type ItemResumo = {
+  pagamento_id: string;
+  aluno_id: string | null;
+  nome: string;
+  valor: number;
+  telefone: string | null;
+  data_vencimento: string | null;
+  data_pagamento: string | null;
+  numero_parcela: number | null;
+  dias_atraso: number | null;
+  cobranca_contatado_em: string | null;
+};
+
+function paraItem(p: PagamentoRaw, hoje: string, comAtraso: boolean): ItemResumo {
+  return {
+    pagamento_id: p.id,
+    aluno_id: p.aluno_id,
+    nome: p.alunos?.nome ?? 'Aluno',
+    valor: p.valor ?? 0,
+    telefone: p.alunos?.cobranca_telefone || p.alunos?.whatsapp || null,
+    data_vencimento: p.data_vencimento,
+    data_pagamento: p.data_pagamento,
+    numero_parcela: p.numero_parcela,
+    dias_atraso: comAtraso && p.data_vencimento ? diasEntre(p.data_vencimento, hoje) : null,
+    cobranca_contatado_em: p.cobranca_contatado_em,
+  };
 }
 
 serve(async (req) => {
@@ -112,7 +115,7 @@ serve(async (req) => {
     const em7dias = addDias(hoje, 7);
     const amanha = addDias(hoje, 1);
 
-    const selectComAluno = 'valor, data_pagamento, data_vencimento, numero_parcela, alunos(nome, whatsapp, cobranca_telefone)';
+    const selectComAluno = 'id, aluno_id, valor, data_pagamento, data_vencimento, numero_parcela, cobranca_contatado_em, alunos(nome, whatsapp, cobranca_telefone)';
 
     const [pagosHoje, atrasados, pendentesVencidos, vencendo7, vencendo1] = await Promise.all([
       supabase.from('pagamentos').select(selectComAluno).eq('status', 'pago').eq('data_pagamento', hoje),
@@ -126,34 +129,37 @@ serve(async (req) => {
       if (r.error) throw new Error(`Falha ao consultar ${nome}: ${r.error.message}`);
     }
 
-    const inadimplentes = [...(atrasados.data ?? []), ...(pendentesVencidos.data ?? [])] as unknown as PagamentoLinha[];
-    const listaPagosHoje = (pagosHoje.data ?? []) as unknown as PagamentoLinha[];
-    const lista7 = (vencendo7.data ?? []) as unknown as PagamentoLinha[];
-    const lista1 = (vencendo1.data ?? []) as unknown as PagamentoLinha[];
+    const inadimplentesRaw = [...(atrasados.data ?? []), ...(pendentesVencidos.data ?? [])] as unknown as PagamentoRaw[];
+    const pagosHojeRaw = (pagosHoje.data ?? []) as unknown as PagamentoRaw[];
+    const vencendo7Raw = (vencendo7.data ?? []) as unknown as PagamentoRaw[];
+    const vencendo1Raw = (vencendo1.data ?? []) as unknown as PagamentoRaw[];
 
-    const totalPagoHoje = listaPagosHoje.reduce((s, p) => s + (p.valor ?? 0), 0);
-    const totalInadimplente = inadimplentes.reduce((s, p) => s + (p.valor ?? 0), 0);
+    const dados = {
+      pagosHoje: pagosHojeRaw.map(p => paraItem(p, hoje, false)),
+      inadimplentes: inadimplentesRaw.map(p => paraItem(p, hoje, true)),
+      vencendo7: vencendo7Raw.map(p => paraItem(p, hoje, false)),
+      vencendo1: vencendo1Raw.map(p => paraItem(p, hoje, false)),
+      hoje,
+    };
+
+    const totalPagoHoje = dados.pagosHoje.reduce((s, p) => s + p.valor, 0);
+    const totalInadimplente = dados.inadimplentes.reduce((s, p) => s + p.valor, 0);
+    const fmtValor = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
     const resposta = [
-      `📊 Resumo financeiro de hoje (${formatDataBR(hoje)})`,
-      '',
-      `💰 Pagamentos de hoje (${listaPagosHoje.length}) — ${formatValor(totalPagoHoje)} — confira se bateu:`,
-      formatLista(listaPagosHoje, hoje, false),
-      '',
-      `⚠️ Inadimplentes (${inadimplentes.length}) — ${formatValor(totalInadimplente)} em atraso:`,
-      formatLista(inadimplentes, hoje, true),
-      '',
-      `🔔 Vencendo em 7 dias — ${formatDataBR(em7dias)} (${lista7.length}):`,
-      formatLista(lista7, hoje, false),
-      '',
-      `🔴 Vencendo amanhã — ${formatDataBR(amanha)} (${lista1.length}):`,
-      formatLista(lista1, hoje, false),
+      `📊 Resumo financeiro de hoje`,
+      `💰 Pagamentos de hoje: ${dados.pagosHoje.length} (${fmtValor(totalPagoHoje)})`,
+      `⚠️ Inadimplentes: ${dados.inadimplentes.length} (${fmtValor(totalInadimplente)} em atraso)`,
+      `🔔 Vencendo em 7 dias: ${dados.vencendo7.length}`,
+      `🔴 Vencendo amanhã: ${dados.vencendo1.length}`,
+      `Veja a lista detalhada abaixo, com link direto pro aluno e opção de marcar quem já foi cobrado.`,
     ].join('\n');
 
     await supabase.from('equipe_11ds_tarefas').update({
       status: 'concluido',
       resposta_texto: resposta,
       anexos: [],
+      dados,
       concluido_em: new Date().toISOString(),
     }).eq('id', tarefaId);
 
