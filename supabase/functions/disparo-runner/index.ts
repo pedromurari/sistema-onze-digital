@@ -93,12 +93,16 @@ serve(async (req) => {
         continue;
       }
 
-      const campInstances = camp.evolution_config_id
-        ? (() => {
-            const specific = allInstances.filter((r: { id: string }) => r.id === camp.evolution_config_id);
-            return specific.length ? specific : allInstances;
-          })()
+      const pinnedIds: string[] = (camp.evolution_config_ids?.length ? camp.evolution_config_ids : camp.evolution_config_id ? [camp.evolution_config_id] : []);
+      const scoped = pinnedIds.length
+        ? allInstances.filter((r: { id: string }) => pinnedIds.includes(r.id))
         : allInstances;
+      const campInstances = scoped.length ? scoped : allInstances;
+
+      // Rodízio: a instância da vez é escolhida por quantas mensagens a campanha já mandou,
+      // as demais entram como fallback (nessa ordem) se a da vez falhar.
+      const rotateIdx = (camp.leads_sent ?? 0) % campInstances.length;
+      const orderedInstances = [...campInstances.slice(rotateIdx), ...campInstances.slice(0, rotateIdx)];
 
       const vars: Record<string, string> = {
         nome:  lead.nome ?? '',
@@ -109,8 +113,9 @@ serve(async (req) => {
 
       let sendOk    = false;
       let sendError = '';
+      let sentInstanceId = '';
 
-      for (const inst of campInstances) {
+      for (const inst of orderedInstances) {
         const rawBase = (inst.api_url as string).replace(/\/$/, '');
         const base    = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
         try {
@@ -147,6 +152,7 @@ serve(async (req) => {
             }
           }
           sendOk = true;
+          sentInstanceId = inst.id;
           break;
         } catch (e: unknown) {
           sendError = `[${inst.instance_name}] ${(e as Error).message}`;
@@ -161,7 +167,7 @@ serve(async (req) => {
 
       if (sendOk) {
         await supabase.from('disparo_leads')
-          .update({ status: 'enviado', sent_at: sentAt, error_msg: null })
+          .update({ status: 'enviado', sent_at: sentAt, error_msg: null, instance_id: sentInstanceId })
           .eq('id', lead.id);
         await supabase.from('disparo_campanhas')
           .update({ leads_sent: (camp.leads_sent ?? 0) + 1, consecutive_errors: 0, next_send_at: nextSendAt })
