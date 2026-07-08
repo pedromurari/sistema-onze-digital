@@ -23,11 +23,13 @@ serve(async (req) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabase = createClient(supabaseUrl, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
-  // Endpoint só é acionado internamente pelo pg_cron — sem auth de usuário.
+  // Auth: x-cron-key (pg_cron) ou Bearer JWT (disparo manual pelo painel).
   // O secret nao fica em nenhuma variavel de ambiente/codigo — e' lido do Supabase Vault.
+  const authHeader    = req.headers.get('authorization') ?? '';
   const cronKeyHeader = req.headers.get('x-cron-key') ?? '';
   const { data: cronSecret } = await supabase.rpc('get_equipe_11ds_cron_secret');
-  if (!cronSecret || cronKeyHeader !== cronSecret) {
+  const isCron = Boolean(cronSecret) && cronKeyHeader === cronSecret;
+  if (!isCron && !authHeader.startsWith('Bearer ')) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

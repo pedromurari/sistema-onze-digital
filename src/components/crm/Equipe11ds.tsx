@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Bot, Loader2, Download, Send, ArrowUpRight, AlertTriangle } from 'lucide-react';
+import { Bot, Loader2, Download, Send, ArrowUpRight, AlertTriangle, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,10 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -182,6 +186,7 @@ function AgentePanel({ agente, onClose, onNavigateToPosts }: { agente: Agente; o
   const [ordemTexto, setOrdemTexto] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [selecionada, setSelecionada] = useState<string | null>(null);
+  const [rodandoDiaria, setRodandoDiaria] = useState(false);
 
   const loadTarefas = useCallback(async () => {
     const { data, error } = await (supabase.from('equipe_11ds_tarefas' as any) as any)
@@ -240,6 +245,16 @@ function AgentePanel({ agente, onClose, onNavigateToPosts }: { agente: Agente; o
     loadTarefas();
   };
 
+  const rodarRotinaDiaria = async () => {
+    setRodandoDiaria(true);
+    const { data, error } = await supabase.functions.invoke('equipe-11ds-diario', { body: {} });
+    setRodandoDiaria(false);
+    if (error) { toast.error(`Erro ao rodar rotina diária: ${error.message}`); return; }
+    const criadas = (data as any)?.criadas ?? 0;
+    toast.success(criadas > 0 ? `${criadas} post(s) diário(s) iniciado(s)!` : 'Nenhum post novo — todos os clientes ativos já têm post hoje.');
+    loadTarefas();
+  };
+
   const grupos: { status: TarefaStatus; label: string }[] = [
     { status: 'em_andamento', label: 'Em andamento' },
     { status: 'pendente', label: 'A fazer' },
@@ -261,6 +276,27 @@ function AgentePanel({ agente, onClose, onNavigateToPosts }: { agente: Agente; o
               <SheetTitle>{agente.nome}</SheetTitle>
               <p className="text-xs text-muted-foreground">{agente.cargo}</p>
             </div>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" variant="outline" className="gap-1.5 mr-6" disabled={rodandoDiaria}>
+                  {rodandoDiaria ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                  Rodar posts diários
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Rodar a rotina diária agora?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Isso gera e publica como rascunho o post de hoje para cada cliente ativo que ainda não tem post no dia.
+                    Normalmente isso roda sozinho às 08h — use isso só se quiser testar ou não quiser esperar.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction onClick={rodarRotinaDiaria}>Rodar agora</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
           <div className="mt-2">
             <BalaoDeFala agente={agente} />
