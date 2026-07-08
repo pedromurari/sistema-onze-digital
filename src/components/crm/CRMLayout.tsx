@@ -31,6 +31,7 @@ const Produtos          = lazy(() => import('./Produtos').then(m => ({ default: 
 const IDMPsiFranquias   = lazy(() => import('./IDMPsiFranquias').then(m => ({ default: m.IDMPsiFranquias })));
 const Posts             = lazy(() => import('./Posts').then(m => ({ default: m.Posts })));
 const Parceiros         = lazy(() => import('./Parceiros').then(m => ({ default: m.Parceiros })));
+const Equipe11ds        = lazy(() => import('./Equipe11ds').then(m => ({ default: m.Equipe11ds })));
 
 function ModuleLoader() {
   return (
@@ -243,6 +244,7 @@ export function CRMLayout() {
       case 'produtos': return isAdmin ? <Produtos /> : <RestrictedView />;
       case 'posts': return isAdmin ? <Posts /> : <RestrictedView />;
       case 'parceiros': return isAdmin ? <Parceiros /> : <RestrictedView />;
+      case 'equipe_11ds': return isAdmin ? <Equipe11ds onNavigateToPosts={() => setCurrentView('posts')} /> : <RestrictedView />;
       case 'franquia_psi': return <IDMPsiFranquias />;
       default: return <Dashboard />;
     }
