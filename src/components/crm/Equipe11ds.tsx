@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Bot, Loader2, Download, Send, ArrowUpRight, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Bot, Loader2, Download, Send, ArrowUpRight, AlertTriangle, RefreshCw, Repeat, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -55,6 +56,13 @@ type Tarefa = {
 };
 
 type Cliente = { id: string; nome: string };
+
+type Recorrente = {
+  id: string;
+  tipo: TarefaTipo;
+  cliente_id: string | null;
+  ordem_texto: string;
+};
 
 const STATUS_LABEL: Record<TarefaStatus, string> = {
   pendente: 'A fazer',
@@ -181,9 +189,11 @@ function AgentePanel({ agente, onClose, onNavigateToPosts }: { agente: Agente; o
   const { user } = useAuth();
   const [tarefas, setTarefas] = useState<Tarefa[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [recorrentes, setRecorrentes] = useState<Recorrente[]>([]);
   const [tipo, setTipo] = useState<TarefaTipo>('avulso');
   const [clienteId, setClienteId] = useState<string>('');
   const [ordemTexto, setOrdemTexto] = useState('');
+  const [repetirDiariamente, setRepetirDiariamente] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [selecionada, setSelecionada] = useState<string | null>(null);
   const [rodandoDiaria, setRodandoDiaria] = useState(false);
@@ -198,11 +208,22 @@ function AgentePanel({ agente, onClose, onNavigateToPosts }: { agente: Agente; o
     setTarefas((data as any) || []);
   }, [agente.id]);
 
+  const loadRecorrentes = useCallback(async () => {
+    const { data, error } = await (supabase.from('equipe_11ds_recorrentes' as any) as any)
+      .select('id, tipo, cliente_id, ordem_texto')
+      .eq('agente_id', agente.id)
+      .eq('ativo', true)
+      .order('created_at');
+    if (error) { toast.error(`Erro ao carregar tarefas recorrentes: ${error.message}`); return; }
+    setRecorrentes((data as any) || []);
+  }, [agente.id]);
+
   useEffect(() => {
     loadTarefas();
+    loadRecorrentes();
     supabase.from('conteudo_clientes' as any).select('id, nome').order('nome')
       .then(({ data }) => setClientes((data as any) || []));
-  }, [loadTarefas]);
+  }, [loadTarefas, loadRecorrentes]);
 
   useEffect(() => {
     const channel = supabase
@@ -218,6 +239,21 @@ function AgentePanel({ agente, onClose, onNavigateToPosts }: { agente: Agente; o
     if (!ordemTexto.trim()) return;
     if (tipo === 'post_cliente' && !clienteId) { toast.error('Selecione o cliente'); return; }
     setEnviando(true);
+
+    if (repetirDiariamente) {
+      const { error: recError } = await (supabase.from('equipe_11ds_recorrentes' as any) as any)
+        .insert({
+          agente_id: agente.id,
+          criado_por: user?.id ?? null,
+          tipo,
+          cliente_id: tipo === 'post_cliente' ? clienteId : null,
+          ordem_texto: ordemTexto.trim(),
+          ativo: true,
+        });
+      if (recError) toast.error(`Erro ao salvar como recorrente: ${recError.message}`);
+      else { toast.success('Vai repetir todo dia a partir de amanhã!'); loadRecorrentes(); }
+    }
+
     const { data, error } = await (supabase.from('equipe_11ds_tarefas' as any) as any)
       .insert({
         agente_id: agente.id,
@@ -237,12 +273,20 @@ function AgentePanel({ agente, onClose, onNavigateToPosts }: { agente: Agente; o
     }
 
     setOrdemTexto('');
+    setRepetirDiariamente(false);
     loadTarefas();
 
     const { error: fnError } = await supabase.functions.invoke('equipe-11ds-executar', { body: { tarefa_id: data.id } });
     setEnviando(false);
     if (fnError) toast.error(`Erro ao executar tarefa: ${fnError.message}`);
     loadTarefas();
+  };
+
+  const removerRecorrente = async (id: string) => {
+    const { error } = await (supabase.from('equipe_11ds_recorrentes' as any) as any).update({ ativo: false }).eq('id', id);
+    if (error) { toast.error(`Erro ao remover recorrente: ${error.message}`); return; }
+    setRecorrentes(prev => prev.filter(r => r.id !== id));
+    toast.success('Tarefa recorrente removida.');
   };
 
   const rodarRotinaDiaria = async () => {
@@ -305,6 +349,24 @@ function AgentePanel({ agente, onClose, onNavigateToPosts }: { agente: Agente; o
 
         <ScrollArea className="flex-1 p-4">
           <div className="space-y-4">
+            {recorrentes.length > 0 && (
+              <div>
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1">
+                  <Repeat className="h-3 w-3" /> Tarefas recorrentes ({recorrentes.length})
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {recorrentes.map(r => (
+                    <div key={r.id} className="flex items-center gap-1.5 border border-purple-200 bg-purple-50 text-purple-700 rounded-lg pl-2.5 pr-1 py-1.5 text-xs font-medium">
+                      <span>{r.tipo === 'post_cliente' ? '📝' : '🎨'}</span>
+                      <span className="max-w-[140px] truncate" title={r.ordem_texto}>{r.ordem_texto}</span>
+                      <button onClick={() => removerRecorrente(r.id)} className="hover:opacity-70" title="Remover">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {grupos.map(g => {
               const items = tarefas.filter(t => t.status === g.status);
               if (items.length === 0) return null;
@@ -360,6 +422,10 @@ function AgentePanel({ agente, onClose, onNavigateToPosts }: { agente: Agente; o
               {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
           </div>
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer w-fit">
+            <Checkbox checked={repetirDiariamente} onCheckedChange={(v) => setRepetirDiariamente(Boolean(v))} />
+            <Repeat className="h-3 w-3" /> Repetir todo dia
+          </label>
         </div>
       </SheetContent>
     </Sheet>

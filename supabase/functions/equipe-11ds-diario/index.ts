@@ -52,46 +52,82 @@ serve(async (req) => {
       .single();
     if (agenteErr || !agente) throw new Error(`Agente Posts & Criativos nao encontrado: ${agenteErr?.message}`);
 
+    const hoje = hojeSaoPaulo();
+    const tarefasCriadas: string[] = [];
+
+    // ── 1. Rotina de posts diarios para clientes ativos ──────────────────────
     const { data: clientes, error: clientesErr } = await supabase
       .from('conteudo_clientes')
       .select('id, nome')
       .eq('ativo', true);
     if (clientesErr) throw new Error(`Falha ao listar clientes ativos: ${clientesErr.message}`);
-    if (!clientes || clientes.length === 0) {
-      return new Response(JSON.stringify({ ok: true, criadas: 0, motivo: 'sem clientes ativos' }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+
+    if (clientes && clientes.length > 0) {
+      const [{ data: postsHoje }, { data: tarefasHoje }] = await Promise.all([
+        supabase.from('conteudo_posts').select('cliente_id').eq('data_post', hoje),
+        supabase.from('equipe_11ds_tarefas').select('cliente_id').eq('tipo', 'post_cliente').neq('status', 'erro').gte('created_at', `${hoje}T00:00:00`),
+      ]);
+      const jaTemPostHoje = new Set([
+        ...(postsHoje ?? []).map(p => p.cliente_id),
+        ...(tarefasHoje ?? []).map(t => t.cliente_id),
+      ]);
+
+      const pendentes = clientes.filter(c => !jaTemPostHoje.has(c.id));
+
+      for (const cliente of pendentes) {
+        const { data: tarefa, error: insertErr } = await supabase
+          .from('equipe_11ds_tarefas')
+          .insert({
+            agente_id: agente.id,
+            criado_por: null,
+            tipo: 'post_cliente',
+            cliente_id: cliente.id,
+            ordem_texto: `Crie o post diário de hoje para o cliente ${cliente.nome}: escolha um tema relevante e alinhado com o nicho dele.`,
+            status: 'pendente',
+          })
+          .select('id')
+          .single();
+        if (insertErr || !tarefa) {
+          console.error(`Falha ao criar tarefa diaria para ${cliente.nome}:`, insertErr?.message);
+          continue;
+        }
+        tarefasCriadas.push(tarefa.id);
+      }
     }
 
-    const hoje = hojeSaoPaulo();
+    // ── 2. Tarefas recorrentes cadastradas manualmente ────────────────────────
+    const { data: recorrentes, error: recorrentesErr } = await supabase
+      .from('equipe_11ds_recorrentes')
+      .select('id, tipo, cliente_id, ordem_texto')
+      .eq('agente_id', agente.id)
+      .eq('ativo', true);
+    if (recorrentesErr) console.error('Falha ao listar recorrentes:', recorrentesErr.message);
 
-    const [{ data: postsHoje }, { data: tarefasHoje }] = await Promise.all([
-      supabase.from('conteudo_posts').select('cliente_id').eq('data_post', hoje),
-      supabase.from('equipe_11ds_tarefas').select('cliente_id').eq('tipo', 'post_cliente').neq('status', 'erro').gte('created_at', `${hoje}T00:00:00`),
-    ]);
-    const jaTemPostHoje = new Set([
-      ...(postsHoje ?? []).map(p => p.cliente_id),
-      ...(tarefasHoje ?? []).map(t => t.cliente_id),
-    ]);
+    for (const rec of recorrentes ?? []) {
+      const { data: jaExecutou } = await supabase
+        .from('equipe_11ds_tarefas')
+        .select('id')
+        .eq('recorrente_id', rec.id)
+        .neq('status', 'erro')
+        .gte('created_at', `${hoje}T00:00:00`)
+        .limit(1);
+      if (jaExecutou && jaExecutou.length > 0) continue;
 
-    const pendentes = clientes.filter(c => !jaTemPostHoje.has(c.id));
-
-    const tarefasCriadas: string[] = [];
-    for (const cliente of pendentes) {
       const { data: tarefa, error: insertErr } = await supabase
         .from('equipe_11ds_tarefas')
         .insert({
           agente_id: agente.id,
           criado_por: null,
-          tipo: 'post_cliente',
-          cliente_id: cliente.id,
-          ordem_texto: `Crie o post diário de hoje para o cliente ${cliente.nome}: escolha um tema relevante e alinhado com o nicho dele.`,
+          tipo: rec.tipo,
+          cliente_id: rec.cliente_id,
+          ordem_texto: rec.ordem_texto,
           status: 'pendente',
+          recorrente_id: rec.id,
         })
         .select('id')
         .single();
       if (insertErr || !tarefa) {
-        console.error(`Falha ao criar tarefa diaria para ${cliente.nome}:`, insertErr?.message);
+        console.error(`Falha ao criar tarefa recorrente ${rec.id}:`, insertErr?.message);
         continue;
       }
       tarefasCriadas.push(tarefa.id);
