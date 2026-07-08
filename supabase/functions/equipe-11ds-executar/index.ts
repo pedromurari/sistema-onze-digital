@@ -60,10 +60,12 @@ async function interpretarOrdem(openaiKey: string, cargo: string, tipo: string, 
 }
 
 async function gerarImagem(openaiKey: string, prompt: string): Promise<Uint8Array> {
+  // response_format nao e mais aceito pela API de imagens da OpenAI — o retorno
+  // pode vir como b64_json ou como url, dependendo do modelo usado pela conta.
   const res = await fetch('https://api.openai.com/v1/images/generations', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openaiKey}` },
-    body: JSON.stringify({ model: 'dall-e-3', prompt, n: 1, size: '1024x1024', response_format: 'b64_json' }),
+    body: JSON.stringify({ model: 'dall-e-3', prompt, n: 1, size: '1024x1024' }),
     signal: AbortSignal.timeout(60_000),
   });
 
@@ -72,14 +74,24 @@ async function gerarImagem(openaiKey: string, prompt: string): Promise<Uint8Arra
     throw new Error(`DALL-E error ${res.status}: ${err.slice(0, 300)}`);
   }
 
-  const data = await res.json() as { data: { b64_json: string }[] };
-  const b64 = data.data[0]?.b64_json;
-  if (!b64) throw new Error('DALL-E nao retornou imagem');
+  const data = await res.json() as { data: { b64_json?: string; url?: string }[] };
+  const item = data.data[0];
+  if (!item) throw new Error('DALL-E nao retornou imagem');
 
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
+  if (item.b64_json) {
+    const binary = atob(item.b64_json);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+
+  if (item.url) {
+    const imgRes = await fetch(item.url, { signal: AbortSignal.timeout(30_000) });
+    if (!imgRes.ok) throw new Error(`Falha ao baixar imagem gerada: ${imgRes.status}`);
+    return new Uint8Array(await imgRes.arrayBuffer());
+  }
+
+  throw new Error('DALL-E nao retornou b64_json nem url');
 }
 
 serve(async (req) => {
