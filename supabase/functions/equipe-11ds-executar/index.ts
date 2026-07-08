@@ -122,12 +122,13 @@ async function interpretarOrdem(
         `O tema escolhido precisa ser as duas coisas ao mesmo tempo: (1) um gancho atual de verdade (algo acontecendo agora, nao um conceito de manual reciclado) e (2) ter relevancia pessoal imediata (o publico tem que se reconhecer, nao so ler um fato). O mecanismo/conceito central da area precisa aparecer no proprio gancho, nao so ser colado na legenda depois.`,
         `Legenda: escreva como uma pessoa real falando (especialista em primeira pessoa, "eu ja vi isso"), nao como comunicado institucional. Estrutura: (1) gancho textual curto reforcando o gancho visual, (2) corpo explicando o assunto com contexto/dado real, (3) fechamento com pergunta ou CTA que puxa comunidade${cliente?.cta_padrao ? ` (pode usar uma variacao de "${cliente.cta_padrao}")` : ''}, (4) hashtags combinando${cliente?.hashtags_fixas?.length ? ` as fixas do cliente (${cliente.hashtags_fixas.join(' ')})` : ''} com 3-5 especificas do tema.`,
         `NUNCA use travessao (—) na legenda — e o maior tique de "escrito por IA" que existe. Frases curtas e diretas, pontuacao simples (. , ? !).`,
-        `Headline (frase curta que vai aparecer escrita DENTRO da imagem gerada): estilo "${cliente?.estilo_visual ?? 'manchete'}".`,
+        `Headline (frase curta que vai aparecer escrita DENTRO da imagem, composta localmente com fonte real — nao pela IA de imagem, entao a grafia que voce escrever aqui sai pixel-identica): estilo "${cliente?.estilo_visual ?? 'manchete'}".`,
         cliente?.estilo_visual === 'editorial'
           ? `Estilo editorial: frase unica, poetica/reflexiva, 6-11 palavras, tom contemplativo.`
           : `Estilo manchete: pergunta ou afirmacao direta e provocadora, 5-9 palavras, tom impactante.`,
         cliente?.formula_headline ? `Formula de headline deste cliente (seguir a risca): ${cliente.formula_headline}.` : '',
-        `Sempre acentuacao correta em portugues (VOCÊ, É, NÃO, etc).`,
+        `Marque 1 a 3 palavras-chave da headline entre **dois asteriscos** (ex: "Nao e sorte. E **metodo**.") — essas palavras saem destacadas na cor da marca na composicao final. O resto do texto sai em branco. Nao exagere: no maximo uma "ilha" de destaque por frase curta, pode ser mais de uma palavra colada (ex: **metodo certo**).`,
+        `Sempre acentuacao correta em portugues (VOCÊ, É, NÃO, etc) — essa headline vai pra imagem exatamente como voce escrever, sem segunda revisao, entao confira a gramatica com cuidado antes de responder.`,
         `Prompt de imagem: pense antes num UNICO MOMENTO decisivo que faria alguem parar de rolar o feed (um gesto, uma expressao, uma tensao visual) — nao uma lista de termos tecnicos soltos. Descreva esse momento numa frase com ideia, depois traduza pra vocabulario tecnico: luz (low-key/rim light pra separar do fundo, nunca luz frontal de camera), enquadramento (rule of thirds, espaco negativo generoso na parte de baixo pro headline), fundo (NUNCA vazio/liso — sempre um ambiente desfocado que sugere contexto, nomeando o que esta desfocado). Sempre fotografia realista (editorial/advertising photography, photorealistic), nunca ilustracao/flat/aquarela. Evite telas, monitores, relogios, placas ou qualquer texto/numero pequeno em primeiro plano (a IA de imagem erra esses detalhes). Evite duas maos entrelacadas em close-up (risco de anatomia errada) — prefira uma mao so ou o rosto como foco emocional. Se aparecer pessoa, o genero/idade deve combinar com o publico-alvo. Escreva o prompt em ingles, 25-40 palavras, so a cena/composicao (o texto do headline e adicionado automaticamente depois, nao descreva texto no prompt).`,
         `Escolha um "arquetipo_visual" pra essa cena (ex: especialista em acao, still life de objetos em acao, retrato com expressao forte, duas pessoas em interacao, ambiente com drama visual proprio).`,
         historico?.arquetipos.length ? `Arquetipos visuais usados recentemente (varie, nao repita 2 dias seguidos): ${historico.arquetipos.join(', ')}.` : '',
@@ -168,31 +169,28 @@ async function interpretarOrdem(
   return JSON.parse(raw) as ExecResultado;
 }
 
-// Reforca identidade visual (cores da marca) e o texto que tem que aparecer na
-// imagem — nao confia so no que o GPT lembrou de colocar no prompt_imagem.
-// NOTA: tentamos compor logo real + texto localmente via ImageScript, mas essa
-// lib nao sobe no runtime de Edge Functions do Supabase (BOOT_ERROR mesmo com
-// import minimo, testado isolado). Ate achar uma lib compativel, o texto sai
-// gerado pela propria IA de imagem — nao ha garantia 100% contra erro de grafia.
-function montarPromptFinal(promptBase: string, headline: string | undefined, cliente?: ClienteContexto): string {
+// Reforca identidade visual (cores da marca) no fundo gerado pela IA. O headline
+// e a logo NAO sao mais pedidos pra IA de imagem — a IA erra grafia/anatomia de
+// texto com frequencia e nao tem como garantir a logo pixel-identica. Os dois
+// agora sao compostos localmente (logo real colada + fonte real renderizada)
+// pelo servico externo em equipe-11ds-imagem (Vercel, Python/Pillow), chamado
+// por compositarImagem() logo abaixo. Ver tambem a nota em interpretarOrdem.
+function montarPromptFinal(promptBase: string, cliente?: ClienteContexto): string {
   const partes = [promptBase];
-  if (headline) {
-    partes.push(`The image MUST have this exact headline text rendered directly on it, in bold, highly legible Portuguese typography, spelled exactly as given with correct accents, positioned prominently (lower third or centered, with a solid or semi-transparent background band behind the text so it stays readable): "${headline}"`);
-  }
   if (cliente?.cor_primaria) partes.push(`Use ${cliente.cor_primaria} as the dominant brand color of the design`);
   if (cliente?.cor_secundaria) partes.push(`${cliente.cor_secundaria} as a secondary accent color`);
-  partes.push('Professional social media creative, square 1:1 format, scroll-stopping design, modern flat/editorial style, high contrast, no watermarks, no random extra text besides the headline.');
+  partes.push('Professional social media creative, vertical portrait photography, scroll-stopping composition, photorealistic (never flat illustration), high contrast, generous negative space in the lower third, no on-screen text, no logos, no watermarks.');
   return partes.join('. ');
 }
 
-async function gerarImagem(openaiKey: string, prompt: string): Promise<Uint8Array> {
+async function gerarImagem(openaiKey: string, prompt: string, size: '1024x1024' | '1024x1536' = '1024x1024'): Promise<Uint8Array> {
   // dall-e-3 foi descontinuado pela OpenAI — modelo atual e' gpt-image-1.
   // response_format tambem nao e mais aceito — o retorno pode vir como
   // b64_json ou como url, dependendo do modelo usado pela conta.
   const res = await fetch('https://api.openai.com/v1/images/generations', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openaiKey}` },
-    body: JSON.stringify({ model: 'gpt-image-1', prompt, n: 1, size: '1024x1024' }),
+    body: JSON.stringify({ model: 'gpt-image-1', prompt, n: 1, size }),
     signal: AbortSignal.timeout(60_000),
   });
 
@@ -219,6 +217,66 @@ async function gerarImagem(openaiKey: string, prompt: string): Promise<Uint8Arra
   }
 
   throw new Error('OpenAI nao retornou b64_json nem url');
+}
+
+// ── Composicao local (logo real + headline com fonte real) ────────────────────
+// Chama o servico externo (Vercel, Python/Pillow) que cola a logo de verdade do
+// cliente (pixel identica ao arquivo original) e renderiza o headline com fonte
+// real — nunca a IA "desenhando" letras, que erra grafia/anatomia com frequencia.
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function baixarLogo(logoUrl: string | null | undefined): Promise<Uint8Array | null> {
+  if (!logoUrl) return null;
+  try {
+    const res = await fetch(logoUrl, { signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) return null;
+    return new Uint8Array(await res.arrayBuffer());
+  } catch (e) {
+    console.error('Falha ao baixar logo do cliente:', (e as Error).message);
+    return null;
+  }
+}
+
+async function compositarImagem(
+  composeUrl: string, compositeSecret: string, imagemBase: Uint8Array,
+  logoBytes: Uint8Array | null, headline: string | undefined,
+  estiloVisual: EstiloVisual | undefined, corPrimaria: string | null | undefined,
+): Promise<{ feed: Uint8Array; stories: Uint8Array | null }> {
+  const res = await fetch(composeUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-composite-key': compositeSecret },
+    body: JSON.stringify({
+      imagem_base64: bytesToBase64(imagemBase),
+      logo_base64: logoBytes ? bytesToBase64(logoBytes) : undefined,
+      logo_posicao: 'superior-esquerda',
+      headline: headline ?? '',
+      estilo_visual: estiloVisual ?? 'manchete',
+      cor_primaria: corPrimaria ?? undefined,
+      gerar_stories: true,
+    }),
+    signal: AbortSignal.timeout(45_000),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Servico de composicao de imagem falhou (${res.status}): ${err.slice(0, 300)}`);
+  }
+  const data = await res.json() as { feed_base64: string; stories_base64?: string };
+  return {
+    feed: base64ToBytes(data.feed_base64),
+    stories: data.stories_base64 ? base64ToBytes(data.stories_base64) : null,
+  };
 }
 
 serve(async (req) => {
@@ -308,15 +366,44 @@ serve(async (req) => {
     const resultado = await interpretarOrdem(openaiKey, agente.cargo ?? 'Posts & Criativos', tarefa.tipo, tarefa.ordem_texto, cliente, pesquisa, historico);
 
     const anexos: { tipo: string; url: string }[] = [];
+    let storiesUrl: string | null = null;
     if (resultado.gerar_imagem && resultado.prompt_imagem) {
       const isPostCliente = tarefa.tipo === 'post_cliente';
-      const promptFinal = isPostCliente ? montarPromptFinal(resultado.prompt_imagem, resultado.headline, cliente) : resultado.prompt_imagem;
-      const bytes = await gerarImagem(openaiKey, promptFinal);
-      const storagePath = `${tarefaId}.png`;
-      const { error: uploadErr } = await supabase.storage.from('equipe-11ds-criativos').upload(storagePath, bytes, { contentType: 'image/png', upsert: true });
+      const promptFinal = isPostCliente ? montarPromptFinal(resultado.prompt_imagem, cliente) : resultado.prompt_imagem;
+      const bytesBase = await gerarImagem(openaiKey, promptFinal, isPostCliente ? '1024x1536' : '1024x1024');
+
+      let feedBytes = bytesBase;
+      let storiesBytes: Uint8Array | null = null;
+
+      if (isPostCliente) {
+        const { data: composeConfig } = await supabase.rpc('get_equipe_11ds_composite_config');
+        const composeUrl = composeConfig?.[0]?.url as string | undefined;
+        const compositeSecret = composeConfig?.[0]?.secret as string | undefined;
+        if (composeUrl && compositeSecret) {
+          const logoBytes = await baixarLogo(cliente?.logo_url);
+          const composto = await compositarImagem(composeUrl, compositeSecret, bytesBase, logoBytes, resultado.headline, cliente?.estilo_visual, cliente?.cor_primaria);
+          feedBytes = composto.feed;
+          storiesBytes = composto.stories;
+        } else {
+          console.error('Servico de composicao de imagem nao configurado (Vault vazio) — logo/headline nao serao aplicados localmente nesta tarefa.');
+        }
+      }
+
+      const storagePathFeed = `${tarefaId}-feed.png`;
+      const { error: uploadErr } = await supabase.storage.from('equipe-11ds-criativos').upload(storagePathFeed, feedBytes, { contentType: 'image/png', upsert: true });
       if (uploadErr) throw new Error(`Storage upload error: ${uploadErr.message}`);
-      const { data: { publicUrl } } = supabase.storage.from('equipe-11ds-criativos').getPublicUrl(storagePath);
+      const { data: { publicUrl } } = supabase.storage.from('equipe-11ds-criativos').getPublicUrl(storagePathFeed);
       anexos.push({ tipo: 'imagem', url: publicUrl });
+
+      if (storiesBytes) {
+        const storagePathStories = `${tarefaId}-stories.png`;
+        const { error: uploadErrStories } = await supabase.storage.from('equipe-11ds-criativos').upload(storagePathStories, storiesBytes, { contentType: 'image/png', upsert: true });
+        if (!uploadErrStories) {
+          const { data: { publicUrl: storiesPublicUrl } } = supabase.storage.from('equipe-11ds-criativos').getPublicUrl(storagePathStories);
+          storiesUrl = storiesPublicUrl;
+          anexos.push({ tipo: 'imagem_stories', url: storiesPublicUrl });
+        }
+      }
     }
 
     let conteudoPostId: string | null = null;
@@ -329,6 +416,7 @@ serve(async (req) => {
           tema_fonte: 'equipe_11ds',
           legenda: resultado.legenda ?? resultado.resposta,
           imagem_feed_url: anexos[0]?.url ?? null,
+          imagem_stories_url: storiesUrl,
           pilar: resultado.pilar ?? null,
           arquetipo_visual: resultado.arquetipo_visual ?? null,
           status: 'rascunho',
