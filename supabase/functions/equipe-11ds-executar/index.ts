@@ -60,23 +60,24 @@ async function interpretarOrdem(openaiKey: string, cargo: string, tipo: string, 
 }
 
 async function gerarImagem(openaiKey: string, prompt: string): Promise<Uint8Array> {
-  // response_format nao e mais aceito pela API de imagens da OpenAI — o retorno
-  // pode vir como b64_json ou como url, dependendo do modelo usado pela conta.
+  // dall-e-3 foi descontinuado pela OpenAI — modelo atual e' gpt-image-1.
+  // response_format tambem nao e mais aceito — o retorno pode vir como
+  // b64_json ou como url, dependendo do modelo usado pela conta.
   const res = await fetch('https://api.openai.com/v1/images/generations', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openaiKey}` },
-    body: JSON.stringify({ model: 'dall-e-3', prompt, n: 1, size: '1024x1024' }),
+    body: JSON.stringify({ model: 'gpt-image-1', prompt, n: 1, size: '1024x1024' }),
     signal: AbortSignal.timeout(60_000),
   });
 
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`DALL-E error ${res.status}: ${err.slice(0, 300)}`);
+    throw new Error(`Imagem OpenAI error ${res.status}: ${err.slice(0, 300)}`);
   }
 
   const data = await res.json() as { data: { b64_json?: string; url?: string }[] };
   const item = data.data[0];
-  if (!item) throw new Error('DALL-E nao retornou imagem');
+  if (!item) throw new Error('OpenAI nao retornou imagem');
 
   if (item.b64_json) {
     const binary = atob(item.b64_json);
@@ -91,7 +92,7 @@ async function gerarImagem(openaiKey: string, prompt: string): Promise<Uint8Arra
     return new Uint8Array(await imgRes.arrayBuffer());
   }
 
-  throw new Error('DALL-E nao retornou b64_json nem url');
+  throw new Error('OpenAI nao retornou b64_json nem url');
 }
 
 serve(async (req) => {
