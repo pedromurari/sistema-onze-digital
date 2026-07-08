@@ -65,7 +65,7 @@ interface Aluno {
   pais?: string;
   dia_vencimento?: number;
   dia_vencimento_contrato?: string;
-  status: 'ativo' | 'inadimplente' | 'cancelado' | 'concluido';
+  status: 'ativo' | 'inadimplente' | 'cancelado' | 'concluido' | 'pre_matricula';
   tipo_pagamento?: 'mensalidade' | 'bolsa' | 'cortesia';
   mensalidades_pagas?: number;
   total_mensalidades?: number;
@@ -274,6 +274,46 @@ const statusColors: Record<string, string> = {
   inadimplente: 'bg-red-50 text-red-700 border border-red-200',
   cancelado: 'bg-zinc-200 text-zinc-600 border border-zinc-300',
   concluido: 'bg-sky-50 text-sky-700 border border-sky-200',
+  pre_matricula: 'bg-amber-50 text-amber-700 border border-amber-200',
+};
+
+const statusLabels: Record<string, string> = {
+  ativo: 'ativo',
+  inadimplente: 'inadimplente',
+  cancelado: 'cancelado',
+  concluido: 'concluido',
+  pre_matricula: 'pré-matrícula',
+};
+
+// Aluno cuja "Ato de matricula / 1a parcela" ainda nao chegou fica automaticamente
+// em pré-matrícula (amarrado ao contrato assinado); quando a data chega, volta sozinho
+// para o status anterior (ou 'ativo'). Estados finais (cancelado/concluido) nunca sao sobrepostos.
+const isFutureDate = (value?: string | null) => {
+  const d = parseDateOnly(value);
+  const today = parseDateOnly(todayDateInput());
+  return !!(d && today && d > today);
+};
+
+const deriveAlunoStatus = (dataMatricula: string | null | undefined, previousStatus?: Aluno['status']): Aluno['status'] => {
+  if (previousStatus === 'cancelado' || previousStatus === 'concluido') return previousStatus;
+  if (isFutureDate(dataMatricula)) return 'pre_matricula';
+  if (previousStatus === 'pre_matricula') return 'ativo';
+  return previousStatus || 'ativo';
+};
+
+// Recalcula o status de cada aluno com base na data de matricula ao carregar a lista,
+// e persiste em segundo plano qualquer transicao (ex: pre_matricula -> ativo assim que a data chega).
+const applyAutoStatus = <T extends Pick<Aluno, 'id' | 'status' | 'data_matricula'>>(rows: T[]): T[] => {
+  const toFix: { id: string; status: Aluno['status'] }[] = [];
+  const corrected = rows.map(row => {
+    const nextStatus = deriveAlunoStatus(row.data_matricula, row.status);
+    if (nextStatus !== row.status) toFix.push({ id: row.id, status: nextStatus });
+    return nextStatus !== row.status ? { ...row, status: nextStatus } : row;
+  });
+  if (toFix.length) {
+    Promise.all(toFix.map(f => supabase.from('alunos').update({ status: f.status }).eq('id', f.id))).catch(() => {});
+  }
+  return corrected;
 };
 
 const paymentLabels: Record<PaymentMethod, string> = {
@@ -876,7 +916,7 @@ export function Financeiro() {
   const [savingTurma, setSavingTurma] = useState(false);
   const [showPagoDialog, setShowPagoDialog] = useState(false);
   const [pagoInfo, setPagoInfo] = useState<{ pagamentoId: string; alunoId: string; data: string } | null>(null);
-  const [statusFilter, setStatusFilter] = useState<'todos' | 'ativo' | 'inadimplente' | 'cancelado'>('todos');
+  const [statusFilter, setStatusFilter] = useState<'todos' | 'ativo' | 'inadimplente' | 'cancelado' | 'pre_matricula'>('todos');
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('todos');
   const [dueDayFilter, setDueDayFilter] = useState<DueDayFilter>('todos');
   const [dueFilter, setDueFilter] = useState<DueFilter>('todos');
@@ -914,11 +954,11 @@ export function Financeiro() {
       ]);
       if (turmasRes.data) setTurmas(turmasRes.data);
       if (alunosRes.data) {
-        setAlunos(alunosRes.data);
+        setAlunos(applyAutoStatus(alunosRes.data));
       } else if (alunosRes.error) {
         // Fallback: novas colunas ainda nao existem (migration pendente)
         const { data: fallback } = await supabase.from('alunos').select(ALUNOS_SELECT_BASE).order('created_at', { ascending: false });
-        if (fallback) setAlunos(fallback);
+        if (fallback) setAlunos(applyAutoStatus(fallback));
       }
       // Busca todos os pagamentos em lotes de 1000 para contornar limite do servidor
       const PAGE = 1000;
@@ -1123,7 +1163,7 @@ export function Financeiro() {
 
   const inadimplentes = useMemo(() => alunosBase.filter(a => inadimplenciaMap[a.id] || a.status === 'inadimplente'), [alunosBase, inadimplenciaMap]);
   const totalEmAtraso = useMemo(() => inadimplentes.reduce((s, a) => s + (inadimplenciaMap[a.id]?.valorEmAtraso || 0), 0), [inadimplentes, inadimplenciaMap]);
-  const contratosPendentes = useMemo(() => filteredAlunos.filter(a => !a.contrato_assinado && a.status === 'ativo').length, [filteredAlunos]);
+  const contratosPendentes = useMemo(() => filteredAlunos.filter(a => !a.contrato_assinado && (a.status === 'ativo' || a.status === 'pre_matricula')).length, [filteredAlunos]);
   const alunosSemTurma = useMemo(() => alunos.filter(a => a.produto === activeTab && !a.turma_id), [alunos, activeTab]);
 
   // Agrupar alunos por turma
@@ -1400,7 +1440,7 @@ export function Financeiro() {
         cidade_estado: newAlunoForm.cidade_estado || null,
         dia_vencimento: diaVenc,
         dia_vencimento_contrato: `dia ${diaVenc}`,
-        status: 'ativo',
+        status: deriveAlunoStatus(newAlunoForm.data_matricula || todayDateInput()),
         tipo_pagamento: newAlunoForm.tipo_pagamento,
         mensalidades_pagas: isIsento ? 0 : (method === 'boleto' ? 1 : totalMens),
         total_mensalidades: totalMens,
@@ -1455,7 +1495,7 @@ export function Financeiro() {
       data_inicio: a.data_inicio || '',
       data_fim: a.data_fim || '',
       data_matricula: a.data_matricula || todayDateInput(),
-      status: a.status,
+      status: deriveAlunoStatus(a.data_matricula, a.status),
       origem_lead: a.origem_lead || '',
       lancamento_id: a.lancamento_id || '',
       mensalidades_pagas: a.mensalidades_pagas || 0,
@@ -1492,6 +1532,7 @@ export function Financeiro() {
       const nextMethod = normalizePaymentMethod(editAlunoForm.forma_pagamento || alunoDetail.forma_pagamento);
       const nextDiaVenc = extractDueDay(editAlunoForm.dia_vencimento || editAlunoForm.dia_vencimento_contrato || alunoDetail.dia_vencimento || alunoDetail.dia_vencimento_contrato);
       const nextDataMatricula = editAlunoForm.data_matricula || alunoDetail.data_matricula || todayDateInput();
+      const nextStatus = deriveAlunoStatus(nextDataMatricula, editAlunoForm.status || alunoDetail.status);
       const nextValorAluno = editAlunoForm.valor_mensalidade ?? null;
       const valorEfetivo = getValorEfetivo(nextTurmaId, nextValorAluno);
       const editCustomTotal = editAlunoForm.total_mensalidades;
@@ -1536,7 +1577,7 @@ export function Financeiro() {
         data_inicio: editAlunoForm.data_inicio || null,
         data_fim: editAlunoForm.data_fim || null,
         data_matricula: nextDataMatricula,
-        status: editAlunoForm.status || alunoDetail.status,
+        status: nextStatus,
         tipo_pagamento: editAlunoForm.tipo_pagamento || 'mensalidade',
         origem_lead: editAlunoForm.origem_lead || null,
         lancamento_id: editAlunoForm.lancamento_id || null,
@@ -2022,6 +2063,7 @@ export function Financeiro() {
               <span className="text-xs font-medium text-muted-foreground w-14 shrink-0">Status:</span>
               {([
                 { key: 'todos', label: 'Todos', active: 'bg-gray-700 text-white' },
+                { key: 'pre_matricula', label: 'Pré-matrícula', active: 'bg-amber-600 text-white' },
                 { key: 'ativo', label: 'Ativos', active: 'bg-green-600 text-white' },
                 { key: 'inadimplente', label: `Inadimplentes (${inadimplentes.length})`, active: 'bg-red-600 text-white' },
                 { key: 'cancelado', label: 'Cancelados', active: 'bg-gray-500 text-white' },
@@ -2455,6 +2497,7 @@ export function Financeiro() {
                             const hoje2 = parseDateOnly(todayDateInput())!;
                             const urgDot = (() => {
                               if (aluno.status === 'cancelado') return { cls: 'bg-zinc-300', tip: 'Cancelado' };
+                              if (aluno.status === 'pre_matricula') return { cls: 'bg-amber-400', tip: 'Pré-matrícula' };
                               if (isInad && method !== 'boleto') return { cls: 'bg-red-600 ring-2 ring-red-200', tip: 'Inadimplente' };
                               if (method !== 'boleto') return { cls: 'bg-zinc-300', tip: 'Quitado' };
                               if (abertas.length === 0) return { cls: 'bg-emerald-500', tip: 'Quitado' };
@@ -2467,7 +2510,7 @@ export function Financeiro() {
                               return { cls: 'bg-emerald-500', tip: `Vence em ${diff}d` };
                             })();
                             return (
-                              <tr key={aluno.id} className={`border-b border-border/30 transition-colors ${selectedRows.has(aluno.id) ? 'bg-primary/5' : isInad ? 'bg-red-50/60 border-l-[3px] border-l-red-400' : aluno.status === 'cancelado' ? 'bg-zinc-50 border-l-[3px] border-l-zinc-400 opacity-70' : 'hover:bg-muted/25'}`}>
+                              <tr key={aluno.id} className={`border-b border-border/30 transition-colors ${selectedRows.has(aluno.id) ? 'bg-primary/5' : isInad ? 'bg-red-50/60 border-l-[3px] border-l-red-400' : aluno.status === 'cancelado' ? 'bg-zinc-50 border-l-[3px] border-l-zinc-400 opacity-70' : aluno.status === 'pre_matricula' ? 'bg-amber-50/50 border-l-[3px] border-l-amber-400' : 'hover:bg-muted/25'}`}>
                                 <td className="py-2.5 px-2"><input type="checkbox" className="cursor-pointer" checked={selectedRows.has(aluno.id)} onChange={() => toggleRowSelection(aluno.id)} /></td>
                                 <td className="py-2.5 px-3 font-medium">
                                   <div className="flex items-center gap-1.5">
@@ -2556,7 +2599,7 @@ export function Financeiro() {
                                 <td className="py-2.5 px-3">
                                   <div className="flex flex-col gap-1">
                                     <Badge className={isInad ? 'bg-red-50 text-red-700 border border-red-200' : statusColors[aluno.status] || 'bg-zinc-100 text-zinc-600 border border-zinc-200'}>
-                                      {isInad ? 'inadimplente' : aluno.status}
+                                      {isInad ? 'inadimplente' : (statusLabels[aluno.status] || aluno.status)}
                                     </Badge>
                                     {inad && (
                                       <span className="text-[10px] text-red-600 font-medium leading-tight mt-0.5 flex items-center gap-1">
@@ -2977,7 +3020,7 @@ export function Financeiro() {
               </Select>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="text-sm font-medium">Data de Matricula</label><Input type="date" value={newAlunoForm.data_matricula} onChange={e => setNewAlunoForm({ ...newAlunoForm, data_matricula: e.target.value })} className="mt-1" /><p className="text-[10px] text-muted-foreground mt-0.5">Data do 1o pagamento / ato de matricula</p></div>
+              <div><label className="text-sm font-medium">Data de Matricula</label><Input type="date" value={newAlunoForm.data_matricula} onChange={e => setNewAlunoForm({ ...newAlunoForm, data_matricula: e.target.value })} className="mt-1" /><p className="text-[10px] text-muted-foreground mt-0.5">Data do 1o pagamento / ato de matricula. Se for uma data futura, o aluno entra como Pré-matrícula automaticamente.</p></div>
               <div><label className="text-sm font-medium">Data de Inicio da Turma</label><Input type="date" value={newAlunoForm.data_inicio} onChange={e => setNewAlunoForm({ ...newAlunoForm, data_inicio: e.target.value })} className="mt-1" /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -3224,6 +3267,7 @@ export function Financeiro() {
                     <Select value={editAlunoForm.status || 'ativo'} onValueChange={v => setEditAlunoForm({ ...editAlunoForm, status: v as Aluno['status'] })}>
                       <SelectTrigger className="h-7 text-xs w-36"><SelectValue /></SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="pre_matricula">Pré-matrícula</SelectItem>
                         <SelectItem value="ativo">Ativo</SelectItem>
                         <SelectItem value="inadimplente">Inadimplente</SelectItem>
                         <SelectItem value="cancelado">Cancelado</SelectItem>
@@ -3231,6 +3275,9 @@ export function Financeiro() {
                       </SelectContent>
                     </Select>
                   </div>
+                  <p className="w-full text-[10px] text-muted-foreground -mt-1">
+                    Pré-matrícula é automático: enquanto a data de "Ato de matrícula / 1ª parcela" abaixo estiver no futuro, o aluno fica como Pré-matrícula; ao salvar depois que a data chegar, ele vira Ativo sozinho.
+                  </p>
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 w-full pt-2">
                     <div className="flex items-center gap-2">
                       <Switch checked={!!editAlunoForm.forms_respondido} onCheckedChange={checked => setEditAlunoForm(f => ({ ...f, forms_respondido: checked, forms_respondido_em: checked ? (f.forms_respondido_em || todayDateInput()) : '' }))} />

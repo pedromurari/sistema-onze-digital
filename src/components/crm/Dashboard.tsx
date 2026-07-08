@@ -17,7 +17,7 @@ import { ptBR } from 'date-fns/locale';
 
 interface Aluno {
   id: string; nome: string; produto: 'psicanalise' | 'numerologia';
-  status: 'ativo' | 'inadimplente' | 'cancelado' | 'concluido';
+  status: 'ativo' | 'inadimplente' | 'cancelado' | 'concluido' | 'pre_matricula';
   turma_id?: string; data_inicio: string; created_at: string;
   valor_mensalidade?: number; mensalidades_pagas?: number; total_mensalidades?: number;
 }
@@ -306,7 +306,7 @@ export function Dashboard() {
 
   const mesAtual = new Date().toISOString().slice(0, 7); // 'YYYY-MM'
 
-  const alunosAtivos = useMemo(() => alunos.filter(a => a.status === 'ativo'), [alunos]);
+  const alunosAtivos = useMemo(() => alunos.filter(a => a.status === 'ativo' || a.status === 'pre_matricula'), [alunos]);
 
   // Owner filter: 1 = include, 0 = exclude
   const ownerTurmaIds = useMemo(() => {
