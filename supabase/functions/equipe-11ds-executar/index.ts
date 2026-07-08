@@ -3,7 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-key',
 };
 
 type ExecResultado = {
@@ -14,12 +14,20 @@ type ExecResultado = {
   legenda?: string;
 };
 
-async function interpretarOrdem(openaiKey: string, cargo: string, tipo: string, ordemTexto: string, clienteNome?: string): Promise<ExecResultado> {
+type ClienteContexto = { nome: string; nicho?: string | null; tom_de_voz?: string | null; cta_padrao?: string | null };
+
+async function interpretarOrdem(openaiKey: string, cargo: string, tipo: string, ordemTexto: string, cliente?: ClienteContexto): Promise<ExecResultado> {
   const systemPrompt = [
     `Voce e um agente de IA que trabalha no time "${cargo}" da agencia 11 Digital Strategy.`,
     `Responda sempre em portugues do Brasil, em tom profissional e direto.`,
     tipo === 'post_cliente'
-      ? `A ordem e para criar um post de rede social para o cliente "${clienteNome ?? ''}". Gere um tema curto e uma legenda pronta para publicar.`
+      ? [
+          `A ordem e para criar um post de rede social para o cliente "${cliente?.nome ?? ''}".`,
+          cliente?.nicho ? `Nicho do cliente: ${cliente.nicho}.` : '',
+          cliente?.tom_de_voz ? `Tom de voz do cliente: ${cliente.tom_de_voz}.` : '',
+          cliente?.cta_padrao ? `Encerre a legenda com uma variacao deste CTA padrao do cliente: "${cliente.cta_padrao}".` : '',
+          `Gere um tema curto e uma legenda pronta para publicar.`,
+        ].filter(Boolean).join(' ')
       : `A ordem e uma tarefa avulsa (ex: foto de capa de grupo, criativo de anuncio, imagem promocional).`,
     `Decida se a tarefa precisa de uma imagem gerada. Se precisar, escreva um prompt de imagem em ingles, detalhado, para o DALL-E.`,
     `Responda SOMENTE com um JSON no formato: {"resposta": string, "gerar_imagem": boolean, "prompt_imagem"?: string, "tema"?: string, "legenda"?: string}`,
@@ -82,6 +90,21 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
+  // Auth: Bearer JWT (chamada do painel) ou x-cron-key (chamada interna do equipe-11ds-diario).
+  // O secret nao fica em nenhuma variavel de ambiente/codigo — e' lido do Supabase Vault.
+  const authHeader    = req.headers.get('authorization') ?? '';
+  const cronKeyHeader = req.headers.get('x-cron-key') ?? '';
+  let isCron = false;
+  if (cronKeyHeader) {
+    const { data: cronSecret } = await supabase.rpc('get_equipe_11ds_cron_secret');
+    isCron = Boolean(cronSecret) && cronKeyHeader === cronSecret;
+  }
+  if (!isCron && !authHeader.startsWith('Bearer ')) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
   let tarefaId = '';
   let agenteId = '';
 
@@ -109,14 +132,14 @@ serve(async (req) => {
       .single();
     if (agenteErr || !agente) throw new Error(`Agente nao encontrado: ${agenteErr?.message ?? agenteId}`);
 
-    let clienteNome: string | undefined;
+    let cliente: ClienteContexto | undefined;
     if (tarefa.tipo === 'post_cliente' && tarefa.cliente_id) {
-      const { data: cliente } = await supabase.from('conteudo_clientes').select('nome').eq('id', tarefa.cliente_id).single();
-      clienteNome = cliente?.nome;
+      const { data } = await supabase.from('conteudo_clientes').select('nome, nicho, tom_de_voz, cta_padrao').eq('id', tarefa.cliente_id).single();
+      cliente = data ?? undefined;
     }
 
     const statusTexto = tarefa.tipo === 'post_cliente'
-      ? `Criando post para ${clienteNome ?? 'cliente'}...`
+      ? `Criando post para ${cliente?.nome ?? 'cliente'}...`
       : `${tarefa.ordem_texto.slice(0, 60)}${tarefa.ordem_texto.length > 60 ? '...' : ''}`;
 
     await supabase.from('equipe_11ds_tarefas').update({ status: 'em_andamento', iniciado_em: new Date().toISOString() }).eq('id', tarefaId);
@@ -125,7 +148,7 @@ serve(async (req) => {
     const openaiKey = Deno.env.get('OPENAI_API_KEY');
     if (!openaiKey) throw new Error('OPENAI_API_KEY nao configurada nos Supabase Secrets');
 
-    const resultado = await interpretarOrdem(openaiKey, agente.cargo ?? 'Posts & Criativos', tarefa.tipo, tarefa.ordem_texto, clienteNome);
+    const resultado = await interpretarOrdem(openaiKey, agente.cargo ?? 'Posts & Criativos', tarefa.tipo, tarefa.ordem_texto, cliente);
 
     const anexos: { tipo: string; url: string }[] = [];
     if (resultado.gerar_imagem && resultado.prompt_imagem) {

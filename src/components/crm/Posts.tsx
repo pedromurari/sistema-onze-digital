@@ -3,12 +3,16 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Image as ImageIcon, Clock, CheckCircle2, Send, XCircle, Loader2, Download, Copy } from 'lucide-react';
+import { Image as ImageIcon, Clock, CheckCircle2, Send, XCircle, Loader2, Download, Copy, Users, Plus, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -16,6 +20,16 @@ import { toast } from 'sonner';
 type PostStatus = 'rascunho' | 'aprovado' | 'publicado' | 'rejeitado';
 
 type ConteudoCliente = { id: string; slug: string; nome: string };
+
+type ConteudoClienteFull = {
+  id: string;
+  slug: string;
+  nome: string;
+  nicho: string | null;
+  tom_de_voz: string | null;
+  cta_padrao: string | null;
+  ativo: boolean;
+};
 
 type ConteudoPost = {
   id: string;
@@ -51,6 +65,159 @@ function StatCard({ icon: Icon, label, value, color }: { icon: React.ElementType
   );
 }
 
+// ── Clientes tab ─────────────────────────────────────────────────────────────
+
+function slugify(nome: string) {
+  return nome
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
+
+const CLIENTE_VAZIO = { nome: '', slug: '', nicho: '', tom_de_voz: '', cta_padrao: '', ativo: true };
+
+function ClientesTab({ onClientesChanged }: { onClientesChanged: () => void }) {
+  const [clientes, setClientes] = useState<ConteudoClienteFull[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<ConteudoClienteFull | null>(null);
+  const [form, setForm] = useState(CLIENTE_VAZIO);
+  const [saving, setSaving] = useState(false);
+
+  const loadClientes = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await (supabase.from('conteudo_clientes' as any) as any)
+      .select('id, slug, nome, nicho, tom_de_voz, cta_padrao, ativo')
+      .order('nome');
+    if (error) { toast.error(`Erro ao carregar clientes: ${error.message}`); setLoading(false); return; }
+    setClientes((data as any) || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadClientes(); }, [loadClientes]);
+
+  const abrirNovo = () => { setEditing(null); setForm(CLIENTE_VAZIO); setDialogOpen(true); };
+  const abrirEdicao = (c: ConteudoClienteFull) => {
+    setEditing(c);
+    setForm({ nome: c.nome, slug: c.slug, nicho: c.nicho ?? '', tom_de_voz: c.tom_de_voz ?? '', cta_padrao: c.cta_padrao ?? '', ativo: c.ativo });
+    setDialogOpen(true);
+  };
+
+  const salvar = async () => {
+    if (!form.nome.trim()) { toast.error('Nome é obrigatório'); return; }
+    const slug = form.slug.trim() || slugify(form.nome);
+    setSaving(true);
+    const payload = { nome: form.nome.trim(), slug, nicho: form.nicho.trim() || null, tom_de_voz: form.tom_de_voz.trim() || null, cta_padrao: form.cta_padrao.trim() || null, ativo: form.ativo };
+    const { error } = editing
+      ? await (supabase.from('conteudo_clientes' as any) as any).update(payload).eq('id', editing.id)
+      : await (supabase.from('conteudo_clientes' as any) as any).insert(payload);
+    setSaving(false);
+    if (error) { toast.error(`Erro ao salvar cliente: ${error.message}`); return; }
+    toast.success(editing ? 'Cliente atualizado!' : 'Cliente criado!');
+    setDialogOpen(false);
+    loadClientes();
+    onClientesChanged();
+  };
+
+  const alternarAtivo = async (c: ConteudoClienteFull) => {
+    const { error } = await (supabase.from('conteudo_clientes' as any) as any).update({ ativo: !c.ativo }).eq('id', c.id);
+    if (error) { toast.error(`Erro ao atualizar cliente: ${error.message}`); return; }
+    setClientes(prev => prev.map(x => x.id === c.id ? { ...x, ativo: !x.ativo } : x));
+    onClientesChanged();
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Clientes ativos entram automaticamente na rotina diária de posts da Equipe 11DS.
+        </p>
+        <Button size="sm" className="gap-1.5" onClick={abrirNovo}><Plus className="h-4 w-4" /> Novo cliente</Button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+      ) : clientes.length === 0 ? (
+        <div className="text-center py-16 text-muted-foreground text-sm">Nenhum cliente cadastrado ainda.</div>
+      ) : (
+        <div className="bg-white border border-border rounded-xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                <th className="px-4 py-2.5 font-medium">Cliente</th>
+                <th className="px-4 py-2.5 font-medium">Nicho</th>
+                <th className="px-4 py-2.5 font-medium">Ativo</th>
+                <th className="px-4 py-2.5 font-medium w-10"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {clientes.map(c => (
+                <tr key={c.id} className="border-b border-border last:border-0 hover:bg-muted/30">
+                  <td className="px-4 py-2.5">
+                    <p className="font-medium text-foreground">{c.nome}</p>
+                    <p className="text-xs text-muted-foreground">{c.slug}</p>
+                  </td>
+                  <td className="px-4 py-2.5 text-muted-foreground">{c.nicho || '—'}</td>
+                  <td className="px-4 py-2.5">
+                    <Switch checked={c.ativo} onCheckedChange={() => alternarAtivo(c)} />
+                  </td>
+                  <td className="px-4 py-2.5 text-right">
+                    <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => abrirEdicao(c)}>
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editing ? 'Editar cliente' : 'Novo cliente'}</DialogTitle>
+            <DialogDescription>Clientes ativos recebem post diário automático da Equipe 11DS.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="cliente-nome">Nome</Label>
+              <Input id="cliente-nome" value={form.nome} onChange={(e) => setForm(f => ({ ...f, nome: e.target.value }))} placeholder="Ex: Instituto Despertamente" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cliente-slug">Slug</Label>
+              <Input id="cliente-slug" value={form.slug} onChange={(e) => setForm(f => ({ ...f, slug: e.target.value }))} placeholder={form.nome ? slugify(form.nome) : 'gerado a partir do nome'} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cliente-nicho">Nicho</Label>
+              <Input id="cliente-nicho" value={form.nicho} onChange={(e) => setForm(f => ({ ...f, nicho: e.target.value }))} placeholder="Ex: autoconhecimento, psicanálise..." />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cliente-tom">Tom de voz</Label>
+              <Input id="cliente-tom" value={form.tom_de_voz} onChange={(e) => setForm(f => ({ ...f, tom_de_voz: e.target.value }))} placeholder="Ex: acolhedor, direto, inspirador..." />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cliente-cta">CTA padrão</Label>
+              <Input id="cliente-cta" value={form.cta_padrao} onChange={(e) => setForm(f => ({ ...f, cta_padrao: e.target.value }))} placeholder="Ex: Chama no direct pra saber mais" />
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <Label htmlFor="cliente-ativo">Ativo (entra na rotina diária)</Label>
+              <Switch id="cliente-ativo" checked={form.ativo} onCheckedChange={(v) => setForm(f => ({ ...f, ativo: v }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={salvar} disabled={saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : editing ? 'Salvar' : 'Criar cliente'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 // ── Posts tab ────────────────────────────────────────────────────────────────
 
 export function Posts() {
@@ -64,10 +231,12 @@ export function Posts() {
   const [detailPost, setDetailPost] = useState<ConteudoPost | null>(null);
   const [actingId, setActingId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadClientesLeve = useCallback(() => {
     supabase.from('conteudo_clientes' as any).select('id, slug, nome').order('nome')
       .then(({ data }) => setClientes((data as any) || []));
   }, []);
+
+  useEffect(() => { loadClientesLeve(); }, [loadClientesLeve]);
 
   const loadStats = useCallback(async () => {
     const hojeStr = format(new Date(), 'yyyy-MM-dd');
@@ -160,6 +329,17 @@ export function Posts() {
         <p className="text-sm text-muted-foreground">Criativos e legendas gerados diariamente para revisão e aprovação.</p>
       </div>
 
+      <Tabs defaultValue="posts">
+        <TabsList>
+          <TabsTrigger value="posts" className="gap-1.5"><ImageIcon className="h-4 w-4" /> Posts</TabsTrigger>
+          <TabsTrigger value="clientes" className="gap-1.5"><Users className="h-4 w-4" /> Clientes</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="clientes" className="mt-4">
+          <ClientesTab onClientesChanged={loadClientesLeve} />
+        </TabsContent>
+
+        <TabsContent value="posts" className="mt-4 space-y-5">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <StatCard icon={Clock} label="Posts hoje" value={stats.hoje} color="bg-blue-50 text-blue-600" />
         <StatCard icon={ImageIcon} label="Pendentes de aprovação" value={stats.pendentes} color="bg-amber-50 text-amber-600" />
@@ -328,6 +508,8 @@ export function Posts() {
           )}
         </DialogContent>
       </Dialog>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
