@@ -26,6 +26,65 @@ function diasEntre(deISO: string, ateISO: string): number {
   return Math.round((ate - de) / 86_400_000);
 }
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+// ── Interpretacao do periodo pedido na ordem ───────────────────────────────────
+// A IA aqui SO extrai duas datas (inicio/fim) e uma descricao curta do periodo a
+// partir do texto livre da ordem -- ela nunca ve nem gera nenhum numero
+// financeiro. Todos os valores/contagens do resumo continuam vindo 100% de SQL
+// deterministico sobre `alunos`/`pagamentos`, sem risco de alucinacao.
+type Periodo = { desde: string; ate: string; resumoPeriodo: string };
+
+async function interpretarPeriodo(openaiKey: string, ordemTexto: string, hoje: string): Promise<Periodo> {
+  const fallback: Periodo = { desde: hoje, ate: hoje, resumoPeriodo: 'hoje' };
+  if (!ordemTexto?.trim()) return fallback;
+
+  try {
+    const systemPrompt = [
+      `Extraia APENAS o periodo de datas que o usuario esta pedindo num resumo financeiro. Hoje e ${hoje} (formato YYYY-MM-DD).`,
+      `Regras: pedido generico/sem periodo especifico ou tarefa automatica recorrente -> desde=ate=hoje, resumo_periodo="hoje".`,
+      `"essa semana" -> desde = segunda-feira desta semana, ate = hoje.`,
+      `"esse mes"/"mes atual"/"desse mes" -> desde = primeiro dia do mes de hoje, ate = hoje.`,
+      `"mes passado"/"mes anterior" -> mes civil completo anterior (do dia 1 ao ultimo dia daquele mes).`,
+      `Datas explicitas mencionadas na ordem -> use exatamente elas.`,
+      `Responda SOMENTE com um JSON: {"desde": "YYYY-MM-DD", "ate": "YYYY-MM-DD", "resumo_periodo": "descricao curta em portugues, ex: hoje | julho de 2026 | 01/07 a 13/07"}`,
+    ].join(' ');
+
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openaiKey}` },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: ordemTexto },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0,
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) {
+      console.error(`Interpretacao de periodo falhou (${res.status}):`, (await res.text()).slice(0, 300));
+      return fallback;
+    }
+    const data = await res.json() as { choices: { message: { content: string } }[] };
+    const raw = data.choices[0]?.message?.content;
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as { desde?: unknown; ate?: unknown; resumo_periodo?: unknown };
+
+    const desde = typeof parsed.desde === 'string' && ISO_DATE.test(parsed.desde) ? parsed.desde : hoje;
+    let ate = typeof parsed.ate === 'string' && ISO_DATE.test(parsed.ate) ? parsed.ate : hoje;
+    if (ate > hoje) ate = hoje; // nunca busca "futuro" como se ja tivesse acontecido
+    const resumoPeriodo = typeof parsed.resumo_periodo === 'string' && parsed.resumo_periodo.trim() ? parsed.resumo_periodo : 'hoje';
+
+    return { desde, ate, resumoPeriodo };
+  } catch (e) {
+    console.error('Interpretacao de periodo falhou:', (e as Error).message);
+    return fallback;
+  }
+}
+
 type PagamentoRaw = {
   id: string;
   aluno_id: string | null;
@@ -113,7 +172,7 @@ serve(async (req) => {
     }
 
     const { data: tarefa, error: tarefaErr } = await supabase
-      .from('equipe_11ds_tarefas').select('id, agente_id').eq('id', tarefaId).single();
+      .from('equipe_11ds_tarefas').select('id, agente_id, ordem_texto').eq('id', tarefaId).single();
     if (tarefaErr || !tarefa) throw new Error(`Tarefa nao encontrada: ${tarefaErr?.message ?? tarefaId}`);
     agenteId = tarefa.agente_id;
 
@@ -124,47 +183,54 @@ serve(async (req) => {
     const em7dias = addDias(hoje, 7);
     const amanha = addDias(hoje, 1);
 
+    const openaiKey = Deno.env.get('OPENAI_API_KEY');
+    const periodo = openaiKey ? await interpretarPeriodo(openaiKey, tarefa.ordem_texto ?? '', hoje) : { desde: hoje, ate: hoje, resumoPeriodo: 'hoje' };
+
     const selectComAluno = 'id, aluno_id, valor, data_pagamento, data_vencimento, numero_parcela, cobranca_contatado_em, alunos(nome, whatsapp, cobranca_telefone)';
 
-    const [pagosHoje, atrasados, pendentesVencidos, vencendo7, vencendo1, matriculasHoje] = await Promise.all([
-      supabase.from('pagamentos').select(selectComAluno).eq('status', 'pago').eq('data_pagamento', hoje),
+    // Matriculas e pagamentos recebidos respeitam o periodo pedido na ordem.
+    // Inadimplentes/vencendo7/vencendo1 sao sempre um retrato do "agora" (nao
+    // fazem sentido "no mes passado" -- inadimplencia e status atual do aluno).
+    const [pagosPeriodo, atrasados, pendentesVencidos, vencendo7, vencendo1, matriculasPeriodo] = await Promise.all([
+      supabase.from('pagamentos').select(selectComAluno).eq('status', 'pago').gte('data_pagamento', periodo.desde).lte('data_pagamento', periodo.ate),
       supabase.from('pagamentos').select(selectComAluno).eq('status', 'atrasado').order('data_vencimento'),
       supabase.from('pagamentos').select(selectComAluno).eq('status', 'pendente').lt('data_vencimento', hoje).order('data_vencimento'),
       supabase.from('pagamentos').select(selectComAluno).eq('status', 'pendente').eq('data_vencimento', em7dias).order('data_vencimento'),
       supabase.from('pagamentos').select(selectComAluno).eq('status', 'pendente').eq('data_vencimento', amanha).order('data_vencimento'),
-      supabase.from('alunos').select('id, nome, produto, valor_mensalidade, data_matricula, whatsapp').eq('data_matricula', hoje),
+      supabase.from('alunos').select('id, nome, produto, valor_mensalidade, data_matricula, whatsapp').gte('data_matricula', periodo.desde).lte('data_matricula', periodo.ate),
     ]);
 
-    for (const [nome, r] of Object.entries({ pagosHoje, atrasados, pendentesVencidos, vencendo7, vencendo1, matriculasHoje })) {
+    for (const [nome, r] of Object.entries({ pagosPeriodo, atrasados, pendentesVencidos, vencendo7, vencendo1, matriculasPeriodo })) {
       if (r.error) throw new Error(`Falha ao consultar ${nome}: ${r.error.message}`);
     }
 
     const inadimplentesRaw = [...(atrasados.data ?? []), ...(pendentesVencidos.data ?? [])] as unknown as PagamentoRaw[];
-    const pagosHojeRaw = (pagosHoje.data ?? []) as unknown as PagamentoRaw[];
+    const pagosPeriodoRaw = (pagosPeriodo.data ?? []) as unknown as PagamentoRaw[];
     const vencendo7Raw = (vencendo7.data ?? []) as unknown as PagamentoRaw[];
     const vencendo1Raw = (vencendo1.data ?? []) as unknown as PagamentoRaw[];
-    const matriculasHojeRaw = (matriculasHoje.data ?? []) as unknown as MatriculaRaw[];
+    const matriculasPeriodoRaw = (matriculasPeriodo.data ?? []) as unknown as MatriculaRaw[];
 
     const dados = {
-      pagosHoje: pagosHojeRaw.map(p => paraItem(p, hoje, false)),
+      pagosHoje: pagosPeriodoRaw.map(p => paraItem(p, hoje, false)),
       inadimplentes: inadimplentesRaw.map(p => paraItem(p, hoje, true)),
       vencendo7: vencendo7Raw.map(p => paraItem(p, hoje, false)),
       vencendo1: vencendo1Raw.map(p => paraItem(p, hoje, false)),
-      matriculasHoje: matriculasHojeRaw.map(a => ({
+      matriculasHoje: matriculasPeriodoRaw.map(a => ({
         aluno_id: a.id, nome: a.nome, produto: a.produto, valor: a.valor_mensalidade ?? 0, telefone: a.whatsapp,
       })),
       hoje,
+      periodo: periodo.resumoPeriodo,
     };
 
-    const totalPagoHoje = dados.pagosHoje.reduce((s, p) => s + p.valor, 0);
+    const totalPagoPeriodo = dados.pagosHoje.reduce((s, p) => s + p.valor, 0);
     const totalInadimplente = dados.inadimplentes.reduce((s, p) => s + p.valor, 0);
     const fmtValor = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
     const resposta = [
-      `📊 Resumo financeiro de hoje`,
+      `📊 Resumo financeiro — ${periodo.resumoPeriodo}`,
       `🎓 Novas matrículas: ${dados.matriculasHoje.length}`,
-      `💰 Pagamentos de hoje: ${dados.pagosHoje.length} (${fmtValor(totalPagoHoje)})`,
-      `⚠️ Inadimplentes: ${dados.inadimplentes.length} (${fmtValor(totalInadimplente)} em atraso)`,
+      `💰 Pagamentos recebidos: ${dados.pagosHoje.length} (${fmtValor(totalPagoPeriodo)})`,
+      `⚠️ Inadimplentes (hoje): ${dados.inadimplentes.length} (${fmtValor(totalInadimplente)} em atraso)`,
       `🔔 Vencendo em 7 dias: ${dados.vencendo7.length}`,
       `🔴 Vencendo amanhã: ${dados.vencendo1.length}`,
       `Veja a lista detalhada abaixo, com link direto pro aluno e opção de marcar quem já foi cobrado.`,

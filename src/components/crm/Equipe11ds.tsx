@@ -69,6 +69,7 @@ type DadosFinanceiro = {
   vencendo7: ItemFinanceiro[];
   vencendo1: ItemFinanceiro[];
   matriculasHoje: MatriculaItem[];
+  periodo?: string;
 };
 
 type Tarefa = {
@@ -225,11 +226,11 @@ function ItemFinanceiroRow({ item, comAtraso, onNavigateToAluno, onMarcarContata
   );
 }
 
-function ListaMatriculas({ itens, onNavigateToAluno }: { itens: MatriculaItem[]; onNavigateToAluno?: (alunoId: string) => void }) {
+function ListaMatriculas({ itens, periodo, onNavigateToAluno }: { itens: MatriculaItem[]; periodo?: string; onNavigateToAluno?: (alunoId: string) => void }) {
   if (itens.length === 0) return null;
   return (
     <div className="space-y-1.5">
-      <p className="text-xs font-semibold text-foreground">🎓 Novas matrículas ({itens.length})</p>
+      <p className="text-xs font-semibold text-foreground">🎓 Novas matrículas{periodo ? ` — ${periodo}` : ''} ({itens.length})</p>
       <div className="space-y-1.5">
         {itens.map(item => (
           <div key={item.aluno_id} className="flex items-center gap-2 border border-border rounded-lg px-2.5 py-2 text-xs bg-white">
@@ -317,8 +318,8 @@ function TarefaDetalhe({ tarefa, onNavigateToPosts, onNavigateToAluno }: { taref
       )}
       {dados && (
         <div className="space-y-3 pt-1">
-          <ListaMatriculas itens={dados.matriculasHoje ?? []} onNavigateToAluno={onNavigateToAluno} />
-          <ListaFinanceira titulo="💰 Pagamentos de hoje — confira se bateu" itens={dados.pagosHoje} comAtraso={false} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
+          <ListaMatriculas itens={dados.matriculasHoje ?? []} periodo={dados.periodo} onNavigateToAluno={onNavigateToAluno} />
+          <ListaFinanceira titulo={`💰 Pagamentos recebidos${dados.periodo ? ` — ${dados.periodo}` : ' de hoje'}`} itens={dados.pagosHoje} comAtraso={false} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
           <ListaFinanceira titulo="⚠️ Inadimplentes" itens={dados.inadimplentes} comAtraso={true} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
           <ListaFinanceira titulo="🔔 Vencendo em 7 dias" itens={dados.vencendo7} comAtraso={false} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
           <ListaFinanceira titulo="🔴 Vencendo amanhã" itens={dados.vencendo1} comAtraso={false} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
