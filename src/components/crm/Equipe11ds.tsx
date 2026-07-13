@@ -63,12 +63,15 @@ type MatriculaItem = {
   telefone: string | null;
 };
 
+type LeadQuenteItem = MatriculaItem & { contatado_em: string | null };
+
 type DadosFinanceiro = {
   pagosHoje: ItemFinanceiro[];
   inadimplentes: ItemFinanceiro[];
   vencendo7: ItemFinanceiro[];
   vencendo1: ItemFinanceiro[];
   matriculasHoje: MatriculaItem[];
+  leadsQuentes: LeadQuenteItem[];
   periodo?: string;
 };
 
@@ -258,6 +261,53 @@ function ListaMatriculas({ itens, periodo, onNavigateToAluno }: { itens: Matricu
   );
 }
 
+function ListaLeadsQuentes({ itens, periodo, onNavigateToAluno, onMarcarContatado }: {
+  itens: LeadQuenteItem[];
+  periodo?: string;
+  onNavigateToAluno?: (alunoId: string) => void;
+  onMarcarContatado: (alunoId: string, contatar: boolean) => void;
+}) {
+  if (itens.length === 0) return null;
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-semibold text-foreground">🔥 Leads quentes — cadastraram, não pagaram a 1ª parcela{periodo ? ` (${periodo})` : ''} ({itens.length})</p>
+      <div className="space-y-1.5">
+        {itens.map(item => {
+          const contatado = Boolean(item.contatado_em);
+          return (
+            <div key={item.aluno_id} className="flex items-center gap-2 border border-border rounded-lg px-2.5 py-2 text-xs bg-white">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-foreground truncate">{item.nome}</p>
+                <p className="text-muted-foreground">
+                  {item.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  {item.produto ? ` · ${item.produto}` : ''}
+                </p>
+              </div>
+              {item.telefone && (
+                <a href={whatsappLink(item.telefone)} target="_blank" rel="noreferrer" title="Chamar no WhatsApp" className="text-emerald-600 hover:opacity-70 flex-shrink-0">
+                  <MessageCircle className="h-4 w-4" />
+                </a>
+              )}
+              {onNavigateToAluno && (
+                <button onClick={() => onNavigateToAluno(item.aluno_id)} title="Ver aluno no Financeiro" className="text-primary hover:opacity-70 flex-shrink-0">
+                  <ExternalLink className="h-4 w-4" />
+                </button>
+              )}
+              <button
+                onClick={() => onMarcarContatado(item.aluno_id, !contatado)}
+                title={contatado ? 'Já contatado — clique para desmarcar' : 'Marcar como já contatado'}
+                className={cn('flex-shrink-0', contatado ? 'text-emerald-600' : 'text-gray-300 hover:text-gray-400')}
+              >
+                <CheckCircle2 className="h-4 w-4" />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ListaFinanceira({ titulo, itens, comAtraso, onNavigateToAluno, onMarcarContatado }: {
   titulo: string;
   itens: ItemFinanceiro[];
@@ -300,6 +350,19 @@ function TarefaDetalhe({ tarefa, onNavigateToPosts, onNavigateToAluno }: { taref
       };
     });
   };
+
+  const marcarLeadContatado = async (alunoId: string, contatar: boolean) => {
+    const valor = contatar ? new Date().toISOString() : null;
+    const { error } = await supabase.from('alunos').update({ lead_quente_contatado_em: valor }).eq('id', alunoId);
+    if (error) { toast.error(`Erro ao atualizar: ${error.message}`); return; }
+    setDados(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        leadsQuentes: (prev.leadsQuentes ?? []).map(i => i.aluno_id === alunoId ? { ...i, contatado_em: valor } : i),
+      };
+    });
+  };
   return (
     <div className="border border-border rounded-xl p-3 space-y-2 bg-muted/30">
       <div className="flex items-center justify-between">
@@ -319,6 +382,7 @@ function TarefaDetalhe({ tarefa, onNavigateToPosts, onNavigateToAluno }: { taref
       {dados && (
         <div className="space-y-3 pt-1">
           <ListaMatriculas itens={dados.matriculasHoje ?? []} periodo={dados.periodo} onNavigateToAluno={onNavigateToAluno} />
+          <ListaLeadsQuentes itens={dados.leadsQuentes ?? []} periodo={dados.periodo} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarLeadContatado} />
           <ListaFinanceira titulo={`💰 Pagamentos recebidos${dados.periodo ? ` — ${dados.periodo}` : ' de hoje'}`} itens={dados.pagosHoje} comAtraso={false} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
           <ListaFinanceira titulo="⚠️ Inadimplentes" itens={dados.inadimplentes} comAtraso={true} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
           <ListaFinanceira titulo="🔔 Vencendo em 7 dias" itens={dados.vencendo7} comAtraso={false} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />

@@ -103,7 +103,10 @@ type MatriculaRaw = {
   valor_mensalidade: number | null;
   data_matricula: string | null;
   whatsapp: string | null;
+  lead_quente_contatado_em: string | null;
 };
+
+type Parcela1Raw = { aluno_id: string; status: string };
 
 type ItemResumo = {
   pagamento_id: string;
@@ -191,32 +194,51 @@ serve(async (req) => {
     // Matriculas e pagamentos recebidos respeitam o periodo pedido na ordem.
     // Inadimplentes/vencendo7/vencendo1 sao sempre um retrato do "agora" (nao
     // fazem sentido "no mes passado" -- inadimplencia e status atual do aluno).
-    const [pagosPeriodo, atrasados, pendentesVencidos, vencendo7, vencendo1, matriculasPeriodo] = await Promise.all([
+    const [pagosPeriodo, atrasados, pendentesVencidos, vencendo7, vencendo1, cadastradosPeriodo] = await Promise.all([
       supabase.from('pagamentos').select(selectComAluno).eq('status', 'pago').gte('data_pagamento', periodo.desde).lte('data_pagamento', periodo.ate),
       supabase.from('pagamentos').select(selectComAluno).eq('status', 'atrasado').order('data_vencimento'),
       supabase.from('pagamentos').select(selectComAluno).eq('status', 'pendente').lt('data_vencimento', hoje).order('data_vencimento'),
       supabase.from('pagamentos').select(selectComAluno).eq('status', 'pendente').eq('data_vencimento', em7dias).order('data_vencimento'),
       supabase.from('pagamentos').select(selectComAluno).eq('status', 'pendente').eq('data_vencimento', amanha).order('data_vencimento'),
-      supabase.from('alunos').select('id, nome, produto, valor_mensalidade, data_matricula, whatsapp').gte('data_matricula', periodo.desde).lte('data_matricula', periodo.ate),
+      supabase.from('alunos').select('id, nome, produto, valor_mensalidade, data_matricula, whatsapp, lead_quente_contatado_em').gte('data_matricula', periodo.desde).lte('data_matricula', periodo.ate),
     ]);
 
-    for (const [nome, r] of Object.entries({ pagosPeriodo, atrasados, pendentesVencidos, vencendo7, vencendo1, matriculasPeriodo })) {
+    for (const [nome, r] of Object.entries({ pagosPeriodo, atrasados, pendentesVencidos, vencendo7, vencendo1, cadastradosPeriodo })) {
       if (r.error) throw new Error(`Falha ao consultar ${nome}: ${r.error.message}`);
     }
+
+    // Cadastro (aluno criado com data_matricula no periodo) so vira "matricula"
+    // de verdade se a parcela 1 foi paga ou o aluno e isento -- se a parcela 1
+    // esta pendente/atrasada, ou nem existe ainda (cadastro veio so do
+    // formulario publico, sem plano de pagamento gerado), e um lead quente que
+    // se inscreveu mas ainda nao converteu.
+    const idsCadastrados = (cadastradosPeriodo.data ?? []).map((a: any) => a.id as string);
+    const { data: parcelas1Data, error: parcelas1Err } = idsCadastrados.length
+      ? await supabase.from('pagamentos').select('aluno_id, status').eq('numero_parcela', 1).in('aluno_id', idsCadastrados)
+      : { data: [] as Parcela1Raw[], error: null };
+    if (parcelas1Err) throw new Error(`Falha ao consultar parcela 1: ${parcelas1Err.message}`);
+    const statusParcela1PorAluno = new Map((parcelas1Data ?? []).map((p: any) => [p.aluno_id as string, p.status as string]));
+
+    const cadastradosRaw = (cadastradosPeriodo.data ?? []) as unknown as MatriculaRaw[];
+    const matriculasRaw = cadastradosRaw.filter(a => ['pago', 'isento'].includes(statusParcela1PorAluno.get(a.id) ?? ''));
+    const leadsQuentesRaw = cadastradosRaw.filter(a => !['pago', 'isento'].includes(statusParcela1PorAluno.get(a.id) ?? ''));
 
     const inadimplentesRaw = [...(atrasados.data ?? []), ...(pendentesVencidos.data ?? [])] as unknown as PagamentoRaw[];
     const pagosPeriodoRaw = (pagosPeriodo.data ?? []) as unknown as PagamentoRaw[];
     const vencendo7Raw = (vencendo7.data ?? []) as unknown as PagamentoRaw[];
     const vencendo1Raw = (vencendo1.data ?? []) as unknown as PagamentoRaw[];
-    const matriculasPeriodoRaw = (matriculasPeriodo.data ?? []) as unknown as MatriculaRaw[];
 
     const dados = {
       pagosHoje: pagosPeriodoRaw.map(p => paraItem(p, hoje, false)),
       inadimplentes: inadimplentesRaw.map(p => paraItem(p, hoje, true)),
       vencendo7: vencendo7Raw.map(p => paraItem(p, hoje, false)),
       vencendo1: vencendo1Raw.map(p => paraItem(p, hoje, false)),
-      matriculasHoje: matriculasPeriodoRaw.map(a => ({
+      matriculasHoje: matriculasRaw.map(a => ({
         aluno_id: a.id, nome: a.nome, produto: a.produto, valor: a.valor_mensalidade ?? 0, telefone: a.whatsapp,
+      })),
+      leadsQuentes: leadsQuentesRaw.map(a => ({
+        aluno_id: a.id, nome: a.nome, produto: a.produto, valor: a.valor_mensalidade ?? 0, telefone: a.whatsapp,
+        contatado_em: a.lead_quente_contatado_em,
       })),
       hoje,
       periodo: periodo.resumoPeriodo,
@@ -229,6 +251,7 @@ serve(async (req) => {
     const resposta = [
       `📊 Resumo financeiro — ${periodo.resumoPeriodo}`,
       `🎓 Novas matrículas: ${dados.matriculasHoje.length}`,
+      `🔥 Leads quentes (cadastraram, não pagaram a 1ª parcela): ${dados.leadsQuentes.length}`,
       `💰 Pagamentos recebidos: ${dados.pagosHoje.length} (${fmtValor(totalPagoPeriodo)})`,
       `⚠️ Inadimplentes (hoje): ${dados.inadimplentes.length} (${fmtValor(totalInadimplente)} em atraso)`,
       `🔔 Vencendo em 7 dias: ${dados.vencendo7.length}`,
