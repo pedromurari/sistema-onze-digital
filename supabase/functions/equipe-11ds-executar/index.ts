@@ -26,7 +26,7 @@ type ClienteContexto = {
   arquetipos_visuais_evitar?: string[] | null;
 };
 
-type HistoricoRecente = { temas: string[]; pilares: string[]; arquetipos: string[] };
+type HistoricoRecente = { temas: string[]; pilares: string[]; arquetipos: string[]; aberturas: string[] };
 
 type ExecResultado = {
   resposta: string;
@@ -35,6 +35,7 @@ type ExecResultado = {
   headline?: string;
   tema?: string;
   legenda?: string;
+  hashtags?: string;
   pilar?: string;
   arquetipo_visual?: string;
 };
@@ -90,15 +91,16 @@ async function pesquisarTendencia(openaiKey: string, cliente: ClienteContexto, h
 async function buscarHistoricoRecente(supabase: any, clienteId: string): Promise<HistoricoRecente> {
   const { data } = await supabase
     .from('conteudo_posts')
-    .select('tema, pilar, arquetipo_visual')
+    .select('tema, pilar, arquetipo_visual, legenda')
     .eq('cliente_id', clienteId)
     .order('data_post', { ascending: false })
     .limit(7);
-  const linhas = (data ?? []) as { tema: string | null; pilar: string | null; arquetipo_visual: string | null }[];
+  const linhas = (data ?? []) as { tema: string | null; pilar: string | null; arquetipo_visual: string | null; legenda: string | null }[];
   return {
     temas: linhas.map(l => l.tema).filter((t): t is string => Boolean(t)),
     pilares: linhas.map(l => l.pilar).filter((t): t is string => Boolean(t)),
     arquetipos: linhas.map(l => l.arquetipo_visual).filter((t): t is string => Boolean(t)),
+    aberturas: linhas.map(l => l.legenda?.split(/\s+/).slice(0, 7).join(' ')).filter((t): t is string => Boolean(t)),
   };
 }
 
@@ -114,14 +116,16 @@ async function interpretarOrdem(
         `Post diario para o cliente "${cliente?.nome ?? ''}". Nicho: ${cliente?.nicho ?? 'nao informado'}.`,
         cliente?.publico_alvo ? `Publico-alvo: ${cliente.publico_alvo}.` : '',
         cliente?.tom_de_voz ? `Tom de voz: ${cliente.tom_de_voz}.` : '',
-        cliente?.pilares_conteudo?.length ? `Pilares de conteudo do cliente (gire entre eles, nao repita o mesmo pilar dos ultimos posts): ${cliente.pilares_conteudo.join(', ')}.` : '',
-        historico?.pilares.length ? `Pilares usados recentemente: ${historico.pilares.join(', ')}. Escolha um "pilar" diferente destes se possivel.` : '',
+        cliente?.pilares_conteudo?.length ? `Pilares de conteudo do cliente, gire entre eles de verdade: ${cliente.pilares_conteudo.join(', ')}.` : '',
+        historico?.pilares.length ? `REGRA DURA, nao e sugestao: o "pilar" de hoje TEM que ser diferente do pilar usado no post mais recente (${historico.pilares[0]}). So repita um pilar se ele nao tiver sido usado em nenhum dos ultimos ${Math.min(historico.pilares.length, cliente?.pilares_conteudo?.length ?? 3)} posts.` : '',
         historico?.temas.length ? `Temas ja usados recentemente (o tema de hoje TEM que ser de uma familia de assunto diferente): ${historico.temas.join(' | ')}.` : '',
         cliente?.temas_evitar?.length ? `NUNCA fale sobre: ${cliente.temas_evitar.join(', ')} (brand safety).` : '',
         pesquisa ? `Pesquisa de tendencia feita agora: ${pesquisa}` : '',
         `O tema escolhido precisa ser as duas coisas ao mesmo tempo: (1) um gancho atual de verdade (algo acontecendo agora, nao um conceito de manual reciclado) e (2) ter relevancia pessoal imediata (o publico tem que se reconhecer, nao so ler um fato). O mecanismo/conceito central da area precisa aparecer no proprio gancho, nao so ser colado na legenda depois.`,
-        `Legenda: escreva como uma pessoa real falando (especialista em primeira pessoa, "eu ja vi isso"), nao como comunicado institucional. Estrutura: (1) gancho textual curto reforcando o gancho visual, (2) corpo explicando o assunto com contexto/dado real, (3) fechamento com pergunta ou CTA que puxa comunidade${cliente?.cta_padrao ? ` (pode usar uma variacao de "${cliente.cta_padrao}")` : ''}, (4) hashtags combinando${cliente?.hashtags_fixas?.length ? ` as fixas do cliente (${cliente.hashtags_fixas.join(' ')})` : ''} com 3-5 especificas do tema.`,
-        `NUNCA use travessao (—) na legenda — e o maior tique de "escrito por IA" que existe. Frases curtas e diretas, pontuacao simples (. , ? !).`,
+        `Legenda: escreva como uma pessoa real falando (especialista em primeira pessoa, "eu ja vi isso"), nao como comunicado institucional. Estrutura obrigatoria em PARAGRAFOS SEPARADOS por quebra de linha dupla (\\n\\n entre cada um, nunca um bloco unico de texto corrido): (1) gancho textual curto reforcando o gancho visual, (2) corpo explicando o assunto — TEM que conter pelo menos um dado, numero, mecanismo, citacao ou exemplo concreto e especifico (nunca fique so no genérico tipo "reflita sobre suas emoções"; se for numerologia, faca a conta do numero; se for psicanalise/marketing, nomeie o mecanismo ou cite um dado real), (3) fechamento com pergunta ou CTA que puxa comunidade${cliente?.cta_padrao ? ` (pode usar uma variacao de "${cliente.cta_padrao}")` : ''}.`,
+        historico?.aberturas.length ? `Aberturas (primeiras palavras) usadas nos ultimos posts, NAO repita esse padrao de abertura: ${historico.aberturas.map(a => `"${a}..."`).join(' / ')}.` : '',
+        `NUNCA use travessao (—) na legenda — e o maior tique de "escrito por IA" que existe. Frases curtas e diretas, pontuacao simples (. , ? !). NUNCA use ** (asteriscos duplos) dentro da legenda — essa marcacao e EXCLUSIVA do campo "headline", em nenhuma hipotese aparece no campo "legenda".`,
+        `Hashtags: campo separado "hashtags" (string, nao faz parte da legenda), combinando${cliente?.hashtags_fixas?.length ? ` as fixas do cliente (${cliente.hashtags_fixas.join(' ')})` : ''} com 3-5 especificas do tema de hoje. Esse campo e obrigatorio, nunca venha vazio.`,
         `Headline (frase curta que vai aparecer escrita DENTRO da imagem, composta localmente com fonte real — nao pela IA de imagem, entao a grafia que voce escrever aqui sai pixel-identica): estilo "${cliente?.estilo_visual ?? 'manchete'}".`,
         cliente?.estilo_visual === 'editorial'
           ? `Estilo editorial: frase unica, poetica/reflexiva, 6-11 palavras, tom contemplativo.`
@@ -130,11 +134,11 @@ async function interpretarOrdem(
         `Marque 1 a 3 palavras-chave da headline entre **dois asteriscos** (ex: "Nao e sorte. E **metodo**.") — essas palavras saem destacadas na cor da marca na composicao final. O resto do texto sai em branco. Nao exagere: no maximo uma "ilha" de destaque por frase curta, pode ser mais de uma palavra colada (ex: **metodo certo**).`,
         `Sempre acentuacao correta em portugues (VOCÊ, É, NÃO, etc) — essa headline vai pra imagem exatamente como voce escrever, sem segunda revisao, entao confira a gramatica com cuidado antes de responder.`,
         `Prompt de imagem: pense antes num UNICO MOMENTO decisivo que faria alguem parar de rolar o feed (um gesto, uma expressao, uma tensao visual) — nao uma lista de termos tecnicos soltos. Descreva esse momento numa frase com ideia, depois traduza pra vocabulario tecnico: luz (low-key/rim light pra separar do fundo, nunca luz frontal de camera), enquadramento (rule of thirds, espaco negativo generoso na parte de baixo pro headline), fundo (NUNCA vazio/liso — sempre um ambiente desfocado que sugere contexto, nomeando o que esta desfocado). Sempre fotografia realista (editorial/advertising photography, photorealistic), nunca ilustracao/flat/aquarela. Evite telas, monitores, relogios, placas ou qualquer texto/numero pequeno em primeiro plano (a IA de imagem erra esses detalhes). Evite duas maos entrelacadas em close-up (risco de anatomia errada) — prefira uma mao so ou o rosto como foco emocional. Se aparecer pessoa, o genero/idade deve combinar com o publico-alvo. Escreva o prompt em ingles, 25-40 palavras, so a cena/composicao (o texto do headline e adicionado automaticamente depois, nao descreva texto no prompt).`,
-        `Escolha um "arquetipo_visual" pra essa cena (ex: especialista em acao, still life de objetos em acao, retrato com expressao forte, duas pessoas em interacao, ambiente com drama visual proprio).`,
-        historico?.arquetipos.length ? `Arquetipos visuais usados recentemente (varie, nao repita 2 dias seguidos): ${historico.arquetipos.join(', ')}.` : '',
-        cliente?.arquetipos_visuais_preferidos?.length ? `Arquetipos preferidos deste cliente: ${cliente.arquetipos_visuais_preferidos.join(', ')}.` : '',
+        `Escolha um "arquetipo_visual" pra essa cena: uma frase curta e ESPECIFICA descrevendo pose/enquadramento/acao concreta (ex: "maos folheando um caderno com anotacoes", "close no rosto olhando pra janela", "duas pessoas cara a cara sobre uma mesa", "objeto sendo segurado contra a luz") — nunca uma categoria generica tipo so "retrato" ou "still life".`,
+        historico?.arquetipos.length ? `REGRA DURA, nao e sugestao: estes arquetipos ja foram usados nos ultimos posts e estao PROIBIDOS hoje, mesmo reformulados com outras palavras — o enquadramento/pose tem que ser visivelmente diferente de todos estes: ${historico.arquetipos.join(' | ')}.` : '',
+        cliente?.arquetipos_visuais_preferidos?.length ? `Familias de arquetipo preferidas deste cliente (permanece dentro delas, mas varie pose/enquadramento/objeto a cada dia, nunca repita a composicao exata de um post recente): ${cliente.arquetipos_visuais_preferidos.join(' | ')}.` : '',
         cliente?.arquetipos_visuais_evitar?.length ? `NUNCA use estes arquetipos: ${cliente.arquetipos_visuais_evitar.join(', ')}.` : '',
-        `Responda SOMENTE com um JSON: {"resposta": string, "gerar_imagem": true, "prompt_imagem": string, "headline": string, "tema": string, "legenda": string, "pilar": string, "arquetipo_visual": string}`,
+        `Responda SOMENTE com um JSON: {"resposta": string, "gerar_imagem": true, "prompt_imagem": string, "headline": string, "tema": string, "legenda": string, "hashtags": string, "pilar": string, "arquetipo_visual": string}`,
       ].filter(Boolean).join(' ')
     : [
         `Voce e a Nina, agente de IA do time "${cargo}" da agencia 11 Digital Strategy. Responda sempre em portugues do Brasil, tom profissional e direto.`,
@@ -336,7 +340,7 @@ serve(async (req) => {
     if (agenteErr || !agente) throw new Error(`Agente nao encontrado: ${agenteErr?.message ?? agenteId}`);
 
     let cliente: ClienteContexto | undefined;
-    let historico: HistoricoRecente = { temas: [], pilares: [], arquetipos: [] };
+    let historico: HistoricoRecente = { temas: [], pilares: [], arquetipos: [], aberturas: [] };
     if (tarefa.tipo === 'post_cliente' && tarefa.cliente_id) {
       const { data } = await supabase
         .from('conteudo_clientes')
@@ -414,7 +418,7 @@ serve(async (req) => {
           cliente_id: tarefa.cliente_id,
           tema: resultado.tema ?? null,
           tema_fonte: 'equipe_11ds',
-          legenda: resultado.legenda ?? resultado.resposta,
+          legenda: [resultado.legenda ?? resultado.resposta, resultado.hashtags ? `.\n.\n.\n${resultado.hashtags}` : ''].filter(Boolean).join('\n\n'),
           imagem_feed_url: anexos[0]?.url ?? null,
           imagem_stories_url: storiesUrl,
           pilar: resultado.pilar ?? null,

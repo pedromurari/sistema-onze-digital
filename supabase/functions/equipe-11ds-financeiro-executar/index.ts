@@ -37,6 +37,15 @@ type PagamentoRaw = {
   alunos: { nome: string; whatsapp: string | null; cobranca_telefone: string | null } | null;
 };
 
+type MatriculaRaw = {
+  id: string;
+  nome: string;
+  produto: string | null;
+  valor_mensalidade: number | null;
+  data_matricula: string | null;
+  whatsapp: string | null;
+};
+
 type ItemResumo = {
   pagamento_id: string;
   aluno_id: string | null;
@@ -117,15 +126,16 @@ serve(async (req) => {
 
     const selectComAluno = 'id, aluno_id, valor, data_pagamento, data_vencimento, numero_parcela, cobranca_contatado_em, alunos(nome, whatsapp, cobranca_telefone)';
 
-    const [pagosHoje, atrasados, pendentesVencidos, vencendo7, vencendo1] = await Promise.all([
+    const [pagosHoje, atrasados, pendentesVencidos, vencendo7, vencendo1, matriculasHoje] = await Promise.all([
       supabase.from('pagamentos').select(selectComAluno).eq('status', 'pago').eq('data_pagamento', hoje),
       supabase.from('pagamentos').select(selectComAluno).eq('status', 'atrasado').order('data_vencimento'),
       supabase.from('pagamentos').select(selectComAluno).eq('status', 'pendente').lt('data_vencimento', hoje).order('data_vencimento'),
       supabase.from('pagamentos').select(selectComAluno).eq('status', 'pendente').eq('data_vencimento', em7dias).order('data_vencimento'),
       supabase.from('pagamentos').select(selectComAluno).eq('status', 'pendente').eq('data_vencimento', amanha).order('data_vencimento'),
+      supabase.from('alunos').select('id, nome, produto, valor_mensalidade, data_matricula, whatsapp').eq('data_matricula', hoje),
     ]);
 
-    for (const [nome, r] of Object.entries({ pagosHoje, atrasados, pendentesVencidos, vencendo7, vencendo1 })) {
+    for (const [nome, r] of Object.entries({ pagosHoje, atrasados, pendentesVencidos, vencendo7, vencendo1, matriculasHoje })) {
       if (r.error) throw new Error(`Falha ao consultar ${nome}: ${r.error.message}`);
     }
 
@@ -133,12 +143,16 @@ serve(async (req) => {
     const pagosHojeRaw = (pagosHoje.data ?? []) as unknown as PagamentoRaw[];
     const vencendo7Raw = (vencendo7.data ?? []) as unknown as PagamentoRaw[];
     const vencendo1Raw = (vencendo1.data ?? []) as unknown as PagamentoRaw[];
+    const matriculasHojeRaw = (matriculasHoje.data ?? []) as unknown as MatriculaRaw[];
 
     const dados = {
       pagosHoje: pagosHojeRaw.map(p => paraItem(p, hoje, false)),
       inadimplentes: inadimplentesRaw.map(p => paraItem(p, hoje, true)),
       vencendo7: vencendo7Raw.map(p => paraItem(p, hoje, false)),
       vencendo1: vencendo1Raw.map(p => paraItem(p, hoje, false)),
+      matriculasHoje: matriculasHojeRaw.map(a => ({
+        aluno_id: a.id, nome: a.nome, produto: a.produto, valor: a.valor_mensalidade ?? 0, telefone: a.whatsapp,
+      })),
       hoje,
     };
 
@@ -148,6 +162,7 @@ serve(async (req) => {
 
     const resposta = [
       `📊 Resumo financeiro de hoje`,
+      `🎓 Novas matrículas: ${dados.matriculasHoje.length}`,
       `💰 Pagamentos de hoje: ${dados.pagosHoje.length} (${fmtValor(totalPagoHoje)})`,
       `⚠️ Inadimplentes: ${dados.inadimplentes.length} (${fmtValor(totalInadimplente)} em atraso)`,
       `🔔 Vencendo em 7 dias: ${dados.vencendo7.length}`,

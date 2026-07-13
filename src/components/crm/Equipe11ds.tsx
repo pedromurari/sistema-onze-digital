@@ -55,11 +55,20 @@ type ItemFinanceiro = {
   cobranca_contatado_em: string | null;
 };
 
+type MatriculaItem = {
+  aluno_id: string;
+  nome: string;
+  produto: string | null;
+  valor: number;
+  telefone: string | null;
+};
+
 type DadosFinanceiro = {
   pagosHoje: ItemFinanceiro[];
   inadimplentes: ItemFinanceiro[];
   vencendo7: ItemFinanceiro[];
   vencendo1: ItemFinanceiro[];
+  matriculasHoje: MatriculaItem[];
 };
 
 type Tarefa = {
@@ -216,6 +225,38 @@ function ItemFinanceiroRow({ item, comAtraso, onNavigateToAluno, onMarcarContata
   );
 }
 
+function ListaMatriculas({ itens, onNavigateToAluno }: { itens: MatriculaItem[]; onNavigateToAluno?: (alunoId: string) => void }) {
+  if (itens.length === 0) return null;
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-semibold text-foreground">🎓 Novas matrículas ({itens.length})</p>
+      <div className="space-y-1.5">
+        {itens.map(item => (
+          <div key={item.aluno_id} className="flex items-center gap-2 border border-border rounded-lg px-2.5 py-2 text-xs bg-white">
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-foreground truncate">{item.nome}</p>
+              <p className="text-muted-foreground">
+                {item.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                {item.produto ? ` · ${item.produto}` : ''}
+              </p>
+            </div>
+            {item.telefone && (
+              <a href={whatsappLink(item.telefone)} target="_blank" rel="noreferrer" title="Chamar no WhatsApp" className="text-emerald-600 hover:opacity-70 flex-shrink-0">
+                <MessageCircle className="h-4 w-4" />
+              </a>
+            )}
+            {onNavigateToAluno && (
+              <button onClick={() => onNavigateToAluno(item.aluno_id)} title="Ver aluno no Financeiro" className="text-primary hover:opacity-70 flex-shrink-0">
+                <ExternalLink className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ListaFinanceira({ titulo, itens, comAtraso, onNavigateToAluno, onMarcarContatado }: {
   titulo: string;
   itens: ItemFinanceiro[];
@@ -250,6 +291,7 @@ function TarefaDetalhe({ tarefa, onNavigateToPosts, onNavigateToAluno }: { taref
       if (!prev) return prev;
       const atualizarLista = (lista: ItemFinanceiro[]) => lista.map(i => i.pagamento_id === pagamentoId ? { ...i, cobranca_contatado_em: valor } : i);
       return {
+        ...prev,
         pagosHoje: atualizarLista(prev.pagosHoje),
         inadimplentes: atualizarLista(prev.inadimplentes),
         vencendo7: atualizarLista(prev.vencendo7),
@@ -275,6 +317,7 @@ function TarefaDetalhe({ tarefa, onNavigateToPosts, onNavigateToAluno }: { taref
       )}
       {dados && (
         <div className="space-y-3 pt-1">
+          <ListaMatriculas itens={dados.matriculasHoje ?? []} onNavigateToAluno={onNavigateToAluno} />
           <ListaFinanceira titulo="💰 Pagamentos de hoje — confira se bateu" itens={dados.pagosHoje} comAtraso={false} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
           <ListaFinanceira titulo="⚠️ Inadimplentes" itens={dados.inadimplentes} comAtraso={true} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
           <ListaFinanceira titulo="🔔 Vencendo em 7 dias" itens={dados.vencendo7} comAtraso={false} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
