@@ -48,14 +48,16 @@ serve(async (req) => {
       .single();
     if (timeErr || !time) throw new Error(`Time posts-criativos nao encontrado: ${timeErr?.message}`);
 
+    // Lookup por slug estavel -- com o time tendo virado uma equipe de 5 agentes
+    // (Gestor, Estrategista, Redator, Diretor de Arte, Nina), "primeiro por ordem"
+    // deixou de identificar quem de fato executa a tarefa diaria de cliente.
     const { data: agente, error: agenteErr } = await supabase
       .from('equipe_11ds_agentes')
       .select('id')
       .eq('time_id', time.id)
-      .order('ordem')
-      .limit(1)
+      .eq('slug', 'nina-producao')
       .single();
-    if (agenteErr || !agente) throw new Error(`Agente Posts & Criativos nao encontrado: ${agenteErr?.message}`);
+    if (agenteErr || !agente) throw new Error(`Agente Nina (producao) nao encontrado: ${agenteErr?.message}`);
 
     const hoje = hojeSaoPaulo();
     const tarefasCriadas: { id: string; agenteId: string; executorFunction: string }[] = [];
