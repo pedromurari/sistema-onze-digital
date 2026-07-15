@@ -158,7 +158,7 @@ async function registrarMensagem(supabase: any, tarefaId: string, agenteId: stri
   await supabase.from('equipe_11ds_mensagens').insert({ tarefa_id: tarefaId, agente_id: agenteId, tipo, conteudo });
 }
 
-type Agentes = { gestor: string; estrategista: string; redator: string; diretor: string; nina: string };
+type Agentes = { gestor: string; estrategista: string; redator: string; diretor: string; nina: string; curador: string };
 
 async function buscarAgentesDoTime(supabase: any, timeId: string): Promise<Agentes> {
   const { data, error } = await supabase.from('equipe_11ds_agentes').select('id, slug').eq('time_id', timeId);
@@ -175,7 +175,83 @@ async function buscarAgentesDoTime(supabase: any, timeId: string): Promise<Agent
     redator: obrigatorio('redator-chefe'),
     diretor: obrigatorio('diretor-arte'),
     nina: obrigatorio('nina-producao'),
+    curador: obrigatorio('curador-conhecimento'),
   };
+}
+
+// ── Cerebro coletivo: cofre Obsidian versionado no GitHub (11ds-conhecimento) ──
+// Leitura acontece antes de Estrategista/Redator/Diretor decidirem (contexto);
+// escrita acontece so no passo do Curador, depois do QA do Gestor, e so quando
+// passa pela regua dos 3 criterios (nao-obvio, concreto, muda decisao futura).
+// Nunca deve travar a producao do post -- qualquer falha aqui e' so logada.
+
+function slugificar(nome: string): string {
+  return nome.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+async function lerConhecimento(token: string, repo: string, caminho: string): Promise<{ conteudo: string; sha: string } | null> {
+  const res = await fetch(`https://api.github.com/repos/${repo}/contents/${caminho}`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'equipe-11ds' },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Falha ao ler ${caminho}: ${res.status} ${await res.text()}`);
+  const data = await res.json() as { content: string; sha: string };
+  const conteudo = new TextDecoder().decode(Uint8Array.from(atob(data.content.replace(/\n/g, '')), c => c.charCodeAt(0)));
+  return { conteudo, sha: data.sha };
+}
+
+async function listarDiretorio(token: string, repo: string, caminho: string): Promise<{ name: string; type: string }[]> {
+  const res = await fetch(`https://api.github.com/repos/${repo}/contents/${caminho}`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'equipe-11ds' },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) return [];
+  return await res.json() as { name: string; type: string }[];
+}
+
+async function gravarConhecimento(token: string, repo: string, caminho: string, conteudoNovo: string, mensagemCommit: string, shaExistente?: string): Promise<void> {
+  const res = await fetch(`https://api.github.com/repos/${repo}/contents/${caminho}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'equipe-11ds', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: mensagemCommit, content: bytesToBase64(new TextEncoder().encode(conteudoNovo)), ...(shaExistente ? { sha: shaExistente } : {}) }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`Falha ao gravar ${caminho}: ${res.status} ${await res.text()}`);
+}
+
+type ContextoConhecimento = { notaCliente: string; notaClienteSha: string | null; principios: string };
+
+async function buscarContextoConhecimento(supabase: any, cliente: ClienteContexto): Promise<ContextoConhecimento> {
+  const vazio: ContextoConhecimento = { notaCliente: '', notaClienteSha: null, principios: '' };
+  try {
+    const { data: config } = await supabase.rpc('get_equipe_11ds_github_config');
+    const token = config?.[0]?.token as string | undefined;
+    const repo = config?.[0]?.repo as string | undefined;
+    if (!token || !repo) return vazio;
+
+    const caminhoNota = `Midia-Criativos/Clientes/${slugificar(cliente.nome)}.md`;
+    const [nota, arquivosPrincipios] = await Promise.all([
+      lerConhecimento(token, repo, caminhoNota),
+      listarDiretorio(token, repo, 'Midia-Criativos/Principios'),
+    ]);
+
+    const principiosLidos = await Promise.all(
+      arquivosPrincipios
+        .filter(a => a.type === 'file' && a.name.endsWith('.md'))
+        .map(a => lerConhecimento(token, repo, `Midia-Criativos/Principios/${a.name}`).catch(() => null)),
+    );
+    const principios = principiosLidos
+      .filter((p): p is { conteudo: string; sha: string } => Boolean(p))
+      .map(p => p.conteudo)
+      .join('\n\n---\n\n')
+      .slice(0, 6000);
+
+    return { notaCliente: nota?.conteudo ?? '', notaClienteSha: nota?.sha ?? null, principios };
+  } catch (e) {
+    console.error('Falha ao buscar contexto do Obsidian (seguindo sem ele):', (e as Error).message);
+    return vazio;
+  }
 }
 
 // ── Banimentos e menu de ganchos (pesquisa de referencia, ver vault Obsidian) ──
@@ -206,7 +282,7 @@ async function passoGestorAbertura(supabase: any, tarefaId: string, agentes: Age
 
 async function passoEstrategista(
   supabase: any, openaiKey: string, tarefaId: string, agentes: Agentes,
-  cliente: ClienteContexto, pilar: string | null, pesquisa: string, historico: HistoricoRecente,
+  cliente: ClienteContexto, pilar: string | null, pesquisa: string, historico: HistoricoRecente, contexto: ContextoConhecimento,
 ): Promise<{ tema: string; justificativa: string }> {
   await atualizarAgente(supabase, agentes.estrategista, 'trabalhando', `Definindo o angulo do dia para ${cliente.nome}...`);
 
@@ -218,6 +294,7 @@ async function passoEstrategista(
     cliente.temas_evitar?.length ? `NUNCA sugira nada relacionado a: ${cliente.temas_evitar.join(', ')} (brand safety).` : '',
     pesquisa ? `Pesquisa de tendencia feita agora: ${pesquisa}` : '',
     historico.temas.length ? `Temas ja usados recentemente (o tema de hoje TEM que ser de uma familia de assunto diferente): ${historico.temas.join(' | ')}.` : '',
+    contexto.notaCliente ? `O que o time ja aprendeu sobre este cliente especificamente (memoria do time, Obsidian): ${contexto.notaCliente.slice(0, 1500)}` : '',
     `O tema escolhido precisa ser as duas coisas ao mesmo tempo: (1) um gancho atual de verdade (algo acontecendo agora, nao um conceito de manual reciclado) e (2) ter relevancia pessoal imediata (o publico tem que se reconhecer). O mecanismo/conceito central da area precisa aparecer no proprio gancho.`,
     `Responda SOMENTE com um JSON: {"tema": string, "justificativa": string (uma linha, por que esse angulo e diferente dos recentes)}`,
   ].filter(Boolean).join(' ');
@@ -233,7 +310,7 @@ async function passoEstrategista(
 
 async function passoRedator(
   supabase: any, openaiKey: string, tarefaId: string, agentes: Agentes,
-  cliente: ClienteContexto, tema: string, historico: HistoricoRecente, feedbackCorrecao?: string,
+  cliente: ClienteContexto, tema: string, historico: HistoricoRecente, contexto: ContextoConhecimento, feedbackCorrecao?: string,
 ): Promise<{ legenda: string; headline: string; hashtags: string }> {
   await atualizarAgente(supabase, agentes.redator, 'trabalhando', `Escrevendo a legenda sobre "${tema.slice(0, 40)}"...`);
 
@@ -243,6 +320,8 @@ async function passoRedator(
     `Escreva como uma pessoa real falando (especialista em primeira pessoa, "eu ja vi isso"), nao como comunicado institucional.`,
     `Gancho (linha 1, sozinha, e o que aparece antes do "...mais"): escolha e adapte um destes formatos comprovados ao tema de hoje -- ${MENU_GANCHOS}`,
     historico.aberturas.length ? `Aberturas usadas nos ultimos posts, NAO repita esse padrao: ${historico.aberturas.map(a => `"${a}..."`).join(' / ')}.` : '',
+    contexto.notaCliente ? `O que o time ja aprendeu sobre este cliente especificamente (memoria do time, Obsidian): ${contexto.notaCliente.slice(0, 1500)}` : '',
+    contexto.principios ? `Principios gerais de escrita do time, validados por pesquisa (Obsidian, use como reforco, nao repita o texto deles): ${contexto.principios.slice(0, 2500)}` : '',
     `Depois do gancho: PARAGRAFOS SEPARADOS por quebra de linha dupla (\\n\\n entre cada um, nunca bloco unico de texto corrido). Corpo TEM que conter pelo menos um dado, numero, mecanismo, citacao ou exemplo concreto e especifico (nunca genérico tipo "reflita sobre suas emoções"). Fechamento com pergunta ou CTA que puxa comunidade${cliente.cta_padrao ? ` (pode usar variacao de "${cliente.cta_padrao}")` : ''}.`,
     `NUNCA use travessao (—). NUNCA use estas palavras/aberturas (tique de IA): ${PALAVRAS_BANIDAS.join(', ')}. NUNCA use ** dentro da legenda -- essa marcacao e exclusiva do headline.`,
     `Hashtags: campo separado "hashtags" (nao faz parte da legenda), combinando${cliente.hashtags_fixas?.length ? ` as fixas do cliente (${cliente.hashtags_fixas.join(' ')})` : ''} com 3-5 especificas do tema. Obrigatorio, nunca vazio.`,
@@ -264,7 +343,7 @@ async function passoRedator(
 
 async function passoDiretorArte(
   supabase: any, openaiKey: string, tarefaId: string, agentes: Agentes,
-  cliente: ClienteContexto, tema: string, headline: string, formato: FormatoDia, pilar: string | null, historico: HistoricoRecente,
+  cliente: ClienteContexto, tema: string, headline: string, formato: FormatoDia, pilar: string | null, historico: HistoricoRecente, contexto: ContextoConhecimento,
 ): Promise<{ promptImagem?: string; kicker?: string; gradientStyle?: 'radial' | 'diagonal'; arquetipoVisual: string }> {
   await atualizarAgente(supabase, agentes.diretor, 'trabalhando', `Definindo o conceito visual (${formato})...`);
 
@@ -288,6 +367,8 @@ async function passoDiretorArte(
     historico.arquetipos.length ? `PROIBIDO repetir estes arquetipos recentes, mesmo reformulados: ${historico.arquetipos.join(' | ')}.` : '',
     cliente.arquetipos_visuais_preferidos?.length ? `Familias de arquetipo preferidas deste cliente: ${cliente.arquetipos_visuais_preferidos.join(' | ')}.` : '',
     cliente.arquetipos_visuais_evitar?.length ? `NUNCA use estes arquetipos: ${cliente.arquetipos_visuais_evitar.join(', ')}.` : '',
+    contexto.notaCliente ? `O que o time ja aprendeu sobre este cliente especificamente (memoria do time, Obsidian): ${contexto.notaCliente.slice(0, 1500)}` : '',
+    contexto.principios ? `Principios gerais de imagem do time, validados por pesquisa (Obsidian, use como reforco): ${contexto.principios.slice(0, 2500)}` : '',
     `prompt_imagem: 30-50 palavras.`,
     `Responda SOMENTE com um JSON: {"prompt_imagem": string, "arquetipo_visual": string}`,
   ].filter(Boolean).join(' ');
@@ -459,6 +540,61 @@ async function passoGestorFechamento(
   }
 }
 
+// ── Passo 7: Curador de Conhecimento (registra so o 1% que vale a pena) ────────
+// Ultimo passo da cadeia, depois do QA do Gestor. Regua alta e explicita: so
+// escreve se as 3 respostas forem sim (nao-obvio, concreto/acionavel, muda uma
+// decisao futura de verdade). Na maioria dos dias a resposta certa e' nao
+// escrever nada -- e isso e' o esperado, nao uma falha. Nunca deve travar a
+// producao do post.
+
+async function passoCurador(
+  supabase: any, openaiKey: string, tarefaId: string, agentes: Agentes,
+  cliente: ClienteContexto, tema: string, headline: string, legenda: string, contexto: ContextoConhecimento,
+): Promise<void> {
+  await atualizarAgente(supabase, agentes.curador, 'trabalhando', 'Avaliando o que vale a pena guardar...');
+  try {
+    const { data: config } = await supabase.rpc('get_equipe_11ds_github_config');
+    const token = config?.[0]?.token as string | undefined;
+    const repo = config?.[0]?.repo as string | undefined;
+    if (!token || !repo) throw new Error('Config do GitHub nao encontrada no Vault');
+
+    const avaliacao = await chamarGPT(
+      openaiKey,
+      [
+        `Voce e o Curador de Conhecimento do time de midia da agencia 11 Digital Strategy. Sua regua e alta: so vale registrar um aprendizado se as 3 respostas forem SIM ao mesmo tempo -- (1) e nao-obvio: um redator generico ja saberia disso sem ter trabalhado com este cliente? (2) e concreto e acionavel, nao uma platitude tipo "o publico gosta de autenticidade"? (3) mudaria de verdade uma decisao futura sobre ESTE cliente especifico?`,
+        `Cliente: "${cliente.nome}". O que o time ja sabe sobre ele: ${contexto.notaCliente || '(nota ainda vazia, nenhum aprendizado registrado ainda)'}`,
+        `Producao de hoje -- Tema: "${tema}". Headline: "${headline}". Legenda: ${legenda}`,
+        `Na maioria dos dias a resposta certa e' NAO registrar nada -- nao force um aprendizado que nao existe so pra ter o que escrever.`,
+        `Responda SOMENTE com um JSON: {"registrar": boolean, "aprendizado"?: string (1-2 frases, especifico e acionavel, em portugues, so presente se registrar=true)}`,
+      ].join(' '),
+      'Avalie o dia de hoje.',
+      0.4,
+    );
+
+    const aprendizado = Boolean(avaliacao.registrar) ? String(avaliacao.aprendizado ?? '').trim() : '';
+    if (!aprendizado) {
+      await registrarMensagem(supabase, tarefaId, agentes.curador, 'mensagem', 'Nada que passe do filtro hoje -- não registrei nada novo.');
+      return;
+    }
+
+    const notaBase = contexto.notaCliente.trim();
+    const partes = [
+      notaBase ? '' : `# ${cliente.nome}\n\nAprendizados acumulados pelo time de mídia sobre este cliente.`,
+      notaBase,
+      `- **${hojeSaoPaulo()}**: ${aprendizado}`,
+    ].filter(Boolean);
+    const notaAtualizada = partes.join('\n\n') + '\n';
+
+    const caminhoNota = `Midia-Criativos/Clientes/${slugificar(cliente.nome)}.md`;
+    await gravarConhecimento(token, repo, caminhoNota, notaAtualizada, `curador: aprendizado sobre ${cliente.nome} (${hojeSaoPaulo()})`, contexto.notaClienteSha ?? undefined);
+
+    await registrarMensagem(supabase, tarefaId, agentes.curador, 'mensagem', `Registrei um aprendizado sobre ${cliente.nome} no Obsidian: "${aprendizado}"`);
+  } catch (e) {
+    console.error('Curador: falha ao registrar aprendizado (seguindo sem travar a producao):', (e as Error).message);
+    await registrarMensagem(supabase, tarefaId, agentes.curador, 'mensagem', 'Nada que passe do filtro hoje -- não registrei nada novo.');
+  }
+}
+
 // ── Tarefa avulsa (sem cliente/pilares) -- Nina executa direto, sem o time todo ─
 
 type ExecResultadoAvulso = { resposta: string; gerar_imagem: boolean; prompt_imagem?: string; headline?: string; tema?: string; legenda?: string };
@@ -554,24 +690,26 @@ serve(async (req) => {
       .single();
     const cliente: ClienteContexto = clienteData ?? { nome: 'Cliente' };
     const historico = await buscarHistoricoRecente(supabase, tarefa.cliente_id);
+    const contexto = await buscarContextoConhecimento(supabase, cliente);
     const hoje = hojeSaoPaulo();
 
     const { pilar, formato } = await passoGestorAbertura(supabase, tarefaId, agentes, cliente, hoje);
 
     const pesquisa = await pesquisarTendencia(openaiKey, cliente, historico);
-    const { tema, justificativa } = await passoEstrategista(supabase, openaiKey, tarefaId, agentes, cliente, pilar, pesquisa, historico);
+    const { tema, justificativa } = await passoEstrategista(supabase, openaiKey, tarefaId, agentes, cliente, pilar, pesquisa, historico, contexto);
 
-    let { legenda, headline, hashtags } = await passoRedator(supabase, openaiKey, tarefaId, agentes, cliente, tema, historico);
+    let { legenda, headline, hashtags } = await passoRedator(supabase, openaiKey, tarefaId, agentes, cliente, tema, historico, contexto);
     const problema = checagemDura(legenda, hashtags);
     if (problema) {
       await registrarMensagem(supabase, tarefaId, agentes.gestor, 'alerta', `Encontrei um problema antes de seguir: ${problema}`);
-      const corrigido = await passoRedator(supabase, openaiKey, tarefaId, agentes, cliente, tema, historico, problema);
+      const corrigido = await passoRedator(supabase, openaiKey, tarefaId, agentes, cliente, tema, historico, contexto, problema);
       legenda = corrigido.legenda; headline = corrigido.headline; hashtags = corrigido.hashtags;
     }
 
-    const arte = await passoDiretorArte(supabase, openaiKey, tarefaId, agentes, cliente, tema, headline, formato, pilar, historico);
+    const arte = await passoDiretorArte(supabase, openaiKey, tarefaId, agentes, cliente, tema, headline, formato, pilar, historico, contexto);
     const { feedUrl, storiesUrl } = await passoProducao(supabase, openaiKey, tarefaId, agentes, cliente, formato, headline, arte);
     await passoGestorFechamento(supabase, openaiKey, tarefaId, agentes, legenda, headline);
+    await passoCurador(supabase, openaiKey, tarefaId, agentes, cliente, tema, headline, legenda, contexto);
 
     const legendaFinal = [legenda, hashtags ? `.\n.\n.\n${hashtags}` : ''].filter(Boolean).join('\n\n');
 
