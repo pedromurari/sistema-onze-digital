@@ -329,6 +329,68 @@ function ListaFinanceira({ titulo, itens, comAtraso, onNavigateToAluno, onMarcar
   );
 }
 
+// ── Conversa do time (thread de mensagens entre os agentes) ────────────────
+
+type Mensagem = {
+  id: string;
+  tipo: 'mensagem' | 'alerta' | 'aprovacao';
+  conteudo: string;
+  created_at: string;
+  equipe_11ds_agentes: { nome: string } | null;
+};
+
+const MENSAGEM_ESTILO: Record<Mensagem['tipo'], string> = {
+  mensagem: 'bg-white border-border',
+  alerta: 'bg-amber-50 border-amber-200',
+  aprovacao: 'bg-emerald-50 border-emerald-200',
+};
+
+function MensagemThread({ tarefaId }: { tarefaId: string }) {
+  const [mensagens, setMensagens] = useState<Mensagem[]>([]);
+
+  const loadMensagens = useCallback(async () => {
+    const { data, error } = await (supabase.from('equipe_11ds_mensagens' as any) as any)
+      .select('id, tipo, conteudo, created_at, equipe_11ds_agentes(nome)')
+      .eq('tarefa_id', tarefaId)
+      .order('created_at');
+    if (!error) setMensagens((data as any) || []);
+  }, [tarefaId]);
+
+  useEffect(() => {
+    loadMensagens();
+    const channel = supabase
+      .channel(`equipe-11ds-mensagens-${tarefaId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'equipe_11ds_mensagens', filter: `tarefa_id=eq.${tarefaId}` }, () => loadMensagens())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [tarefaId, loadMensagens]);
+
+  if (mensagens.length === 0) return null;
+
+  return (
+    <div className="space-y-2 pt-1">
+      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+        <MessageCircle className="h-3 w-3" /> Conversa do time
+      </p>
+      <div className="space-y-1.5">
+        {mensagens.map(m => (
+          <div key={m.id} className={cn('flex items-start gap-2 rounded-lg px-2.5 py-2 text-xs border', MENSAGEM_ESTILO[m.tipo])}>
+            <Avatar className="h-6 w-6 flex-shrink-0">
+              <AvatarFallback className="bg-gradient-to-br from-purple-500 to-pink-500 text-white text-[10px] font-semibold">
+                {initials(m.equipe_11ds_agentes?.nome ?? '?')}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-foreground">{m.equipe_11ds_agentes?.nome ?? 'Agente'}</p>
+              <p className="text-muted-foreground whitespace-pre-wrap">{m.conteudo}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Detalhe da tarefa ────────────────────────────────────────────────────────
 
 function TarefaDetalhe({ tarefa, onNavigateToPosts, onNavigateToAluno }: { tarefa: Tarefa; onNavigateToPosts?: () => void; onNavigateToAluno?: (alunoId: string) => void }) {
@@ -380,6 +442,7 @@ function TarefaDetalhe({ tarefa, onNavigateToPosts, onNavigateToAluno }: { taref
       {tarefa.resposta_texto && (
         <p className="text-sm text-foreground bg-white border border-border rounded-lg p-2 whitespace-pre-wrap">{tarefa.resposta_texto}</p>
       )}
+      <MensagemThread tarefaId={tarefa.id} />
       {dados && (
         <div className="space-y-3 pt-1">
           <ListaMatriculas itens={dados.matriculasHoje ?? []} periodo={dados.periodo} onNavigateToAluno={onNavigateToAluno} />
