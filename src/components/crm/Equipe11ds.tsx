@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Bot, Loader2, Download, Send, ArrowUpRight, AlertTriangle, RefreshCw, Repeat, X, MessageCircle, CheckCircle2, ExternalLink } from 'lucide-react';
+import { Bot, Loader2, Download, Send, ArrowUpRight, AlertTriangle, RefreshCw, Repeat, X, MessageCircle, CheckCircle2, ExternalLink, CalendarDays } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -33,6 +33,7 @@ type Agente = {
   status: AgenteStatus;
   status_texto: string | null;
   executor_function: string;
+  slug: string | null;
 };
 
 type Time = {
@@ -420,6 +421,7 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
   const [enviando, setEnviando] = useState(false);
   const [selecionada, setSelecionada] = useState<string | null>(null);
   const [rodandoDiaria, setRodandoDiaria] = useState(false);
+  const [rodandoCalendario, setRodandoCalendario] = useState(false);
 
   const loadTarefas = useCallback(async () => {
     const { data, error } = await (supabase.from('equipe_11ds_tarefas' as any) as any)
@@ -522,6 +524,16 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
     loadTarefas();
   };
 
+  const gerarCalendario = async () => {
+    setRodandoCalendario(true);
+    const { data, error } = await supabase.functions.invoke('equipe-11ds-calendario-executar', { body: {} });
+    setRodandoCalendario(false);
+    if (error) { toast.error(`Erro ao gerar calendário: ${error.message}`); return; }
+    const planejados = (data as any)?.planejados ?? 0;
+    toast.success(planejados > 0 ? `${planejados} dia(s) planejado(s) no calendário!` : 'Nada novo pra planejar — os próximos dias já estão cobertos.');
+    loadTarefas();
+  };
+
   const grupos: { status: TarefaStatus; label: string }[] = [
     { status: 'em_andamento', label: 'Em andamento' },
     { status: 'pendente', label: 'A fazer' },
@@ -543,28 +555,54 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
               <SheetTitle>{agente.nome}</SheetTitle>
               <p className="text-xs text-muted-foreground">{agente.cargo}</p>
             </div>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button size="sm" variant="outline" className="gap-1.5 mr-6" disabled={rodandoDiaria}>
-                  {rodandoDiaria ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                  Rodar rotina diária
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Rodar a rotina diária agora?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Isso roda de uma vez a rotina diária de todos os agentes: posts de hoje pros clientes ativos e todas
-                    as tarefas recorrentes cadastradas. Normalmente isso roda sozinho às 08h — use isso só se quiser
-                    testar ou não quiser esperar.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                  <AlertDialogAction onClick={rodarRotinaDiaria}>Rodar agora</AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            <div className="flex items-center gap-2 mr-6">
+              {agente.slug === 'gestor-midia' && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button size="sm" variant="outline" className="gap-1.5" disabled={rodandoCalendario}>
+                      {rodandoCalendario ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CalendarDays className="h-3.5 w-3.5" />}
+                      Gerar calendário
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Gerar o calendário de conteúdo?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        O Gestor planeja os próximos 7 dias de cada cliente ativo (direção de tema por dia, dentro do
+                        pilar/formato já decididos pelo calendário) e salva como "ideia" no Calendário de Conteúdo — sem
+                        sobrescrever nenhum dia que já tenha sido produzido.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                      <AlertDialogAction onClick={gerarCalendario}>Gerar agora</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button size="sm" variant="outline" className="gap-1.5" disabled={rodandoDiaria}>
+                    {rodandoDiaria ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                    Rodar rotina diária
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Rodar a rotina diária agora?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Isso roda de uma vez a rotina diária de todos os agentes: posts de hoje pros clientes ativos e todas
+                      as tarefas recorrentes cadastradas. Normalmente isso roda sozinho às 08h — use isso só se quiser
+                      testar ou não quiser esperar.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction onClick={rodarRotinaDiaria}>Rodar agora</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
           </div>
           <div className="mt-2">
             <BalaoDeFala agente={agente} />
@@ -668,7 +706,7 @@ export function Equipe11ds({ onNavigateToPosts, onNavigateToAluno }: { onNavigat
 
   const loadTimes = useCallback(async () => {
     const { data, error } = await (supabase.from('equipe_11ds_times' as any) as any)
-      .select('id, nome, emoji, equipe_11ds_agentes(id, nome, cargo, avatar_url, status, status_texto, executor_function)')
+      .select('id, nome, emoji, equipe_11ds_agentes(id, nome, cargo, avatar_url, status, status_texto, executor_function, slug)')
       .order('ordem');
     if (error) { toast.error(`Erro ao carregar equipe: ${error.message}`); setLoading(false); return; }
     setTimes((data as any) || []);

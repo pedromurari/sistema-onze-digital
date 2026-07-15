@@ -559,7 +559,7 @@ serve(async (req) => {
     const { pilar, formato } = await passoGestorAbertura(supabase, tarefaId, agentes, cliente, hoje);
 
     const pesquisa = await pesquisarTendencia(openaiKey, cliente, historico);
-    const { tema } = await passoEstrategista(supabase, openaiKey, tarefaId, agentes, cliente, pilar, pesquisa, historico);
+    const { tema, justificativa } = await passoEstrategista(supabase, openaiKey, tarefaId, agentes, cliente, pilar, pesquisa, historico);
 
     let { legenda, headline, hashtags } = await passoRedator(supabase, openaiKey, tarefaId, agentes, cliente, tema, historico);
     const problema = checagemDura(legenda, hashtags);
@@ -587,6 +587,31 @@ serve(async (req) => {
       .select('id')
       .single();
     if (postErr) throw new Error(`Falha ao criar post em conteudo_posts: ${postErr.message}`);
+
+    // Interliga com o calendario de conteudo ja existente no sistema (Operacoes >
+    // Calendario de Conteudo) -- upsert por (cliente_id, data) pra atualizar a
+    // mesma linha do dia em vez de duplicar. Nunca deve derrubar a producao do
+    // post se falhar por algum motivo (tabela auxiliar, nao a fonte da verdade).
+    try {
+      await supabase.from('conteudo_calendario').upsert({
+        cliente_id: tarefa.cliente_id,
+        titulo: tema,
+        plataforma: 'instagram',
+        formato: 'feed',
+        formato_4x5: true,
+        formato_9x16: Boolean(storiesUrl),
+        status: 'agendado',
+        data_publicacao: hoje,
+        angulo: justificativa || null,
+        hook: legenda.split('\n\n')[0] || null,
+        texto_peca: legendaFinal,
+        prompt_imagem: arte.promptImagem ?? null,
+        imagem_url: feedUrl,
+        gerado_por: 'equipe_11ds',
+      }, { onConflict: 'cliente_id,data_publicacao' });
+    } catch (e) {
+      console.error('Falha ao interligar com conteudo_calendario:', (e as Error).message);
+    }
 
     const anexosFinais = [{ tipo: 'imagem', url: feedUrl }, ...(storiesUrl ? [{ tipo: 'imagem_stories', url: storiesUrl }] : [])];
     await supabase.from('equipe_11ds_tarefas').update({
