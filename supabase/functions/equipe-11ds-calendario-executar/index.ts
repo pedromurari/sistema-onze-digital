@@ -135,6 +135,7 @@ serve(async (req) => {
       const systemPrompt = [
         `Voce e o Gestor de Midia da agencia 11 Digital Strategy, planejando o calendario editorial dos proximos dias do cliente "${cliente.nome}" (nicho: ${cliente.nicho ?? 'não informado'}).`,
         `Pra cada dia da lista, o pilar e o formato JA ESTAO DECIDIDOS pelo calendario -- sua funcao e sugerir uma DIRECAO curta de tema (nao o texto final, a redacao de verdade acontece no dia, com pesquisa de tendencia fresca) coerente com aquele pilar, sem repetir direcoes entre os dias da lista.`,
+        `REGRA DURA: o time so tem texto e imagem gerada/composta -- NUNCA sugira uma direcao que dependa de depoimento real de aluno, foto/video de pessoa real, prova social que nao existe no sistema, ou cobertura de evento que de fato aconteceu. Toda direcao tem que ser produzivel do zero (ideia, reflexao, reframe, mito x verdade, mecanismo, POV generico).`,
         `Dias a planejar (data | pilar | formato): ${diasParaPlanejar.map(d => `${d.data} | ${d.pilar ?? 'sem pilar'} | ${d.formato}`).join(' / ')}`,
         `Responda SOMENTE com um JSON: {"dias": [{"data": string, "tema_sugerido": string}], "resumo": string (2-3 frases explicando o raciocínio geral do plano pro dono da agência, em português)}`,
       ].join(' ');

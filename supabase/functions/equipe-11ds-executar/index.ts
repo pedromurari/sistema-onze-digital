@@ -292,6 +292,7 @@ async function passoEstrategista(
     cliente.publico_alvo ? `Publico-alvo: ${cliente.publico_alvo}.` : '',
     pilar ? `O pilar de hoje JA ESTA DECIDIDO pelo calendario: "${pilar}". Sua funcao e escolher o ANGULO/TEMA especifico dentro desse pilar -- nao escolha outro pilar.` : '',
     cliente.temas_evitar?.length ? `NUNCA sugira nada relacionado a: ${cliente.temas_evitar.join(', ')} (brand safety).` : '',
+    `REGRA DURA: o time so tem duas ferramentas -- escrever texto e gerar/compor imagem. NUNCA sugira um tema que dependa de algo que o time nao tem: depoimento real de aluno, foto ou video de pessoa real, prova social que nao existe no sistema (numero de formados, avaliacao, caso especifico), cobertura de um evento que de fato aconteceu, ou qualquer dado que o time nao pode verificar. O tema tem que ser 100% produzivel do zero: uma ideia, reflexao, reframe, explicacao de mecanismo, mito x verdade, cenario hipotetico ou POV generico -- nunca um relato que pareça vindo de uma pessoa ou evento real que o time nao presenciou.`,
     pesquisa ? `Pesquisa de tendencia feita agora: ${pesquisa}` : '',
     historico.temas.length ? `Temas ja usados recentemente (o tema de hoje TEM que ser de uma familia de assunto diferente): ${historico.temas.join(' | ')}.` : '',
     contexto.notaCliente ? `O que o time ja aprendeu sobre este cliente especificamente (memoria do time, Obsidian): ${contexto.notaCliente.slice(0, 1500)}` : '',
