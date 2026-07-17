@@ -272,19 +272,6 @@ serve(async (req) => {
       }
     }
 
-    const somar = <T,>(mapa: Map<string, T>, campo: (v: T) => number) => [...mapa.values()].reduce((s, v) => s + campo(v), 0);
-    const totalBvWppSent = somar(porFunilBV, a => a.wpp.sent);
-    const totalBvWppError = somar(porFunilBV, a => a.wpp.error);
-    const totalBvWppSkipped = somar(porFunilBV, a => a.wpp.skipped);
-    const totalBvEmailSent = somar(porFunilBV, a => a.email.sent);
-    const totalBvEmailError = somar(porFunilBV, a => a.email.error);
-    const totalFmSent = somar(porFunilFM, a => a.sent);
-    const totalFmError = somar(porFunilFM, a => a.error);
-    const totalDlEnviado = somar(porCampanha, a => a.enviado);
-    const totalDlErro = somar(porCampanha, a => a.erro);
-    const totalGajAdd = somar(porAcao, a => a.adicionado);
-    const totalGajErro = somar(porAcao, a => a.erro + a.falhouAdd);
-
     const dados = {
       periodo: periodo.resumoPeriodo, desde: periodo.desde, ate: periodo.ate,
       boasVindas: [...porFunilBV.entries()].map(([funil, acc]) => ({
@@ -307,17 +294,45 @@ serve(async (req) => {
       gargalo: gargalo ? { fonte: gargalo.fonte, detalhe: gargalo.detalhe, taxaErro: gargalo.taxa, tendencia, taxaAnterior } : null,
     };
 
-    const resposta = [
-      `📡 Relatório de disparos — ${periodo.resumoPeriodo}`,
-      `📧 Boas-vindas (e-mail): ${totalBvEmailSent} enviados, ${totalBvEmailError} com erro (${fmtPct(taxaErro(totalBvEmailSent, totalBvEmailError))} de erro)`,
-      `📱 Boas-vindas (WhatsApp): ${totalBvWppSent} enviados, ${totalBvWppError} com erro, ${totalBvWppSkipped} não tentados`,
-      `💬 Mensagens de funil/grupo: ${totalFmSent} enviadas, ${totalFmError} com erro (${fmtPct(taxaErro(totalFmSent, totalFmError))} de erro)`,
-      `📣 Disparos em massa: ${totalDlEnviado} enviados, ${totalDlErro} com erro (${fmtPct(taxaErro(totalDlEnviado, totalDlErro))} de erro)`,
-      `👥 Adição a grupos: ${totalGajAdd} adicionados, ${totalGajErro} falharam (${fmtPct(taxaErro(totalGajAdd, totalGajErro))} de erro)`,
+    // Um por um, so quem teve atividade de verdade no periodo -- nada de canal
+    // zerado/inativo poluindo o relatorio (ex: WhatsApp de boas-vindas quando o
+    // funil so tem email ligado vem 100% "skipped", nao interessa mostrar).
+    const linhas: string[] = [`📡 Relatório de disparos — ${periodo.resumoPeriodo}`];
+
+    for (const [funil, acc] of porFunilBV) {
+      if (acc.email.sent + acc.email.error > 0) {
+        linhas.push(`📧 ${funil} (e-mail): ${acc.email.sent} enviados, ${acc.email.error} com erro (${fmtPct(taxaErro(acc.email.sent, acc.email.error))} de erro)`);
+      }
+      if (acc.wpp.sent + acc.wpp.error > 0) {
+        linhas.push(`📱 ${funil} (WhatsApp): ${acc.wpp.sent} enviados, ${acc.wpp.error} com erro (${fmtPct(taxaErro(acc.wpp.sent, acc.wpp.error))} de erro)`);
+      }
+    }
+    for (const [funil, acc] of porFunilFM) {
+      if (acc.sent + acc.error > 0) {
+        linhas.push(`💬 ${funil}: ${acc.sent} enviadas, ${acc.error} com erro (${fmtPct(taxaErro(acc.sent, acc.error))} de erro)`);
+      }
+    }
+    for (const [campanha, acc] of porCampanha) {
+      if (acc.enviado + acc.erro > 0) {
+        linhas.push(`📣 ${campanha}: ${acc.enviado} enviados, ${acc.erro} com erro (${fmtPct(taxaErro(acc.enviado, acc.erro))} de erro)`);
+      }
+    }
+    for (const [acao, acc] of porAcao) {
+      const falharam = acc.erro + acc.falhouAdd;
+      if (acc.adicionado + falharam > 0) {
+        linhas.push(`👥 ${acao}: ${acc.adicionado} adicionados, ${falharam} falharam (${fmtPct(taxaErro(acc.adicionado, falharam))} de erro)`);
+      }
+    }
+
+    if (linhas.length === 1) linhas.push('Nenhum disparo registrado nesse período.');
+
+    linhas.push(
       gargalo
         ? `🚨 Maior gargalo: ${gargalo.fonte} — "${gargalo.detalhe}" com ${gargalo.taxa}% de erro${tendencia ? ` (${tendencia}${taxaAnterior !== null ? `, era ${taxaAnterior}% no período anterior` : ''})` : ''}.`
         : `✅ Nenhum canal com volume suficiente pra apontar um gargalo com confiança neste período.`,
-    ].join('\n');
+    );
+
+    const resposta = linhas.join('\n');
 
     await supabase.from('equipe_11ds_tarefas').update({
       status: 'concluido', resposta_texto: resposta, anexos: [], dados, concluido_em: new Date().toISOString(),
