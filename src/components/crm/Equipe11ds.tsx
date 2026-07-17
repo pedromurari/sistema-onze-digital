@@ -559,14 +559,14 @@ function TarefaDetalhe({ tarefa, onNavigateToPosts, onNavigateToAluno }: { taref
         <p className="text-sm text-foreground bg-white border border-border rounded-lg p-2 whitespace-pre-wrap">{tarefa.resposta_texto}</p>
       )}
       <MensagemThread tarefa={tarefa} />
-      {dados && (
+      {dados && 'matriculasHoje' in dados && (
         <div className="space-y-3 pt-1">
           <ListaMatriculas itens={dados.matriculasHoje ?? []} periodo={dados.periodo} onNavigateToAluno={onNavigateToAluno} />
           <ListaLeadsQuentes itens={dados.leadsQuentes ?? []} periodo={dados.periodo} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarLeadContatado} />
-          <ListaFinanceira titulo={`💰 Pagamentos recebidos${dados.periodo ? ` — ${dados.periodo}` : ' de hoje'}`} itens={dados.pagosHoje} comAtraso={false} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
-          <ListaFinanceira titulo="⚠️ Inadimplentes" itens={dados.inadimplentes} comAtraso={true} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
-          <ListaFinanceira titulo="🔔 Vencendo em 7 dias" itens={dados.vencendo7} comAtraso={false} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
-          <ListaFinanceira titulo="🔴 Vencendo amanhã" itens={dados.vencendo1} comAtraso={false} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
+          <ListaFinanceira titulo={`💰 Pagamentos recebidos${dados.periodo ? ` — ${dados.periodo}` : ' de hoje'}`} itens={dados.pagosHoje ?? []} comAtraso={false} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
+          <ListaFinanceira titulo="⚠️ Inadimplentes" itens={dados.inadimplentes ?? []} comAtraso={true} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
+          <ListaFinanceira titulo="🔔 Vencendo em 7 dias" itens={dados.vencendo7 ?? []} comAtraso={false} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
+          <ListaFinanceira titulo="🔴 Vencendo amanhã" itens={dados.vencendo1 ?? []} comAtraso={false} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
         </div>
       )}
       {tarefa.anexos?.filter(a => a.tipo === 'imagem').map((a, i) => (
