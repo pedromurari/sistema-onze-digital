@@ -34,6 +34,9 @@ type Agente = {
   status_texto: string | null;
   executor_function: string;
   slug: string | null;
+  responsabilidade: string | null;
+  regras: string[] | null;
+  aplica: string[] | null;
 };
 
 type Time = {
@@ -329,14 +332,26 @@ function ListaFinanceira({ titulo, itens, comAtraso, onNavigateToAluno, onMarcar
   );
 }
 
-// ── Conversa do time (thread de mensagens entre os agentes) ────────────────
+// ── Linha de producao + conversa do time ────────────────────────────────────
+// A ordem dos cargos e' fixa (mesma cadeia do backend em equipe-11ds-executar);
+// so vale pra tarefas post_cliente -- tarefas avulsas tem um unico agente, sem
+// cadeia pra mostrar como esteira.
+
+const ESTAGIOS_PRODUCAO: { slug: string; label: string; emoji: string }[] = [
+  { slug: 'gestor-midia', label: 'Gestor', emoji: '🧭' },
+  { slug: 'estrategista-conteudo', label: 'Estrategista', emoji: '🎯' },
+  { slug: 'redator-chefe', label: 'Redator', emoji: '✍️' },
+  { slug: 'diretor-arte', label: 'Diretor de Arte', emoji: '🎨' },
+  { slug: 'nina-producao', label: 'Nina', emoji: '🖼️' },
+  { slug: 'curador-conhecimento', label: 'Curador', emoji: '🧠' },
+];
 
 type Mensagem = {
   id: string;
   tipo: 'mensagem' | 'alerta' | 'aprovacao';
   conteudo: string;
   created_at: string;
-  equipe_11ds_agentes: { nome: string } | null;
+  equipe_11ds_agentes: { nome: string; slug: string | null } | null;
 };
 
 const MENSAGEM_ESTILO: Record<Mensagem['tipo'], string> = {
@@ -345,30 +360,57 @@ const MENSAGEM_ESTILO: Record<Mensagem['tipo'], string> = {
   aprovacao: 'bg-emerald-50 border-emerald-200',
 };
 
-function MensagemThread({ tarefaId }: { tarefaId: string }) {
+function LinhaDeProducao({ tarefaStatus, mensagens }: { tarefaStatus: TarefaStatus; mensagens: Mensagem[] }) {
+  const slugsQueFalaram = new Set(mensagens.map(m => m.equipe_11ds_agentes?.slug).filter(Boolean));
+  const ultimoSlug = mensagens.length ? mensagens[mensagens.length - 1].equipe_11ds_agentes?.slug : null;
+
+  return (
+    <div className="flex items-center gap-0.5 overflow-x-auto pb-1">
+      {ESTAGIOS_PRODUCAO.map((estagio, i) => {
+        const concluido = slugsQueFalaram.has(estagio.slug);
+        const atual = tarefaStatus === 'em_andamento' && estagio.slug === ultimoSlug;
+        return (
+          <div key={estagio.slug} className="flex items-center flex-shrink-0">
+            {i > 0 && <div className={cn('h-px w-3', concluido ? 'bg-emerald-400' : 'bg-border')} />}
+            <div className={cn(
+              'flex flex-col items-center gap-0.5 px-1.5 py-1 rounded-lg',
+              atual ? 'bg-blue-50 ring-1 ring-blue-300' : !concluido ? 'opacity-40' : '',
+            )}>
+              <span className="text-base leading-none">{estagio.emoji}</span>
+              <span className="text-[9px] text-muted-foreground whitespace-nowrap">{estagio.label}</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function MensagemThread({ tarefa }: { tarefa: Tarefa }) {
   const [mensagens, setMensagens] = useState<Mensagem[]>([]);
 
   const loadMensagens = useCallback(async () => {
     const { data, error } = await (supabase.from('equipe_11ds_mensagens' as any) as any)
-      .select('id, tipo, conteudo, created_at, equipe_11ds_agentes(nome)')
-      .eq('tarefa_id', tarefaId)
+      .select('id, tipo, conteudo, created_at, equipe_11ds_agentes(nome, slug)')
+      .eq('tarefa_id', tarefa.id)
       .order('created_at');
     if (!error) setMensagens((data as any) || []);
-  }, [tarefaId]);
+  }, [tarefa.id]);
 
   useEffect(() => {
     loadMensagens();
     const channel = supabase
-      .channel(`equipe-11ds-mensagens-${tarefaId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'equipe_11ds_mensagens', filter: `tarefa_id=eq.${tarefaId}` }, () => loadMensagens())
+      .channel(`equipe-11ds-mensagens-${tarefa.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'equipe_11ds_mensagens', filter: `tarefa_id=eq.${tarefa.id}` }, () => loadMensagens())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [tarefaId, loadMensagens]);
+  }, [tarefa.id, loadMensagens]);
 
   if (mensagens.length === 0) return null;
 
   return (
     <div className="space-y-2 pt-1">
+      {tarefa.tipo === 'post_cliente' && <LinhaDeProducao tarefaStatus={tarefa.status} mensagens={mensagens} />}
       <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
         <MessageCircle className="h-3 w-3" /> Conversa do time
       </p>
@@ -384,6 +426,80 @@ function MensagemThread({ tarefaId }: { tarefaId: string }) {
               <p className="font-semibold text-foreground">{m.equipe_11ds_agentes?.nome ?? 'Agente'}</p>
               <p className="text-muted-foreground whitespace-pre-wrap">{m.conteudo}</p>
             </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Ficha de cargo (responsabilidade fixa + regras + o que aplica) ─────────
+// Texto autoral, nao gerado por IA a cada abertura -- estavel e barato de
+// renderizar. Padrao pra qualquer agente/time, nao so midia.
+
+function FichaDeCargo({ agente }: { agente: Agente }) {
+  if (!agente.responsabilidade && !agente.regras?.length && !agente.aplica?.length) return null;
+  return (
+    <div className="border border-border rounded-xl p-3 bg-white space-y-2">
+      {agente.responsabilidade && <p className="text-sm text-foreground">{agente.responsabilidade}</p>}
+      {agente.regras?.length ? (
+        <div>
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Nunca quebra</p>
+          <ul className="space-y-1">
+            {agente.regras.map((r, i) => (
+              <li key={i} className="text-xs text-foreground flex items-start gap-1.5">
+                <span className="text-emerald-600 mt-0.5 flex-shrink-0">✓</span>{r}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {agente.aplica?.length ? (
+        <div className="flex flex-wrap gap-1.5 pt-1">
+          {agente.aplica.map((a, i) => (
+            <span key={i} className="text-[11px] bg-purple-50 text-purple-700 border border-purple-200 rounded-full px-2 py-0.5">📚 {a}</span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ── Historico de decisoes do cargo (cross-tarefa, nao so a que esta aberta) ─
+
+type MensagemHistorico = { id: string; tipo: Mensagem['tipo']; conteudo: string; created_at: string };
+
+function HistoricoDecisoes({ agenteId }: { agenteId: string }) {
+  const [itens, setItens] = useState<MensagemHistorico[]>([]);
+
+  const load = useCallback(async () => {
+    const { data, error } = await (supabase.from('equipe_11ds_mensagens' as any) as any)
+      .select('id, tipo, conteudo, created_at')
+      .eq('agente_id', agenteId)
+      .order('created_at', { ascending: false })
+      .limit(8);
+    if (!error) setItens((data as any) || []);
+  }, [agenteId]);
+
+  useEffect(() => {
+    load();
+    const channel = supabase
+      .channel(`equipe-11ds-historico-${agenteId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'equipe_11ds_mensagens', filter: `agente_id=eq.${agenteId}` }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [agenteId, load]);
+
+  if (itens.length === 0) return null;
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Últimas decisões</p>
+      <div className="space-y-1.5">
+        {itens.map(m => (
+          <div key={m.id} className={cn('rounded-lg px-2.5 py-1.5 text-xs border', MENSAGEM_ESTILO[m.tipo])}>
+            <p className="text-foreground line-clamp-2">{m.conteudo}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">{format(new Date(m.created_at), "dd/MM 'às' HH:mm", { locale: ptBR })}</p>
           </div>
         ))}
       </div>
@@ -442,7 +558,7 @@ function TarefaDetalhe({ tarefa, onNavigateToPosts, onNavigateToAluno }: { taref
       {tarefa.resposta_texto && (
         <p className="text-sm text-foreground bg-white border border-border rounded-lg p-2 whitespace-pre-wrap">{tarefa.resposta_texto}</p>
       )}
-      <MensagemThread tarefaId={tarefa.id} />
+      <MensagemThread tarefa={tarefa} />
       {dados && (
         <div className="space-y-3 pt-1">
           <ListaMatriculas itens={dados.matriculasHoje ?? []} periodo={dados.periodo} onNavigateToAluno={onNavigateToAluno} />
@@ -674,6 +790,8 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
 
         <ScrollArea className="flex-1 p-4">
           <div className="space-y-4">
+            <FichaDeCargo agente={agente} />
+            <HistoricoDecisoes agenteId={agente.id} />
             {recorrentes.length > 0 && (
               <div>
                 <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1">
@@ -769,7 +887,7 @@ export function Equipe11ds({ onNavigateToPosts, onNavigateToAluno }: { onNavigat
 
   const loadTimes = useCallback(async () => {
     const { data, error } = await (supabase.from('equipe_11ds_times' as any) as any)
-      .select('id, nome, emoji, equipe_11ds_agentes(id, nome, cargo, avatar_url, status, status_texto, executor_function, slug)')
+      .select('id, nome, emoji, equipe_11ds_agentes(id, nome, cargo, avatar_url, status, status_texto, executor_function, slug, responsabilidade, regras, aplica)')
       .order('ordem');
     if (error) { toast.error(`Erro ao carregar equipe: ${error.message}`); setLoading(false); return; }
     setTimes((data as any) || []);
