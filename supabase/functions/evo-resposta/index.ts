@@ -95,7 +95,12 @@ serve(async (req) => {
     const message    = (data.message ?? {}) as Record<string, unknown>;
     const { text: mensagem, tipo: mensagemTipo } = extractText(message);
 
-    // Busca leads na planilha pelo sufixo do telefone
+    const now = new Date().toISOString();
+
+    // Busca leads na planilha pelo sufixo do telefone. Nao retorna cedo se nao
+    // achar nada aqui -- um lead que so existe em disparo_leads (CSV, turma,
+    // grupo de WPP) nunca teria linha em lancamento_leads, e antes isso fazia
+    // a funcao inteira parar antes mesmo de checar disparo_leads.
     const { data: leads, error: leadsErr } = await supabase
       .from('lancamento_leads')
       .select('id, lancamento_id, whatsapp, nome')
@@ -106,15 +111,9 @@ serve(async (req) => {
       return ok({ ok: false, error: leadsErr.message });
     }
 
-    if (!leads?.length) {
-      console.log(`phone suffix ${s8} not found in lancamento_leads — ignoring`);
-      return ok({ ok: true, skipped: true, reason: 'phone not in planilha' });
-    }
-
-    const now = new Date().toISOString();
     const saved: string[] = [];
 
-    for (const lead of leads) {
+    for (const lead of leads ?? []) {
       // Salva histórico
       const { error: insertErr } = await supabase.from('lead_respostas').insert({
         lead_id:            lead.id,
@@ -141,24 +140,31 @@ serve(async (req) => {
       saved.push(lead.id);
     }
 
-    // Marca como quente em disparo_leads para qualquer campanha que tenha esse telefone
-    // Busca por sufixo dos últimos 8 dígitos (mesmo padrão de normalização)
+    // Marca como quente e grava a resposta em disparo_leads para qualquer
+    // campanha que tenha esse telefone (mesmo sufixo dos ultimos 8 digitos).
+    // Alimenta a tela de Campanhas de Disparo -- "respondeu_em"/"ultima_resposta"
+    // e' o que faz a coluna de resposta aparecer la, independente do lead
+    // tambem existir em lancamento_leads ou nao.
     const { data: disparoLeads } = await supabase
       .from('disparo_leads')
       .select('id, phone, temperatura')
-      .filter('phone', 'ilike', `%${s8}`)
-      .neq('temperatura', 'quente');
+      .filter('phone', 'ilike', `%${s8}`);
 
     if (disparoLeads?.length) {
       const ids = disparoLeads.map((l: { id: string }) => l.id);
       await supabase
         .from('disparo_leads')
-        .update({ temperatura: 'quente' })
+        .update({ temperatura: 'quente', respondeu_em: now, ultima_resposta: mensagem.slice(0, 500) })
         .in('id', ids);
-      console.log(`temperatura=quente aplicada em ${ids.length} disparo_leads para phone suffix=${s8}`);
+      console.log(`resposta gravada em ${ids.length} disparo_leads para phone suffix=${s8}`);
     }
 
-    return ok({ ok: true, saved: saved.length, leads: saved });
+    if (!saved.length && !disparoLeads?.length) {
+      console.log(`phone suffix ${s8} not found in lancamento_leads nem disparo_leads — ignoring`);
+      return ok({ ok: true, skipped: true, reason: 'phone not found' });
+    }
+
+    return ok({ ok: true, saved: saved.length, leads: saved, disparoLeadsAtualizados: disparoLeads?.length ?? 0 });
 
   } catch (e: unknown) {
     console.error('evo-resposta fatal:', (e as Error).message);
