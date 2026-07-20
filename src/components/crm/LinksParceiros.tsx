@@ -12,6 +12,7 @@ type ProdutoStatus = 'em_analise' | 'aprovado' | 'ativo' | 'pausado' | 'reprovad
 
 type ProdutoLink = {
   id: string;
+  parceiro_id: string;
   nome: string;
   status: ProdutoStatus;
   checkout_link_syncpay: string | null;
@@ -32,10 +33,17 @@ function copiarLink(link: string) {
   toast.success('Link copiado!');
 }
 
-function LinkField({ produtoId, campo, label, placeholder, valorAtual, editable, onSaved }: {
+const TIPO_LABEL: Record<'vendas' | 'checkout', string> = {
+  vendas: 'Página de vendas',
+  checkout: 'Checkout (Sync Pay)',
+};
+
+function LinkField({ produtoId, parceiroId, produtoNome, tipo, campo, placeholder, valorAtual, editable, onSaved }: {
   produtoId: string;
+  parceiroId: string;
+  produtoNome: string;
+  tipo: 'vendas' | 'checkout';
   campo: 'checkout_link_syncpay' | 'pagina_vendas_url';
-  label: string;
   placeholder: string;
   valorAtual: string | null;
   editable: boolean;
@@ -44,38 +52,66 @@ function LinkField({ produtoId, campo, label, placeholder, valorAtual, editable,
   const [valor, setValor] = useState(valorAtual || '');
   const [saving, setSaving] = useState(false);
 
+  const slug = `${produtoId.slice(0, 8)}-${tipo}`;
+  const linkRastreavel = `${window.location.origin}/ir/${slug}`;
+
   const salvar = async () => {
     setSaving(true);
+    const destino = valor.trim();
+
     const { error } = await supabase.from('parceiros_produtos' as any)
-      .update({ [campo]: valor.trim() || null })
+      .update({ [campo]: destino || null })
       .eq('id', produtoId);
+    if (error) { toast.error(`Erro ao salvar link: ${error.message}`); setSaving(false); return; }
+
+    if (destino) {
+      const { error: linkError } = await supabase.from('parceiros_links' as any)
+        .upsert({
+          parceiro_id: parceiroId,
+          produto_id: produtoId,
+          slug,
+          titulo: `${TIPO_LABEL[tipo]} — ${produtoNome}`,
+          destino_url: destino,
+          ativo: true,
+        }, { onConflict: 'slug' });
+      if (linkError) { toast.error(`Link salvo, mas o rastreamento falhou: ${linkError.message}`); setSaving(false); return; }
+    } else {
+      await supabase.from('parceiros_links' as any).update({ ativo: false }).eq('slug', slug);
+    }
+
     setSaving(false);
-    if (error) { toast.error(`Erro ao salvar link: ${error.message}`); return; }
     toast.success('Link salvo.');
     onSaved();
   };
 
   return (
     <div className="space-y-1">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
+      <Label className="text-xs text-muted-foreground">{TIPO_LABEL[tipo]}</Label>
       {editable ? (
-        <div className="flex items-center gap-2">
-          <Input className="h-9" placeholder={placeholder} value={valor} onChange={e => setValor(e.target.value)} />
-          <Button size="sm" disabled={saving || valor.trim() === (valorAtual || '')} onClick={salvar}>
-            {saving ? 'Salvando...' : 'Salvar'}
-          </Button>
-          {valorAtual && (
-            <Button size="sm" variant="outline" className="h-9 w-9 p-0 flex-shrink-0" onClick={() => copiarLink(valorAtual)} title="Copiar link">
-              <Copy className="h-3.5 w-3.5" />
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <Input className="h-9" placeholder={placeholder} value={valor} onChange={e => setValor(e.target.value)} />
+            <Button size="sm" disabled={saving || valor.trim() === (valorAtual || '')} onClick={salvar}>
+              {saving ? 'Salvando...' : 'Salvar'}
             </Button>
+          </div>
+          {valorAtual && (
+            <div className="flex items-center gap-2 bg-muted/40 rounded-lg px-2.5 py-1.5">
+              <span className="text-[11px] text-muted-foreground truncate flex-1">
+                Link rastreável (divulgar este): <span className="font-mono">{linkRastreavel}</span>
+              </span>
+              <Button size="sm" variant="outline" className="h-7 w-7 p-0 flex-shrink-0" onClick={() => copiarLink(linkRastreavel)} title="Copiar link rastreável">
+                <Copy className="h-3 w-3" />
+              </Button>
+            </div>
           )}
         </div>
       ) : valorAtual ? (
         <button
-          onClick={() => copiarLink(valorAtual)}
+          onClick={() => copiarLink(linkRastreavel)}
           className="w-full flex items-center justify-center gap-1.5 text-xs font-medium text-primary bg-primary/5 hover:bg-primary/10 border border-primary/20 rounded-lg py-1.5 transition-colors"
         >
-          <Copy className="h-3.5 w-3.5" /> Copiar
+          <Copy className="h-3.5 w-3.5" /> Copiar link pra divulgar
         </button>
       ) : (
         <p className="text-xs text-muted-foreground py-1">Ainda sem link cadastrado.</p>
@@ -99,8 +135,10 @@ function LinkRow({ produto, editable, onSaved }: { produto: ProdutoLink; editabl
 
       <LinkField
         produtoId={produto.id}
+        parceiroId={produto.parceiro_id}
+        produtoNome={produto.nome}
+        tipo="vendas"
         campo="pagina_vendas_url"
-        label="Página de vendas"
         placeholder="https://www.idmpsi.com.br/..."
         valorAtual={produto.pagina_vendas_url}
         editable={editable}
@@ -109,8 +147,10 @@ function LinkRow({ produto, editable, onSaved }: { produto: ProdutoLink; editabl
 
       <LinkField
         produtoId={produto.id}
+        parceiroId={produto.parceiro_id}
+        produtoNome={produto.nome}
+        tipo="checkout"
         campo="checkout_link_syncpay"
-        label="Checkout (Sync Pay)"
         placeholder="Cole aqui o link de checkout da Sync Pay"
         valorAtual={produto.checkout_link_syncpay}
         editable={editable}
@@ -127,7 +167,7 @@ export function LinksParceiros({ scopedParceiroId, editable = false }: { scopedP
   const load = useCallback(async () => {
     setLoading(true);
     let query = supabase.from('parceiros_produtos' as any)
-      .select('id, nome, status, checkout_link_syncpay, pagina_vendas_url, parceiros(nome)')
+      .select('id, parceiro_id, nome, status, checkout_link_syncpay, pagina_vendas_url, parceiros(nome)')
       .order('nome');
     if (scopedParceiroId) query = query.eq('parceiro_id', scopedParceiroId);
     const { data, error } = await query;
@@ -148,7 +188,7 @@ export function LinksParceiros({ scopedParceiroId, editable = false }: { scopedP
 
       <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700">
         <Info className="h-4 w-4 flex-shrink-0 mt-0.5" />
-        <p>Página de vendas e link de checkout <strong>Sync Pay</strong> — hoje cadastrados manualmente. A integração automática de vendas já roda por fora (aba Tráfego).</p>
+        <p>Cole aqui a URL real de cada link. Pra divulgar, copie sempre o <strong>link rastreável</strong> que aparece embaixo — ele registra o clique (aba Tráfego) antes de redirecionar pro destino real.</p>
       </div>
 
       {loading ? (
