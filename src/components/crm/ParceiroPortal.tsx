@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { DesempenhoParceiros } from './DesempenhoParceiros';
 import { EntregasParceiros } from './EntregasParceiros';
+import { TrafegoParceiros } from './TrafegoParceiros';
 
 function conectarMercadoPago(parceiraId: string) {
   const clientId = import.meta.env.VITE_MP_CLIENT_ID;
@@ -51,6 +52,7 @@ const TABS = [
   { key: 'produtos', label: 'Meus produtos', icon: ShoppingBag },
   { key: 'cupons', label: 'Meus cupons', icon: Ticket },
   { key: 'desempenho', label: 'Desempenho', icon: BarChart3 },
+  { key: 'trafego', label: 'Tráfego', icon: Link2 },
   { key: 'entregas', label: 'Entregas', icon: ClipboardList },
   { key: 'perfil', label: 'Meu perfil', icon: UserCircle },
 ] as const;
@@ -254,6 +256,7 @@ export function ParceiroPortal() {
             {tab === 'produtos' && <MeusProdutos parceiraId={parceiraId} />}
             {tab === 'cupons' && <MeusCupons parceiraId={parceiraId} />}
             {tab === 'desempenho' && <DesempenhoParceiros scopedParceiroId={parceiraId} />}
+            {tab === 'trafego' && <TrafegoParceiros scopedParceiroId={parceiraId} />}
             {tab === 'entregas' && <EntregasParceiros scopedParceiroId={parceiraId} />}
             {tab === 'perfil' && <MeuPerfil parceiraId={parceiraId} nomeParceira={nomeParceira} mpConectado={mpConectado} />}
           </>
