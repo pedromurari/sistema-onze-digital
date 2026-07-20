@@ -4,13 +4,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
-  Loader2, Plus, Upload, CheckCircle2, XCircle, PlayCircle, PauseCircle, RotateCcw, Users, ShoppingBag, KeyRound, TrendingUp, Settings2, ClipboardList, Ticket, DollarSign, ShieldCheck, Eye, Link2,
+  Loader2, Plus, Upload, CheckCircle2, XCircle, PlayCircle, PauseCircle, RotateCcw, Users, ShoppingBag, KeyRound, TrendingUp, Settings2, ClipboardList, Ticket, DollarSign, ShieldCheck, Eye, Link2, MousePointerClick,
 } from 'lucide-react';
 import { DesempenhoParceiros } from './DesempenhoParceiros';
 import { EntregasParceiros } from './EntregasParceiros';
 import { CuponsParceiros } from './CuponsParceiros';
-import { VendasParceiros } from './VendasParceiros';
 import { TrafegoParceiros } from './TrafegoParceiros';
+import { LinksParceiros } from './LinksParceiros';
+import { RepassesParceiros } from './RepassesParceiros';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -721,9 +722,9 @@ function ParceirosTab() {
 
 const TABS = [
   { key: 'desempenho', label: 'Desempenho', icon: TrendingUp },
-  { key: 'trafego', label: 'Tráfego', icon: Link2 },
+  { key: 'trafego', label: 'Tráfego', icon: MousePointerClick },
   { key: 'entregas', label: 'Entregas', icon: ClipboardList },
-  { key: 'vendas', label: 'Vendas', icon: DollarSign },
+  { key: 'links', label: 'Links', icon: Link2 },
 ] as const;
 
 type Tab = typeof TABS[number]['key'];
@@ -732,6 +733,7 @@ const ADM_TABS = [
   { key: 'parceiras', label: 'Parceiras', icon: Users },
   { key: 'produtos', label: 'Produtos', icon: ShoppingBag },
   { key: 'cupons', label: 'Cupons', icon: Ticket },
+  { key: 'repasses', label: 'Repasses', icon: DollarSign },
 ] as const;
 
 type AdmTab = typeof ADM_TABS[number]['key'];
@@ -770,6 +772,7 @@ function AdmPanel() {
         {admTab === 'parceiras' && <ParceirosTab />}
         {admTab === 'produtos' && <ProdutosTab />}
         {admTab === 'cupons' && <CuponsParceiros />}
+        {admTab === 'repasses' && <RepassesParceiros />}
       </SheetContent>
     </Sheet>
   );
@@ -832,7 +835,7 @@ export function Parceiros() {
       {tab === 'desempenho' && <DesempenhoParceiros scopedParceiroId={scopedId} />}
       {tab === 'trafego' && <TrafegoParceiros scopedParceiroId={scopedId} />}
       {tab === 'entregas' && <EntregasParceiros scopedParceiroId={scopedId} />}
-      {tab === 'vendas' && <VendasParceiros />}
+      {tab === 'links' && <LinksParceiros scopedParceiroId={scopedId} editable />}
     </div>
   );
 }

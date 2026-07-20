@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Loader2, LogOut, ShoppingBag, BarChart3, ClipboardList, Wallet, CheckCircle2, Ticket, UserCircle, Copy, Link2 } from 'lucide-react';
+import { Loader2, LogOut, ShoppingBag, BarChart3, ClipboardList, Wallet, CheckCircle2, Ticket, UserCircle, Copy, Link2, MousePointerClick } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { DesempenhoParceiros } from './DesempenhoParceiros';
 import { EntregasParceiros } from './EntregasParceiros';
 import { TrafegoParceiros } from './TrafegoParceiros';
+import { LinksParceiros } from './LinksParceiros';
 
 function conectarMercadoPago(parceiraId: string) {
   const clientId = import.meta.env.VITE_MP_CLIENT_ID;
@@ -51,8 +52,9 @@ const STATUS_CONFIG: Record<ProdutoStatus, { label: string; className: string }>
 const TABS = [
   { key: 'produtos', label: 'Meus produtos', icon: ShoppingBag },
   { key: 'cupons', label: 'Meus cupons', icon: Ticket },
+  { key: 'links', label: 'Links', icon: Link2 },
   { key: 'desempenho', label: 'Desempenho', icon: BarChart3 },
-  { key: 'trafego', label: 'Tráfego', icon: Link2 },
+  { key: 'trafego', label: 'Tráfego', icon: MousePointerClick },
   { key: 'entregas', label: 'Entregas', icon: ClipboardList },
   { key: 'perfil', label: 'Meu perfil', icon: UserCircle },
 ] as const;
@@ -255,6 +257,7 @@ export function ParceiroPortal() {
           <>
             {tab === 'produtos' && <MeusProdutos parceiraId={parceiraId} />}
             {tab === 'cupons' && <MeusCupons parceiraId={parceiraId} />}
+            {tab === 'links' && <LinksParceiros scopedParceiroId={parceiraId} />}
             {tab === 'desempenho' && <DesempenhoParceiros scopedParceiroId={parceiraId} />}
             {tab === 'trafego' && <TrafegoParceiros scopedParceiroId={parceiraId} />}
             {tab === 'entregas' && <EntregasParceiros scopedParceiroId={parceiraId} />}
