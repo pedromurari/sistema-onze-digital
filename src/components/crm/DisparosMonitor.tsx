@@ -8,7 +8,7 @@ import {
   Clock, CheckCircle2, AlertCircle, FileText,
   MessageSquare, Image, Music, Video, BarChart2,
   Search, Zap, Pause, Play, Trash2, Send,
-  ChevronDown, ChevronRight, Flame, Thermometer, Snowflake,
+  ChevronLeft, Flame, Thermometer, Snowflake,
   Users, Shield, Webhook, Mail, Link, Copy, X, Info, Pencil, Upload, Check,
 } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
@@ -70,6 +70,8 @@ interface DisparoLead {
   error_msg: string | null;
   temperatura: Temperatura;
   ordem: number | null;
+  respondeu_em: string | null;
+  ultima_resposta: string | null;
 }
 
 type ViewMode   = 'table' | 'kanban';
@@ -174,7 +176,7 @@ function nextCommercialSlot(safeStart: number, safeEnd: number): Date {
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export function DisparosMonitor({ onCreateFunnel }: { onCreateFunnel: () => void }) {
-  const [mainTab, setMainTab] = useState<MainTab>('funil');
+  const [mainTab, setMainTab] = useState<MainTab>('campanhas');
 
   return (
     <div className="h-full flex flex-col bg-gray-50/40">
@@ -186,26 +188,26 @@ export function DisparosMonitor({ onCreateFunnel }: { onCreateFunnel: () => void
           <h1 className="text-lg font-semibold text-foreground">Central de Disparos</h1>
           <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 ml-4">
             <button
-              onClick={() => setMainTab('funil')}
-              className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all',
-                mainTab === 'funil' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}
-            >
-              <Clock className="h-3.5 w-3.5" /> Mensagens de Funil
-            </button>
-            <button
               onClick={() => setMainTab('campanhas')}
               className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all',
                 mainTab === 'campanhas' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}
             >
               <Send className="h-3.5 w-3.5" /> Campanhas de Disparo
             </button>
+            <button
+              onClick={() => setMainTab('funil')}
+              className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all',
+                mainTab === 'funil' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}
+            >
+              <Clock className="h-3.5 w-3.5" /> Mensagens de Funil
+            </button>
           </div>
         </div>
       </div>
 
-      {mainTab === 'funil'
-        ? <FunilTab onCreateFunnel={onCreateFunnel} />
-        : <CampanhasTab />
+      {mainTab === 'campanhas'
+        ? <CampanhasTab />
+        : <FunilTab onCreateFunnel={onCreateFunnel} />
       }
     </div>
   );
@@ -1214,11 +1216,10 @@ function CampanhasTab() {
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [leads, setLeads] = useState<Record<string, DisparoLead[]>>({});
-  const [loadingLeads, setLoadingLeads] = useState<Set<string>>(new Set());
   const [novaModal, setNovaModal] = useState(false);
   const [instanceNames, setInstanceNames] = useState<Record<string, string>>({});
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [respostasTotal, setRespostasTotal] = useState(0);
 
   useEffect(() => {
     supabase.from('evolution_config').select('id, instance_name').then(({ data }) => {
@@ -1247,31 +1248,19 @@ function CampanhasTab() {
     return () => { supabase.removeChannel(ch); };
   }, [load]);
 
-  async function loadLeads(campanhaId: string) {
-    if (leads[campanhaId] || loadingLeads.has(campanhaId)) return;
-    setLoadingLeads(prev => new Set(prev).add(campanhaId));
-    const { data, error } = await supabase
-      .from('disparo_leads')
-      .select('id, nome, phone, status, sent_at, error_msg, temperatura, ordem')
-      .eq('campanha_id', campanhaId)
-      .order('ordem', { ascending: true, nullsFirst: false });
-    setLoadingLeads(prev => { const s = new Set(prev); s.delete(campanhaId); return s; });
-    if (error) { toast.error('Erro ao carregar leads'); return; }
-    setLeads(prev => ({ ...prev, [campanhaId]: (data ?? []) as DisparoLead[] }));
-  }
+  const loadRespostasTotal = useCallback(async () => {
+    const { count } = await supabase.from('disparo_leads').select('id', { count: 'exact', head: true }).not('respondeu_em', 'is', null);
+    setRespostasTotal(count ?? 0);
+  }, []);
 
-  function toggleExpand(id: string) {
-    setExpanded(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-        loadLeads(id);
-      }
-      return next;
-    });
-  }
+  useEffect(() => { loadRespostasTotal(); }, [loadRespostasTotal]);
+
+  useEffect(() => {
+    const ch = supabase.channel('disparo_leads_respostas_rt')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'disparo_leads' }, () => loadRespostasTotal())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [loadRespostasTotal]);
 
   async function pauseCampanha(id: string) {
     const { error } = await supabase.from('disparo_campanhas').update({ status: 'pausado' }).eq('id', id);
@@ -1299,7 +1288,24 @@ function CampanhasTab() {
     const { error } = await supabase.from('disparo_campanhas').delete().eq('id', id);
     if (error) { toast.error('Erro: ' + error.message); return; }
     setCampanhas(prev => prev.filter(c => c.id !== id));
+    if (selectedId === id) setSelectedId(null);
     toast.success('Campanha deletada');
+  }
+
+  const selecionada = selectedId ? campanhas.find(c => c.id === selectedId) ?? null : null;
+
+  if (selecionada) {
+    return (
+      <CampanhaDetalheView
+        campanha={selecionada}
+        instanceNames={instanceNames}
+        onBack={() => setSelectedId(null)}
+        onPause={() => pauseCampanha(selecionada.id)}
+        onResume={() => resumeCampanha(selecionada)}
+        onDelete={() => deleteCampanha(selecionada.id)}
+        onUpdate={updated => setCampanhas(prev => prev.map(x => x.id === selecionada.id ? { ...x, ...updated } : x))}
+      />
+    );
   }
 
   const filtered = search.trim()
@@ -1320,6 +1326,7 @@ function CampanhasTab() {
               { label: 'Pausadas',   count: pausadas,  color: 'text-amber-700',   bg: 'bg-amber-50',   dot: 'bg-amber-400' },
               { label: 'Concluídas', count: concluidas, color: 'text-blue-700',   bg: 'bg-blue-50',    dot: 'bg-blue-500' },
               { label: 'Total',      count: campanhas.length, color: 'text-gray-600', bg: 'bg-gray-100', dot: 'bg-gray-400' },
+              { label: 'Respostas',  count: respostasTotal, color: 'text-violet-700', bg: 'bg-violet-50', dot: 'bg-violet-500' },
             ].map(s => (
               <div key={s.label} className={cn('flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium', s.bg, s.color)}>
                 <span className={cn('w-1.5 h-1.5 rounded-full', s.dot)} />
@@ -1365,10 +1372,7 @@ function CampanhasTab() {
               <CampanhaCard
                 key={c.id}
                 campanha={c}
-                isExpanded={expanded.has(c.id)}
-                onToggle={() => toggleExpand(c.id)}
-                leads={leads[c.id] ?? null}
-                loadingLeads={loadingLeads.has(c.id)}
+                onOpen={() => setSelectedId(c.id)}
                 onPause={() => pauseCampanha(c.id)}
                 onResume={() => resumeCampanha(c)}
                 onDelete={() => deleteCampanha(c.id)}
@@ -1387,10 +1391,7 @@ function CampanhasTab() {
 
 interface CampanhaCardProps {
   campanha: Campanha;
-  isExpanded: boolean;
-  onToggle: () => void;
-  leads: DisparoLead[] | null;
-  loadingLeads: boolean;
+  onOpen: () => void;
   onPause: () => void;
   onResume: () => void;
   onDelete: () => void;
@@ -1398,7 +1399,7 @@ interface CampanhaCardProps {
   instanceNames: Record<string, string>;
 }
 
-function CampanhaCard({ campanha: c, isExpanded, onToggle, leads, loadingLeads, onPause, onResume, onDelete, onUpdate, instanceNames }: CampanhaCardProps) {
+function CampanhaCard({ campanha: c, onOpen, onPause, onResume, onDelete, onUpdate, instanceNames }: CampanhaCardProps) {
   const [editOpen, setEditOpen] = useState(false);
   const cfg   = CAMP_STATUS_CFG[c.status] ?? CAMP_STATUS_CFG.rascunho;
   const total = c.leads_total || 1;
@@ -1408,30 +1409,14 @@ function CampanhaCard({ campanha: c, isExpanded, onToggle, leads, loadingLeads, 
     return h >= c.safe_hour_start && h < c.safe_hour_end;
   })();
 
-  const byStatus = useMemo<Record<string, DisparoLead[]>>(() => {
-    const base: Record<string, DisparoLead[]> = { pendente: [], enviado: [], erro: [] };
-    for (const l of leads ?? []) {
-      const key = l.status in base ? l.status : 'pendente';
-      base[key].push(l);
-    }
-    return base;
-  }, [leads]);
-
   return (
-    <Card className={cn('bg-white shadow-none border transition-shadow', isExpanded ? 'shadow-sm' : 'hover:shadow-sm')}>
+    <Card className="bg-white shadow-none border transition-shadow hover:shadow-sm">
       {/* ── Header row ── */}
       <CardContent className="p-0">
         <div
           className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none"
-          onClick={onToggle}
+          onClick={onOpen}
         >
-          {/* Expand icon */}
-          <div className="flex-none text-muted-foreground">
-            {isExpanded
-              ? <ChevronDown className="h-4 w-4" />
-              : <ChevronRight className="h-4 w-4" />}
-          </div>
-
           {/* Progress ring */}
           <div className="flex-none w-10 h-10 rounded-full border-2 border-gray-100 flex items-center justify-center bg-gray-50">
             <span className="text-xs font-bold text-foreground">{pct}%</span>
@@ -1531,67 +1516,284 @@ function CampanhaCard({ campanha: c, isExpanded, onToggle, leads, loadingLeads, 
             onSaved={updated => { onUpdate(updated); setEditOpen(false); }}
           />
         )}
-
-        {/* ── Expanded panel ── */}
-        {isExpanded && (
-          <div className="border-t bg-gray-50/60 px-4 pb-4 pt-3">
-            {loadingLeads ? (
-              <div className="flex items-center justify-center h-24">
-                <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
-              </div>
-            ) : !leads || leads.length === 0 ? (
-              <div className="flex items-center justify-center h-16 text-sm text-muted-foreground gap-2">
-                <Users className="h-4 w-4" /> Nenhum lead nesta campanha
-              </div>
-            ) : (
-              <div className="grid grid-cols-3 gap-3">
-                {([
-                  { key: 'pendente', label: 'Falta Receber', icon: Clock,        color: 'text-gray-600',    bg: 'bg-gray-50',    border: 'border-gray-200' },
-                  { key: 'enviado',  label: 'Recebeu',       icon: CheckCircle2, color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
-                  { key: 'erro',     label: 'Erro',          icon: AlertCircle,  color: 'text-red-600',     bg: 'bg-red-50',     border: 'border-red-200' },
-                ] as const).map(({ key, label, icon: Icon, color, bg, border }) => {
-                  const list = byStatus[key] ?? [];
-                  return (
-                    <div key={key} className={cn('rounded-lg border bg-white overflow-hidden', border)}>
-                      <div className={cn('flex items-center gap-2 px-3 py-2 border-b', bg, border)}>
-                        <Icon className={cn('h-3.5 w-3.5', color)} />
-                        <span className={cn('text-xs font-semibold', color)}>{label}</span>
-                        <span className={cn('ml-auto text-xs font-bold', color)}>{list.length}</span>
-                      </div>
-                      <div className="max-h-52 overflow-y-auto divide-y divide-gray-50">
-                        {list.length === 0 ? (
-                          <p className="text-xs text-muted-foreground text-center py-4">Vazio</p>
-                        ) : list.map(lead => (
-                          <LeadRow key={lead.id} lead={lead} />
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
       </CardContent>
     </Card>
   );
 }
 
-function LeadRow({ lead }: { lead: DisparoLead }) {
-  const statusDot =
-    lead.status === 'enviado' ? 'bg-emerald-500' :
-    lead.status === 'erro'    ? 'bg-red-500'     :
-    'bg-gray-300';
+// ── Campanha Detalhe (tela cheia dedicada) ──────────────────────────────────
+
+type LeadStatusFiltro = 'all' | 'pendente' | 'enviado' | 'erro' | 'respondeu';
+type LeadSortKey = 'ordem' | 'nome' | 'status' | 'sent_at' | 'respondeu_em';
+
+function CampanhaDetalheView({
+  campanha: c, instanceNames, onBack, onPause, onResume, onDelete, onUpdate,
+}: {
+  campanha: Campanha;
+  instanceNames: Record<string, string>;
+  onBack: () => void;
+  onPause: () => void;
+  onResume: () => void;
+  onDelete: () => void;
+  onUpdate: (updated: Partial<Campanha>) => void;
+}) {
+  const [leads, setLeads] = useState<DisparoLead[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<LeadStatusFiltro>('all');
+  const [editOpen, setEditOpen] = useState(false);
+  const [sortKey, setSortKey] = useState<LeadSortKey>('ordem');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  const load = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('disparo_leads')
+      .select('id, nome, phone, status, sent_at, error_msg, temperatura, ordem, respondeu_em, ultima_resposta')
+      .eq('campanha_id', c.id)
+      .order('ordem', { ascending: true, nullsFirst: false });
+    if (error) { toast.error('Erro ao carregar leads'); setLoading(false); return; }
+    setLeads((data ?? []) as DisparoLead[]);
+    setLoading(false);
+  }, [c.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const ch = supabase.channel(`disparo_leads_detalhe_${c.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'disparo_leads', filter: `campanha_id=eq.${c.id}` }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [c.id, load]);
+
+  const respondidos = leads.filter(l => !!l.respondeu_em).length;
+  const pendentes   = leads.filter(l => l.status === 'pendente').length;
+  const enviados    = leads.filter(l => l.status === 'enviado').length;
+  const erros       = leads.filter(l => l.status === 'erro').length;
+  const total       = leads.length || 1;
+
+  function toggleSort(key: LeadSortKey) {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  }
+
+  const filtered = useMemo(() => {
+    let list = leads;
+    if (statusFilter === 'respondeu') list = list.filter(l => !!l.respondeu_em);
+    else if (statusFilter !== 'all') list = list.filter(l => l.status === statusFilter);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(l => (l.nome ?? '').toLowerCase().includes(q) || l.phone.includes(q));
+    }
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...list].sort((a, b) => {
+      if (sortKey === 'nome') return dir * (a.nome ?? '').localeCompare(b.nome ?? '');
+      if (sortKey === 'status') return dir * a.status.localeCompare(b.status);
+      if (sortKey === 'sent_at') return dir * ((a.sent_at ? new Date(a.sent_at).getTime() : 0) - (b.sent_at ? new Date(b.sent_at).getTime() : 0));
+      if (sortKey === 'respondeu_em') return dir * ((a.respondeu_em ? new Date(a.respondeu_em).getTime() : 0) - (b.respondeu_em ? new Date(b.respondeu_em).getTime() : 0));
+      return dir * ((a.ordem ?? 0) - (b.ordem ?? 0));
+    });
+  }, [leads, search, statusFilter, sortKey, sortDir]);
+
+  function exportCSV() {
+    const headers = ['Nome', 'Telefone', 'Status', 'Enviado em', 'Erro', 'Respondeu em', 'Última resposta'];
+    const rows = filtered.map(l => [
+      `"${l.nome ?? ''}"`, l.phone, l.status,
+      l.sent_at ? `"${fmtDatetime(l.sent_at)}"` : '',
+      l.error_msg ? `"${l.error_msg.replace(/"/g, "'")}"` : '',
+      l.respondeu_em ? `"${fmtDatetime(l.respondeu_em)}"` : '',
+      l.ultima_resposta ? `"${l.ultima_resposta.replace(/"/g, "'").replace(/\n/g, ' ')}"` : '',
+    ]);
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url;
+    a.download = `campanha_${c.nome.replace(/[^a-z0-9]+/gi, '_')}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  }
+
+  const cfg = CAMP_STATUS_CFG[c.status] ?? CAMP_STATUS_CFG.rascunho;
+  const isWithinHours = (() => {
+    const h = new Date().getHours();
+    return h >= c.safe_hour_start && h < c.safe_hour_end;
+  })();
+
+  const columns: { key: LeadSortKey | null; label: string }[] = [
+    { key: 'nome', label: 'Nome' },
+    { key: null, label: 'Telefone' },
+    { key: 'status', label: 'Status' },
+    { key: 'sent_at', label: 'Enviado em' },
+    { key: null, label: 'Erro' },
+    { key: 'respondeu_em', label: 'Última resposta' },
+  ];
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50/80 transition-colors">
-      <span className={cn('w-1.5 h-1.5 rounded-full flex-none', statusDot)} />
-      <span className="text-xs text-foreground/80 truncate flex-1">
-        {lead.nome ?? maskPhone(lead.phone)}
-      </span>
-      <span className="text-xs text-muted-foreground flex-none">
-        {lead.status === 'enviado' && lead.sent_at ? fmtTime(lead.sent_at) : lead.status === 'erro' ? 'erro' : '—'}
-      </span>
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="bg-white border-b px-6 py-4 flex-none">
+        <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-3 transition-colors">
+          <ChevronLeft className="h-3.5 w-3.5" /> Voltar pras campanhas
+        </button>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-lg font-bold text-foreground">{c.nome}</h2>
+              <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border', cfg.badge)}>
+                <span className={cn('w-1.5 h-1.5 rounded-full', cfg.dot)} />
+                {cfg.label}
+              </span>
+              <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border',
+                isWithinHours ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-gray-50 text-gray-500 border-gray-200')}>
+                <Clock className="h-3 w-3" /> {c.safe_hour_start}h–{c.safe_hour_end}h
+              </span>
+            </div>
+            <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground flex-wrap">
+              <span>delay {c.delay_min_s}–{c.delay_max_s}s</span>
+              <span className="text-muted-foreground/60">·</span>
+              <span><Shield className="inline h-3 w-3 mr-0.5 mb-0.5" />{c.daily_limit}/dia</span>
+              {(c.evolution_config_ids?.length ?? 0) > 1 && (
+                <>
+                  <span className="text-muted-foreground/60">·</span>
+                  <span title={c.evolution_config_ids!.map(id => instanceNames[id] ?? id).join(', ')}>
+                    <Zap className="inline h-3 w-3 mr-0.5 mb-0.5" /> rodízio: {c.evolution_config_ids!.map(id => instanceNames[id] ?? id).join(', ')}
+                  </span>
+                </>
+              )}
+              {c.status === 'ativo' && c.next_send_at && (
+                <span className="text-blue-600 font-medium">próximo {fmtRelative(c.next_send_at) ?? fmtTime(c.next_send_at)}</span>
+              )}
+              {c.status === 'pausado' && c.next_send_at && (
+                <span className="text-amber-600">retoma às {fmtTime(c.next_send_at)}</span>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 flex-none">
+            <Button variant="outline" size="sm" onClick={() => setEditOpen(true)} className="gap-1.5">
+              <Pencil className="h-3.5 w-3.5" /> Editar
+            </Button>
+            {c.status === 'ativo' && (
+              <Button variant="outline" size="sm" onClick={onPause} className="gap-1.5 text-amber-600 border-amber-200 hover:bg-amber-50">
+                <Pause className="h-3.5 w-3.5" /> Pausar
+              </Button>
+            )}
+            {c.status === 'pausado' && (
+              <Button variant="outline" size="sm" onClick={onResume} className="gap-1.5 text-emerald-600 border-emerald-200 hover:bg-emerald-50">
+                <Play className="h-3.5 w-3.5" /> Retomar
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={onDelete} className="gap-1.5 text-red-500 border-red-200 hover:bg-red-50">
+              <Trash2 className="h-3.5 w-3.5" /> Deletar
+            </Button>
+          </div>
+        </div>
+
+        {/* Tiles */}
+        <div className="flex items-center gap-3 mt-4 flex-wrap">
+          {[
+            { label: 'Total',       count: leads.length, color: 'text-gray-700',    bg: 'bg-gray-100',   dot: 'bg-gray-400' },
+            { label: 'Enviados',    count: enviados,      color: 'text-emerald-700', bg: 'bg-emerald-50', dot: 'bg-emerald-500' },
+            { label: 'Erros',       count: erros,         color: 'text-red-700',     bg: 'bg-red-50',     dot: 'bg-red-500' },
+            { label: 'Pendentes',   count: pendentes,     color: 'text-gray-600',    bg: 'bg-gray-50',    dot: 'bg-gray-300' },
+            { label: 'Respondidos', count: respondidos,   color: 'text-violet-700',  bg: 'bg-violet-50',  dot: 'bg-violet-500' },
+          ].map(s => (
+            <div key={s.label} className={cn('flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium', s.bg, s.color)}>
+              <span className={cn('w-1.5 h-1.5 rounded-full', s.dot)} />
+              {s.count} {s.label}
+              {s.label !== 'Total' && leads.length > 0 && (
+                <span className="opacity-60 text-xs">({Math.round((s.count / total) * 100)}%)</span>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Busca + filtro */}
+        <div className="flex items-center gap-2 mt-3 flex-wrap">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input placeholder="Buscar nome ou telefone…" value={search}
+              onChange={e => setSearch(e.target.value)} className="pl-8 h-8 w-56 text-sm" />
+          </div>
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+            {([
+              { key: 'all' as const, label: 'Todos' },
+              { key: 'pendente' as const, label: 'Pendente' },
+              { key: 'enviado' as const, label: 'Enviado' },
+              { key: 'erro' as const, label: 'Erro' },
+              { key: 'respondeu' as const, label: 'Respondeu' },
+            ]).map(f => (
+              <button key={f.key} onClick={() => setStatusFilter(f.key)}
+                className={cn('px-2.5 py-1 rounded-md text-xs font-medium transition-all',
+                  statusFilter === f.key ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <span className="text-xs text-muted-foreground ml-1">{filtered.length} leads</span>
+          <Button variant="outline" size="sm" onClick={exportCSV} className="ml-auto gap-1.5">
+            <Download className="h-3.5 w-3.5" /> CSV
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-auto p-6">
+        {loading ? (
+          <div className="flex items-center justify-center h-40">
+            <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-40 text-center">
+            <Users className="h-8 w-8 text-muted-foreground/40 mb-2" />
+            <p className="text-sm text-muted-foreground">Nenhum lead encontrado pra esse filtro</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-gray-50/60">
+                  {columns.map(col => (
+                    <th key={col.label}
+                      onClick={() => col.key && toggleSort(col.key)}
+                      className={cn('text-left px-3 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wide select-none',
+                        col.key && 'cursor-pointer hover:text-foreground')}>
+                      {col.label}{sortKey === col.key && (sortDir === 'asc' ? ' ↑' : ' ↓')}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((l, i) => (
+                  <tr key={l.id} className={cn('border-b last:border-0 hover:bg-gray-50/60 transition-colors', i % 2 === 0 ? '' : 'bg-gray-50/20')}>
+                    <td className="px-3 py-2.5 font-medium text-foreground/90 max-w-[160px] truncate">{l.nome || '—'}</td>
+                    <td className="px-3 py-2.5 font-mono text-xs text-muted-foreground">{maskPhone(l.phone)}</td>
+                    <td className="px-3 py-2.5">
+                      <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium',
+                        l.status === 'enviado' ? 'bg-emerald-50 text-emerald-700' :
+                        l.status === 'erro'    ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-600')}>
+                        {l.status === 'enviado' ? 'Enviado' : l.status === 'erro' ? 'Erro' : 'Pendente'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{l.sent_at ? fmtDatetime(l.sent_at) : '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-red-500 max-w-[160px] truncate" title={l.error_msg ?? undefined}>{l.error_msg ?? '—'}</td>
+                    <td className="px-3 py-2.5 max-w-[240px]">
+                      {l.respondeu_em ? (
+                        <div className="flex items-start gap-1.5">
+                          <MessageSquare className="h-3 w-3 text-violet-500 mt-0.5 flex-none" />
+                          <div className="min-w-0">
+                            <p className="text-xs text-foreground/90 truncate" title={l.ultima_resposta ?? undefined}>{l.ultima_resposta || '—'}</p>
+                            <p className="text-[10px] text-muted-foreground">{fmtDatetime(l.respondeu_em)}</p>
+                          </div>
+                        </div>
+                      ) : <span className="text-xs text-muted-foreground">—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {editOpen && (
+        <EditCampanhaModal campanha={c} onClose={() => setEditOpen(false)} onSaved={updated => { onUpdate(updated); setEditOpen(false); }} />
+      )}
     </div>
   );
 }
