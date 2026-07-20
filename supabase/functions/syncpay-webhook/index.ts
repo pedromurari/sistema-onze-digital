@@ -6,14 +6,17 @@
  * uma venda pre-criada pra atualizar: a venda inteira nasce a partir do
  * webhook.
  *
- * Atribuicao de parceira/produto: o webhook e registrado na SyncPay (via
- * POST /api/partner/v1/webhooks, escopado por product_tokens) com a URL
- * desta function + ?produto_id=<uuid>. Isso garante que sabemos de quem e
- * a venda mesmo sem depender do formato exato do payload -- que ainda nao
- * temos 100% confirmado, entao o parsing de valor/status/comprador abaixo
- * e defensivo e tenta varios formatos conhecidos da API da Sync. O payload
- * bruto sempre fica salvo em raw_payload pra ajuste fino depois do primeiro
- * evento real.
+ * Atribuicao de parceira/produto: o ideal e registrar o webhook na SyncPay
+ * (via POST /api/partner/v1/webhooks) escopado por product_tokens, com a
+ * URL desta function + ?produto_id=<uuid> -- mas nao existe (ainda) um jeito
+ * confirmado de obter esse token pelo dashboard/API da Sync. Enquanto isso,
+ * quando produto_id NAO vem na URL (webhook "pega tudo" da conta, event=all
+ * ou cashin sem product_tokens), a funcao tenta casar a venda por VALOR
+ * exato contra parceiros_produtos.preco (so entre produtos com
+ * syncpay_checkout_url configurado) -- funciona bem enquanto os precos dos
+ * produtos SyncPay forem distintos entre si. Se achar 0 ou mais de 1 match,
+ * NAO insere (fica so no log) em vez de arriscar atribuir a venda errada.
+ * O payload bruto sempre fica salvo em raw_payload pra ajuste fino depois.
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -43,13 +46,7 @@ serve(async (req) => {
 
   try {
     const url = new URL(req.url);
-    const produtoId = url.searchParams.get('produto_id');
-    if (!produtoId) {
-      console.error('syncpay-webhook: sem produto_id na URL do webhook');
-      return new Response(JSON.stringify({ ok: true, aviso: 'sem produto_id' }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    let produtoId = url.searchParams.get('produto_id');
 
     const body = await req.json().catch(() => ({} as any));
     const d = body?.data ?? body;
@@ -83,6 +80,24 @@ serve(async (req) => {
           status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+    }
+
+    // Webhook "pega tudo" (sem produto_id na URL): tenta descobrir o produto
+    // casando o valor exato contra os produtos que tem checkout SyncPay configurado.
+    if (!produtoId) {
+      const { data: candidatos } = await supabase
+        .from('parceiros_produtos')
+        .select('id')
+        .not('syncpay_checkout_url', 'is', null)
+        .eq('preco', valor);
+
+      if (!candidatos || candidatos.length !== 1) {
+        console.error('syncpay-webhook: sem produto_id na URL e nao achei match unico por valor', { valor, candidatos: candidatos?.length ?? 0, raw: body });
+        return new Response(JSON.stringify({ ok: true, aviso: 'sem match de produto', valor }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      produtoId = candidatos[0].id;
     }
 
     const { data: produto } = await supabase
