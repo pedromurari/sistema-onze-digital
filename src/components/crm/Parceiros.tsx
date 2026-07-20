@@ -4,11 +4,12 @@ import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
-  Loader2, Plus, Upload, CheckCircle2, XCircle, PlayCircle, PauseCircle, RotateCcw, Users, ShoppingBag, KeyRound, TrendingUp, Settings2, ClipboardList, Ticket, DollarSign, ShieldCheck, Eye, Link2,
+  Loader2, Plus, Upload, CheckCircle2, XCircle, PlayCircle, PauseCircle, RotateCcw, Users, ShoppingBag, KeyRound, TrendingUp, Settings2, ClipboardList, Ticket, DollarSign, ShieldCheck, Eye, Link2, MousePointerClick,
 } from 'lucide-react';
 import { DesempenhoParceiros } from './DesempenhoParceiros';
 import { EntregasParceiros } from './EntregasParceiros';
 import { CuponsParceiros } from './CuponsParceiros';
+import { TrafegoParceiros } from './TrafegoParceiros';
 import { LinksParceiros } from './LinksParceiros';
 import { RepassesParceiros } from './RepassesParceiros';
 import { cn } from '@/lib/utils';
@@ -61,6 +62,8 @@ type Produto = {
   bump_nome: string | null;
   bump_descricao: string | null;
   bump_preco: number | null;
+  syncpay_product_token: string | null;
+  syncpay_checkout_url: string | null;
 };
 
 function conectarMercadoPago(parceiraId: string) {
@@ -122,6 +125,9 @@ function ProdutosTab() {
   const [bumpDialog, setBumpDialog] = useState<Produto | null>(null);
   const [bumpForm, setBumpForm] = useState({ bump_ativo: false, bump_nome: '', bump_descricao: '', bump_preco: '' });
   const [savingBump, setSavingBump] = useState(false);
+  const [syncDialog, setSyncDialog] = useState<Produto | null>(null);
+  const [syncForm, setSyncForm] = useState({ syncpay_product_token: '', syncpay_checkout_url: '' });
+  const [savingSync, setSavingSync] = useState(false);
 
   const loadParceiros = useCallback(async () => {
     const { data } = await supabase.from('parceiros' as any).select('id, nome, whatsapp, email, status_contrato, ativo').eq('ativo', true).order('nome');
@@ -131,7 +137,7 @@ function ProdutosTab() {
   const loadProdutos = useCallback(async () => {
     setLoading(true);
     const { data, error } = await (supabase.from('parceiros_produtos' as any) as any)
-      .select('id, parceiro_id, nome, descricao, preco, status, comissao_idm_pct, comissao_parceiro_pct, comissao_afiliado_padrao_pct, material_url, created_at, parceiros(id, nome), meta_campaign_id, meta_ad_account_id, meta_access_token, bump_ativo, bump_nome, bump_descricao, bump_preco')
+      .select('id, parceiro_id, nome, descricao, preco, status, comissao_idm_pct, comissao_parceiro_pct, comissao_afiliado_padrao_pct, material_url, created_at, parceiros(id, nome), meta_campaign_id, meta_ad_account_id, meta_access_token, bump_ativo, bump_nome, bump_descricao, bump_preco, syncpay_product_token, syncpay_checkout_url')
       .order('created_at', { ascending: false });
     if (error) {
       toast.error(`Erro ao carregar produtos: ${error.message}`);
@@ -268,6 +274,28 @@ function ProdutosTab() {
     loadProdutos();
   };
 
+  const abrirDialogSync = (produto: Produto) => {
+    setSyncDialog(produto);
+    setSyncForm({
+      syncpay_product_token: produto.syncpay_product_token || '',
+      syncpay_checkout_url: produto.syncpay_checkout_url || '',
+    });
+  };
+
+  const salvarSync = async () => {
+    if (!syncDialog) return;
+    setSavingSync(true);
+    const { error } = await (supabase.from('parceiros_produtos' as any) as any).update({
+      syncpay_product_token: syncForm.syncpay_product_token.trim() || null,
+      syncpay_checkout_url: syncForm.syncpay_checkout_url.trim() || null,
+    }).eq('id', syncDialog.id);
+    setSavingSync(false);
+    if (error) { toast.error(`Erro ao salvar SyncPay: ${error.message}`); return; }
+    toast.success('Dados da SyncPay salvos.');
+    setSyncDialog(null);
+    loadProdutos();
+  };
+
   const stats = {
     emAnalise: produtos.filter(p => p.status === 'em_analise').length,
     aprovados: produtos.filter(p => p.status === 'aprovado').length,
@@ -396,6 +424,13 @@ function ProdutosTab() {
                     >
                       <Settings2 className={cn('h-3.5 w-3.5', produto.meta_campaign_id ? 'text-blue-500' : 'text-muted-foreground')} />
                     </Button>
+                    <Button
+                      size="sm" variant="ghost" className="h-8 w-8 p-0"
+                      title={produto.syncpay_product_token ? 'SyncPay vinculada (recebendo vendas por webhook)' : 'Vincular checkout SyncPay'}
+                      onClick={() => abrirDialogSync(produto)}
+                    >
+                      <Link2 className={cn('h-3.5 w-3.5', produto.syncpay_product_token ? 'text-emerald-500' : 'text-muted-foreground')} />
+                    </Button>
                   </div>
                 </div>
               );
@@ -462,6 +497,39 @@ function ProdutosTab() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setAdsDialog(null)}>Cancelar</Button>
             <Button disabled={savingAds} onClick={salvarAds}>{savingAds ? 'Salvando...' : 'Salvar'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!syncDialog} onOpenChange={(open) => !open && setSyncDialog(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>SyncPay — {syncDialog?.nome}</DialogTitle>
+            <DialogDescription>
+              Cole o token do produto criado no dashboard hospedado da SyncPay. Com isso a gente registra um webhook
+              escopado só pra esse produto e as vendas passam a aparecer automaticamente na aba Tráfego, sem misturar
+              com vendas de outra parceira na mesma conta SyncPay.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Token do produto (SyncPay)</Label>
+              <Input placeholder="product_token do dashboard da Sync" value={syncForm.syncpay_product_token} onChange={e => setSyncForm(f => ({ ...f, syncpay_product_token: e.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Link de checkout (SyncPay)</Label>
+              <Input placeholder="https://syncpay.link/..." value={syncForm.syncpay_checkout_url} onChange={e => setSyncForm(f => ({ ...f, syncpay_checkout_url: e.target.value }))} />
+            </div>
+            {syncDialog && (
+              <p className="text-[11px] text-muted-foreground bg-muted/50 rounded-lg p-2 break-all">
+                URL do webhook a registrar na SyncPay: <br />
+                <span className="font-mono">https://usqiyekfmwwnvkmkdlej.supabase.co/functions/v1/syncpay-webhook?produto_id={syncDialog.id}</span>
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSyncDialog(null)}>Cancelar</Button>
+            <Button disabled={savingSync} onClick={salvarSync}>{savingSync ? 'Salvando...' : 'Salvar'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -654,6 +722,7 @@ function ParceirosTab() {
 
 const TABS = [
   { key: 'desempenho', label: 'Desempenho', icon: TrendingUp },
+  { key: 'trafego', label: 'Tráfego', icon: MousePointerClick },
   { key: 'entregas', label: 'Entregas', icon: ClipboardList },
   { key: 'links', label: 'Links', icon: Link2 },
 ] as const;
@@ -764,6 +833,7 @@ export function Parceiros() {
       </div>
 
       {tab === 'desempenho' && <DesempenhoParceiros scopedParceiroId={scopedId} />}
+      {tab === 'trafego' && <TrafegoParceiros scopedParceiroId={scopedId} />}
       {tab === 'entregas' && <EntregasParceiros scopedParceiroId={scopedId} />}
       {tab === 'links' && <LinksParceiros scopedParceiroId={scopedId} editable />}
     </div>

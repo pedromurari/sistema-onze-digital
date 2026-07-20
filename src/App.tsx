@@ -12,6 +12,7 @@ const ContratoPublico = React.lazy(() => import("./pages/ContratoPublico"));
 const FormularioAluno = React.lazy(() => import("./pages/FormularioAluno"));
 const AreaMembros     = React.lazy(() => import("./pages/AreaMembros"));
 const Checkout        = React.lazy(() => import("./pages/Checkout"));
+const LinkRedirect    = React.lazy(() => import("./pages/LinkRedirect"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -81,6 +82,7 @@ const App = () => (
               <Route path="/assinar/:token"         element={<ContratoPublico />} />
               <Route path="/membros/:token"         element={<AreaMembros />} />
               <Route path="/comprar/:produtoId"     element={<Checkout />} />
+              <Route path="/ir/:slug"               element={<LinkRedirect />} />
               <Route path="/"                       element={<Index />} />
               <Route path="*"                       element={<NotFound />} />
             </Routes>

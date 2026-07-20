@@ -4,6 +4,7 @@ import { Loader2, Link2, Copy, Info } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { NovoProdutoDialog } from './NovoProdutoDialog';
 
@@ -14,6 +15,7 @@ type ProdutoLink = {
   nome: string;
   status: ProdutoStatus;
   checkout_link_syncpay: string | null;
+  pagina_vendas_url: string | null;
   parceiros: { nome: string } | null;
 };
 
@@ -30,16 +32,23 @@ function copiarLink(link: string) {
   toast.success('Link copiado!');
 }
 
-function LinkRow({ produto, editable, onSaved }: { produto: ProdutoLink; editable: boolean; onSaved: () => void }) {
-  const [valor, setValor] = useState(produto.checkout_link_syncpay || '');
+function LinkField({ produtoId, campo, label, placeholder, valorAtual, editable, onSaved }: {
+  produtoId: string;
+  campo: 'checkout_link_syncpay' | 'pagina_vendas_url';
+  label: string;
+  placeholder: string;
+  valorAtual: string | null;
+  editable: boolean;
+  onSaved: () => void;
+}) {
+  const [valor, setValor] = useState(valorAtual || '');
   const [saving, setSaving] = useState(false);
-  const cfg = STATUS_CONFIG[produto.status];
 
   const salvar = async () => {
     setSaving(true);
     const { error } = await supabase.from('parceiros_produtos' as any)
-      .update({ checkout_link_syncpay: valor.trim() || null })
-      .eq('id', produto.id);
+      .update({ [campo]: valor.trim() || null })
+      .eq('id', produtoId);
     setSaving(false);
     if (error) { toast.error(`Erro ao salvar link: ${error.message}`); return; }
     toast.success('Link salvo.');
@@ -47,7 +56,39 @@ function LinkRow({ produto, editable, onSaved }: { produto: ProdutoLink; editabl
   };
 
   return (
-    <div className="bg-white border border-border rounded-xl p-4 space-y-2">
+    <div className="space-y-1">
+      <Label className="text-xs text-muted-foreground">{label}</Label>
+      {editable ? (
+        <div className="flex items-center gap-2">
+          <Input className="h-9" placeholder={placeholder} value={valor} onChange={e => setValor(e.target.value)} />
+          <Button size="sm" disabled={saving || valor.trim() === (valorAtual || '')} onClick={salvar}>
+            {saving ? 'Salvando...' : 'Salvar'}
+          </Button>
+          {valorAtual && (
+            <Button size="sm" variant="outline" className="h-9 w-9 p-0 flex-shrink-0" onClick={() => copiarLink(valorAtual)} title="Copiar link">
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+      ) : valorAtual ? (
+        <button
+          onClick={() => copiarLink(valorAtual)}
+          className="w-full flex items-center justify-center gap-1.5 text-xs font-medium text-primary bg-primary/5 hover:bg-primary/10 border border-primary/20 rounded-lg py-1.5 transition-colors"
+        >
+          <Copy className="h-3.5 w-3.5" /> Copiar
+        </button>
+      ) : (
+        <p className="text-xs text-muted-foreground py-1">Ainda sem link cadastrado.</p>
+      )}
+    </div>
+  );
+}
+
+function LinkRow({ produto, editable, onSaved }: { produto: ProdutoLink; editable: boolean; onSaved: () => void }) {
+  const cfg = STATUS_CONFIG[produto.status];
+
+  return (
+    <div className="bg-white border border-border rounded-xl p-4 space-y-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="font-semibold text-foreground truncate">{produto.nome}</p>
@@ -56,33 +97,25 @@ function LinkRow({ produto, editable, onSaved }: { produto: ProdutoLink; editabl
         <Badge variant="outline" className={cfg.className}>{cfg.label}</Badge>
       </div>
 
-      {editable ? (
-        <div className="flex items-center gap-2">
-          <Input
-            className="h-9"
-            placeholder="Cole aqui o link de checkout da Sync Pay"
-            value={valor}
-            onChange={e => setValor(e.target.value)}
-          />
-          <Button size="sm" disabled={saving || valor.trim() === (produto.checkout_link_syncpay || '')} onClick={salvar}>
-            {saving ? 'Salvando...' : 'Salvar'}
-          </Button>
-          {produto.checkout_link_syncpay && (
-            <Button size="sm" variant="outline" className="h-9 w-9 p-0 flex-shrink-0" onClick={() => copiarLink(produto.checkout_link_syncpay!)} title="Copiar link">
-              <Copy className="h-3.5 w-3.5" />
-            </Button>
-          )}
-        </div>
-      ) : produto.checkout_link_syncpay ? (
-        <button
-          onClick={() => copiarLink(produto.checkout_link_syncpay!)}
-          className="w-full flex items-center justify-center gap-1.5 text-xs font-medium text-primary bg-primary/5 hover:bg-primary/10 border border-primary/20 rounded-lg py-1.5 transition-colors"
-        >
-          <Copy className="h-3.5 w-3.5" /> Copiar link de venda
-        </button>
-      ) : (
-        <p className="text-xs text-muted-foreground py-1">Ainda sem link cadastrado.</p>
-      )}
+      <LinkField
+        produtoId={produto.id}
+        campo="pagina_vendas_url"
+        label="Página de vendas"
+        placeholder="https://www.idmpsi.com.br/..."
+        valorAtual={produto.pagina_vendas_url}
+        editable={editable}
+        onSaved={onSaved}
+      />
+
+      <LinkField
+        produtoId={produto.id}
+        campo="checkout_link_syncpay"
+        label="Checkout (Sync Pay)"
+        placeholder="Cole aqui o link de checkout da Sync Pay"
+        valorAtual={produto.checkout_link_syncpay}
+        editable={editable}
+        onSaved={onSaved}
+      />
     </div>
   );
 }
@@ -94,7 +127,7 @@ export function LinksParceiros({ scopedParceiroId, editable = false }: { scopedP
   const load = useCallback(async () => {
     setLoading(true);
     let query = supabase.from('parceiros_produtos' as any)
-      .select('id, nome, status, checkout_link_syncpay, parceiros(nome)')
+      .select('id, nome, status, checkout_link_syncpay, pagina_vendas_url, parceiros(nome)')
       .order('nome');
     if (scopedParceiroId) query = query.eq('parceiro_id', scopedParceiroId);
     const { data, error } = await query;
@@ -115,7 +148,7 @@ export function LinksParceiros({ scopedParceiroId, editable = false }: { scopedP
 
       <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700">
         <Info className="h-4 w-4 flex-shrink-0 mt-0.5" />
-        <p>Links de venda via <strong>Sync Pay</strong> — hoje cadastrados manualmente. A integração automática com a Sync Pay ainda não foi plugada aqui.</p>
+        <p>Página de vendas e link de checkout <strong>Sync Pay</strong> — hoje cadastrados manualmente. A integração automática de vendas já roda por fora (aba Tráfego).</p>
       </div>
 
       {loading ? (
