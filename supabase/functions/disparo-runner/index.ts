@@ -24,11 +24,19 @@ serve(async (req) => {
     const now = new Date();
     const brazilHour = (now.getUTCHours() - 3 + 24) % 24;
 
-    const { data: campaigns } = await supabase
+    // Libera leads presos em "enviando" (execução anterior travou/caiu antes de concluir)
+    await supabase
+      .from('disparo_leads')
+      .update({ status: 'pendente' })
+      .eq('status', 'enviando')
+      .lt('sent_at', new Date(now.getTime() - 3 * 60 * 1000).toISOString());
+
+    const { data: campaigns, error: campaignsErr } = await supabase
       .from('disparo_campanhas')
       .select('*')
       .eq('status', 'ativo')
       .lte('next_send_at', now.toISOString());
+    if (campaignsErr) console.error('disparo-runner: falha ao buscar campanhas elegiveis:', campaignsErr.message);
 
     if (!campaigns?.length) {
       return new Response(JSON.stringify({ ok: true, processed: 0 }), {
@@ -66,21 +74,34 @@ serve(async (req) => {
         continue;
       }
 
-      const { data: lead } = await supabase
+      const { data: candidate } = await supabase
         .from('disparo_leads')
-        .select('*')
+        .select('id')
         .eq('campanha_id', camp.id)
         .eq('status', 'pendente')
         .order('ordem', { ascending: true })
         .limit(1)
         .maybeSingle();
 
-      if (!lead) {
+      if (!candidate) {
         await supabase.from('disparo_campanhas')
           .update({ status: 'concluido' })
           .eq('id', camp.id);
         continue;
       }
+
+      // Claim atômico: marca 'enviando' ANTES de enviar — evita duplicata se o
+      // cron sobrepõe (uma execução ainda processando quando a próxima começa).
+      const { data: claimedRows, error: claimErr } = await supabase
+        .from('disparo_leads')
+        .update({ status: 'enviando', sent_at: now.toISOString() })
+        .eq('id', candidate.id)
+        .eq('status', 'pendente')
+        .select('*');
+      if (claimErr) console.error(`disparo-runner: falha ao reivindicar lead ${candidate.id}:`, claimErr.message);
+
+      const lead = claimedRows?.[0];
+      if (!lead) continue; // outra execução já pegou este lead (ou a reivindicação falhou -- ver log acima)
 
       const phone = formatPhone(lead.phone);
       if (!phone) {
@@ -114,6 +135,7 @@ serve(async (req) => {
       let sendOk    = false;
       let sendError = '';
       let sentInstanceId = '';
+      let ambiguous = false;
 
       for (const inst of orderedInstances) {
         const rawBase = (inst.api_url as string).replace(/\/$/, '');
@@ -156,6 +178,14 @@ serve(async (req) => {
           break;
         } catch (e: unknown) {
           sendError = `[${inst.instance_name}] ${(e as Error).message}`;
+          const isTimeout = e instanceof Error &&
+            (e.name === 'TimeoutError' || e.name === 'AbortError' || /timeout|timed out/i.test(e.message));
+          if (isTimeout) {
+            // Pode já ter entregue — não tenta outra instância pro mesmo lead
+            ambiguous = true;
+            console.warn(`disparo-runner: ${inst.instance_name} deu timeout (envio incerto), não tentando outra instância`);
+            break;
+          }
           console.warn(`disparo-runner: ${inst.instance_name} falhou, tentando próxima...`);
         }
       }
@@ -175,7 +205,11 @@ serve(async (req) => {
       } else {
         const newErrors = (camp.consecutive_errors ?? 0) + 1;
         await supabase.from('disparo_leads')
-          .update({ status: 'erro', error_msg: sendError, sent_at: sentAt })
+          .update({
+            status: 'erro',
+            error_msg: ambiguous ? `[verificar manualmente antes de reenviar] ${sendError}` : sendError,
+            sent_at: sentAt,
+          })
           .eq('id', lead.id);
         await supabase.from('disparo_campanhas')
           .update({
