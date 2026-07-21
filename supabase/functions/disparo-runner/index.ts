@@ -21,6 +21,13 @@ serve(async (req) => {
       });
     }
 
+    // A Evolution API pode aceitar a chamada REST (HTTP 200/201) mesmo com a
+    // sessao do WhatsApp fechada, e so falhar silenciosamente na entrega --
+    // ja vimos isso marcar lead como "enviado" sem nada ter saido de verdade.
+    // Checa o estado de conexao de cada instancia uma vez por execucao e
+    // exclui da rotacao qualquer uma que nao esteja "open".
+    const connectedIds = await getConnectedInstanceIds(allInstances);
+
     const now = new Date();
     const brazilHour = (now.getUTCHours() - 3 + 24) % 24;
 
@@ -118,7 +125,26 @@ serve(async (req) => {
       const scoped = pinnedIds.length
         ? allInstances.filter((r: { id: string }) => pinnedIds.includes(r.id))
         : allInstances;
-      const campInstances = scoped.length ? scoped : allInstances;
+      const campInstances = (scoped.length ? scoped : allInstances).filter((r: { id: string }) => connectedIds.has(r.id));
+
+      if (!campInstances.length) {
+        // Nenhuma instância elegível está com sessão de WhatsApp aberta --
+        // nem tenta enviar (evita o falso "enviado" que a Evolution API pode
+        // devolver mesmo com a sessão fechada).
+        const newErrors = (camp.consecutive_errors ?? 0) + 1;
+        await supabase.from('disparo_leads')
+          .update({ status: 'erro', error_msg: 'Nenhuma instância conectada disponível (sessão do WhatsApp fechada)', sent_at: now.toISOString() })
+          .eq('id', lead.id);
+        await supabase.from('disparo_campanhas')
+          .update({
+            leads_error: (camp.leads_error ?? 0) + 1,
+            consecutive_errors: newErrors,
+            next_send_at: now.toISOString(),
+            ...(newErrors >= camp.max_errors_seq ? { status: 'erro' } : {}),
+          })
+          .eq('id', camp.id);
+        continue;
+      }
 
       // Rodízio: a instância da vez é escolhida por quantas mensagens a campanha já mandou,
       // as demais entram como fallback (nessa ordem) se a da vez falhar.
@@ -261,4 +287,26 @@ async function getAllInstances(
     .eq('ativo', true)
     .order('prioridade', { ascending: true });
   return rows ?? [];
+}
+
+async function getConnectedInstanceIds(
+  instances: Array<{ id: string; api_url: string; api_key: string; instance_name: string }>,
+): Promise<Set<string>> {
+  const connected = new Set<string>();
+  await Promise.all(instances.map(async (inst) => {
+    const rawBase = inst.api_url.replace(/\/$/, '');
+    const base = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
+    try {
+      const res = await fetch(`${base}/instance/connectionState/${encodeURIComponent(inst.instance_name)}`, {
+        headers: { apikey: inst.api_key },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) return;
+      const data = await res.json() as { instance?: { state?: string } };
+      if (data.instance?.state === 'open') connected.add(inst.id);
+    } catch (e: unknown) {
+      console.warn(`disparo-runner: falha ao checar conexao de ${inst.instance_name}:`, (e as Error).message);
+    }
+  }));
+  return connected;
 }
