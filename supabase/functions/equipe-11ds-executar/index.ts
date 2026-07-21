@@ -25,6 +25,7 @@ type ClienteContexto = {
   formula_headline?: string | null;
   arquetipos_visuais_preferidos?: string[] | null;
   arquetipos_visuais_evitar?: string[] | null;
+  fundos_fixos?: string[] | null;
 };
 
 type HistoricoRecente = { temas: string[]; pilares: string[]; arquetipos: string[]; aberturas: string[] };
@@ -256,7 +257,7 @@ async function buscarContextoConhecimento(supabase: any, cliente: ClienteContext
 
 // ── Banimentos e menu de ganchos (pesquisa de referencia, ver vault Obsidian) ──
 
-const PALAVRAS_BANIDAS = ['utilizar', 'robusto', 'aprofundar', 'certamente', 'é importante ressaltar', 'você já parou pra pensar', 'você sabia que'];
+const PALAVRAS_BANIDAS = ['utilizar', 'robusto', 'aprofundar', 'certamente', 'é importante ressaltar', 'você já parou pra pensar', 'você sabia que', 'comente aqui o que esse tema desperta'];
 
 const MENU_GANCHOS = [
   '"Fui de [estado ruim] pra [estado bom] em [tempo] fazendo [mecanismo]."',
@@ -264,6 +265,14 @@ const MENU_GANCHOS = [
   '"Eu fiz [a coisa certa] por [tempo] e nao deu em nada. Ate que [virada]."',
   '"Nao e [crenca comum]. E [reframe]."',
   'POV que coloca quem le no centro da cena (ex: "Voce percebe [padrao] e nao sabe o motivo -- e isso:").',
+].join(' / ');
+
+const MENU_CTAS = [
+  'Pergunta direta que só quem já viveu isso sabe responder (não genérica tipo "o que acha?").',
+  'Pede pra marcar/enviar pra alguém específico que precisa ouvir isso agora.',
+  'Convite pra salvar o post pra reler depois, com o motivo exato de por que vale salvar.',
+  'Provocação/afirmação que deixa no ar, sem pergunta — o silêncio é que gera comentário.',
+  'Pede pra completar uma frase nos comentários (ex: "termina essa frase: eu percebi que...").',
 ].join(' / ');
 
 // ── Passo 1: Gestor (abertura) ─────────────────────────────────────────────────
@@ -318,13 +327,16 @@ async function passoRedator(
   const systemPrompt = [
     `Voce e o Redator-chefe do time de midia da agencia 11 Digital Strategy. Responda sempre em portugues do Brasil.`,
     `Cliente: "${cliente.nome}". Tom de voz: ${cliente.tom_de_voz ?? 'nao informado'}. Tema de hoje: "${tema}".`,
-    `Escreva como uma pessoa real falando (especialista em primeira pessoa, "eu ja vi isso"), nao como comunicado institucional.`,
+    `Escreva como uma pessoa real falando (especialista em primeira pessoa, "eu ja vi isso" no sentido de observacao profissional/clinica), nao como comunicado institucional.`,
+    `Cuidado com o gancho "Fui de [estado ruim] pra [estado bom]": ele so pode ser usado em primeira pessoa se for sobre uma OBSERVACAO/PADRAO que a instituicao ve repetir (ex: "Eu ja vi gente sair de X pra Y quando..."), nunca como se fosse o relato de uma transformacao pessoal especifica do "eu" -- isso soa como depoimento fabricado mesmo fora do pilar de prova social. Se ficar ambiguo se parece um relato de pessoa real, troque de gancho.`,
     `Gancho (linha 1, sozinha, e o que aparece antes do "...mais"): escolha e adapte um destes formatos comprovados ao tema de hoje -- ${MENU_GANCHOS}`,
     historico.aberturas.length ? `Aberturas usadas nos ultimos posts, NAO repita esse padrao: ${historico.aberturas.map(a => `"${a}..."`).join(' / ')}.` : '',
     contexto.notaCliente ? `O que o time ja aprendeu sobre este cliente especificamente (memoria do time, Obsidian): ${contexto.notaCliente.slice(0, 1500)}` : '',
     contexto.principios ? `Principios gerais de escrita do time, validados por pesquisa (Obsidian, use como reforco, nao repita o texto deles): ${contexto.principios.slice(0, 2500)}` : '',
-    `Depois do gancho: PARAGRAFOS SEPARADOS por quebra de linha dupla (\\n\\n entre cada um, nunca bloco unico de texto corrido). Corpo TEM que conter pelo menos um dado, numero, mecanismo, citacao ou exemplo concreto e especifico (nunca genérico tipo "reflita sobre suas emoções"). Fechamento com pergunta ou CTA que puxa comunidade${cliente.cta_padrao ? ` (pode usar variacao de "${cliente.cta_padrao}")` : ''}.`,
-    `NUNCA use travessao (—). NUNCA use estas palavras/aberturas (tique de IA): ${PALAVRAS_BANIDAS.join(', ')}. NUNCA use ** dentro da legenda -- essa marcacao e exclusiva do headline.`,
+    `Depois do gancho: PARAGRAFOS SEPARADOS por quebra de linha dupla (\\n\\n entre cada um, nunca bloco unico de texto corrido).`,
+    `REGRA DURA contra fabricacao: NUNCA cite numero/percentual/estatistica de estudo nenhum, NUNCA atribua frase a uma pessoa real (viva ou historica) a menos que seja uma citacao amplamente conhecida e verificavel -- e proibido inventar "estudos mostram que X%" ou citar "psicologo/pesquisador Fulano disse Y" pra parecer com dado concreto. Em vez disso, o "dado concreto" exigido no corpo tem que ser: um mecanismo psicologico explicado com precisao, um exemplo hipotetico especifico e detalhado, ou uma observacao clinica generica sem numero inventado (ex: "isso costuma aparecer quando..." em vez de "67% dos casos...").`,
+    `Fechamento (nunca repita o mesmo fechamento de post pra post -- varie de verdade): escolha e adapte um destes formatos -- ${MENU_CTAS}${cliente.cta_padrao ? ` (ocasionalmente pode usar variacao de "${cliente.cta_padrao}")` : ''}.`,
+    `NUNCA use travessao (—). NUNCA use estas palavras/aberturas (tique de IA): ${PALAVRAS_BANIDAS.join(', ')}. NUNCA use ** dentro da legenda -- essa marcacao e exclusiva do headline. NUNCA termine com a frase literal "comente aqui o que esse tema desperta em você" -- ja foi usada demais.`,
     `Hashtags: campo separado "hashtags" (nao faz parte da legenda), combinando${cliente.hashtags_fixas?.length ? ` as fixas do cliente (${cliente.hashtags_fixas.join(' ')})` : ''} com 3-5 especificas do tema. Obrigatorio, nunca vazio.`,
     `Headline (frase curta pra aparecer na imagem, composta localmente com fonte real -- a grafia que voce escrever sai pixel-identica, confira acentuacao com cuidado): estilo "${cliente.estilo_visual ?? 'manchete'}".`,
     cliente.estilo_visual === 'editorial' ? `Estilo editorial: frase unica, poetica/reflexiva, 6-11 palavras.` : `Estilo manchete: pergunta ou afirmacao direta e provocadora, 5-9 palavras.`,
@@ -345,25 +357,28 @@ async function passoRedator(
 async function passoDiretorArte(
   supabase: any, openaiKey: string, tarefaId: string, agentes: Agentes,
   cliente: ClienteContexto, tema: string, headline: string, formato: FormatoDia, pilar: string | null, historico: HistoricoRecente, contexto: ContextoConhecimento,
-): Promise<{ promptImagem?: string; kicker?: string; gradientStyle?: 'radial' | 'diagonal'; arquetipoVisual: string }> {
+): Promise<{ promptImagem?: string; fundoUrl?: string; arquetipoVisual: string }> {
   await atualizarAgente(supabase, agentes.diretor, 'trabalhando', `Definindo o conceito visual (${formato})...`);
 
   if (formato === 'tipografico') {
-    const gradientStyle: 'radial' | 'diagonal' = Math.floor(Date.parse(`${hojeSaoPaulo()}T00:00:00Z`) / 86_400_000) % 2 === 0 ? 'radial' : 'diagonal';
-    const kicker = pilar ?? tema;
-    const arquetipoVisual = `cartao tipografico, gradiente ${gradientStyle}`;
-    await registrarMensagem(supabase, tarefaId, agentes.diretor, 'mensagem', `Cartão tipográfico. Kicker: "${kicker}". Gradiente ${gradientStyle}.`);
-    return { kicker, gradientStyle, arquetipoVisual };
+    const fundos = cliente.fundos_fixos ?? [];
+    if (!fundos.length) throw new Error(`Cliente "${cliente.nome}" nao tem fundos_fixos configurados -- rode equipe-11ds-gerar-fundos antes de usar o formato tipografico.`);
+    const diasDesdeEpoch = Math.floor(Date.parse(`${hojeSaoPaulo()}T00:00:00Z`) / 86_400_000);
+    const fundoUrl = fundos[diasDesdeEpoch % fundos.length];
+    const arquetipoVisual = `cartao estilo tweet, fundo fixo #${(diasDesdeEpoch % fundos.length) + 1}`;
+    await registrarMensagem(supabase, tarefaId, agentes.diretor, 'mensagem', `Cartão estilo tweet, texto centralizado sobre fundo fixo da marca.`);
+    return { fundoUrl, arquetipoVisual };
   }
 
   const systemPrompt = [
     `Voce e o Diretor de Arte do time de midia da agencia 11 Digital Strategy. Responda sempre em ingles no campo prompt_imagem (o resto em portugues).`,
-    `Cliente: "${cliente.nome}". Tema: "${tema}". Headline que vai aparecer integrado a imagem: "${headline}".`,
-    `Pense antes num UNICO MOMENTO decisivo que faria alguem parar de rolar o feed -- nao uma lista de termos tecnicos soltos. Isso e "key art" (termo de cinema/streaming): imagem e tipografia desenhadas como peca so, nunca foto solta com faixa de texto colada.`,
-    `No prompt_imagem, instrua explicitamente como o headline se integra a cena: tipografia que combina com a composicao, cor herdada da paleta da marca (${cliente.cor_primaria ?? '#C41E3A'}), posicionada respeitando a composicao (nunca faixa generica embaixo). Cite o texto exato entre aspas, com a acentuacao exata: "${headline}".`,
-    `Luz: low-key/rim light pra separar do fundo, nunca luz frontal de camera. Enquadramento: rule of thirds. Fundo: NUNCA vazio/liso -- sempre um ambiente desfocado que sugere contexto, nomeando o que esta desfocado. Sempre fotografia realista (editorial/advertising photography, photorealistic), nunca ilustracao/flat.`,
-    `EVITE (tique de imagem de IA): pele/textura cerosa, pose de banco de imagens (laptop+cafe+caderno), iluminacao de estudio generica, fundo sem contexto, infografico/icone tipo apresentacao de slide.`,
-    `Evite duas maos entrelacadas em close-up. Se aparecer pessoa, genero/idade combinando com o publico-alvo.`,
+    `Cliente: "${cliente.nome}". Tema: "${tema}".`,
+    `Pense antes num UNICO MOMENTO decisivo que faria alguem parar de rolar o feed -- nao uma lista de termos tecnicos soltos. Isso e "key art" (termo de cinema/streaming): uma cena com peso proprio, nunca uma foto generica de banco de imagens.`,
+    `NAO inclua texto/headline/tipografia na cena -- o texto e' aplicado depois, separadamente, com fonte real. O prompt_imagem descreve so a fotografia (cena, luz, composicao), nunca menciona palavras/letras/texto.`,
+    `Luz: low-key/rim light pra separar do fundo, nunca luz frontal de camera. Enquadramento: rule of thirds, com espaco negativo no terco superior da composicao (e' onde o texto entra depois -- nao preencha essa area com o assunto principal). Fundo: NUNCA vazio/liso -- sempre um ambiente desfocado que sugere contexto, nomeando o que esta desfocado. Sempre fotografia realista (editorial/advertising photography, photorealistic), nunca ilustracao/flat.`,
+    `PROIBIDO (cliches de banco de imagens vistos repetidas vezes, banidos explicitamente): pessoa com a mao no queixo/rosto em pose pensativa, livro aberto generico sobre mesa, vaso de planta ao lado, cortina translucida com luz de janela atras, laptop+cafe+caderno, pele/textura cerosa, iluminacao de estudio generica, infografico/icone tipo slide de apresentacao, duas maos entrelacadas em close-up.`,
+    `Em vez de pose passiva de reflexao, descreva um momento com acao ou tensao especifica (um gesto, um instante de decisao, um movimento) -- nunca alguem so "pensando" olhando pro nada.`,
+    `Se aparecer pessoa, genero/idade combinando com o publico-alvo.`,
     `Escolha um "arquetipo_visual": pose/enquadramento/acao especifica (nunca categoria generica tipo so "retrato").`,
     historico.arquetipos.length ? `PROIBIDO repetir estes arquetipos recentes, mesmo reformulados: ${historico.arquetipos.join(' | ')}.` : '',
     cliente.arquetipos_visuais_preferidos?.length ? `Familias de arquetipo preferidas deste cliente: ${cliente.arquetipos_visuais_preferidos.join(' | ')}.` : '',
@@ -447,7 +462,7 @@ async function chamarServicoComposicao(composeUrl: string, compositeSecret: stri
 async function passoProducao(
   supabase: any, openaiKey: string, tarefaId: string, agentes: Agentes,
   cliente: ClienteContexto, formato: FormatoDia, headline: string,
-  arte: { promptImagem?: string; kicker?: string; gradientStyle?: 'radial' | 'diagonal' },
+  arte: { promptImagem?: string; fundoUrl?: string },
 ): Promise<{ feedUrl: string | null; storiesUrl: string | null }> {
   await atualizarAgente(supabase, agentes.nina, 'trabalhando', `Produzindo o post de ${cliente.nome}...`);
 
@@ -460,16 +475,18 @@ async function passoProducao(
 
   let composto: { feed: Uint8Array; stories: Uint8Array | null };
   if (formato === 'tipografico') {
+    if (!arte.fundoUrl) throw new Error('Fundo fixo nao definido pelo Diretor de Arte');
+    // Fundo vai por URL, nao base64 -- um PNG 1024x1536 embutido no payload
+    // sozinho ja estoura o limite de requisicao da Vercel. O servico Python
+    // baixa a imagem ele mesmo.
     composto = await chamarServicoComposicao(composeUrl, compositeSecret, {
       modo: 'tipografico',
+      fundo_url: arte.fundoUrl,
       logo_base64: logoBytes ? bytesToBase64(logoBytes) : undefined,
-      logo_posicao: 'superior-esquerda',
-      kicker: arte.kicker ?? '',
+      logo_posicao: 'superior-centro',
       headline,
       estilo_visual: cliente.estilo_visual ?? 'manchete',
       cor_primaria: cliente.cor_primaria ?? undefined,
-      cor_secundaria: cliente.cor_secundaria ?? undefined,
-      gradient_style: arte.gradientStyle ?? 'radial',
       gerar_stories: true,
     });
   } else {
@@ -477,7 +494,7 @@ async function passoProducao(
       arte.promptImagem ?? '',
       cliente.cor_primaria ? `Use ${cliente.cor_primaria} as the dominant brand color of the design` : '',
       cliente.cor_secundaria ? `${cliente.cor_secundaria} as a secondary accent color` : '',
-      'Professional social media key art, vertical portrait photography, scroll-stopping composition, photorealistic, high contrast, no watermarks.',
+      'Professional social media key art, vertical portrait photography, scroll-stopping composition, photorealistic, high contrast, no watermarks, no text, no letters.',
     ].filter(Boolean).join('. ');
     const bytesBase = await gerarImagem(openaiKey, promptFinal, '1024x1536');
     composto = await chamarServicoComposicao(composeUrl, compositeSecret, {
@@ -485,7 +502,7 @@ async function passoProducao(
       imagem_base64: bytesToBase64(bytesBase),
       logo_base64: logoBytes ? bytesToBase64(logoBytes) : undefined,
       logo_posicao: 'superior-esquerda',
-      headline: '', // headline ja foi integrado pela IA de imagem -- so a logo e composta aqui
+      headline, // aplicado via PIL (fonte real, margem segura) -- nunca mais pedido pra IA de imagem desenhar
       estilo_visual: cliente.estilo_visual ?? 'manchete',
       cor_primaria: cliente.cor_primaria ?? undefined,
       gerar_stories: true,
@@ -686,7 +703,7 @@ serve(async (req) => {
 
     const { data: clienteData } = await supabase
       .from('conteudo_clientes')
-      .select('nome, nicho, publico_alvo, tom_de_voz, cta_padrao, cor_primaria, cor_secundaria, logo_url, hashtags_fixas, temas_evitar, pilares_conteudo, estilo_visual, formula_headline, arquetipos_visuais_preferidos, arquetipos_visuais_evitar')
+      .select('nome, nicho, publico_alvo, tom_de_voz, cta_padrao, cor_primaria, cor_secundaria, logo_url, hashtags_fixas, temas_evitar, pilares_conteudo, estilo_visual, formula_headline, arquetipos_visuais_preferidos, arquetipos_visuais_evitar, fundos_fixos')
       .eq('id', tarefa.cliente_id)
       .single();
     const cliente: ClienteContexto = clienteData ?? { nome: 'Cliente' };
