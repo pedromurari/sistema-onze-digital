@@ -628,6 +628,120 @@ async function interpretarOrdemAvulsa(openaiKey: string, cargo: string, ordemTex
   return resultado as unknown as ExecResultadoAvulso;
 }
 
+// ── Roteamento de intencao real em ordem avulsa (deterministico, nunca "por
+// sorte de prompt") -- algumas frases em linguagem natural pedem uma acao que
+// o sistema ja sabe fazer de verdade (rotina diaria, calendario, post de
+// hoje), mas cair direto no interpretador generico so devolve texto/pergunta
+// de esclarecimento, nunca dispara a acao. Casa por padrao explicito; fora
+// disso, segue pro interpretador generico como sempre.
+
+type IntencaoReal = 'rotina_diaria' | 'calendario' | 'post_hoje';
+
+function detectarIntencaoReal(ordemTexto: string): IntencaoReal | null {
+  const t = ordemTexto.toLowerCase();
+  if (/rotina\s+di[aá]ria/.test(t) || /\brodar?\s+(a\s+)?rotina\b/.test(t) || /\broda\s+tudo\b/.test(t)) return 'rotina_diaria';
+  if (/calend[aá]rio/.test(t) && /\b(gera|gerar|planeja|planejar|monta|montar|atualiza|atualizar)\b/.test(t)) return 'calendario';
+  if (/\bposts?\b/.test(t) && /\b(pr[oó]ximo|hoje|crie|criar|fa[çc]a|fazer|gera|gerar|monta|montar|publica|publicar)\b/.test(t)) return 'post_hoje';
+  return null;
+}
+
+async function dispararFuncaoInterna(supabase: any, nomeFuncao: string): Promise<Record<string, unknown>> {
+  const { data: cronSecret } = await supabase.rpc('get_equipe_11ds_cron_secret');
+  if (!cronSecret) throw new Error('Segredo de cron nao configurado (Vault vazio)');
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const res = await fetch(`${supabaseUrl}/functions/v1/${nomeFuncao}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-cron-key': cronSecret },
+    body: JSON.stringify({}),
+    signal: AbortSignal.timeout(55_000),
+  });
+  if (!res.ok) throw new Error(`${nomeFuncao} falhou (${res.status}): ${(await res.text()).slice(0, 300)}`);
+  return await res.json();
+}
+
+// ── Pipeline completa de post_cliente, extraida pra ser reaproveitada tanto
+// pela tarefa formal (tipo=post_cliente) quanto por uma ordem avulsa que a
+// intencao real detectou como pedido de post (ex: "faça o post de hoje").
+
+async function executarPostParaCliente(
+  supabase: any, openaiKey: string, tarefaId: string, agentes: Agentes, clienteId: string, hoje: string,
+): Promise<{ postId: string; tema: string }> {
+  const { data: clienteData } = await supabase
+    .from('conteudo_clientes')
+    .select('nome, nicho, publico_alvo, tom_de_voz, cta_padrao, cor_primaria, cor_secundaria, logo_url, hashtags_fixas, temas_evitar, pilares_conteudo, estilo_visual, formula_headline, arquetipos_visuais_preferidos, arquetipos_visuais_evitar, fundos_fixos')
+    .eq('id', clienteId)
+    .single();
+  const cliente: ClienteContexto = clienteData ?? { nome: 'Cliente' };
+  const historico = await buscarHistoricoRecente(supabase, clienteId);
+  const contexto = await buscarContextoConhecimento(supabase, cliente);
+
+  const { pilar, formato } = await passoGestorAbertura(supabase, tarefaId, agentes, cliente, hoje);
+
+  const pesquisa = await pesquisarTendencia(openaiKey, cliente, historico);
+  const { tema, justificativa } = await passoEstrategista(supabase, openaiKey, tarefaId, agentes, cliente, pilar, pesquisa, historico, contexto);
+
+  let { legenda, headline, hashtags } = await passoRedator(supabase, openaiKey, tarefaId, agentes, cliente, tema, historico, contexto);
+  const problema = checagemDura(legenda, hashtags);
+  if (problema) {
+    await registrarMensagem(supabase, tarefaId, agentes.gestor, 'alerta', `Encontrei um problema antes de seguir: ${problema}`);
+    const corrigido = await passoRedator(supabase, openaiKey, tarefaId, agentes, cliente, tema, historico, contexto, problema);
+    legenda = corrigido.legenda; headline = corrigido.headline; hashtags = corrigido.hashtags;
+  }
+
+  const arte = await passoDiretorArte(supabase, openaiKey, tarefaId, agentes, cliente, tema, headline, formato, pilar, historico, contexto);
+  const { feedUrl, storiesUrl } = await passoProducao(supabase, openaiKey, tarefaId, agentes, cliente, formato, headline, arte);
+  await passoGestorFechamento(supabase, openaiKey, tarefaId, agentes, legenda, headline);
+  await passoCurador(supabase, openaiKey, tarefaId, agentes, cliente, tema, headline, legenda, contexto);
+
+  const legendaFinal = [legenda, hashtags ? `.\n.\n.\n${hashtags}` : ''].filter(Boolean).join('\n\n');
+
+  const { data: post, error: postErr } = await supabase
+    .from('conteudo_posts')
+    .insert({
+      cliente_id: clienteId,
+      tema, tema_fonte: 'equipe_11ds', legenda: legendaFinal,
+      imagem_feed_url: feedUrl, imagem_stories_url: storiesUrl,
+      pilar: pilar, arquetipo_visual: arte.arquetipoVisual,
+      status: 'rascunho',
+    })
+    .select('id')
+    .single();
+  if (postErr) throw new Error(`Falha ao criar post em conteudo_posts: ${postErr.message}`);
+
+  // Interliga com o calendario de conteudo ja existente no sistema (Operacoes >
+  // Calendario de Conteudo) -- upsert por (cliente_id, data) pra atualizar a
+  // mesma linha do dia em vez de duplicar. Nunca deve derrubar a producao do
+  // post se falhar por algum motivo (tabela auxiliar, nao a fonte da verdade).
+  try {
+    await supabase.from('conteudo_calendario').upsert({
+      cliente_id: clienteId,
+      titulo: tema,
+      plataforma: 'instagram',
+      formato: 'feed',
+      formato_4x5: true,
+      formato_9x16: Boolean(storiesUrl),
+      status: 'agendado',
+      data_publicacao: hoje,
+      angulo: justificativa || null,
+      hook: legenda.split('\n\n')[0] || null,
+      texto_peca: legendaFinal,
+      prompt_imagem: arte.promptImagem ?? null,
+      imagem_url: feedUrl,
+      gerado_por: 'equipe_11ds',
+    }, { onConflict: 'cliente_id,data_publicacao' });
+  } catch (e) {
+    console.error('Falha ao interligar com conteudo_calendario:', (e as Error).message);
+  }
+
+  const anexosFinais = [{ tipo: 'imagem', url: feedUrl }, ...(storiesUrl ? [{ tipo: 'imagem_stories', url: storiesUrl }] : [])];
+  await supabase.from('equipe_11ds_tarefas').update({
+    status: 'concluido', resposta_texto: `Post produzido pelo time: "${tema}".`, anexos: anexosFinais,
+    conteudo_post_id: post.id, concluido_em: new Date().toISOString(),
+  }).eq('id', tarefaId);
+
+  return { postId: post.id, tema };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -678,6 +792,50 @@ serve(async (req) => {
     // ── Tarefa avulsa: Nina executa sozinha, sem o time todo ───────────────────
     if (tarefa.tipo !== 'post_cliente' || !tarefa.cliente_id) {
       await atualizarAgente(supabase, agenteOriginal.id, 'trabalhando', `${tarefa.ordem_texto.slice(0, 60)}${tarefa.ordem_texto.length > 60 ? '...' : ''}`);
+
+      // Antes de cair no interprete generico (que so responde/pergunta em
+      // texto), checa se a ordem em linguagem natural pede uma acao que o
+      // sistema ja sabe fazer de verdade -- senao "roda a rotina diaria" ou
+      // "faça o post de hoje" viram uma pergunta de esclarecimento em vez de
+      // executarem qualquer coisa.
+      const intencao = detectarIntencaoReal(tarefa.ordem_texto);
+
+      if (intencao === 'rotina_diaria' || intencao === 'calendario') {
+        const nomeFuncao = intencao === 'rotina_diaria' ? 'equipe-11ds-diario' : 'equipe-11ds-calendario-executar';
+        const resultado = await dispararFuncaoInterna(supabase, nomeFuncao);
+        const resumo = intencao === 'rotina_diaria'
+          ? `Rotina diária disparada. ${(resultado as { criadas?: number }).criadas ?? 0} tarefa(s) iniciada(s).`
+          : `Calendário atualizado. ${(resultado as { planejados?: number }).planejados ?? 0} dia(s) planejado(s).`;
+        await supabase.from('equipe_11ds_tarefas').update({
+          status: 'concluido', resposta_texto: resumo, anexos: [], concluido_em: new Date().toISOString(),
+        }).eq('id', tarefaId);
+        await atualizarAgente(supabase, agenteOriginal.id, 'livre', null);
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      if (intencao === 'post_hoje') {
+        const { data: clientesAtivos } = await supabase.from('conteudo_clientes').select('id, nome');
+        const lista = (clientesAtivos ?? []) as { id: string; nome: string }[];
+        if (lista.length === 1) {
+          const agentes = await buscarAgentesDoTime(supabase, agenteOriginal.time_id);
+          agentesEquipe = agentes;
+          await executarPostParaCliente(supabase, openaiKey, tarefaId, agentes, lista[0].id, hojeSaoPaulo());
+          for (const id of Object.values(agentes)) await atualizarAgente(supabase, id, 'livre', null);
+          return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        if (lista.length > 1) {
+          const nomes = lista.map(c => c.nome).join(', ');
+          await supabase.from('equipe_11ds_tarefas').update({
+            status: 'concluido',
+            resposta_texto: `Tenho mais de um cliente cadastrado (${nomes}) -- pra criar o post de verdade, use "Post pro cliente" e escolha o cliente antes de mandar a ordem.`,
+            concluido_em: new Date().toISOString(),
+          }).eq('id', tarefaId);
+          await atualizarAgente(supabase, agenteOriginal.id, 'livre', null);
+          return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        // Nenhum cliente cadastrado: cai pro interprete generico abaixo.
+      }
+
       const resultado = await interpretarOrdemAvulsa(openaiKey, agenteOriginal.cargo ?? 'Posts & Criativos', tarefa.ordem_texto);
 
       const anexos: { tipo: string; url: string }[] = [];
@@ -701,79 +859,7 @@ serve(async (req) => {
     const agentes = await buscarAgentesDoTime(supabase, agenteOriginal.time_id);
     agentesEquipe = agentes;
 
-    const { data: clienteData } = await supabase
-      .from('conteudo_clientes')
-      .select('nome, nicho, publico_alvo, tom_de_voz, cta_padrao, cor_primaria, cor_secundaria, logo_url, hashtags_fixas, temas_evitar, pilares_conteudo, estilo_visual, formula_headline, arquetipos_visuais_preferidos, arquetipos_visuais_evitar, fundos_fixos')
-      .eq('id', tarefa.cliente_id)
-      .single();
-    const cliente: ClienteContexto = clienteData ?? { nome: 'Cliente' };
-    const historico = await buscarHistoricoRecente(supabase, tarefa.cliente_id);
-    const contexto = await buscarContextoConhecimento(supabase, cliente);
-    const hoje = hojeSaoPaulo();
-
-    const { pilar, formato } = await passoGestorAbertura(supabase, tarefaId, agentes, cliente, hoje);
-
-    const pesquisa = await pesquisarTendencia(openaiKey, cliente, historico);
-    const { tema, justificativa } = await passoEstrategista(supabase, openaiKey, tarefaId, agentes, cliente, pilar, pesquisa, historico, contexto);
-
-    let { legenda, headline, hashtags } = await passoRedator(supabase, openaiKey, tarefaId, agentes, cliente, tema, historico, contexto);
-    const problema = checagemDura(legenda, hashtags);
-    if (problema) {
-      await registrarMensagem(supabase, tarefaId, agentes.gestor, 'alerta', `Encontrei um problema antes de seguir: ${problema}`);
-      const corrigido = await passoRedator(supabase, openaiKey, tarefaId, agentes, cliente, tema, historico, contexto, problema);
-      legenda = corrigido.legenda; headline = corrigido.headline; hashtags = corrigido.hashtags;
-    }
-
-    const arte = await passoDiretorArte(supabase, openaiKey, tarefaId, agentes, cliente, tema, headline, formato, pilar, historico, contexto);
-    const { feedUrl, storiesUrl } = await passoProducao(supabase, openaiKey, tarefaId, agentes, cliente, formato, headline, arte);
-    await passoGestorFechamento(supabase, openaiKey, tarefaId, agentes, legenda, headline);
-    await passoCurador(supabase, openaiKey, tarefaId, agentes, cliente, tema, headline, legenda, contexto);
-
-    const legendaFinal = [legenda, hashtags ? `.\n.\n.\n${hashtags}` : ''].filter(Boolean).join('\n\n');
-
-    const { data: post, error: postErr } = await supabase
-      .from('conteudo_posts')
-      .insert({
-        cliente_id: tarefa.cliente_id,
-        tema, tema_fonte: 'equipe_11ds', legenda: legendaFinal,
-        imagem_feed_url: feedUrl, imagem_stories_url: storiesUrl,
-        pilar: pilar, arquetipo_visual: arte.arquetipoVisual,
-        status: 'rascunho',
-      })
-      .select('id')
-      .single();
-    if (postErr) throw new Error(`Falha ao criar post em conteudo_posts: ${postErr.message}`);
-
-    // Interliga com o calendario de conteudo ja existente no sistema (Operacoes >
-    // Calendario de Conteudo) -- upsert por (cliente_id, data) pra atualizar a
-    // mesma linha do dia em vez de duplicar. Nunca deve derrubar a producao do
-    // post se falhar por algum motivo (tabela auxiliar, nao a fonte da verdade).
-    try {
-      await supabase.from('conteudo_calendario').upsert({
-        cliente_id: tarefa.cliente_id,
-        titulo: tema,
-        plataforma: 'instagram',
-        formato: 'feed',
-        formato_4x5: true,
-        formato_9x16: Boolean(storiesUrl),
-        status: 'agendado',
-        data_publicacao: hoje,
-        angulo: justificativa || null,
-        hook: legenda.split('\n\n')[0] || null,
-        texto_peca: legendaFinal,
-        prompt_imagem: arte.promptImagem ?? null,
-        imagem_url: feedUrl,
-        gerado_por: 'equipe_11ds',
-      }, { onConflict: 'cliente_id,data_publicacao' });
-    } catch (e) {
-      console.error('Falha ao interligar com conteudo_calendario:', (e as Error).message);
-    }
-
-    const anexosFinais = [{ tipo: 'imagem', url: feedUrl }, ...(storiesUrl ? [{ tipo: 'imagem_stories', url: storiesUrl }] : [])];
-    await supabase.from('equipe_11ds_tarefas').update({
-      status: 'concluido', resposta_texto: `Post produzido pelo time: "${tema}".`, anexos: anexosFinais,
-      conteudo_post_id: post.id, concluido_em: new Date().toISOString(),
-    }).eq('id', tarefaId);
+    await executarPostParaCliente(supabase, openaiKey, tarefaId, agentes, tarefa.cliente_id, hojeSaoPaulo());
 
     for (const id of Object.values(agentes)) await atualizarAgente(supabase, id, 'livre', null);
 
