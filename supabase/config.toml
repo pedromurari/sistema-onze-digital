@@ -11,3 +11,8 @@ verify_jwt = false
 
 [functions.admin-create-user]
 verify_jwt = true
+
+# A função valida o JWT no próprio código para poder responder com mensagens de
+# confirmação e manter a autenticação uniforme entre painel e chamadas internas.
+[functions.equipe-11ds-chat]
+verify_jwt = false

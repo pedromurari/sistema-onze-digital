@@ -103,6 +103,22 @@ type Recorrente = {
   ordem_texto: string;
 };
 
+type ChatMensagem = {
+  id: string;
+  papel: 'usuario' | 'agente' | 'sistema';
+  conteudo: string;
+  acao_id: string | null;
+  created_at: string;
+};
+
+type ChatAcao = {
+  id: string;
+  tipo: 'executar_tarefa' | 'gerar_proximo_post' | 'gerar_calendario';
+  estado: 'proposta' | 'confirmada' | 'cancelada' | 'concluida' | 'erro';
+  resumo: string;
+  payload: Record<string, unknown>;
+};
+
 const STATUS_LABEL: Record<TarefaStatus, string> = {
   pendente: 'A fazer',
   em_andamento: 'Em andamento',
@@ -598,6 +614,10 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
   const [ordemTexto, setOrdemTexto] = useState('');
   const [repetirDiariamente, setRepetirDiariamente] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  const [chatMensagens, setChatMensagens] = useState<ChatMensagem[]>([]);
+  const [acaoPendente, setAcaoPendente] = useState<ChatAcao | null>(null);
+  const [carregandoChat, setCarregandoChat] = useState(false);
+  const [confirmandoAcao, setConfirmandoAcao] = useState(false);
   const [selecionada, setSelecionada] = useState<string | null>(null);
   const [gerandoProximoPost, setGerandoProximoPost] = useState(false);
   const [rodandoCalendario, setRodandoCalendario] = useState(false);
@@ -622,12 +642,39 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
     setRecorrentes((data as any) || []);
   }, [agente.id]);
 
+  const loadChat = useCallback(async () => {
+    if (!user?.id) return;
+    setCarregandoChat(true);
+    const [mensagensResult, acoesResult] = await Promise.all([
+      (supabase.from('equipe_11ds_chat_mensagens' as any) as any)
+        .select('id, papel, conteudo, acao_id, created_at')
+        .eq('agente_id', agente.id)
+        .eq('solicitante_id', user.id)
+        .order('created_at', { ascending: true })
+        .limit(30),
+      (supabase.from('equipe_11ds_chat_acoes' as any) as any)
+        .select('id, tipo, estado, resumo, payload')
+        .eq('agente_id', agente.id)
+        .eq('solicitante_id', user.id)
+        .eq('estado', 'proposta')
+        .order('created_at', { ascending: false })
+        .limit(1),
+    ]);
+    if (mensagensResult.error) toast.error(`Erro ao carregar conversa: ${mensagensResult.error.message}`);
+    else setChatMensagens((mensagensResult.data as ChatMensagem[]) || []);
+    if (acoesResult.error) toast.error(`Erro ao carregar confirmação: ${acoesResult.error.message}`);
+    else setAcaoPendente(((acoesResult.data as ChatAcao[]) || [])[0] ?? null);
+    setCarregandoChat(false);
+  }, [agente.id, user?.id]);
+
   useEffect(() => {
     loadTarefas();
     loadRecorrentes();
     supabase.from('conteudo_clientes' as any).select('id, nome').order('nome')
       .then(({ data }) => setClientes((data as any) || []));
   }, [loadTarefas, loadRecorrentes]);
+
+  useEffect(() => { loadChat(); }, [loadChat]);
 
   useEffect(() => {
     const channel = supabase
@@ -642,48 +689,53 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
   const enviarOrdem = async () => {
     if (!ordemTexto.trim()) return;
     if (tipo === 'post_cliente' && !clienteId) { toast.error('Selecione o cliente'); return; }
+    if (acaoPendente) { toast.error('Confirme ou cancele a proposta pendente antes de enviar outro pedido.'); return; }
     setEnviando(true);
-
-    if (repetirDiariamente) {
-      const { error: recError } = await (supabase.from('equipe_11ds_recorrentes' as any) as any)
-        .insert({
-          agente_id: agente.id,
-          criado_por: user?.id ?? null,
+    const mensagem = ordemTexto.trim();
+    const { data, error } = await supabase.functions.invoke('equipe-11ds-chat', {
+      body: {
+        operacao: 'interpretar',
+        agente_id: agente.id,
+        mensagem,
+        contexto: {
           tipo,
           cliente_id: tipo === 'post_cliente' ? clienteId : null,
-          ordem_texto: ordemTexto.trim(),
-          ativo: true,
-        });
-      if (recError) toast.error(`Erro ao salvar como recorrente: ${recError.message}`);
-      else { toast.success('Vai repetir todo dia a partir de amanhã!'); loadRecorrentes(); }
-    }
-
-    const { data, error } = await (supabase.from('equipe_11ds_tarefas' as any) as any)
-      .insert({
-        agente_id: agente.id,
-        criado_por: user?.id ?? null,
-        tipo,
-        cliente_id: tipo === 'post_cliente' ? clienteId : null,
-        ordem_texto: ordemTexto.trim(),
-        status: 'pendente',
-      })
-      .select('id')
-      .single();
-
-    if (error || !data) {
-      toast.error(`Erro ao criar tarefa: ${error?.message}`);
-      setEnviando(false);
+          repetir_diariamente: repetirDiariamente,
+        },
+      },
+    });
+    setEnviando(false);
+    if (error || !(data as any)?.ok) {
+      toast.error(`Erro ao entender o pedido: ${error?.message ?? (data as any)?.error ?? 'sem resposta'}`);
       return;
     }
-
     setOrdemTexto('');
-    setRepetirDiariamente(false);
-    loadTarefas();
+    const proposta = (data as any)?.proposta as ChatAcao | null;
+    if (proposta) {
+      setAcaoPendente(proposta);
+      toast.info('Proposta pronta. Confirme para executar.');
+    }
+    await loadChat();
+  };
 
-    const { error: fnError } = await supabase.functions.invoke(agente.executor_function, { body: { tarefa_id: data.id } });
-    setEnviando(false);
-    if (fnError) toast.error(`Erro ao executar tarefa: ${fnError.message}`);
-    loadTarefas();
+  const tratarAcaoPendente = async (operacao: 'confirmar' | 'cancelar') => {
+    if (!acaoPendente) return;
+    setConfirmandoAcao(true);
+    const { data, error } = await supabase.functions.invoke('equipe-11ds-chat', {
+      body: { operacao, agente_id: agente.id, acao_id: acaoPendente.id },
+    });
+    setConfirmandoAcao(false);
+    if (error || !(data as any)?.ok) {
+      toast.error(`Não foi possível ${operacao === 'confirmar' ? 'executar' : 'cancelar'}: ${error?.message ?? (data as any)?.error ?? 'sem resposta'}`);
+      await loadChat();
+      return;
+    }
+    setAcaoPendente(null);
+    if (operacao === 'confirmar') {
+      setRepetirDiariamente(false);
+      toast.success((data as any)?.resposta ?? 'Ação confirmada.');
+    } else toast.success('Ação cancelada. Nada foi executado.');
+    await Promise.all([loadChat(), loadTarefas(), loadRecorrentes()]);
   };
 
   const removerRecorrente = async (id: string) => {
@@ -797,6 +849,54 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
         <ScrollArea className="flex-1 p-4">
           <div className="space-y-4">
             <FichaDeCargo agente={agente} />
+            <div className="rounded-xl border border-purple-100 bg-gradient-to-br from-purple-50/70 to-background p-3 space-y-3">
+              <div className="flex items-center gap-2">
+                <MessageCircle className="h-4 w-4 text-purple-600" />
+                <div>
+                  <p className="text-sm font-semibold">Conversa com {agente.nome}</p>
+                  <p className="text-[11px] text-muted-foreground">Entende seu pedido e sempre pede confirmação antes de agir.</p>
+                </div>
+              </div>
+              <div className="max-h-52 overflow-y-auto space-y-2 pr-1">
+                {carregandoChat && <div className="flex justify-center py-3"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>}
+                {!carregandoChat && chatMensagens.length === 0 && (
+                  <p className="py-2 text-xs text-muted-foreground">Peça algo do seu jeito. Ex.: “gere o próximo post”.</p>
+                )}
+                {chatMensagens.map(mensagem => (
+                  <div
+                    key={mensagem.id}
+                    className={cn(
+                      'rounded-lg px-3 py-2 text-xs leading-relaxed whitespace-pre-line',
+                      mensagem.papel === 'usuario'
+                        ? 'ml-8 bg-purple-600 text-white'
+                        : mensagem.papel === 'sistema'
+                          ? 'border border-amber-200 bg-amber-50 text-amber-900'
+                          : 'mr-8 border bg-background text-foreground',
+                    )}
+                  >
+                    {mensagem.conteudo}
+                  </div>
+                ))}
+              </div>
+              {acaoPendente && (
+                <div className="rounded-lg border border-purple-200 bg-background p-3 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-purple-600" />
+                    <div>
+                      <p className="text-xs font-semibold">Ação aguardando sua confirmação</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{acaoPendente.resumo}</p>
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button size="sm" variant="ghost" disabled={confirmandoAcao} onClick={() => tratarAcaoPendente('cancelar')}>Cancelar</Button>
+                    <Button size="sm" className="gap-1.5" disabled={confirmandoAcao} onClick={() => tratarAcaoPendente('confirmar')}>
+                      {confirmandoAcao ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                      Confirmar e executar
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
             <HistoricoDecisoes agenteId={agente.id} />
             {recorrentes.length > 0 && (
               <div>
@@ -863,11 +963,11 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
             <Textarea
               value={ordemTexto}
               onChange={(e) => setOrdemTexto(e.target.value)}
-              placeholder="Dê uma ordem pro agente..."
+              placeholder={`Converse com ${agente.nome}. Ex.: “gere o próximo post”`}
               className="min-h-[60px] text-sm resize-none"
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarOrdem(); } }}
             />
-            <Button size="icon" className="h-auto" disabled={enviando || !ordemTexto.trim()} onClick={enviarOrdem}>
+            <Button size="icon" className="h-auto" disabled={enviando || Boolean(acaoPendente) || !ordemTexto.trim()} onClick={enviarOrdem}>
               {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
           </div>
