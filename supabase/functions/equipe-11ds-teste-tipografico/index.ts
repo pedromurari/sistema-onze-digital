@@ -24,7 +24,7 @@ serve(async (req) => {
   }
 
   try {
-    const { data: cliente } = await supabase.from('conteudo_clientes').select('cor_primaria, logo_url, fundos_fixos, estilo_visual').eq('id', 'cdb9037a-2303-4155-aac6-fda9cac36f75').single();
+    const { data: cliente } = await supabase.from('conteudo_clientes').select('nome, cor_primaria, logo_url, fundos_fixos, estilo_visual, instagram_handle').eq('id', 'cdb9037a-2303-4155-aac6-fda9cac36f75').single();
     const fundoUrl = cliente?.fundos_fixos?.[0];
     if (!fundoUrl) throw new Error('Cliente sem fundos_fixos');
 
@@ -44,6 +44,8 @@ serve(async (req) => {
         logo_base64: logoBytes ? bytesToBase64(logoBytes) : undefined,
         logo_posicao: 'superior-centro',
         headline: `Não é sobre ter todas as respostas. É sobre **perguntar** melhor.`,
+        nome_exibicao: cliente.nome,
+        handle: cliente.instagram_handle ?? undefined,
         estilo_visual: cliente.estilo_visual ?? 'manchete',
         cor_primaria: cliente.cor_primaria ?? undefined,
         gerar_stories: false,

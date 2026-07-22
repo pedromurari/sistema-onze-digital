@@ -26,6 +26,7 @@ type ClienteContexto = {
   arquetipos_visuais_preferidos?: string[] | null;
   arquetipos_visuais_evitar?: string[] | null;
   fundos_fixos?: string[] | null;
+  instagram_handle?: string | null;
 };
 
 type HistoricoRecente = { temas: string[]; pilares: string[]; arquetipos: string[]; aberturas: string[] };
@@ -485,6 +486,8 @@ async function passoProducao(
       logo_base64: logoBytes ? bytesToBase64(logoBytes) : undefined,
       logo_posicao: 'superior-centro',
       headline,
+      nome_exibicao: cliente.nome,
+      handle: cliente.instagram_handle ?? undefined,
       estilo_visual: cliente.estilo_visual ?? 'manchete',
       cor_primaria: cliente.cor_primaria ?? undefined,
       gerar_stories: true,
@@ -668,7 +671,7 @@ async function executarPostParaCliente(
 ): Promise<{ postId: string; tema: string }> {
   const { data: clienteData } = await supabase
     .from('conteudo_clientes')
-    .select('nome, nicho, publico_alvo, tom_de_voz, cta_padrao, cor_primaria, cor_secundaria, logo_url, hashtags_fixas, temas_evitar, pilares_conteudo, estilo_visual, formula_headline, arquetipos_visuais_preferidos, arquetipos_visuais_evitar, fundos_fixos')
+    .select('nome, nicho, publico_alvo, tom_de_voz, cta_padrao, cor_primaria, cor_secundaria, logo_url, hashtags_fixas, temas_evitar, pilares_conteudo, estilo_visual, formula_headline, arquetipos_visuais_preferidos, arquetipos_visuais_evitar, fundos_fixos, instagram_handle')
     .eq('id', clienteId)
     .single();
   const cliente: ClienteContexto = clienteData ?? { nome: 'Cliente' };
