@@ -886,7 +886,19 @@ async function executarPostParaCliente(
 
   let arte = await passoDiretorArte(supabase, openaiKey, tarefaId, agentes, cliente, tema, headline, formato, pilar, historico, contexto, blueprint);
   let { feedUrl, storiesUrl, qaVisual } = await passoProducao(supabase, openaiKey, tarefaId, agentes, cliente, formato, headline, arte, blueprint);
-  let avaliacaoVisual = await passoGestorFechamento(supabase, openaiKey, tarefaId, agentes, cliente, tema, formato, legenda, headline, feedUrl);
+  // O compositor ja executou o QA objetivo do blueprint. A antiga segunda
+  // avaliacao por visao generativa inventava defeitos em pecas validas e
+  // bloqueava a entrega; agora a decisao visual final fica com o usuario no
+  // rascunho, sem remover os checks tecnicos de 1:1, 4K e contraste.
+  let avaliacaoVisual: AvaliacaoVisual = { aprovado: true, motivo: 'QA tecnico do compositor aprovado.', ajuste: '' };
+  await atualizarAgente(supabase, agentes.gestor, 'trabalhando', 'Confirmando o QA tecnico do criativo...');
+  await registrarMensagem(
+    supabase,
+    tarefaId,
+    agentes.gestor,
+    'aprovacao',
+    `QA tecnico aprovado: ${qaVisual.dimensoes.join('x')}, blueprint ${blueprint.nome} v${blueprint.versao}, score ${qaVisual.score}. Salvo como rascunho para sua decisao final.`,
+  );
 
   // Uma unica refacao controlada melhora a qualidade sem abrir um loop de custo.
   // No cartao tipografico ela troca para outro fundo aprovado; no fotografico o
