@@ -599,7 +599,7 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
   const [repetirDiariamente, setRepetirDiariamente] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [selecionada, setSelecionada] = useState<string | null>(null);
-  const [rodandoDiaria, setRodandoDiaria] = useState(false);
+  const [gerandoProximoPost, setGerandoProximoPost] = useState(false);
   const [rodandoCalendario, setRodandoCalendario] = useState(false);
 
   const loadTarefas = useCallback(async () => {
@@ -693,13 +693,17 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
     toast.success('Tarefa recorrente removida.');
   };
 
-  const rodarRotinaDiaria = async () => {
-    setRodandoDiaria(true);
+  const gerarProximoPost = async () => {
+    setGerandoProximoPost(true);
     const { data, error } = await supabase.functions.invoke('equipe-11ds-diario', { body: {} });
-    setRodandoDiaria(false);
-    if (error) { toast.error(`Erro ao rodar rotina diária: ${error.message}`); return; }
+    setGerandoProximoPost(false);
+    if (error) { toast.error(`Erro ao gerar próximo post: ${error.message}`); return; }
     const criadas = (data as any)?.criadas ?? 0;
-    toast.success(criadas > 0 ? `${criadas} tarefa(s) diária(s) iniciada(s)!` : 'Nada novo pra rodar agora — tudo já foi feito hoje.');
+    toast.success(
+      criadas > 0
+        ? `${criadas} próximo(s) post(s) iniciado(s)!`
+        : 'Nenhum post foi iniciado: os clientes ativos já têm uma geração em andamento.',
+    );
     loadTarefas();
   };
 
@@ -759,28 +763,30 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
                   </AlertDialogContent>
                 </AlertDialog>
               )}
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button size="sm" variant="outline" className="gap-1.5" disabled={rodandoDiaria}>
-                    {rodandoDiaria ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                    Rodar rotina diária
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Rodar a rotina diária agora?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Isso roda de uma vez a rotina diária de todos os agentes: posts de hoje pros clientes ativos e todas
-                      as tarefas recorrentes cadastradas. Normalmente isso roda sozinho às 08h — use isso só se quiser
-                      testar ou não quiser esperar.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                    <AlertDialogAction onClick={rodarRotinaDiaria}>Rodar agora</AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              {agente.slug === 'gestor-midia' && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button size="sm" variant="outline" className="gap-1.5" disabled={gerandoProximoPost}>
+                      {gerandoProximoPost ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                      Gerar próximo post
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Gerar o próximo post agora?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        O Gestor de Mídia inicia a próxima geração editorial para os clientes ativos. Cada cliente segue
+                        a alternância entre cartão tipográfico premium e peça fotográfica cinematográfica. Você pode gerar
+                        mais de uma vez no mesmo dia; clientes com uma geração em andamento são ignorados.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                      <AlertDialogAction onClick={gerarProximoPost}>Gerar agora</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
             </div>
           </div>
           <div className="mt-2">
