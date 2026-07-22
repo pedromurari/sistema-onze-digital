@@ -852,7 +852,7 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
                   variant="outline"
                   className="gap-1.5"
                   disabled={enviando || Boolean(planoAtivo && ['aguardando_confirmacao', 'executando'].includes(planoAtivo.status))}
-                  onClick={() => solicitarPlano('Gere o próximo post premium para os clientes ativos, mantendo a alternância entre cartão tipográfico e fotografia cinematográfica em 1:1.', { tipo: 'avulso', cliente_id: null, repetir_diariamente: false })}
+                  onClick={() => solicitarPlano('Gere o próximo post premium para os clientes ativos, mantendo a alternância entre cartão tipográfico e fotografia cinematográfica em 1350x1050.', { tipo: 'avulso', cliente_id: null, repetir_diariamente: false })}
                 >
                   <RefreshCw className="h-3.5 w-3.5" /> Gerar próximo post
                 </Button>

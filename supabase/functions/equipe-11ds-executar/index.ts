@@ -69,7 +69,7 @@ const CADENCIA_FORMATO: FormatoDia[] = ['tipografico', 'fotografico'];
 const DIRECAO_ARTE_PREMIUM = {
   assinatura: 'Feed premium de luxo sobrio: preto profundo, ambar/dourado, contraste alto, textura sutil, luz controlada e acabamento editorial. A identidade da marca precisa ser reconhecivel mesmo com o assunto mudando.',
   tipografico: 'Cartao editorial dominante sobre fundo fixo aprovado da marca: grande, centralizado, com cantos arredondados, borda dourada sutil, cabecalho de perfil, headline hierarquica e CTA discreto na base. Layout, margens, tipografia e CTA sao estaveis; variam somente headline e fundo aprovado.',
-  fotografico: 'Fotografia editorial cinematografica de campanha em 1:1 4K: cena ou metafora visual concreta ligada ao tema, ambiente real contextualizado, luz lateral ou de recorte, sombras ricas, profundidade e acentos ambar/dourados. O resultado deve parecer uma imagem cuidadosamente dirigida, composta e retocada por uma equipe completa, nunca uma foto de banco ou imagem generica de IA.',
+  fotografico: 'Fotografia editorial cinematografica de campanha em 1350x1050 para feed do Instagram: cena ou metafora visual concreta ligada ao tema, ambiente real contextualizado, luz lateral ou de recorte, sombras ricas, profundidade e acentos ambar/dourados. O resultado deve parecer uma imagem cuidadosamente dirigida, composta e retocada por uma equipe completa, nunca uma foto de banco ou imagem generica de IA.',
   proibicoesFotograficas: 'Nunca usar texto, letras, logos ou marcas-d agua na imagem-base; pose passiva olhando para o nada, mao no rosto/queixo, laptop com cafe, livro generico, planta decorativa, fundo vazio, luz frontal de estudio, pele plastificada, infografico ou icones de apresentacao.',
   cta: 'CONFIRA A LEGENDA COMPLETA',
 } as const;
@@ -583,7 +583,7 @@ async function chamarServicoComposicao(
   if (!res.ok) throw new Error(`Servico de composicao falhou (${res.status}): ${(await res.text()).slice(0, 300)}`);
   const data = await res.json() as { feed_base64?: string; upload_concluido?: boolean; qa_visual?: QaVisual; dimensoes?: number[] };
   if (!data.qa_visual || data.qa_visual.status !== 'aprovado') throw new Error('Compositor nao apresentou QA visual aprovado.');
-  if (data.dimensoes?.[0] !== 4096 || data.dimensoes?.[1] !== 4096) throw new Error('Compositor entregou formato diferente de 1:1 4K.');
+  if (data.dimensoes?.[0] !== 1350 || data.dimensoes?.[1] !== 1050) throw new Error('Compositor entregou formato diferente de 1350x1050.');
   return {
     feed: data.feed_base64 ? base64ToBytes(data.feed_base64) : null,
     uploadConcluido: data.upload_concluido === true,
@@ -610,8 +610,8 @@ async function buscarBlueprintVisual(supabase: any, clienteId: string, formato: 
     base_visual_url: null,
     referencia_url: null,
     spec: {
-      canvas: [4096, 4096],
-      safe_area: 230,
+      canvas: [1350, 1050],
+      safe_area: 80,
       finish: 'campaign_key_art',
     },
   };
@@ -634,7 +634,7 @@ async function passoProducao(
   const { data: signedUpload, error: signedError } = await supabase.storage
     .from('equipe-11ds-criativos')
     .createSignedUploadUrl(storagePathFeed, { upsert: true });
-  if (signedError || !signedUpload?.signedUrl) throw new Error(`Falha ao preparar upload 4K: ${signedError?.message ?? 'URL assinada ausente'}`);
+  if (signedError || !signedUpload?.signedUrl) throw new Error(`Falha ao preparar upload 1350x1050: ${signedError?.message ?? 'URL assinada ausente'}`);
 
   let composto: { feed: Uint8Array | null; uploadConcluido: boolean; qaVisual: QaVisual; dimensoes: number[] };
   if (formato === 'tipografico') {
@@ -664,7 +664,7 @@ async function passoProducao(
       arte.promptImagem ?? '',
       cliente.cor_primaria ? `Use ${cliente.cor_primaria} as the dominant brand color of the design` : '',
       cliente.cor_secundaria ? `${cliente.cor_secundaria} as a secondary accent color` : '',
-      'Premium cinematic editorial campaign key art, composed for a square 1:1 Instagram feed. Stop-scroll composition with rich shadow detail, cinematic color grading, physically believable texture, professional retouching, sharp intentional focal plane and sophisticated art direction. The full frame must feel finished by an art director, retoucher and designer working together. Keep every key subject inside the central 80 percent. No text, letters, logos, watermarks, graphic overlays or stock-photo look.',
+      'Premium cinematic editorial campaign key art, composed for a 1350x1050 Instagram feed post. Stop-scroll composition with rich shadow detail, cinematic color grading, physically believable texture, professional retouching, sharp intentional focal plane and sophisticated art direction. The full frame must feel finished by an art director, retoucher and designer working together. Keep every key subject inside the central 80 percent. No text, letters, logos, watermarks, graphic overlays or stock-photo look.',
     ].filter(Boolean).join('. ');
     const bytesBase = await gerarImagem(openaiKey, promptFinal, '1024x1024');
     composto = await chamarServicoComposicao(composeUrl, compositeSecret, {
@@ -694,7 +694,7 @@ async function passoProducao(
     tarefaId,
     agentes.nina,
     'mensagem',
-    `Peça 1:1 4K finalizada como campanha completa. QA visual ${composto.qaVisual.score}/100, blueprint v${blueprint.versao}.`,
+    `Peça 1350x1050 finalizada como campanha completa. QA visual ${composto.qaVisual.score}/100, blueprint v${blueprint.versao}.`,
   );
   return { feedUrl, storiesUrl: null, qaVisual: composto.qaVisual, blueprint };
 }
@@ -815,7 +815,7 @@ async function interpretarOrdemAvulsa(openaiKey: string, agente: PerfilAgenteAvu
     `Métodos que aplica: ${(agente.aplica ?? []).join(' | ') || 'boas práticas profissionais da sua função'}.`,
     memoria ? `Cérebro permanente da equipe no Obsidian (use quando relevante e nunca contradiga uma regra explícita):\n${memoria}` : 'O Obsidian não trouxe nota relevante para esta tarefa.',
     podeGerarImagem
-      ? 'Você pode decidir gerar uma imagem. Se gerar, escreva headline curto e prompt_imagem em inglês com composição, estética premium, formato 1:1 e texto exato quando houver.'
+      ? 'Você pode decidir gerar uma imagem. Se gerar, escreva headline curto e prompt_imagem em inglês com composição, estética premium, formato 1350x1050 e texto exato quando houver.'
       : 'Você não é o produtor visual nesta tarefa: mantenha gerar_imagem=false e entregue seu trabalho especializado em texto.',
     `Responda SOMENTE com um JSON: {"resposta": string, "gerar_imagem": boolean, "prompt_imagem"?: string, "headline"?: string, "tema"?: string, "legenda"?: string}`,
   ].join(' ');
@@ -889,7 +889,7 @@ async function executarPostParaCliente(
   // O compositor ja executou o QA objetivo do blueprint. A antiga segunda
   // avaliacao por visao generativa inventava defeitos em pecas validas e
   // bloqueava a entrega; agora a decisao visual final fica com o usuario no
-  // rascunho, sem remover os checks tecnicos de 1:1, 4K e contraste.
+  // rascunho, sem remover os checks tecnicos de 1350x1050 e contraste.
   let avaliacaoVisual: AvaliacaoVisual = { aprovado: true, motivo: 'QA tecnico do compositor aprovado.', ajuste: '' };
   await atualizarAgente(supabase, agentes.gestor, 'trabalhando', 'Confirmando o QA tecnico do criativo...');
   await registrarMensagem(
