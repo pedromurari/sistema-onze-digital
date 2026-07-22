@@ -9,14 +9,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-key',
 };
 
-function hojeSaoPaulo(): string {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).formatToParts(new Date());
-  const y = parts.find(p => p.type === 'year')?.value;
-  const m = parts.find(p => p.type === 'month')?.value;
-  const d = parts.find(p => p.type === 'day')?.value;
-  return `${y}-${m}-${d}`;
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -59,7 +51,6 @@ serve(async (req) => {
       .single();
     if (agenteErr || !agente) throw new Error(`Agente Nina (producao) nao encontrado: ${agenteErr?.message}`);
 
-    const hoje = hojeSaoPaulo();
     const tarefasCriadas: { id: string; agenteId: string; executorFunction: string }[] = [];
 
     // ── 1. Rotina de posts diarios para clientes ativos ──────────────────────
@@ -70,16 +61,16 @@ serve(async (req) => {
     if (clientesErr) throw new Error(`Falha ao listar clientes ativos: ${clientesErr.message}`);
 
     if (clientes && clientes.length > 0) {
-      const [{ data: postsHoje }, { data: tarefasHoje }] = await Promise.all([
-        supabase.from('conteudo_posts').select('cliente_id').eq('data_post', hoje),
-        supabase.from('equipe_11ds_tarefas').select('cliente_id').eq('tipo', 'post_cliente').neq('status', 'erro').gte('created_at', `${hoje}T00:00:00`),
-      ]);
-      const jaTemPostHoje = new Set([
-        ...(postsHoje ?? []).map(p => p.cliente_id),
-        ...(tarefasHoje ?? []).map(t => t.cliente_id),
-      ]);
-
-      const pendentes = clientes.filter(c => !jaTemPostHoje.has(c.id));
+      // A rotina pode ser chamada varias vezes no mesmo dia. So evitamos duas
+      // execucoes concorrentes para o mesmo cliente; posts e tarefas concluidos
+      // continuam no historico e nunca bloqueiam uma nova geracao.
+      const { data: tarefasAtivas } = await supabase
+        .from('equipe_11ds_tarefas')
+        .select('cliente_id')
+        .eq('tipo', 'post_cliente')
+        .in('status', ['pendente', 'em_andamento']);
+      const clientesComExecucaoAtiva = new Set((tarefasAtivas ?? []).map(t => t.cliente_id));
+      const pendentes = clientes.filter(c => !clientesComExecucaoAtiva.has(c.id));
 
       for (const cliente of pendentes) {
         const { data: tarefa, error: insertErr } = await supabase
@@ -89,7 +80,7 @@ serve(async (req) => {
             criado_por: null,
             tipo: 'post_cliente',
             cliente_id: cliente.id,
-            ordem_texto: `Crie o post diário de hoje para o cliente ${cliente.nome}: escolha um tema relevante e alinhado com o nicho dele.`,
+            ordem_texto: `Crie uma nova geração de post para o cliente ${cliente.nome}: escolha um tema relevante e alinhado com o nicho dele.`,
             status: 'pendente',
           })
           .select('id')
@@ -110,14 +101,13 @@ serve(async (req) => {
     if (recorrentesErr) console.error('Falha ao listar recorrentes:', recorrentesErr.message);
 
     for (const rec of (recorrentes ?? []) as any[]) {
-      const { data: jaExecutou } = await supabase
+      const { data: jaEstaEmExecucao } = await supabase
         .from('equipe_11ds_tarefas')
         .select('id')
         .eq('recorrente_id', rec.id)
-        .neq('status', 'erro')
-        .gte('created_at', `${hoje}T00:00:00`)
+        .in('status', ['pendente', 'em_andamento'])
         .limit(1);
-      if (jaExecutou && jaExecutou.length > 0) continue;
+      if (jaEstaEmExecucao && jaEstaEmExecucao.length > 0) continue;
 
       const { data: tarefa, error: insertErr } = await supabase
         .from('equipe_11ds_tarefas')

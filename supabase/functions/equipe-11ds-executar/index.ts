@@ -8,6 +8,7 @@ const corsHeaders = {
 
 type EstiloVisual = 'manchete' | 'editorial';
 type FormatoDia = 'tipografico' | 'fotografico';
+type AvaliacaoVisual = { aprovado: boolean; motivo: string; ajuste: string };
 
 type ClienteContexto = {
   nome: string;
@@ -41,7 +42,26 @@ function hojeSaoPaulo(): string {
 
 // ── Calendario deterministico (decidido por codigo, nunca por sorte de prompt) ─
 
-const CADENCIA_FORMATO: FormatoDia[] = ['tipografico', 'tipografico', 'fotografico', 'tipografico', 'tipografico', 'fotografico', 'tipografico'];
+const CADENCIA_FORMATO: FormatoDia[] = ['tipografico', 'fotografico'];
+
+// Contrato visual compartilhado por todos os agentes. O tema pode variar; a
+// assinatura da marca e a hierarquia da peca nao. Mantemos isso em codigo para
+// que a identidade nao dependa de uma instrucao solta em um unico prompt.
+const DIRECAO_ARTE_PREMIUM = {
+  assinatura: 'Feed premium de luxo sobrio: preto profundo, ambar/dourado, contraste alto, textura sutil, luz controlada e acabamento editorial. A identidade da marca precisa ser reconhecivel mesmo com o assunto mudando.',
+  tipografico: 'Cartao editorial dominante sobre fundo fixo aprovado da marca: grande, centralizado, com cantos arredondados, borda dourada sutil, cabecalho de perfil, headline hierarquica e CTA discreto na base. Layout, margens, tipografia e CTA sao estaveis; variam somente headline e fundo aprovado.',
+  fotografico: 'Fotografia editorial cinematografica de campanha em 4:5: cena ou metafora visual concreta ligada ao tema, ambiente real contextualizado, luz lateral ou de recorte, sombras ricas, profundidade e acentos ambar/dourados. O resultado deve parecer uma imagem cuidadosamente dirigida e retocada, nunca uma foto de banco ou imagem generica de IA.',
+  proibicoesFotograficas: 'Nunca usar texto, letras, logos ou marcas-d agua na imagem-base; pose passiva olhando para o nada, mao no rosto/queixo, laptop com cafe, livro generico, planta decorativa, fundo vazio, luz frontal de estudio, pele plastificada, infografico ou icones de apresentacao.',
+  cta: 'CONFIRA A LEGENDA COMPLETA',
+} as const;
+
+function direcaoVisualPara(formato: FormatoDia): string {
+  return [
+    DIRECAO_ARTE_PREMIUM.assinatura,
+    formato === 'tipografico' ? DIRECAO_ARTE_PREMIUM.tipografico : DIRECAO_ARTE_PREMIUM.fotografico,
+    formato === 'fotografico' ? `Proibicoes: ${DIRECAO_ARTE_PREMIUM.proibicoesFotograficas}` : '',
+  ].filter(Boolean).join(' ');
+}
 
 function calcularCalendarioDoDia(pilares: string[], hoje: string): { pilar: string | null; formato: FormatoDia } {
   const diasDesdeEpoch = Math.floor(Date.parse(`${hoje}T00:00:00Z`) / 86_400_000);
@@ -147,6 +167,36 @@ async function chamarGPT(openaiKey: string, systemPrompt: string, userPrompt: st
   const data = await res.json() as { choices: { message: { content: string } }[] };
   const raw = data.choices[0]?.message?.content;
   if (!raw) throw new Error('OpenAI nao retornou conteudo');
+  return desembrulharJSON(raw);
+}
+
+async function chamarGPTComImagem(
+  openaiKey: string, systemPrompt: string, userPrompt: string, imageUrl: string, temperature = 0.2,
+): Promise<Record<string, unknown>> {
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openaiKey}` },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: userPrompt },
+            { type: 'image_url', image_url: { url: imageUrl, detail: 'low' } },
+          ],
+        },
+      ],
+      response_format: { type: 'json_object' },
+      temperature,
+    }),
+    signal: AbortSignal.timeout(45_000),
+  });
+  if (!res.ok) throw new Error(`OpenAI vision error ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const data = await res.json() as { choices: { message: { content: string } }[] };
+  const raw = data.choices[0]?.message?.content;
+  if (!raw) throw new Error('OpenAI nao retornou revisao visual');
   return desembrulharJSON(raw);
 }
 
@@ -282,8 +332,8 @@ async function passoGestorAbertura(supabase: any, tarefaId: string, agentes: Age
   await atualizarAgente(supabase, agentes.gestor, 'trabalhando', `Abrindo o dia para ${cliente.nome}...`);
   const { pilar, formato } = calcularCalendarioDoDia(cliente.pilares_conteudo ?? [], hoje);
   const briefing = pilar
-    ? `Hoje: pilar "${pilar}", formato ${formato}. Estrategista, defina o angulo.`
-    : `Hoje: formato ${formato} (cliente sem pilares cadastrados). Estrategista, defina o angulo.`;
+    ? `Hoje: pilar "${pilar}", formato ${formato}. ${direcaoVisualPara(formato)} Estrategista, defina o angulo.`
+    : `Hoje: formato ${formato} (cliente sem pilares cadastrados). ${direcaoVisualPara(formato)} Estrategista, defina o angulo.`;
   await registrarMensagem(supabase, tarefaId, agentes.gestor, 'mensagem', briefing);
   return { pilar, formato };
 }
@@ -292,7 +342,7 @@ async function passoGestorAbertura(supabase: any, tarefaId: string, agentes: Age
 
 async function passoEstrategista(
   supabase: any, openaiKey: string, tarefaId: string, agentes: Agentes,
-  cliente: ClienteContexto, pilar: string | null, pesquisa: string, historico: HistoricoRecente, contexto: ContextoConhecimento,
+  cliente: ClienteContexto, pilar: string | null, formato: FormatoDia, pesquisa: string, historico: HistoricoRecente, contexto: ContextoConhecimento,
 ): Promise<{ tema: string; justificativa: string }> {
   await atualizarAgente(supabase, agentes.estrategista, 'trabalhando', `Definindo o angulo do dia para ${cliente.nome}...`);
 
@@ -301,6 +351,7 @@ async function passoEstrategista(
     `Cliente: "${cliente.nome}". Nicho: ${cliente.nicho ?? 'nao informado'}.`,
     cliente.publico_alvo ? `Publico-alvo: ${cliente.publico_alvo}.` : '',
     pilar ? `O pilar de hoje JA ESTA DECIDIDO pelo calendario: "${pilar}". Sua funcao e escolher o ANGULO/TEMA especifico dentro desse pilar -- nao escolha outro pilar.` : '',
+    `Formato visual de hoje: ${formato}. Direcao de arte que deve orientar a escolha do tema: ${direcaoVisualPara(formato)}. Escolha um angulo que seja facil de transformar nesse formato sem enfraquecer a identidade visual.`,
     cliente.temas_evitar?.length ? `NUNCA sugira nada relacionado a: ${cliente.temas_evitar.join(', ')} (brand safety).` : '',
     `REGRA DURA: o time so tem duas ferramentas -- escrever texto e gerar/compor imagem. NUNCA sugira um tema que dependa de algo que o time nao tem: depoimento real de aluno, foto ou video de pessoa real, prova social que nao existe no sistema (numero de formados, avaliacao, caso especifico), cobertura de um evento que de fato aconteceu, ou qualquer dado que o time nao pode verificar. O tema tem que ser 100% produzivel do zero: uma ideia, reflexao, reframe, explicacao de mecanismo, mito x verdade, cenario hipotetico ou POV generico -- nunca um relato que pareça vindo de uma pessoa ou evento real que o time nao presenciou.`,
     pesquisa ? `Pesquisa de tendencia feita agora: ${pesquisa}` : '',
@@ -321,13 +372,14 @@ async function passoEstrategista(
 
 async function passoRedator(
   supabase: any, openaiKey: string, tarefaId: string, agentes: Agentes,
-  cliente: ClienteContexto, tema: string, historico: HistoricoRecente, contexto: ContextoConhecimento, feedbackCorrecao?: string,
+  cliente: ClienteContexto, tema: string, formato: FormatoDia, historico: HistoricoRecente, contexto: ContextoConhecimento, feedbackCorrecao?: string,
 ): Promise<{ legenda: string; headline: string; hashtags: string }> {
   await atualizarAgente(supabase, agentes.redator, 'trabalhando', `Escrevendo a legenda sobre "${tema.slice(0, 40)}"...`);
 
   const systemPrompt = [
     `Voce e o Redator-chefe do time de midia da agencia 11 Digital Strategy. Responda sempre em portugues do Brasil.`,
     `Cliente: "${cliente.nome}". Tom de voz: ${cliente.tom_de_voz ?? 'nao informado'}. Tema de hoje: "${tema}".`,
+    `Formato visual de hoje: ${formato}. Direcao de arte compartilhada: ${direcaoVisualPara(formato)}. A headline deve fortalecer esta composicao, nunca competir com ela.`,
     `Escreva como uma pessoa real falando (especialista em primeira pessoa, "eu ja vi isso" no sentido de observacao profissional/clinica), nao como comunicado institucional.`,
     `Cuidado com o gancho "Fui de [estado ruim] pra [estado bom]": ele so pode ser usado em primeira pessoa se for sobre uma OBSERVACAO/PADRAO que a instituicao ve repetir (ex: "Eu ja vi gente sair de X pra Y quando..."), nunca como se fosse o relato de uma transformacao pessoal especifica do "eu" -- isso soa como depoimento fabricado mesmo fora do pilar de prova social. Se ficar ambiguo se parece um relato de pessoa real, troque de gancho.`,
     `Gancho (linha 1, sozinha, e o que aparece antes do "...mais"): escolha e adapte um destes formatos comprovados ao tema de hoje -- ${MENU_GANCHOS}`,
@@ -357,7 +409,7 @@ async function passoRedator(
 
 async function passoDiretorArte(
   supabase: any, openaiKey: string, tarefaId: string, agentes: Agentes,
-  cliente: ClienteContexto, tema: string, headline: string, formato: FormatoDia, pilar: string | null, historico: HistoricoRecente, contexto: ContextoConhecimento,
+  cliente: ClienteContexto, tema: string, headline: string, formato: FormatoDia, pilar: string | null, historico: HistoricoRecente, contexto: ContextoConhecimento, feedbackRefacao?: string,
 ): Promise<{ promptImagem?: string; fundoUrl?: string; arquetipoVisual: string }> {
   await atualizarAgente(supabase, agentes.diretor, 'trabalhando', `Definindo o conceito visual (${formato})...`);
 
@@ -365,19 +417,23 @@ async function passoDiretorArte(
     const fundos = cliente.fundos_fixos ?? [];
     if (!fundos.length) throw new Error(`Cliente "${cliente.nome}" nao tem fundos_fixos configurados -- rode equipe-11ds-gerar-fundos antes de usar o formato tipografico.`);
     const diasDesdeEpoch = Math.floor(Date.parse(`${hojeSaoPaulo()}T00:00:00Z`) / 86_400_000);
-    const fundoUrl = fundos[diasDesdeEpoch % fundos.length];
-    const arquetipoVisual = `cartao estilo tweet, fundo fixo #${(diasDesdeEpoch % fundos.length) + 1}`;
-    await registrarMensagem(supabase, tarefaId, agentes.diretor, 'mensagem', `Cartão estilo tweet, texto centralizado sobre fundo fixo da marca.`);
+    const indiceFundo = (diasDesdeEpoch + (feedbackRefacao ? 1 : 0)) % fundos.length;
+    const fundoUrl = fundos[indiceFundo];
+    const arquetipoVisual = `cartao premium de marca, fundo fixo #${indiceFundo + 1}`;
+    await registrarMensagem(supabase, tarefaId, agentes.diretor, 'mensagem', feedbackRefacao
+      ? `Refazendo o cartao premium com outro fundo aprovado: ${feedbackRefacao}`
+      : 'Cartão premium de marca, com hierarquia fixa sobre fundo aprovado.');
     return { fundoUrl, arquetipoVisual };
   }
 
   const systemPrompt = [
     `Voce e o Diretor de Arte do time de midia da agencia 11 Digital Strategy. Responda sempre em ingles no campo prompt_imagem (o resto em portugues).`,
     `Cliente: "${cliente.nome}". Tema: "${tema}".`,
+    `Direcao de arte obrigatoria: ${direcaoVisualPara('fotografico')}`,
     `Pense antes num UNICO MOMENTO decisivo que faria alguem parar de rolar o feed -- nao uma lista de termos tecnicos soltos. Isso e "key art" (termo de cinema/streaming): uma cena com peso proprio, nunca uma foto generica de banco de imagens.`,
     `NAO inclua texto/headline/tipografia na cena -- o texto e' aplicado depois, separadamente, com fonte real. O prompt_imagem descreve so a fotografia (cena, luz, composicao), nunca menciona palavras/letras/texto.`,
     `Luz: low-key/rim light pra separar do fundo, nunca luz frontal de camera. Enquadramento: rule of thirds, com espaco negativo no terco superior da composicao (e' onde o texto entra depois -- nao preencha essa area com o assunto principal). Fundo: NUNCA vazio/liso -- sempre um ambiente desfocado que sugere contexto, nomeando o que esta desfocado. Sempre fotografia realista (editorial/advertising photography, photorealistic), nunca ilustracao/flat.`,
-    `PROIBIDO (cliches de banco de imagens vistos repetidas vezes, banidos explicitamente): pessoa com a mao no queixo/rosto em pose pensativa, livro aberto generico sobre mesa, vaso de planta ao lado, cortina translucida com luz de janela atras, laptop+cafe+caderno, pele/textura cerosa, iluminacao de estudio generica, infografico/icone tipo slide de apresentacao, duas maos entrelacadas em close-up.`,
+    `PROIBIDO (cliches de banco de imagens vistos repetidas vezes, banidos explicitamente): ${DIRECAO_ARTE_PREMIUM.proibicoesFotograficas}.`,
     `Em vez de pose passiva de reflexao, descreva um momento com acao ou tensao especifica (um gesto, um instante de decisao, um movimento) -- nunca alguem so "pensando" olhando pro nada.`,
     `Se aparecer pessoa, genero/idade combinando com o publico-alvo.`,
     `Escolha um "arquetipo_visual": pose/enquadramento/acao especifica (nunca categoria generica tipo so "retrato").`,
@@ -386,6 +442,7 @@ async function passoDiretorArte(
     cliente.arquetipos_visuais_evitar?.length ? `NUNCA use estes arquetipos: ${cliente.arquetipos_visuais_evitar.join(', ')}.` : '',
     contexto.notaCliente ? `O que o time ja aprendeu sobre este cliente especificamente (memoria do time, Obsidian): ${contexto.notaCliente.slice(0, 1500)}` : '',
     contexto.principios ? `Principios gerais de imagem do time, validados por pesquisa (Obsidian, use como reforco): ${contexto.principios.slice(0, 2500)}` : '',
+    feedbackRefacao ? `REFACAO OBRIGATORIA: a primeira versao foi reprovada por "${feedbackRefacao}". Corrija exatamente esse problema sem abandonar a direcao de arte.` : '',
     `prompt_imagem: 30-50 palavras.`,
     `Responda SOMENTE com um JSON: {"prompt_imagem": string, "arquetipo_visual": string}`,
   ].filter(Boolean).join(' ');
@@ -490,6 +547,9 @@ async function passoProducao(
       handle: cliente.instagram_handle ?? undefined,
       estilo_visual: cliente.estilo_visual ?? 'manchete',
       cor_primaria: cliente.cor_primaria ?? undefined,
+      perfil_visual: 'premium-editorial-amber',
+      direcao_visual: DIRECAO_ARTE_PREMIUM.tipografico,
+      cta: DIRECAO_ARTE_PREMIUM.cta,
       gerar_stories: true,
     });
   } else {
@@ -497,7 +557,7 @@ async function passoProducao(
       arte.promptImagem ?? '',
       cliente.cor_primaria ? `Use ${cliente.cor_primaria} as the dominant brand color of the design` : '',
       cliente.cor_secundaria ? `${cliente.cor_secundaria} as a secondary accent color` : '',
-      'Professional social media key art, vertical portrait photography, scroll-stopping composition, photorealistic, high contrast, no watermarks, no text, no letters.',
+      'Premium cinematic editorial campaign photography, made for a 4:5 Instagram feed crop. Stop-scroll composition with rich shadow detail, cinematic color grading, physically believable texture, professional retouching, sharp intentional focal plane and sophisticated art direction. Keep every key subject inside the central 80 percent of the frame for the final crop. No text, letters, logos, watermarks, graphic overlays or stock-photo look.',
     ].filter(Boolean).join('. ');
     const bytesBase = await gerarImagem(openaiKey, promptFinal, '1024x1536');
     composto = await chamarServicoComposicao(composeUrl, compositeSecret, {
@@ -508,6 +568,9 @@ async function passoProducao(
       headline, // aplicado via PIL (fonte real, margem segura) -- nunca mais pedido pra IA de imagem desenhar
       estilo_visual: cliente.estilo_visual ?? 'manchete',
       cor_primaria: cliente.cor_primaria ?? undefined,
+      perfil_visual: 'premium-editorial-amber',
+      direcao_visual: DIRECAO_ARTE_PREMIUM.fotografico,
+      cta: DIRECAO_ARTE_PREMIUM.cta,
       gerar_stories: true,
     });
   }
@@ -542,22 +605,34 @@ function checagemDura(legenda: string, hashtags: string): string | null {
 
 async function passoGestorFechamento(
   supabase: any, openaiKey: string, tarefaId: string, agentes: Agentes,
-  legenda: string, headline: string,
-): Promise<void> {
+  cliente: ClienteContexto, tema: string, formato: FormatoDia, legenda: string, headline: string, feedUrl: string | null,
+): Promise<AvaliacaoVisual> {
   await atualizarAgente(supabase, agentes.gestor, 'trabalhando', 'Revisando antes de publicar...');
   try {
-    const critica = await chamarGPT(
-      openaiKey,
-      'Voce e o Gestor de Midia revisando a qualidade final de um post antes de publicar. Responda SOMENTE com um JSON: {"aprovado": boolean, "motivo": string (uma linha, em portugues)}. Reprove so se houver problema real de qualidade (generico demais, cheira a IA, gramatica errada) -- nao seja excessivamente rigoroso.',
-      `Headline: "${headline}"\n\nLegenda:\n${legenda}`,
-      0.3,
-    );
-    const aprovado = Boolean(critica.aprovado);
+    const systemPrompt = [
+      'Voce e o Gestor de Midia revisando a qualidade final de um post de Instagram antes de publicar como rascunho. Avalie a imagem final e o texto com regua alta, mas sem inventar defeitos invisiveis.',
+      `Cliente: "${cliente.nome}". Formato: ${formato}. Direcao de arte obrigatoria: ${direcaoVisualPara(formato)}.`,
+      formato === 'fotografico'
+        ? 'Reprove fotografia generica, com aparencia de stock ou IA barata, sem cena ligada ao tema, fora da paleta, com luz rasa, baixa legibilidade ou sem impacto de feed.'
+        : 'Reprove cartao se logo/identificacao ou headline estiverem ilegiveis, se a hierarquia visual falhar, se a paleta fugir da marca ou se o layout nao parecer um cartao premium consistente.',
+      'Responda SOMENTE com JSON: {"aprovado": boolean, "motivo": string (uma linha, em portugues), "ajuste": string (instrucao objetiva para uma unica refacao; vazio se aprovado)}.',
+    ].join(' ');
+    const contexto = `Tema: "${tema}"\nHeadline: "${headline}"\n\nLegenda:\n${legenda}`;
+    const critica = feedUrl
+      ? await chamarGPTComImagem(openaiKey, systemPrompt, contexto, feedUrl, 0.2)
+      : await chamarGPT(openaiKey, systemPrompt, contexto, 0.2);
+    const aprovado = critica.aprovado === true;
     const motivo = String(critica.motivo ?? '');
-    await registrarMensagem(supabase, tarefaId, agentes.gestor, aprovado ? 'aprovacao' : 'alerta', aprovado ? `Aprovado, publicado como rascunho. ${motivo}`.trim() : `Ressalva: ${motivo}. Publicado mesmo assim para revisao manual.`);
+    const ajuste = String(critica.ajuste ?? motivo ?? '').trim();
+    await registrarMensagem(supabase, tarefaId, agentes.gestor, aprovado ? 'aprovacao' : 'alerta', aprovado
+      ? `Aprovado visualmente como rascunho. ${motivo}`.trim()
+      : `Ressalva visual: ${motivo}. Uma refacao dirigida sera tentada.`);
+    return { aprovado, motivo, ajuste };
   } catch (e) {
-    // A critica do Gestor e' um sinal extra, nunca deve travar a publicacao do post.
-    await registrarMensagem(supabase, tarefaId, agentes.gestor, 'aprovacao', 'Aprovado, publicado como rascunho.');
+    // Revisao automatica e' uma camada de qualidade. Indisponibilidade nao pode
+    // apagar uma geracao valida nem travar o trabalho do time.
+    await registrarMensagem(supabase, tarefaId, agentes.gestor, 'alerta', 'Revisao visual automatica indisponivel; post preservado como rascunho para revisao manual.');
+    return { aprovado: true, motivo: 'Revisao visual automatica indisponivel.', ajuste: '' };
   }
 }
 
@@ -681,19 +756,32 @@ async function executarPostParaCliente(
   const { pilar, formato } = await passoGestorAbertura(supabase, tarefaId, agentes, cliente, hoje);
 
   const pesquisa = await pesquisarTendencia(openaiKey, cliente, historico);
-  const { tema, justificativa } = await passoEstrategista(supabase, openaiKey, tarefaId, agentes, cliente, pilar, pesquisa, historico, contexto);
+  const { tema, justificativa } = await passoEstrategista(supabase, openaiKey, tarefaId, agentes, cliente, pilar, formato, pesquisa, historico, contexto);
 
-  let { legenda, headline, hashtags } = await passoRedator(supabase, openaiKey, tarefaId, agentes, cliente, tema, historico, contexto);
+  let { legenda, headline, hashtags } = await passoRedator(supabase, openaiKey, tarefaId, agentes, cliente, tema, formato, historico, contexto);
   const problema = checagemDura(legenda, hashtags);
   if (problema) {
     await registrarMensagem(supabase, tarefaId, agentes.gestor, 'alerta', `Encontrei um problema antes de seguir: ${problema}`);
-    const corrigido = await passoRedator(supabase, openaiKey, tarefaId, agentes, cliente, tema, historico, contexto, problema);
+    const corrigido = await passoRedator(supabase, openaiKey, tarefaId, agentes, cliente, tema, formato, historico, contexto, problema);
     legenda = corrigido.legenda; headline = corrigido.headline; hashtags = corrigido.hashtags;
   }
 
-  const arte = await passoDiretorArte(supabase, openaiKey, tarefaId, agentes, cliente, tema, headline, formato, pilar, historico, contexto);
-  const { feedUrl, storiesUrl } = await passoProducao(supabase, openaiKey, tarefaId, agentes, cliente, formato, headline, arte);
-  await passoGestorFechamento(supabase, openaiKey, tarefaId, agentes, legenda, headline);
+  let arte = await passoDiretorArte(supabase, openaiKey, tarefaId, agentes, cliente, tema, headline, formato, pilar, historico, contexto);
+  let { feedUrl, storiesUrl } = await passoProducao(supabase, openaiKey, tarefaId, agentes, cliente, formato, headline, arte);
+  let avaliacaoVisual = await passoGestorFechamento(supabase, openaiKey, tarefaId, agentes, cliente, tema, formato, legenda, headline, feedUrl);
+
+  // Uma unica refacao controlada melhora a qualidade sem abrir um loop de custo.
+  // No cartao tipografico ela troca para outro fundo aprovado; no fotografico o
+  // Diretor recebe a critica concreta e reconstrói a direcao da cena.
+  if (!avaliacaoVisual.aprovado) {
+    arte = await passoDiretorArte(supabase, openaiKey, tarefaId, agentes, cliente, tema, headline, formato, pilar, historico, contexto, avaliacaoVisual.ajuste || avaliacaoVisual.motivo);
+    ({ feedUrl, storiesUrl } = await passoProducao(supabase, openaiKey, tarefaId, agentes, cliente, formato, headline, arte));
+    avaliacaoVisual = await passoGestorFechamento(supabase, openaiKey, tarefaId, agentes, cliente, tema, formato, legenda, headline, feedUrl);
+    if (!avaliacaoVisual.aprovado) {
+      await registrarMensagem(supabase, tarefaId, agentes.gestor, 'alerta', `Post mantido como rascunho com ressalva visual: ${avaliacaoVisual.motivo}`);
+    }
+  }
+
   await passoCurador(supabase, openaiKey, tarefaId, agentes, cliente, tema, headline, legenda, contexto);
 
   const legendaFinal = [legenda, hashtags ? `.\n.\n.\n${hashtags}` : ''].filter(Boolean).join('\n\n');
