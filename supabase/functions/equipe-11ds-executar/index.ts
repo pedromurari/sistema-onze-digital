@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { registrarDiretiva } from './memoria.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,6 +10,24 @@ const corsHeaders = {
 type EstiloVisual = 'manchete' | 'editorial';
 type FormatoDia = 'tipografico' | 'fotografico';
 type AvaliacaoVisual = { aprovado: boolean; motivo: string; ajuste: string };
+type BlueprintVisual = {
+  id: string | null;
+  nome: string;
+  tipo: FormatoDia;
+  versao: number;
+  base_visual_url: string | null;
+  referencia_url: string | null;
+  spec: Record<string, unknown>;
+};
+type QaVisual = {
+  status: 'aprovado' | 'reprovado';
+  score: number;
+  checks: Record<string, boolean>;
+  dimensoes: number[];
+  contraste: number;
+  blueprint_id?: string | null;
+  blueprint_versao?: number;
+};
 
 type ClienteContexto = {
   nome: string;
@@ -50,7 +69,7 @@ const CADENCIA_FORMATO: FormatoDia[] = ['tipografico', 'fotografico'];
 const DIRECAO_ARTE_PREMIUM = {
   assinatura: 'Feed premium de luxo sobrio: preto profundo, ambar/dourado, contraste alto, textura sutil, luz controlada e acabamento editorial. A identidade da marca precisa ser reconhecivel mesmo com o assunto mudando.',
   tipografico: 'Cartao editorial dominante sobre fundo fixo aprovado da marca: grande, centralizado, com cantos arredondados, borda dourada sutil, cabecalho de perfil, headline hierarquica e CTA discreto na base. Layout, margens, tipografia e CTA sao estaveis; variam somente headline e fundo aprovado.',
-  fotografico: 'Fotografia editorial cinematografica de campanha em 4:5: cena ou metafora visual concreta ligada ao tema, ambiente real contextualizado, luz lateral ou de recorte, sombras ricas, profundidade e acentos ambar/dourados. O resultado deve parecer uma imagem cuidadosamente dirigida e retocada, nunca uma foto de banco ou imagem generica de IA.',
+  fotografico: 'Fotografia editorial cinematografica de campanha em 1:1 4K: cena ou metafora visual concreta ligada ao tema, ambiente real contextualizado, luz lateral ou de recorte, sombras ricas, profundidade e acentos ambar/dourados. O resultado deve parecer uma imagem cuidadosamente dirigida, composta e retocada por uma equipe completa, nunca uma foto de banco ou imagem generica de IA.',
   proibicoesFotograficas: 'Nunca usar texto, letras, logos ou marcas-d agua na imagem-base; pose passiva olhando para o nada, mao no rosto/queixo, laptop com cafe, livro generico, planta decorativa, fundo vazio, luz frontal de estudio, pele plastificada, infografico ou icones de apresentacao.',
   cta: 'CONFIRA A LEGENDA COMPLETA',
 } as const;
@@ -274,8 +293,26 @@ async function gravarConhecimento(token: string, repo: string, caminho: string, 
 
 type ContextoConhecimento = { notaCliente: string; notaClienteSha: string | null; principios: string };
 
-async function buscarContextoConhecimento(supabase: any, cliente: ClienteContexto): Promise<ContextoConhecimento> {
-  const vazio: ContextoConhecimento = { notaCliente: '', notaClienteSha: null, principios: '' };
+async function buscarContextoConhecimento(supabase: any, cliente: ClienteContexto, clienteId: string): Promise<ContextoConhecimento> {
+  let memoriaPersistida = '';
+  try {
+    const { data: memorias } = await supabase
+      .from('equipe_11ds_memorias')
+      .select('resumo,regra,origem,prioridade,agentes_consumidores')
+      .or(`cliente_id.eq.${clienteId},cliente_id.is.null`)
+      .in('status', ['ativa', 'pendente_sincronizacao'])
+      .order('prioridade', { ascending: false })
+      .limit(30);
+    memoriaPersistida = (memorias ?? []).map((memoria: any) => [
+      `### ${String(memoria.resumo ?? 'Diretriz')}`,
+      String(memoria.regra ?? ''),
+      `Origem: ${memoria.origem === 'usuario' ? 'orientação explícita do usuário, prioridade máxima' : 'inferência validada'}`,
+      `Consumidores: ${(memoria.agentes_consumidores ?? []).join(', ') || 'equipe inteira'}`,
+    ].join('\n')).join('\n\n').slice(0, 7000);
+  } catch (error) {
+    console.error('Falha ao ler índice de memória; tentando o cofre:', (error as Error).message);
+  }
+  const vazio: ContextoConhecimento = { notaCliente: memoriaPersistida, notaClienteSha: null, principios: '' };
   try {
     const { data: config } = await supabase.rpc('get_equipe_11ds_github_config');
     const token = config?.[0]?.token as string | undefined;
@@ -299,7 +336,11 @@ async function buscarContextoConhecimento(supabase: any, cliente: ClienteContext
       .join('\n\n---\n\n')
       .slice(0, 6000);
 
-    return { notaCliente: nota?.conteudo ?? '', notaClienteSha: nota?.sha ?? null, principios };
+    return {
+      notaCliente: [memoriaPersistida, nota?.conteudo ?? ''].filter(Boolean).join('\n\n---\n\n').slice(0, 9000),
+      notaClienteSha: nota?.sha ?? null,
+      principios,
+    };
   } catch (e) {
     console.error('Falha ao buscar contexto do Obsidian (seguindo sem ele):', (e as Error).message);
     return vazio;
@@ -432,20 +473,20 @@ async function passoRedator(
 
 async function passoDiretorArte(
   supabase: any, openaiKey: string, tarefaId: string, agentes: Agentes,
-  cliente: ClienteContexto, tema: string, headline: string, formato: FormatoDia, pilar: string | null, historico: HistoricoRecente, contexto: ContextoConhecimento, feedbackRefacao?: string,
+  cliente: ClienteContexto, tema: string, headline: string, formato: FormatoDia, pilar: string | null, historico: HistoricoRecente, contexto: ContextoConhecimento, blueprint: BlueprintVisual, feedbackRefacao?: string,
 ): Promise<{ promptImagem?: string; fundoUrl?: string; arquetipoVisual: string }> {
   await atualizarAgente(supabase, agentes.diretor, 'trabalhando', `Definindo o conceito visual (${formato})...`);
 
   if (formato === 'tipografico') {
     const fundos = cliente.fundos_fixos ?? [];
-    if (!fundos.length) throw new Error(`Cliente "${cliente.nome}" nao tem fundos_fixos configurados -- rode equipe-11ds-gerar-fundos antes de usar o formato tipografico.`);
+    if (!blueprint.base_visual_url && !fundos.length) throw new Error(`Cliente "${cliente.nome}" nao tem base visual aprovada para o blueprint tipografico.`);
     const diasDesdeEpoch = Math.floor(Date.parse(`${hojeSaoPaulo()}T00:00:00Z`) / 86_400_000);
-    const indiceFundo = (diasDesdeEpoch + (feedbackRefacao ? 1 : 0)) % fundos.length;
-    const fundoUrl = fundos[indiceFundo];
-    const arquetipoVisual = `cartao premium de marca, fundo fixo #${indiceFundo + 1}`;
+    const indiceFundo = fundos.length ? (diasDesdeEpoch + (feedbackRefacao ? 1 : 0)) % fundos.length : 0;
+    const fundoUrl = blueprint.base_visual_url || fundos[indiceFundo];
+    const arquetipoVisual = `key art tipografico integral, blueprint ${blueprint.nome} v${blueprint.versao}`;
     await registrarMensagem(supabase, tarefaId, agentes.diretor, 'mensagem', feedbackRefacao
-      ? `Refazendo o cartao premium com outro fundo aprovado: ${feedbackRefacao}`
-      : 'Cartão premium de marca, com hierarquia fixa sobre fundo aprovado.');
+      ? `Refazendo a peça completa dentro do blueprint aprovado: ${feedbackRefacao}`
+      : `Conceito e composição definidos pelo blueprint ${blueprint.nome} v${blueprint.versao}.`);
     return { fundoUrl, arquetipoVisual };
   }
 
@@ -528,23 +569,59 @@ async function baixarLogo(logoUrl: string | null | undefined): Promise<Uint8Arra
   }
 }
 
-async function chamarServicoComposicao(composeUrl: string, compositeSecret: string, payload: Record<string, unknown>): Promise<{ feed: Uint8Array; stories: Uint8Array | null }> {
+async function chamarServicoComposicao(
+  composeUrl: string,
+  compositeSecret: string,
+  payload: Record<string, unknown>,
+): Promise<{ feed: Uint8Array | null; uploadConcluido: boolean; qaVisual: QaVisual; dimensoes: number[] }> {
   const res = await fetch(composeUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-composite-key': compositeSecret },
     body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(45_000),
+    signal: AbortSignal.timeout(70_000),
   });
   if (!res.ok) throw new Error(`Servico de composicao falhou (${res.status}): ${(await res.text()).slice(0, 300)}`);
-  const data = await res.json() as { feed_base64: string; stories_base64?: string };
-  return { feed: base64ToBytes(data.feed_base64), stories: data.stories_base64 ? base64ToBytes(data.stories_base64) : null };
+  const data = await res.json() as { feed_base64?: string; upload_concluido?: boolean; qa_visual?: QaVisual; dimensoes?: number[] };
+  if (!data.qa_visual || data.qa_visual.status !== 'aprovado') throw new Error('Compositor nao apresentou QA visual aprovado.');
+  if (data.dimensoes?.[0] !== 4096 || data.dimensoes?.[1] !== 4096) throw new Error('Compositor entregou formato diferente de 1:1 4K.');
+  return {
+    feed: data.feed_base64 ? base64ToBytes(data.feed_base64) : null,
+    uploadConcluido: data.upload_concluido === true,
+    qaVisual: data.qa_visual,
+    dimensoes: data.dimensoes ?? [],
+  };
+}
+
+async function buscarBlueprintVisual(supabase: any, clienteId: string, formato: FormatoDia): Promise<BlueprintVisual> {
+  const { data, error } = await supabase
+    .from('equipe_11ds_blueprints')
+    .select('id,nome,tipo,versao,base_visual_url,referencia_url,spec')
+    .eq('cliente_id', clienteId)
+    .eq('tipo', formato)
+    .eq('status', 'ativo')
+    .maybeSingle();
+  if (error) throw new Error(`Falha ao carregar blueprint visual: ${error.message}`);
+  if (data) return data as BlueprintVisual;
+  return {
+    id: null,
+    nome: `Contrato premium 1:1 — ${formato}`,
+    tipo: formato,
+    versao: 1,
+    base_visual_url: null,
+    referencia_url: null,
+    spec: {
+      canvas: [4096, 4096],
+      safe_area: 230,
+      finish: 'campaign_key_art',
+    },
+  };
 }
 
 async function passoProducao(
   supabase: any, openaiKey: string, tarefaId: string, agentes: Agentes,
   cliente: ClienteContexto, formato: FormatoDia, headline: string,
-  arte: { promptImagem?: string; fundoUrl?: string },
-): Promise<{ feedUrl: string | null; storiesUrl: string | null }> {
+  arte: { promptImagem?: string; fundoUrl?: string }, blueprint: BlueprintVisual,
+): Promise<{ feedUrl: string; storiesUrl: null; qaVisual: QaVisual; blueprint: BlueprintVisual }> {
   await atualizarAgente(supabase, agentes.nina, 'trabalhando', `Produzindo o post de ${cliente.nome}...`);
 
   const { data: composeConfig } = await supabase.rpc('get_equipe_11ds_composite_config');
@@ -553,16 +630,24 @@ async function passoProducao(
   if (!composeUrl || !compositeSecret) throw new Error('Servico de composicao de imagem nao configurado (Vault vazio)');
 
   const logoBytes = await baixarLogo(cliente.logo_url);
+  const storagePathFeed = `${tarefaId}-feed.png`;
+  const { data: signedUpload, error: signedError } = await supabase.storage
+    .from('equipe-11ds-criativos')
+    .createSignedUploadUrl(storagePathFeed, { upsert: true });
+  if (signedError || !signedUpload?.signedUrl) throw new Error(`Falha ao preparar upload 4K: ${signedError?.message ?? 'URL assinada ausente'}`);
 
-  let composto: { feed: Uint8Array; stories: Uint8Array | null };
+  let composto: { feed: Uint8Array | null; uploadConcluido: boolean; qaVisual: QaVisual; dimensoes: number[] };
   if (formato === 'tipografico') {
-    if (!arte.fundoUrl) throw new Error('Fundo fixo nao definido pelo Diretor de Arte');
+    const fundoUrl = blueprint.base_visual_url || arte.fundoUrl;
+    if (!fundoUrl) throw new Error('Blueprint tipografico nao possui base visual aprovada');
     // Fundo vai por URL, nao base64 -- um PNG 1024x1536 embutido no payload
     // sozinho ja estoura o limite de requisicao da Vercel. O servico Python
     // baixa a imagem ele mesmo.
     composto = await chamarServicoComposicao(composeUrl, compositeSecret, {
       modo: 'tipografico',
-      fundo_url: arte.fundoUrl,
+      fundo_url: fundoUrl,
+      upload_url: signedUpload.signedUrl,
+      blueprint,
       logo_base64: logoBytes ? bytesToBase64(logoBytes) : undefined,
       logo_posicao: 'superior-centro',
       headline,
@@ -573,19 +658,20 @@ async function passoProducao(
       perfil_visual: 'premium-editorial-amber',
       direcao_visual: DIRECAO_ARTE_PREMIUM.tipografico,
       cta: DIRECAO_ARTE_PREMIUM.cta,
-      gerar_stories: true,
     });
   } else {
     const promptFinal = [
       arte.promptImagem ?? '',
       cliente.cor_primaria ? `Use ${cliente.cor_primaria} as the dominant brand color of the design` : '',
       cliente.cor_secundaria ? `${cliente.cor_secundaria} as a secondary accent color` : '',
-      'Premium cinematic editorial campaign photography, made for a 4:5 Instagram feed crop. Stop-scroll composition with rich shadow detail, cinematic color grading, physically believable texture, professional retouching, sharp intentional focal plane and sophisticated art direction. Keep every key subject inside the central 80 percent of the frame for the final crop. No text, letters, logos, watermarks, graphic overlays or stock-photo look.',
+      'Premium cinematic editorial campaign key art, composed for a square 1:1 Instagram feed. Stop-scroll composition with rich shadow detail, cinematic color grading, physically believable texture, professional retouching, sharp intentional focal plane and sophisticated art direction. The full frame must feel finished by an art director, retoucher and designer working together. Keep every key subject inside the central 80 percent. No text, letters, logos, watermarks, graphic overlays or stock-photo look.',
     ].filter(Boolean).join('. ');
-    const bytesBase = await gerarImagem(openaiKey, promptFinal, '1024x1536');
+    const bytesBase = await gerarImagem(openaiKey, promptFinal, '1024x1024');
     composto = await chamarServicoComposicao(composeUrl, compositeSecret, {
       modo: 'fotografico',
       imagem_base64: bytesToBase64(bytesBase),
+      upload_url: signedUpload.signedUrl,
+      blueprint,
       logo_base64: logoBytes ? bytesToBase64(logoBytes) : undefined,
       logo_posicao: 'superior-esquerda',
       headline, // aplicado via PIL (fonte real, margem segura) -- nunca mais pedido pra IA de imagem desenhar
@@ -594,24 +680,23 @@ async function passoProducao(
       perfil_visual: 'premium-editorial-amber',
       direcao_visual: DIRECAO_ARTE_PREMIUM.fotografico,
       cta: DIRECAO_ARTE_PREMIUM.cta,
-      gerar_stories: true,
     });
   }
 
-  const storagePathFeed = `${tarefaId}-feed.png`;
-  const { error: uploadErr } = await supabase.storage.from('equipe-11ds-criativos').upload(storagePathFeed, composto.feed, { contentType: 'image/png', upsert: true });
-  if (uploadErr) throw new Error(`Storage upload error: ${uploadErr.message}`);
-  const feedUrl = supabase.storage.from('equipe-11ds-criativos').getPublicUrl(storagePathFeed).data.publicUrl;
-
-  let storiesUrl: string | null = null;
-  if (composto.stories) {
-    const storagePathStories = `${tarefaId}-stories.png`;
-    const { error: uploadErrStories } = await supabase.storage.from('equipe-11ds-criativos').upload(storagePathStories, composto.stories, { contentType: 'image/png', upsert: true });
-    if (!uploadErrStories) storiesUrl = supabase.storage.from('equipe-11ds-criativos').getPublicUrl(storagePathStories).data.publicUrl;
+  if (!composto.uploadConcluido) {
+    if (!composto.feed) throw new Error('Compositor nao enviou nem retornou a imagem final.');
+    const { error: uploadErr } = await supabase.storage.from('equipe-11ds-criativos').upload(storagePathFeed, composto.feed, { contentType: 'image/png', upsert: true });
+    if (uploadErr) throw new Error(`Storage upload error: ${uploadErr.message}`);
   }
-
-  await registrarMensagem(supabase, tarefaId, agentes.nina, 'mensagem', 'Imagem produzida e logo aplicada.');
-  return { feedUrl, storiesUrl };
+  const feedUrl = supabase.storage.from('equipe-11ds-criativos').getPublicUrl(storagePathFeed).data.publicUrl;
+  await registrarMensagem(
+    supabase,
+    tarefaId,
+    agentes.nina,
+    'mensagem',
+    `Peça 1:1 4K finalizada como campanha completa. QA visual ${composto.qaVisual.score}/100, blueprint v${blueprint.versao}.`,
+  );
+  return { feedUrl, storiesUrl: null, qaVisual: composto.qaVisual, blueprint };
 }
 
 // ── Passo 6: Gestor (fechamento / QA) ───────────────────────────────────────────
@@ -668,15 +753,10 @@ async function passoGestorFechamento(
 
 async function passoCurador(
   supabase: any, openaiKey: string, tarefaId: string, agentes: Agentes,
-  cliente: ClienteContexto, tema: string, headline: string, legenda: string, contexto: ContextoConhecimento,
+  clienteId: string, cliente: ClienteContexto, tema: string, headline: string, legenda: string, contexto: ContextoConhecimento,
 ): Promise<void> {
   await atualizarAgente(supabase, agentes.curador, 'trabalhando', 'Avaliando o que vale a pena guardar...');
   try {
-    const { data: config } = await supabase.rpc('get_equipe_11ds_github_config');
-    const token = config?.[0]?.token as string | undefined;
-    const repo = config?.[0]?.repo as string | undefined;
-    if (!token || !repo) throw new Error('Config do GitHub nao encontrada no Vault');
-
     const avaliacao = await chamarGPT(
       openaiKey,
       [
@@ -696,18 +776,25 @@ async function passoCurador(
       return;
     }
 
-    const notaBase = contexto.notaCliente.trim();
-    const partes = [
-      notaBase ? '' : `# ${cliente.nome}\n\nAprendizados acumulados pelo time de mídia sobre este cliente.`,
-      notaBase,
-      `- **${hojeSaoPaulo()}**: ${aprendizado}`,
-    ].filter(Boolean);
-    const notaAtualizada = partes.join('\n\n') + '\n';
-
-    const caminhoNota = `Midia-Criativos/Clientes/${slugificar(cliente.nome)}.md`;
-    await gravarConhecimento(token, repo, caminhoNota, notaAtualizada, `curador: aprendizado sobre ${cliente.nome} (${hojeSaoPaulo()})`, contexto.notaClienteSha ?? undefined);
-
-    await registrarMensagem(supabase, tarefaId, agentes.curador, 'mensagem', `Registrei um aprendizado sobre ${cliente.nome} no Obsidian: "${aprendizado}"`);
+    const { data: tarefa } = await supabase.from('equipe_11ds_tarefas').select('criado_por').eq('id', tarefaId).maybeSingle();
+    if (!tarefa?.criado_por) throw new Error('Tarefa sem autor para auditar a memória.');
+    const memoria = await registrarDiretiva(supabase, {
+      solicitanteId: tarefa.criado_por,
+      agenteId: agentes.curador,
+      clienteId,
+      tipo: 'aprendizado',
+      escopo: `Aprendizados de ${cliente.nome}`,
+      regra: aprendizado,
+      resumo: aprendizado.slice(0, 220),
+      evidencia: { tarefa_id: tarefaId, tema, headline },
+      agentesConsumidores: ['estrategista-conteudo', 'redator-chefe', 'diretor-arte', 'nina-producao', 'gestor-midia'],
+      prioridade: 50,
+      origem: 'agente',
+    });
+    await dispararFuncaoInterna(supabase, 'equipe-11ds-memoria-sync').catch(error => {
+      console.error('Memória persistida, sync do Obsidian ficou pendente:', (error as Error).message);
+    });
+    await registrarMensagem(supabase, tarefaId, agentes.curador, 'mensagem', `Aprendizado persistido e auditável: "${memoria.resumo}"`);
   } catch (e) {
     console.error('Curador: falha ao registrar aprendizado (seguindo sem travar a producao):', (e as Error).message);
     await registrarMensagem(supabase, tarefaId, agentes.curador, 'mensagem', 'Nada que passe do filtro hoje -- não registrei nada novo.');
@@ -781,9 +868,10 @@ async function executarPostParaCliente(
     .single();
   const cliente: ClienteContexto = clienteData ?? { nome: 'Cliente' };
   const historico = await buscarHistoricoRecente(supabase, clienteId);
-  const contexto = await buscarContextoConhecimento(supabase, cliente);
+  const contexto = await buscarContextoConhecimento(supabase, cliente, clienteId);
 
   const { pilar, formato } = await passoGestorAbertura(supabase, tarefaId, agentes, cliente, hoje);
+  const blueprint = await buscarBlueprintVisual(supabase, clienteId, formato);
 
   const pesquisa = await pesquisarTendencia(openaiKey, cliente, historico);
   const { tema, justificativa } = await passoEstrategista(supabase, openaiKey, tarefaId, agentes, cliente, pilar, formato, pesquisa, historico, contexto);
@@ -796,23 +884,24 @@ async function executarPostParaCliente(
     legenda = corrigido.legenda; headline = corrigido.headline; hashtags = corrigido.hashtags;
   }
 
-  let arte = await passoDiretorArte(supabase, openaiKey, tarefaId, agentes, cliente, tema, headline, formato, pilar, historico, contexto);
-  let { feedUrl, storiesUrl } = await passoProducao(supabase, openaiKey, tarefaId, agentes, cliente, formato, headline, arte);
+  let arte = await passoDiretorArte(supabase, openaiKey, tarefaId, agentes, cliente, tema, headline, formato, pilar, historico, contexto, blueprint);
+  let { feedUrl, storiesUrl, qaVisual } = await passoProducao(supabase, openaiKey, tarefaId, agentes, cliente, formato, headline, arte, blueprint);
   let avaliacaoVisual = await passoGestorFechamento(supabase, openaiKey, tarefaId, agentes, cliente, tema, formato, legenda, headline, feedUrl);
 
   // Uma unica refacao controlada melhora a qualidade sem abrir um loop de custo.
   // No cartao tipografico ela troca para outro fundo aprovado; no fotografico o
   // Diretor recebe a critica concreta e reconstrói a direcao da cena.
   if (!avaliacaoVisual.aprovado) {
-    arte = await passoDiretorArte(supabase, openaiKey, tarefaId, agentes, cliente, tema, headline, formato, pilar, historico, contexto, avaliacaoVisual.ajuste || avaliacaoVisual.motivo);
-    ({ feedUrl, storiesUrl } = await passoProducao(supabase, openaiKey, tarefaId, agentes, cliente, formato, headline, arte));
+    arte = await passoDiretorArte(supabase, openaiKey, tarefaId, agentes, cliente, tema, headline, formato, pilar, historico, contexto, blueprint, avaliacaoVisual.ajuste || avaliacaoVisual.motivo);
+    ({ feedUrl, storiesUrl, qaVisual } = await passoProducao(supabase, openaiKey, tarefaId, agentes, cliente, formato, headline, arte, blueprint));
     avaliacaoVisual = await passoGestorFechamento(supabase, openaiKey, tarefaId, agentes, cliente, tema, formato, legenda, headline, feedUrl);
     if (!avaliacaoVisual.aprovado) {
-      await registrarMensagem(supabase, tarefaId, agentes.gestor, 'alerta', `Post mantido como rascunho com ressalva visual: ${avaliacaoVisual.motivo}`);
+      await registrarMensagem(supabase, tarefaId, agentes.gestor, 'alerta', `Entrega bloqueada pelo QA visual: ${avaliacaoVisual.motivo}`);
+      throw new Error(`Gestor reprovou a peça final após a refação: ${avaliacaoVisual.motivo}`);
     }
   }
 
-  await passoCurador(supabase, openaiKey, tarefaId, agentes, cliente, tema, headline, legenda, contexto);
+  await passoCurador(supabase, openaiKey, tarefaId, agentes, clienteId, cliente, tema, headline, legenda, contexto);
 
   const legendaFinal = [legenda, hashtags ? `.\n.\n.\n${hashtags}` : ''].filter(Boolean).join('\n\n');
 
@@ -823,6 +912,10 @@ async function executarPostParaCliente(
       tema, tema_fonte: 'equipe_11ds', legenda: legendaFinal,
       imagem_feed_url: feedUrl, imagem_stories_url: storiesUrl,
       pilar: pilar, arquetipo_visual: arte.arquetipoVisual,
+      blueprint_id: blueprint.id,
+      blueprint_versao: blueprint.versao,
+      qa_visual: qaVisual,
+      qa_visual_status: qaVisual.status,
       status: 'rascunho',
     })
     .select('id')
@@ -839,8 +932,8 @@ async function executarPostParaCliente(
       titulo: tema,
       plataforma: 'instagram',
       formato: 'feed',
-      formato_4x5: true,
-      formato_9x16: Boolean(storiesUrl),
+      formato_4x5: false,
+      formato_9x16: false,
       status: 'agendado',
       data_publicacao: hoje,
       angulo: justificativa || null,

@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Bot, Loader2, Download, Send, ArrowUpRight, AlertTriangle, RefreshCw, Repeat, X, MessageCircle, CheckCircle2, ExternalLink, CalendarDays, ListChecks, ShieldCheck, Clock3 } from 'lucide-react';
+import { Bot, Loader2, Download, Send, ArrowUpRight, AlertTriangle, RefreshCw, Repeat, X, MessageCircle, CheckCircle2, ExternalLink, CalendarDays, ListChecks, ShieldCheck, Clock3, Paperclip, SlidersHorizontal, Brain, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -637,6 +637,8 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
   const [carregandoChat, setCarregandoChat] = useState(false);
   const [confirmandoPlano, setConfirmandoPlano] = useState(false);
   const [selecionada, setSelecionada] = useState<string | null>(null);
+  const [referencias, setReferencias] = useState<{ nome: string; url: string }[]>([]);
+  const [enviandoReferencia, setEnviandoReferencia] = useState(false);
 
   const loadTarefas = useCallback(async () => {
     const { data, error } = await (supabase.from('equipe_11ds_tarefas' as any) as any)
@@ -744,6 +746,8 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
           tipo: tipoDoPlano,
           cliente_id: clienteDoPlano,
           repetir_diariamente: contextoForcado?.repetir_diariamente ?? repetirDiariamente,
+          referencias,
+          memoria_explicita: referencias.length > 0,
         },
       },
     });
@@ -753,6 +757,7 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
       return;
     }
     setOrdemTexto('');
+    setReferencias([]);
     setPlanoAtivo((data as any)?.plano as Plano);
     setEtapasPlano(((data as any)?.etapas as PlanoEtapa[]) ?? []);
     toast.info('Plano pronto. Revise tudo e confirme uma vez para executar.');
@@ -760,6 +765,26 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
   };
 
   const enviarOrdem = () => solicitarPlano();
+
+  const anexarReferencia = async (arquivo: File) => {
+    if (!user?.id) return;
+    if (!arquivo.type.startsWith('image/')) {
+      toast.error('A referência precisa ser uma imagem.');
+      return;
+    }
+    setEnviandoReferencia(true);
+    const nomeSeguro = arquivo.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]+/g, '-');
+    const caminho = `${user.id}/${Date.now()}-${nomeSeguro}`;
+    const { error } = await supabase.storage.from('equipe-11ds-referencias').upload(caminho, arquivo, { contentType: arquivo.type, upsert: false });
+    setEnviandoReferencia(false);
+    if (error) {
+      toast.error(`Erro ao anexar referência: ${error.message}`);
+      return;
+    }
+    const url = supabase.storage.from('equipe-11ds-referencias').getPublicUrl(caminho).data.publicUrl;
+    setReferencias(prev => [...prev, { nome: arquivo.name, url }].slice(0, 5));
+    toast.success('Referência anexada. Ela será guardada com a orientação após sua confirmação.');
+  };
 
   const tratarPlano = async (operacao: 'confirmar' | 'cancelar') => {
     if (!planoAtivo || planoAtivo.status !== 'aguardando_confirmacao') return;
@@ -808,7 +833,8 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
               <SheetTitle>{agente.nome}</SheetTitle>
               <p className="text-xs text-muted-foreground">{agente.cargo}</p>
             </div>
-            <div className="flex items-center gap-2 mr-6">
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
               {agente.slug === 'gestor-midia' && (
                 <Button
                   size="sm"
@@ -831,7 +857,6 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
                   <RefreshCw className="h-3.5 w-3.5" /> Gerar próximo post
                 </Button>
               )}
-            </div>
           </div>
           <div className="mt-2">
             <BalaoDeFala agente={agente} />
@@ -840,13 +865,12 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
 
         <ScrollArea className="flex-1 p-4">
           <div className="space-y-4">
-            <FichaDeCargo agente={agente} />
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-3 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 space-y-3 shadow-sm">
               <div className="flex items-center gap-2">
                 <MessageCircle className="h-4 w-4 text-amber-600" />
                 <div>
                   <p className="text-sm font-semibold">Conversa com {agente.nome}</p>
-                  <p className="text-[11px] text-muted-foreground">Planeja, delega entre especialistas e pede uma confirmação antes de agir.</p>
+                  <p className="text-[11px] text-muted-foreground">Você pede em linguagem natural. A equipe monta o plano e só age depois da sua confirmação.</p>
                 </div>
               </div>
               <div className="max-h-52 overflow-y-auto space-y-2 pr-1">
@@ -963,7 +987,24 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
                 </div>
               )}
             </div>
-            <HistoricoDecisoes agenteId={agente.id} />
+            <details className="group rounded-xl border border-border bg-white">
+              <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-xs font-semibold text-slate-700">
+                <Brain className="h-3.5 w-3.5 text-amber-600" />
+                Como este agente trabalha e o que já decidiu
+                <ChevronDown className="ml-auto h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="space-y-4 border-t border-border p-3">
+                <FichaDeCargo agente={agente} />
+                <HistoricoDecisoes agenteId={agente.id} />
+              </div>
+            </details>
+            <details className="group rounded-xl border border-border bg-white">
+              <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-xs font-semibold text-slate-700">
+                <Clock3 className="h-3.5 w-3.5 text-slate-500" />
+                Atividade e entregas anteriores
+                <ChevronDown className="ml-auto h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="space-y-4 border-t border-border p-3">
             {recorrentes.length > 0 && (
               <div>
                 <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1">
@@ -1004,43 +1045,92 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
             {tarefas.length === 0 && (
               <p className="text-sm text-muted-foreground text-center py-8">Nenhuma tarefa ainda. Dê uma ordem abaixo.</p>
             )}
+              </div>
+            </details>
           </div>
         </ScrollArea>
 
-        <div className="border-t border-border p-4 space-y-2">
-          <div className="flex gap-2">
-            <Select value={tipo} onValueChange={(v) => setTipo(v as TarefaTipo)}>
-              <SelectTrigger className="w-[160px] h-9 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="avulso">Avulso</SelectItem>
-                <SelectItem value="post_cliente">Post pro cliente</SelectItem>
-              </SelectContent>
-            </Select>
-            {tipo === 'post_cliente' && (
-              <Select value={clienteId} onValueChange={setClienteId}>
-                <SelectTrigger className="flex-1 h-9 text-xs"><SelectValue placeholder="Cliente" /></SelectTrigger>
-                <SelectContent>
-                  {clientes.map(c => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-          <div className="flex gap-2">
+        <div className="space-y-2 border-t border-border bg-white p-4 shadow-[0_-12px_30px_rgba(15,23,42,0.06)]">
+          {referencias.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {referencias.map(referencia => (
+                <span key={referencia.url} className="flex max-w-full items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-900">
+                  <Paperclip className="h-3 w-3 shrink-0" />
+                  <span className="max-w-[230px] truncate">{referencia.nome}</span>
+                  <button type="button" aria-label={`Remover ${referencia.nome}`} onClick={() => setReferencias(prev => prev.filter(item => item.url !== referencia.url))}>
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="flex items-stretch gap-2">
+            <input
+              id={`referencia-${agente.id}`}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="sr-only"
+              onChange={(event) => {
+                const arquivo = event.target.files?.[0];
+                if (arquivo) void anexarReferencia(arquivo);
+                event.currentTarget.value = '';
+              }}
+            />
+            <label
+              htmlFor={`referencia-${agente.id}`}
+              className={cn(
+                'flex w-10 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-border bg-white text-slate-600 transition-colors hover:bg-slate-50',
+                enviandoReferencia && 'pointer-events-none opacity-50',
+              )}
+              title="Anexar referência visual"
+            >
+              {enviandoReferencia ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+            </label>
             <Textarea
               value={ordemTexto}
-              onChange={(e) => setOrdemTexto(e.target.value)}
-              placeholder={`Converse com ${agente.nome}. Ex.: “gere o próximo post”`}
-              className="min-h-[60px] text-sm resize-none"
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarOrdem(); } }}
+              onChange={(event) => setOrdemTexto(event.target.value)}
+              placeholder={`Peça algo para ${agente.nome}. Ex.: “use esta referência e gere o próximo post”.`}
+              className="min-h-[64px] resize-none rounded-xl text-sm"
+              onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); enviarOrdem(); } }}
             />
-            <Button size="icon" className="h-auto" disabled={enviando || Boolean(planoAtivo && ['aguardando_confirmacao', 'executando'].includes(planoAtivo.status)) || !ordemTexto.trim()} onClick={enviarOrdem}>
+            <Button
+              size="icon"
+              className="h-auto w-11 shrink-0 rounded-xl bg-slate-950 text-white hover:bg-slate-800"
+              aria-label="Enviar pedido"
+              disabled={enviando || Boolean(planoAtivo && ['aguardando_confirmacao', 'executando'].includes(planoAtivo.status)) || !ordemTexto.trim()}
+              onClick={enviarOrdem}
+            >
               {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
           </div>
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer w-fit">
-            <Checkbox checked={repetirDiariamente} onCheckedChange={(v) => setRepetirDiariamente(Boolean(v))} />
-            <Repeat className="h-3 w-3" /> Repetir todo dia
-          </label>
+          <details className="group">
+            <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground">
+              <SlidersHorizontal className="h-3 w-3" /> Opções do pedido
+              <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 p-2">
+              <Select value={tipo} onValueChange={(value) => setTipo(value as TarefaTipo)}>
+                <SelectTrigger className="h-8 w-[150px] bg-white text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="avulso">Pedido geral</SelectItem>
+                  <SelectItem value="post_cliente">Para um cliente</SelectItem>
+                </SelectContent>
+              </Select>
+              {tipo === 'post_cliente' && (
+                <Select value={clienteId} onValueChange={setClienteId}>
+                  <SelectTrigger className="h-8 min-w-[180px] flex-1 bg-white text-xs"><SelectValue placeholder="Escolha o cliente" /></SelectTrigger>
+                  <SelectContent>
+                    {clientes.map(cliente => <SelectItem key={cliente.id} value={cliente.id}>{cliente.nome}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
+              <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+                <Checkbox checked={repetirDiariamente} onCheckedChange={(value) => setRepetirDiariamente(Boolean(value))} />
+                <Repeat className="h-3 w-3" /> Repetir todo dia
+              </label>
+            </div>
+          </details>
+          <p className="text-[10px] text-muted-foreground">Referências e regras só viram memória depois que você confirmar o plano.</p>
         </div>
       </SheetContent>
     </Sheet>

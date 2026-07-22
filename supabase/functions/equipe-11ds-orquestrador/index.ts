@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { memoriasAtivas, registrarDiretiva, type TipoMemoria } from './memoria.ts';
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
@@ -14,6 +15,7 @@ type Ferramenta =
   | 'executar_tarefa'
   | 'gerar_calendario'
   | 'gerar_proximo_post'
+  | 'registrar_diretiva'
   | 'curar_memoria';
 
 type Agente = {
@@ -59,6 +61,7 @@ const FERRAMENTAS = new Set<Ferramenta>([
   'executar_tarefa',
   'gerar_calendario',
   'gerar_proximo_post',
+  'registrar_diretiva',
   'curar_memoria',
 ]);
 
@@ -203,9 +206,18 @@ async function githubConfig(supabase: ReturnType<typeof createClient>) {
   return token && repo ? { token, repo } : null;
 }
 
-async function buscarMemoriaObsidian(supabase: ReturnType<typeof createClient>, objetivo: string) {
+async function buscarMemoriaObsidian(
+  supabase: ReturnType<typeof createClient>,
+  objetivo: string,
+  options: { clienteId?: string | null; agenteSlug?: string | null } = {},
+) {
+  const indice = await memoriasAtivas(supabase, {
+    clienteId: options.clienteId,
+    agenteSlug: options.agenteSlug,
+    limite: 30,
+  });
   const config = await githubConfig(supabase);
-  if (!config) return { notas: [], aviso: 'Cofre Obsidian não configurado.' };
+  if (!config) return { indice, notas: [], aviso: 'Cofre Obsidian não configurado; usando o índice persistido.' };
   const raizes = ['Empresa', 'Clientes', 'Processos', 'Midia-Criativos/Principios', 'Midia-Criativos/Clientes', 'Equipe/Aprendizados'];
   const listagens = (await Promise.all(raizes.map(raiz => listarGithub(config.token, config.repo, raiz)))).flat();
   const termos = new Set(normalizar(objetivo).split(/\W+/).filter(termo => termo.length >= 4));
@@ -222,11 +234,36 @@ async function buscarMemoriaObsidian(supabase: ReturnType<typeof createClient>, 
       return null;
     }
   }));
-  return { notas: notas.filter(Boolean) };
+  return { indice, notas: notas.filter(Boolean) };
 }
 
-function planoDeterministico(mensagem: string, agente: Agente): PlanoProposto {
+function ehDiretivaExplicita(mensagem: string, agente: Agente, contexto: Record<string, unknown>) {
+  if (contexto.memoria_explicita === true) return true;
+  if (Array.isArray(contexto.referencias) && contexto.referencias.length > 0) return true;
+  if (agente.slug === 'curador-conhecimento') return true;
+  return /\b(sempre|nunca|quero que|use .+ como|refer[eê]ncia|padr[aã]o|prefiro|aprovad|corrij|corre[cç][aã]o|salv|memor|lembre)\b/i.test(mensagem);
+}
+
+function parametrosDiretivaFallback(mensagem: string, contexto: Record<string, unknown>) {
+  const referencias = Array.isArray(contexto.referencias) ? contexto.referencias.slice(0, 5) : [];
+  const identidadeVisual = referencias.length > 0 || /visual|post|imagem|feed|1:1|logo|tipograf|fotograf/i.test(mensagem);
+  return {
+    tipo: identidadeVisual ? 'identidade_visual' : 'decisao',
+    escopo: identidadeVisual ? 'Identidade visual do cliente' : 'Decisão operacional da Equipe 11DS',
+    regra: mensagem,
+    resumo: mensagem.slice(0, 220),
+    cliente_id: texto(contexto.cliente_id, 80) || null,
+    evidencia: { referencias },
+    agentes_consumidores: identidadeVisual
+      ? ['diretor-arte', 'nina-producao', 'gestor-midia']
+      : [],
+    prioridade: 100,
+  };
+}
+
+function planoDeterministico(mensagem: string, agente: Agente, contexto: Record<string, unknown> = {}): PlanoProposto {
   const pedido = normalizar(mensagem);
+  const diretiva = ehDiretivaExplicita(mensagem, agente, contexto);
   let ferramenta: Ferramenta = 'executar_tarefa';
   let agenteExecutor = agente.slug;
   let titulo = `Executar com ${agente.nome}`;
@@ -245,19 +282,61 @@ function planoDeterministico(mensagem: string, agente: Agente): PlanoProposto {
     descricao = 'Iniciar a próxima produção premium dos clientes ativos, mantendo a alternância visual.';
     efeitos = ['Novas tarefas de produção e rascunhos de post poderão ser criados.'];
   }
+  const etapas: EtapaProposta[] = [];
+  if (diretiva) {
+    etapas.push({
+      chave: 'registrar-diretiva',
+      titulo: 'Guardar sua orientação',
+      descricao: 'Salvar a regra confirmada e disponibilizá-la aos agentes responsáveis.',
+      agente_slug: 'curador-conhecimento',
+      ferramenta: 'registrar_diretiva',
+      parametros: parametrosDiretivaFallback(mensagem, contexto),
+      depende_de: [],
+    });
+  }
+  const somenteMemoria = diretiva
+    && !['gerar_calendario', 'gerar_proximo_post'].includes(ferramenta)
+    && (agente.slug === 'curador-conhecimento' || /salv|memor|lembre|use .+ como (padr[aã]o|refer)/i.test(mensagem));
+  if (!somenteMemoria) {
+    etapas.push({
+      chave: 'executar',
+      titulo,
+      descricao,
+      agente_slug: agenteExecutor,
+      ferramenta,
+      parametros: { ordem_texto: mensagem },
+      depende_de: diretiva ? ['registrar-diretiva'] : [],
+    });
+    etapas.push({
+      chave: 'curar',
+      titulo: 'Avaliar novo aprendizado',
+      descricao: 'Avaliar apenas inferências da equipe que sejam não óbvias, acionáveis e úteis no futuro.',
+      agente_slug: 'curador-conhecimento',
+      ferramenta: 'curar_memoria',
+      parametros: {},
+      depende_de: ['executar'],
+    });
+  }
   return {
     resposta: 'Entendi. Preparei um plano objetivo e vou pedir uma única confirmação antes de agir.',
-    resumo: titulo,
-    alteracoes_previstas: [descricao, 'Registrar evidências e atualizar o histórico da equipe.'],
-    efeitos_externos: efeitos,
-    etapas: [
-      { chave: 'executar', titulo, descricao, agente_slug: agenteExecutor, ferramenta, parametros: { ordem_texto: mensagem }, depende_de: [] },
-      { chave: 'curar', titulo: 'Curar aprendizado', descricao: 'Avaliar se o resultado contém conhecimento permanente útil para decisões futuras.', agente_slug: 'curador-conhecimento', ferramenta: 'curar_memoria', parametros: {}, depende_de: ['executar'] },
+    resumo: somenteMemoria ? 'Guardar orientação na memória da equipe' : titulo,
+    alteracoes_previstas: [
+      ...(diretiva ? ['Salvar sua orientação como memória permanente da equipe.'] : []),
+      ...(!somenteMemoria ? [descricao, 'Registrar evidências e atualizar o histórico da equipe.'] : []),
     ],
+    efeitos_externos: [...(diretiva ? ['A memória confirmada será sincronizada com o Obsidian.'] : []), ...(!somenteMemoria ? efeitos : [])],
+    etapas,
   };
 }
 
-function sanitizarPlano(raw: Record<string, unknown>, fallback: PlanoProposto, agentes: Map<string, Agente>) {
+function sanitizarPlano(
+  raw: Record<string, unknown>,
+  fallback: PlanoProposto,
+  agentes: Map<string, Agente>,
+  mensagem: string,
+  agenteSolicitado: Agente,
+  contexto: Record<string, unknown>,
+) {
   const etapasRaw = Array.isArray(raw.etapas) ? raw.etapas : [];
   const chaves = new Set<string>();
   const etapas: EtapaProposta[] = [];
@@ -269,6 +348,7 @@ function sanitizarPlano(raw: Record<string, unknown>, fallback: PlanoProposto, a
     if (!FERRAMENTAS.has(ferramenta) || !agentes.has(agenteSlug) || !chave || chaves.has(chave)) continue;
     if (ferramenta === 'gerar_calendario' && agenteSlug !== 'gestor-midia') continue;
     if (ferramenta === 'gerar_proximo_post' && !['gestor-midia', 'nina-producao'].includes(agenteSlug)) continue;
+    if (ferramenta === 'registrar_diretiva' && agenteSlug !== 'curador-conhecimento') continue;
     if (ferramenta === 'curar_memoria' && agenteSlug !== 'curador-conhecimento') continue;
     chaves.add(chave);
     etapas.push({
@@ -282,8 +362,37 @@ function sanitizarPlano(raw: Record<string, unknown>, fallback: PlanoProposto, a
     });
   }
   if (!etapas.length) return fallback;
+
+  // Preferências e correções explícitas são ordens já confirmadas pelo usuário.
+  // O servidor garante o registro mesmo quando o GPT omite a etapa.
+  const diretivaExplicita = ehDiretivaExplicita(mensagem, agenteSolicitado, contexto);
+  if (diretivaExplicita && !etapas.some(etapa => etapa.ferramenta === 'registrar_diretiva')) {
+    if (etapas.length >= 6) {
+      const curadoriaInferida = etapas.findIndex(etapa => etapa.ferramenta === 'curar_memoria');
+      etapas.splice(curadoriaInferida >= 0 ? curadoriaInferida : 5, 1);
+    }
+    etapas.unshift({
+      chave: 'registrar-diretiva',
+      titulo: 'Guardar sua orientação',
+      descricao: 'Salvar a regra confirmada e disponibilizá-la aos agentes que executam e validam a entrega.',
+      agente_slug: 'curador-conhecimento',
+      ferramenta: 'registrar_diretiva',
+      parametros: parametrosDiretivaFallback(mensagem, contexto),
+      depende_de: [],
+    });
+  }
+  const chaveDiretiva = etapas.find(etapa => etapa.ferramenta === 'registrar_diretiva')?.chave;
+  if (chaveDiretiva) {
+    for (const etapa of etapas) {
+      if (etapa.chave !== chaveDiretiva && etapa.ferramenta !== 'curar_memoria' && !etapa.depende_de.includes(chaveDiretiva)) {
+        etapa.depende_de.unshift(chaveDiretiva);
+      }
+    }
+  }
+
   const curador = agentes.get('curador-conhecimento');
-  if (curador && !etapas.some(etapa => etapa.ferramenta === 'curar_memoria')) {
+  const temExecucaoOperacional = etapas.some(etapa => !['registrar_diretiva', 'curar_memoria', 'consultar_contexto'].includes(etapa.ferramenta));
+  if (curador && temExecucaoOperacional && !etapas.some(etapa => etapa.ferramenta === 'curar_memoria')) {
     if (etapas.length >= 6) etapas.splice(5);
     etapas.push({
       chave: 'curar',
@@ -327,7 +436,7 @@ async function planejarComGPT(
       : item.slug === 'nina-producao'
         ? ['consultar_contexto', 'analisar_com_especialista', 'executar_tarefa', 'gerar_proximo_post']
         : item.slug === 'curador-conhecimento'
-          ? ['consultar_contexto', 'analisar_com_especialista', 'curar_memoria']
+          ? ['consultar_contexto', 'analisar_com_especialista', 'registrar_diretiva', 'curar_memoria']
           : ['consultar_contexto', 'analisar_com_especialista', 'executar_tarefa'],
   }));
   const system = [
@@ -335,8 +444,11 @@ async function planejarComGPT(
     'Você pode delegar entre todos os agentes. Para pedidos complexos, divida o trabalho por competência e dependência; para pedidos simples, mantenha o plano curto.',
     'Nunca diga que algo foi executado: o plano ainda aguardará UMA confirmação do usuário para todas as etapas.',
     'Escolha apenas agente_slug e ferramenta existentes no catálogo. No máximo 6 etapas.',
-    'Use gerar_calendario para alterar o calendário real; gerar_proximo_post para disparar a produção real; executar_tarefa para trabalho operacional do agente; analisar_com_especialista para análise sem efeito externo; consultar_contexto para uma leitura explícita; curar_memoria apenas para o Curador.',
-    'Sempre finalize com curar_memoria pelo curador-conhecimento. Não invente dados; use o contexto fornecido.',
+    'Use gerar_calendario para alterar o calendário real; gerar_proximo_post para disparar a produção real; executar_tarefa para trabalho operacional do agente; analisar_com_especialista para análise sem efeito externo; consultar_contexto para uma leitura explícita.',
+    'Quando o usuário declarar preferência, correção, padrão, referência ou regra, inclua primeiro registrar_diretiva com o Curador. Essa diretiva já foi confirmada pelo usuário e não pode ser vetada pelo GPT.',
+    'Use curar_memoria somente para inferências novas descobertas durante uma execução operacional. Não use curar_memoria como condição para guardar orientação explícita.',
+    'A imagem final é responsabilidade conjunta: Diretor define conceito e composição, Redator define a mensagem, Nina executa a peça completa e o Gestor bloqueia resultados sem acabamento coeso. O Curador apenas preserva a regra para uso futuro.',
+    'Não invente dados; use o contexto fornecido.',
     'Responda somente JSON: {"resposta":string,"resumo":string,"alteracoes_previstas":string[],"efeitos_externos":string[],"etapas":[{"chave":string,"titulo":string,"descricao":string,"agente_slug":string,"ferramenta":string,"parametros":object,"depende_de":string[]}]}',
   ].join(' ');
   return await chamarGPT(openaiKey, system, JSON.stringify({ agente_solicitado: agente, pedido: mensagem, catalogo, historico, contexto_operacional: contexto, memoria_obsidian: memoria }), 0.15);
@@ -446,8 +558,6 @@ async function curarMemoria(
   etapa: EtapaPersistida,
   resultados: Record<string, unknown>,
 ) {
-  const config = await githubConfig(supabase);
-  if (!config) return { gravado: false, motivo: 'Cofre Obsidian não configurado.' };
   const decisao = await chamarGPT(openaiKey, [
     'Você é o Curador de Conhecimento da 11DS.',
     'Só grave algo quando os 3 critérios forem verdadeiros simultaneamente: não óbvio; concreto/acionável; muda uma decisão futura.',
@@ -455,26 +565,38 @@ async function curarMemoria(
     'Responda somente JSON: {"gravar":boolean,"tipo":"empresa|cliente|agente|procedimento|campanha|identidade_visual|aprendizado|decisao","escopo":string,"titulo":string,"resumo":string,"conteudo_markdown":string,"confianca":number,"motivo":string}.',
   ].join(' '), JSON.stringify({ objetivo: plano.objetivo, resumo_do_plano: plano.resumo, resultados, etapa: etapa.descricao }), 0.1);
   if (!decisao.gravar) return { gravado: false, motivo: texto(decisao.motivo, 600) || 'Não passou na régua de memória permanente.' };
-  const tipo = ['empresa', 'cliente', 'agente', 'procedimento', 'campanha', 'identidade_visual', 'aprendizado', 'decisao'].includes(texto(decisao.tipo, 50)) ? texto(decisao.tipo, 50) : 'aprendizado';
+  const valorTipo = texto(decisao.tipo, 50);
+  const tipos: TipoMemoria[] = ['empresa', 'cliente', 'agente', 'procedimento', 'campanha', 'identidade_visual', 'aprendizado', 'decisao'];
+  const tipo: TipoMemoria = tipos.includes(valorTipo as TipoMemoria) ? valorTipo as TipoMemoria : 'aprendizado';
   const titulo = texto(decisao.titulo, 120) || `Aprendizado ${String(plano.id).slice(0, 8)}`;
-  const caminho = `Equipe/Aprendizados/${agora().slice(0, 10)}-${slugificar(titulo).slice(0, 70)}-${String(plano.id).slice(0, 8)}.md`;
-  const conteudo = [`# ${titulo}`, '', `- Tipo: ${tipo}`, `- Escopo: ${texto(decisao.escopo, 160) || 'Equipe 11DS'}`, `- Plano: ${plano.id}`, `- Registrado em: ${agora()}`, '', texto(decisao.conteudo_markdown, 8000) || texto(decisao.resumo, 2000)].join('\n');
-  await gravarGithub(config.token, config.repo, caminho, conteudo, `curadoria: ${titulo}`);
-  const conteudoHash = await sha256(conteudo);
-  const confianca = Math.max(0, Math.min(1, Number(decisao.confianca ?? 0.8)));
-  const { error } = await supabase.from('equipe_11ds_memorias').insert({
-    solicitante_id: plano.solicitante_id,
-    plano_id: plano.id,
-    agente_id: etapa.agente_id,
+  const contexto = (plano.contexto ?? {}) as Record<string, unknown>;
+  const memoria = await registrarDiretiva(supabase, {
+    solicitanteId: texto(plano.solicitante_id),
+    planoId: texto(plano.id),
+    agenteId: etapa.agente_id,
+    clienteId: texto(contexto.cliente_id, 80) || null,
     tipo,
     escopo: texto(decisao.escopo, 160) || 'Equipe 11DS',
-    caminho_obsidian: caminho,
+    regra: texto(decisao.conteudo_markdown, 8000) || texto(decisao.resumo, 2000) || titulo,
     resumo: texto(decisao.resumo, 1200) || titulo,
-    conteudo_hash: conteudoHash,
-    confianca,
+    evidencia: { origem: 'curadoria_inferencial', resultados },
+    agentesConsumidores: [],
+    prioridade: 50,
+    origem: 'agente',
   });
-  if (error) throw new Error(`Memória gravada no Obsidian, mas o índice falhou: ${error.message}`);
-  return { gravado: true, caminho, resumo: texto(decisao.resumo, 1200) || titulo, confianca };
+  try {
+    await chamarInterna(supabase, 'equipe-11ds-memoria-sync', { memoria_ids: [memoria.id] });
+  } catch (error) {
+    console.error('Memória inferida persistida, aguardando nova tentativa de sync:', (error as Error).message);
+  }
+  return {
+    gravado: true,
+    memoria_id: memoria.id,
+    caminho: memoria.caminho_obsidian,
+    resumo: memoria.resumo,
+    status: memoria.status,
+    evidencia: 'Inferência validada pelo Curador e persistida no índice de memória.',
+  };
 }
 
 async function executarFerramenta(
@@ -498,6 +620,49 @@ async function executarFerramenta(
       return await chamarInterna(supabase, 'equipe-11ds-calendario-executar', {});
     case 'gerar_proximo_post':
       return await chamarInterna(supabase, 'equipe-11ds-diario', {});
+    case 'registrar_diretiva': {
+      const parametros = etapa.parametros ?? {};
+      const valorTipo = texto(parametros.tipo, 50);
+      const tipos: TipoMemoria[] = ['empresa', 'cliente', 'agente', 'procedimento', 'campanha', 'identidade_visual', 'aprendizado', 'decisao'];
+      const tipo: TipoMemoria = tipos.includes(valorTipo as TipoMemoria) ? valorTipo as TipoMemoria : 'decisao';
+      const contexto = (plano.contexto ?? {}) as Record<string, unknown>;
+      const evidencia = parametros.evidencia && typeof parametros.evidencia === 'object'
+        ? parametros.evidencia as Record<string, unknown>
+        : {};
+      const memoria = await registrarDiretiva(supabase, {
+        solicitanteId: texto(plano.solicitante_id),
+        planoId: texto(plano.id),
+        agenteId: agente.id,
+        clienteId: texto(parametros.cliente_id, 80) || texto(contexto.cliente_id, 80) || null,
+        tipo,
+        escopo: texto(parametros.escopo, 160) || 'Equipe 11DS',
+        regra: texto(parametros.regra, 6000) || texto(plano.objetivo, 6000),
+        resumo: texto(parametros.resumo, 1200) || texto(plano.objetivo, 1200),
+        evidencia,
+        agentesConsumidores: Array.isArray(parametros.agentes_consumidores)
+          ? parametros.agentes_consumidores.map(item => texto(item, 100)).filter(Boolean)
+          : [],
+        prioridade: Number(parametros.prioridade ?? 100),
+        substituiId: texto(parametros.substitui_id, 80) || null,
+        origem: 'usuario',
+      });
+      let sincronizacao = 'sincronizada';
+      try {
+        await chamarInterna(supabase, 'equipe-11ds-memoria-sync', { memoria_ids: [memoria.id] });
+      } catch (error) {
+        sincronizacao = 'pendente';
+        console.error('Diretiva persistida, aguardando nova tentativa de sync:', (error as Error).message);
+      }
+      return {
+        gravado: true,
+        memoria_id: memoria.id,
+        status: memoria.status,
+        sincronizacao,
+        caminho: memoria.caminho_obsidian,
+        resumo: memoria.resumo,
+        evidencia: 'Orientação explícita persistida sem veto do Curador e disponibilizada aos agentes consumidores.',
+      };
+    }
     case 'curar_memoria':
       return await curarMemoria(supabase, openaiKey, plano, etapa, resultados);
     default:
@@ -587,16 +752,27 @@ serve(async req => {
         supabase.from('equipe_11ds_agentes').select('id,nome,cargo,slug,responsabilidade,regras,aplica,executor_function').not('slug', 'is', null),
         supabase.from('equipe_11ds_chat_mensagens').select('papel,conteudo,created_at').eq('agente_id', agente.id).eq('solicitante_id', user.id).order('created_at', { ascending: false }).limit(10),
         buscarContextoOperacional(supabase),
-        buscarMemoriaObsidian(supabase, mensagem),
+        buscarMemoriaObsidian(supabase, mensagem, {
+          clienteId: texto(body.contexto?.cliente_id, 80) || null,
+          agenteSlug: agente.slug,
+        }),
       ]);
       const agentes = (agentesData ?? []) as Agente[];
       const mapaAgentes = new Map(agentes.map(item => [item.slug, item]));
-      const fallback = planoDeterministico(mensagem, agente);
+      const contextoPedido = body.contexto ?? {};
+      const fallback = planoDeterministico(mensagem, agente, contextoPedido);
       let proposta = fallback;
       const openaiKey = Deno.env.get('OPENAI_API_KEY');
       if (openaiKey) {
         try {
-          proposta = sanitizarPlano(await planejarComGPT(openaiKey, agente, mensagem, agentes, (historico ?? []).reverse(), contexto, memoria), fallback, mapaAgentes);
+          proposta = sanitizarPlano(
+            await planejarComGPT(openaiKey, agente, mensagem, agentes, (historico ?? []).reverse(), contexto, memoria),
+            fallback,
+            mapaAgentes,
+            mensagem,
+            agente,
+            contextoPedido,
+          );
         } catch (error) {
           console.error('Planejamento GPT caiu no fallback seguro:', (error as Error).message);
         }

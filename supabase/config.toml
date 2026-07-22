@@ -21,3 +21,8 @@ verify_jwt = false
 # depois de vincular o plano ao usuário autenticado.
 [functions.equipe-11ds-orquestrador]
 verify_jwt = false
+
+# Worker interno: conclui no GitHub/Obsidian apenas memórias já persistidas e
+# confirmadas. A autenticação usa x-cron-key dentro da própria função.
+[functions.equipe-11ds-memoria-sync]
+verify_jwt = false
