@@ -16,3 +16,8 @@ verify_jwt = true
 # confirmação e manter a autenticação uniforme entre painel e chamadas internas.
 [functions.equipe-11ds-chat]
 verify_jwt = false
+
+# O orquestrador valida o JWT no próprio código e usa a service role apenas
+# depois de vincular o plano ao usuário autenticado.
+[functions.equipe-11ds-orquestrador]
+verify_jwt = false

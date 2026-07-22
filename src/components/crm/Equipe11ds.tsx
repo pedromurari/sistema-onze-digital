@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Bot, Loader2, Download, Send, ArrowUpRight, AlertTriangle, RefreshCw, Repeat, X, MessageCircle, CheckCircle2, ExternalLink, CalendarDays } from 'lucide-react';
+import { Bot, Loader2, Download, Send, ArrowUpRight, AlertTriangle, RefreshCw, Repeat, X, MessageCircle, CheckCircle2, ExternalLink, CalendarDays, ListChecks, ShieldCheck, Clock3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,10 +13,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
-  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -108,15 +104,36 @@ type ChatMensagem = {
   papel: 'usuario' | 'agente' | 'sistema';
   conteudo: string;
   acao_id: string | null;
+  plano_id: string | null;
   created_at: string;
 };
 
-type ChatAcao = {
+type PlanoStatus = 'planejada' | 'aguardando_confirmacao' | 'executando' | 'concluida' | 'erro' | 'cancelada';
+
+type Plano = {
   id: string;
-  tipo: 'executar_tarefa' | 'gerar_proximo_post' | 'gerar_calendario';
-  estado: 'proposta' | 'confirmada' | 'cancelada' | 'concluida' | 'erro';
+  objetivo: string;
   resumo: string;
-  payload: Record<string, unknown>;
+  status: PlanoStatus;
+  alteracoes_previstas: string[];
+  efeitos_externos: string[];
+  versao_hash: string;
+  resultado_resumo: string | null;
+  erro_mensagem: string | null;
+  created_at: string;
+};
+
+type PlanoEtapa = {
+  id: string;
+  chave: string;
+  ordem: number;
+  agente_slug: string;
+  titulo: string;
+  descricao: string;
+  ferramenta: string;
+  status: 'planejada' | 'aguardando' | 'executando' | 'corrigindo' | 'concluida' | 'erro' | 'cancelada';
+  evidencia: string | null;
+  erro_mensagem: string | null;
 };
 
 const STATUS_LABEL: Record<TarefaStatus, string> = {
@@ -615,12 +632,11 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
   const [repetirDiariamente, setRepetirDiariamente] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [chatMensagens, setChatMensagens] = useState<ChatMensagem[]>([]);
-  const [acaoPendente, setAcaoPendente] = useState<ChatAcao | null>(null);
+  const [planoAtivo, setPlanoAtivo] = useState<Plano | null>(null);
+  const [etapasPlano, setEtapasPlano] = useState<PlanoEtapa[]>([]);
   const [carregandoChat, setCarregandoChat] = useState(false);
-  const [confirmandoAcao, setConfirmandoAcao] = useState(false);
+  const [confirmandoPlano, setConfirmandoPlano] = useState(false);
   const [selecionada, setSelecionada] = useState<string | null>(null);
-  const [gerandoProximoPost, setGerandoProximoPost] = useState(false);
-  const [rodandoCalendario, setRodandoCalendario] = useState(false);
 
   const loadTarefas = useCallback(async () => {
     const { data, error } = await (supabase.from('equipe_11ds_tarefas' as any) as any)
@@ -645,25 +661,38 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
   const loadChat = useCallback(async () => {
     if (!user?.id) return;
     setCarregandoChat(true);
-    const [mensagensResult, acoesResult] = await Promise.all([
+    const [mensagensResult, planosResult] = await Promise.all([
       (supabase.from('equipe_11ds_chat_mensagens' as any) as any)
-        .select('id, papel, conteudo, acao_id, created_at')
+        .select('id, papel, conteudo, acao_id, plano_id, created_at')
         .eq('agente_id', agente.id)
         .eq('solicitante_id', user.id)
         .order('created_at', { ascending: true })
-        .limit(30),
-      (supabase.from('equipe_11ds_chat_acoes' as any) as any)
-        .select('id, tipo, estado, resumo, payload')
-        .eq('agente_id', agente.id)
+        .limit(50),
+      (supabase.from('equipe_11ds_planos' as any) as any)
+        .select('id, objetivo, resumo, status, alteracoes_previstas, efeitos_externos, versao_hash, resultado_resumo, erro_mensagem, created_at')
+        .eq('agente_responsavel_id', agente.id)
         .eq('solicitante_id', user.id)
-        .eq('estado', 'proposta')
         .order('created_at', { ascending: false })
         .limit(1),
     ]);
     if (mensagensResult.error) toast.error(`Erro ao carregar conversa: ${mensagensResult.error.message}`);
     else setChatMensagens((mensagensResult.data as ChatMensagem[]) || []);
-    if (acoesResult.error) toast.error(`Erro ao carregar confirmação: ${acoesResult.error.message}`);
-    else setAcaoPendente(((acoesResult.data as ChatAcao[]) || [])[0] ?? null);
+    if (planosResult.error) {
+      toast.error(`Erro ao carregar plano: ${planosResult.error.message}`);
+      setPlanoAtivo(null);
+      setEtapasPlano([]);
+    } else {
+      const plano = ((planosResult.data as Plano[]) || [])[0] ?? null;
+      setPlanoAtivo(plano);
+      if (plano) {
+        const { data: etapas, error: etapasError } = await (supabase.from('equipe_11ds_plano_etapas' as any) as any)
+          .select('id, chave, ordem, agente_slug, titulo, descricao, ferramenta, status, evidencia, erro_mensagem')
+          .eq('plano_id', plano.id)
+          .order('ordem');
+        if (etapasError) toast.error(`Erro ao carregar etapas: ${etapasError.message}`);
+        else setEtapasPlano((etapas as PlanoEtapa[]) || []);
+      } else setEtapasPlano([]);
+    }
     setCarregandoChat(false);
   }, [agente.id, user?.id]);
 
@@ -677,6 +706,15 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
   useEffect(() => { loadChat(); }, [loadChat]);
 
   useEffect(() => {
+    if (planoAtivo?.status !== 'executando') return;
+    const timer = window.setInterval(() => {
+      loadChat();
+      loadTarefas();
+    }, 2200);
+    return () => window.clearInterval(timer);
+  }, [planoAtivo?.status, loadChat, loadTarefas]);
+
+  useEffect(() => {
     const channel = supabase
       .channel(`equipe_11ds_tarefas_${agente.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'equipe_11ds_tarefas', filter: `agente_id=eq.${agente.id}` }, () => {
@@ -686,55 +724,59 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
     return () => { supabase.removeChannel(channel); };
   }, [agente.id, loadTarefas]);
 
-  const enviarOrdem = async () => {
-    if (!ordemTexto.trim()) return;
-    if (tipo === 'post_cliente' && !clienteId) { toast.error('Selecione o cliente'); return; }
-    if (acaoPendente) { toast.error('Confirme ou cancele a proposta pendente antes de enviar outro pedido.'); return; }
+  const solicitarPlano = async (mensagemRecebida?: string, contextoForcado?: Partial<{ tipo: TarefaTipo; cliente_id: string | null; repetir_diariamente: boolean }>) => {
+    const mensagem = (mensagemRecebida ?? ordemTexto).trim();
+    if (!mensagem) return;
+    const tipoDoPlano = contextoForcado?.tipo ?? tipo;
+    const clienteDoPlano = contextoForcado?.cliente_id ?? (tipoDoPlano === 'post_cliente' ? clienteId : null);
+    if (tipoDoPlano === 'post_cliente' && !clienteDoPlano) { toast.error('Selecione o cliente'); return; }
+    if (planoAtivo && ['aguardando_confirmacao', 'executando'].includes(planoAtivo.status)) {
+      toast.error('Este agente já tem um plano aguardando confirmação ou em execução.');
+      return;
+    }
     setEnviando(true);
-    const mensagem = ordemTexto.trim();
-    const { data, error } = await supabase.functions.invoke('equipe-11ds-chat', {
+    const { data, error } = await supabase.functions.invoke('equipe-11ds-orquestrador', {
       body: {
-        operacao: 'interpretar',
+        operacao: 'planejar',
         agente_id: agente.id,
         mensagem,
         contexto: {
-          tipo,
-          cliente_id: tipo === 'post_cliente' ? clienteId : null,
-          repetir_diariamente: repetirDiariamente,
+          tipo: tipoDoPlano,
+          cliente_id: clienteDoPlano,
+          repetir_diariamente: contextoForcado?.repetir_diariamente ?? repetirDiariamente,
         },
       },
     });
     setEnviando(false);
     if (error || !(data as any)?.ok) {
-      toast.error(`Erro ao entender o pedido: ${error?.message ?? (data as any)?.error ?? 'sem resposta'}`);
+      toast.error(`Erro ao montar o plano: ${error?.message ?? (data as any)?.error ?? 'sem resposta'}`);
       return;
     }
     setOrdemTexto('');
-    const proposta = (data as any)?.proposta as ChatAcao | null;
-    if (proposta) {
-      setAcaoPendente(proposta);
-      toast.info('Proposta pronta. Confirme para executar.');
-    }
+    setPlanoAtivo((data as any)?.plano as Plano);
+    setEtapasPlano(((data as any)?.etapas as PlanoEtapa[]) ?? []);
+    toast.info('Plano pronto. Revise tudo e confirme uma vez para executar.');
     await loadChat();
   };
 
-  const tratarAcaoPendente = async (operacao: 'confirmar' | 'cancelar') => {
-    if (!acaoPendente) return;
-    setConfirmandoAcao(true);
-    const { data, error } = await supabase.functions.invoke('equipe-11ds-chat', {
-      body: { operacao, agente_id: agente.id, acao_id: acaoPendente.id },
+  const enviarOrdem = () => solicitarPlano();
+
+  const tratarPlano = async (operacao: 'confirmar' | 'cancelar') => {
+    if (!planoAtivo || planoAtivo.status !== 'aguardando_confirmacao') return;
+    setConfirmandoPlano(true);
+    const { data, error } = await supabase.functions.invoke('equipe-11ds-orquestrador', {
+      body: { operacao, agente_id: agente.id, plano_id: planoAtivo.id, versao_hash: planoAtivo.versao_hash },
     });
-    setConfirmandoAcao(false);
+    setConfirmandoPlano(false);
     if (error || !(data as any)?.ok) {
       toast.error(`Não foi possível ${operacao === 'confirmar' ? 'executar' : 'cancelar'}: ${error?.message ?? (data as any)?.error ?? 'sem resposta'}`);
       await loadChat();
       return;
     }
-    setAcaoPendente(null);
     if (operacao === 'confirmar') {
       setRepetirDiariamente(false);
-      toast.success((data as any)?.resposta ?? 'Ação confirmada.');
-    } else toast.success('Ação cancelada. Nada foi executado.');
+      toast.success((data as any)?.resposta ?? 'Plano confirmado. A equipe iniciou a execução.');
+    } else toast.success('Plano cancelado. Nada foi executado.');
     await Promise.all([loadChat(), loadTarefas(), loadRecorrentes()]);
   };
 
@@ -743,30 +785,6 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
     if (error) { toast.error(`Erro ao remover recorrente: ${error.message}`); return; }
     setRecorrentes(prev => prev.filter(r => r.id !== id));
     toast.success('Tarefa recorrente removida.');
-  };
-
-  const gerarProximoPost = async () => {
-    setGerandoProximoPost(true);
-    const { data, error } = await supabase.functions.invoke('equipe-11ds-diario', { body: {} });
-    setGerandoProximoPost(false);
-    if (error) { toast.error(`Erro ao gerar próximo post: ${error.message}`); return; }
-    const criadas = (data as any)?.criadas ?? 0;
-    toast.success(
-      criadas > 0
-        ? `${criadas} próximo(s) post(s) iniciado(s)!`
-        : 'Nenhum post foi iniciado: os clientes ativos já têm uma geração em andamento.',
-    );
-    loadTarefas();
-  };
-
-  const gerarCalendario = async () => {
-    setRodandoCalendario(true);
-    const { data, error } = await supabase.functions.invoke('equipe-11ds-calendario-executar', { body: {} });
-    setRodandoCalendario(false);
-    if (error) { toast.error(`Erro ao gerar calendário: ${error.message}`); return; }
-    const planejados = (data as any)?.planejados ?? 0;
-    toast.success(planejados > 0 ? `${planejados} dia(s) planejado(s) no calendário!` : 'Nada novo pra planejar — os próximos dias já estão cobertos.');
-    loadTarefas();
   };
 
   const grupos: { status: TarefaStatus; label: string }[] = [
@@ -778,7 +796,7 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
 
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
-      <SheetContent className="w-full sm:max-w-lg flex flex-col gap-0 p-0">
+      <SheetContent className="w-full sm:max-w-xl flex flex-col gap-0 p-0">
         <SheetHeader className="p-4 border-b border-border">
           <div className="flex items-center gap-3">
             <Avatar className="h-11 w-11">
@@ -792,52 +810,26 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
             </div>
             <div className="flex items-center gap-2 mr-6">
               {agente.slug === 'gestor-midia' && (
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button size="sm" variant="outline" className="gap-1.5" disabled={rodandoCalendario}>
-                      {rodandoCalendario ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CalendarDays className="h-3.5 w-3.5" />}
-                      Gerar calendário
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Gerar o calendário de conteúdo?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        O Gestor planeja os próximos 7 dias de cada cliente ativo (direção de tema por dia, dentro do
-                        pilar/formato já decididos pelo calendário) e salva como "ideia" no Calendário de Conteúdo — sem
-                        sobrescrever nenhum dia que já tenha sido produzido.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                      <AlertDialogAction onClick={gerarCalendario}>Gerar agora</AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  disabled={enviando || Boolean(planoAtivo && ['aguardando_confirmacao', 'executando'].includes(planoAtivo.status))}
+                  onClick={() => solicitarPlano('Gere o calendário editorial dos próximos 7 dias para todos os clientes ativos, sem sobrescrever dias já produzidos.', { tipo: 'avulso', cliente_id: null, repetir_diariamente: false })}
+                >
+                  <CalendarDays className="h-3.5 w-3.5" /> Gerar calendário
+                </Button>
               )}
-              {agente.slug === 'gestor-midia' && (
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button size="sm" variant="outline" className="gap-1.5" disabled={gerandoProximoPost}>
-                      {gerandoProximoPost ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                      Gerar próximo post
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Gerar o próximo post agora?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        O Gestor de Mídia inicia a próxima geração editorial para os clientes ativos. Cada cliente segue
-                        a alternância entre cartão tipográfico premium e peça fotográfica cinematográfica. Você pode gerar
-                        mais de uma vez no mesmo dia; clientes com uma geração em andamento são ignorados.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                      <AlertDialogAction onClick={gerarProximoPost}>Gerar agora</AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+              {['gestor-midia', 'nina-producao'].includes(agente.slug ?? '') && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  disabled={enviando || Boolean(planoAtivo && ['aguardando_confirmacao', 'executando'].includes(planoAtivo.status))}
+                  onClick={() => solicitarPlano('Gere o próximo post premium para os clientes ativos, mantendo a alternância entre cartão tipográfico e fotografia cinematográfica em 1:1.', { tipo: 'avulso', cliente_id: null, repetir_diariamente: false })}
+                >
+                  <RefreshCw className="h-3.5 w-3.5" /> Gerar próximo post
+                </Button>
               )}
             </div>
           </div>
@@ -849,12 +841,12 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
         <ScrollArea className="flex-1 p-4">
           <div className="space-y-4">
             <FichaDeCargo agente={agente} />
-            <div className="rounded-xl border border-purple-100 bg-gradient-to-br from-purple-50/70 to-background p-3 space-y-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-3 shadow-sm">
               <div className="flex items-center gap-2">
-                <MessageCircle className="h-4 w-4 text-purple-600" />
+                <MessageCircle className="h-4 w-4 text-amber-600" />
                 <div>
                   <p className="text-sm font-semibold">Conversa com {agente.nome}</p>
-                  <p className="text-[11px] text-muted-foreground">Entende seu pedido e sempre pede confirmação antes de agir.</p>
+                  <p className="text-[11px] text-muted-foreground">Planeja, delega entre especialistas e pede uma confirmação antes de agir.</p>
                 </div>
               </div>
               <div className="max-h-52 overflow-y-auto space-y-2 pr-1">
@@ -868,7 +860,7 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
                     className={cn(
                       'rounded-lg px-3 py-2 text-xs leading-relaxed whitespace-pre-line',
                       mensagem.papel === 'usuario'
-                        ? 'ml-8 bg-purple-600 text-white'
+                        ? 'ml-8 bg-slate-900 text-white'
                         : mensagem.papel === 'sistema'
                           ? 'border border-amber-200 bg-amber-50 text-amber-900'
                           : 'mr-8 border bg-background text-foreground',
@@ -878,21 +870,95 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
                   </div>
                 ))}
               </div>
-              {acaoPendente && (
-                <div className="rounded-lg border border-purple-200 bg-background p-3 space-y-2">
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-purple-600" />
-                    <div>
-                      <p className="text-xs font-semibold">Ação aguardando sua confirmação</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">{acaoPendente.resumo}</p>
+              {planoAtivo && (
+                <div className={cn(
+                  'overflow-hidden rounded-xl border bg-white shadow-sm',
+                  planoAtivo.status === 'erro' ? 'border-red-200' :
+                    planoAtivo.status === 'concluida' ? 'border-emerald-200' :
+                      planoAtivo.status === 'executando' ? 'border-blue-200' :
+                        planoAtivo.status === 'aguardando_confirmacao' ? 'border-amber-300' : 'border-slate-200',
+                )}>
+                  <div className="border-b border-slate-100 bg-slate-950 px-3 py-3 text-white">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-2">
+                        <ListChecks className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Plano de execução</p>
+                          <p className="mt-0.5 text-sm font-semibold leading-snug">{planoAtivo.resumo}</p>
+                        </div>
+                      </div>
+                      <Badge className={cn(
+                        'shrink-0 border-0 text-[10px]',
+                        planoAtivo.status === 'aguardando_confirmacao' && 'bg-amber-400 text-slate-950',
+                        planoAtivo.status === 'executando' && 'bg-blue-500 text-white',
+                        planoAtivo.status === 'concluida' && 'bg-emerald-500 text-white',
+                        planoAtivo.status === 'erro' && 'bg-red-500 text-white',
+                        planoAtivo.status === 'cancelada' && 'bg-slate-600 text-white',
+                      )}>
+                        {planoAtivo.status === 'aguardando_confirmacao' ? 'Aguardando confirmação' :
+                          planoAtivo.status === 'executando' ? 'Em execução' :
+                            planoAtivo.status === 'concluida' ? 'Concluído' :
+                              planoAtivo.status === 'erro' ? 'Interrompido' :
+                                planoAtivo.status === 'cancelada' ? 'Cancelado' : 'Planejado'}
+                      </Badge>
                     </div>
                   </div>
-                  <div className="flex justify-end gap-2">
-                    <Button size="sm" variant="ghost" disabled={confirmandoAcao} onClick={() => tratarAcaoPendente('cancelar')}>Cancelar</Button>
-                    <Button size="sm" className="gap-1.5" disabled={confirmandoAcao} onClick={() => tratarAcaoPendente('confirmar')}>
-                      {confirmandoAcao ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                      Confirmar e executar
-                    </Button>
+
+                  <div className="space-y-3 p-3">
+                    <div className="space-y-2">
+                      {etapasPlano.map(etapa => (
+                        <div key={etapa.id} className="grid grid-cols-[22px_1fr] gap-2">
+                          <div className={cn(
+                            'mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-bold',
+                            etapa.status === 'concluida' ? 'border-emerald-500 bg-emerald-500 text-white' :
+                              etapa.status === 'executando' ? 'border-blue-500 bg-blue-50 text-blue-700' :
+                                etapa.status === 'erro' ? 'border-red-500 bg-red-50 text-red-700' :
+                                  'border-slate-300 bg-white text-slate-500',
+                          )}>
+                            {etapa.status === 'concluida' ? '✓' : etapa.status === 'executando' ? <Loader2 className="h-3 w-3 animate-spin" /> : etapa.ordem}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-xs font-semibold text-slate-800">{etapa.titulo}</p>
+                              <span className="truncate text-[10px] font-medium uppercase tracking-wide text-slate-400">{etapa.agente_slug.replace(/-/g, ' ')}</span>
+                            </div>
+                            <p className="text-[11px] leading-relaxed text-slate-500">{etapa.descricao}</p>
+                            {etapa.evidencia && <p className="mt-1 text-[11px] text-emerald-700">Evidência: {etapa.evidencia}</p>}
+                            {etapa.erro_mensagem && <p className="mt-1 text-[11px] text-red-600">{etapa.erro_mensagem}</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {planoAtivo.status === 'aguardando_confirmacao' && (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-950">
+                          <ShieldCheck className="h-3.5 w-3.5" /> Uma confirmação libera o plano inteiro
+                        </div>
+                        {planoAtivo.efeitos_externos.length > 0 && (
+                          <ul className="mt-1.5 space-y-1 pl-4 text-[11px] text-amber-900 list-disc">
+                            {planoAtivo.efeitos_externos.map((efeito, index) => <li key={index}>{efeito}</li>)}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+                    {planoAtivo.status === 'executando' && (
+                      <div className="flex items-center gap-2 rounded-lg bg-blue-50 px-2.5 py-2 text-[11px] font-medium text-blue-800">
+                        <Clock3 className="h-3.5 w-3.5 animate-pulse" /> A equipe está trabalhando. O progresso atualiza automaticamente.
+                      </div>
+                    )}
+                    {planoAtivo.resultado_resumo && <p className="rounded-lg bg-emerald-50 px-2.5 py-2 text-[11px] text-emerald-800">{planoAtivo.resultado_resumo}</p>}
+                    {planoAtivo.erro_mensagem && <p className="rounded-lg bg-red-50 px-2.5 py-2 text-[11px] text-red-700">{planoAtivo.erro_mensagem}</p>}
+
+                    {planoAtivo.status === 'aguardando_confirmacao' && (
+                      <div className="flex justify-end gap-2 pt-1">
+                        <Button size="sm" variant="ghost" disabled={confirmandoPlano} onClick={() => tratarPlano('cancelar')}>Cancelar</Button>
+                        <Button size="sm" className="gap-1.5 bg-amber-500 text-slate-950 hover:bg-amber-400" disabled={confirmandoPlano} onClick={() => tratarPlano('confirmar')}>
+                          {confirmandoPlano ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                          Confirmar plano inteiro
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -967,7 +1033,7 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
               className="min-h-[60px] text-sm resize-none"
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarOrdem(); } }}
             />
-            <Button size="icon" className="h-auto" disabled={enviando || Boolean(acaoPendente) || !ordemTexto.trim()} onClick={enviarOrdem}>
+            <Button size="icon" className="h-auto" disabled={enviando || Boolean(planoAtivo && ['aguardando_confirmacao', 'executando'].includes(planoAtivo.status)) || !ordemTexto.trim()} onClick={enviarOrdem}>
               {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
           </div>

@@ -306,6 +306,29 @@ async function buscarContextoConhecimento(supabase: any, cliente: ClienteContext
   }
 }
 
+async function buscarContextoGeralConhecimento(supabase: any, ordem: string): Promise<string> {
+  try {
+    const { data: config } = await supabase.rpc('get_equipe_11ds_github_config');
+    const token = config?.[0]?.token as string | undefined;
+    const repo = config?.[0]?.repo as string | undefined;
+    if (!token || !repo) return '';
+    const termos = new Set(slugificar(ordem).split('-').filter(t => t.length >= 4));
+    const raizes = ['Empresa', 'Clientes', 'Processos', 'Equipe/Aprendizados', 'Midia-Criativos/Principios'];
+    const arquivos = (await Promise.all(raizes.map(async raiz => {
+      const itens = await listarDiretorio(token, repo, raiz);
+      return itens.filter(item => item.type === 'file' && item.name.endsWith('.md')).map(item => ({
+        caminho: `${raiz}/${item.name}`,
+        score: slugificar(item.name).split('-').filter(t => termos.has(t)).length,
+      }));
+    }))).flat().sort((a, b) => b.score - a.score).slice(0, 6);
+    const notas = await Promise.all(arquivos.map(item => lerConhecimento(token, repo, item.caminho).catch(() => null)));
+    return notas.filter((nota): nota is { conteudo: string; sha: string } => Boolean(nota)).map(nota => nota.conteudo).join('\n\n---\n\n').slice(0, 9000);
+  } catch (error) {
+    console.error('Falha ao ler o cérebro geral do Obsidian:', (error as Error).message);
+    return '';
+  }
+}
+
 // ── Banimentos e menu de ganchos (pesquisa de referencia, ver vault Obsidian) ──
 
 const PALAVRAS_BANIDAS = ['utilizar', 'robusto', 'aprofundar', 'certamente', 'é importante ressaltar', 'você já parou pra pensar', 'você sabia que', 'comente aqui o que esse tema desperta'];
@@ -691,15 +714,22 @@ async function passoCurador(
   }
 }
 
-// ── Tarefa avulsa (sem cliente/pilares) -- Nina executa direto, sem o time todo ─
+// ── Tarefa avulsa: cada especialista executa com a própria ficha de cargo ──
 
 type ExecResultadoAvulso = { resposta: string; gerar_imagem: boolean; prompt_imagem?: string; headline?: string; tema?: string; legenda?: string };
+type PerfilAgenteAvulso = { nome: string; cargo: string | null; slug: string | null; responsabilidade: string | null; regras: string[] | null; aplica: string[] | null };
 
-async function interpretarOrdemAvulsa(openaiKey: string, cargo: string, ordemTexto: string): Promise<ExecResultadoAvulso> {
+async function interpretarOrdemAvulsa(openaiKey: string, agente: PerfilAgenteAvulso, ordemTexto: string, memoria: string): Promise<ExecResultadoAvulso> {
+  const podeGerarImagem = ['nina-producao', 'diretor-arte'].includes(agente.slug ?? '');
   const systemPrompt = [
-    `Voce e a Nina, agente de IA do time "${cargo}" da agencia 11 Digital Strategy. Responda sempre em portugues do Brasil, tom profissional e direto.`,
-    `A ordem e uma tarefa avulsa (ex: foto de capa de grupo, criativo de anuncio, imagem promocional). Nao ha marca/logo cadastrada pra essa tarefa, entao se precisar de texto ele deve ser descrito dentro do proprio prompt_imagem.`,
-    `Decida se precisa de imagem. Se precisar, escreva um "headline" curto (se fizer sentido ter texto na imagem, descreva-o tambem dentro do prompt_imagem, com a grafia exata e correta em portugues) e um "prompt_imagem" em ingles descrevendo a cena/composicao/estilo visual.`,
+    `Você é ${agente.nome}, ${agente.cargo ?? 'especialista'} da agência 11 Digital Strategy. Responda em português do Brasil, com profundidade, clareza e ação concreta.`,
+    `Sua responsabilidade: ${agente.responsabilidade ?? 'entregar a tarefa dentro da sua especialidade'}.`,
+    `Regras que nunca quebra: ${(agente.regras ?? []).join(' | ') || 'não inventar fatos ou resultados'}.`,
+    `Métodos que aplica: ${(agente.aplica ?? []).join(' | ') || 'boas práticas profissionais da sua função'}.`,
+    memoria ? `Cérebro permanente da equipe no Obsidian (use quando relevante e nunca contradiga uma regra explícita):\n${memoria}` : 'O Obsidian não trouxe nota relevante para esta tarefa.',
+    podeGerarImagem
+      ? 'Você pode decidir gerar uma imagem. Se gerar, escreva headline curto e prompt_imagem em inglês com composição, estética premium, formato 1:1 e texto exato quando houver.'
+      : 'Você não é o produtor visual nesta tarefa: mantenha gerar_imagem=false e entregue seu trabalho especializado em texto.',
     `Responda SOMENTE com um JSON: {"resposta": string, "gerar_imagem": boolean, "prompt_imagem"?: string, "headline"?: string, "tema"?: string, "legenda"?: string}`,
   ].join(' ');
   const resultado = await chamarGPT(openaiKey, systemPrompt, ordemTexto);
@@ -872,7 +902,7 @@ serve(async (req) => {
     if (tarefaErr || !tarefa) throw new Error(`Tarefa nao encontrada: ${tarefaErr?.message ?? tarefaId}`);
     agenteIdErro = tarefa.agente_id;
 
-    const { data: agenteOriginal, error: agenteErr } = await supabase.from('equipe_11ds_agentes').select('id, time_id, cargo').eq('id', tarefa.agente_id).single();
+    const { data: agenteOriginal, error: agenteErr } = await supabase.from('equipe_11ds_agentes').select('id, time_id, nome, cargo, slug, responsabilidade, regras, aplica').eq('id', tarefa.agente_id).single();
     if (agenteErr || !agenteOriginal) throw new Error(`Agente nao encontrado: ${agenteErr?.message}`);
 
     await supabase.from('equipe_11ds_tarefas').update({ status: 'em_andamento', iniciado_em: new Date().toISOString() }).eq('id', tarefaId);
@@ -880,7 +910,7 @@ serve(async (req) => {
     const openaiKey = Deno.env.get('OPENAI_API_KEY');
     if (!openaiKey) throw new Error('OPENAI_API_KEY nao configurada nos Supabase Secrets');
 
-    // ── Tarefa avulsa: Nina executa sozinha, sem o time todo ───────────────────
+    // ── Tarefa avulsa: o agente selecionado executa com sua própria identidade ─
     if (tarefa.tipo !== 'post_cliente' || !tarefa.cliente_id) {
       await atualizarAgente(supabase, agenteOriginal.id, 'trabalhando', `${tarefa.ordem_texto.slice(0, 60)}${tarefa.ordem_texto.length > 60 ? '...' : ''}`);
 
@@ -927,7 +957,8 @@ serve(async (req) => {
         // Nenhum cliente cadastrado: cai pro interprete generico abaixo.
       }
 
-      const resultado = await interpretarOrdemAvulsa(openaiKey, agenteOriginal.cargo ?? 'Posts & Criativos', tarefa.ordem_texto);
+      const memoria = await buscarContextoGeralConhecimento(supabase, tarefa.ordem_texto);
+      const resultado = await interpretarOrdemAvulsa(openaiKey, agenteOriginal as PerfilAgenteAvulso, tarefa.ordem_texto, memoria);
 
       const anexos: { tipo: string; url: string }[] = [];
       if (resultado.gerar_imagem && resultado.prompt_imagem) {
