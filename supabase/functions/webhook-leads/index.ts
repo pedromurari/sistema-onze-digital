@@ -205,29 +205,26 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    // Create database row
+    const now = new Date().toISOString();
+    // The Leads Diretos screen filters by origem="Direto" and groups by status.
     const dbRow = {
       nome,
       email: email || null,
       telefone,
-      curso_interesse: cursoInteresse || 'Não especificado',
-      como_conheceu: fonte,
+      whatsapp: telefone,
+      origem: 'Direto',
+      status: 'novo',
       responsavel_id: responsavelId || null,
-      valor_investimento: valorInvestimento,
-      formacao_academica: formacao || null,
-      area_atuacao: areaAtuacao || null,
-      cidade: cidade || null,
-      estado: estado || null,
-      observacoes: observacoes || null,
-      etapa: 'novo',
-      criado_por_id: null, // webhook origin - no user
-      historico: [{
-        id: crypto.randomUUID(),
-        data: new Date().toISOString(),
-        usuarioNome: 'Sistema',
-        usuarioId: '',
-        acao: 'Lead criado via webhook de entrada',
-      }],
+      valor_potencial: valorInvestimento,
+      observacoes: [
+        observacoes,
+        `Origem do cadastro: ${fonte}`,
+        formacao && `Formação acadêmica: ${formacao}`,
+        areaAtuacao && `Área de atuação: ${areaAtuacao}`,
+        cidade && `Cidade: ${cidade}${estado ? `/${estado}` : ''}`,
+        cursoInteresse && `Curso de interesse: ${cursoInteresse}`,
+      ].filter(Boolean).join('\n') || null,
+      ultima_atividade: now,
     };
 
     // Insert into database

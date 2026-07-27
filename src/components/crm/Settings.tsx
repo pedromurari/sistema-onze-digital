@@ -573,13 +573,13 @@ export function Settings() {
                 <div className="flex gap-2">
                   <Input
                     readOnly
-                    value="https://qdpitjwpvmqsgshsdiab.supabase.co/functions/v1/webhook-leads"
+                    value="https://usqiyekfmwwnvkmkdlej.supabase.co/functions/v1/webhook-leads"
                     className="font-mono text-sm"
                   />
                   <Button
                     variant="outline"
                     onClick={() => {
-                      navigator.clipboard.writeText('https://qdpitjwpvmqsgshsdiab.supabase.co/functions/v1/webhook-leads');
+                      navigator.clipboard.writeText('https://usqiyekfmwwnvkmkdlej.supabase.co/functions/v1/webhook-leads');
                       toast({ title: 'URL copiada!' });
                     }}
                   >
