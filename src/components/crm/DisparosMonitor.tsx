@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { LancamentoWizard } from '@/components/crm/LancamentoWizard';
+import { EvolutionTaskPanel } from './EvolutionTaskPanel';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
@@ -94,6 +95,14 @@ interface BoasVindasConfig {
   email_assunto: string;
   email_corpo: string;
   updated_at: string;
+  delay_min_s: number;
+  delay_max_s: number;
+  daily_limit: number;
+  safe_hour_start: number;
+  safe_hour_end: number;
+  max_errors_seq: number;
+  pausado_por_erro: boolean;
+  erros_seq: number;
 }
 
 interface BoasVindasLog {
@@ -2038,6 +2047,13 @@ function EditBoasVindasModal({ cfg, onClose, onSaved }: {
   const [wppMediaUrl, setWppMediaUrl] = useState(cfg.wpp_media_url ?? '');
   const [emailAssunto, setEmailAssunto] = useState(cfg.email_assunto ?? '');
   const [emailCorpo, setEmailCorpo] = useState(cfg.email_corpo ?? '');
+  const [delayMinS, setDelayMinS] = useState(cfg.delay_min_s ?? 20);
+  const [delayMaxS, setDelayMaxS] = useState(cfg.delay_max_s ?? 60);
+  const [dailyLimit, setDailyLimit] = useState(cfg.daily_limit ?? 150);
+  const [safeHourStart, setSafeHourStart] = useState(cfg.safe_hour_start ?? 8);
+  const [safeHourEnd, setSafeHourEnd] = useState(cfg.safe_hour_end ?? 21);
+  const [maxErrorsSeq, setMaxErrorsSeq] = useState(cfg.max_errors_seq ?? 3);
+  const [pausadoPorErro, setPausadoPorErro] = useState(cfg.pausado_por_erro ?? false);
   const [saving, setSaving] = useState(false);
 
   async function save() {
@@ -2053,6 +2069,14 @@ function EditBoasVindasModal({ cfg, onClose, onSaved }: {
       wpp_media_url: wppMessageType === 'text' ? null : wppMediaUrl.trim(),
       email_assunto: emailAssunto,
       email_corpo: emailCorpo,
+      delay_min_s: delayMinS,
+      delay_max_s: delayMaxS,
+      daily_limit: dailyLimit,
+      safe_hour_start: safeHourStart,
+      safe_hour_end: safeHourEnd,
+      max_errors_seq: maxErrorsSeq,
+      pausado_por_erro: pausadoPorErro,
+      erros_seq: pausadoPorErro ? cfg.erros_seq : 0,
       updated_at: new Date().toISOString(),
     }).eq('id', cfg.id).select('*').single();
     setSaving(false);
@@ -2127,6 +2151,60 @@ function EditBoasVindasModal({ cfg, onClose, onSaved }: {
               <Textarea value={wppMsgTarde} onChange={e => setWppMsgTarde(e.target.value)} rows={5} className="text-sm resize-y" />
             </div>
           )}
+
+          {/* Instância WhatsApp da fila (compartilhada por todos os funis de boas-vindas) */}
+          <div className="p-3 rounded-lg border border-border bg-muted/10">
+            <EvolutionTaskPanel task="boas_vindas" label="Boas-vindas (fila)" />
+          </div>
+
+          {pausadoPorErro && (
+            <div className="flex items-center justify-between gap-2 p-3 rounded-lg border border-red-200 bg-red-50">
+              <div>
+                <p className="text-xs font-semibold text-red-800">Fila pausada automaticamente</p>
+                <p className="text-[11px] text-red-600">{cfg.erros_seq} erro(s) seguido(s) neste funil.</p>
+              </div>
+              <Button size="sm" variant="outline" className="h-7 text-xs border-red-300 text-red-700 hover:bg-red-100"
+                onClick={() => setPausadoPorErro(false)}>
+                Reativar
+              </Button>
+            </div>
+          )}
+
+          <div className="border rounded-lg p-3 bg-muted/20 space-y-2.5">
+            <p className="text-xs font-semibold text-foreground">Anti-ban da fila</p>
+            <div className="grid grid-cols-2 gap-2.5">
+              <div>
+                <label className="text-[10px] text-muted-foreground mb-1 block">Delay mín. (seg)</label>
+                <Input type="number" min={5} className="h-8 text-sm" value={delayMinS}
+                  onChange={e => setDelayMinS(Number(e.target.value))} />
+              </div>
+              <div>
+                <label className="text-[10px] text-muted-foreground mb-1 block">Delay máx. (seg)</label>
+                <Input type="number" min={5} className="h-8 text-sm" value={delayMaxS}
+                  onChange={e => setDelayMaxS(Number(e.target.value))} />
+              </div>
+              <div>
+                <label className="text-[10px] text-muted-foreground mb-1 block">Horário seguro</label>
+                <div className="flex items-center gap-1.5">
+                  <Input type="number" min={0} max={23} className="h-8 text-sm" value={safeHourStart}
+                    onChange={e => setSafeHourStart(Number(e.target.value))} />
+                  <span className="text-xs text-muted-foreground">às</span>
+                  <Input type="number" min={0} max={23} className="h-8 text-sm" value={safeHourEnd}
+                    onChange={e => setSafeHourEnd(Number(e.target.value))} />
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] text-muted-foreground mb-1 block">Limite diário</label>
+                <Input type="number" min={1} className="h-8 text-sm" value={dailyLimit}
+                  onChange={e => setDailyLimit(Number(e.target.value))} />
+              </div>
+            </div>
+            <div>
+              <label className="text-[10px] text-muted-foreground mb-1 block">Pausar após N erros seguidos</label>
+              <Input type="number" min={1} className="h-8 text-sm w-24" value={maxErrorsSeq}
+                onChange={e => setMaxErrorsSeq(Number(e.target.value))} />
+            </div>
+          </div>
 
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1 block">Assunto do e-mail</label>
