@@ -82,11 +82,22 @@ export function Pipeline({ onEditLead }: PipelineProps) {
   }, []);
 
   const fetchLeads = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('leads')
       .select('*')
       .eq('origem', 'Direto')
-      .order('created_at', { ascending: false });
+      .order('criado_em', { ascending: false });
+
+    if (error) {
+      console.error('Erro ao carregar Leads Diretos:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Não foi possível carregar os leads',
+        description: error.message,
+      });
+      return;
+    }
+
     if (data) setLeads(data as any);
   };
 
