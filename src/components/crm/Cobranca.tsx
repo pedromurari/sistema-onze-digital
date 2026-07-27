@@ -326,12 +326,29 @@ export function Cobranca() {
   const salvarCobrancaCfg = async () => {
     if (!cobrancaCfg) return;
     setSaving(true);
+    // Só os campos que este formulário realmente edita -- enviados_hoje, dia_contagem,
+    // erros_seq, ultimo_envio_em e pausado_por_erro são estado de execução gerenciado
+    // pelo enviar-cobranca (tick/bulk); sobrescrever com o valor carregado na tela
+    // apagava o progresso de um envio que já tinha acontecido no meio tempo.
+    const {
+      id, ativo, horario_envio, horario_inicio_envio, horario_fim_envio,
+      dias_pre_vencimento, enviar_pre_vencimento, enviar_no_vencimento,
+      dias_pos_vencimento, enviar_pos_vencimento, enviar_apenas_dias_uteis,
+      pausar_fins_semana, delay_min_s, delay_max_s, daily_limit, max_errors_seq,
+    } = cobrancaCfg;
     const { error } = await (supabase as any)
       .from('cobranca_config')
-      .upsert({ ...cobrancaCfg, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+      .upsert({
+        id, ativo, horario_envio, horario_inicio_envio, horario_fim_envio,
+        dias_pre_vencimento, enviar_pre_vencimento, enviar_no_vencimento,
+        dias_pos_vencimento, enviar_pos_vencimento, enviar_apenas_dias_uteis,
+        pausar_fins_semana, delay_min_s, delay_max_s, daily_limit, max_errors_seq,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'id' });
     if (error) toast.error('Erro ao salvar: ' + error.message);
     else toast.success('Regras de cobrança salvas!');
     setSaving(false);
+    await loadAll();
   };
 
   // ── Templates CRUD ────────────────────────────────────────────────────────
@@ -1086,7 +1103,7 @@ export function Cobranca() {
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    O envio automático espera um intervalo aleatório entre esse mínimo e máximo, e se desliga sozinho se passar do limite de erros seguidos.
+                    O tique automático (via cron externo) espera um intervalo aleatório entre esse mínimo e máximo antes de cada envio, e se desliga sozinho se passar do limite de erros seguidos. Delays de minutos só funcionam de verdade nesse modo — o botão "Disparar agora" processa a fila num único disparo, com um respiro curto entre cada envio (não consegue esperar minutos parado no meio da requisição).
                   </p>
                 </div>
 

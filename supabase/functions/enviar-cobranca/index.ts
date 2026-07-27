@@ -476,12 +476,16 @@ async function processarFilaAutomatica(db: any, userId: string | null, cors: any
     });
   }
 
+  const now = new Date();
+  const sp  = saoPauloParts(now);
+  let enviadosHoje = cfg.dia_contagem === sp.dateStr ? (cfg.enviados_hoje ?? 0) : 0;
+
   let enviados = 0;
   let erros    = 0;
   let errosSeq = cfg.erros_seq ?? 0;
   const remaining = [...elegiveis];
 
-  while (remaining.length && errosSeq < cfg.max_errors_seq) {
+  while (remaining.length && errosSeq < cfg.max_errors_seq && enviadosHoje < cfg.daily_limit) {
     const proximo = await proximoEnvioElegivel(db, remaining, templates, cfg, hoje);
     if (!proximo) break;
 
@@ -504,16 +508,26 @@ async function processarFilaAutomatica(db: any, userId: string | null, cors: any
       enviado_em: result.ok ? new Date().toISOString() : null,
     }).eq("id", logRow?.id);
 
-    if (result.ok) { enviados++; errosSeq = 0; } else if (!result.ambiguous) { erros++; errosSeq++; } else { erros++; }
+    if (result.ok) { enviados++; enviadosHoje++; errosSeq = 0; } else if (!result.ambiguous) { erros++; errosSeq++; } else { erros++; }
 
-    const delayS = cfg.delay_min_s + Math.random() * (cfg.delay_max_s - cfg.delay_min_s);
+    // O disparo manual roda dentro de uma única invocação da edge function, que tem um
+    // teto de execução bem menor que os minutos de delay_min_s/delay_max_s configurados
+    // pro anti-ban real (esse ritmo é responsabilidade do modo tick, chamado por um cron
+    // externo). Aqui só um respiro curto pra não martelar a Evolution API -- delays longos
+    // são ignorados nesse modo, senão a função morre no meio do sleep e trava o disparo
+    // depois do primeiro envio.
+    const delayS = Math.min(cfg.delay_min_s + Math.random() * (cfg.delay_max_s - cfg.delay_min_s), 5);
     await new Promise(r => setTimeout(r, delayS * 1000));
   }
 
   const pausou = errosSeq >= cfg.max_errors_seq;
   await db.from("cobranca_config").update({
     erros_seq: errosSeq,
-    ultimo_envio_em: new Date().toISOString(),
+    enviados_hoje: enviadosHoje,
+    dia_contagem: sp.dateStr,
+    // Só marca o horário do último envio se algo saiu de fato -- senão um "Disparar agora"
+    // sem ninguém elegível bloquearia o próximo tique automático à toa pelo delay inteiro.
+    ...(enviados > 0 ? { ultimo_envio_em: now.toISOString() } : {}),
     ...(pausou ? { pausado_por_erro: true, ativo: false } : {}),
   }).eq("id", "default");
 
