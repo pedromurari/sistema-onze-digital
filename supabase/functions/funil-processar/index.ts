@@ -63,6 +63,51 @@ async function sendEvolution(endpoint: string, body: unknown, apikey: string) {
   try { return JSON.parse(text); } catch { return { raw: text }; }
 }
 
+// Erro "ambíguo": não sabemos se a Evolution API chegou a entregar a mensagem
+// antes do timeout/erro de rede. Nesses casos NUNCA tentamos outra instância
+// nem reagendamos automaticamente — reenviar às cegas é o que causa disparos
+// duplicados em grupo. Só erros claros (4xx/5xx com resposta) são retry-seguros.
+function isAmbiguousError(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  return e.name === 'TimeoutError' || e.name === 'AbortError' || /timeout|timed out|network/i.test(e.message);
+}
+
+class AmbiguousSendError extends Error {}
+
+function saoPauloAgora(d: Date): { dateStr: string; hour: number } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hour12: false,
+  }).formatToParts(d);
+  const get = (t: string) => parts.find(p => p.type === t)?.value ?? '';
+  return { dateStr: `${get('year')}-${get('month')}-${get('day')}`, hour: Number(get('hour')) };
+}
+
+// A Evolution API pode responder 200 mesmo com a sessão do WhatsApp fechada e só falhar
+// silenciosamente na entrega -- checa o estado real de conexão antes de usar a instância
+// (mesmo mecanismo do disparo-runner).
+async function getConnectedInstanceIds(
+  instances: Array<{ id: string; api_url: string; api_key: string; instance_name: string }>,
+): Promise<Set<string>> {
+  const connected = new Set<string>();
+  await Promise.all(instances.map(async (inst) => {
+    const rawBase = inst.api_url.replace(/\/$/, '');
+    const base = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
+    try {
+      const res = await fetch(`${base}/instance/connectionState/${encodeURIComponent(inst.instance_name)}`, {
+        headers: { apikey: inst.api_key },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) return;
+      const data = await res.json() as { instance?: { state?: string } };
+      if (data.instance?.state === 'open') connected.add(inst.id);
+    } catch (e: unknown) {
+      console.warn(`funil-processar: falha ao checar conexão de ${inst.instance_name}:`, (e as Error).message);
+    }
+  }));
+  return connected;
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 serve(async (req) => {
@@ -117,6 +162,7 @@ serve(async (req) => {
           } catch (e) {
             lastErr = e as Error;
             console.warn(`funil-processar: instância ${instance} falhou:`, (e as Error).message);
+            if (isAmbiguousError(e)) break; // pode já ter entregue — não tenta outra instância
           }
         }
         if (lastErr) throw lastErr;
@@ -213,6 +259,7 @@ serve(async (req) => {
 
         let lastErr: Error | null = null;
         let usedInstance = '';
+        let ambiguous = false;
         for (const { base, instance, apikey } of evoInstances) {
           try {
             await processMessage(msg, base, instance, apikey, supabase, funnelCfg);
@@ -222,9 +269,10 @@ serve(async (req) => {
           } catch (e) {
             lastErr = e as Error;
             console.warn(`funil-processar: instância ${instance} falhou:`, (e as Error).message);
+            if (isAmbiguousError(e)) { ambiguous = true; break; } // pode já ter entregue — não tenta outra instância
           }
         }
-        if (lastErr) throw lastErr;
+        if (lastErr) throw ambiguous ? new AmbiguousSendError(lastErr.message) : lastErr;
 
         await supabase
           .from('funnel_messages')
@@ -235,6 +283,22 @@ serve(async (req) => {
         await new Promise(r => setTimeout(r, 1500));
       } catch (e: unknown) {
         const errMsg = (e as Error).message;
+
+        // Erro ambíguo (timeout): não sabemos se já foi entregue. Reenviar
+        // automaticamente é exatamente o que causa mensagens duplicadas em
+        // grupo — então NUNCA reagenda sozinho, marca erro pra revisão manual.
+        if (e instanceof AmbiguousSendError) {
+          await supabase
+            .from('funnel_messages')
+            .update({
+              status: 'error',
+              error_message: `[verificar manualmente antes de reenviar] ${errMsg}`,
+            })
+            .eq('id', msg.id);
+          console.warn(`funil-processar: msg ${msg.id} — erro ambíguo (timeout), NÃO reagendado automaticamente`);
+          continue;
+        }
+
         const prevRetries = (msg.error_message ?? '').match(/\[retry (\d+)\]/);
         const retryCount = prevRetries ? parseInt(prevRetries[1]) : 0;
         const scheduledTime = new Date(msg.scheduled_at).getTime();
@@ -256,6 +320,9 @@ serve(async (req) => {
     }
 
     // ── Processar boas-vindas agendadas ──────────────────────────────────────
+    // Anti-ban real por funil (mesmo padrao do disparo-runner): horario seguro, limite
+    // diario, instancia escolhida em evolution_task_config (task 'boas_vindas') so' usada
+    // se estiver com sessao aberta, e pausa automatica apos erros seguidos.
     if (bvCount) {
       const { data: bvPendentes } = await supabase
         .from('boas_vindas_agendados')
@@ -263,38 +330,113 @@ serve(async (req) => {
         .eq('status', 'pendente')
         .lte('agendado_para', now.toISOString())
         .order('agendado_para', { ascending: true })
-        .limit(20); // máx 20 por ciclo (anti-ban)
+        .limit(20); // teto de seguranca por ciclo -- o gate real e' o daily_limit por funil
 
+      const porFunil = new Map<string, typeof bvPendentes>();
       for (const bv of bvPendentes ?? []) {
-        try {
-          let lastBvErr: Error | null = null;
-          for (const { base, instance, apikey } of evoInstances) {
+        const lista = porFunil.get(bv.funnel_name) ?? [];
+        lista.push(bv);
+        porFunil.set(bv.funnel_name, lista);
+      }
+
+      if (porFunil.size > 0) {
+        const nomesFunis = [...porFunil.keys()];
+        const { data: bvConfigs } = await supabase
+          .from('boas_vindas_config')
+          .select('funnel_name, delay_min_s, delay_max_s, daily_limit, safe_hour_start, safe_hour_end, max_errors_seq, enviados_hoje, dia_contagem, erros_seq, pausado_por_erro')
+          .in('funnel_name', nomesFunis);
+        const cfgPorFunil = new Map((bvConfigs ?? []).map((c: any) => [c.funnel_name, c]));
+
+        const sp = saoPauloAgora(now);
+
+        const { data: evoRowsBV } = await supabase
+          .from('evolution_config')
+          .select('id, api_url, api_key, instance_name')
+          .eq('ativo', true)
+          .order('prioridade', { ascending: true });
+        const allBV = (evoRowsBV ?? []) as { id: string; api_url: string; api_key: string; instance_name: string }[];
+
+        let scopedBV = allBV;
+        const { data: taskCfg } = await supabase
+          .from('evolution_task_config')
+          .select('instance_ids')
+          .eq('task', 'boas_vindas')
+          .maybeSingle();
+        if ((taskCfg as any)?.instance_ids?.length) {
+          const byId = new Map(allBV.map(i => [i.id, i]));
+          const scoped = ((taskCfg as any).instance_ids as string[]).map(id => byId.get(id)).filter(Boolean) as typeof allBV;
+          if (scoped.length) scopedBV = scoped;
+        }
+        const connectedBV = await getConnectedInstanceIds(scopedBV);
+        const instancesBV = scopedBV
+          .filter(i => connectedBV.has(i.id))
+          .map(i => {
+            const rawBase = i.api_url.replace(/\/$/, '');
+            return { base: /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`, instance: i.instance_name, apikey: i.api_key };
+          });
+
+        for (const [funnelName, itens] of porFunil) {
+          const cfgBV = cfgPorFunil.get(funnelName) ?? {
+            delay_min_s: 20, delay_max_s: 60, daily_limit: 150,
+            safe_hour_start: 8, safe_hour_end: 21, max_errors_seq: 3,
+            enviados_hoje: 0, dia_contagem: sp.dateStr, erros_seq: 0, pausado_por_erro: false,
+          };
+
+          if (cfgBV.pausado_por_erro) continue;
+          if (sp.hour < cfgBV.safe_hour_start || sp.hour >= cfgBV.safe_hour_end) continue;
+          if (!instancesBV.length) continue; // nenhuma instancia conectada -- nao tenta enviar
+
+          let enviadosHoje = cfgBV.dia_contagem === sp.dateStr ? cfgBV.enviados_hoje : 0;
+          let errosSeq = cfgBV.erros_seq ?? 0;
+
+          for (const bv of itens ?? []) {
+            if (enviadosHoje >= cfgBV.daily_limit) break;
+            if (errosSeq >= cfgBV.max_errors_seq) break;
+
             try {
-              await sendEvolution(`${base}/message/sendText/${instance}`, {
-                number: bv.whatsapp,
-                text:   bv.mensagem,
-                delay:  1200,
-              }, apikey);
-              lastBvErr = null;
-              break;
-            } catch (e) {
-              lastBvErr = e as Error;
+              let lastBvErr: Error | null = null;
+              for (const { base, instance, apikey } of instancesBV) {
+                try {
+                  await sendEvolution(`${base}/message/sendText/${instance}`, {
+                    number: bv.whatsapp,
+                    text:   bv.mensagem,
+                    delay:  1200,
+                  }, apikey);
+                  lastBvErr = null;
+                  break;
+                } catch (e) {
+                  lastBvErr = e as Error;
+                  if (isAmbiguousError(e)) break;
+                }
+              }
+              if (lastBvErr) throw lastBvErr;
+
+              await supabase
+                .from('boas_vindas_agendados')
+                .update({ status: 'enviado', enviado_em: new Date().toISOString() })
+                .eq('id', bv.id);
+
+              enviadosHoje++;
+              errosSeq = 0;
+              processed++;
+              const delayS = cfgBV.delay_min_s + Math.random() * (cfgBV.delay_max_s - cfgBV.delay_min_s);
+              await new Promise(r => setTimeout(r, delayS * 1000));
+            } catch (e: unknown) {
+              const ambiguous = isAmbiguousError(e);
+              await supabase
+                .from('boas_vindas_agendados')
+                .update({ status: 'erro', erro_msg: (e as Error).message })
+                .eq('id', bv.id);
+              if (!ambiguous) errosSeq++;
             }
           }
-          if (lastBvErr) throw lastBvErr;
 
-          await supabase
-            .from('boas_vindas_agendados')
-            .update({ status: 'enviado', enviado_em: new Date().toISOString() })
-            .eq('id', bv.id);
-
-          processed++;
-          await new Promise(r => setTimeout(r, 3000 + Math.random() * 2000)); // anti-ban
-        } catch (e: unknown) {
-          await supabase
-            .from('boas_vindas_agendados')
-            .update({ status: 'erro', erro_msg: (e as Error).message })
-            .eq('id', bv.id);
+          await supabase.from('boas_vindas_config').update({
+            enviados_hoje: enviadosHoje,
+            dia_contagem: sp.dateStr,
+            erros_seq: errosSeq,
+            ...(errosSeq >= cfgBV.max_errors_seq ? { pausado_por_erro: true } : {}),
+          }).eq('funnel_name', funnelName);
         }
       }
     }

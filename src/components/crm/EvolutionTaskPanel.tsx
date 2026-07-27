@@ -9,7 +9,7 @@ import { Loader2, X, ChevronUp, ChevronDown } from 'lucide-react';
 
 interface EvInstance { id: string; instance_name: string; ativo: boolean; }
 
-export type EvolutionTask = 'cobranca' | 'funil' | 'disparo';
+export type EvolutionTask = 'cobranca' | 'funil' | 'disparo' | 'boas_vindas';
 
 interface Props {
   task: EvolutionTask;

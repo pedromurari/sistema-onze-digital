@@ -42,7 +42,15 @@ interface CobrancaConfig {
   enviar_pos_vencimento: boolean;
   enviar_apenas_dias_uteis: boolean;
   pausar_fins_semana: boolean;
+  delay_min_s: number;
+  delay_max_s: number;
+  daily_limit: number;
+  max_errors_seq: number;
+  erros_seq: number;
+  pausado_por_erro: boolean;
 }
+
+interface Turma { id: string; nome: string; }
 
 interface Template {
   id: string;
@@ -196,18 +204,46 @@ export function Cobranca() {
   // Search
   const [searchLog, setSearchLog] = useState('');
 
+  // Turmas administradas
+  const [turmas, setTurmas] = useState<Turma[]>([]);
+  const [turmasAtivas, setTurmasAtivas] = useState<Set<string>>(new Set());
+
+  // Card da Bia (Operações -- domínio financeiro)
+  const [biaAgenteId, setBiaAgenteId] = useState<string | null>(null);
+  const [biaResumo, setBiaResumo] = useState<string | null>(null);
+  const [biaAtualizando, setBiaAtualizando] = useState(false);
+
   // ── Load data ─────────────────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [cfgRes, tplRes, logRes] = await Promise.all([
+    const [cfgRes, tplRes, logRes, turmasRes, turmasAtivasRes, biaRes] = await Promise.all([
       supabase.from('cobranca_config'  as any).select('*').eq('id', 'default').single(),
       supabase.from('cobranca_templates' as any).select('*').order('ordem'),
       supabase.from('cobranca_logs' as any).select('*').order('created_at', { ascending: false }).limit(200),
+      supabase.from('turmas').select('id, nome').order('nome'),
+      supabase.from('cobranca_turmas_ativas' as any).select('turma_id'),
+      supabase.from('equipe_11ds_agentes' as any).select('id').eq('slug', 'bia-comunicacao').maybeSingle(),
     ]);
 
     if (cfgRes.data) setCobrancaCfg(cfgRes.data as CobrancaConfig);
     if (tplRes.data) setTemplates(tplRes.data as Template[]);
     if (logRes.data) setLogs(logRes.data as CobrancaLog[]);
+    if (turmasRes.data) setTurmas(turmasRes.data as Turma[]);
+    if (turmasAtivasRes.data) setTurmasAtivas(new Set((turmasAtivasRes.data as any[]).map(r => r.turma_id)));
+
+    const biaId = (biaRes.data as any)?.id ?? null;
+    setBiaAgenteId(biaId);
+    if (biaId) {
+      const { data: tarefaBia } = await supabase
+        .from('equipe_11ds_tarefas' as any)
+        .select('resposta_texto')
+        .eq('agente_id', biaId)
+        .eq('status', 'concluido')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      setBiaResumo((tarefaBia as any)?.resposta_texto ?? null);
+    }
 
     const hoje = new Date().toISOString().split('T')[0];
     const filaRes = await supabase.rpc('get_alunos_para_cobranca' as any, { p_data: hoje });
@@ -217,6 +253,56 @@ export function Cobranca() {
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  const toggleTurmaAtiva = async (turmaId: string) => {
+    const ativa = turmasAtivas.has(turmaId);
+    if (ativa) {
+      await supabase.from('cobranca_turmas_ativas' as any).delete().eq('turma_id', turmaId);
+      setTurmasAtivas(prev => { const next = new Set(prev); next.delete(turmaId); return next; });
+    } else {
+      await supabase.from('cobranca_turmas_ativas' as any).insert({ turma_id: turmaId });
+      setTurmasAtivas(prev => new Set([...prev, turmaId]));
+    }
+    await loadAll();
+  };
+
+  const reativarAposErro = async () => {
+    if (!cobrancaCfg) return;
+    setSaving(true);
+    const { error } = await (supabase as any)
+      .from('cobranca_config')
+      .update({ pausado_por_erro: false, erros_seq: 0, ativo: true })
+      .eq('id', 'default');
+    setSaving(false);
+    if (error) { toast.error('Erro ao reativar: ' + error.message); return; }
+    toast.success('Cobrança reativada!');
+    await loadAll();
+  };
+
+  const pedirAtualizacaoBia = async () => {
+    if (!biaAgenteId) { toast.error('Agente Bia não encontrada'); return; }
+    setBiaAtualizando(true);
+    const { data: tarefa, error: tarefaErr } = await supabase
+      .from('equipe_11ds_tarefas' as any)
+      .insert({ agente_id: biaAgenteId, tipo: 'avulso', ordem_texto: 'Atualização de cobrança sob demanda' })
+      .select('id')
+      .single();
+    if (tarefaErr || !tarefa) {
+      toast.error('Erro ao criar tarefa: ' + (tarefaErr?.message ?? 'desconhecido'));
+      setBiaAtualizando(false);
+      return;
+    }
+    const { data, error } = await supabase.functions.invoke('equipe-11ds-comunicacao-executar', {
+      body: { tarefa_id: (tarefa as any).id },
+    });
+    setBiaAtualizando(false);
+    if (error || !(data as any)?.ok) {
+      toast.error('Erro ao atualizar: ' + (error?.message ?? (data as any)?.error ?? 'sem resposta'));
+      return;
+    }
+    toast.success('Bia atualizou o relatório!');
+    await loadAll();
+  };
 
   // ── Schedule calculation ──────────────────────────────────────────────────
   const schedule = useMemo(() => {
@@ -482,6 +568,40 @@ export function Cobranca() {
           )}
         </div>
       </div>
+
+      {/* Banner: pausado por erro sequencial */}
+      {cobrancaCfg?.pausado_por_erro && (
+        <div className="flex items-center gap-3 p-4 rounded-xl border border-red-200 bg-red-50">
+          <AlertTriangle className="text-red-600 shrink-0" size={20} />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-red-800">Automação pausada automaticamente</p>
+            <p className="text-xs text-red-600">
+              {cobrancaCfg.erros_seq} erro(s) seguido(s) ao enviar — a cobrança foi desligada sozinha por segurança.
+            </p>
+          </div>
+          <Button size="sm" variant="outline" className="gap-1.5 border-red-300 text-red-700 hover:bg-red-100" onClick={reativarAposErro} disabled={saving}>
+            {saving ? <RefreshCw size={13} className="animate-spin"/> : null} Reativar
+          </Button>
+        </div>
+      )}
+
+      {/* Card: resumo da Bia (Operações) sobre cobrança */}
+      <Card className="border-violet-200 bg-violet-50/40">
+        <CardContent className="py-4 px-4">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-sm font-bold shrink-0">B</div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-violet-900">Bia — Operações</p>
+              <p className="text-sm text-violet-800/90 whitespace-pre-wrap mt-1">
+                {biaResumo ?? 'Ainda sem relatório com dados de cobrança. Peça uma atualização.'}
+              </p>
+            </div>
+            <Button size="sm" variant="outline" className="gap-1.5 border-violet-300 text-violet-700 hover:bg-violet-100 shrink-0" onClick={pedirAtualizacaoBia} disabled={biaAtualizando}>
+              {biaAtualizando ? <RefreshCw size={13} className="animate-spin"/> : null} Pedir atualização da Bia agora
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -798,6 +918,42 @@ export function Cobranca() {
               </CardContent>
             </Card>
 
+            {/* Turmas administradas */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Calendar size={16}/> Turmas administradas
+                </CardTitle>
+                <CardDescription>
+                  Só alunos das turmas marcadas aqui entram na fila de cobrança — escolha manual, turma a turma.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {turmas.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nenhuma turma cadastrada.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {turmas.map(t => {
+                      const ativa = turmasAtivas.has(t.id);
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => toggleTurmaAtiva(t.id)}
+                          className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                            ativa ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-muted-foreground border-border hover:border-primary'
+                          }`}
+                        >
+                          {t.nome}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground mt-3">{turmasAtivas.size} turma(s) administrada(s)</p>
+              </CardContent>
+            </Card>
+
             {/* Regras de cobrança */}
             <Card>
               <CardHeader className="pb-3">
@@ -904,6 +1060,36 @@ export function Cobranca() {
                   />
                 </div>
 
+                {/* Anti-ban */}
+                <div className="border rounded-lg p-4 bg-muted/20 space-y-3">
+                  <p className="text-sm font-medium">Anti-ban</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">Delay mín. (seg)</label>
+                      <Input type="number" min={5} value={cobrancaCfg?.delay_min_s ?? 20}
+                        onChange={e => setCobrancaCfg(p => p ? { ...p, delay_min_s: Number(e.target.value) } : p)} />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">Delay máx. (seg)</label>
+                      <Input type="number" min={5} value={cobrancaCfg?.delay_max_s ?? 60}
+                        onChange={e => setCobrancaCfg(p => p ? { ...p, delay_max_s: Number(e.target.value) } : p)} />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">Limite diário</label>
+                      <Input type="number" min={1} value={cobrancaCfg?.daily_limit ?? 150}
+                        onChange={e => setCobrancaCfg(p => p ? { ...p, daily_limit: Number(e.target.value) } : p)} />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">Pausar após N erros seguidos</label>
+                      <Input type="number" min={1} value={cobrancaCfg?.max_errors_seq ?? 3}
+                        onChange={e => setCobrancaCfg(p => p ? { ...p, max_errors_seq: Number(e.target.value) } : p)} />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    O envio automático espera um intervalo aleatório entre esse mínimo e máximo, e se desliga sozinho se passar do limite de erros seguidos.
+                  </p>
+                </div>
+
                 <Button size="sm" className="w-full gap-1.5" onClick={salvarCobrancaCfg} disabled={saving}>
                   {saving ? <RefreshCw size={13} className="animate-spin"/> : null}
                   Salvar regras
@@ -918,7 +1104,7 @@ export function Cobranca() {
                   <Zap size={16}/>Ativação via Cron (cron-job.org)
                 </CardTitle>
                 <CardDescription>
-                  Configure um cron externo para disparar a cobrança automaticamente todos os dias às 9h.
+                  Configure um cron externo pra chamar a cada poucos minutos — os lembretes ficam espalhados ao longo da janela de horário, com anti-ban de verdade (não é mais um disparo único em rajada).
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -928,7 +1114,7 @@ export function Cobranca() {
                     : 'bg-amber-50 text-amber-700 border-amber-200'
                 }`}>
                   {cobrancaCfg?.ativo
-                    ? <><CheckCircle2 size={14}/> Automação ativa — disparará diariamente às 9h</>
+                    ? <><CheckCircle2 size={14}/> Automação ativa — processa a fila a cada chamada do cron</>
                     : <><Clock size={14}/> Aguardando ativação — ative o toggle "Automação ativa" acima</>}
                 </div>
 
@@ -937,9 +1123,10 @@ export function Cobranca() {
                   {[
                     { label: 'URL', value: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/enviar-cobranca` },
                     { label: 'Method', value: 'POST' },
-                    { label: 'Body', value: '{"bulk": true}' },
-                    { label: 'Header', value: 'Content-Type: application/json' },
-                    { label: 'Cron', value: '0 9 * * *' },
+                    { label: 'Body', value: '{"tick": true}' },
+                    { label: 'Header 1', value: 'Content-Type: application/json' },
+                    { label: 'Header 2', value: 'x-cron-key: enviar-cobranca-internal-2026' },
+                    { label: 'Cron', value: '*/3 * * * *' },
                   ].map(({ label, value }) => (
                     <div key={label} className="flex items-center gap-2 bg-muted/40 rounded px-3 py-1.5 font-mono">
                       <span className="text-muted-foreground w-16 flex-shrink-0">{label}</span>
@@ -953,6 +1140,9 @@ export function Cobranca() {
                     </div>
                   ))}
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Sem esse header o cron recebe erro 401 (a função exige autenticação, exceto pra chamadas de cron). Se houver uma variável <code className="bg-muted px-1 rounded">CRON_SECRET</code> configurada nas Edge Functions, use o valor dela em vez do texto padrão acima.
+                </p>
 
                 <div className="flex items-center gap-2">
                   <Button

@@ -2276,6 +2276,15 @@ interface BoasVindasCfg {
   email_ativo: boolean;
   email_assunto: string;
   email_corpo: string;
+  delay_minutos: number;
+  delay_min_s: number;
+  delay_max_s: number;
+  daily_limit: number;
+  safe_hour_start: number;
+  safe_hour_end: number;
+  max_errors_seq: number;
+  pausado_por_erro: boolean;
+  erros_seq: number;
 }
 
 interface BVLog {
@@ -2299,6 +2308,15 @@ const EMPTY_BV = (funnel_name: string): BoasVindasCfg => ({
   email_ativo: false,
   email_assunto: 'Boas-vindas à {{turma}}! 🎉',
   email_corpo: '<h2>Olá, {{nome}}! 👋</h2><p>Seja muito bem-vindo(a) à <strong>{{turma}}</strong>!</p><p>Estamos super felizes em ter você conosco.</p><p>Em breve você receberá mais informações.</p><p>Abraços,<br/>Equipe 11ds</p>',
+  delay_minutos: 0,
+  delay_min_s: 20,
+  delay_max_s: 60,
+  daily_limit: 150,
+  safe_hour_start: 8,
+  safe_hour_end: 21,
+  max_errors_seq: 3,
+  pausado_por_erro: false,
+  erros_seq: 0,
 });
 
 const BV_VARS = ['nome', 'turma', 'whatsapp', 'email'];
@@ -2436,9 +2454,9 @@ function BoasVindasSection({ funnelName }: { funnelName: string }) {
 
             {cfg.wpp_ativo && (
               <div className="pl-9 space-y-3">
-                {/* Instance selector */}
+                {/* Instance selector -- usada no envio de teste manual (botão "Enviar" abaixo) */}
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Instância</label>
+                  <label className="text-xs text-muted-foreground mb-1 block">Instância (envio de teste manual)</label>
                   <Select
                     value={cfg.wpp_instance_name ?? '__auto__'}
                     onValueChange={v => setCfg(c => ({ ...c, wpp_instance_name: v === '__auto__' ? null : v }))}
@@ -2453,6 +2471,62 @@ function BoasVindasSection({ funnelName }: { funnelName: string }) {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+
+                {/* Instância da fila com anti-ban (compartilhada por todos os funis) */}
+                <div className="p-3 rounded-lg border border-border bg-muted/10">
+                  <EvolutionTaskPanel task="boas_vindas" label="Boas-vindas (fila)" />
+                </div>
+
+                {/* Aviso de pausa automática por erro sequencial */}
+                {cfg.pausado_por_erro && (
+                  <div className="flex items-center gap-2 p-3 rounded-lg border border-red-200 bg-red-50">
+                    <div className="flex-1">
+                      <p className="text-xs font-semibold text-red-800">Fila pausada automaticamente</p>
+                      <p className="text-[11px] text-red-600">{cfg.erros_seq} erro(s) seguido(s) neste funil.</p>
+                    </div>
+                    <Button size="sm" variant="outline" className="h-7 text-xs border-red-300 text-red-700 hover:bg-red-100"
+                      onClick={() => setCfg(c => ({ ...c, pausado_por_erro: false, erros_seq: 0 }))}>
+                      Reativar
+                    </Button>
+                  </div>
+                )}
+
+                {/* Anti-ban da fila */}
+                <div className="border rounded-lg p-3 bg-muted/20 space-y-2.5">
+                  <p className="text-xs font-semibold text-foreground">Anti-ban da fila</p>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="text-[10px] text-muted-foreground mb-1 block">Delay mín. (seg)</label>
+                      <Input type="number" min={5} className="h-8 text-sm" value={cfg.delay_min_s}
+                        onChange={e => setCfg(c => ({ ...c, delay_min_s: Number(e.target.value) }))} />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted-foreground mb-1 block">Delay máx. (seg)</label>
+                      <Input type="number" min={5} className="h-8 text-sm" value={cfg.delay_max_s}
+                        onChange={e => setCfg(c => ({ ...c, delay_max_s: Number(e.target.value) }))} />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted-foreground mb-1 block">Horário seguro</label>
+                      <div className="flex items-center gap-1.5">
+                        <Input type="number" min={0} max={23} className="h-8 text-sm" value={cfg.safe_hour_start}
+                          onChange={e => setCfg(c => ({ ...c, safe_hour_start: Number(e.target.value) }))} />
+                        <span className="text-xs text-muted-foreground">às</span>
+                        <Input type="number" min={0} max={23} className="h-8 text-sm" value={cfg.safe_hour_end}
+                          onChange={e => setCfg(c => ({ ...c, safe_hour_end: Number(e.target.value) }))} />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted-foreground mb-1 block">Limite diário</label>
+                      <Input type="number" min={1} className="h-8 text-sm" value={cfg.daily_limit}
+                        onChange={e => setCfg(c => ({ ...c, daily_limit: Number(e.target.value) }))} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-muted-foreground mb-1 block">Pausar após N erros seguidos</label>
+                    <Input type="number" min={1} className="h-8 text-sm w-24" value={cfg.max_errors_seq}
+                      onChange={e => setCfg(c => ({ ...c, max_errors_seq: Number(e.target.value) }))} />
+                  </div>
                 </div>
 
                 {/* Mensagem */}

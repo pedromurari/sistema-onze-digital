@@ -108,6 +108,7 @@ type AccBoasVindas = { wpp: AccCanal; email: AccCanal; errosWpp: Map<string, num
 type AccFunil = { sent: number; error: number; scheduled: number; draft: number; erros: Map<string, number> };
 type AccCampanha = { enviado: number; erro: number; erros: Map<string, number> };
 type AccGrupo = { adicionado: number; erro: number; falhouAdd: number; detalhes: Map<string, number> };
+type AccCobranca = { enviado: number; erro: number; erros: Map<string, number> };
 
 async function taxaErroDaFonte(supabase: any, fonte: string, desde: string, ate: string): Promise<number | null> {
   const desdeTs = `${desde}T00:00:00`;
@@ -136,6 +137,11 @@ async function taxaErroDaFonte(supabase: any, fonte: string, desde: string, ate:
     const { data } = await supabase.from('grupo_add_jobs').select('result').gte('done_at', desdeTs).lte('done_at', ateTs);
     const rows = (data ?? []) as { result: string }[];
     return taxaErro(rows.filter(r => r.result === 'adicionado').length, rows.filter(r => r.result === 'erro' || r.result === 'falhou_add').length);
+  }
+  if (fonte === 'Cobrança') {
+    const { data } = await supabase.from('cobranca_logs').select('status').gte('created_at', desdeTs).lte('created_at', ateTs);
+    const rows = (data ?? []) as { status: string }[];
+    return taxaErro(rows.filter(r => r.status === 'enviado').length, rows.filter(r => r.status === 'erro').length);
   }
   return null;
 }
@@ -185,13 +191,14 @@ serve(async (req) => {
     const desdeTs = `${periodo.desde}T00:00:00`;
     const ateTs = `${periodo.ate}T23:59:59`;
 
-    const [bv, fm, dl, gaj] = await Promise.all([
+    const [bv, fm, dl, gaj, cl] = await Promise.all([
       supabase.from('boas_vindas_logs').select('funnel_name, wpp_status, email_status, wpp_error, email_error').gte('sent_at', desdeTs).lte('sent_at', ateTs),
       supabase.from('funnel_messages').select('funnel_name, status, error_message').gte('scheduled_at', desdeTs).lte('scheduled_at', ateTs),
       supabase.from('disparo_leads').select('status, error_msg, disparo_campanhas(nome)').gte('sent_at', desdeTs).lte('sent_at', ateTs),
       supabase.from('grupo_add_jobs').select('action, result, result_detail').gte('done_at', desdeTs).lte('done_at', ateTs),
+      supabase.from('cobranca_logs').select('status, erro_msg').gte('created_at', desdeTs).lte('created_at', ateTs),
     ]);
-    for (const [nome, r] of Object.entries({ bv, fm, dl, gaj })) {
+    for (const [nome, r] of Object.entries({ bv, fm, dl, gaj, cl })) {
       if (r.error) throw new Error(`Falha ao consultar ${nome}: ${r.error.message}`);
     }
 
@@ -242,6 +249,13 @@ serve(async (req) => {
       else if (r.result === 'falhou_add') { acc.falhouAdd++; if (r.result_detail) acc.detalhes.set(r.result_detail, (acc.detalhes.get(r.result_detail) ?? 0) + 1); }
     }
 
+    // ── Cobrança automática (financeiro), agregado único ─────────────────────
+    const cobranca: AccCobranca = { enviado: 0, erro: 0, erros: new Map() };
+    for (const r of (cl.data ?? []) as { status: string; erro_msg: string | null }[]) {
+      if (r.status === 'enviado') cobranca.enviado++;
+      else if (r.status === 'erro') { cobranca.erro++; if (r.erro_msg) cobranca.erros.set(r.erro_msg, (cobranca.erros.get(r.erro_msg) ?? 0) + 1); }
+    }
+
     // ── Gargalo: pior taxa de erro entre quem tem volume suficiente ──────────
     type Candidato = { fonte: string; detalhe: string; sucesso: number; erro: number };
     const candidatos: Candidato[] = [];
@@ -252,6 +266,7 @@ serve(async (req) => {
     for (const [funil, acc] of porFunilFM) candidatos.push({ fonte: 'Mensagens de funil/grupo', detalhe: funil, sucesso: acc.sent, erro: acc.error });
     for (const [campanha, acc] of porCampanha) candidatos.push({ fonte: 'Disparo em massa', detalhe: campanha, sucesso: acc.enviado, erro: acc.erro });
     for (const [acao, acc] of porAcao) candidatos.push({ fonte: 'Adição a grupos', detalhe: acao, sucesso: acc.adicionado, erro: acc.erro + acc.falhouAdd });
+    candidatos.push({ fonte: 'Cobrança', detalhe: 'Cobrança automática', sucesso: cobranca.enviado, erro: cobranca.erro });
 
     const qualificados = candidatos
       .map(c => ({ ...c, total: c.sucesso + c.erro, taxa: taxaErro(c.sucesso, c.erro) }))
@@ -291,6 +306,7 @@ serve(async (req) => {
       grupos: [...porAcao.entries()].map(([acao, acc]) => ({
         acao, adicionado: acc.adicionado, erro: acc.erro + acc.falhouAdd, taxaErro: taxaErro(acc.adicionado, acc.erro + acc.falhouAdd), topDetalhes: top3(acc.detalhes),
       })),
+      cobranca: { enviado: cobranca.enviado, erro: cobranca.erro, taxaErro: taxaErro(cobranca.enviado, cobranca.erro), topErros: top3(cobranca.erros) },
       gargalo: gargalo ? { fonte: gargalo.fonte, detalhe: gargalo.detalhe, taxaErro: gargalo.taxa, tendencia, taxaAnterior } : null,
     };
 
@@ -322,6 +338,9 @@ serve(async (req) => {
       if (acc.adicionado + falharam > 0) {
         linhas.push(`👥 ${acao}: ${acc.adicionado} adicionados, ${falharam} falharam (${fmtPct(taxaErro(acc.adicionado, falharam))} de erro)`);
       }
+    }
+    if (cobranca.enviado + cobranca.erro > 0) {
+      linhas.push(`💰 Cobrança: ${cobranca.enviado} enviados, ${cobranca.erro} com erro (${fmtPct(taxaErro(cobranca.enviado, cobranca.erro))} de erro)`);
     }
 
     if (linhas.length === 1) linhas.push('Nenhum disparo registrado nesse período.');

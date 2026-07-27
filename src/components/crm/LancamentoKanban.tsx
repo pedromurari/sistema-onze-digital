@@ -1115,6 +1115,7 @@ function BoasVindasLancamentoPanel({
   const [agendadosIds, setAgendadosIds]   = useState<Set<string>>(new Set());
   const [delayMinutos, setDelayMinutos]   = useState(0);
   const [filaStatus, setFilaStatus]       = useState<FilaStatus | null>(null);
+  const [antiBan, setAntiBan]             = useState<{ delayMinS: number; delayMaxS: number; pausado: boolean; errosSeq: number } | null>(null);
 
   const refreshFila = useCallback(async () => {
     const { data } = await supabase
@@ -1135,10 +1136,18 @@ function BoasVindasLancamentoPanel({
     const load = async () => {
       const { data: cfg } = await supabase
         .from('boas_vindas_config')
-        .select('delay_minutos')
+        .select('delay_minutos, delay_min_s, delay_max_s, pausado_por_erro, erros_seq')
         .eq('funnel_name', lancamento.nome)
         .maybeSingle();
       if ((cfg as any)?.delay_minutos !== undefined) setDelayMinutos((cfg as any).delay_minutos ?? 0);
+      if (cfg) {
+        setAntiBan({
+          delayMinS: (cfg as any).delay_min_s ?? 20,
+          delayMaxS: (cfg as any).delay_max_s ?? 60,
+          pausado: (cfg as any).pausado_por_erro ?? false,
+          errosSeq: (cfg as any).erros_seq ?? 0,
+        });
+      }
       await refreshFila();
     };
     load();
@@ -1272,9 +1281,17 @@ function BoasVindasLancamentoPanel({
                   </div>
                 ))}
               </div>
+              {antiBan?.pausado && (
+                <div className="flex items-center justify-between gap-2 p-2 rounded-lg border border-red-200 bg-red-50">
+                  <p className="text-[11px] text-red-700">
+                    ⚠️ Fila pausada automaticamente — {antiBan.errosSeq} erro(s) seguido(s). Reative em <strong>Configurar boas-vindas</strong> no funil.
+                  </p>
+                </div>
+              )}
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs text-blue-700">
-                  Fase: <strong>planilha</strong> · delay: <strong>{delayLabel}</strong> · anti-ban ativo
+                  Fase: <strong>planilha</strong> · delay inicial: <strong>{delayLabel}</strong>
+                  {antiBan && <> · envios espaçados de <strong>{antiBan.delayMinS}–{antiBan.delayMaxS}s</strong></>}
                 </p>
                 <Button
                   size="sm"
