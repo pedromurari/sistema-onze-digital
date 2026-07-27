@@ -44,13 +44,17 @@ export function EvolutionTaskPanel({ task, label }: Props) {
 
   const handleSave = async () => {
     setSaving(true);
-    await (supabase as any).from('evolution_task_config').upsert(
+    const { error } = await (supabase as any).from('evolution_task_config').upsert(
       { task, instance_ids: selectedIds, updated_at: new Date().toISOString() },
       { onConflict: 'task' },
     );
     setSaving(false);
-    setDirty(false);
-    toast.success(`Instâncias de ${label} salvas!`);
+    if (error) {
+      toast.error('Erro ao salvar: ' + error.message);
+    } else {
+      setDirty(false);
+      toast.success(`Instâncias de ${label} salvas!`);
+    }
   };
 
   const update = (ids: string[]) => { setSelectedIds(ids); setDirty(true); };
