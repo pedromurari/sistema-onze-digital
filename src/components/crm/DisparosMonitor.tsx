@@ -79,7 +79,7 @@ interface DisparoLead {
 
 type ViewMode   = 'table' | 'kanban';
 type DateFilter = 'proximos' | 'hoje' | 'semana' | 'todos';
-type MainTab    = 'funil' | 'campanhas' | 'boasvindas';
+type MainTab    = 'funil' | 'campanhas' | 'boasvindas' | 'leads';
 
 interface BoasVindasConfig {
   id: string;
@@ -258,6 +258,13 @@ export function DisparosMonitor({ onCreateFunnel }: { onCreateFunnel: () => void
             >
               <Sparkles className="h-3.5 w-3.5" /> Boas-vindas
             </button>
+            <button
+              onClick={() => setMainTab('leads')}
+              className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all',
+                mainTab === 'leads' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}
+            >
+              <Users className="h-3.5 w-3.5" /> Leads
+            </button>
           </div>
         </div>
       </div>
@@ -265,6 +272,246 @@ export function DisparosMonitor({ onCreateFunnel }: { onCreateFunnel: () => void
       {mainTab === 'campanhas' && <CampanhasTab />}
       {mainTab === 'funil' && <FunilTab onCreateFunnel={onCreateFunnel} />}
       {mainTab === 'boasvindas' && <BoasVindasTab />}
+      {mainTab === 'leads' && <LeadsTab />}
+    </div>
+  );
+}
+
+// ── Leads Tab ─────────────────────────────────────────────────────────────────
+
+const ORIGENS: { valor: string; label: string }[] = [
+  { valor: 'lancamento_leads',    label: 'Lançamento' },
+  { valor: 'npa_evento_leads',    label: 'Evento NPA' },
+  { valor: 'alunos',              label: 'Aluno' },
+  { valor: 'seu_numerologo_leads', label: 'Numerólogo' },
+];
+
+interface LeadUnificado {
+  origem_tabela: string;
+  origem_id: string;
+  origem: string;
+  nome: string | null;
+  telefone: string | null;
+  email: string | null;
+  fase: string | null;
+  temperatura: 'quente' | 'morno' | 'frio';
+  bv_enviado: boolean;
+  criado_em: string;
+}
+
+const LEADS_PAGE_SIZE = 50;
+const CSV_BATCH_SIZE = 1000;
+
+function LeadsTab() {
+  const [search, setSearch]           = useState('');
+  const [searchDebounced, setSearchDebounced] = useState('');
+  const [origemFiltro, setOrigemFiltro]       = useState<Set<string>>(new Set());
+  const [faseFiltro, setFaseFiltro]           = useState<Set<string>>(new Set());
+  const [tempFiltro, setTempFiltro]           = useState<Set<'quente' | 'morno' | 'frio'>>(new Set());
+  const [fasesDisponiveis, setFasesDisponiveis] = useState<string[]>([]);
+  const [page, setPage]               = useState(0);
+  const [rows, setRows]               = useState<LeadUnificado[]>([]);
+  const [total, setTotal]             = useState(0);
+  const [loading, setLoading]         = useState(true);
+  const [exporting, setExporting]     = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setSearchDebounced(search.trim()), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => { setPage(0); }, [searchDebounced, origemFiltro, faseFiltro, tempFiltro]);
+
+  function applyFilters(query: any) {
+    let q = query;
+    if (searchDebounced) q = q.or(`nome.ilike.%${searchDebounced}%,telefone.ilike.%${searchDebounced}%`);
+    if (origemFiltro.size) q = q.in('origem_tabela', [...origemFiltro]);
+    if (faseFiltro.size) q = q.in('fase', [...faseFiltro]);
+    if (tempFiltro.size) q = q.in('temperatura', [...tempFiltro]);
+    return q;
+  }
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const from = page * LEADS_PAGE_SIZE;
+    const query = applyFilters(
+      supabase.from('leads_unificados' as any).select('*', { count: 'exact' }),
+    ).order('criado_em', { ascending: false }).range(from, from + LEADS_PAGE_SIZE - 1);
+    const { data, count, error } = await query;
+    if (error) { toast.error('Erro ao carregar leads: ' + error.message); setLoading(false); return; }
+    setRows((data ?? []) as LeadUnificado[]);
+    setTotal(count ?? 0);
+    setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, searchDebounced, origemFiltro, faseFiltro, tempFiltro]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Fases disponíveis dependem da origem selecionada (vocabulário difere por fonte)
+  useEffect(() => {
+    (async () => {
+      let q = supabase.from('leads_unificados' as any).select('fase');
+      if (origemFiltro.size) q = q.in('origem_tabela', [...origemFiltro]);
+      const { data } = await q.limit(5000);
+      const set = new Set((data ?? []).map((r: any) => r.fase).filter(Boolean));
+      setFasesDisponiveis([...set].sort());
+    })();
+  }, [origemFiltro]);
+
+  function toggleSet<T>(set: Set<T>, setSet: (s: Set<T>) => void, value: T) {
+    const next = new Set(set);
+    next.has(value) ? next.delete(value) : next.add(value);
+    setSet(next);
+  }
+
+  async function exportarCSV() {
+    setExporting(true);
+    const all: LeadUnificado[] = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await applyFilters(
+        supabase.from('leads_unificados' as any).select('*'),
+      ).order('criado_em', { ascending: false }).range(from, from + CSV_BATCH_SIZE - 1);
+      if (error) { toast.error('Erro ao exportar: ' + error.message); setExporting(false); return; }
+      const batch = (data ?? []) as LeadUnificado[];
+      all.push(...batch);
+      if (batch.length < CSV_BATCH_SIZE) break;
+      from += CSV_BATCH_SIZE;
+    }
+    setExporting(false);
+    if (!all.length) { toast.error('Nenhum lead pra exportar com esses filtros'); return; }
+
+    const headers = ['Nome', 'Whatsapp', 'Email', 'Origem', 'Fase', 'Temperatura', 'Boas-vindas'];
+    const csvRows = all.map(r => [
+      `"${(r.nome ?? '').replace(/"/g, "'")}"`, r.telefone ?? '', r.email ?? '',
+      `"${r.origem}"`, `"${r.fase ?? ''}"`, r.temperatura, r.bv_enviado ? 'sim' : 'não',
+    ]);
+    const csv = [headers, ...csvRows].map(row => row.join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url;
+    a.download = `leads_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+    toast.success(`${all.length} leads exportados`);
+  }
+
+  const totalPages = Math.max(1, Math.ceil(total / LEADS_PAGE_SIZE));
+
+  return (
+    <div className="flex-1 overflow-auto p-6 space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input placeholder="Buscar nome ou telefone…" value={search}
+            onChange={e => setSearch(e.target.value)} className="pl-8 h-8 w-64 text-sm" />
+        </div>
+
+        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+          {ORIGENS.map(o => (
+            <button key={o.valor} onClick={() => toggleSet(origemFiltro, setOrigemFiltro, o.valor)}
+              className={cn('px-2.5 py-1 rounded-md text-xs font-medium transition-all',
+                origemFiltro.has(o.valor) ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+              {o.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+          {(['quente', 'morno', 'frio'] as const).map(t => {
+            const cfg = TEMP_CFG[t];
+            return (
+              <button key={t} onClick={() => toggleSet(tempFiltro, setTempFiltro, t)}
+                className={cn('flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-all',
+                  tempFiltro.has(t) ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+                <cfg.icon className="h-3 w-3" /> {cfg.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {fasesDisponiveis.length > 0 && (
+          <select
+            multiple={false}
+            value=""
+            onChange={e => { if (e.target.value) toggleSet(faseFiltro, setFaseFiltro, e.target.value); }}
+            className="h-8 px-2 rounded-md border border-border text-xs bg-background"
+          >
+            <option value="">+ Filtrar por fase…</option>
+            {fasesDisponiveis.filter(f => !faseFiltro.has(f)).map(f => <option key={f} value={f}>{f}</option>)}
+          </select>
+        )}
+
+        {[...faseFiltro].map(f => (
+          <span key={f} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-primary/10 text-primary">
+            {f}
+            <button onClick={() => toggleSet(faseFiltro, setFaseFiltro, f)}><X className="h-3 w-3" /></button>
+          </span>
+        ))}
+
+        <Button variant="outline" size="sm" onClick={exportarCSV} disabled={exporting} className="ml-auto gap-1.5">
+          {exporting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+          {exporting ? 'Exportando…' : `Exportar CSV (${total})`}
+        </Button>
+      </div>
+
+      <div className="border rounded-lg overflow-hidden bg-white">
+        {loading ? (
+          <div className="flex items-center justify-center h-40">
+            <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-40 text-center">
+            <Users className="h-8 w-8 text-muted-foreground/40 mb-2" />
+            <p className="text-sm text-muted-foreground">Nenhum lead encontrado para esse filtro</p>
+          </div>
+        ) : (
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Nome</th>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Telefone</th>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Origem</th>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Fase</th>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Temp.</th>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Boas-vindas</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => {
+                const cfg = TEMP_CFG[r.temperatura];
+                return (
+                  <tr key={`${r.origem_tabela}-${r.origem_id}`} className="border-b last:border-0 hover:bg-gray-50/60">
+                    <td className="px-3 py-1.5 font-medium truncate max-w-[180px]">{r.nome || '—'}</td>
+                    <td className="px-3 py-1.5 font-mono text-muted-foreground">{r.telefone ? maskPhone(r.telefone) : '—'}</td>
+                    <td className="px-3 py-1.5 text-muted-foreground truncate max-w-[220px]">{r.origem}</td>
+                    <td className="px-3 py-1.5 text-muted-foreground truncate max-w-[140px]">{r.fase || '—'}</td>
+                    <td className="px-3 py-1.5">
+                      <span className={cn('inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium', cfg.bg, cfg.color)}>
+                        <cfg.icon className="h-2.5 w-2.5" />{cfg.label}
+                      </span>
+                    </td>
+                    <td className="px-3 py-1.5">
+                      {r.bv_enviado
+                        ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                        : <span className="text-muted-foreground">—</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {total > 0 && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>{total} lead(s) — página {page + 1} de {totalPages}</span>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={page === 0} onClick={() => setPage(p => p - 1)}>Anterior</Button>
+            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={page + 1 >= totalPages} onClick={() => setPage(p => p + 1)}>Próxima</Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
