@@ -2,7 +2,9 @@
 -- Usada pelo EvolutionTaskPanel (frontend) e pelas edge functions de cobrança/funil
 
 create table if not exists evolution_task_config (
-  task         text        primary key,
+  task         text        primary key
+    constraint evolution_task_config_task_check
+    check (task = any (array['cobranca'::text, 'funil'::text, 'disparo'::text, 'boas_vindas'::text])),
   instance_ids text[]      not null default '{}',
   updated_at   timestamptz not null default now()
 );
