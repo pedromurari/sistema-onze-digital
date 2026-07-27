@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { dbRowToLead } from '@/contexts/LeadsContext';
 import { Mail, Clock, Edit, MessageCircle, ChevronDown, ChevronUp, ExternalLink, TrendingUp, Users, DollarSign, Target } from 'lucide-react';
 
 interface PipelineProps { onEditLead: (lead: Lead) => void; }
@@ -98,11 +99,18 @@ export function Pipeline({ onEditLead }: PipelineProps) {
       return;
     }
 
-    if (data) setLeads(data as any);
+    if (data) {
+      setLeads(data.map((row) => ({
+        ...dbRowToLead(row),
+        status: row.status || row.etapa || 'novo',
+        responsavel_id: row.responsavel_id,
+        prazo: row.prazo,
+      })) as any);
+    }
   };
 
   const getLeadsByStage = (stage: string) => {
-    return leads.filter(l => l.status === stage);
+    return leads.filter((lead) => ((lead as any).status || lead.etapa) === stage);
   };
 
   const formatCurrency = (value?: number) => {

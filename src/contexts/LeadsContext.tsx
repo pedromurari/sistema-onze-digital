@@ -27,12 +27,12 @@ interface LeadsContextType {
 const LeadsContext = createContext<LeadsContextType | undefined>(undefined);
 
 // Helper to convert database row to Lead object
-function dbRowToLead(row: any): Lead {
+export function dbRowToLead(row: any): Lead {
   return {
     id: row.id,
     nome: row.nome,
     email: row.email || '',
-    telefone: row.telefone,
+    telefone: row.telefone || row.whatsapp || '',
     dataNascimento: row.data_nascimento || undefined,
     cpf: row.cpf || undefined,
     cidade: row.cidade || undefined,
@@ -40,11 +40,11 @@ function dbRowToLead(row: any): Lead {
     formacaoAcademica: row.formacao_academica || undefined,
     areaAtuacao: row.area_atuacao || undefined,
     jaFezPsicanalise: row.ja_fez_psicanalise || false,
-    cursoInteresse: row.curso_interesse,
-    comoConheceu: row.como_conheceu,
-    valorInvestimento: row.valor_investimento || undefined,
+    cursoInteresse: row.curso_interesse || row.produto || '',
+    comoConheceu: row.como_conheceu || row.origem || '',
+    valorInvestimento: row.valor_investimento ?? row.valor_potencial ?? undefined,
     formaPagamento: row.forma_pagamento || undefined,
-    etapa: row.etapa as PipelineStage,
+    etapa: (row.etapa || row.status || 'novo') as PipelineStage,
     responsavelId: row.responsavel_id || '',
     proximaAcao: row.proxima_acao || undefined,
     dataProximaAcao: row.data_proxima_acao || undefined,

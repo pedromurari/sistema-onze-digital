@@ -73,8 +73,8 @@ export function LeadModal({ isOpen, onClose, editingLead }: LeadModalProps) {
     if (editingLead) {
       setFormData({
         nome: editingLead.nome,
-        email: editingLead.email,
-        telefone: editingLead.telefone,
+        email: editingLead.email || '',
+        telefone: editingLead.telefone || '',
         dataNascimento: editingLead.dataNascimento || '',
         cpf: editingLead.cpf || '',
         cidade: editingLead.cidade || '',
@@ -82,12 +82,12 @@ export function LeadModal({ isOpen, onClose, editingLead }: LeadModalProps) {
         formacaoAcademica: editingLead.formacaoAcademica || '',
         areaAtuacao: editingLead.areaAtuacao || '',
         jaFezPsicanalise: editingLead.jaFezPsicanalise || false,
-        cursoInteresse: editingLead.cursoInteresse,
-        comoConheceu: editingLead.comoConheceu,
+        cursoInteresse: editingLead.cursoInteresse || '',
+        comoConheceu: editingLead.comoConheceu || '',
         valorInvestimento: editingLead.valorInvestimento?.toString() || '',
         formaPagamento: editingLead.formaPagamento || '',
-        etapa: editingLead.etapa,
-        responsavelId: editingLead.responsavelId,
+        etapa: editingLead.etapa || 'novo',
+        responsavelId: editingLead.responsavelId || '',
         proximaAcao: editingLead.proximaAcao || '',
         dataProximaAcao: editingLead.dataProximaAcao || '',
         observacoes: editingLead.observacoes || '',
@@ -491,14 +491,14 @@ export function LeadModal({ isOpen, onClose, editingLead }: LeadModalProps) {
                 />
               </div>
 
-              {editingLead && editingLead.historico.length > 0 && (
+              {editingLead && (editingLead.historico?.length ?? 0) > 0 && (
                 <div className="space-y-2 pt-4 border-t border-border">
                   <Label className="flex items-center gap-2">
                     <History className="h-4 w-4" />
                     Histórico
                   </Label>
                   <div className="space-y-2 max-h-40 overflow-y-auto">
-                    {editingLead.historico.map((item) => (
+                    {(editingLead.historico || []).map((item) => (
                       <div key={item.id} className="text-sm p-2 bg-muted rounded">
                         <div className="flex justify-between text-muted-foreground text-xs mb-1">
                           <span>{item.usuarioNome}</span>
