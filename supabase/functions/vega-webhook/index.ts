@@ -150,7 +150,15 @@ async function processVegaWebhook(
   const produtoTitle = String((body?.plans as any)?.[0]?.products?.[0]?.title ?? body?.produto ?? '');
   const pixCode      = String(body?.pix_code ?? '');
 
-  if (!produtoTitle) { console.warn('vega-webhook: produto não identificado'); return; }
+  if (!produtoTitle) {
+    console.warn('vega-webhook: produto não identificado');
+    await supabase.from('audit_logs').insert({
+      action: 'vega_webhook_produto_nao_identificado',
+      target_id: eventType,
+      details: { body },
+    });
+    return;
+  }
 
   const phone = normalizePhone(phoneRaw);
   console.log(`vega-webhook: event=${eventType} produto="${produtoTitle}" phone=${phone}`);
@@ -163,18 +171,28 @@ async function processVegaWebhook(
   }
 
   // ── Encontra NPA ──────────────────────────────────────────────────────────
+  // ilike + trim: tolera diferença de maiúsculas/espaços entre o título que o
+  // Vega manda e o que está cadastrado — um match exato (eq) já falhou
+  // silenciosamente antes por causa disso.
+  const produtoTrim = produtoTitle.trim();
   const { data: npas } = await supabase
     .from('npa_eventos')
     .select('id, nome, data_evento, vega_produto_id, vega_produto_tarde, pix_mensagem_template')
-    .or(`vega_produto_id.eq.${produtoTitle},vega_produto_tarde.eq.${produtoTitle}`);
+    .or(`vega_produto_id.ilike.${produtoTrim},vega_produto_tarde.ilike.${produtoTrim}`);
 
   if (!npas?.length) {
     console.warn(`vega-webhook: NPA não encontrado para produto "${produtoTitle}"`);
+    await supabase.from('audit_logs').insert({
+      action: 'vega_webhook_npa_nao_encontrado',
+      target_id: produtoTitle,
+      details: { eventType, phone, nome, produtoTitle },
+    });
     return;
   }
 
   const npa   = npas[0];
-  const turma: 'manha' | 'tarde' = npa.vega_produto_id === produtoTitle ? 'manha' : 'tarde';
+  const turma: 'manha' | 'tarde' =
+    (npa.vega_produto_id ?? '').trim().toLowerCase() === produtoTrim.toLowerCase() ? 'manha' : 'tarde';
 
   // ── funnel_configs (link do grupo) ────────────────────────────────────────
   const { data: fConfig } = await supabase
@@ -196,7 +214,15 @@ async function processVegaWebhook(
     .order('prioridade', { ascending: true })
     .limit(1);
 
-  if (!evoRows?.length) { console.warn('vega-webhook: Evolution API não configurada'); return; }
+  if (!evoRows?.length) {
+    console.warn('vega-webhook: Evolution API não configurada');
+    await supabase.from('audit_logs').insert({
+      action: 'vega_webhook_evolution_nao_configurada',
+      target_id: npa.nome,
+      details: { eventType, phone, nome, produtoTitle },
+    });
+    return;
+  }
 
   const evo     = evoRows[0];
   const rawBase = evo.api_url.replace(/\/$/, '');

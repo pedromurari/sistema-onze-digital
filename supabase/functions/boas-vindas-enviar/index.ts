@@ -93,6 +93,9 @@ serve(async (req) => {
 
         const mensagem = applyVars(cfg.wpp_mensagem, vars);
         const number   = toGroupJid(whatsapp);
+        const msgType  = (cfg.wpp_message_type as string) || 'text';
+        const mediaUrl = msgType !== 'text' ? applyVars(cfg.wpp_media_url ?? '', vars) : '';
+        if (msgType !== 'text' && !mediaUrl) throw new Error('wpp_media_url não configurada para o tipo de mensagem escolhido');
 
         let lastErr: Error | null = null;
         for (const inst of activeInstances) {
@@ -102,10 +105,14 @@ serve(async (req) => {
           const instance = inst.instance_name as string;
 
           try {
-            const res = await fetch(`${base}/message/sendText/${instance}`, {
+            const endpoint = msgType === 'text' ? `${base}/message/sendText/${instance}` : `${base}/message/sendMedia/${instance}`;
+            const payload = msgType === 'text'
+              ? { number, text: mensagem, delay: 1200 }
+              : { number, mediatype: msgType, media: mediaUrl, caption: mensagem, delay: 1200 };
+            const res = await fetch(endpoint, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', apikey },
-              body: JSON.stringify({ number, text: mensagem, delay: 1200 }),
+              body: JSON.stringify(payload),
             });
             const txt = await res.text();
             if (!res.ok) throw new Error(`Evolution ${res.status}: ${txt.slice(0, 200)}`);

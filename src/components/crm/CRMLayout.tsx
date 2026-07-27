@@ -32,6 +32,7 @@ const IDMPsiFranquias   = lazy(() => import('./IDMPsiFranquias').then(m => ({ de
 const Posts             = lazy(() => import('./Posts').then(m => ({ default: m.Posts })));
 const Parceiros         = lazy(() => import('./Parceiros').then(m => ({ default: m.Parceiros })));
 const Equipe11ds        = lazy(() => import('./Equipe11ds').then(m => ({ default: m.Equipe11ds })));
+const ReelsIDM           = lazy(() => import('./ReelsIDM').then(m => ({ default: m.ReelsIDM })));
 
 function ModuleLoader() {
   return (
@@ -252,6 +253,7 @@ export function CRMLayout() {
         ? <Equipe11ds onNavigateToPosts={() => setCurrentView('posts')} onNavigateToAluno={(alunoId) => setCurrentView(`financeiro_aluno_${alunoId}` as View)} />
         : <RestrictedView />;
       case 'franquia_psi': return <IDMPsiFranquias />;
+      case 'reels_idm': return isAdmin ? <ReelsIDM /> : <RestrictedView />;
       default: return <Dashboard />;
     }
   };

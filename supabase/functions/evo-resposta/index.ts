@@ -159,12 +159,35 @@ serve(async (req) => {
       console.log(`resposta gravada em ${ids.length} disparo_leads para phone suffix=${s8}`);
     }
 
-    if (!saved.length && !disparoLeads?.length) {
-      console.log(`phone suffix ${s8} not found in lancamento_leads nem disparo_leads — ignoring`);
+    // Mesma lógica pros logs de boas-vindas (Semana do Despertar + IDM Pelo
+    // Brasil, ambos gravam em boas_vindas_logs) -- alimenta a coluna de
+    // resposta na tela de Boas-vindas, independente do funil de origem.
+    const { data: bvLogs } = await supabase
+      .from('boas_vindas_logs')
+      .select('id, whatsapp')
+      .filter('whatsapp', 'ilike', `%${s8}`);
+
+    if (bvLogs?.length) {
+      const ids = bvLogs.map((l: { id: string }) => l.id);
+      await supabase
+        .from('boas_vindas_logs')
+        .update({ respondeu_em: now, ultima_resposta: mensagem.slice(0, 500) })
+        .in('id', ids);
+      console.log(`resposta gravada em ${ids.length} boas_vindas_logs para phone suffix=${s8}`);
+    }
+
+    if (!saved.length && !disparoLeads?.length && !bvLogs?.length) {
+      console.log(`phone suffix ${s8} not found in lancamento_leads, disparo_leads nem boas_vindas_logs — ignoring`);
       return ok({ ok: true, skipped: true, reason: 'phone not found' });
     }
 
-    return ok({ ok: true, saved: saved.length, leads: saved, disparoLeadsAtualizados: disparoLeads?.length ?? 0 });
+    return ok({
+      ok: true,
+      saved: saved.length,
+      leads: saved,
+      disparoLeadsAtualizados: disparoLeads?.length ?? 0,
+      boasVindasLogsAtualizados: bvLogs?.length ?? 0,
+    });
 
   } catch (e: unknown) {
     console.error('evo-resposta fatal:', (e as Error).message);

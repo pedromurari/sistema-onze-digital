@@ -18,8 +18,8 @@ import { toast } from 'sonner';
 // ── Types ────────────────────────────────────────────────────────────────────
 
 type AgenteStatus = 'livre' | 'trabalhando' | 'erro';
-type TarefaStatus = 'pendente' | 'em_andamento' | 'concluido' | 'erro';
-type TarefaTipo = 'post_cliente' | 'avulso';
+type TarefaStatus = 'pendente' | 'em_andamento' | 'aguardando_aprovacao' | 'concluido' | 'erro';
+type TarefaTipo = 'post_cliente' | 'avulso' | 'video_roteiro';
 
 type Agente = {
   id: string;
@@ -75,6 +75,18 @@ type DadosFinanceiro = {
   periodo?: string;
 };
 
+type BlocoRoteiro = { order: number; text: string; image_prompt: string; movement_type: string };
+
+type DadosRoteiroVideo = {
+  tema: string;
+  gancho: string;
+  angulo: string;
+  justificativa?: string;
+  blocos: BlocoRoteiro[];
+  video_script_id: string;
+  feedback_anterior?: string;
+};
+
 type Tarefa = {
   id: string;
   agente_id: string;
@@ -87,7 +99,7 @@ type Tarefa = {
   conteudo_post_id: string | null;
   erro_mensagem: string | null;
   created_at: string;
-  dados: DadosFinanceiro | null;
+  dados: DadosFinanceiro | DadosRoteiroVideo | null;
 };
 
 type Cliente = { id: string; nome: string };
@@ -139,6 +151,7 @@ type PlanoEtapa = {
 const STATUS_LABEL: Record<TarefaStatus, string> = {
   pendente: 'A fazer',
   em_andamento: 'Em andamento',
+  aguardando_aprovacao: 'Aguardando aprovação',
   concluido: 'Concluído',
   erro: 'Erro',
 };
@@ -146,6 +159,7 @@ const STATUS_LABEL: Record<TarefaStatus, string> = {
 const STATUS_DOT: Record<TarefaStatus, string> = {
   pendente: 'bg-gray-300',
   em_andamento: 'bg-blue-500 animate-pulse',
+  aguardando_aprovacao: 'bg-amber-500',
   concluido: 'bg-emerald-500',
   erro: 'bg-red-500',
 };
@@ -153,6 +167,7 @@ const STATUS_DOT: Record<TarefaStatus, string> = {
 const STATUS_CHIP: Record<TarefaStatus, string> = {
   pendente: 'bg-gray-100 border-gray-200 text-gray-600',
   em_andamento: 'bg-blue-50 border-blue-200 text-blue-700',
+  aguardando_aprovacao: 'bg-amber-50 border-amber-200 text-amber-700',
   concluido: 'bg-emerald-50 border-emerald-200 text-emerald-700',
   erro: 'bg-red-50 border-red-200 text-red-700',
 };
@@ -546,12 +561,35 @@ function TarefaDetalhe({ tarefa, onNavigateToPosts, onNavigateToAluno }: { taref
   const [dados, setDados] = useState(tarefa.dados);
   useEffect(() => { setDados(tarefa.dados); }, [tarefa.dados]);
 
+  const [ajusteAberto, setAjusteAberto] = useState(false);
+  const [ajusteTexto, setAjusteTexto] = useState('');
+  const [processandoRoteiro, setProcessandoRoteiro] = useState(false);
+
+  const aprovarVideo = async () => {
+    setProcessandoRoteiro(true);
+    const { data, error } = await supabase.functions.invoke('equipe-11ds-roteiro-executar', { body: { tarefa_id: tarefa.id, acao: 'aprovar' } });
+    setProcessandoRoteiro(false);
+    if (error || !(data as any)?.ok) { toast.error(`Erro ao aprovar: ${error?.message ?? (data as any)?.error ?? 'sem resposta'}`); return; }
+    toast.success('Roteiro aprovado -- o vídeo entrou na fila de produção.');
+  };
+
+  const pedirAjusteVideo = async () => {
+    if (!ajusteTexto.trim()) { toast.error('Descreva o ajuste pedido.'); return; }
+    setProcessandoRoteiro(true);
+    const { data, error } = await supabase.functions.invoke('equipe-11ds-roteiro-executar', { body: { tarefa_id: tarefa.id, acao: 'ajustar', feedback: ajusteTexto.trim() } });
+    setProcessandoRoteiro(false);
+    if (error || !(data as any)?.ok) { toast.error(`Erro ao pedir ajuste: ${error?.message ?? (data as any)?.error ?? 'sem resposta'}`); return; }
+    setAjusteTexto('');
+    setAjusteAberto(false);
+    toast.success('Ajuste pedido -- o Roteirista está reescrevendo.');
+  };
+
   const marcarContatado = async (pagamentoId: string, contatar: boolean) => {
     const valor = contatar ? new Date().toISOString() : null;
     const { error } = await supabase.from('pagamentos').update({ cobranca_contatado_em: valor }).eq('id', pagamentoId);
     if (error) { toast.error(`Erro ao atualizar: ${error.message}`); return; }
     setDados(prev => {
-      if (!prev) return prev;
+      if (!prev || !('matriculasHoje' in prev)) return prev;
       const atualizarLista = (lista: ItemFinanceiro[]) => lista.map(i => i.pagamento_id === pagamentoId ? { ...i, cobranca_contatado_em: valor } : i);
       return {
         ...prev,
@@ -568,7 +606,7 @@ function TarefaDetalhe({ tarefa, onNavigateToPosts, onNavigateToAluno }: { taref
     const { error } = await supabase.from('alunos').update({ lead_quente_contatado_em: valor }).eq('id', alunoId);
     if (error) { toast.error(`Erro ao atualizar: ${error.message}`); return; }
     setDados(prev => {
-      if (!prev) return prev;
+      if (!prev || !('matriculasHoje' in prev)) return prev;
       return {
         ...prev,
         leadsQuentes: (prev.leadsQuentes ?? []).map(i => i.aluno_id === alunoId ? { ...i, contatado_em: valor } : i),
@@ -600,6 +638,45 @@ function TarefaDetalhe({ tarefa, onNavigateToPosts, onNavigateToAluno }: { taref
           <ListaFinanceira titulo="⚠️ Inadimplentes" itens={dados.inadimplentes ?? []} comAtraso={true} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
           <ListaFinanceira titulo="🔔 Vencendo em 7 dias" itens={dados.vencendo7 ?? []} comAtraso={false} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
           <ListaFinanceira titulo="🔴 Vencendo amanhã" itens={dados.vencendo1 ?? []} comAtraso={false} onNavigateToAluno={onNavigateToAluno} onMarcarContatado={marcarContatado} />
+        </div>
+      )}
+      {dados && 'video_script_id' in dados && (
+        <div className="space-y-2.5 pt-1">
+          <div className="text-xs text-foreground bg-white border border-border rounded-lg p-2.5 space-y-1.5">
+            <p><span className="font-medium">Gancho:</span> {dados.gancho}</p>
+            <p><span className="font-medium">Ângulo:</span> {dados.angulo}</p>
+            {dados.feedback_anterior && <p className="text-muted-foreground"><span className="font-medium">Último ajuste pedido:</span> {dados.feedback_anterior}</p>}
+          </div>
+          <div className="space-y-1.5">
+            {dados.blocos.map((b, i) => (
+              <div key={i} className="text-xs bg-white border border-border rounded-lg p-2.5">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Cena {i + 1} · {b.movement_type}</p>
+                <p className="text-foreground">{b.text}</p>
+              </div>
+            ))}
+          </div>
+          {tarefa.status === 'aguardando_aprovacao' && (
+            <div className="space-y-2 pt-1">
+              {ajusteAberto ? (
+                <div className="space-y-2">
+                  <Textarea value={ajusteTexto} onChange={e => setAjusteTexto(e.target.value)} placeholder="O que precisa mudar no roteiro?" rows={2} className="text-xs" />
+                  <div className="flex gap-2">
+                    <Button size="sm" disabled={processandoRoteiro} onClick={pedirAjusteVideo} className="gap-1.5">
+                      {processandoRoteiro ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Enviar ajuste
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={processandoRoteiro} onClick={() => { setAjusteAberto(false); setAjusteTexto(''); }}>Cancelar</Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <Button size="sm" disabled={processandoRoteiro} onClick={aprovarVideo} className="gap-1.5">
+                    {processandoRoteiro ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />} Aprovar e gerar vídeo
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={processandoRoteiro} onClick={() => setAjusteAberto(true)}>Pedir ajuste</Button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
       {tarefa.anexos?.filter(a => a.tipo === 'imagem').map((a, i) => (
@@ -813,6 +890,7 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
   };
 
   const grupos: { status: TarefaStatus; label: string }[] = [
+    { status: 'aguardando_aprovacao', label: 'Aguardando aprovação' },
     { status: 'em_andamento', label: 'Em andamento' },
     { status: 'pendente', label: 'A fazer' },
     { status: 'concluido', label: 'Concluído' },

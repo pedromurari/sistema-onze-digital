@@ -10,11 +10,13 @@ import {
   Search, Zap, Pause, Play, Trash2, Send,
   ChevronLeft, Flame, Thermometer, Snowflake,
   Users, Shield, Webhook, Mail, Link, Copy, X, Info, Pencil, Upload, Check,
+  Sparkles,
 } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -76,7 +78,46 @@ interface DisparoLead {
 
 type ViewMode   = 'table' | 'kanban';
 type DateFilter = 'proximos' | 'hoje' | 'semana' | 'todos';
-type MainTab    = 'funil' | 'campanhas';
+type MainTab    = 'funil' | 'campanhas' | 'boasvindas';
+
+interface BoasVindasConfig {
+  id: string;
+  funnel_name: string;
+  ativo: boolean;
+  wpp_ativo: boolean;
+  wpp_instance_name: string | null;
+  wpp_mensagem: string;
+  wpp_mensagem_tarde: string | null;
+  wpp_message_type: 'text' | 'image' | 'audio' | 'video' | 'document';
+  wpp_media_url: string | null;
+  email_ativo: boolean;
+  email_assunto: string;
+  email_corpo: string;
+  updated_at: string;
+}
+
+interface BoasVindasLog {
+  id: string;
+  funnel_name: string;
+  nome: string | null;
+  whatsapp: string | null;
+  email: string | null;
+  wpp_status: string;
+  email_status: string;
+  wpp_error: string | null;
+  email_error: string | null;
+  sent_at: string;
+  respondeu_em: string | null;
+  ultima_resposta: string | null;
+}
+
+function tipoFunilBV(nome: string): 'idm' | 'despertar' {
+  return /^NPA\b/i.test(nome) ? 'idm' : 'despertar';
+}
+const TIPO_BV_LABEL: Record<'idm' | 'despertar', string> = {
+  idm: 'IDM Pelo Brasil',
+  despertar: 'Semana do Despertar',
+};
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -201,14 +242,20 @@ export function DisparosMonitor({ onCreateFunnel }: { onCreateFunnel: () => void
             >
               <Clock className="h-3.5 w-3.5" /> Mensagens de Funil
             </button>
+            <button
+              onClick={() => setMainTab('boasvindas')}
+              className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all',
+                mainTab === 'boasvindas' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}
+            >
+              <Sparkles className="h-3.5 w-3.5" /> Boas-vindas
+            </button>
           </div>
         </div>
       </div>
 
-      {mainTab === 'campanhas'
-        ? <CampanhasTab />
-        : <FunilTab onCreateFunnel={onCreateFunnel} />
-      }
+      {mainTab === 'campanhas' && <CampanhasTab />}
+      {mainTab === 'funil' && <FunilTab onCreateFunnel={onCreateFunnel} />}
+      {mainTab === 'boasvindas' && <BoasVindasTab />}
     </div>
   );
 }
@@ -1794,6 +1841,689 @@ function CampanhaDetalheView({
       {editOpen && (
         <EditCampanhaModal campanha={c} onClose={() => setEditOpen(false)} onSaved={updated => { onUpdate(updated); setEditOpen(false); }} />
       )}
+    </div>
+  );
+}
+
+// ── Boas-vindas: aba de configuração + monitoramento ───────────────────────────
+// Cobre os dois funis que hoje geram boas-vindas (IDM Pelo Brasil / eventos NPA
+// e Semana do Despertar / turmas-lançamentos), ambos convergindo pra
+// boas_vindas_config (mensagens) e boas_vindas_logs (histórico de envio +
+// resposta) depois da unificação em npa-bv-trigger e boas-vindas-enviar.
+
+type BVStats = { wppSent: number; wppError: number; emailSent: number; emailError: number; respondidos: number };
+
+function BoasVindasTab() {
+  const [configs, setConfigs] = useState<BoasVindasConfig[]>([]);
+  const [stats, setStats] = useState<Map<string, BVStats>>(new Map());
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [tipoFilter, setTipoFilter] = useState<'all' | 'idm' | 'despertar'>('all');
+  const [selectedFunnel, setSelectedFunnel] = useState<string | null>(null);
+  const [editCfg, setEditCfg] = useState<BoasVindasConfig | null>(null);
+  const [novaOpen, setNovaOpen] = useState(false);
+
+  const load = useCallback(async () => {
+    const seteDiasAtras = new Date(Date.now() - 7 * 86400000).toISOString();
+    const [{ data: cfgs }, { data: logs }] = await Promise.all([
+      supabase.from('boas_vindas_config').select('*').order('funnel_name', { ascending: false }),
+      supabase.from('boas_vindas_logs').select('funnel_name, wpp_status, email_status, respondeu_em').gte('sent_at', seteDiasAtras),
+    ]);
+    setConfigs((cfgs ?? []) as BoasVindasConfig[]);
+    const map = new Map<string, BVStats>();
+    for (const l of (logs ?? []) as { funnel_name: string; wpp_status: string; email_status: string; respondeu_em: string | null }[]) {
+      if (!map.has(l.funnel_name)) map.set(l.funnel_name, { wppSent: 0, wppError: 0, emailSent: 0, emailError: 0, respondidos: 0 });
+      const s = map.get(l.funnel_name)!;
+      if (l.wpp_status === 'sent') s.wppSent++; else if (l.wpp_status === 'error') s.wppError++;
+      if (l.email_status === 'sent') s.emailSent++; else if (l.email_status === 'error') s.emailError++;
+      if (l.respondeu_em) s.respondidos++;
+    }
+    setStats(map);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const ch = supabase.channel('boas_vindas_config_tab')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'boas_vindas_config' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'boas_vindas_logs' }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [load]);
+
+  async function toggleField(cfg: BoasVindasConfig, field: 'ativo' | 'wpp_ativo' | 'email_ativo', value: boolean) {
+    setConfigs(cs => cs.map(c => c.id === cfg.id ? { ...c, [field]: value } : c));
+    const { error } = await supabase.from('boas_vindas_config').update({ [field]: value, updated_at: new Date().toISOString() }).eq('id', cfg.id);
+    if (error) { toast.error('Erro ao salvar'); load(); } else toast.success('Salvo');
+  }
+
+  const filtered = useMemo(() => {
+    let list = configs;
+    if (tipoFilter !== 'all') list = list.filter(c => tipoFunilBV(c.funnel_name) === tipoFilter);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(c => c.funnel_name.toLowerCase().includes(q));
+    }
+    return list;
+  }, [configs, tipoFilter, search]);
+
+  if (selectedFunnel) {
+    return <BoasVindasDetalheView funnelName={selectedFunnel} onBack={() => setSelectedFunnel(null)} />;
+  }
+
+  const totalRespondidos = [...stats.values()].reduce((sum, s) => sum + s.respondidos, 0);
+  const totalErros = [...stats.values()].reduce((sum, s) => sum + s.wppError + s.emailError, 0);
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="bg-white border-b px-6 py-4 flex-none">
+        <div className="flex items-center gap-3 flex-wrap">
+          {[
+            { label: 'Funis configurados', count: configs.length, color: 'text-gray-700',   bg: 'bg-gray-100',   dot: 'bg-gray-400' },
+            { label: 'Respostas (7d)',      count: totalRespondidos, color: 'text-violet-700', bg: 'bg-violet-50',  dot: 'bg-violet-500' },
+            { label: 'Erros (7d)',          count: totalErros,       color: 'text-red-700',    bg: 'bg-red-50',     dot: 'bg-red-500' },
+          ].map(s => (
+            <div key={s.label} className={cn('flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium', s.bg, s.color)}>
+              <span className={cn('w-1.5 h-1.5 rounded-full', s.dot)} />
+              {s.count} {s.label}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-2 mt-3 flex-wrap">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input placeholder="Buscar funil…" value={search}
+              onChange={e => setSearch(e.target.value)} className="pl-8 h-8 w-56 text-sm" />
+          </div>
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+            {([
+              { key: 'all' as const, label: 'Todos' },
+              { key: 'idm' as const, label: 'IDM Pelo Brasil' },
+              { key: 'despertar' as const, label: 'Semana do Despertar' },
+            ]).map(f => (
+              <button key={f.key} onClick={() => setTipoFilter(f.key)}
+                className={cn('px-2.5 py-1 rounded-md text-xs font-medium transition-all',
+                  tipoFilter === f.key ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <Button size="sm" onClick={() => setNovaOpen(true)} className="ml-auto gap-1.5">
+            <Plus className="h-3.5 w-3.5" /> Nova configuração
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-auto p-6">
+        {loading ? (
+          <div className="flex items-center justify-center h-40">
+            <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-40 text-center">
+            <Sparkles className="h-8 w-8 text-muted-foreground/40 mb-2" />
+            <p className="text-sm text-muted-foreground">Nenhuma configuração de boas-vindas encontrada</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {filtered.map(cfg => {
+              const tipo = tipoFunilBV(cfg.funnel_name);
+              const s = stats.get(cfg.funnel_name);
+              const errosTotal = (s?.wppError ?? 0) + (s?.emailError ?? 0);
+              return (
+                <div key={cfg.id} className="bg-white rounded-xl border p-4 hover:shadow-sm transition-shadow">
+                  <div className="flex items-start justify-between gap-2">
+                    <button onClick={() => setSelectedFunnel(cfg.funnel_name)} className="text-left min-w-0">
+                      <p className="font-semibold text-foreground text-sm truncate">{cfg.funnel_name}</p>
+                      <span className={cn('inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium',
+                        tipo === 'idm' ? 'bg-amber-100 text-amber-700' : 'bg-violet-100 text-violet-700')}>
+                        {TIPO_BV_LABEL[tipo]}
+                      </span>
+                    </button>
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-none" onClick={() => setEditCfg(cfg)}>
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+
+                  <div className="mt-3 space-y-1.5">
+                    <label className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Boas-vindas ativo</span>
+                      <Switch checked={cfg.ativo} onCheckedChange={v => toggleField(cfg, 'ativo', v)} />
+                    </label>
+                    <label className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">WhatsApp</span>
+                      <Switch checked={cfg.wpp_ativo} onCheckedChange={v => toggleField(cfg, 'wpp_ativo', v)} />
+                    </label>
+                    <label className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">E-mail</span>
+                      <Switch checked={cfg.email_ativo} onCheckedChange={v => toggleField(cfg, 'email_ativo', v)} />
+                    </label>
+                  </div>
+
+                  <div className="mt-3 pt-3 border-t flex items-center gap-2 text-[11px] text-muted-foreground flex-wrap">
+                    <span>7d:</span>
+                    <span className="text-emerald-600">{s?.wppSent ?? 0} wpp</span>
+                    <span className="text-sky-600">{s?.emailSent ?? 0} e-mail</span>
+                    {errosTotal > 0 && <span className="text-red-600">{errosTotal} erro</span>}
+                    {(s?.respondidos ?? 0) > 0 && <span className="text-violet-600">{s?.respondidos} respondeu</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {editCfg && (
+        <EditBoasVindasModal cfg={editCfg} onClose={() => setEditCfg(null)}
+          onSaved={updated => { setConfigs(cs => cs.map(c => c.id === updated.id ? updated : c)); setEditCfg(null); }} />
+      )}
+      {novaOpen && (
+        <NovaBoasVindasModal configs={configs} onClose={() => setNovaOpen(false)}
+          onCreated={created => { setConfigs(cs => [created, ...cs]); setNovaOpen(false); }} />
+      )}
+    </div>
+  );
+}
+
+function EditBoasVindasModal({ cfg, onClose, onSaved }: {
+  cfg: BoasVindasConfig; onClose: () => void; onSaved: (c: BoasVindasConfig) => void;
+}) {
+  const tipo = tipoFunilBV(cfg.funnel_name);
+  const [wppMsg, setWppMsg] = useState(cfg.wpp_mensagem ?? '');
+  const [wppMsgTarde, setWppMsgTarde] = useState(cfg.wpp_mensagem_tarde ?? '');
+  const [wppMessageType, setWppMessageType] = useState<BoasVindasConfig['wpp_message_type']>(cfg.wpp_message_type ?? 'text');
+  const [wppMediaUrl, setWppMediaUrl] = useState(cfg.wpp_media_url ?? '');
+  const [emailAssunto, setEmailAssunto] = useState(cfg.email_assunto ?? '');
+  const [emailCorpo, setEmailCorpo] = useState(cfg.email_corpo ?? '');
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (wppMessageType !== 'text' && !wppMediaUrl.trim()) {
+      toast.error('Informe a URL da mídia pro tipo de mensagem escolhido');
+      return;
+    }
+    setSaving(true);
+    const { data, error } = await supabase.from('boas_vindas_config').update({
+      wpp_mensagem: wppMsg,
+      wpp_mensagem_tarde: tipo === 'idm' ? (wppMsgTarde || null) : null,
+      wpp_message_type: wppMessageType,
+      wpp_media_url: wppMessageType === 'text' ? null : wppMediaUrl.trim(),
+      email_assunto: emailAssunto,
+      email_corpo: emailCorpo,
+      updated_at: new Date().toISOString(),
+    }).eq('id', cfg.id).select('*').single();
+    setSaving(false);
+    if (error) { toast.error(`Erro ao salvar: ${error.message}`); return; }
+    toast.success('Mensagens atualizadas');
+    onSaved(data as BoasVindasConfig);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b flex-none">
+          <div>
+            <h2 className="text-lg font-bold text-foreground">Editar boas-vindas</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{cfg.funnel_name}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
+            <X className="h-4 w-4 text-muted-foreground" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-2 block">Tipo de mensagem no WhatsApp</label>
+            <div className="grid grid-cols-4 gap-1.5">
+              {([
+                { key: 'text'  as const, icon: MessageSquare, label: 'Texto'  },
+                { key: 'image' as const, icon: Image,         label: 'Imagem' },
+                { key: 'audio' as const, icon: Music,         label: 'Áudio'  },
+                { key: 'video' as const, icon: Video,         label: 'Vídeo'  },
+              ]).map(({ key, icon: Icon, label }) => (
+                <button key={key} type="button"
+                  onClick={() => setWppMessageType(key)}
+                  className={cn(
+                    'flex flex-col items-center gap-1 py-2.5 rounded-xl border text-xs font-medium transition-all',
+                    wppMessageType === key
+                      ? 'border-primary bg-primary/5 text-primary shadow-sm'
+                      : 'border-border text-muted-foreground hover:border-primary/40 hover:text-foreground',
+                  )}>
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {wppMessageType !== 'text' && (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                URL da {wppMessageType === 'image' ? 'imagem' : wppMessageType === 'audio' ? 'áudio' : 'vídeo'}
+                <span className="font-normal opacity-60 ml-1">— link público direto para o arquivo</span>
+              </label>
+              <Input value={wppMediaUrl} onChange={e => setWppMediaUrl(e.target.value)}
+                placeholder="https://exemplo.com/arquivo.jpg" className="h-9 text-sm font-mono" />
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              {wppMessageType === 'text' ? 'Mensagem' : 'Legenda'} WhatsApp{tipo === 'idm' ? ' (manhã)' : ''}{' '}
+              <span className="font-normal opacity-60">{"— use {{nome}}, {{evento_nome}}, {{turma}}, {{link_grupo}}, {{data_evento}}"}</span>
+            </label>
+            <Textarea value={wppMsg} onChange={e => setWppMsg(e.target.value)} rows={5} className="text-sm resize-y"
+              placeholder="Olá {{nome}}! 👋 Sua inscrição está confirmada…" />
+          </div>
+
+          {tipo === 'idm' && (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                {wppMessageType === 'text' ? 'Mensagem' : 'Legenda'} WhatsApp (tarde) <span className="font-normal opacity-60">— vazio usa a de manhã pros dois turnos</span>
+              </label>
+              <Textarea value={wppMsgTarde} onChange={e => setWppMsgTarde(e.target.value)} rows={5} className="text-sm resize-y" />
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Assunto do e-mail</label>
+            <Input value={emailAssunto} onChange={e => setEmailAssunto(e.target.value)} className="h-9 text-sm" />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Corpo do e-mail (HTML)</label>
+            <Textarea value={emailCorpo} onChange={e => setEmailCorpo(e.target.value)} rows={8} className="text-xs font-mono resize-y" />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t flex-none">
+          <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
+          <Button size="sm" onClick={save} disabled={saving}>{saving ? 'Salvando…' : 'Salvar'}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NovaBoasVindasModal({ configs, onClose, onCreated }: {
+  configs: BoasVindasConfig[]; onClose: () => void; onCreated: (c: BoasVindasConfig) => void;
+}) {
+  const [funnelName, setFunnelName] = useState('');
+  const [copyFrom, setCopyFrom] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (!funnelName.trim()) { toast.error('Nome do funil obrigatório'); return; }
+    setSaving(true);
+    const base = configs.find(c => c.funnel_name === copyFrom);
+    const { data, error } = await supabase.from('boas_vindas_config').insert({
+      funnel_name: funnelName.trim(),
+      ativo: true,
+      wpp_ativo: base?.wpp_ativo ?? false,
+      wpp_mensagem: base?.wpp_mensagem ?? '',
+      wpp_mensagem_tarde: base?.wpp_mensagem_tarde ?? null,
+      wpp_message_type: base?.wpp_message_type ?? 'text',
+      wpp_media_url: base?.wpp_media_url ?? null,
+      email_ativo: base?.email_ativo ?? false,
+      email_assunto: base?.email_assunto ?? '',
+      email_corpo: base?.email_corpo ?? '',
+    }).select('*').single();
+    setSaving(false);
+    if (error) { toast.error(`Erro ao criar: ${error.message}`); return; }
+    toast.success('Configuração criada');
+    onCreated(data as BoasVindasConfig);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+        <div className="flex items-center justify-between px-6 py-4 border-b">
+          <h2 className="text-lg font-bold text-foreground">Nova configuração de boas-vindas</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
+            <X className="h-4 w-4 text-muted-foreground" />
+          </button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              Nome do funil <span className="font-normal opacity-60">— precisa bater exatamente com o nome usado no evento/turma</span>
+            </label>
+            <Input value={funnelName} onChange={e => setFunnelName(e.target.value)} placeholder="Ex: Turma #48" className="h-9 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Copiar mensagens de (opcional)</label>
+            <select value={copyFrom} onChange={e => setCopyFrom(e.target.value)}
+              className="w-full h-9 text-sm border rounded-md px-2 bg-white">
+              <option value="">Começar em branco</option>
+              {configs.map(c => <option key={c.id} value={c.funnel_name}>{c.funnel_name}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t">
+          <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
+          <Button size="sm" onClick={save} disabled={saving}>{saving ? 'Criando…' : 'Criar'}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type BVStatusFiltro = 'all' | 'pendente' | 'wpp_sent' | 'wpp_error' | 'email_sent' | 'email_error' | 'respondeu';
+
+// Linha unificada da tabela de leads: junta o lead de origem (npa_evento_leads
+// ou lancamento_leads -- TODOS os leads elegiveis, nao só quem já teve
+// tentativa de envio) com a linha de boas_vindas_logs correspondente, casada
+// por sufixo de telefone (mesmo padrão de matching que evo-resposta usa).
+// Sem log correspondente, status fica "pendente" (nunca tentou).
+type BVLeadRow = {
+  id: string;
+  nome: string | null;
+  whatsapp: string | null;
+  email: string | null;
+  ingressoGerado?: boolean;
+  ingressoPago?: boolean;
+  fase?: string | null;
+  wpp_status: 'sent' | 'error' | 'skipped' | 'pendente';
+  email_status: 'sent' | 'error' | 'skipped' | 'pendente';
+  wpp_error: string | null;
+  email_error: string | null;
+  sent_at: string | null;
+  respondeu_em: string | null;
+  ultima_resposta: string | null;
+};
+
+function statusLabelBV(v: string) {
+  if (v === 'sent') return 'Enviado';
+  if (v === 'error') return 'Erro';
+  if (v === 'skipped') return 'Desativado';
+  return 'Pendente';
+}
+
+function BoasVindasDetalheView({ funnelName, onBack }: { funnelName: string; onBack: () => void }) {
+  const tipo = tipoFunilBV(funnelName);
+  const [rows, setRows] = useState<BVLeadRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<BVStatusFiltro>('all');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+
+    const { data: logsData } = await supabase
+      .from('boas_vindas_logs')
+      .select('whatsapp, wpp_status, email_status, wpp_error, email_error, sent_at, respondeu_em, ultima_resposta')
+      .eq('funnel_name', funnelName)
+      .order('sent_at', { ascending: false });
+
+    // Mapa por sufixo de telefone -> log mais recente (a lista já vem ordenada
+    // por sent_at desc, então o primeiro achado pra cada sufixo é o mais novo).
+    const logByPhone = new Map<string, NonNullable<typeof logsData>[number]>();
+    for (const l of logsData ?? []) {
+      const s8 = (l.whatsapp ?? '').replace(/\D/g, '').slice(-8);
+      if (s8 && !logByPhone.has(s8)) logByPhone.set(s8, l);
+    }
+    const matchLog = (whatsapp: string | null) => {
+      const s8 = (whatsapp ?? '').replace(/\D/g, '').slice(-8);
+      return s8 ? logByPhone.get(s8) : undefined;
+    };
+
+    let unified: BVLeadRow[] = [];
+
+    if (tipo === 'idm') {
+      const { data: evento } = await supabase.from('npa_eventos').select('id').eq('nome', funnelName).maybeSingle();
+      if (evento) {
+        const { data: leads } = await supabase
+          .from('npa_evento_leads')
+          .select('id, nome, whatsapp, email, pix_enviado, pix_codigo, ingresso_pago')
+          .eq('npa_evento_id', evento.id)
+          .order('created_at', { ascending: false });
+        unified = (leads ?? []).map(l => {
+          const log = matchLog(l.whatsapp);
+          return {
+            id: l.id, nome: l.nome, whatsapp: l.whatsapp, email: l.email,
+            ingressoGerado: Boolean(l.pix_enviado || l.pix_codigo),
+            ingressoPago: Boolean(l.ingresso_pago),
+            wpp_status: (log?.wpp_status as BVLeadRow['wpp_status']) ?? 'pendente',
+            email_status: (log?.email_status as BVLeadRow['email_status']) ?? 'pendente',
+            wpp_error: log?.wpp_error ?? null,
+            email_error: log?.email_error ?? null,
+            sent_at: log?.sent_at ?? null,
+            respondeu_em: log?.respondeu_em ?? null,
+            ultima_resposta: log?.ultima_resposta ?? null,
+          };
+        });
+      }
+    } else {
+      const { data: lanc } = await supabase.from('lancamentos').select('id').eq('nome', funnelName).maybeSingle();
+      if (lanc) {
+        const { data: leads } = await supabase
+          .from('lancamento_leads')
+          .select('id, nome, whatsapp, email, fase')
+          .eq('lancamento_id', lanc.id)
+          .order('created_at', { ascending: false });
+        unified = (leads ?? []).map(l => {
+          const log = matchLog(l.whatsapp);
+          return {
+            id: l.id, nome: l.nome, whatsapp: l.whatsapp, email: l.email,
+            fase: l.fase,
+            wpp_status: (log?.wpp_status as BVLeadRow['wpp_status']) ?? 'pendente',
+            email_status: (log?.email_status as BVLeadRow['email_status']) ?? 'pendente',
+            wpp_error: log?.wpp_error ?? null,
+            email_error: log?.email_error ?? null,
+            sent_at: log?.sent_at ?? null,
+            respondeu_em: log?.respondeu_em ?? null,
+            ultima_resposta: log?.ultima_resposta ?? null,
+          };
+        });
+      }
+    }
+
+    setRows(unified);
+    setLoading(false);
+  }, [funnelName, tipo]);
+
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const leadTable = tipo === 'idm' ? 'npa_evento_leads' : 'lancamento_leads';
+    const ch = supabase.channel(`boas_vindas_detalhe_${funnelName}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'boas_vindas_logs', filter: `funnel_name=eq.${funnelName}` }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: leadTable }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [funnelName, tipo, load]);
+
+  const total       = rows.length || 1;
+  const wppSent     = rows.filter(l => l.wpp_status === 'sent').length;
+  const wppError    = rows.filter(l => l.wpp_status === 'error').length;
+  const emailSent   = rows.filter(l => l.email_status === 'sent').length;
+  const emailError  = rows.filter(l => l.email_status === 'error').length;
+  const respondidos = rows.filter(l => !!l.respondeu_em).length;
+
+  const filtered = useMemo(() => {
+    let list = rows;
+    if (statusFilter === 'pendente') list = list.filter(l => l.wpp_status === 'pendente' && l.email_status === 'pendente');
+    else if (statusFilter === 'wpp_sent') list = list.filter(l => l.wpp_status === 'sent');
+    else if (statusFilter === 'wpp_error') list = list.filter(l => l.wpp_status === 'error');
+    else if (statusFilter === 'email_sent') list = list.filter(l => l.email_status === 'sent');
+    else if (statusFilter === 'email_error') list = list.filter(l => l.email_status === 'error');
+    else if (statusFilter === 'respondeu') list = list.filter(l => !!l.respondeu_em);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(l => (l.nome ?? '').toLowerCase().includes(q) || (l.whatsapp ?? '').includes(q) || (l.email ?? '').toLowerCase().includes(q));
+    }
+    return list;
+  }, [rows, search, statusFilter]);
+
+  function exportCSV() {
+    const extraHeaders = tipo === 'idm' ? ['Ingresso gerado', 'Ingresso pago'] : ['Fase'];
+    const headers = ['Nome', 'WhatsApp', 'E-mail', ...extraHeaders, 'Status WPP', 'Erro WPP', 'Status E-mail', 'Erro E-mail', 'Enviado em', 'Respondeu em', 'Última resposta'];
+    const rowsCsv = filtered.map(l => [
+      `"${l.nome ?? ''}"`, l.whatsapp ?? '', l.email ?? '',
+      ...(tipo === 'idm' ? [l.ingressoGerado ? 'Sim' : 'Não', l.ingressoPago ? 'Sim' : 'Não'] : [l.fase ?? '']),
+      l.wpp_status,
+      l.wpp_error ? `"${l.wpp_error.replace(/"/g, "'")}"` : '',
+      l.email_status,
+      l.email_error ? `"${l.email_error.replace(/"/g, "'")}"` : '',
+      l.sent_at ? `"${fmtDatetime(l.sent_at)}"` : '',
+      l.respondeu_em ? `"${fmtDatetime(l.respondeu_em)}"` : '',
+      l.ultima_resposta ? `"${l.ultima_resposta.replace(/"/g, "'").replace(/\n/g, ' ')}"` : '',
+    ]);
+    const csv = [headers, ...rowsCsv].map(r => r.join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url;
+    a.download = `boas_vindas_${funnelName.replace(/[^a-z0-9]+/gi, '_')}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="bg-white border-b px-6 py-4 flex-none">
+        <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-3 transition-colors">
+          <ChevronLeft className="h-3.5 w-3.5" /> Voltar pras boas-vindas
+        </button>
+        <h2 className="text-lg font-bold text-foreground">{funnelName}</h2>
+
+        <div className="flex items-center gap-3 mt-4 flex-wrap">
+          {[
+            { label: 'Total',          count: rows.length, color: 'text-gray-700',    bg: 'bg-gray-100',   dot: 'bg-gray-400' },
+            { label: 'WPP enviado',    count: wppSent,      color: 'text-emerald-700', bg: 'bg-emerald-50', dot: 'bg-emerald-500' },
+            { label: 'WPP erro',       count: wppError,     color: 'text-red-700',     bg: 'bg-red-50',     dot: 'bg-red-500' },
+            { label: 'E-mail enviado', count: emailSent,    color: 'text-sky-700',     bg: 'bg-sky-50',     dot: 'bg-sky-500' },
+            { label: 'E-mail erro',    count: emailError,   color: 'text-red-700',     bg: 'bg-red-50',     dot: 'bg-red-500' },
+            { label: 'Respondidos',    count: respondidos,  color: 'text-violet-700',  bg: 'bg-violet-50',  dot: 'bg-violet-500' },
+          ].map(s => (
+            <div key={s.label} className={cn('flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium', s.bg, s.color)}>
+              <span className={cn('w-1.5 h-1.5 rounded-full', s.dot)} />
+              {s.count} {s.label}
+              {s.label !== 'Total' && rows.length > 0 && (
+                <span className="opacity-60 text-xs">({Math.round((s.count / total) * 100)}%)</span>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-2 mt-3 flex-wrap">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input placeholder="Buscar nome, whatsapp ou e-mail…" value={search}
+              onChange={e => setSearch(e.target.value)} className="pl-8 h-8 w-64 text-sm" />
+          </div>
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+            {([
+              { key: 'all' as const, label: 'Todos' },
+              { key: 'pendente' as const, label: 'Pendente' },
+              { key: 'wpp_sent' as const, label: 'WPP enviado' },
+              { key: 'wpp_error' as const, label: 'WPP erro' },
+              { key: 'email_sent' as const, label: 'E-mail enviado' },
+              { key: 'email_error' as const, label: 'E-mail erro' },
+              { key: 'respondeu' as const, label: 'Respondeu' },
+            ]).map(f => (
+              <button key={f.key} onClick={() => setStatusFilter(f.key)}
+                className={cn('px-2.5 py-1 rounded-md text-xs font-medium transition-all',
+                  statusFilter === f.key ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <span className="text-xs text-muted-foreground ml-1">{filtered.length} leads</span>
+          <Button variant="outline" size="sm" onClick={exportCSV} className="ml-auto gap-1.5">
+            <Download className="h-3.5 w-3.5" /> CSV
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-auto p-6">
+        {loading ? (
+          <div className="flex items-center justify-center h-40">
+            <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-40 text-center">
+            <Users className="h-8 w-8 text-muted-foreground/40 mb-2" />
+            <p className="text-sm text-muted-foreground">Nenhum lead encontrado pra esse filtro</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-gray-50/60">
+                  {[
+                    'Nome', 'WhatsApp', 'E-mail',
+                    ...(tipo === 'idm' ? ['Ingresso gerado', 'Ingresso pago'] : ['Fase']),
+                    'WPP', 'E-mail', 'Enviado em', 'Última resposta',
+                  ].map(h => (
+                    <th key={h} className="text-left px-3 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wide whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((l, i) => (
+                  <tr key={l.id} className={cn('border-b last:border-0 hover:bg-gray-50/60 transition-colors', i % 2 === 0 ? '' : 'bg-gray-50/20')}>
+                    <td className="px-3 py-2.5 font-medium text-foreground/90 max-w-[160px] truncate">{l.nome || '—'}</td>
+                    <td className="px-3 py-2.5 font-mono text-xs text-muted-foreground">{l.whatsapp ? maskPhone(l.whatsapp) : '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[160px] truncate">{l.email || '—'}</td>
+                    {tipo === 'idm' ? (
+                      <>
+                        <td className="px-3 py-2.5">
+                          <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
+                            l.ingressoGerado ? 'bg-sky-50 text-sky-700' : 'bg-gray-100 text-gray-500')}>
+                            {l.ingressoGerado ? 'Sim' : 'Não'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
+                            l.ingressoPago ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500')}>
+                            {l.ingressoPago ? 'Sim' : 'Não'}
+                          </span>
+                        </td>
+                      </>
+                    ) : (
+                      <td className="px-3 py-2.5">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-violet-50 text-violet-700">
+                          {l.fase || '—'}
+                        </span>
+                      </td>
+                    )}
+                    <td className="px-3 py-2.5">
+                      <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
+                        l.wpp_status === 'sent' ? 'bg-emerald-50 text-emerald-700' :
+                        l.wpp_status === 'error' ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-500')}
+                        title={l.wpp_error ?? undefined}>
+                        {statusLabelBV(l.wpp_status)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
+                        l.email_status === 'sent' ? 'bg-emerald-50 text-emerald-700' :
+                        l.email_status === 'error' ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-500')}
+                        title={l.email_error ?? undefined}>
+                        {statusLabelBV(l.email_status)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{l.sent_at ? fmtDatetime(l.sent_at) : '—'}</td>
+                    <td className="px-3 py-2.5 max-w-[240px]">
+                      {l.respondeu_em ? (
+                        <div className="flex items-start gap-1.5">
+                          <MessageSquare className="h-3 w-3 text-violet-500 mt-0.5 flex-none" />
+                          <div className="min-w-0">
+                            <p className="text-xs text-foreground/90 truncate" title={l.ultima_resposta ?? undefined}>{l.ultima_resposta || '—'}</p>
+                            <p className="text-[10px] text-muted-foreground">{fmtDatetime(l.respondeu_em)}</p>
+                          </div>
+                        </div>
+                      ) : <span className="text-xs text-muted-foreground">—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

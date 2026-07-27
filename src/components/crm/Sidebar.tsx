@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Kanban, Settings, UserCog,
   Rocket, BarChart3, CheckSquare, ChevronDown,
   ChevronLeft, ChevronRight, Plus, Brain, Scale,
-  GripVertical, Pencil, Check, MessageSquare, TrendingUp, GitBranch, CalendarDays, ShoppingBag, Radio, Image, Handshake, Bot,
+  GripVertical, Pencil, Check, MessageSquare, TrendingUp, GitBranch, CalendarDays, ShoppingBag, Radio, Image, Handshake, Bot, Video,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,6 +39,7 @@ const BASE_MENU: MenuItem[] = [
   { key: 'posts',                      label: 'Post',                 icon: Image,       adminOnly: true },
   { key: 'parceiros',                  label: 'Parceiros',           icon: Handshake,   adminOnly: true },
   { key: 'equipe_11ds',                label: 'Equipe 11DS',         icon: Bot,         adminOnly: true },
+  { key: 'reels_idm',                  label: 'Reels IDM',           icon: Video,       adminOnly: true },
   // Eventos & Funis
   { group: 'lancamentos_legado',       label: 'Semana do Despertar', icon: Rocket,       children: [] },
   { group: 'npa_dinamico',            label: 'IDM Pelo Brasil',       icon: BarChart3,    children: [] },
