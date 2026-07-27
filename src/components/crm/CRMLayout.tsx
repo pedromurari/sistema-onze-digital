@@ -23,6 +23,7 @@ const FinanceiroCFO    = lazy(() => import('./FinanceiroCFO').then(m => ({ defau
 const Cobranca         = lazy(() => import('./Cobranca').then(m => ({ default: m.Cobranca })));
 const FunilLancamento  = lazy(() => import('./FunilLancamento').then(m => ({ default: m.FunilLancamento })));
 const DisparosMonitor  = lazy(() => import('./DisparosMonitor').then(m => ({ default: m.DisparosMonitor })));
+const AquecimentoChips = lazy(() => import('./AquecimentoChips').then(m => ({ default: m.AquecimentoChips })));
 const Rodrygo          = lazy(() => import('./Rodrygo').then(m => ({ default: m.Rodrygo })));
 const LancamentoKanban = lazy(() => import('./LancamentoKanban').then(m => ({ default: m.LancamentoKanban })));
 const NPAKanban        = lazy(() => import('./NPAKanban'));
@@ -239,6 +240,7 @@ export function CRMLayout() {
       case 'disparos_monitor':  return permissions.canViewCobranca || isAdmin
         ? <DisparosMonitor onCreateFunnel={() => setCurrentView('funil_lancamento')} />
         : <RestrictedView />;
+      case 'aquecimento_chips': return isAdmin ? <AquecimentoChips /> : <RestrictedView />;
       case 'rodrygo': return <Rodrygo />;
       case 'team': return user?.tipo === 'admin' || permissions.canViewTeam ? <TeamManagement /> : <RestrictedView />;
       case 'settings': return permissions.canViewSettings || isAdmin ? <Settings /> : <RestrictedView />;

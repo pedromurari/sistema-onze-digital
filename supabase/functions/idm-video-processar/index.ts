@@ -586,10 +586,6 @@ serve(async (req) => {
           const { data: signedClip, error: signedErr } = await supabase.storage.from('idm-reels').createSignedUploadUrl(clipPath, { upsert: true });
           if (signedErr || !signedClip?.signedUrl) throw new Error(`Falha ao preparar upload do clipe: ${signedErr?.message}`);
 
-          // SFX contextual e' esparso -- so entra quando o Roteirista marcou
-          // sfx_tag pra este bloco especifico.
-          const sfxUrl = blocoFaltando.sfx_tag ? await sortearArquivoDoStorage(supabase, `audio/sfx/${blocoFaltando.sfx_tag}`) : null;
-
           const resultado = await chamarWorker(supabase, '/api/render-scene', {
             image_url: imagem.storage_url,
             audio_url: audio.storage_url,
@@ -600,7 +596,6 @@ serve(async (req) => {
             emphasis_words: blocoFaltando.emphasis_words ?? [],
             concept_word: script.concept_word ?? null,
             logo_url: cliente?.logo_url ?? null,
-            sfx_url: sfxUrl,
             figure_name: blocoFaltando.figure_name ?? null,
             figure_role: blocoFaltando.figure_role ?? null,
           });
@@ -614,9 +609,25 @@ serve(async (req) => {
         }
 
         // Todas as cenas ja saem prontas (acabamento+legenda+logo por cena):
-        // finaliza so concatenando via stream-copy, sem re-encode.
+        // finaliza so concatenando via stream-copy, sem re-encode. SFX
+        // contextual entra aqui (nao mais no render por cena, que estourava
+        // o teto de tempo quando uma cena tinha SFX) -- cada bloco marcado
+        // com sfx_tag vira 1 entrada com o tempo de inicio exato (soma das
+        // duracoes dos blocos anteriores), mixado no mesmo passe barato de
+        // audio que ja mistura a musica de fundo.
         const clipUrls = blocos.map(b => clipesPorBloco.get(b.order)).filter((u): u is string => Boolean(u));
         if (clipUrls.length !== blocos.length) throw new Error('Faltam clipes de cena');
+
+        const transcricoesPorBloco = await carregarTranscricoesDosBlocos(supabase, jobRenderingIA.id);
+        let acumulado = 0;
+        const sfxEntradas: { url: string; time: number }[] = [];
+        for (const bloco of blocos) {
+          if (bloco.sfx_tag) {
+            const sfxUrl = await sortearArquivoDoStorage(supabase, `audio/sfx/${bloco.sfx_tag}`);
+            if (sfxUrl) sfxEntradas.push({ url: sfxUrl, time: acumulado });
+          }
+          acumulado += transcricoesPorBloco[bloco.order]?.duracao ?? 0;
+        }
 
         const finalPath = `${jobRenderingIA.id}/final.mp4`;
         const { data: signedFinal, error: signedErr } = await supabase.storage.from('idm-reels').createSignedUploadUrl(finalPath, { upsert: true });
@@ -626,6 +637,7 @@ serve(async (req) => {
           upload_url: signedFinal.signedUrl,
           scene_clip_urls: clipUrls,
           music_track_url: musicTrackUrl,
+          sfx: sfxEntradas,
         });
         if (!resultado.ok) throw new Error(resultado.error ?? 'render-scenes (finalize) falhou');
 

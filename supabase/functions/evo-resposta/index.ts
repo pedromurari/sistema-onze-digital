@@ -72,7 +72,19 @@ serve(async (req) => {
 
     console.log(JSON.stringify({ event, instance, ts: new Date().toISOString() }));
 
-    // Só processa mensagens recebidas
+    // ── Aquecimento de chips: ACK de entrega/leitura ──────────────────────────
+    // Shape não documentado pela Evolution neste repo (greenfield) -- best
+    // effort com múltiplos fallbacks, validar contra o payload real de teste.
+    if (event === 'messages.update' || event === 'message.update') {
+      return await handleMessagesUpdate(supabase, body);
+    }
+
+    // ── Aquecimento de chips: estabilidade de conexão ─────────────────────────
+    if (event === 'connection.update') {
+      return await handleConnectionUpdate(supabase, instance, body);
+    }
+
+    // Só processa mensagens recebidas (upsert)
     if (!event.includes('message')) {
       return ok({ ok: true, skipped: true, reason: `event="${event}" ignored` });
     }
@@ -196,3 +208,77 @@ serve(async (req) => {
     });
   }
 });
+
+// ── ACK (messages.update): casa com aquecimento_jobs.evolution_message_id ────
+// Status Baileys/Evolution: 0=erro, 1=pendente, 2=servidor, 3=entregue, 4=lido, 5=tocado
+function ackStatusFromNumero(status: number | undefined): 'entregue' | 'lido' | 'falhou' | null {
+  if (status === undefined || status === null) return null;
+  if (status <= 0) return 'falhou';
+  if (status >= 4) return 'lido';
+  if (status === 3) return 'entregue';
+  return null; // pendente/servidor ainda não é sinal suficiente
+}
+
+async function handleMessagesUpdate(
+  supabase: ReturnType<typeof createClient>,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  const data = body.data ?? {};
+  const updates = Array.isArray(data) ? data : [data];
+  let atualizados = 0;
+
+  for (const upd of updates as Record<string, unknown>[]) {
+    const key = (upd.key ?? {}) as Record<string, unknown>;
+    const messageId = String(key.id ?? upd.keyId ?? upd.id ?? '');
+    if (!messageId) continue;
+
+    const statusRaw = (upd.update as Record<string, unknown>)?.status ?? upd.status;
+    const statusNum = typeof statusRaw === 'number' ? statusRaw : Number(statusRaw);
+    const ackStatus = ackStatusFromNumero(Number.isFinite(statusNum) ? statusNum : undefined);
+    if (!ackStatus) continue;
+
+    const now = new Date().toISOString();
+    const patch: Record<string, unknown> = { ack_status: ackStatus };
+    if (ackStatus === 'entregue') patch.entregue_em = now;
+    if (ackStatus === 'lido') patch.lido_em = now;
+
+    const { data: updated } = await supabase
+      .from('aquecimento_jobs')
+      .update(patch)
+      .eq('evolution_message_id', messageId)
+      .select('id');
+
+    if (updated?.length) atualizados += updated.length;
+  }
+
+  return ok({ ok: true, tipo: 'messages.update', atualizados });
+}
+
+// ── Conexão (connection.update): histórico de estabilidade por instância ────
+async function handleConnectionUpdate(
+  supabase: ReturnType<typeof createClient>,
+  instance: string,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  if (!instance) return ok({ ok: true, skipped: true, reason: 'connection.update sem instance' });
+
+  const data = (body.data ?? {}) as Record<string, unknown>;
+  const state = String(
+    data.state ?? (data.instance as Record<string, unknown>)?.state ?? data.connection ?? '',
+  ).toLowerCase();
+  if (!state) return ok({ ok: true, skipped: true, reason: 'connection.update sem state' });
+
+  const { data: evoConfig } = await supabase
+    .from('evolution_config')
+    .select('id')
+    .eq('instance_name', instance)
+    .maybeSingle();
+
+  await supabase.from('evolution_conexao_eventos').insert({
+    evolution_config_id: evoConfig?.id ?? null,
+    instance_name: instance,
+    state,
+  });
+
+  return ok({ ok: true, tipo: 'connection.update', instance, state });
+}

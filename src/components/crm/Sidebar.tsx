@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Kanban, Settings, UserCog,
   Rocket, BarChart3, CheckSquare, ChevronDown,
   ChevronLeft, ChevronRight, Plus, Brain, Scale,
-  GripVertical, Pencil, Check, MessageSquare, TrendingUp, GitBranch, CalendarDays, ShoppingBag, Radio, Image, Handshake, Bot, Video,
+  GripVertical, Pencil, Check, MessageSquare, TrendingUp, GitBranch, CalendarDays, ShoppingBag, Radio, Image, Handshake, Bot, Video, Flame,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,6 +47,7 @@ const BASE_MENU: MenuItem[] = [
   { key: 'franquia_psi',              label: 'IDM PSI Franquias',    icon: TrendingUp },
   { key: 'funil_lancamento',          label: 'Funil de Lançamento',  icon: GitBranch },
   { key: 'disparos_monitor',          label: 'Central de Disparos',  icon: Radio },
+  { key: 'aquecimento_chips',         label: 'Aquecimento de Chips', icon: Flame,       adminOnly: true },
   // Financeiro
   { key: 'financeiro',                label: 'Financeiro',           icon: BarChart3 },
   { key: 'financeiro_cfo',           label: 'Análise CFO',           icon: TrendingUp },

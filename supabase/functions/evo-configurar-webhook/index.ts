@@ -54,7 +54,7 @@ serve(async (req) => {
               url: WEBHOOK_URL,
               webhookByEvents: false,
               webhookBase64: false,
-              events: ['MESSAGES_UPSERT'],
+              events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE'],
             },
           }),
           signal: AbortSignal.timeout(15_000),

@@ -17,6 +17,54 @@ function toGroupJid(value: string): string {
   return trimmed; // número individual
 }
 
+type EvoInstance = { id: string; api_url: string; api_key: string; instance_name: string };
+
+// Resolução da instância: override específico do funil (wpp_instance_name) -> instância(s)
+// escolhida(s) na tela de Boas-vindas (evolution_task_config, task 'boas_vindas') -> todas
+// as instâncias ativas por prioridade global. Mesmo padrão do enviar-cobranca.
+async function resolveInstances(
+  db: ReturnType<typeof createClient>,
+  cfg: { wpp_instance_name?: string | null },
+  allActive: EvoInstance[],
+): Promise<EvoInstance[]> {
+  if (cfg.wpp_instance_name) {
+    const scoped = allActive.filter(r => r.instance_name === cfg.wpp_instance_name);
+    if (scoped.length) return scoped;
+  }
+
+  const { data: taskCfg } = await db
+    .from('evolution_task_config')
+    .select('instance_ids')
+    .eq('task', 'boas_vindas')
+    .maybeSingle();
+  if (taskCfg?.instance_ids?.length) {
+    const byId = new Map(allActive.map(i => [i.id, i]));
+    const scoped = (taskCfg.instance_ids as string[]).map(id => byId.get(id)).filter(Boolean) as EvoInstance[];
+    if (scoped.length) return scoped;
+  }
+
+  return allActive;
+}
+
+// A Evolution API pode responder 200 mesmo com a sessão do WhatsApp fechada e só falhar
+// silenciosamente na entrega — checa o estado real de conexão antes de usar a instância
+// (mesmo mecanismo do disparo-runner e enviar-cobranca).
+async function isInstanceConnected(inst: { api_url: string; api_key: string; instance_name: string }): Promise<boolean> {
+  const rawBase = inst.api_url.replace(/\/$/, '');
+  const base = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
+  try {
+    const res = await fetch(`${base}/instance/connectionState/${encodeURIComponent(inst.instance_name)}`, {
+      headers: { apikey: inst.api_key },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return false;
+    const data = await res.json() as { instance?: { state?: string } };
+    return data.instance?.state === 'open';
+  } catch {
+    return false;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -74,22 +122,19 @@ serve(async (req) => {
     if (cfg.wpp_ativo && whatsapp) {
       try {
         // Instâncias Evolution
-        const query = supabase
+        const { data: evoRows } = await supabase
           .from('evolution_config')
-          .select('api_url, api_key, instance_name')
+          .select('id, api_url, api_key, instance_name')
           .eq('ativo', true)
           .order('prioridade', { ascending: true });
 
-        const { data: evoRows } = await query;
-
         if (!evoRows?.length) throw new Error('Nenhuma instância Evolution ativa');
 
-        // Filtra instância específica se configurada
-        const instances = cfg.wpp_instance_name
-          ? evoRows.filter((r: { instance_name: string }) => r.instance_name === cfg.wpp_instance_name)
-          : evoRows;
+        const candidateInstances = await resolveInstances(supabase, cfg, evoRows as EvoInstance[]);
+        const connectedFlags = await Promise.all(candidateInstances.map(isInstanceConnected));
+        const activeInstances = candidateInstances.filter((_: unknown, i: number) => connectedFlags[i]);
 
-        const activeInstances = instances.length ? instances : evoRows;
+        if (!activeInstances.length) throw new Error('Nenhuma instância conectada disponível (sessão do WhatsApp fechada)');
 
         const mensagem = applyVars(cfg.wpp_mensagem, vars);
         const number   = toGroupJid(whatsapp);
