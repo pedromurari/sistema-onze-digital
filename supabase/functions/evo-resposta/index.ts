@@ -76,6 +76,7 @@ serve(async (req) => {
     // Shape não documentado pela Evolution neste repo (greenfield) -- best
     // effort com múltiplos fallbacks, validar contra o payload real de teste.
     if (event === 'messages.update' || event === 'message.update') {
+      console.log('RAW messages.update:', JSON.stringify(body).slice(0, 2000));
       return await handleMessagesUpdate(supabase, body);
     }
 
