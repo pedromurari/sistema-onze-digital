@@ -251,13 +251,37 @@ async function handleMessagesUpdate(
 
     if (updated?.length) atualizados += updated.length;
 
-    const { data: updatedDisparo } = await supabase
-      .from('disparo_leads')
-      .update(patch)
-      .eq('evolution_message_id', messageId)
-      .select('id');
+    // "falhou" confirmado pelo WhatsApp (não só HTTP 200 da Evolution): tenta
+    // reenviar automaticamente 1 vez -- volta pra pendente pro disparo-runner
+    // pegar no próximo ciclo. Só 1 vez por lead (reenviado_apos_falha) pra não
+    // ficar em loop se o número for mesmo inalcançável.
+    if (ackStatus === 'falhou') {
+      const { data: leadsFalhos } = await supabase
+        .from('disparo_leads')
+        .select('id, reenviado_apos_falha')
+        .eq('evolution_message_id', messageId);
 
-    if (updatedDisparo?.length) atualizados += updatedDisparo.length;
+      for (const lead of (leadsFalhos ?? []) as { id: string; reenviado_apos_falha: boolean }[]) {
+        if (!lead.reenviado_apos_falha) {
+          await supabase.from('disparo_leads').update({
+            status: 'pendente', sent_at: null, error_msg: null,
+            instance_id: null, evolution_message_id: null, ack_status: null,
+            reenviado_apos_falha: true,
+          }).eq('id', lead.id);
+        } else {
+          await supabase.from('disparo_leads').update(patch).eq('id', lead.id);
+        }
+        atualizados++;
+      }
+    } else {
+      const { data: updatedDisparo } = await supabase
+        .from('disparo_leads')
+        .update(patch)
+        .eq('evolution_message_id', messageId)
+        .select('id');
+
+      if (updatedDisparo?.length) atualizados += updatedDisparo.length;
+    }
   }
 
   return ok({ ok: true, tipo: 'messages.update', atualizados });
