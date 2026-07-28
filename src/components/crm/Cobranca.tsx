@@ -23,7 +23,7 @@ import {
   MessageSquare, Send, Settings, FileText, History, Clock,
   Plus, Trash2, Pencil, Play, CheckCircle2, XCircle, AlertCircle,
   RefreshCw, Zap, Phone, Calendar, Info,
-  AlertTriangle, TrendingDown, Copy, ExternalLink,
+  AlertTriangle, TrendingDown,
 } from 'lucide-react';
 import { EvolutionTaskPanel } from './EvolutionTaskPanel';
 
@@ -1273,10 +1273,10 @@ export function Cobranca() {
             <Card className="lg:col-span-2">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Zap size={16}/>Ativação via Cron (cron-job.org)
+                  <Zap size={16}/>Disparo automático (tique)
                 </CardTitle>
                 <CardDescription>
-                  Configure um cron externo pra chamar a cada poucos minutos — os lembretes ficam espalhados ao longo da janela de horário, com anti-ban de verdade (não é mais um disparo único em rajada).
+                  Roda sozinho a cada minuto direto no banco (pg_cron), sem precisar de serviço externo — cada chamada só manda 1 mensagem, e só se as regras de horário/limite/delay permitirem.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1286,34 +1286,12 @@ export function Cobranca() {
                     : 'bg-amber-50 text-amber-700 border-amber-200'
                 }`}>
                   {cobrancaCfg?.ativo
-                    ? <><CheckCircle2 size={14}/> Automação ativa — processa a fila a cada chamada do cron</>
+                    ? <><CheckCircle2 size={14}/> Automação ativa — o job "enviar-cobranca-tick" verifica a cada minuto</>
                     : <><Clock size={14}/> Aguardando ativação — ative o toggle "Automação ativa" acima</>}
                 </div>
 
-                <div className="space-y-2 text-xs">
-                  <p className="text-muted-foreground font-medium">Configure no cron-job.org:</p>
-                  {[
-                    { label: 'URL', value: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/enviar-cobranca` },
-                    { label: 'Method', value: 'POST' },
-                    { label: 'Body', value: '{"tick": true}' },
-                    { label: 'Header 1', value: 'Content-Type: application/json' },
-                    { label: 'Header 2', value: 'x-cron-key: enviar-cobranca-internal-2026' },
-                    { label: 'Cron', value: '*/3 * * * *' },
-                  ].map(({ label, value }) => (
-                    <div key={label} className="flex items-center gap-2 bg-muted/40 rounded px-3 py-1.5 font-mono">
-                      <span className="text-muted-foreground w-16 flex-shrink-0">{label}</span>
-                      <span className="flex-1 truncate text-foreground">{value}</span>
-                      <button
-                        onClick={() => { navigator.clipboard.writeText(value); toast.success('Copiado!'); }}
-                        className="p-1 hover:bg-primary/10 rounded transition-colors flex-shrink-0"
-                      >
-                        <Copy size={12} className="text-primary"/>
-                      </button>
-                    </div>
-                  ))}
-                </div>
                 <p className="text-xs text-muted-foreground">
-                  Sem esse header o cron recebe erro 401 (a função exige autenticação, exceto pra chamadas de cron). Se houver uma variável <code className="bg-muted px-1 rounded">CRON_SECRET</code> configurada nas Edge Functions, use o valor dela em vez do texto padrão acima.
+                  O card de status no topo da página mostra em tempo real quando o próximo envio deve sair. Não precisa configurar nada em serviço externo — se quiser conferir o job por baixo, ele se chama <code className="bg-muted px-1 rounded">enviar-cobranca-tick</code> no pg_cron do Supabase.
                 </p>
 
                 <div className="flex items-center gap-2">
@@ -1332,16 +1310,6 @@ export function Cobranca() {
                   >
                     <Play size={13}/> Enviar agora
                   </Button>
-                  <a
-                    href="https://cron-job.org"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="ml-auto"
-                  >
-                    <Button variant="ghost" size="sm" className="gap-1.5 text-xs text-muted-foreground">
-                      <ExternalLink size={12}/> cron-job.org
-                    </Button>
-                  </a>
                 </div>
               </CardContent>
             </Card>
