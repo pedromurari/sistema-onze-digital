@@ -161,14 +161,16 @@ serve(async (req) => {
       let sendOk    = false;
       let sendError = '';
       let sentInstanceId = '';
+      let sentMessageId: string | null = null;
       let ambiguous = false;
 
       for (const inst of orderedInstances) {
         const rawBase = (inst.api_url as string).replace(/\/$/, '');
         const base    = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
         try {
+          let res: Response;
           if (camp.message_type && camp.message_type !== 'text') {
-            const res = await fetch(`${base}/message/sendMedia/${inst.instance_name}`, {
+            res = await fetch(`${base}/message/sendMedia/${inst.instance_name}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', apikey: inst.api_key },
               body: JSON.stringify({
@@ -179,12 +181,8 @@ serve(async (req) => {
                 delay:     1200,
               }),
             });
-            if (!res.ok) {
-              const txt = await res.text();
-              throw new Error(`${res.status}: ${txt.slice(0, 200)}`);
-            }
           } else {
-            const res = await fetch(`${base}/message/sendText/${inst.instance_name}`, {
+            res = await fetch(`${base}/message/sendText/${inst.instance_name}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', apikey: inst.api_key },
               body: JSON.stringify({
@@ -194,11 +192,14 @@ serve(async (req) => {
                 ...(camp.mention_everyone ? { mentionEveryone: true } : {}),
               }),
             });
-            if (!res.ok) {
-              const txt = await res.text();
-              throw new Error(`${res.status}: ${txt.slice(0, 200)}`);
-            }
           }
+          const rawText = await res.text();
+          if (!res.ok) throw new Error(`${res.status}: ${rawText.slice(0, 200)}`);
+
+          let json: any = {};
+          try { json = JSON.parse(rawText); } catch { /* resposta sem corpo json */ }
+          sentMessageId = json?.key?.id ?? json?.data?.key?.id ?? null;
+
           sendOk = true;
           sentInstanceId = inst.id;
           break;
@@ -223,7 +224,7 @@ serve(async (req) => {
 
       if (sendOk) {
         await supabase.from('disparo_leads')
-          .update({ status: 'enviado', sent_at: sentAt, error_msg: null, instance_id: sentInstanceId })
+          .update({ status: 'enviado', sent_at: sentAt, error_msg: null, instance_id: sentInstanceId, evolution_message_id: sentMessageId })
           .eq('id', lead.id);
         await supabase.from('disparo_campanhas')
           .update({ leads_sent: (camp.leads_sent ?? 0) + 1, consecutive_errors: 0, next_send_at: nextSendAt })

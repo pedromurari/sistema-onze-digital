@@ -250,6 +250,14 @@ async function handleMessagesUpdate(
       .select('id');
 
     if (updated?.length) atualizados += updated.length;
+
+    const { data: updatedDisparo } = await supabase
+      .from('disparo_leads')
+      .update(patch)
+      .eq('evolution_message_id', messageId)
+      .select('id');
+
+    if (updatedDisparo?.length) atualizados += updatedDisparo.length;
   }
 
   return ok({ ok: true, tipo: 'messages.update', atualizados });

@@ -76,6 +76,7 @@ interface DisparoLead {
   ordem: number | null;
   respondeu_em: string | null;
   ultima_resposta: string | null;
+  ack_status: 'entregue' | 'lido' | 'falhou' | null;
 }
 
 type ViewMode   = 'table' | 'kanban';
@@ -198,6 +199,20 @@ function funnelBadgeColor(name: string) {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
   return colors[hash % colors.length];
+}
+
+/**
+ * "enviado" só confirma que a Evolution API aceitou a chamada (HTTP 200) --
+ * não que o WhatsApp entregou. ack_status vem do webhook messages.update
+ * (confirmação real do WhatsApp) e só chega depois, se chegar.
+ */
+function leadStatusDisplay(status: string, ackStatus: DisparoLead['ack_status']): { label: string; className: string } {
+  if (status === 'erro') return { label: 'Erro', className: 'bg-red-50 text-red-700' };
+  if (status !== 'enviado') return { label: 'Pendente', className: 'bg-gray-100 text-gray-600' };
+  if (ackStatus === 'falhou') return { label: 'Não entregue', className: 'bg-red-50 text-red-700' };
+  if (ackStatus === 'lido') return { label: 'Lido', className: 'bg-violet-50 text-violet-700' };
+  if (ackStatus === 'entregue') return { label: 'Entregue', className: 'bg-emerald-50 text-emerald-700' };
+  return { label: 'Enviado (sem confirmação)', className: 'bg-sky-50 text-sky-700' };
 }
 
 function maskPhone(phone: string) {
@@ -1951,7 +1966,7 @@ function CampanhaDetalheView({
   const load = useCallback(async () => {
     const { data, error } = await supabase
       .from('disparo_leads')
-      .select('id, nome, phone, status, sent_at, error_msg, temperatura, ordem, respondeu_em, ultima_resposta')
+      .select('id, nome, phone, status, sent_at, error_msg, temperatura, ordem, respondeu_em, ultima_resposta, ack_status')
       .eq('campanha_id', c.id)
       .order('ordem', { ascending: true, nullsFirst: false });
     if (error) { toast.error('Erro ao carregar leads'); setLoading(false); return; }
@@ -1998,9 +2013,10 @@ function CampanhaDetalheView({
   }, [leads, search, statusFilter, sortKey, sortDir]);
 
   function exportCSV() {
-    const headers = ['Nome', 'Telefone', 'Status', 'Enviado em', 'Erro', 'Respondeu em', 'Última resposta'];
+    const headers = ['Nome', 'Telefone', 'Status', 'Confirmação WhatsApp', 'Enviado em', 'Erro', 'Respondeu em', 'Última resposta'];
     const rows = filtered.map(l => [
       `"${l.nome ?? ''}"`, l.phone, l.status,
+      l.ack_status ?? '',
       l.sent_at ? `"${fmtDatetime(l.sent_at)}"` : '',
       l.error_msg ? `"${l.error_msg.replace(/"/g, "'")}"` : '',
       l.respondeu_em ? `"${fmtDatetime(l.respondeu_em)}"` : '',
@@ -2167,11 +2183,14 @@ function CampanhaDetalheView({
                     <td className="px-3 py-2.5 font-medium text-foreground/90 max-w-[160px] truncate">{l.nome || '—'}</td>
                     <td className="px-3 py-2.5 font-mono text-xs text-muted-foreground">{maskPhone(l.phone)}</td>
                     <td className="px-3 py-2.5">
-                      <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium',
-                        l.status === 'enviado' ? 'bg-emerald-50 text-emerald-700' :
-                        l.status === 'erro'    ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-600')}>
-                        {l.status === 'enviado' ? 'Enviado' : l.status === 'erro' ? 'Erro' : 'Pendente'}
-                      </span>
+                      {(() => {
+                        const d = leadStatusDisplay(l.status, l.ack_status);
+                        return (
+                          <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium', d.className)}>
+                            {d.label}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{l.sent_at ? fmtDatetime(l.sent_at) : '—'}</td>
                     <td className="px-3 py-2.5 text-xs text-red-500 max-w-[160px] truncate" title={l.error_msg ?? undefined}>{l.error_msg ?? '—'}</td>
