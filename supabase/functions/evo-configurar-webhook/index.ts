@@ -14,9 +14,11 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  const authHeader    = req.headers.get('authorization') ?? '';
   const cronKeyHeader = req.headers.get('x-cron-key') ?? '';
   const { data: cronSecret } = await supabase.rpc('get_equipe_11ds_cron_secret');
-  if (!cronSecret || cronKeyHeader !== cronSecret) {
+  const isCron = !!cronSecret && cronKeyHeader === cronSecret;
+  if (!isCron && !authHeader.startsWith('Bearer ')) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
