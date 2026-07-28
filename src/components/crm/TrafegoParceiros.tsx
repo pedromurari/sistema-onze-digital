@@ -48,6 +48,10 @@ function slugify(s: string) {
     .replace(/(^-|-$)/g, '');
 }
 
+// Dominio proprio pros links rastreaveis (em vez do dominio feio do Vercel).
+// Precisa de um CNAME em ir.idmpsi.com.br apontando pra este projeto Vercel.
+const LINK_BASE_URL = 'https://ir.idmpsi.com.br';
+
 function StatCard({ icon: Icon, label, value, color }: { icon: React.ElementType; label: string; value: string; color: string }) {
   return (
     <div className="bg-white border border-border rounded-xl p-4 flex items-center gap-3">
@@ -192,7 +196,7 @@ export function TrafegoParceiros({ scopedParceiroId }: { scopedParceiroId?: stri
   };
 
   const copiarLink = (slug: string) => {
-    navigator.clipboard.writeText(`${window.location.origin}/ir/${slug}`);
+    navigator.clipboard.writeText(`${LINK_BASE_URL}/ir/${slug}`);
     toast.success('Link copiado!');
   };
 

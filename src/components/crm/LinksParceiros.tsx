@@ -8,6 +8,10 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { NovoProdutoDialog } from './NovoProdutoDialog';
 
+// Dominio proprio pros links rastreaveis (em vez do dominio feio do Vercel).
+// Precisa de um CNAME em ir.idmpsi.com.br apontando pra este projeto Vercel.
+const LINK_BASE_URL = 'https://ir.idmpsi.com.br';
+
 type ProdutoStatus = 'em_analise' | 'aprovado' | 'ativo' | 'pausado' | 'reprovado';
 
 type ProdutoLink = {
@@ -54,7 +58,7 @@ function LinkField({ produtoId, parceiroId, parceiraNome, produtoNome, tipo, cam
   const [saving, setSaving] = useState(false);
 
   const slug = `${produtoId.slice(0, 8)}-${tipo}`;
-  const linkRastreavel = `${window.location.origin}/ir/${slug}`;
+  const linkRastreavel = `${LINK_BASE_URL}/ir/${slug}`;
 
   const salvar = async () => {
     setSaving(true);
