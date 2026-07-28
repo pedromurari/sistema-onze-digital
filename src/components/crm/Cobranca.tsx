@@ -76,6 +76,33 @@ interface CobrancaLog {
   manual: boolean;
   created_at: string;
   aluno_id: string | null;
+  pagamento_id: string | null;
+}
+
+type EstadoDisparo =
+  | 'pausado_manual' | 'pausado_erro' | 'fim_de_semana' | 'fora_horario'
+  | 'limite_diario' | 'sem_templates' | 'sem_elegiveis' | 'aguardando_delay' | 'pronto' | 'sem_config';
+
+interface StatusDisparo {
+  estado: EstadoDisparo;
+  proximo_em_s?: number;
+  proximo_em_s_max?: number;
+  proximo_lead?: string;
+  fila_total?: number;
+  erros_seq?: number;
+}
+
+function fmtCountdown(s: number): string {
+  if (s <= 0) return 'agora';
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
+  if (h > 0) return `${h}h ${m}min`;
+  if (m > 0) return `${m}min ${sec}s`;
+  return `${sec}s`;
+}
+
+function fmtQuando(s: number): string {
+  const alvo = new Date(Date.now() + s * 1000);
+  return alvo.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
 interface FilaItem {
@@ -213,6 +240,10 @@ export function Cobranca() {
   const [biaResumo, setBiaResumo] = useState<string | null>(null);
   const [biaAtualizando, setBiaAtualizando] = useState(false);
 
+  // Status do próximo disparo automático (tique)
+  const [statusDisparo, setStatusDisparo] = useState<StatusDisparo | null>(null);
+  const [countdown, setCountdown] = useState<number | null>(null);
+
   // ── Load data ─────────────────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -304,6 +335,41 @@ export function Cobranca() {
     await loadAll();
   };
 
+  // ── Status do próximo disparo (tique) ─────────────────────────────────────
+  const carregarStatusDisparo = useCallback(async () => {
+    const { data: sess } = await supabase.auth.getSession();
+    const token = sess.session?.access_token;
+    try {
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/enviar-cobranca`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: true }),
+      });
+      const json = await res.json();
+      setStatusDisparo(json as StatusDisparo);
+      setCountdown(typeof json.proximo_em_s === 'number' ? Math.round(json.proximo_em_s) : null);
+    } catch {
+      // silencioso -- é só um indicador informativo, não impede o resto da tela
+    }
+  }, []);
+
+  useEffect(() => {
+    carregarStatusDisparo();
+    const refreshId = setInterval(carregarStatusDisparo, 30_000);
+    return () => clearInterval(refreshId);
+  }, [carregarStatusDisparo]);
+
+  useEffect(() => {
+    const tickId = setInterval(() => {
+      setCountdown(c => (c !== null && c > 0 ? c - 1 : c));
+    }, 1000);
+    return () => clearInterval(tickId);
+  }, []);
+
   // ── Schedule calculation ──────────────────────────────────────────────────
   const schedule = useMemo(() => {
     if (!cobrancaCfg || fila.length === 0) return null;
@@ -321,6 +387,17 @@ export function Cobranca() {
     inadimplentes: fila.filter(f => f.pagamento_status === 'atrasado').length,
     mesMes: fila.filter(f => f.pagamento_status === 'pendente').length,
   }), [fila]);
+
+  // Parcelas já cobradas hoje -- pra marcar na tabela da fila em vez de deixar parecer
+  // que ninguém foi tocado ainda
+  const enviadosHojeSet = useMemo(() => {
+    const hoje = new Date().toISOString().split('T')[0];
+    return new Set(
+      logs
+        .filter(l => l.status === 'enviado' && l.pagamento_id && (l.enviado_em ?? l.created_at)?.startsWith(hoje))
+        .map(l => l.pagamento_id as string),
+    );
+  }, [logs]);
 
   // ── Salvar configs ────────────────────────────────────────────────────────
   const salvarCobrancaCfg = async () => {
@@ -620,6 +697,59 @@ export function Cobranca() {
         </CardContent>
       </Card>
 
+      {/* Card: status do próximo disparo automático (tique) */}
+      {statusDisparo && !cobrancaCfg?.pausado_por_erro && (
+        <Card className="border-border/50">
+          <CardContent className="py-3 px-4">
+            <div className="flex items-center gap-3">
+              <Clock size={16} className="text-muted-foreground shrink-0" />
+              <div className="flex-1 text-sm">
+                {statusDisparo.estado === 'pausado_manual' && (
+                  <span className="text-muted-foreground">Automação desligada — ligue o toggle em Configuração para retomar os envios.</span>
+                )}
+                {statusDisparo.estado === 'fim_de_semana' && (
+                  <span className="text-muted-foreground">Pausado no fim de semana — retoma {typeof statusDisparo.proximo_em_s === 'number' && <>em <strong className="text-foreground">{fmtCountdown(statusDisparo.proximo_em_s)}</strong> ({fmtQuando(statusDisparo.proximo_em_s)})</>}</span>
+                )}
+                {statusDisparo.estado === 'fora_horario' && (
+                  <span className="text-muted-foreground">Fora do horário de envio — retoma {typeof statusDisparo.proximo_em_s === 'number' && <>em <strong className="text-foreground">{fmtCountdown(statusDisparo.proximo_em_s)}</strong> ({fmtQuando(statusDisparo.proximo_em_s)})</>}</span>
+                )}
+                {statusDisparo.estado === 'limite_diario' && (
+                  <span className="text-muted-foreground">Limite diário atingido — retoma amanhã {typeof statusDisparo.proximo_em_s === 'number' && <>em <strong className="text-foreground">{fmtCountdown(statusDisparo.proximo_em_s)}</strong> ({fmtQuando(statusDisparo.proximo_em_s)})</>}</span>
+                )}
+                {statusDisparo.estado === 'sem_templates' && (
+                  <span className="text-muted-foreground">Nenhum template ativo — nada será enviado até ativar um em Templates.</span>
+                )}
+                {statusDisparo.estado === 'sem_elegiveis' && (
+                  <span className="text-muted-foreground">Nenhum lead elegível na fila agora.</span>
+                )}
+                {statusDisparo.estado === 'aguardando_delay' && countdown !== null && (
+                  <span>
+                    Próximo envio em <strong>{fmtCountdown(countdown)}</strong>
+                    {typeof statusDisparo.proximo_em_s_max === 'number' && countdown < statusDisparo.proximo_em_s_max && (
+                      <span className="text-muted-foreground"> (janela até {fmtCountdown(statusDisparo.proximo_em_s_max)})</span>
+                    )}
+                    {statusDisparo.proximo_lead && <span className="text-muted-foreground"> — próximo: {statusDisparo.proximo_lead}</span>}
+                  </span>
+                )}
+                {statusDisparo.estado === 'pronto' && (
+                  <span>
+                    <span className="text-emerald-600 font-medium">Pronto pra enviar</span>
+                    {statusDisparo.proximo_lead && <span className="text-muted-foreground"> — próximo: {statusDisparo.proximo_lead}</span>}
+                    <span className="text-muted-foreground"> (aguardando o próximo tique do cron)</span>
+                  </span>
+                )}
+              </div>
+              {typeof statusDisparo.fila_total === 'number' && (
+                <span className="text-xs text-muted-foreground shrink-0">{statusDisparo.fila_total} na fila</span>
+              )}
+              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 shrink-0" onClick={carregarStatusDisparo} title="Atualizar status">
+                <RefreshCw size={13}/>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
@@ -709,6 +839,7 @@ export function Cobranca() {
                         <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Valor</th>
                         <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Vencimento</th>
                         <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Situação</th>
+                        <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Cobrado hoje</th>
                         {schedule && <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Hora estimada</th>}
                         <th className="px-4 py-3"/>
                       </tr>
@@ -718,6 +849,7 @@ export function Cobranca() {
                         const atraso = item.dias_offset;
                         const isSending = enviandoIds.has(item.pagamento_id);
                         const isInadimplente = item.pagamento_status === 'atrasado';
+                        const jaCobrado = enviadosHojeSet.has(item.pagamento_id);
                         return (
                           <tr key={item.pagamento_id} className="border-b hover:bg-muted/30 transition-colors">
                             <td className="px-4 py-3">
@@ -746,6 +878,11 @@ export function Cobranca() {
                                     : <Badge className="bg-orange-50 text-orange-700 border border-orange-200 text-xs">{atraso}d após</Badge>
                               }
                             </td>
+                            <td className="px-4 py-3">
+                              {jaCobrado
+                                ? <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs gap-1"><CheckCircle2 size={10}/>Já cobrado</Badge>
+                                : <span className="text-muted-foreground text-xs">—</span>}
+                            </td>
                             {schedule && (
                               <td className="px-4 py-3 text-muted-foreground font-mono text-xs">
                                 {schedule.slots[idx]}
@@ -760,7 +897,7 @@ export function Cobranca() {
                                 onClick={() => abrirSendModal(item)}
                               >
                                 {isSending ? <RefreshCw size={12} className="animate-spin"/> : <Send size={12}/>}
-                                Enviar
+                                {jaCobrado ? 'Reenviar' : 'Enviar'}
                               </Button>
                             </td>
                           </tr>
