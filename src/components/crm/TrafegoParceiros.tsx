@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { format, subDays, startOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Loader2, Plus, Copy, Link2, MousePointerClick, ShoppingCart, DollarSign, Power } from 'lucide-react';
+import { Loader2, Plus, Copy, Link2, MousePointerClick, ShoppingCart, DollarSign, Power, Clock } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -77,6 +77,7 @@ export function TrafegoParceiros({ scopedParceiroId }: { scopedParceiroId?: stri
   const [cliquesPorLink, setCliquesPorLink] = useState<Record<string, number>>({});
   const [cliquesPorDia, setCliquesPorDia] = useState<{ dia: string; cliques: number }[]>([]);
   const [vendasResumo, setVendasResumo] = useState<VendaResumo[]>([]);
+  const [pendentesCount, setPendentesCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ parceiro_id: scopedParceiroId || '', produto_id: '', titulo: '', destino_url: '' });
@@ -140,13 +141,16 @@ export function TrafegoParceiros({ scopedParceiroId }: { scopedParceiroId?: stri
     if (parceiraAtual) vendasQuery = vendasQuery.eq('parceiros_produtos.parceiro_id', parceiraAtual);
     const { data: vendasData } = await vendasQuery;
     const resumo: Record<string, VendaResumo> = {};
+    let pendentes = 0;
     ((vendasData as any) || []).forEach((v: any) => {
       const key = v.produto_id;
       if (!resumo[key]) resumo[key] = { produto_id: key, produto_nome: v.parceiros_produtos?.nome ?? 'Produto', vendas: 0, receita: 0 };
       resumo[key].vendas += 1;
       if (v.status === 'aprovado') resumo[key].receita += Number(v.valor_bruto || 0);
+      if (v.status === 'pendente') pendentes += 1;
     });
     setVendasResumo(Object.values(resumo));
+    setPendentesCount(pendentes);
 
     setLoading(false);
   }, [parceiraAtual]);
@@ -218,9 +222,10 @@ export function TrafegoParceiros({ scopedParceiroId }: { scopedParceiroId?: stri
         Os cliques abaixo são dos <strong>nossos links de divulgação</strong> (aba de baixo). Vendas de checkout hospedado (SyncPay) não repassam quem clicou em qual link — por isso cliques e vendas aparecem como funil aproximado, não 1-para-1 por visitante.
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <StatCard icon={MousePointerClick} label="Cliques (14 dias)" value={totalCliques.toLocaleString('pt-BR')} color="bg-blue-50 text-blue-600" />
         <StatCard icon={ShoppingCart} label="Vendas" value={String(totalVendas)} color="bg-violet-50 text-violet-600" />
+        <StatCard icon={Clock} label="Não pagas" value={String(pendentesCount)} color="bg-amber-50 text-amber-600" />
         <StatCard icon={DollarSign} label="Receita aprovada" value={totalReceita.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} color="bg-emerald-50 text-emerald-600" />
         <StatCard icon={Link2} label="Links ativos" value={String(links.filter(l => l.ativo).length)} color="bg-amber-50 text-amber-600" />
       </div>
