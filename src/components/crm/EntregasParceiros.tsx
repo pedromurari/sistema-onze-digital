@@ -124,6 +124,11 @@ export function EntregasParceiros({ scopedParceiroId }: { scopedParceiroId?: str
     query.then(({ data }) => setProdutos((data as any) || []));
   }, [scopedParceiroId]);
 
+  const abrirNovoDialog = () => {
+    setForm(f => ({ ...f, parceiro_id: scopedParceiroId || f.parceiro_id }));
+    setNovoDialog(true);
+  };
+
   const criarEntrega = async () => {
     if (!form.parceiro_id || !form.titulo.trim()) { toast.error('Selecione a parceira e informe um título.'); return; }
     setSaving(true);
@@ -154,11 +159,9 @@ export function EntregasParceiros({ scopedParceiroId }: { scopedParceiroId?: str
 
   return (
     <div className="space-y-4">
-      {admin && (
-        <div className="flex justify-end">
-          <Button onClick={() => setNovoDialog(true)}><Plus className="h-4 w-4 mr-1" /> Novo pedido de gravação</Button>
-        </div>
-      )}
+      <div className="flex justify-end">
+        <Button onClick={abrirNovoDialog}><Plus className="h-4 w-4 mr-1" /> Nova atividade</Button>
+      </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
@@ -196,11 +199,13 @@ export function EntregasParceiros({ scopedParceiroId }: { scopedParceiroId?: str
             <DialogDescription>Entra automaticamente na coluna "Conteúdo novo".</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <Select value={form.parceiro_id} onValueChange={v => setForm(f => ({ ...f, parceiro_id: v, produto_id: '' }))}>
-                <SelectTrigger className="h-9"><SelectValue placeholder="Parceira" /></SelectTrigger>
-                <SelectContent>{parceiros.map(p => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}</SelectContent>
-              </Select>
+            <div className={cn('grid gap-3', admin ? 'grid-cols-2' : 'grid-cols-1')}>
+              {admin && (
+                <Select value={form.parceiro_id} onValueChange={v => setForm(f => ({ ...f, parceiro_id: v, produto_id: '' }))}>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="Parceira" /></SelectTrigger>
+                  <SelectContent>{parceiros.map(p => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}</SelectContent>
+                </Select>
+              )}
               <Select value={form.produto_id || 'none'} onValueChange={v => setForm(f => ({ ...f, produto_id: v === 'none' ? '' : v }))}>
                 <SelectTrigger className="h-9"><SelectValue placeholder="Produto (opcional)" /></SelectTrigger>
                 <SelectContent>
@@ -330,15 +335,13 @@ function DetalheEntrega({ entrega, admin, onMover }: { entrega: Entrega; admin: 
         )}
       </div>
 
-      {admin && (
-        <div className="flex items-center gap-2">
-          <Label className="text-xs text-muted-foreground">Status:</Label>
-          <Select value={entrega.status} onValueChange={(v) => onMover(entrega, v as EntregaStatus)}>
-            <SelectTrigger className="h-8 w-[180px] text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>{COLUNAS.map(c => <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-      )}
+      <div className="flex items-center gap-2">
+        <Label className="text-xs text-muted-foreground">Status:</Label>
+        <Select value={entrega.status} onValueChange={(v) => onMover(entrega, v as EntregaStatus)}>
+          <SelectTrigger className="h-8 w-[180px] text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>{COLUNAS.map(c => <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
 
       {entrega.roteiro && (
         <div className="bg-muted/30 rounded-lg p-3 space-y-1">

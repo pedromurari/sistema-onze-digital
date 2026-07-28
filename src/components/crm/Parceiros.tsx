@@ -66,14 +66,6 @@ type Produto = {
   syncpay_checkout_url: string | null;
 };
 
-function conectarMercadoPago(parceiraId: string) {
-  const clientId = import.meta.env.VITE_MP_CLIENT_ID;
-  if (!clientId) { toast.error('Conexão com Mercado Pago ainda não configurada.'); return; }
-  const redirectUri = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mp-oauth-callback`;
-  const url = `https://auth.mercadopago.com.br/authorization?client_id=${clientId}&response_type=code&platform_id=mp&state=${parceiraId}&redirect_uri=${encodeURIComponent(redirectUri)}`;
-  window.location.href = url;
-}
-
 const STATUS_CONFIG: Record<ProdutoStatus, { label: string; className: string }> = {
   em_analise: { label: 'Em análise', className: 'bg-amber-100 text-amber-700 border-amber-200' },
   aprovado:   { label: 'Aprovado',   className: 'bg-blue-100 text-blue-700 border-blue-200' },
@@ -676,13 +668,6 @@ function ParceirosTab() {
               ) : (
                 <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => abrirDialogAcesso(p)}>
                   <KeyRound className="h-3.5 w-3.5 mr-1" /> Criar acesso
-                </Button>
-              )}
-              {p.mp_connected_at ? (
-                <Badge variant="outline" className="bg-emerald-100 text-emerald-700 border-emerald-200">Mercado Pago conectado</Badge>
-              ) : (
-                <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => conectarMercadoPago(p.id)}>
-                  Conectar Mercado Pago
                 </Button>
               )}
             </div>
