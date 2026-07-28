@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { LancamentoWizard } from '@/components/crm/LancamentoWizard';
 import { EvolutionTaskPanel } from './EvolutionTaskPanel';
+import { LeadsQuadros, type LeadsFiltro } from './leads/LeadsQuadros';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
@@ -296,6 +297,10 @@ interface LeadUnificado {
   fase: string | null;
   temperatura: 'quente' | 'morno' | 'frio';
   bv_enviado: boolean;
+  produto: string | null;
+  ddd: number | null;
+  cidade: string | null;
+  estado: string | null;
   criado_em: string;
 }
 
@@ -308,7 +313,12 @@ function LeadsTab() {
   const [origemFiltro, setOrigemFiltro]       = useState<Set<string>>(new Set());
   const [faseFiltro, setFaseFiltro]           = useState<Set<string>>(new Set());
   const [tempFiltro, setTempFiltro]           = useState<Set<'quente' | 'morno' | 'frio'>>(new Set());
-  const [fasesDisponiveis, setFasesDisponiveis] = useState<string[]>([]);
+  const [produtoFiltro, setProdutoFiltro]     = useState<Set<string>>(new Set());
+  const [dddFiltro, setDddFiltro]             = useState<Set<number>>(new Set());
+  const [fasesDisponiveis, setFasesDisponiveis]     = useState<string[]>([]);
+  const [produtosDisponiveis, setProdutosDisponiveis] = useState<string[]>([]);
+  const [dddsDisponiveis, setDddsDisponiveis] = useState<{ ddd: number; cidade: string; estado: string }[]>([]);
+  const [mainView, setMainView]       = useState<'tabela' | 'quadros'>('tabela');
   const [page, setPage]               = useState(0);
   const [rows, setRows]               = useState<LeadUnificado[]>([]);
   const [total, setTotal]             = useState(0);
@@ -320,7 +330,7 @@ function LeadsTab() {
     return () => clearTimeout(t);
   }, [search]);
 
-  useEffect(() => { setPage(0); }, [searchDebounced, origemFiltro, faseFiltro, tempFiltro]);
+  useEffect(() => { setPage(0); }, [searchDebounced, origemFiltro, faseFiltro, tempFiltro, produtoFiltro, dddFiltro]);
 
   function applyFilters(query: any) {
     let q = query;
@@ -328,8 +338,19 @@ function LeadsTab() {
     if (origemFiltro.size) q = q.in('origem_tabela', [...origemFiltro]);
     if (faseFiltro.size) q = q.in('fase', [...faseFiltro]);
     if (tempFiltro.size) q = q.in('temperatura', [...tempFiltro]);
+    if (produtoFiltro.size) q = q.in('produto', [...produtoFiltro]);
+    if (dddFiltro.size) q = q.in('ddd', [...dddFiltro]);
     return q;
   }
+
+  const filtroAtual: LeadsFiltro = useMemo(() => ({
+    search: searchDebounced,
+    origem: [...origemFiltro],
+    fase: [...faseFiltro],
+    temperatura: [...tempFiltro],
+    produto: [...produtoFiltro],
+    ddd: [...dddFiltro],
+  }), [searchDebounced, origemFiltro, faseFiltro, tempFiltro, produtoFiltro, dddFiltro]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -343,18 +364,32 @@ function LeadsTab() {
     setTotal(count ?? 0);
     setLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, searchDebounced, origemFiltro, faseFiltro, tempFiltro]);
+  }, [page, searchDebounced, origemFiltro, faseFiltro, tempFiltro, produtoFiltro, dddFiltro]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (mainView === 'tabela') load(); }, [load, mainView]);
 
-  // Fases disponíveis dependem da origem selecionada (vocabulário difere por fonte)
+  // Fases e produtos disponíveis dependem da origem selecionada (vocabulário difere por fonte)
   useEffect(() => {
     (async () => {
-      let q = supabase.from('leads_unificados' as any).select('fase');
+      let q = supabase.from('leads_unificados' as any).select('fase, produto');
       if (origemFiltro.size) q = q.in('origem_tabela', [...origemFiltro]);
       const { data } = await q.limit(5000);
-      const set = new Set((data ?? []).map((r: any) => r.fase).filter(Boolean));
-      setFasesDisponiveis([...set].sort());
+      const fases = new Set((data ?? []).map((r: any) => r.fase).filter(Boolean));
+      const produtos = new Set((data ?? []).map((r: any) => r.produto).filter(Boolean));
+      setFasesDisponiveis([...fases].sort());
+      setProdutosDisponiveis([...produtos].sort());
+    })();
+  }, [origemFiltro]);
+
+  // DDDs disponíveis (com cidade/estado) — respeita origem selecionada
+  useEffect(() => {
+    (async () => {
+      let q = supabase.from('leads_unificados' as any).select('ddd, cidade, estado').not('ddd', 'is', null);
+      if (origemFiltro.size) q = q.in('origem_tabela', [...origemFiltro]);
+      const { data } = await q.limit(5000);
+      const map = new Map<number, { ddd: number; cidade: string; estado: string }>();
+      for (const r of (data ?? []) as any[]) if (!map.has(r.ddd)) map.set(r.ddd, r);
+      setDddsDisponiveis([...map.values()].sort((a, b) => a.ddd - b.ddd));
     })();
   }, [origemFiltro]);
 
@@ -381,10 +416,11 @@ function LeadsTab() {
     setExporting(false);
     if (!all.length) { toast.error('Nenhum lead pra exportar com esses filtros'); return; }
 
-    const headers = ['Nome', 'Whatsapp', 'Email', 'Origem', 'Fase', 'Temperatura', 'Boas-vindas'];
+    const headers = ['Nome', 'Whatsapp', 'Email', 'Origem', 'Produto', 'Fase', 'Temperatura', 'DDD', 'Cidade', 'Estado', 'Boas-vindas'];
     const csvRows = all.map(r => [
       `"${(r.nome ?? '').replace(/"/g, "'")}"`, r.telefone ?? '', r.email ?? '',
-      `"${r.origem}"`, `"${r.fase ?? ''}"`, r.temperatura, r.bv_enviado ? 'sim' : 'não',
+      `"${r.origem}"`, `"${r.produto ?? ''}"`, `"${r.fase ?? ''}"`, r.temperatura,
+      r.ddd ?? '', `"${r.cidade ?? ''}"`, r.estado ?? '', r.bv_enviado ? 'sim' : 'não',
     ]);
     const csv = [headers, ...csvRows].map(row => row.join(',')).join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
@@ -429,9 +465,19 @@ function LeadsTab() {
           })}
         </div>
 
+        {produtosDisponiveis.length > 0 && (
+          <select
+            value=""
+            onChange={e => { if (e.target.value) toggleSet(produtoFiltro, setProdutoFiltro, e.target.value); }}
+            className="h-8 px-2 rounded-md border border-border text-xs bg-background"
+          >
+            <option value="">+ Filtrar por produto…</option>
+            {produtosDisponiveis.filter(p => !produtoFiltro.has(p)).map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+        )}
+
         {fasesDisponiveis.length > 0 && (
           <select
-            multiple={false}
             value=""
             onChange={e => { if (e.target.value) toggleSet(faseFiltro, setFaseFiltro, e.target.value); }}
             className="h-8 px-2 rounded-md border border-border text-xs bg-background"
@@ -441,19 +487,65 @@ function LeadsTab() {
           </select>
         )}
 
+        {dddsDisponiveis.length > 0 && (
+          <select
+            value=""
+            onChange={e => { if (e.target.value) toggleSet(dddFiltro, setDddFiltro, Number(e.target.value)); }}
+            className="h-8 px-2 rounded-md border border-border text-xs bg-background"
+          >
+            <option value="">+ Filtrar por DDD/cidade…</option>
+            {dddsDisponiveis.filter(d => !dddFiltro.has(d.ddd)).map(d => (
+              <option key={d.ddd} value={d.ddd}>{d.ddd} — {d.cidade}/{d.estado}</option>
+            ))}
+          </select>
+        )}
+
+        {[...produtoFiltro].map(p => (
+          <span key={`p-${p}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-violet-100 text-violet-700">
+            {p}
+            <button onClick={() => toggleSet(produtoFiltro, setProdutoFiltro, p)}><X className="h-3 w-3" /></button>
+          </span>
+        ))}
+
         {[...faseFiltro].map(f => (
-          <span key={f} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-primary/10 text-primary">
+          <span key={`f-${f}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-primary/10 text-primary">
             {f}
             <button onClick={() => toggleSet(faseFiltro, setFaseFiltro, f)}><X className="h-3 w-3" /></button>
           </span>
         ))}
 
-        <Button variant="outline" size="sm" onClick={exportarCSV} disabled={exporting} className="ml-auto gap-1.5">
-          {exporting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-          {exporting ? 'Exportando…' : `Exportar CSV (${total})`}
-        </Button>
+        {[...dddFiltro].map(d => {
+          const info = dddsDisponiveis.find(x => x.ddd === d);
+          return (
+            <span key={`d-${d}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-sky-100 text-sky-700">
+              {d}{info ? ` — ${info.cidade}` : ''}
+              <button onClick={() => toggleSet(dddFiltro, setDddFiltro, d)}><X className="h-3 w-3" /></button>
+            </span>
+          );
+        })}
+
+        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 ml-auto">
+          {(['tabela', 'quadros'] as const).map(v => (
+            <button key={v} onClick={() => setMainView(v)}
+              className={cn('flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all',
+                mainView === v ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+              {v === 'tabela' ? <><TableIcon className="h-3.5 w-3.5" /> Planilha</> : <><Kanban className="h-3.5 w-3.5" /> Quadros</>}
+            </button>
+          ))}
+        </div>
+
+        {mainView === 'tabela' && (
+          <Button variant="outline" size="sm" onClick={exportarCSV} disabled={exporting} className="gap-1.5">
+            {exporting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            {exporting ? 'Exportando…' : `Exportar CSV (${total})`}
+          </Button>
+        )}
       </div>
 
+      {mainView === 'quadros' ? (
+        <LeadsQuadros filtroAtual={filtroAtual} />
+      ) : (
+      <>
       <div className="border rounded-lg overflow-hidden bg-white">
         {loading ? (
           <div className="flex items-center justify-center h-40">
@@ -471,8 +563,10 @@ function LeadsTab() {
                 <th className="text-left px-3 py-2 font-medium text-muted-foreground">Nome</th>
                 <th className="text-left px-3 py-2 font-medium text-muted-foreground">Telefone</th>
                 <th className="text-left px-3 py-2 font-medium text-muted-foreground">Origem</th>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Produto</th>
                 <th className="text-left px-3 py-2 font-medium text-muted-foreground">Fase</th>
                 <th className="text-left px-3 py-2 font-medium text-muted-foreground">Temp.</th>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground">DDD/Cidade</th>
                 <th className="text-left px-3 py-2 font-medium text-muted-foreground">Boas-vindas</th>
               </tr>
             </thead>
@@ -484,11 +578,15 @@ function LeadsTab() {
                     <td className="px-3 py-1.5 font-medium truncate max-w-[180px]">{r.nome || '—'}</td>
                     <td className="px-3 py-1.5 font-mono text-muted-foreground">{r.telefone ? maskPhone(r.telefone) : '—'}</td>
                     <td className="px-3 py-1.5 text-muted-foreground truncate max-w-[220px]">{r.origem}</td>
+                    <td className="px-3 py-1.5 text-muted-foreground truncate max-w-[140px]">{r.produto || '—'}</td>
                     <td className="px-3 py-1.5 text-muted-foreground truncate max-w-[140px]">{r.fase || '—'}</td>
                     <td className="px-3 py-1.5">
                       <span className={cn('inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium', cfg.bg, cfg.color)}>
                         <cfg.icon className="h-2.5 w-2.5" />{cfg.label}
                       </span>
+                    </td>
+                    <td className="px-3 py-1.5 text-muted-foreground truncate max-w-[160px]">
+                      {r.ddd ? `${r.ddd} — ${r.cidade}/${r.estado}` : '—'}
                     </td>
                     <td className="px-3 py-1.5">
                       {r.bv_enviado
@@ -511,6 +609,8 @@ function LeadsTab() {
             <Button size="sm" variant="outline" className="h-7 text-xs" disabled={page + 1 >= totalPages} onClick={() => setPage(p => p + 1)}>Próxima</Button>
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );
