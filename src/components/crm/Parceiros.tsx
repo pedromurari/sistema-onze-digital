@@ -518,7 +518,7 @@ function ProdutosTab() {
             </div>
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">Link de checkout (SyncPay)</Label>
-              <Input placeholder="https://syncpay.link/..." value={syncForm.syncpay_checkout_url} onChange={e => setSyncForm(f => ({ ...f, syncpay_checkout_url: e.target.value }))} />
+              <Input placeholder="https://link.syncpayments.com.br/..." value={syncForm.syncpay_checkout_url} onChange={e => setSyncForm(f => ({ ...f, syncpay_checkout_url: e.target.value }))} />
             </div>
             {syncDialog && (
               <p className="text-[11px] text-muted-foreground bg-muted/50 rounded-lg p-2 break-all">

@@ -162,12 +162,21 @@ export function TrafegoParceiros({ scopedParceiroId }: { scopedParceiroId?: stri
     const slug = `${base}-${Math.random().toString(36).slice(2, 6)}`;
 
     setSaving(true);
+    const { data: parceiraRow } = await supabase.from('parceiros' as any).select('nome').eq('id', form.parceiro_id).maybeSingle();
+    const parceiraNome = (parceiraRow as any)?.nome ?? null;
+    let produtoNome: string | null = null;
+    if (form.produto_id) {
+      const { data: produtoRow } = await supabase.from('parceiros_produtos' as any).select('nome').eq('id', form.produto_id).maybeSingle();
+      produtoNome = (produtoRow as any)?.nome ?? null;
+    }
     const { error } = await (supabase.from('parceiros_links' as any) as any).insert({
       parceiro_id: form.parceiro_id,
       produto_id: form.produto_id || null,
       titulo: form.titulo.trim(),
       destino_url: form.destino_url.trim(),
       slug,
+      parceira_nome: parceiraNome,
+      produto_nome: produtoNome,
     });
     setSaving(false);
     if (error) { toast.error(`Erro ao criar link: ${error.message}`); return; }

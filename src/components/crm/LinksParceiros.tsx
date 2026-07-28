@@ -38,9 +38,10 @@ const TIPO_LABEL: Record<'vendas' | 'checkout', string> = {
   checkout: 'Checkout (Sync Pay)',
 };
 
-function LinkField({ produtoId, parceiroId, produtoNome, tipo, campo, placeholder, valorAtual, editable, onSaved }: {
+function LinkField({ produtoId, parceiroId, parceiraNome, produtoNome, tipo, campo, placeholder, valorAtual, editable, onSaved }: {
   produtoId: string;
   parceiroId: string;
+  parceiraNome: string;
   produtoNome: string;
   tipo: 'vendas' | 'checkout';
   campo: 'checkout_link_syncpay' | 'pagina_vendas_url';
@@ -73,6 +74,8 @@ function LinkField({ produtoId, parceiroId, produtoNome, tipo, campo, placeholde
           titulo: `${TIPO_LABEL[tipo]} — ${produtoNome}`,
           destino_url: destino,
           ativo: true,
+          parceira_nome: parceiraNome,
+          produto_nome: produtoNome,
         }, { onConflict: 'slug' });
       if (linkError) { toast.error(`Link salvo, mas o rastreamento falhou: ${linkError.message}`); setSaving(false); return; }
     } else {
@@ -136,6 +139,7 @@ function LinkRow({ produto, editable, onSaved }: { produto: ProdutoLink; editabl
       <LinkField
         produtoId={produto.id}
         parceiroId={produto.parceiro_id}
+        parceiraNome={produto.parceiros?.nome ?? ''}
         produtoNome={produto.nome}
         tipo="vendas"
         campo="pagina_vendas_url"
@@ -148,6 +152,7 @@ function LinkRow({ produto, editable, onSaved }: { produto: ProdutoLink; editabl
       <LinkField
         produtoId={produto.id}
         parceiroId={produto.parceiro_id}
+        parceiraNome={produto.parceiros?.nome ?? ''}
         produtoNome={produto.nome}
         tipo="checkout"
         campo="checkout_link_syncpay"
