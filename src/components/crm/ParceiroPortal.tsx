@@ -109,6 +109,7 @@ type MeuCupom = {
   id: string;
   codigo: string;
   comissao_pct: number | null;
+  desconto_pct: number | null;
   ativo: boolean;
   produto_id: string;
   parceiros_produtos: { nome: string; parceiros: { nome: string } | null } | null;
@@ -121,7 +122,7 @@ function MeusCupons({ parceiraId }: { parceiraId: string }) {
   useEffect(() => {
     supabase
       .from('parceiros_cupons' as any)
-      .select('id, codigo, comissao_pct, ativo, produto_id, parceiros_produtos(nome, parceiros(nome))')
+      .select('id, codigo, comissao_pct, desconto_pct, ativo, produto_id, parceiros_produtos(nome, parceiros(nome))')
       .eq('parceiro_afiliado_id', parceiraId)
       .order('codigo')
       .then(({ data }) => { setCupons((data as any) || []); setLoading(false); });
@@ -139,12 +140,16 @@ function MeusCupons({ parceiraId }: { parceiraId: string }) {
             <p className="text-sm font-mono font-semibold text-foreground">{c.codigo}</p>
             <p className="text-xs text-muted-foreground truncate">
               {c.parceiros_produtos?.nome} ({c.parceiros_produtos?.parceiros?.nome})
+              {c.desconto_pct != null && ` · ${c.desconto_pct}% de desconto`}
               {c.comissao_pct != null && ` · sua comissão: ${c.comissao_pct}%`}
             </p>
           </div>
           <Badge variant="outline" className={cn(c.ativo ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-gray-100 text-gray-600 border-gray-200')}>
             {c.ativo ? 'Ativo' : 'Inativo'}
           </Badge>
+          <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => copiarLink(c.codigo)}>
+            <Copy className="h-3.5 w-3.5" /> Copiar código
+          </Button>
           <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => copiarLink(linkCheckout(c.produto_id))}>
             <Copy className="h-3.5 w-3.5" /> Copiar link
           </Button>
