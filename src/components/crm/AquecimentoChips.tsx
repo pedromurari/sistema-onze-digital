@@ -71,6 +71,8 @@ interface AquecimentoConfig {
   pct_dm: number;
   delay_min_s: number;
   delay_max_s: number;
+  msgs_por_sessao_min: number;
+  msgs_por_sessao_max: number;
   safe_hour_start: number;
   safe_hour_end: number;
   max_errors_seq: number;
@@ -649,7 +651,8 @@ function ConfigTab() {
       </div>
 
       <div className="border rounded-lg bg-white p-4">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Curva de rampa (mensagens/dia por estágio)</p>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Curva de rampa (sessões de conversa/dia por estágio)</p>
+        <p className="text-xs text-muted-foreground mb-3">Cada sessão é uma troca de várias mensagens seguidas (não 1 mensagem isolada) — o total de mensagens do dia é sessões × mensagens por sessão, configurado abaixo.</p>
         <div className="space-y-2">
           {cfg.rampa.map((e, idx) => (
             <div key={idx} className="flex items-center gap-2">
@@ -677,10 +680,12 @@ function ConfigTab() {
       </div>
 
       <div className="border rounded-lg bg-white p-4 grid grid-cols-2 gap-3">
-        <ConfigNumberField label="% do volume em DM (resto vai pra grupo)" value={cfg.pct_dm} onChange={v => set('pct_dm', v)} />
+        <ConfigNumberField label="% das sessões em DM (resto vai pra grupo)" value={cfg.pct_dm} onChange={v => set('pct_dm', v)} />
         <ConfigNumberField label="Erros seguidos até pausar chip" value={cfg.max_errors_seq} onChange={v => set('max_errors_seq', v)} />
-        <ConfigNumberField label="Delay mínimo entre envios (s)" value={cfg.delay_min_s} onChange={v => set('delay_min_s', v)} />
-        <ConfigNumberField label="Delay máximo entre envios (s)" value={cfg.delay_max_s} onChange={v => set('delay_max_s', v)} />
+        <ConfigNumberField label="Mensagens por sessão — mínimo" value={cfg.msgs_por_sessao_min} onChange={v => set('msgs_por_sessao_min', v)} />
+        <ConfigNumberField label="Mensagens por sessão — máximo" value={cfg.msgs_por_sessao_max} onChange={v => set('msgs_por_sessao_max', v)} />
+        <ConfigNumberField label="Intervalo entre mensagens da conversa — mín (s)" value={cfg.delay_min_s} onChange={v => set('delay_min_s', v)} />
+        <ConfigNumberField label="Intervalo entre mensagens da conversa — máx (s)" value={cfg.delay_max_s} onChange={v => set('delay_max_s', v)} />
         <ConfigNumberField label="Horário seguro — início" value={cfg.safe_hour_start} onChange={v => set('safe_hour_start', v)} />
         <ConfigNumberField label="Horário seguro — fim" value={cfg.safe_hour_end} onChange={v => set('safe_hour_end', v)} />
       </div>
@@ -727,8 +732,16 @@ function MonitorTab() {
   async function rodarAgora() {
     setRodando(true);
     try {
-      await supabase.functions.invoke('aquecimento-planejar-dia', { body: {} });
-      await supabase.functions.invoke('aquecimento-worker', { body: {} });
+      // Sequencial de propósito: o worker precisa que o planejamento já tenha
+      // criado os jobs do dia antes de tentar enviar algo.
+      const planejar = await supabase.functions.invoke('aquecimento-planejar-dia', { body: {} });
+      const erroPlanejar = planejar.error || (planejar.data as any)?.error;
+      if (erroPlanejar) throw new Error(typeof erroPlanejar === 'string' ? erroPlanejar : erroPlanejar.message ?? JSON.stringify(erroPlanejar));
+
+      const worker = await supabase.functions.invoke('aquecimento-worker', { body: {} });
+      const erroWorker = worker.error || (worker.data as any)?.error;
+      if (erroWorker) throw new Error(typeof erroWorker === 'string' ? erroWorker : erroWorker.message ?? JSON.stringify(erroWorker));
+
       toast.success('Planejamento e envio disparados manualmente');
     } catch (e) {
       toast.error('Erro ao rodar: ' + (e as Error).message);

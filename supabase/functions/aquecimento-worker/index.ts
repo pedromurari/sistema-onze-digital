@@ -24,7 +24,11 @@ function baseUrl(rawApiUrl: string): string {
   return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
 }
 
-const BATCH_SIZE = 8;
+// Lote pequeno de propósito: o espaçamento "humano" entre mensagens já vem
+// dos horários planejados (aquecimento-planejar-dia gera sessões com
+// intervalo realista) + do cron rodando a cada 1 min. Este batch é só uma
+// rede de segurança pra atraso/reprocessamento, não o mecanismo de espaçamento.
+const BATCH_SIZE = 3;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
@@ -34,9 +38,12 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
+  // Auth: Bearer JWT (UI, botão "Rodar agora") ou x-cron-key (pg_cron) -- mesmo padrão de funil-processar
+  const authHeader    = req.headers.get('authorization') ?? '';
   const cronKeyHeader = req.headers.get('x-cron-key') ?? '';
   const { data: cronSecret } = await supabase.rpc('get_equipe_11ds_cron_secret');
-  if (!cronSecret || cronKeyHeader !== cronSecret) {
+  const isCron = !!cronSecret && cronKeyHeader === cronSecret;
+  if (!isCron && !authHeader.startsWith('Bearer ')) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401, headers: { ...cors, 'Content-Type': 'application/json' },
     });
@@ -45,12 +52,10 @@ serve(async (req) => {
   try {
     const { data: cfg } = await supabase
       .from('aquecimento_config')
-      .select('delay_min_s, delay_max_s, max_errors_seq')
+      .select('max_errors_seq')
       .eq('id', 'default')
       .maybeSingle();
 
-    const delayMinS   = cfg?.delay_min_s   ?? 5;
-    const delayMaxS   = cfg?.delay_max_s   ?? 15;
     const maxErrorSeq = cfg?.max_errors_seq ?? 5;
 
     const { data: dueJobs, error: dueErr } = await supabase
@@ -80,9 +85,12 @@ serve(async (req) => {
       const result = await processarJob(supabase, claimed[0], maxErrorSeq);
       results.push(result);
 
-      // Delay anti-ban entre envios do mesmo tick
-      const delaySec = delayMinS + Math.random() * (delayMaxS - delayMinS);
-      await new Promise(r => setTimeout(r, delaySec * 1000));
+      // Jitter anti-flood curto entre envios do MESMO tick -- não é o
+      // espaçamento "de conversa" (esse já vem dos horários planejados),
+      // só evita duas chamadas HTTP em sequência imediata quando mais de
+      // um job vence ao mesmo tempo.
+      const jitterSec = 2 + Math.random() * 3;
+      await new Promise(r => setTimeout(r, jitterSec * 1000));
     }
 
     return ok({ ok: true, processed: results.length, results });

@@ -118,7 +118,7 @@ function WebhookRespostasCard({ instances }: { instances: EvolutionInstance[] })
       enabled: true,
       url: EVO_RESPOSTA_URL,
       webhookByEvents: false,
-      events: ['MESSAGES_UPSERT'],
+      events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE'],
     };
 
     // Tenta v2 (PUT /webhook/{instance}) primeiro, depois v1 (POST /webhook/set/{instance})
@@ -193,7 +193,7 @@ function WebhookRespostasCard({ instances }: { instances: EvolutionInstance[] })
           </button>
         </div>
         <p className="text-xs text-muted-foreground">
-          Evento a registrar: <code className="bg-muted px-1 py-0.5 rounded">MESSAGES_UPSERT</code>
+          Eventos registrados: <code className="bg-muted px-1 py-0.5 rounded">MESSAGES_UPSERT</code>, <code className="bg-muted px-1 py-0.5 rounded">MESSAGES_UPDATE</code>, <code className="bg-muted px-1 py-0.5 rounded">CONNECTION_UPDATE</code>
         </p>
       </div>
 
@@ -245,6 +245,7 @@ function WebhookRespostasCard({ instances }: { instances: EvolutionInstance[] })
           <li>Mensagens enviadas por você e mensagens de grupo são <strong>ignoradas</strong></li>
           <li>Só processa se o telefone estiver em algum lançamento da planilha</li>
           <li>A resposta fica salva em <code className="bg-sky-100 px-0.5 rounded">lead_respostas</code> e aparece no card do lead</li>
+          <li>ACK de entrega/leitura e mudanças de conexão alimentam a aba Aquecimento de Chips → Métricas</li>
         </ul>
       </div>
     </Card>

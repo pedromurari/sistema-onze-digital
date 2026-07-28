@@ -67,6 +67,23 @@ function toMinutes(hhmm: string): number {
   return (h || 0) * 60 + (m || 0);
 }
 
+function toHM(hhmm: string): [number, number] {
+  const [h, m] = hhmm.split(":").map(Number);
+  return [h || 0, m || 0];
+}
+
+// Constrói um instante absoluto correspondente a HH:MM no fuso de São Paulo (fixo -03:00,
+// sem DST) num dia específico (dateStr = "YYYY-MM-DD" já em data local de São Paulo).
+function saoPauloDateAt(dateStr: string, hh: number, mm: number): Date {
+  return new Date(`${dateStr}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00-03:00`);
+}
+
+function addDaysStr(dateStr: string, days: number): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 async function getAllActiveInstances(db: any): Promise<EvoInstance[]> {
   const { data } = await db
     .from("evolution_config")
@@ -202,6 +219,10 @@ serve(async (req) => {
     return await processarTick(db, corsHeaders);
   }
 
+  if (body.status) {
+    return await statusTick(db, corsHeaders);
+  }
+
   if (body.bulk) {
     return await processarFilaAutomatica(db, userId, corsHeaders);
   }
@@ -303,7 +324,12 @@ async function enviarManual(db: any, evoInstances: EvoInstance[], body: any, use
 }
 
 // Determina, pra um item da fila, se existe template configurado pro offset dele e se
-// ainda não foi enviado hoje — mesma regra usada tanto no lote manual quanto no tique.
+// aquela fase ainda não foi enviada -- mesma regra usada tanto no lote manual quanto no
+// tique. pos_vencimento casa por FAIXA de dias (fase), não dia exato: 1-3, 4-7, 8-15,
+// 16+ (aberta), pra ninguém ficar em limbo sem nunca bater um dia fixo configurado --
+// isso também resolve sozinho o backlog de quem acumulou atraso enquanto a cobrança
+// esteve parada. pre_vencimento/vencimento continuam por dia exato (evento de data
+// futura conhecida, sem acúmulo possível).
 async function proximoEnvioElegivel(
   db: any,
   fila: any[],
@@ -319,16 +345,21 @@ async function proximoEnvioElegivel(
     } else if (offset === 0 && cfg.enviar_no_vencimento) {
       template = templates.find((t: any) => t.tipo === "vencimento" && t.dias_offset === 0);
     } else if (offset > 0 && cfg.enviar_pos_vencimento) {
-      template = templates.find((t: any) => t.tipo === "pos_vencimento" && t.dias_offset === offset);
+      template = templates.find((t: any) =>
+        t.tipo === "pos_vencimento" &&
+        offset >= t.dias_offset &&
+        (t.dias_offset_fim === null || t.dias_offset_fim === undefined || offset <= t.dias_offset_fim),
+      );
     }
     if (!template) continue;
 
+    // Dedupe por sempre (não só "hoje") -- uma fase de vários dias não pode repetir a
+    // mesma mensagem em cada tique enquanto o pagamento permanecer nela.
     const { count } = await db
       .from("cobranca_logs")
       .select("id", { count: "exact", head: true })
       .eq("pagamento_id", item.pagamento_id)
       .eq("template_nome", template.nome)
-      .gte("created_at", hoje)
       .eq("status", "enviado");
     if (count && count > 0) continue;
 
@@ -441,6 +472,70 @@ async function processarTick(db: any, cors: any) {
   }).eq("id", "default");
 
   return json({ ok: false, error: result.error });
+}
+
+// Modo status: mesmas checagens do tique (horário seguro, limite diário, fim de semana,
+// delay desde o último envio, fila elegível), mas sem enviar nem gravar nada -- só pra
+// tela mostrar quando o próximo disparo automático deve acontecer. Reaproveita
+// proximoEnvioElegivel pra achar quem seria o próximo, garantindo que a tela nunca diga
+// algo diferente do que o tique realmente faria.
+async function statusTick(db: any, cors: any) {
+  const json = (payload: any) => new Response(JSON.stringify(payload), { headers: { ...cors, "Content-Type": "application/json" } });
+
+  const { data: cfg } = await db.from("cobranca_config").select("*").eq("id", "default").single();
+  if (!cfg) return json({ estado: "sem_config" });
+
+  const now = new Date();
+  const sp = saoPauloParts(now);
+  const [hInicio, mInicio] = toHM(cfg.horario_inicio_envio || "09:00");
+
+  if (!cfg.ativo) return json({ estado: cfg.pausado_por_erro ? "pausado_erro" : "pausado_manual", erros_seq: cfg.erros_seq ?? 0 });
+
+  if (cfg.pausar_fins_semana && (sp.weekday === "Sat" || sp.weekday === "Sun")) {
+    const diasAteSegunda = sp.weekday === "Sat" ? 2 : 1;
+    const proxima = saoPauloDateAt(addDaysStr(sp.dateStr, diasAteSegunda), hInicio, mInicio);
+    return json({ estado: "fim_de_semana", proximo_em_s: Math.max(0, (proxima.getTime() - now.getTime()) / 1000) });
+  }
+
+  const nowMin    = sp.hour * 60 + sp.minute;
+  const inicioMin = toMinutes(cfg.horario_inicio_envio || "09:00");
+  const fimMin    = toMinutes(cfg.horario_fim_envio || "18:00");
+  if (nowMin < inicioMin) {
+    const proxima = saoPauloDateAt(sp.dateStr, hInicio, mInicio);
+    return json({ estado: "fora_horario", proximo_em_s: Math.max(0, (proxima.getTime() - now.getTime()) / 1000) });
+  }
+  if (nowMin >= fimMin) {
+    const proxima = saoPauloDateAt(addDaysStr(sp.dateStr, 1), hInicio, mInicio);
+    return json({ estado: "fora_horario", proximo_em_s: Math.max(0, (proxima.getTime() - now.getTime()) / 1000) });
+  }
+
+  const enviadosHoje = cfg.dia_contagem === sp.dateStr ? (cfg.enviados_hoje ?? 0) : 0;
+  if (enviadosHoje >= cfg.daily_limit) {
+    const proxima = saoPauloDateAt(addDaysStr(sp.dateStr, 1), hInicio, mInicio);
+    return json({ estado: "limite_diario", proximo_em_s: Math.max(0, (proxima.getTime() - now.getTime()) / 1000) });
+  }
+
+  const { data: templates } = await db.from("cobranca_templates").select("*").eq("ativo", true).order("ordem");
+  if (!templates?.length) return json({ estado: "sem_templates" });
+
+  const { data: fila } = await db.rpc("get_alunos_para_cobranca", { p_data: sp.dateStr });
+  const proximo = fila?.length ? await proximoEnvioElegivel(db, fila, templates, cfg, sp.dateStr) : null;
+  if (!proximo) return json({ estado: "sem_elegiveis", fila_total: fila?.length ?? 0 });
+
+  if (cfg.ultimo_envio_em) {
+    const elapsedS = (now.getTime() - new Date(cfg.ultimo_envio_em).getTime()) / 1000;
+    if (elapsedS < cfg.delay_min_s) {
+      return json({
+        estado: "aguardando_delay",
+        proximo_em_s: cfg.delay_min_s - elapsedS,
+        proximo_em_s_max: cfg.delay_max_s - elapsedS,
+        proximo_lead: proximo.item.aluno_nome,
+        fila_total: fila.length,
+      });
+    }
+  }
+
+  return json({ estado: "pronto", proximo_lead: proximo.item.aluno_nome, fila_total: fila.length });
 }
 
 async function processarFilaAutomatica(db: any, userId: string | null, cors: any) {
