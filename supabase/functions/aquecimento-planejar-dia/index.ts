@@ -1,13 +1,13 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-// Cron 1x/dia: gera as SESSÕES de conversa de aquecimento (DM + grupo) de
-// cada chip ativo, com base na curva de rampa em aquecimento_config. Uma
-// "sessão" é uma rajada de várias mensagens em sequência (indo e voltando
-// entre os dois chips numa DM, ou em fila num grupo), separadas por um
-// intervalo humano (delay_min_s..delay_max_s) -- não é 1 mensagem isolada
-// por dia, é assim que uma conversa de verdade acontece. Idempotente --
-// não duplica se já existem jobs agendados pra hoje (horário BR) daquele chip.
+// Cron 1x/dia: gera o plano COMPLETO do dia pra todos os chips ativos.
+// Garante: (1) todo par de chips troca pelo menos 1 sessão de DM, (2) todo
+// chip posta pelo menos 1x em cada grupo ativo do qual participa e recebe
+// uma "reação" (outro membro responde logo em seguida), (3) nenhum chip
+// fica escalado em 2 conversas ao mesmo tempo, (4) volume extra por cima
+// disso cresce conforme a rampa (progressivo). Idempotente por dia via
+// aquecimento_config.ultimo_plano_data.
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -15,26 +15,12 @@ const cors = {
 };
 
 function ok(data: unknown) {
-  return new Response(JSON.stringify(data), {
-    status: 200,
-    headers: { ...cors, 'Content-Type': 'application/json' },
-  });
+  return new Response(JSON.stringify(data), { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } });
 }
 
 type RampaEstagio = { dia_inicio: number; dia_fim: number | null; min: number; max: number };
-
-type Chip = {
-  id: string;
-  evolution_config_id: string;
-  numero_whatsapp: string;
-  ativo: boolean;
-  data_inicio: string;
-  status: string;
-  dia_contagem: string;
-};
-
+type Chip = { id: string; evolution_config_id: string; numero_whatsapp: string; ativo: boolean; data_inicio: string; status: string; dia_contagem: string };
 type Grupo = { id: string; membros: string[]; ativo: boolean };
-
 type Mensagem = { id: string; texto: string; tipo: string; ativo: boolean };
 
 function randInt(min: number, max: number): number {
@@ -48,194 +34,193 @@ function estagioParaDia(rampa: RampaEstagio[], dia: number): RampaEstagio | null
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  );
+  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
-  // Auth: Bearer JWT (UI, botão "Rodar agora") ou x-cron-key (pg_cron) -- mesmo padrão de funil-processar
   const authHeader    = req.headers.get('authorization') ?? '';
   const cronKeyHeader = req.headers.get('x-cron-key') ?? '';
   const { data: cronSecret } = await supabase.rpc('get_equipe_11ds_cron_secret');
   const isCron = !!cronSecret && cronKeyHeader === cronSecret;
   if (!isCron && !authHeader.startsWith('Bearer ')) {
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-      status: 401, headers: { ...cors, 'Content-Type': 'application/json' },
-    });
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
   }
 
   try {
-    const { data: cfg } = await supabase
-      .from('aquecimento_config')
-      .select('*')
-      .eq('id', 'default')
-      .maybeSingle();
-
+    const { data: cfg } = await supabase.from('aquecimento_config').select('*').eq('id', 'default').maybeSingle();
     if (!cfg?.ativo) return ok({ ok: true, skipped: true, reason: 'aquecimento inativo' });
 
     const rampa = (cfg.rampa ?? []) as RampaEstagio[];
     if (!rampa.length) return ok({ ok: true, skipped: true, reason: 'rampa não configurada' });
 
+    const now = new Date();
+    const nowBR = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+    const todayBRDateStr = nowBR.toISOString().split('T')[0];
+
+    if (cfg.ultimo_plano_data === todayBRDateStr) {
+      return ok({ ok: true, skipped: true, reason: 'já planejado hoje' });
+    }
+
+    const anchorUTC = new Date(`${todayBRDateStr}T03:00:00.000Z`); // meia-noite BR
+
     const msgsPorSessaoMin = cfg.msgs_por_sessao_min ?? 3;
     const msgsPorSessaoMax = cfg.msgs_por_sessao_max ?? 8;
     const intervaloMinS    = cfg.delay_min_s ?? 20;
     const intervaloMaxS    = cfg.delay_max_s ?? 90;
+    const safeStartSec     = cfg.safe_hour_start * 3600;
+    const safeEndSec       = cfg.safe_hour_end * 3600;
 
-    const now = new Date();
-    // Mesmo padrão de conversão BR usado em disparo-runner: UTC-3, sem DST.
-    const nowBR = new Date(now.getTime() - 3 * 60 * 60 * 1000);
-    const todayBRDateStr = nowBR.toISOString().split('T')[0];
-    const anchorUTC = new Date(`${todayBRDateStr}T03:00:00.000Z`); // meia-noite BR
-    const anchorEndUTC = new Date(anchorUTC.getTime() + 24 * 60 * 60 * 1000);
-
-    const safeStartSec = cfg.safe_hour_start * 3600;
-    const safeEndSec    = cfg.safe_hour_end * 3600;
-
-    const { data: chips, error: chipsErr } = await supabase
-      .from('aquecimento_chips')
-      .select('*')
-      .eq('ativo', true)
-      .neq('status', 'pausado');
+    const { data: chipsRaw, error: chipsErr } = await supabase
+      .from('aquecimento_chips').select('*').eq('ativo', true).neq('status', 'pausado');
     if (chipsErr) throw new Error(`falha ao ler aquecimento_chips: ${chipsErr.message}`);
-    if (!chips?.length) return ok({ ok: true, planned: 0, reason: 'nenhum chip ativo' });
+    const chips = (chipsRaw ?? []) as Chip[];
+    if (!chips.length) return ok({ ok: true, planned: 0, reason: 'nenhum chip ativo' });
 
-    const { data: grupos } = await supabase
-      .from('aquecimento_grupos')
-      .select('id, membros, ativo')
-      .eq('ativo', true);
+    // Reset diário do contador de enviados
+    for (const chip of chips) {
+      if (chip.dia_contagem !== todayBRDateStr) {
+        await supabase.from('aquecimento_chips').update({ enviados_hoje: 0, dia_contagem: todayBRDateStr }).eq('id', chip.id);
+      }
+    }
 
-    const { data: mensagens } = await supabase
-      .from('aquecimento_mensagens')
-      .select('id, texto, tipo, ativo')
-      .eq('ativo', true);
+    const { data: gruposRaw } = await supabase.from('aquecimento_grupos').select('id, membros, ativo').eq('ativo', true);
+    const grupos = (gruposRaw ?? []) as Grupo[];
 
-    const msgsDm    = (mensagens ?? []).filter((m: Mensagem) => m.tipo === 'dm' || m.tipo === 'ambos');
-    const msgsGrupo = (mensagens ?? []).filter((m: Mensagem) => m.tipo === 'grupo' || m.tipo === 'ambos');
+    const { data: mensagensRaw } = await supabase.from('aquecimento_mensagens').select('id, texto, tipo, ativo').eq('ativo', true);
+    const mensagens = (mensagensRaw ?? []) as Mensagem[];
+    const msgsDm    = mensagens.filter(m => m.tipo === 'dm' || m.tipo === 'ambos');
+    const msgsGrupo = mensagens.filter(m => m.tipo === 'grupo' || m.tipo === 'ambos');
 
-    let planned = 0;
+    // ── Controle de sobreposição por chip ──────────────────────────────────
+    const busy = new Map<string, Array<[number, number]>>();
+    function overlaps(chipId: string, start: number, end: number): boolean {
+      return (busy.get(chipId) ?? []).some(([s, e]) => start < e && s < end);
+    }
+    function reserve(chipId: string, start: number, end: number) {
+      if (!busy.has(chipId)) busy.set(chipId, []);
+      busy.get(chipId)!.push([start, end]);
+    }
+    // Acha um horário de início livre pros chips envolvidos, dentro do horário seguro.
+    function acharSlot(chipIds: string[], duracao: number): number {
+      const maxInicio = Math.max(safeStartSec, safeEndSec - duracao);
+      for (let tentativa = 0; tentativa < 40; tentativa++) {
+        const inicio = randInt(safeStartSec, maxInicio);
+        if (chipIds.every(id => !overlaps(id, inicio, inicio + duracao))) return inicio;
+      }
+      // Fallback: encaixa logo após o último compromisso desses chips
+      const ultimoFim = Math.max(safeStartSec, ...chipIds.flatMap(id => (busy.get(id) ?? []).map(([, e]) => e)));
+      return Math.min(ultimoFim + randInt(30, 120), maxInicio);
+    }
+
+    const jobs: Record<string, unknown>[] = [];
     let sessions = 0;
-    const detalhes: Record<string, unknown>[] = [];
 
-    // Gera uma sessão de DM: rajada de k mensagens alternando quem manda,
-    // separadas por um intervalo humano. Retorna os jobs prontos pra inserir.
-    function gerarSessaoDm(chipA: Chip, chipB: Chip): Record<string, unknown>[] {
+    function agendarDm(chipA: Chip, chipB: Chip) {
+      if (!msgsDm.length) return;
       const k = randInt(msgsPorSessaoMin, msgsPorSessaoMax);
-      const duracaoEstimada = k * intervaloMaxS;
-      const inicio = randInt(safeStartSec, Math.max(safeStartSec, safeEndSec - duracaoEstimada));
-      const jobs: Record<string, unknown>[] = [];
-      const sessaoId = crypto.randomUUID();
+      const gaps: number[] = [];
+      for (let m = 0; m < k - 1; m++) gaps.push(randInt(intervaloMinS, intervaloMaxS));
+      const duracao = gaps.reduce((a, b) => a + b, 0);
+      const inicio = acharSlot([chipA.id, chipB.id], duracao);
       let cursor = inicio;
+      const sessaoId = crypto.randomUUID();
       let sender = chipA, receiver = chipB;
       for (let m = 0; m < k; m++) {
         const msg = msgsDm[Math.floor(Math.random() * msgsDm.length)];
         jobs.push({
-          tipo: 'dm',
-          chip_origem_id: sender.id,
-          chip_destino_id: receiver.id,
-          mensagem_texto: msg.texto,
+          tipo: 'dm', chip_origem_id: sender.id, chip_destino_id: receiver.id,
+          mensagem_texto: msg.texto, sessao_id: sessaoId,
           scheduled_at: new Date(anchorUTC.getTime() + cursor * 1000).toISOString(),
-          sessao_id: sessaoId,
         });
-        [sender, receiver] = [receiver, sender]; // alterna quem responde
-        cursor += randInt(intervaloMinS, intervaloMaxS);
+        [sender, receiver] = [receiver, sender];
+        if (m < gaps.length) cursor += gaps[m];
       }
-      return jobs;
+      reserve(chipA.id, inicio, inicio + duracao + 60);
+      reserve(chipB.id, inicio, inicio + duracao + 60);
+      sessions++;
     }
 
-    // Sessão de grupo: uma pequena sequência de mensagens do mesmo chip
-    // (alguém que solta 2-3 comentários seguidos), rajada mais curta que a DM.
-    function gerarSessaoGrupo(chip: Chip, grupo: Grupo): Record<string, unknown>[] {
-      const k = randInt(1, Math.min(3, msgsPorSessaoMax));
-      const duracaoEstimada = k * intervaloMaxS;
-      const inicio = randInt(safeStartSec, Math.max(safeStartSec, safeEndSec - duracaoEstimada));
-      const jobs: Record<string, unknown>[] = [];
-      const sessaoId = crypto.randomUUID();
+    function agendarGrupoPost(chip: Chip, grupo: Grupo, kMax = 2): number {
+      if (!msgsGrupo.length) return -1;
+      const k = randInt(1, kMax);
+      const gaps: number[] = [];
+      for (let m = 0; m < k - 1; m++) gaps.push(randInt(intervaloMinS, intervaloMaxS));
+      const duracao = gaps.reduce((a, b) => a + b, 0);
+      const inicio = acharSlot([chip.id], duracao);
       let cursor = inicio;
+      const sessaoId = crypto.randomUUID();
       for (let m = 0; m < k; m++) {
         const msg = msgsGrupo[Math.floor(Math.random() * msgsGrupo.length)];
         jobs.push({
-          tipo: 'grupo',
-          chip_origem_id: chip.id,
-          grupo_id: grupo.id,
-          mensagem_texto: msg.texto,
+          tipo: 'grupo', chip_origem_id: chip.id, grupo_id: grupo.id,
+          mensagem_texto: msg.texto, sessao_id: sessaoId,
           scheduled_at: new Date(anchorUTC.getTime() + cursor * 1000).toISOString(),
-          sessao_id: sessaoId,
         });
-        cursor += randInt(intervaloMinS, intervaloMaxS);
+        if (m < gaps.length) cursor += gaps[m];
       }
-      return jobs;
+      reserve(chip.id, inicio, cursor + 60);
+      sessions++;
+      return cursor; // fim da postagem, pra agendar reação depois
     }
 
-    for (const chip of chips as Chip[]) {
-      // Reset diário do contador de enviados quando o dia BR muda
-      if (chip.dia_contagem !== todayBRDateStr) {
-        await supabase.from('aquecimento_chips')
-          .update({ enviados_hoje: 0, dia_contagem: todayBRDateStr })
-          .eq('id', chip.id);
+    // ── 1. Todo par de chips troca pelo menos 1 sessão de DM ───────────────
+    for (let i = 0; i < chips.length; i++) {
+      for (let j = i + 1; j < chips.length; j++) {
+        agendarDm(chips[i], chips[j]);
       }
+    }
 
-      // Idempotência: só pula se já tem sessão PENDENTE agendada pra hoje --
-      // se o plano de hoje já foi todo processado (enviado/erro), permite
-      // gerar mais sessões (ex.: rodou "Rodar agora" de novo mais tarde).
-      const { count: existentes } = await supabase
-        .from('aquecimento_jobs')
-        .select('*', { count: 'exact', head: true })
-        .eq('chip_origem_id', chip.id)
-        .eq('status', 'pendente')
-        .gte('scheduled_at', anchorUTC.toISOString())
-        .lt('scheduled_at', anchorEndUTC.toISOString());
-
-      if ((existentes ?? 0) > 0) {
-        detalhes.push({ chip: chip.numero_whatsapp, skipped: 'já tem sessão pendente hoje' });
-        continue;
+    // ── 2. Todo chip posta em cada grupo do qual participa + reação de outro membro
+    for (const grupo of grupos) {
+      const membros = chips.filter(c => grupo.membros.includes(c.id));
+      for (const chip of membros) {
+        const fimPost = agendarGrupoPost(chip, grupo, 2);
+        if (fimPost < 0) continue;
+        const outros = membros.filter(c => c.id !== chip.id);
+        if (!outros.length || !msgsGrupo.length) continue;
+        const reagente = outros[Math.floor(Math.random() * outros.length)];
+        const inicioReacao = Math.max(acharSlot([reagente.id], 0), fimPost + randInt(30, 150));
+        const msg = msgsGrupo[Math.floor(Math.random() * msgsGrupo.length)];
+        jobs.push({
+          tipo: 'grupo', chip_origem_id: reagente.id, grupo_id: grupo.id,
+          mensagem_texto: msg.texto, sessao_id: crypto.randomUUID(),
+          scheduled_at: new Date(anchorUTC.getTime() + inicioReacao * 1000).toISOString(),
+        });
+        reserve(reagente.id, inicioReacao, inicioReacao + 60);
+        sessions++;
       }
+    }
 
+    // ── 3. Volume extra progressivo (rampa) por cima da cobertura obrigatória
+    const detalhesRampa: Record<string, unknown>[] = [];
+    for (const chip of chips) {
       const dia = Math.floor((new Date(todayBRDateStr).getTime() - new Date(chip.data_inicio).getTime()) / 86_400_000) + 1;
       const estagio = estagioParaDia(rampa, dia);
-      if (!estagio) { detalhes.push({ chip: chip.numero_whatsapp, skipped: 'sem estágio de rampa' }); continue; }
+      if (!estagio) continue;
+      const extra = randInt(estagio.min, estagio.max);
+      const pctDm = cfg.pct_dm ?? 50;
+      const extraDm = Math.round(extra * pctDm / 100);
+      const extraGrupo = extra - extraDm;
 
-      const alvoSessoes = randInt(estagio.min, estagio.max);
-      const pctDm       = cfg.pct_dm ?? 50;
-      let nDmSessoes    = Math.round(alvoSessoes * pctDm / 100);
-      let nGrupoSessoes = alvoSessoes - nDmSessoes;
-
-      const gruposDoChip = (grupos ?? []).filter((g: Grupo) => g.membros.includes(chip.id));
-      if (gruposDoChip.length === 0) { nDmSessoes += nGrupoSessoes; nGrupoSessoes = 0; }
-
-      const outrosChips = (chips as Chip[]).filter(c => c.id !== chip.id);
-
-      const jobsToInsert: Record<string, unknown>[] = [];
-
-      if (nDmSessoes > 0 && outrosChips.length && msgsDm.length) {
-        for (let s = 0; s < nDmSessoes; s++) {
-          const partner = outrosChips[Math.floor(Math.random() * outrosChips.length)];
-          jobsToInsert.push(...gerarSessaoDm(chip, partner));
-          sessions++;
-        }
+      const outrosChips = chips.filter(c => c.id !== chip.id);
+      for (let s = 0; s < extraDm && outrosChips.length; s++) {
+        const partner = outrosChips[Math.floor(Math.random() * outrosChips.length)];
+        agendarDm(chip, partner);
       }
-
-      if (nGrupoSessoes > 0 && gruposDoChip.length && msgsGrupo.length) {
-        for (let s = 0; s < nGrupoSessoes; s++) {
-          const grupo = gruposDoChip[Math.floor(Math.random() * gruposDoChip.length)];
-          jobsToInsert.push(...gerarSessaoGrupo(chip, grupo));
-          sessions++;
-        }
+      const gruposDoChip = grupos.filter(g => g.membros.includes(chip.id));
+      for (let s = 0; s < extraGrupo && gruposDoChip.length; s++) {
+        const grupo = gruposDoChip[Math.floor(Math.random() * gruposDoChip.length)];
+        agendarGrupoPost(chip, grupo, 3);
       }
-
-      if (jobsToInsert.length) {
-        const { error: insertErr } = await supabase.from('aquecimento_jobs').insert(jobsToInsert);
-        if (insertErr) {
-          detalhes.push({ chip: chip.numero_whatsapp, erro: insertErr.message });
-          continue;
-        }
-        planned += jobsToInsert.length;
-        detalhes.push({ chip: chip.numero_whatsapp, dia, sessoes: alvoSessoes, mensagens: jobsToInsert.length });
-      } else {
-        detalhes.push({ chip: chip.numero_whatsapp, dia, sessoes: alvoSessoes, skipped: 'sem destinos/mensagens disponíveis' });
-      }
+      detalhesRampa.push({ chip: chip.numero_whatsapp, dia, extra });
     }
 
-    return ok({ ok: true, planned, sessions, detalhes });
+    if (jobs.length) {
+      const { error: insertErr } = await supabase.from('aquecimento_jobs').insert(jobs);
+      if (insertErr) throw new Error(`falha ao inserir jobs: ${insertErr.message}`);
+    }
+
+    await supabase.from('aquecimento_config').update({ ultimo_plano_data: todayBRDateStr }).eq('id', 'default');
+
+    return ok({ ok: true, planned: jobs.length, sessions, chips: chips.length, grupos: grupos.length, detalhesRampa });
 
   } catch (e: unknown) {
     console.error('aquecimento-planejar-dia error:', (e as Error).message);

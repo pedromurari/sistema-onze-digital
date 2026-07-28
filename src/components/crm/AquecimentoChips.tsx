@@ -755,6 +755,7 @@ function MonitorTab() {
   const enviados = doDia.filter(j => j.status === 'enviado').length;
   const erros = doDia.filter(j => j.status === 'erro').length;
   const pendentes = doDia.filter(j => j.status === 'pendente').length;
+  const proximo = [...jobs].filter(j => j.status === 'pendente').sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at))[0];
 
   return (
     <div className="space-y-4">
@@ -769,6 +770,9 @@ function MonitorTab() {
               {s.count} {s.label}
             </div>
           ))}
+          {proximo && (
+            <span className="text-xs text-muted-foreground">Próximo: {proximo.tipo} às {fmtDatetime(proximo.scheduled_at)}</span>
+          )}
         </div>
         <Button size="sm" onClick={rodarAgora} disabled={rodando} className="gap-1.5">
           {rodando ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
@@ -795,7 +799,15 @@ function MonitorTab() {
                 <tr key={j.id} className="border-b last:border-0 hover:bg-gray-50/60">
                   <td className="px-3 py-2">{j.tipo}</td>
                   <td className="px-3 py-2 text-muted-foreground">{fmtDatetime(j.scheduled_at)}</td>
-                  <td className="px-3 py-2">{j.status}</td>
+                  <td className="px-3 py-2">
+                    <span className={cn('inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium border',
+                      j.status === 'enviado' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : j.status === 'erro' ? 'bg-red-50 text-red-700 border-red-200'
+                        : j.status === 'enviando' ? 'bg-amber-50 text-amber-700 border-amber-200'
+                        : 'bg-blue-50 text-blue-700 border-blue-200')}>
+                      {j.status}
+                    </span>
+                  </td>
                   <td className="px-3 py-2 text-muted-foreground">{j.ack_status}</td>
                   <td className="px-3 py-2 text-red-600 max-w-xs truncate">{j.error_msg ?? ''}</td>
                 </tr>
