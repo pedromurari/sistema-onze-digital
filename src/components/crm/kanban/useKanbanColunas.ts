@@ -12,10 +12,11 @@ export interface KanbanColuna {
   tipo_regra?: string | null; // 'normal' | 'receita' | 'roi'
   lancamento_id?: string | null;
   npa_evento_id?: string | null;
-  aula_secreta_id?: string | null;
+  aula_secreta_evento_id?: string | null;
+  leads_quadro_id?: string | null;
 }
 
-type EventoTipo = 'lancamento' | 'npa' | 'aula_secreta';
+type EventoTipo = 'lancamento' | 'npa' | 'aula_secreta' | 'leads_quadro';
 
 const DEFAULT_LANCAMENTO_COLUNAS = [
   'Planilha',
@@ -28,17 +29,55 @@ const DEFAULT_LANCAMENTO_COLUNAS = [
   'Matrícula',
 ] as const;
 
+const DEFAULT_LEADS_QUADRO_COLUNAS = [
+  'Novo',
+  'Contatado',
+  'Respondeu',
+  'Qualificado',
+  'Vendido',
+  'Perdido',
+] as const;
+
+const FILTER_KEY: Record<EventoTipo, string> = {
+  lancamento: 'lancamento_id',
+  npa: 'npa_evento_id',
+  aula_secreta: 'aula_secreta_evento_id',
+  leads_quadro: 'leads_quadro_id',
+};
+
 function buildFilter(tipo: EventoTipo, eventoId: string) {
-  if (tipo === 'lancamento')  return { lancamento_id: `eq.${eventoId}` };
-  if (tipo === 'npa')         return { npa_evento_id: `eq.${eventoId}` };
-  return                             { aula_secreta_id: `eq.${eventoId}` };
+  return { [FILTER_KEY[tipo]]: `eq.${eventoId}` };
 }
 
 function buildInsertBody(tipo: EventoTipo, eventoId: string, nome: string, ordem: number) {
-  const base = { nome, ordem, tipo_regra: 'normal' };
-  if (tipo === 'lancamento') return { ...base, lancamento_id: eventoId };
-  if (tipo === 'npa')        return { ...base, npa_evento_id: eventoId };
-  return                            { ...base, aula_secreta_id: eventoId };
+  return { nome, ordem, tipo_regra: 'normal', [FILTER_KEY[tipo]]: eventoId };
+}
+
+export async function ensureDefaultLeadsQuadroColunas(quadroId: string): Promise<KanbanColuna[]> {
+  const { data: existing, error: fetchError } = await supabase
+    .from('kanban_colunas')
+    .select('*')
+    .eq('leads_quadro_id', quadroId)
+    .order('ordem', { ascending: true });
+
+  if (fetchError) throw fetchError;
+  if (existing && existing.length > 0) return existing as KanbanColuna[];
+
+  const payload = DEFAULT_LEADS_QUADRO_COLUNAS.map((nome, ordem) => ({
+    nome,
+    ordem,
+    tipo_regra: 'normal',
+    leads_quadro_id: quadroId,
+  }));
+
+  const { data: inserted, error: insertError } = await supabase
+    .from('kanban_colunas')
+    .insert(payload)
+    .select('*')
+    .order('ordem', { ascending: true });
+
+  if (insertError) throw insertError;
+  return (inserted || []) as KanbanColuna[];
 }
 
 export async function ensureDefaultLancamentoKanbanColumns(lancamentoId: string): Promise<KanbanColuna[]> {
@@ -76,9 +115,11 @@ export function useKanbanColunas(tipo: EventoTipo, eventoId: string) {
 
   const load = useCallback(async () => {
     setLoadingColunas(true);
-    if (tipo === 'lancamento') {
+    if (tipo === 'lancamento' || tipo === 'leads_quadro') {
       try {
-        const data = await ensureDefaultLancamentoKanbanColumns(eventoId);
+        const data = tipo === 'lancamento'
+          ? await ensureDefaultLancamentoKanbanColumns(eventoId)
+          : await ensureDefaultLeadsQuadroColunas(eventoId);
         setColunas(data);
         colunasRef.current = data;
       } catch {
@@ -88,11 +129,10 @@ export function useKanbanColunas(tipo: EventoTipo, eventoId: string) {
       return;
     }
 
-    const filterKey = tipo === 'lancamento' ? 'lancamento_id' : tipo === 'npa' ? 'npa_evento_id' : 'aula_secreta_id';
     const { data, error } = await supabase
       .from('kanban_colunas')
       .select('*')
-      .eq(filterKey, eventoId)
+      .eq(FILTER_KEY[tipo], eventoId)
       .order('ordem', { ascending: true });
     if (!error && data) {
       setColunas(data as KanbanColuna[]);
