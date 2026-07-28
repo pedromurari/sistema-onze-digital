@@ -324,7 +324,12 @@ async function enviarManual(db: any, evoInstances: EvoInstance[], body: any, use
 }
 
 // Determina, pra um item da fila, se existe template configurado pro offset dele e se
-// ainda não foi enviado hoje — mesma regra usada tanto no lote manual quanto no tique.
+// aquela fase ainda não foi enviada -- mesma regra usada tanto no lote manual quanto no
+// tique. pos_vencimento casa por FAIXA de dias (fase), não dia exato: 1-3, 4-7, 8-15,
+// 16+ (aberta), pra ninguém ficar em limbo sem nunca bater um dia fixo configurado --
+// isso também resolve sozinho o backlog de quem acumulou atraso enquanto a cobrança
+// esteve parada. pre_vencimento/vencimento continuam por dia exato (evento de data
+// futura conhecida, sem acúmulo possível).
 async function proximoEnvioElegivel(
   db: any,
   fila: any[],
@@ -340,16 +345,21 @@ async function proximoEnvioElegivel(
     } else if (offset === 0 && cfg.enviar_no_vencimento) {
       template = templates.find((t: any) => t.tipo === "vencimento" && t.dias_offset === 0);
     } else if (offset > 0 && cfg.enviar_pos_vencimento) {
-      template = templates.find((t: any) => t.tipo === "pos_vencimento" && t.dias_offset === offset);
+      template = templates.find((t: any) =>
+        t.tipo === "pos_vencimento" &&
+        offset >= t.dias_offset &&
+        (t.dias_offset_fim === null || t.dias_offset_fim === undefined || offset <= t.dias_offset_fim),
+      );
     }
     if (!template) continue;
 
+    // Dedupe por sempre (não só "hoje") -- uma fase de vários dias não pode repetir a
+    // mesma mensagem em cada tique enquanto o pagamento permanecer nela.
     const { count } = await db
       .from("cobranca_logs")
       .select("id", { count: "exact", head: true })
       .eq("pagamento_id", item.pagamento_id)
       .eq("template_nome", template.nome)
-      .gte("created_at", hoje)
       .eq("status", "enviado");
     if (count && count > 0) continue;
 

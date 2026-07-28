@@ -57,6 +57,7 @@ interface Template {
   nome: string;
   tipo: 'pre_vencimento' | 'vencimento' | 'pos_vencimento' | 'quitacao' | 'aviso_cancelamento';
   dias_offset: number;
+  dias_offset_fim: number | null;
   mensagem: string;
   ativo: boolean;
   ordem: number;
@@ -468,9 +469,20 @@ export function Cobranca() {
   };
 
   // ── Envio manual ──────────────────────────────────────────────────────────
+  // pos_vencimento casa por faixa de dias (fase), não dia exato -- mesma regra do backend
+  // (enviar-cobranca/proximoEnvioElegivel), pra pré-preencher certo mesmo quem está em
+  // atraso "de limbo" sem bater um dia fixo.
+  const templateParaOffset = (offset: number): Template | undefined => {
+    if (offset < 0) return templates.find(t => t.tipo === 'pre_vencimento' && t.dias_offset === offset && t.ativo);
+    if (offset === 0) return templates.find(t => t.tipo === 'vencimento' && t.dias_offset === 0 && t.ativo);
+    return templates.find(t =>
+      t.tipo === 'pos_vencimento' && t.ativo &&
+      offset >= t.dias_offset && (t.dias_offset_fim == null || offset <= t.dias_offset_fim),
+    );
+  };
+
   const abrirSendModal = (item: FilaItem) => {
-    let tipo = item.dias_offset < 0 ? 'pre_vencimento' : item.dias_offset === 0 ? 'vencimento' : 'pos_vencimento';
-    const tpl = templates.find(t => t.tipo === tipo && t.dias_offset === item.dias_offset && t.ativo);
+    const tpl = templateParaOffset(item.dias_offset);
     if (tpl) {
       setSendTemplate(tpl.id);
       const vencimento = new Date(item.data_vencimento).toLocaleDateString('pt-BR');
@@ -1026,7 +1038,13 @@ export function Cobranca() {
                                 <span className="font-medium text-sm">{tpl.nome}</span>
                                 {tpl.dias_offset !== 0 && (
                                   <Badge variant="outline" className="text-xs">
-                                    {tpl.dias_offset > 0 ? `+${tpl.dias_offset}d` : `${tpl.dias_offset}d`}
+                                    {tpl.tipo === 'pos_vencimento'
+                                      ? (tpl.dias_offset_fim == null
+                                          ? `${tpl.dias_offset}d+`
+                                          : tpl.dias_offset_fim === tpl.dias_offset
+                                            ? `+${tpl.dias_offset}d`
+                                            : `${tpl.dias_offset}-${tpl.dias_offset_fim}d`)
+                                      : (tpl.dias_offset > 0 ? `+${tpl.dias_offset}d` : `${tpl.dias_offset}d`)}
                                   </Badge>
                                 )}
                               </div>
@@ -1567,17 +1585,50 @@ export function Cobranca() {
                   </Select>
                 </div>
               </div>
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">
-                  Offset de dias ({templateModal.tipo === 'pre_vencimento' ? 'negativo = antes' : 'positivo = depois'})
-                </label>
-                <Input
-                  type="number"
-                  value={templateModal.dias_offset ?? 0}
-                  onChange={e => setTemplateModal(p => p ? { ...p, dias_offset: Number(e.target.value) } : p)}
-                  className="w-28"
-                />
+              <div className="flex items-end gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">
+                    {templateModal.tipo === 'pos_vencimento'
+                      ? 'A partir de (dias após vencer)'
+                      : `Offset de dias (${templateModal.tipo === 'pre_vencimento' ? 'negativo = antes' : 'positivo = depois'})`}
+                  </label>
+                  <Input
+                    type="number"
+                    value={templateModal.dias_offset ?? 0}
+                    onChange={e => setTemplateModal(p => p ? { ...p, dias_offset: Number(e.target.value) } : p)}
+                    className="w-28"
+                  />
+                </div>
+                {templateModal.tipo === 'pos_vencimento' && (
+                  <>
+                    <div>
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Até (dias)</label>
+                      <Input
+                        type="number"
+                        value={templateModal.dias_offset_fim ?? ''}
+                        placeholder="sem limite"
+                        disabled={templateModal.dias_offset_fim == null}
+                        onChange={e => setTemplateModal(p => p ? { ...p, dias_offset_fim: e.target.value === '' ? null : Number(e.target.value) } : p)}
+                        className="w-28"
+                      />
+                    </div>
+                    <label className="flex items-center gap-1.5 pb-2 text-xs text-muted-foreground select-none cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={templateModal.dias_offset_fim == null}
+                        onChange={e => setTemplateModal(p => p ? { ...p, dias_offset_fim: e.target.checked ? null : (p.dias_offset ?? 0) } : p)}
+                        className="h-3.5 w-3.5 rounded accent-primary"
+                      />
+                      Sem limite (fase aberta)
+                    </label>
+                  </>
+                )}
               </div>
+              {templateModal.tipo === 'pos_vencimento' && (
+                <p className="text-xs text-muted-foreground -mt-3">
+                  Essa mensagem é enviada uma vez pra quem estiver com atraso nessa faixa de dias — não repete todo dia.
+                </p>
+              )}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Mensagem</label>
