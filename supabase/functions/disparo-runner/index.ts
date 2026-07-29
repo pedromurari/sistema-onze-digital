@@ -146,6 +146,28 @@ serve(async (req) => {
         continue;
       }
 
+      // Checagem síncrona: o número existe no WhatsApp de verdade? Não depende
+      // de webhook (que nessa instalação da Evolution API não confirma entrega
+      // de jeito nenhum -- confirmado via captura de payload). Se o número não
+      // existe, nem tenta enviar -- evita o falso "enviado" pra número inválido.
+      // null = checagem indisponível/deu erro -- não bloqueia, segue o envio normal.
+      const numeroExiste = await checkWhatsappExists(campInstances[0], phone);
+      if (numeroExiste === false) {
+        const newErrors = (camp.consecutive_errors ?? 0) + 1;
+        await supabase.from('disparo_leads')
+          .update({ status: 'erro', error_msg: 'Número não está no WhatsApp', sent_at: now.toISOString() })
+          .eq('id', lead.id);
+        await supabase.from('disparo_campanhas')
+          .update({
+            leads_error: (camp.leads_error ?? 0) + 1,
+            consecutive_errors: newErrors,
+            next_send_at: now.toISOString(),
+            ...(newErrors >= camp.max_errors_seq ? { status: 'erro' } : {}),
+          })
+          .eq('id', camp.id);
+        continue;
+      }
+
       // Rodízio: a instância da vez é escolhida por quantas mensagens a campanha já mandou,
       // as demais entram como fallback (nessa ordem) se a da vez falhar.
       const rotateIdx = (camp.leads_sent ?? 0) % campInstances.length;
@@ -161,14 +183,16 @@ serve(async (req) => {
       let sendOk    = false;
       let sendError = '';
       let sentInstanceId = '';
+      let sentMessageId: string | null = null;
       let ambiguous = false;
 
       for (const inst of orderedInstances) {
         const rawBase = (inst.api_url as string).replace(/\/$/, '');
         const base    = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
         try {
+          let res: Response;
           if (camp.message_type && camp.message_type !== 'text') {
-            const res = await fetch(`${base}/message/sendMedia/${inst.instance_name}`, {
+            res = await fetch(`${base}/message/sendMedia/${inst.instance_name}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', apikey: inst.api_key },
               body: JSON.stringify({
@@ -179,12 +203,8 @@ serve(async (req) => {
                 delay:     1200,
               }),
             });
-            if (!res.ok) {
-              const txt = await res.text();
-              throw new Error(`${res.status}: ${txt.slice(0, 200)}`);
-            }
           } else {
-            const res = await fetch(`${base}/message/sendText/${inst.instance_name}`, {
+            res = await fetch(`${base}/message/sendText/${inst.instance_name}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', apikey: inst.api_key },
               body: JSON.stringify({
@@ -194,11 +214,14 @@ serve(async (req) => {
                 ...(camp.mention_everyone ? { mentionEveryone: true } : {}),
               }),
             });
-            if (!res.ok) {
-              const txt = await res.text();
-              throw new Error(`${res.status}: ${txt.slice(0, 200)}`);
-            }
           }
+          const rawText = await res.text();
+          if (!res.ok) throw new Error(`${res.status}: ${rawText.slice(0, 200)}`);
+
+          let json: any = {};
+          try { json = JSON.parse(rawText); } catch { /* resposta sem corpo json */ }
+          sentMessageId = json?.key?.id ?? json?.data?.key?.id ?? null;
+
           sendOk = true;
           sentInstanceId = inst.id;
           break;
@@ -223,7 +246,7 @@ serve(async (req) => {
 
       if (sendOk) {
         await supabase.from('disparo_leads')
-          .update({ status: 'enviado', sent_at: sentAt, error_msg: null, instance_id: sentInstanceId })
+          .update({ status: 'enviado', sent_at: sentAt, error_msg: null, instance_id: sentInstanceId, evolution_message_id: sentMessageId })
           .eq('id', lead.id);
         await supabase.from('disparo_campanhas')
           .update({ leads_sent: (camp.leads_sent ?? 0) + 1, consecutive_errors: 0, next_send_at: nextSendAt })
@@ -276,6 +299,42 @@ function formatPhone(raw: string): string | null {
 
 function applyTemplate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
+}
+
+/**
+ * Confere se o número existe no WhatsApp antes de enviar (checagem síncrona,
+ * não depende de webhook). Retorna null se a checagem falhar/endpoint não
+ * suportado nessa versão -- nesse caso não bloqueia, segue com o envio normal.
+ */
+async function checkWhatsappExists(
+  inst: { api_url: string; api_key: string; instance_name: string },
+  phone: string,
+): Promise<boolean | null> {
+  if (phone.includes('@g.us')) return true; // grupo -- checagem não se aplica
+  const rawBase = (inst.api_url as string).replace(/\/$/, '');
+  const base = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
+  try {
+    const res = await fetch(`${base}/chat/whatsappNumbers/${inst.instance_name}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: inst.api_key },
+      body: JSON.stringify({ numbers: [phone] }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const list: Array<Record<string, unknown>> = Array.isArray(data)
+      ? data
+      : (data?.numbers ?? data?.data ?? []);
+    const suffix = phone.slice(-8);
+    const entry = list.find((n) => {
+      const num = String(n.number ?? n.jid ?? '').replace(/\D/g, '');
+      return num.endsWith(suffix);
+    }) ?? list[0];
+    if (!entry) return null;
+    return Boolean(entry.exists);
+  } catch {
+    return null;
+  }
 }
 
 async function getAllInstances(
