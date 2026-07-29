@@ -18,7 +18,7 @@ import {
   TrendingUp, Target, Phone, Pencil, Building2, CheckCircle2,
   Copy, Download, ExternalLink, Upload, FileText,
   Send, MessageSquare, Shield, ChevronDown, ChevronRight,
-  Play, Square, CheckCircle, XCircle, Clock, RefreshCw,
+  Play, Square, CheckCircle, XCircle, Clock, RefreshCw, History,
 } from 'lucide-react';
 import { format, isSameMonth, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -40,6 +40,21 @@ interface Responsavel {
   id: string;
   nome: string;
   created_at: string;
+}
+
+interface CobrancaLogAluno {
+  id: string;
+  pagamento_id?: string | null;
+  mensagem: string;
+  template_nome: string;
+  template_tipo?: string | null;
+  status: string;
+  erro_msg?: string | null;
+  enviado_em?: string | null;
+  manual?: boolean;
+  created_at: string;
+  respondeu_em?: string | null;
+  ultima_resposta?: string | null;
 }
 
 interface Lancamento {
@@ -895,6 +910,8 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
   const [showEditTurma, setShowEditTurma] = useState(false);
   const [alunoDetail, setAlunoDetail] = useState<Aluno | null>(null);
   const [alunoToDelete, setAlunoToDelete] = useState<Aluno | null>(null);
+  const [cobrancaLogsAluno, setCobrancaLogsAluno] = useState<CobrancaLogAluno[]>([]);
+  const [loadingCobrancaLogsAluno, setLoadingCobrancaLogsAluno] = useState(false);
   const [turmaToEdit, setTurmaToEdit] = useState<Turma | null>(null);
 
   // Inline edit turma card
@@ -1485,6 +1502,20 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
       toast({ variant: 'destructive', title: 'Erro', description: e.message });
     }
   };
+
+  useEffect(() => {
+    if (!alunoDetail?.id) { setCobrancaLogsAluno([]); return; }
+    setLoadingCobrancaLogsAluno(true);
+    supabase
+      .from('cobranca_logs')
+      .select('id, pagamento_id, mensagem, template_nome, template_tipo, status, erro_msg, enviado_em, manual, created_at, respondeu_em, ultima_resposta')
+      .eq('aluno_id', alunoDetail.id)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        setCobrancaLogsAluno((data as CobrancaLogAluno[]) || []);
+        setLoadingCobrancaLogsAluno(false);
+      });
+  }, [alunoDetail?.id]);
 
   const openAlunoDetail = (a: Aluno) => {
     setAlunoDetail(a);
@@ -3714,6 +3745,59 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                     </div>
                   );
                 })()}
+
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                    <History className="h-3.5 w-3.5" />Histórico de Cobranças
+                  </p>
+                  {loadingCobrancaLogsAluno ? (
+                    <p className="text-xs text-muted-foreground py-2">Carregando...</p>
+                  ) : cobrancaLogsAluno.length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-2">Nenhuma cobrança enviada para este aluno ainda.</p>
+                  ) : (
+                    <div className="overflow-x-auto rounded-md border border-border">
+                      <table className="w-full text-xs">
+                        <thead className="bg-muted/50">
+                          <tr>
+                            <th className="text-left py-1.5 px-2 font-medium">Quando</th>
+                            <th className="text-left py-1.5 px-2 font-medium">Template</th>
+                            <th className="text-left py-1.5 px-2 font-medium">Status</th>
+                            <th className="text-left py-1.5 px-2 font-medium">Resposta</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {cobrancaLogsAluno.map(log => (
+                            <tr key={log.id} className="border-t border-border">
+                              <td className="py-1.5 px-2 text-muted-foreground whitespace-nowrap">
+                                {new Date(log.enviado_em || log.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                              </td>
+                              <td className="py-1.5 px-2">
+                                {log.template_nome}
+                                {log.manual && <Badge variant="outline" className="ml-1.5 text-[10px] px-1 py-0">Manual</Badge>}
+                              </td>
+                              <td className="py-1.5 px-2">
+                                {log.status === 'enviado' && <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 gap-1 text-[10px]"><CheckCircle2 size={10} />Enviado</Badge>}
+                                {log.status === 'erro' && <Badge className="bg-red-50 text-red-700 border border-red-200 gap-1 text-[10px]" title={log.erro_msg || ''}><XCircle size={10} />Erro</Badge>}
+                                {log.status === 'pendente' && <Badge className="bg-amber-50 text-amber-700 border border-amber-200 gap-1 text-[10px]"><Clock size={10} />Pendente</Badge>}
+                              </td>
+                              <td className="py-1.5 px-2">
+                                {log.respondeu_em ? (
+                                  <div className="flex items-start gap-1 text-muted-foreground">
+                                    <MessageSquare size={11} className="mt-0.5 shrink-0 text-violet-600" />
+                                    <div>
+                                      <p className="truncate max-w-[220px]">{log.ultima_resposta}</p>
+                                      <p className="text-[10px]">{new Date(log.respondeu_em).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>
+                                    </div>
+                                  </div>
+                                ) : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
 
               </div>
             );
