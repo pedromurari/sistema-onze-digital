@@ -189,8 +189,25 @@ serve(async (req) => {
       console.log(`resposta gravada em ${ids.length} boas_vindas_logs para phone suffix=${s8}`);
     }
 
-    if (!saved.length && !disparoLeads?.length && !bvLogs?.length) {
-      console.log(`phone suffix ${s8} not found in lancamento_leads, disparo_leads nem boas_vindas_logs — ignoring`);
+    // Mesma lógica pros logs de cobrança -- alimenta a coluna de resposta na tela de
+    // Cobrança, pra saber quem respondeu (negociando, confirmando pagamento, etc) sem
+    // precisar abrir o WhatsApp real pra cada aluno.
+    const { data: cobrancaLogs } = await supabase
+      .from('cobranca_logs')
+      .select('id, telefone')
+      .filter('telefone', 'ilike', `%${s8}`);
+
+    if (cobrancaLogs?.length) {
+      const ids = cobrancaLogs.map((l: { id: string }) => l.id);
+      await supabase
+        .from('cobranca_logs')
+        .update({ respondeu_em: now, ultima_resposta: mensagem.slice(0, 500) })
+        .in('id', ids);
+      console.log(`resposta gravada em ${ids.length} cobranca_logs para phone suffix=${s8}`);
+    }
+
+    if (!saved.length && !disparoLeads?.length && !bvLogs?.length && !cobrancaLogs?.length) {
+      console.log(`phone suffix ${s8} not found in lancamento_leads, disparo_leads, boas_vindas_logs nem cobranca_logs — ignoring`);
       return ok({ ok: true, skipped: true, reason: 'phone not found' });
     }
 
@@ -200,6 +217,7 @@ serve(async (req) => {
       leads: saved,
       disparoLeadsAtualizados: disparoLeads?.length ?? 0,
       boasVindasLogsAtualizados: bvLogs?.length ?? 0,
+      cobrancaLogsAtualizados: cobrancaLogs?.length ?? 0,
     });
 
   } catch (e: unknown) {

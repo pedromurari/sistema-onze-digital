@@ -78,6 +78,8 @@ interface CobrancaLog {
   created_at: string;
   aluno_id: string | null;
   pagamento_id: string | null;
+  respondeu_em: string | null;
+  ultima_resposta: string | null;
 }
 
 type EstadoDisparo =
@@ -104,6 +106,22 @@ function fmtCountdown(s: number): string {
 function fmtQuando(s: number): string {
   const alvo = new Date(Date.now() + s * 1000);
   return alvo.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+// "Hoje" em UTC diverge de "hoje" em São Paulo por até 3h todo dia (das ~21h à meia-noite
+// SP, o UTC já virou o dia seguinte) -- o backend (enviar-cobranca) já calcula tudo em
+// horário de São Paulo, então a tela precisa fazer o mesmo, senão "cobrado hoje"/"enviados
+// hoje" ficam errados bem no fim do dia.
+function dataSaoPaulo(d: Date): string {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).formatToParts(d);
+  const y = parts.find(p => p.type === 'year')?.value;
+  const m = parts.find(p => p.type === 'month')?.value;
+  const dia = parts.find(p => p.type === 'day')?.value;
+  return `${y}-${m}-${dia}`;
+}
+
+function hojeSaoPaulo(): string {
+  return dataSaoPaulo(new Date());
 }
 
 interface FilaItem {
@@ -277,8 +295,7 @@ export function Cobranca() {
       setBiaResumo((tarefaBia as any)?.resposta_texto ?? null);
     }
 
-    const hoje = new Date().toISOString().split('T')[0];
-    const filaRes = await supabase.rpc('get_alunos_para_cobranca' as any, { p_data: hoje });
+    const filaRes = await supabase.rpc('get_alunos_para_cobranca' as any, { p_data: hojeSaoPaulo() });
     if (filaRes.data) setFila(filaRes.data as FilaItem[]);
 
     setLoading(false);
@@ -392,10 +409,13 @@ export function Cobranca() {
   // Parcelas já cobradas hoje -- pra marcar na tabela da fila em vez de deixar parecer
   // que ninguém foi tocado ainda
   const enviadosHojeSet = useMemo(() => {
-    const hoje = new Date().toISOString().split('T')[0];
+    const hoje = hojeSaoPaulo();
     return new Set(
       logs
-        .filter(l => l.status === 'enviado' && l.pagamento_id && (l.enviado_em ?? l.created_at)?.startsWith(hoje))
+        .filter(l => {
+          const quando = l.enviado_em ?? l.created_at;
+          return l.status === 'enviado' && l.pagamento_id && quando && dataSaoPaulo(new Date(quando)) === hoje;
+        })
         .map(l => l.pagamento_id as string),
     );
   }, [logs]);
@@ -525,6 +545,7 @@ export function Cobranca() {
           mensagem:      sendMensagem,
           template_nome: tpl?.nome ?? 'Manual',
           template_tipo: tpl?.tipo ?? null,
+          template_id:   tpl?.id ?? null,
           aluno_nome:    sendModal.aluno_nome,
           telefone:      sendModal.telefone,
         }),
@@ -632,8 +653,9 @@ export function Cobranca() {
   const stats = useMemo(() => ({
     enviados: logs.filter(l => l.status === 'enviado').length,
     erros:    logs.filter(l => l.status === 'erro').length,
-    hoje:     logs.filter(l => l.status === 'enviado' && l.enviado_em?.startsWith(new Date().toISOString().split('T')[0])).length,
+    hoje:     logs.filter(l => l.status === 'enviado' && l.enviado_em && dataSaoPaulo(new Date(l.enviado_em)) === hojeSaoPaulo()).length,
     filaHoje: fila.length,
+    respondidos: logs.filter(l => !!l.respondeu_em).length,
   }), [logs, fila]);
 
   if (loading) {
@@ -763,12 +785,13 @@ export function Cobranca() {
       )}
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
         {[
           { label: 'Na fila hoje', value: stats.filaHoje, icon: Calendar, color: 'text-blue-600' },
           { label: 'Enviados hoje', value: stats.hoje,    icon: CheckCircle2, color: 'text-emerald-600' },
           { label: 'Total enviados', value: stats.enviados, icon: Send, color: 'text-primary' },
           { label: 'Erros',          value: stats.erros,   icon: XCircle, color: 'text-red-500' },
+          { label: 'Respondidos',   value: stats.respondidos, icon: MessageSquare, color: 'text-violet-600' },
         ].map(({ label, value, icon: Icon, color }) => (
           <Card key={label} className="border-border/50">
             <CardContent className="pt-4 pb-3">
@@ -958,6 +981,7 @@ export function Cobranca() {
                         <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Status</th>
                         <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Enviado em</th>
                         <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Tipo</th>
+                        <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Resposta</th>
                         <th className="px-4 py-3"/>
                       </tr>
                     </thead>
@@ -983,6 +1007,17 @@ export function Cobranca() {
                               ? <Badge variant="outline" className="text-xs">Manual</Badge>
                               : <Badge className="bg-primary/10 text-primary border-primary/20 text-xs">Auto</Badge>
                             }
+                          </td>
+                          <td className="px-4 py-3">
+                            {log.respondeu_em ? (
+                              <div className="flex items-start gap-1.5 max-w-[220px]">
+                                <MessageSquare size={12} className="text-violet-600 mt-0.5 shrink-0"/>
+                                <div className="min-w-0">
+                                  <p className="text-xs text-foreground truncate" title={log.ultima_resposta ?? ''}>{log.ultima_resposta}</p>
+                                  <p className="text-[10px] text-muted-foreground">{fmtDate(log.respondeu_em)}</p>
+                                </div>
+                              </div>
+                            ) : <span className="text-muted-foreground text-xs">—</span>}
                           </td>
                           <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                             {log.status === 'erro' && (

@@ -273,7 +273,7 @@ async function enviarPorLogId(db: any, evoInstances: EvoInstance[], logId: strin
 }
 
 async function enviarManual(db: any, evoInstances: EvoInstance[], body: any, userId: string | null, cors: any) {
-  const { aluno_id, pagamento_id, mensagem, template_nome, template_tipo, aluno_nome, telefone } = body;
+  const { aluno_id, pagamento_id, mensagem, template_nome, template_tipo, template_id, aluno_nome, telefone } = body;
 
   let phone = telefone;
   let nome  = aluno_nome;
@@ -303,6 +303,7 @@ async function enviarManual(db: any, evoInstances: EvoInstance[], body: any, use
     mensagem,
     template_nome: template_nome || "Manual",
     template_tipo: template_tipo || null,
+    template_id: template_id || null,
     status: "pendente",
     enviado_por: userId,
     manual: true,
@@ -354,12 +355,14 @@ async function proximoEnvioElegivel(
     if (!template) continue;
 
     // Dedupe por sempre (não só "hoje") -- uma fase de vários dias não pode repetir a
-    // mesma mensagem em cada tique enquanto o pagamento permanecer nela.
+    // mesma mensagem em cada tique enquanto o pagamento permanecer nela. Casa por
+    // template_id (estável), não template_nome (texto) -- renomear um template não pode
+    // fazer o sistema "esquecer" que já mandou aquela fase e reenviar duplicado.
     const { count } = await db
       .from("cobranca_logs")
       .select("id", { count: "exact", head: true })
       .eq("pagamento_id", item.pagamento_id)
-      .eq("template_nome", template.nome)
+      .eq("template_id", template.id)
       .eq("status", "enviado");
     if (count && count > 0) continue;
 
@@ -439,6 +442,7 @@ async function processarTick(db: any, cors: any) {
   const { data: logRow } = await db.from("cobranca_logs").insert({
     aluno_id: item.aluno_id, pagamento_id: item.pagamento_id, aluno_nome: item.aluno_nome,
     telefone: item.telefone, mensagem, template_nome: template.nome, template_tipo: template.tipo,
+    template_id: template.id,
     status: "pendente", manual: false, agendado_para: now.toISOString(),
   }).select("id").single();
 
@@ -592,6 +596,7 @@ async function processarFilaAutomatica(db: any, userId: string | null, cors: any
       aluno_id: proximo.item.aluno_id, pagamento_id: proximo.item.pagamento_id,
       aluno_nome: proximo.item.aluno_nome, telefone: proximo.item.telefone, mensagem: proximo.mensagem,
       template_nome: proximo.template.nome, template_tipo: proximo.template.tipo,
+      template_id: proximo.template.id,
       status: "pendente", enviado_por: userId, manual: false, agendado_para: new Date().toISOString(),
     }).select("id").single();
 
