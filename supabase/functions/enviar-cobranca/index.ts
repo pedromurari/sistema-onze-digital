@@ -142,11 +142,32 @@ async function getConnectedInstanceIds(instances: EvoInstance[]): Promise<Set<st
   return connected;
 }
 
+// Opt-out global (mesma chave normalizada usada em evo-resposta/disparo-runner/
+// funil-processar: sem DDI 55, 11 digitos).
+function toOptOutKey(raw: string): string {
+  const d = raw.replace(/\D/g, "");
+  if ((d.length === 13 || d.length === 12) && d.startsWith("55")) return d.slice(2);
+  return d.slice(-11);
+}
+
+async function estaOptOut(db: any, phone: string): Promise<boolean> {
+  const { data } = await db
+    .from("whatsapp_opt_out")
+    .select("telefone")
+    .eq("telefone", toOptOutKey(phone))
+    .maybeSingle();
+  return Boolean(data);
+}
+
 async function sendViaEvolution(
+  db: any,
   evoInstances: EvoInstance[],
   phone: string,
   message: string,
 ): Promise<{ ok: boolean; error?: string; ambiguous?: boolean }> {
+  if (await estaOptOut(db, phone)) {
+    return { ok: false, error: "Opt-out: destinatário pediu pra parar de receber mensagem" };
+  }
   let lastError = "";
   for (const cfg of evoInstances) {
     const baseUrl = cfg.api_url.replace(/\/$/, "");
@@ -257,7 +278,7 @@ async function enviarPorLogId(db: any, evoInstances: EvoInstance[], logId: strin
     });
   }
 
-  const result = await sendViaEvolution(evoInstances, log.telefone, log.mensagem);
+  const result = await sendViaEvolution(db, evoInstances, log.telefone, log.mensagem);
 
   await db.from("cobranca_logs").update({
     status: result.ok ? "enviado" : "erro",
@@ -310,7 +331,7 @@ async function enviarManual(db: any, evoInstances: EvoInstance[], body: any, use
     agendado_para: new Date().toISOString(),
   }).select("id").single();
 
-  const result = await sendViaEvolution(evoInstances, phone, mensagem);
+  const result = await sendViaEvolution(db, evoInstances, phone, mensagem);
 
   await db.from("cobranca_logs").update({
     status: result.ok ? "enviado" : "erro",
@@ -446,7 +467,7 @@ async function processarTick(db: any, cors: any) {
     status: "pendente", manual: false, agendado_para: now.toISOString(),
   }).select("id").single();
 
-  const result = await sendViaEvolution(connected, item.telefone, mensagem);
+  const result = await sendViaEvolution(db, connected, item.telefone, mensagem);
 
   await db.from("cobranca_logs").update({
     status: result.ok ? "enviado" : "erro",
@@ -600,7 +621,7 @@ async function processarFilaAutomatica(db: any, userId: string | null, cors: any
       status: "pendente", enviado_por: userId, manual: false, agendado_para: new Date().toISOString(),
     }).select("id").single();
 
-    const result = await sendViaEvolution(connected, proximo.item.telefone, proximo.mensagem);
+    const result = await sendViaEvolution(db, connected, proximo.item.telefone, proximo.mensagem);
 
     await db.from("cobranca_logs").update({
       status: result.ok ? "enviado" : "erro",

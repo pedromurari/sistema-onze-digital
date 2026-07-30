@@ -22,6 +22,41 @@ function normalizePhone(raw: string): string {
   return digits.slice(-11);
 }
 
+// Opt-out global de WhatsApp -- heuristica best-effort (mesmo espirito das outras
+// deteccoes por texto deste arquivo, ex: extractText). Palavras curtas e genericas
+// só contam como opt-out quando são a mensagem inteira (padrão "STOP" de SMS/WhatsApp),
+// pra não confundir "vou parar de estudar" com pedido de sair da lista. Frases mais
+// específicas casam como substring em qualquer lugar da mensagem.
+const OPT_OUT_PALAVRAS_EXATAS = ['parar', 'pare', 'stop', 'sair', 'cancelar', 'descadastrar', 'descadastre', 'remover'];
+const OPT_OUT_FRASES = [
+  'para de mandar', 'pare de mandar', 'para de enviar', 'pare de enviar',
+  'para de me mandar', 'pare de me mandar', 'nao manda mais', 'nao mandem mais',
+  'nao quero mais receber', 'nao quero mais mensagem', 'nao quero mais msg',
+  'me tira dessa lista', 'me tira da lista', 'me remove dessa lista', 'me remove da lista',
+  'tira meu numero', 'remove meu numero', 'sair da lista', 'cancelar inscricao',
+];
+
+function normalizarTextoOptOut(texto: string): string {
+  return texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+}
+
+function detectarOptOut(mensagem: string): boolean {
+  const t = normalizarTextoOptOut(mensagem);
+  if (!t) return false;
+  if (OPT_OUT_PALAVRAS_EXATAS.includes(t)) return true;
+  return OPT_OUT_FRASES.some(frase => t.includes(frase));
+}
+
+async function registrarOptOut(supabase: any, telefone: string, mensagem: string): Promise<void> {
+  const { error } = await supabase.from('whatsapp_opt_out').upsert({
+    telefone,
+    origem: 'evo-resposta',
+    gatilho: mensagem.slice(0, 300),
+  }, { onConflict: 'telefone' });
+  if (error) console.error(`falha ao registrar opt-out telefone=${telefone}:`, error.message);
+  else console.log(`opt-out registrado para telefone=${telefone}`);
+}
+
 function extractText(message: Record<string, unknown>): { text: string; tipo: string } {
   if (message.conversation)
     return { text: String(message.conversation), tipo: 'text' };
@@ -114,6 +149,10 @@ serve(async (req) => {
     const s8       = phone.slice(-8);
 
     const { text: mensagem, tipo: mensagemTipo } = extractText(message);
+
+    if (mensagemTipo === 'text' && detectarOptOut(mensagem)) {
+      await registrarOptOut(supabase, phone, mensagem);
+    }
 
     const now = new Date().toISOString();
 
