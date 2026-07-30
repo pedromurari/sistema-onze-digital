@@ -77,7 +77,7 @@ serve(async (req) => {
     // effort com múltiplos fallbacks, validar contra o payload real de teste.
     if (event === 'messages.update' || event === 'message.update') {
       console.log('RAW messages.update:', JSON.stringify(body).slice(0, 2000));
-      return await handleMessagesUpdate(supabase, body);
+      return await handleMessagesUpdate(supabase, instance, body);
     }
 
     // ── Aquecimento de chips: estabilidade de conexão ─────────────────────────
@@ -95,6 +95,14 @@ serve(async (req) => {
 
     const remoteJid = String(key.remoteJid ?? '');
     const fromMe    = Boolean(key.fromMe);
+    const message   = (data.message ?? {}) as Record<string, unknown>;
+
+    // Voto de enquete: chega como message.upsert de grupo com pollUpdateMessage.
+    // Precisa ser tratado ANTES do skip de "mensagem de grupo" abaixo, senão
+    // é descartado silenciosamente -- todas as enquetes do funil vão pra grupo.
+    if (message.pollUpdateMessage && remoteJid.includes('@g.us')) {
+      return await handlePollVote(supabase, instance, remoteJid, key, message.pollUpdateMessage as Record<string, unknown>, body);
+    }
 
     // Ignora mensagens enviadas por nós ou mensagens de grupo
     if (fromMe)                       return ok({ ok: true, skipped: true, reason: 'fromMe=true' });
@@ -105,7 +113,6 @@ serve(async (req) => {
     const phone    = normalizePhone(rawPhone);
     const s8       = phone.slice(-8);
 
-    const message    = (data.message ?? {}) as Record<string, unknown>;
     const { text: mensagem, tipo: mensagemTipo } = extractText(message);
 
     const now = new Date().toISOString();
@@ -240,6 +247,7 @@ function ackStatusFromNumero(status: number | undefined): 'entregue' | 'lido' | 
 
 async function handleMessagesUpdate(
   supabase: ReturnType<typeof createClient>,
+  instance: string,
   body: Record<string, unknown>,
 ): Promise<Response> {
   const data = body.data ?? {};
@@ -249,6 +257,24 @@ async function handleMessagesUpdate(
   for (const upd of updates as Record<string, unknown>[]) {
     const key = (upd.key ?? {}) as Record<string, unknown>;
     const messageId = String(key.id ?? upd.keyId ?? upd.id ?? '');
+
+    // Captura heurística: há relatos de que o voto de enquete só dispara
+    // messages.update (não messages.upsert) em algumas versões da Evolution
+    // API, sem forma documentada do payload. Guarda bruto pra inspecionar
+    // depois, sem tentar decodificar um formato que ainda não confirmamos.
+    const groupJidUpd = String(key.remoteJid ?? '');
+    if (groupJidUpd.includes('@g.us') && JSON.stringify(upd).toLowerCase().includes('poll')) {
+      const voterJidUpd = String(key.participant ?? '');
+      await supabase.from('funnel_poll_respostas').insert({
+        group_jid: groupJidUpd,
+        voter_jid: voterJidUpd || null,
+        voter_phone: voterJidUpd ? normalizePhone(voterJidUpd.split('@')[0]) : null,
+        evolution_instance: instance,
+        event_type: 'messages.update:heuristic',
+        raw_payload: upd,
+      }).then(({ error }) => { if (error) console.error('poll heuristic insert error:', error.message); });
+    }
+
     if (!messageId) continue;
 
     const statusRaw = (upd.update as Record<string, unknown>)?.status ?? upd.status;
@@ -303,6 +329,76 @@ async function handleMessagesUpdate(
   }
 
   return ok({ ok: true, tipo: 'messages.update', atualizados });
+}
+
+// ── Voto de enquete (pollUpdateMessage): captura bruta ──────────────────────
+// O voto chega criptografado (selectedOptions são hashes SHA-256 da opção,
+// e o payload em si vem cifrado com uma chave derivada da mensagem original
+// da enquete) -- a Evolution API tem bug documentado nisso
+// (github.com/EvolutionAPI/evolution-api/issues/1644). Por ora guardamos o
+// payload bruto + quem/quando/qual funil, o suficiente pra saber quem
+// engajou com a enquete. Decodificar a opção escolhida fica pra uma fase
+// seguinte, depois de inspecionar um payload real em produção.
+async function handlePollVote(
+  supabase: ReturnType<typeof createClient>,
+  instance: string,
+  groupJid: string,
+  key: Record<string, unknown>,
+  pollUpdate: Record<string, unknown>,
+  rawBody: Record<string, unknown>,
+): Promise<Response> {
+  const voterJid   = String(key.participant ?? key.remoteJid ?? '');
+  const voterPhone = voterJid ? normalizePhone(voterJid.split('@')[0]) : null;
+
+  const pollCreationKey       = (pollUpdate.pollCreationMessageKey ?? {}) as Record<string, unknown>;
+  const pollCreationMessageId = String(pollCreationKey.id ?? '') || null;
+
+  const { data: funnelCfg } = await supabase
+    .from('funnel_configs')
+    .select('funnel_name')
+    .or(`grupo_1_id.eq.${groupJid},grupo_2_id.eq.${groupJid}`)
+    .maybeSingle();
+
+  let funnelMessageId: string | null = null;
+  let pollName: string | null = null;
+
+  if (funnelCfg?.funnel_name) {
+    const { data: pollMsg } = await supabase
+      .from('funnel_messages')
+      .select('id, poll_name')
+      .eq('funnel_name', funnelCfg.funnel_name)
+      .eq('message_type', 'poll')
+      .eq('status', 'sent')
+      .lte('scheduled_at', new Date().toISOString())
+      .order('scheduled_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    funnelMessageId = pollMsg?.id ?? null;
+    pollName        = pollMsg?.poll_name ?? null;
+  }
+
+  const { error: insertErr } = await supabase.from('funnel_poll_respostas').insert({
+    funnel_message_id:        funnelMessageId,
+    funnel_name:               funnelCfg?.funnel_name ?? null,
+    group_jid:                 groupJid,
+    poll_creation_message_id:  pollCreationMessageId,
+    poll_name:                 pollName,
+    voter_jid:                 voterJid || null,
+    voter_phone:                voterPhone,
+    evolution_instance:        instance,
+    event_type:                'messages.upsert:pollUpdateMessage',
+    raw_payload:                rawBody,
+  });
+
+  if (insertErr) console.error('handlePollVote insert error:', insertErr.message);
+
+  return ok({
+    ok: true,
+    tipo: 'poll_vote',
+    funnel: funnelCfg?.funnel_name ?? null,
+    voterPhone,
+    saved: !insertErr,
+  });
 }
 
 // ── Conexão (connection.update): histórico de estabilidade por instância ────
