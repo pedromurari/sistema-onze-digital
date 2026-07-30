@@ -223,6 +223,11 @@ export function Cobranca() {
   const [templates, setTemplates]     = useState<Template[]>([]);
   const [logs, setLogs]               = useState<CobrancaLog[]>([]);
   const [fila, setFila]               = useState<FilaItem[]>([]);
+  // Chaves "pagamento_id:template_id" já enviadas com sucesso -- usado pra tirar da fila
+  // quem já foi cobrado na janela/fase atual (mesma regra do backend, ver
+  // proximoEnvioElegivel em enviar-cobranca), em vez de reaparecer todo dia até bater
+  // o próximo dia exato.
+  const [envioPorFase, setEnvioPorFase] = useState<Set<string>>(new Set());
 
   const [loading, setLoading]         = useState(true);
   const [saving, setSaving]           = useState(false);
@@ -296,7 +301,23 @@ export function Cobranca() {
     }
 
     const filaRes = await supabase.rpc('get_alunos_para_cobranca' as any, { p_data: hojeSaoPaulo() });
-    if (filaRes.data) setFila(filaRes.data as FilaItem[]);
+    const filaData = (filaRes.data as FilaItem[]) ?? [];
+    if (filaRes.data) setFila(filaData);
+
+    const pagamentoIds = filaData.map(f => f.pagamento_id);
+    if (pagamentoIds.length) {
+      const { data: enviosData } = await supabase
+        .from('cobranca_logs' as any)
+        .select('pagamento_id, template_id')
+        .eq('status', 'enviado')
+        .not('template_id', 'is', null)
+        .in('pagamento_id', pagamentoIds);
+      setEnvioPorFase(new Set(
+        ((enviosData as any[]) ?? []).map(r => `${r.pagamento_id}:${r.template_id}`)
+      ));
+    } else {
+      setEnvioPorFase(new Set());
+    }
 
     setLoading(false);
   }, []);
@@ -388,23 +409,47 @@ export function Cobranca() {
     return () => clearInterval(tickId);
   }, []);
 
+  // pos_vencimento casa por faixa de dias (fase), não dia exato -- mesma regra do backend
+  // (enviar-cobranca/proximoEnvioElegivel), pra pré-preencher certo mesmo quem está em
+  // atraso "de limbo" sem bater um dia fixo.
+  const templateParaOffset = (offset: number): Template | undefined => {
+    if (offset < 0) return templates.find(t => t.tipo === 'pre_vencimento' && t.dias_offset === offset && t.ativo);
+    if (offset === 0) return templates.find(t => t.tipo === 'vencimento' && t.dias_offset === 0 && t.ativo);
+    return templates.find(t =>
+      t.tipo === 'pos_vencimento' && t.ativo &&
+      offset >= t.dias_offset && (t.dias_offset_fim == null || offset <= t.dias_offset_fim),
+    );
+  };
+
+  // Fila "de verdade": tira quem já recebeu a mensagem da fase/janela atual (mesma regra
+  // de dedupe do backend). Sem isso, quem está numa janela de vários dias (ex: 8-15 dias
+  // após vencimento) aparecia repetido todo dia até bater o próximo dia exato configurado,
+  // dando a impressão de que a cobrança ainda funciona por dia em vez de por janela.
+  const filaElegivel = useMemo(() => {
+    return fila.filter(item => {
+      const tpl = templateParaOffset(item.dias_offset);
+      if (!tpl) return true;
+      return !envioPorFase.has(`${item.pagamento_id}:${tpl.id}`);
+    });
+  }, [fila, templates, envioPorFase]);
+
   // ── Schedule calculation ──────────────────────────────────────────────────
   const schedule = useMemo(() => {
-    if (!cobrancaCfg || fila.length === 0) return null;
+    if (!cobrancaCfg || filaElegivel.length === 0) return null;
     const inicio = cobrancaCfg.horario_inicio_envio || cobrancaCfg.horario_envio || '09:00';
     const fim = cobrancaCfg.horario_fim_envio || '18:00';
     const totalMin = timeToMin(fim) - timeToMin(inicio);
     if (totalMin <= 0) return null;
-    const intervalMin = fila.length > 1 ? Math.floor(totalMin / (fila.length - 1)) : totalMin;
-    const slots = fila.map((_, i) => addMinutesToTime(inicio, i * intervalMin));
+    const intervalMin = filaElegivel.length > 1 ? Math.floor(totalMin / (filaElegivel.length - 1)) : totalMin;
+    const slots = filaElegivel.map((_, i) => addMinutesToTime(inicio, i * intervalMin));
     return { intervalMin, inicio, fim, slots, totalMin };
-  }, [fila, cobrancaCfg]);
+  }, [filaElegivel, cobrancaCfg]);
 
   // ── Fila breakdown ────────────────────────────────────────────────────────
   const filaStats = useMemo(() => ({
-    inadimplentes: fila.filter(f => f.pagamento_status === 'atrasado').length,
-    mesMes: fila.filter(f => f.pagamento_status === 'pendente').length,
-  }), [fila]);
+    inadimplentes: filaElegivel.filter(f => f.pagamento_status === 'atrasado').length,
+    mesMes: filaElegivel.filter(f => f.pagamento_status === 'pendente').length,
+  }), [filaElegivel]);
 
   // Parcelas já cobradas hoje -- pra marcar na tabela da fila em vez de deixar parecer
   // que ninguém foi tocado ainda
@@ -489,18 +534,6 @@ export function Cobranca() {
   };
 
   // ── Envio manual ──────────────────────────────────────────────────────────
-  // pos_vencimento casa por faixa de dias (fase), não dia exato -- mesma regra do backend
-  // (enviar-cobranca/proximoEnvioElegivel), pra pré-preencher certo mesmo quem está em
-  // atraso "de limbo" sem bater um dia fixo.
-  const templateParaOffset = (offset: number): Template | undefined => {
-    if (offset < 0) return templates.find(t => t.tipo === 'pre_vencimento' && t.dias_offset === offset && t.ativo);
-    if (offset === 0) return templates.find(t => t.tipo === 'vencimento' && t.dias_offset === 0 && t.ativo);
-    return templates.find(t =>
-      t.tipo === 'pos_vencimento' && t.ativo &&
-      offset >= t.dias_offset && (t.dias_offset_fim == null || offset <= t.dias_offset_fim),
-    );
-  };
-
   const abrirSendModal = (item: FilaItem) => {
     const tpl = templateParaOffset(item.dias_offset);
     if (tpl) {
@@ -654,9 +687,9 @@ export function Cobranca() {
     enviados: logs.filter(l => l.status === 'enviado').length,
     erros:    logs.filter(l => l.status === 'erro').length,
     hoje:     logs.filter(l => l.status === 'enviado' && l.enviado_em && dataSaoPaulo(new Date(l.enviado_em)) === hojeSaoPaulo()).length,
-    filaHoje: fila.length,
+    filaHoje: filaElegivel.length,
     respondidos: logs.filter(l => !!l.respondeu_em).length,
-  }), [logs, fila]);
+  }), [logs, filaElegivel]);
 
   if (loading) {
     return (
@@ -689,7 +722,7 @@ export function Cobranca() {
           <Button variant="outline" size="sm" onClick={loadAll} className="gap-1.5">
             <RefreshCw size={14}/> Atualizar
           </Button>
-          {cobrancaCfg?.ativo && fila.length > 0 && (
+          {cobrancaCfg?.ativo && filaElegivel.length > 0 && (
             <Button size="sm" onClick={() => setBulkConfirmOpen(true)} className="gap-1.5">
               <Play size={14}/> Disparar agora
             </Button>
@@ -808,7 +841,7 @@ export function Cobranca() {
       {/* Tabs */}
       <Tabs value={tab} onValueChange={v => setTab(v as any)}>
         <TabsList className="w-full sm:w-auto">
-          <TabsTrigger value="fila"      className="gap-1.5 flex-1 sm:flex-none"><Calendar size={14}/> Fila ({fila.length})</TabsTrigger>
+          <TabsTrigger value="fila"      className="gap-1.5 flex-1 sm:flex-none"><Calendar size={14}/> Fila ({filaElegivel.length})</TabsTrigger>
           <TabsTrigger value="historico" className="gap-1.5 flex-1 sm:flex-none"><History size={14}/> Histórico</TabsTrigger>
           <TabsTrigger value="templates" className="gap-1.5 flex-1 sm:flex-none"><FileText size={14}/> Templates ({templates.length})</TabsTrigger>
           <TabsTrigger value="config"    className="gap-1.5 flex-1 sm:flex-none"><Settings size={14}/> Configuração</TabsTrigger>
@@ -818,14 +851,14 @@ export function Cobranca() {
         <TabsContent value="fila" className="mt-4 space-y-4">
 
           {/* Schedule info banner */}
-          {fila.length > 0 && schedule && (
+          {filaElegivel.length > 0 && schedule && (
             <Card className="border-blue-200 bg-blue-50/60">
               <CardContent className="py-3 px-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-start gap-3">
                     <Info size={16} className="text-blue-600 mt-0.5 shrink-0" />
                     <div className="text-sm text-blue-800">
-                      <span className="font-semibold">{fila.length} contatos na fila</span>
+                      <span className="font-semibold">{filaElegivel.length} contatos na fila</span>
                       {' — '}intervalo de <span className="font-semibold">{schedule.intervalMin} min</span> entre envios,
                       de <span className="font-semibold">{schedule.inicio}</span> às <span className="font-semibold">{schedule.fim}</span>
                     </div>
@@ -853,11 +886,19 @@ export function Cobranca() {
                 <Calendar size={16}/> Fila de hoje
               </CardTitle>
               <CardDescription>
-                Apenas cobranças deste mês (pendente) e inadimplentes de meses anteriores
+                Apenas cobranças deste mês (pendente) e inadimplentes de meses anteriores, que ainda não
+                receberam a mensagem da janela/fase atual
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
-              {fila.length === 0 ? (
+              {fila.length - filaElegivel.length > 0 && (
+                <div className="px-4 pt-3">
+                  <span className="text-xs text-muted-foreground">
+                    {fila.length - filaElegivel.length} já cobrado(s) nesta janela — aparecem de novo só na próxima janela configurada
+                  </span>
+                </div>
+              )}
+              {filaElegivel.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
                   <CheckCircle2 size={40} className="text-emerald-400"/>
                   <p className="font-medium">Nenhum envio pendente para hoje</p>
@@ -880,7 +921,7 @@ export function Cobranca() {
                       </tr>
                     </thead>
                     <tbody>
-                      {fila.map((item, idx) => {
+                      {filaElegivel.map((item, idx) => {
                         const atraso = item.dias_offset;
                         const isSending = enviandoIds.has(item.pagamento_id);
                         const isInadimplente = item.pagamento_status === 'atrasado';
@@ -1335,13 +1376,13 @@ export function Cobranca() {
                     className="gap-1.5"
                     onClick={() => setTab('fila')}
                   >
-                    <Info size={13}/> Ver fila atual ({fila.length})
+                    <Info size={13}/> Ver fila atual ({filaElegivel.length})
                   </Button>
                   <Button
                     size="sm"
                     className="gap-1.5"
                     onClick={() => setBulkConfirmOpen(true)}
-                    disabled={fila.length === 0}
+                    disabled={filaElegivel.length === 0}
                   >
                     <Play size={13}/> Enviar agora
                   </Button>
@@ -1430,7 +1471,7 @@ export function Cobranca() {
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div className="p-3 rounded-lg bg-blue-50 border border-blue-100 text-center">
-                <p className="text-2xl font-bold text-blue-700">{fila.length}</p>
+                <p className="text-2xl font-bold text-blue-700">{filaElegivel.length}</p>
                 <p className="text-xs text-blue-600">total na fila</p>
               </div>
               <div className="p-3 rounded-lg bg-red-50 border border-red-100 text-center">
@@ -1449,7 +1490,7 @@ export function Cobranca() {
                   <span>1 envio a cada <strong className="text-foreground">{schedule.intervalMin} min</strong></span>
                 </div>
                 <div className="text-xs text-muted-foreground pt-1">
-                  {fila.length > 0 && `Primeiro: ${schedule.slots[0]} • Último: ${schedule.slots[schedule.slots.length - 1]}`}
+                  {filaElegivel.length > 0 && `Primeiro: ${schedule.slots[0]} • Último: ${schedule.slots[schedule.slots.length - 1]}`}
                 </div>
               </div>
             )}
@@ -1460,7 +1501,7 @@ export function Cobranca() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setBulkConfirmOpen(false)}>Cancelar</Button>
             <Button onClick={dispararBulk} className="gap-1.5">
-              <Play size={14}/> Disparar {fila.length} envios
+              <Play size={14}/> Disparar {filaElegivel.length} envios
             </Button>
           </DialogFooter>
         </DialogContent>

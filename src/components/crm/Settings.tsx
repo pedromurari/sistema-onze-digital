@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { validateWebhookUrl, WebhookUrlValidationError } from '@/lib/webhook';
 import { supabase } from '@/integrations/supabase/client';
-import { Webhook, BookOpen, Globe, Plus, Trash2, Send, Smartphone, RefreshCw, Loader2, CheckCircle2, XCircle, QrCode, FileText, Copy, ExternalLink, ChevronRight, MessageSquare, Zap } from 'lucide-react';
+import { Webhook, BookOpen, Globe, Plus, Trash2, Send, Smartphone, RefreshCw, Loader2, CheckCircle2, XCircle, QrCode, FileText, Copy, ExternalLink, ChevronRight, MessageSquare, Zap, Wallet } from 'lucide-react';
 import { EvolutionTaskPanel } from './EvolutionTaskPanel';
 
 interface EvolutionInstance {
@@ -58,6 +58,44 @@ function useEvolutionInstances() {
   };
 
   return { instances, loading, load, save, toggle, remove };
+}
+
+interface CanalCobranca {
+  id: string;
+  nome: string;
+  ativo: boolean;
+}
+
+function useCanaisCobranca() {
+  const [canais, setCanais] = useState<CanalCobranca[]>([]);
+  const { toast } = useToast();
+
+  const load = useCallback(async () => {
+    const { data, error } = await supabase.from('canais_cobranca').select('id, nome, ativo').order('nome');
+    if (!error && data) setCanais(data as CanalCobranca[]);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const add = async (nome: string) => {
+    const { error } = await supabase.from('canais_cobranca').insert({ nome });
+    if (error) { toast({ variant: 'destructive', title: 'Erro', description: error.message }); return; }
+    await load();
+  };
+
+  const toggle = async (id: string) => {
+    const canal = canais.find(c => c.id === id);
+    if (!canal) return;
+    await supabase.from('canais_cobranca').update({ ativo: !canal.ativo }).eq('id', id);
+    setCanais(prev => prev.map(c => c.id === id ? { ...c, ativo: !c.ativo } : c));
+  };
+
+  const remove = async (id: string) => {
+    await supabase.from('canais_cobranca').delete().eq('id', id);
+    setCanais(prev => prev.filter(c => c.id !== id));
+  };
+
+  return { canais, add, toggle, remove };
 }
 
 async function fetchConnectionState(inst: EvolutionInstance): Promise<ConnState> {
@@ -422,11 +460,13 @@ function EvolutionTab() {
 
 export function Settings() {
   const { cursos, fontes, config, addCurso, deleteCurso, addFonte, deleteFonte, updateConfig } = useLeads();
+  const { canais: canaisCobranca, add: addCanalCobranca, toggle: toggleCanalCobranca, remove: removeCanalCobranca } = useCanaisCobranca();
   const { toast } = useToast();
   const [webhookOut, setWebhookOut] = useState(config.webhookOut || '');
   const [webhookIn, setWebhookIn] = useState(config.webhookIn || '');
   const [newCurso, setNewCurso] = useState('');
   const [newFonte, setNewFonte] = useState('');
+  const [newCanalCobranca, setNewCanalCobranca] = useState('');
 
   const saveWebhooks = async () => {
     try {
@@ -507,6 +547,13 @@ export function Settings() {
     toast({ title: 'Fonte adicionada' });
   };
 
+  const handleAddCanalCobranca = async () => {
+    if (!newCanalCobranca.trim()) return;
+    await addCanalCobranca(newCanalCobranca.trim());
+    setNewCanalCobranca('');
+    toast({ title: 'Canal adicionado' });
+  };
+
   return (
     <div className="p-4 lg:p-6 space-y-6 animate-fade-in pb-20 lg:pb-6">
       <h1 className="text-2xl font-bold text-foreground">Configurações</h1>
@@ -528,6 +575,10 @@ export function Settings() {
           <TabsTrigger value="fontes">
             <Globe className="h-4 w-4 mr-2" />
             Fontes
+          </TabsTrigger>
+          <TabsTrigger value="canais_cobranca">
+            <Wallet className="h-4 w-4 mr-2" />
+            Canais de Cobrança
           </TabsTrigger>
           <TabsTrigger value="contratos">
             <FileText className="h-4 w-4 mr-2" />
@@ -669,6 +720,56 @@ export function Settings() {
                   </Button>
                 </div>
               ))}
+            </div>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="canais_cobranca" className="space-y-4">
+          <Card className="p-6 bg-card border-border">
+            <h2 className="text-lg font-semibold text-foreground mb-1">Canais de Cobrança</h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Opções que aparecem ao dar baixa num pagamento, para registrar de onde veio o dinheiro
+              (ex: Asaas, Vega, PIX manual, link de parceiro). Assim dá pra calcular a taxa exata de cada transação.
+            </p>
+            <div className="flex gap-2 mb-4">
+              <Input
+                value={newCanalCobranca}
+                onChange={(e) => setNewCanalCobranca(e.target.value)}
+                placeholder="Nome do novo canal"
+                onKeyDown={(e) => e.key === 'Enter' && handleAddCanalCobranca()}
+              />
+              <Button onClick={handleAddCanalCobranca} className="gradient-primary hover:opacity-90">
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="space-y-2">
+              {canaisCobranca.map((canal) => (
+                <div
+                  key={canal.id}
+                  className="flex items-center justify-between p-3 rounded-lg bg-muted"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={canal.ativo ? 'text-foreground' : 'text-muted-foreground line-through'}>{canal.nome}</span>
+                    {!canal.ativo && <Badge variant="outline" className="text-[10px]">Inativo</Badge>}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button size="sm" variant="ghost" onClick={() => toggleCanalCobranca(canal.id)}>
+                      {canal.ativo ? 'Desativar' : 'Ativar'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => removeCanalCobranca(canal.id)}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              {canaisCobranca.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">Nenhum canal cadastrado ainda.</p>
+              )}
             </div>
           </Card>
         </TabsContent>

@@ -121,6 +121,19 @@ serve(async (req) => {
         continue;
       }
 
+      // Nunca enviar pra quem já pediu pra parar (whatsapp_opt_out, gravado por
+      // evo-resposta) -- risco de denuncia/ban de numero, checagem obrigatoria
+      // antes de qualquer tentativa de envio.
+      if (await estaOptOut(supabase, phone)) {
+        await supabase.from('disparo_leads')
+          .update({ status: 'pulado', error_msg: 'Opt-out: lead pediu pra parar de receber mensagem', sent_at: now.toISOString() })
+          .eq('id', lead.id);
+        await supabase.from('disparo_campanhas')
+          .update({ leads_skipped: (camp.leads_skipped ?? 0) + 1 })
+          .eq('id', camp.id);
+        continue;
+      }
+
       const pinnedIds: string[] = (camp.evolution_config_ids?.length ? camp.evolution_config_ids : camp.evolution_config_id ? [camp.evolution_config_id] : []);
       const scoped = pinnedIds.length
         ? allInstances.filter((r: { id: string }) => pinnedIds.includes(r.id))
@@ -180,6 +193,12 @@ serve(async (req) => {
       };
       const message = applyTemplate(camp.template ?? '', vars);
 
+      // Baixa e conserta o áudio uma vez por lead (não por tentativa de
+      // instância) -- reaproveita entre fallbacks se a primeira instância falhar.
+      const audioPayload = camp.message_type === 'audio'
+        ? await prepareAudioPayload(camp.media_url)
+        : null;
+
       let sendOk    = false;
       let sendError = '';
       let sentInstanceId = '';
@@ -190,9 +209,29 @@ serve(async (req) => {
         const rawBase = (inst.api_url as string).replace(/\/$/, '');
         const base    = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
         try {
+          const instPath = encodeURIComponent(inst.instance_name);
           let res: Response;
-          if (camp.message_type && camp.message_type !== 'text') {
-            res = await fetch(`${base}/message/sendMedia/${inst.instance_name}`, {
+          if (camp.message_type === 'audio') {
+            // Áudio NÃO pode ir por /sendMedia: lá a Evolution deduz o mimetype
+            // do Content-Type da URL de origem (o Drive devolve "video/mp4"),
+            // manda um audioMessage marcado como vídeo e o WhatsApp não toca --
+            // a API responde 200 e o lead vira "enviado" sem nada chegar.
+            // /sendWhatsAppAudio com encoding transcodifica pra ogg/opus e
+            // envia como áudio de verdade (ptt), independente da URL de origem.
+            // audioPayload já vem com o MP4 remuxado (moov no início) quando
+            // precisava -- ver prepareAudioPayload/faststartMp4 mais abaixo.
+            res = await fetch(`${base}/message/sendWhatsAppAudio/${instPath}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', apikey: inst.api_key },
+              body: JSON.stringify({
+                number:   phone,
+                audio:    audioPayload,
+                encoding: true,
+                delay:    1200,
+              }),
+            });
+          } else if (camp.message_type && camp.message_type !== 'text') {
+            res = await fetch(`${base}/message/sendMedia/${instPath}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', apikey: inst.api_key },
               body: JSON.stringify({
@@ -204,7 +243,7 @@ serve(async (req) => {
               }),
             });
           } else {
-            res = await fetch(`${base}/message/sendText/${inst.instance_name}`, {
+            res = await fetch(`${base}/message/sendText/${instPath}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', apikey: inst.api_key },
               body: JSON.stringify({
@@ -286,6 +325,126 @@ serve(async (req) => {
   }
 });
 
+// ── Áudio: conserto de MP4 não-streamable ───────────────────────────────────
+// A Evolution entrega o áudio ao ffmpeg por um pipe (não-seekable). MP4 com o
+// atom `moov` (o índice) no fim do arquivo não é demuxável assim: o ffmpeg
+// precisaria voltar atrás pra ler os dados que já passaram. Ele falha, e aí um
+// bug da Evolution resolve `Buffer.concat([])` -- buffer vazio passa no teste
+// `Buffer.isBuffer()` e vira uma mensagem de 0 byte. O WhatsApp mostra "áudio
+// não disponível" e a API ainda responde 200, marcando o lead como enviado.
+// Exports de áudio do WhatsApp (que é o que costuma vir do Drive) têm o `moov`
+// no fim. A solução é mover o `moov` pra frente antes de mandar. Não recodifica
+// nada: reordena os boxes e corrige as tabelas de offset de chunk, que são
+// absolutas em relação ao arquivo.
+
+const MP4_CONTAINERS = new Set(['moov', 'trak', 'mdia', 'minf', 'stbl', 'edts', 'udta']);
+
+type Mp4Box = { type: string; start: number; end: number; payload: number };
+
+function readBoxes(v: DataView, b: Uint8Array, start: number, end: number): Mp4Box[] {
+  const out: Mp4Box[] = [];
+  let off = start;
+  while (off + 8 <= end) {
+    let size = v.getUint32(off);
+    const type = String.fromCharCode(b[off + 4], b[off + 5], b[off + 6], b[off + 7]);
+    let payload = off + 8;
+    if (size === 1) {
+      size = v.getUint32(off + 8) * 2 ** 32 + v.getUint32(off + 12); // tamanho de 64 bits
+      payload = off + 16;
+    } else if (size === 0) {
+      size = end - off;
+    }
+    if (size < 8 || off + size > end) return out; // estrutura inesperada -- para aqui
+    out.push({ type, start: off, end: off + size, payload });
+    off += size;
+  }
+  return out;
+}
+
+function shiftChunkOffsets(v: DataView, b: Uint8Array, start: number, end: number, delta: number): number {
+  let moved = 0;
+  for (const box of readBoxes(v, b, start, end)) {
+    if (box.type === 'stco') {
+      const count = v.getUint32(box.payload + 4);
+      for (let i = 0; i < count; i++) {
+        const p = box.payload + 8 + i * 4;
+        if (p + 4 > box.end) break;
+        v.setUint32(p, v.getUint32(p) + delta);
+        moved++;
+      }
+    } else if (box.type === 'co64') {
+      const count = v.getUint32(box.payload + 4);
+      for (let i = 0; i < count; i++) {
+        const p = box.payload + 8 + i * 8;
+        if (p + 8 > box.end) break;
+        const val = v.getUint32(p) * 2 ** 32 + v.getUint32(p + 4) + delta;
+        v.setUint32(p, Math.floor(val / 2 ** 32));
+        v.setUint32(p + 4, val % 2 ** 32);
+        moved++;
+      }
+    } else if (MP4_CONTAINERS.has(box.type)) {
+      moved += shiftChunkOffsets(v, b, box.payload, box.end, delta);
+    }
+  }
+  return moved;
+}
+
+/** Devolve o MP4 com o `moov` no início, ou null se não precisar/não der pra mexer. */
+function faststartMp4(input: Uint8Array): Uint8Array | null {
+  const v = new DataView(input.buffer, input.byteOffset, input.byteLength);
+  const top = readBoxes(v, input, 0, input.length);
+  const moov = top.find(x => x.type === 'moov');
+  const mdat = top.find(x => x.type === 'mdat');
+  if (!moov || !mdat) return null;          // não é MP4 -- segue como está
+  if (moov.start < mdat.start) return null; // já está streamable
+
+  const moovBytes = input.slice(moov.start, moov.end); // cópia: não mexe no original
+  const mv = new DataView(moovBytes.buffer, moovBytes.byteOffset, moovBytes.byteLength);
+  // O mdat vai ser empurrado pra frente exatamente pelo tamanho do moov, então
+  // cada offset de chunk soma esse mesmo delta.
+  if (!shiftChunkOffsets(mv, moovBytes, 8, moovBytes.length, moovBytes.length)) return null;
+
+  const out = new Uint8Array(input.length);
+  let pos = 0;
+  const ftyp = top.find(x => x.type === 'ftyp');
+  if (ftyp) { out.set(input.subarray(ftyp.start, ftyp.end), pos); pos += ftyp.end - ftyp.start; }
+  out.set(moovBytes, pos); pos += moovBytes.length;
+  for (const box of top) {
+    if (box.type === 'ftyp' || box.type === 'moov') continue;
+    out.set(input.subarray(box.start, box.end), pos); pos += box.end - box.start;
+  }
+  // Se os boxes não cobriram o arquivo inteiro, algo escapou da leitura -- não arrisca.
+  return pos === input.length ? out : null;
+}
+
+function toBase64(bytes: Uint8Array): string {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 8192) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
+  }
+  return btoa(bin);
+}
+
+/**
+ * Decide o que mandar no campo `audio` da Evolution: base64 já corrigido quando
+ * o arquivo precisa de faststart, ou a própria URL quando já está streamable
+ * (aí a Evolution baixa sozinha, como antes). Qualquer falha cai na URL.
+ */
+async function prepareAudioPayload(mediaUrl: string): Promise<string> {
+  try {
+    const res = await fetch(mediaUrl, { signal: AbortSignal.timeout(30_000) });
+    if (!res.ok) return mediaUrl;
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const fixed = faststartMp4(bytes);
+    if (!fixed) return mediaUrl;
+    console.log(`disparo-runner: audio remuxado pra faststart (${bytes.length} bytes)`);
+    return toBase64(fixed);
+  } catch (e: unknown) {
+    console.warn('disparo-runner: falha ao preparar audio, usando a URL crua:', (e as Error).message);
+    return mediaUrl;
+  }
+}
+
 function formatPhone(raw: string): string | null {
   // JID de grupo — passa direto sem reformatar
   if (raw.includes('@g.us')) return raw;
@@ -295,6 +454,24 @@ function formatPhone(raw: string): string | null {
   if (d.length === 11) return '55' + d;
   if (d.length === 10) return '55' + d;
   return null;
+}
+
+// Chave de opt-out usa o mesmo formato de normalizePhone() em evo-resposta
+// (sem DDI 55, 11 digitos) -- formatPhone() acima devolve COM o 55, entao
+// precisa converter antes de consultar whatsapp_opt_out.
+function toOptOutKey(phoneComDdi: string): string {
+  const d = phoneComDdi.replace(/\D/g, '');
+  if ((d.length === 13 || d.length === 12) && d.startsWith('55')) return d.slice(2);
+  return d.slice(-11);
+}
+
+async function estaOptOut(supabase: any, phoneComDdi: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('whatsapp_opt_out')
+    .select('telefone')
+    .eq('telefone', toOptOutKey(phoneComDdi))
+    .maybeSingle();
+  return Boolean(data);
 }
 
 function applyTemplate(template: string, vars: Record<string, string>): string {
@@ -314,7 +491,7 @@ async function checkWhatsappExists(
   const rawBase = (inst.api_url as string).replace(/\/$/, '');
   const base = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
   try {
-    const res = await fetch(`${base}/chat/whatsappNumbers/${inst.instance_name}`, {
+    const res = await fetch(`${base}/chat/whatsappNumbers/${encodeURIComponent(inst.instance_name)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: inst.api_key },
       body: JSON.stringify({ numbers: [phone] }),

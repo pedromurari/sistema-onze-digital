@@ -13,6 +13,29 @@ function applyVars(text: string | null | undefined, vars: Record<string, string>
   return text.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
 }
 
+// Opt-out global (mesma chave normalizada usada em evo-resposta/disparo-runner:
+// sem DDI 55, 11 digitos). So se aplica a envio INDIVIDUAL -- mensagem de grupo
+// (@g.us) nao tem como pular so 1 pessoa, entao nao e checado aqui.
+function toOptOutKey(raw: string): string {
+  const d = raw.replace(/\D/g, '');
+  if ((d.length === 13 || d.length === 12) && d.startsWith('55')) return d.slice(2);
+  return d.slice(-11);
+}
+
+function isGroupJidOrGroupNumber(numberOrJid: string): boolean {
+  return numberOrJid.includes('@g.us') || (/^\d+$/.test(numberOrJid) && numberOrJid.length >= 18);
+}
+
+async function estaOptOut(supabase: ReturnType<typeof createClient>, numberOrJid: string): Promise<boolean> {
+  if (isGroupJidOrGroupNumber(numberOrJid)) return false;
+  const { data } = await supabase
+    .from('whatsapp_opt_out')
+    .select('telefone')
+    .eq('telefone', toOptOutKey(numberOrJid))
+    .maybeSingle();
+  return Boolean(data);
+}
+
 function hourOf(iso: string): number {
   try { return new Date(iso).getHours(); } catch { return 12; }
 }
@@ -393,6 +416,14 @@ serve(async (req) => {
             if (enviadosHoje >= cfgBV.daily_limit) break;
             if (errosSeq >= cfgBV.max_errors_seq) break;
 
+            if (await estaOptOut(supabase, bv.whatsapp)) {
+              await supabase
+                .from('boas_vindas_agendados')
+                .update({ status: 'erro', erro_msg: 'Opt-out: lead pediu pra parar de receber mensagem' })
+                .eq('id', bv.id);
+              continue;
+            }
+
             try {
               let lastBvErr: Error | null = null;
               for (const { base, instance, apikey } of instancesBV) {
@@ -528,10 +559,20 @@ async function processMessage(
     throw new Error(`Destinatário não resolvido: "${rawRecipient}" — configure o grupo em "Configurar funil"`);
   }
 
+  // Opt-out so bloqueia envio individual -- mensagem de grupo nao tem como pular
+  // 1 pessoa so (ver estaOptOut). Lanca erro nao-retryable/silencioso: quem chama
+  // processMessage trata qualquer excecao marcando a mensagem como 'erro', o que
+  // aqui e o comportamento certo (nunca deve virar retry automatico).
+  if (await estaOptOut(supabase, number)) {
+    throw new Error('Opt-out: destinatário pediu pra parar de receber mensagem');
+  }
+
   // ── Imagem de cabeçalho ───────────────────────────────────────────────────
   const msgType = (p.message_type as string) ?? 'text';
   const headerSubtipo = (p.subtipo as string) ?? '';
   const scheduledAt = (p.scheduled_at as string) ?? new Date().toISOString();
+
+  let headerCombinedWithText = false;
 
   if (p.send_header_image !== false && funnelCfg && canSendHeaderImage(headerSubtipo, msgType, scheduledAt)) {
     const imagens = (funnelCfg.imagens as Record<string, string>) ?? {};
@@ -563,15 +604,33 @@ async function processMessage(
         }
       }
 
-      await sendEvolution(`${base}/message/sendMedia/${instance}`, {
-        number,
-        mediatype: 'image',
-        media: headerUrl,
-        delay: 1200,
-      }, apikey);
-      await new Promise(r => setTimeout(r, 2000));
+      if (msgType === 'text') {
+        // Manda a imagem e o texto como UMA mensagem só (legenda), em vez de
+        // duas mensagens separadas -- fica mais premium e evita a prévia de
+        // link competindo com a imagem de capa.
+        const text = applyVars(p.message_text as string, vars);
+        await sendEvolution(`${base}/message/sendMedia/${instance}`, {
+          number,
+          mediatype: 'image',
+          media: headerUrl,
+          caption: text,
+          delay: 1200,
+          mentionsEveryOne: (p.mention_everyone as boolean) ?? false,
+        }, apikey);
+        headerCombinedWithText = true;
+      } else {
+        await sendEvolution(`${base}/message/sendMedia/${instance}`, {
+          number,
+          mediatype: 'image',
+          media: headerUrl,
+          delay: 1200,
+        }, apikey);
+        await new Promise(r => setTimeout(r, 2000));
+      }
     }
   }
+
+  if (headerCombinedWithText) return;
 
   // ── Mensagem principal ────────────────────────────────────────────────────
   switch (msgType) {
