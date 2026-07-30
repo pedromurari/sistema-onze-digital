@@ -26,6 +26,7 @@ import {
   type Edge,
   type Connection,
   type NodeTypes,
+  type NodeChange,
   BackgroundVariant,
   Panel,
   EdgeLabelRenderer,
@@ -63,22 +64,25 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { toast } from '@/components/ui/use-toast';
 import {
   Plus, Trash2, Download, ChevronRight, ChevronLeft,
-  Type, Palette, Maximize2, Link2, AlignCenter,
-  Bold, Italic, Search, X, User, Flag, FileText,
-  Eye, Edit3, Lock, Unlock, Layers, ZoomIn, ZoomOut,
-  RotateCcw, MessageSquare, Calendar, CheckCircle2,
-  ChevronDown, Users, Tag, ArrowRight, Sparkles,
+  Palette, Maximize2, Link2, AlignCenter,
+  Search, X, User, FileText,
+  Eye, Edit3, Layers, MessageSquare, Calendar, CheckCircle2,
+  Tag, ArrowRight, Sparkles,
   MoreVertical, Pencil, FolderPlus, Target, Filter,
+  Undo2, Redo2, Wand2, Network, AlignLeft, AlignStartVertical,
+  Columns, Rows, Grid3x3, Keyboard, Copy, FileJson,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-type NodeTipo = 'empresa' | 'funil' | 'etapa_funil' | 'canal' | 'metrica' | 'observacao';
+type NodeTipo = 'empresa' | 'funil' | 'etapa_funil' | 'canal' | 'metrica' | 'observacao' | 'meta';
 type NodeFormato = 'redondo' | 'quadrado' | 'retangulo' | 'diamante' | 'hexagono';
 type NodeTamanho = 'pequeno' | 'medio' | 'grande' | 'personalizado';
 type EdgeTipo = 'bezier' | 'reta' | 'step' | 'suave';
@@ -116,6 +120,12 @@ interface NodeData extends Record<string, unknown> {
   notas?: string;
   dataCriacao?: string;
   readonly?: boolean;
+  // Metas (tipo === 'meta') — null significa "limpo pelo usuário"
+  metaAlvo?: number | null;
+  metaAtual?: number | null;
+  metaUnidade?: string;
+  // Só para render: nós fora do filtro ativo ficam apagados
+  dimmed?: boolean;
 }
 
 interface EdgeData extends Record<string, unknown> {
@@ -140,6 +150,20 @@ interface MindMapPage {
   ordem: number;
 }
 
+/**
+ * Uma entrada do histórico de desfazer. Cada ação guarda como se desfaz e como
+ * se refaz — ambas mexem no banco e no estado local, então undo/redo funciona
+ * mesmo depois do realtime recarregar a página.
+ */
+interface HistoryEntry {
+  label: string;
+  undo: () => Promise<void>;
+  redo: () => Promise<void>;
+}
+
+/** Snapshot de um nó no formato do banco, usado para recriar em undo. */
+type NodeRow = Record<string, unknown>;
+
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
 const NODE_COLORS: Record<NodeTipo, string> = {
@@ -149,6 +173,7 @@ const NODE_COLORS: Record<NodeTipo, string> = {
   canal: '#10B981',
   metrica: '#F59E0B',
   observacao: '#6B7280',
+  meta: '#0EA5E9',
 };
 
 const TIPO_LABELS: Record<NodeTipo, string> = {
@@ -158,6 +183,7 @@ const TIPO_LABELS: Record<NodeTipo, string> = {
   canal: '📡 Canal de Tráfego',
   metrica: '📈 Resultado/Métrica',
   observacao: '📝 Observação',
+  meta: '🎯 Meta',
 };
 
 const FASE_LABELS: Record<FaseFunil, string> = {
@@ -198,6 +224,89 @@ const PAGINA_TIPO_OPTIONS: { value: PaginaTipo; label: string; emoji: string }[]
 ];
 
 const LAST_WORKSPACE_KEY = 'mapa_mental_last_workspace';
+const SNAP_KEY = 'mapa_mental_snap_grid';
+const MAX_HISTORY = 60;
+
+/**
+ * Tamanhos dos presets. A dimensão real do nó vive em node.width/node.height
+ * (nativo do React Flow, é o que o NodeResizer manipula) — o div interno só
+ * preenche 100%, senão o handle de resize descola da caixa.
+ */
+const TAMANHO_PRESETS = {
+  pequeno: { w: 110, h: 54 },
+  medio: { w: 155, h: 74 },
+  grande: { w: 210, h: 100 },
+} as const;
+
+function nodeSize(data: Partial<NodeData>): { w: number; h: number } {
+  if (data.tamanho === 'personalizado') {
+    return { w: data.largura || TAMANHO_PRESETS.medio.w, h: data.altura || TAMANHO_PRESETS.medio.h };
+  }
+  return TAMANHO_PRESETS[(data.tamanho as keyof typeof TAMANHO_PRESETS) ?? 'medio'] ?? TAMANHO_PRESETS.medio;
+}
+
+/** Progresso 0–100 de um nó de meta. */
+function metaProgresso(data: NodeData): number {
+  const alvo = Number(data.metaAlvo) || 0;
+  if (alvo <= 0) return 0;
+  const atual = Number(data.metaAtual) || 0;
+  return Math.max(0, Math.min(100, (atual / alvo) * 100));
+}
+
+/** Formata 1234567 → "1,23 mi" para caber dentro do nó. */
+function formatMetaValor(v: number | null | undefined, unidade?: string): string {
+  const n = Number(v) || 0;
+  const u = unidade ? `${unidade} ` : '';
+  if (Math.abs(n) >= 1_000_000) return `${u}${(n / 1_000_000).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} mi`;
+  if (Math.abs(n) >= 1_000) return `${u}${(n / 1_000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil`;
+  return `${u}${n.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}`;
+}
+
+/** Traduz o patch de NodeData para as colunas do banco. */
+function nodeDataToDb(u: Partial<NodeData>): Record<string, unknown> {
+  const db: Record<string, unknown> = {};
+  if (u.label !== undefined) db.titulo = u.label;
+  if (u.sublabel !== undefined) db.sublabel = u.sublabel;
+  if (u.descricao !== undefined) db.descricao = u.descricao;
+  if (u.notas !== undefined) db.notas = u.notas;
+  if (u.emoji !== undefined) db.emoji = u.emoji;
+  if (u.tipo !== undefined) db.tipo = u.tipo;
+  if (u.cor !== undefined) db.cor = u.cor;
+  if (u.corTexto !== undefined) db.cor_texto = u.corTexto;
+  if (u.corBorda !== undefined) db.cor_borda = u.corBorda;
+  if (u.espessuraBorda !== undefined) db.espessura_borda = u.espessuraBorda;
+  if (u.tamanho !== undefined) db.tamanho = u.tamanho;
+  if (u.formato !== undefined) db.formato = u.formato;
+  if (u.largura !== undefined) db.largura = u.largura;
+  if (u.altura !== undefined) db.altura = u.altura;
+  if (u.fontSize !== undefined) db.font_size = u.fontSize;
+  if (u.fontWeight !== undefined) db.font_weight = u.fontWeight;
+  if (u.fontStyle !== undefined) db.font_style = u.fontStyle;
+  if (u.fase !== undefined) db.fase = u.fase;
+  if (u.responsavelId !== undefined) db.responsavel_id = u.responsavelId || null;
+  if (u.responsavelNome !== undefined) db.responsavel_nome = u.responsavelNome;
+  if (u.tags !== undefined) db.tags = u.tags;
+  if (u.metaAlvo !== undefined) db.meta_alvo = u.metaAlvo;
+  if (u.metaAtual !== undefined) db.meta_atual = u.metaAtual;
+  if (u.metaUnidade !== undefined) db.meta_unidade = u.metaUnidade;
+  return db;
+}
+
+/** Campos de NodeData que persistimos — base para copiar/colar e duplicar. */
+const NODE_DATA_KEYS: (keyof NodeData)[] = [
+  'label', 'sublabel', 'descricao', 'notas', 'emoji', 'tipo', 'cor', 'corTexto',
+  'corBorda', 'espessuraBorda', 'tamanho', 'formato', 'largura', 'altura',
+  'fontSize', 'fontWeight', 'fontStyle', 'fase', 'responsavelId',
+  'responsavelNome', 'tags', 'metaAlvo', 'metaAtual', 'metaUnidade',
+];
+
+/** Estruturas iniciais opcionais ao criar uma página. */
+const ETAPAS_FUNIL: { titulo: string; emoji: string; fase: FaseFunil }[] = [
+  { titulo: 'Topo — Atração', emoji: '🔝', fase: 'topo' },
+  { titulo: 'Meio — Consideração', emoji: '🎯', fase: 'meio' },
+  { titulo: 'Fundo — Conversão', emoji: '💰', fase: 'fundo' },
+  { titulo: 'Pós-Venda — Retenção', emoji: '⭐', fase: 'pos_venda' },
+];
 
 // ─── Nó Customizado ───────────────────────────────────────────────────────────
 
@@ -208,12 +317,8 @@ function MindMapNode({
 }) {
   const formato = data.formato || 'redondo';
   const tamanho = data.tamanho || 'medio';
-
-  const sizeMap = { pequeno: 110, medio: 155, grande: 210, personalizado: data.largura || 155 };
-  const heightMap = { pequeno: 54, medio: 74, grande: 100, personalizado: data.altura || 74 };
-
-  const width = sizeMap[tamanho];
-  const height = heightMap[tamanho];
+  const isMeta = data.tipo === 'meta';
+  const progresso = isMeta ? metaProgresso(data) : 0;
 
   let borderRadius = '50px';
   let clipPath: string | undefined;
@@ -235,7 +340,13 @@ function MindMapNode({
   const fase = data.fase && data.fase !== 'nenhuma' ? data.fase : null;
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{
+      position: 'relative',
+      width: '100%',
+      height: '100%',
+      opacity: data.dimmed ? 0.14 : 1,
+      transition: 'opacity 0.18s ease',
+    }}>
       {/* Fase badge */}
       {fase && (
         <div style={{
@@ -275,8 +386,9 @@ function MindMapNode({
             : `${data.espessuraBorda || 2}px solid ${data.corBorda || 'rgba(255,255,255,0.2)'}`,
           borderRadius,
           clipPath,
-          width: `${width}px`,
-          height: `${height}px`,
+          width: '100%',
+          height: '100%',
+          boxSizing: 'border-box',
           boxShadow: selected
             ? '0 0 0 4px rgba(37,99,235,0.25), 0 12px 40px rgba(0,0,0,0.3)'
             : '0 6px 24px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.15)',
@@ -335,6 +447,49 @@ function MindMapNode({
             wordBreak: 'break-word',
           }}>
             {data.sublabel}
+          </div>
+        )}
+
+        {/* Barra de progresso da meta */}
+        {isMeta && (
+          <div style={{ width: '86%', marginTop: 5 }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontSize: 7.5,
+              fontWeight: 700,
+              color: 'rgba(255,255,255,0.92)',
+              marginBottom: 2,
+              letterSpacing: '0.02em',
+            }}>
+              <span>{formatMetaValor(data.metaAtual, data.metaUnidade)}</span>
+              <span style={{ opacity: 0.65 }}>{formatMetaValor(data.metaAlvo, data.metaUnidade)}</span>
+            </div>
+            <div style={{
+              height: 5,
+              background: 'rgba(0,0,0,0.28)',
+              borderRadius: 20,
+              overflow: 'hidden',
+              boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.25)',
+            }}>
+              <div style={{
+                width: `${progresso}%`,
+                height: '100%',
+                borderRadius: 20,
+                background: progresso >= 100
+                  ? 'linear-gradient(90deg, #34D399, #10B981)'
+                  : 'linear-gradient(90deg, rgba(255,255,255,0.95), rgba(255,255,255,0.72))',
+                transition: 'width 0.35s ease',
+              }} />
+            </div>
+            <div style={{
+              fontSize: 8,
+              fontWeight: 800,
+              color: progresso >= 100 ? '#A7F3D0' : 'rgba(255,255,255,0.95)',
+              marginTop: 2,
+            }}>
+              {progresso >= 100 ? '✓ ' : ''}{progresso.toFixed(0)}%
+            </div>
           </div>
         )}
 
@@ -462,6 +617,7 @@ function NodeDetailModal({
 }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Partial<NodeData>>({});
+  const [tagInput, setTagInput] = useState('');
 
   useEffect(() => {
     if (node) {
@@ -471,6 +627,7 @@ function NodeDetailModal({
         descricao: node.data.descricao || '',
         notas: node.data.notas || '',
         fase: node.data.fase || 'nenhuma',
+        tipo: node.data.tipo,
         responsavelId: node.data.responsavelId || '',
         responsavelNome: node.data.responsavelNome || '',
         tags: node.data.tags || [],
@@ -483,7 +640,11 @@ function NodeDetailModal({
         fontWeight: node.data.fontWeight || '700',
         espessuraBorda: node.data.espessuraBorda || 2,
         corBorda: node.data.corBorda || 'rgba(255,255,255,0.2)',
+        metaAlvo: node.data.metaAlvo,
+        metaAtual: node.data.metaAtual,
+        metaUnidade: node.data.metaUnidade || '',
       });
+      setTagInput('');
       setEditing(false);
     }
   }, [node]);
@@ -494,10 +655,26 @@ function NodeDetailModal({
     setEditing(false);
   };
 
+  const addTag = () => {
+    const t = tagInput.trim();
+    if (!t) return;
+    const atuais = form.tags || [];
+    if (atuais.some(x => x.toLowerCase() === t.toLowerCase())) { setTagInput(''); return; }
+    setForm(f => ({ ...f, tags: [...atuais, t] }));
+    setTagInput('');
+  };
+
+  const removeTag = (t: string) => {
+    setForm(f => ({ ...f, tags: (f.tags || []).filter(x => x !== t) }));
+  };
+
   const responsavel = usuarios.find(u => u.id === form.responsavelId);
   const fase = (form.fase || 'nenhuma') as FaseFunil;
 
   if (!node) return null;
+
+  const isMeta = (form.tipo || node.data.tipo) === 'meta';
+  const progressoForm = metaProgresso(form as NodeData);
 
   return (
     <Dialog open={open} onOpenChange={o => { if (!o) onClose(); }}>
@@ -648,11 +825,143 @@ function NodeDetailModal({
             )}
           </div>
 
+          {/* Meta / progresso */}
+          {isMeta && (
+            <div className="rounded-xl border border-sky-100 bg-sky-50/60 p-4">
+              <div className="flex items-center gap-2 text-xs font-semibold text-sky-500 uppercase tracking-wider mb-3">
+                <Target className="h-3.5 w-3.5" /> Progresso da meta
+              </div>
+
+              {editing ? (
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Unidade</label>
+                    <Input
+                      value={form.metaUnidade || ''}
+                      onChange={e => setForm(f => ({ ...f, metaUnidade: e.target.value }))}
+                      placeholder="R$"
+                      className="rounded-xl text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Atual</label>
+                    <Input
+                      type="number"
+                      value={form.metaAtual ?? ''}
+                      onChange={e => setForm(f => ({ ...f, metaAtual: e.target.value === '' ? null : Number(e.target.value) }))}
+                      placeholder="0"
+                      className="rounded-xl text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Alvo</label>
+                    <Input
+                      type="number"
+                      value={form.metaAlvo ?? ''}
+                      onChange={e => setForm(f => ({ ...f, metaAlvo: e.target.value === '' ? null : Number(e.target.value) }))}
+                      placeholder="100"
+                      className="rounded-xl text-sm"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-baseline gap-2 mb-2">
+                  <span className="text-2xl font-bold text-gray-800">
+                    {formatMetaValor(node.data.metaAtual, node.data.metaUnidade)}
+                  </span>
+                  <span className="text-sm text-gray-400">
+                    de {formatMetaValor(node.data.metaAlvo, node.data.metaUnidade)}
+                  </span>
+                </div>
+              )}
+
+              <div className="mt-3">
+                <div className="h-2.5 bg-gray-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${progressoForm}%`,
+                      background: progressoForm >= 100
+                        ? 'linear-gradient(90deg,#34D399,#059669)'
+                        : 'linear-gradient(90deg,#38BDF8,#0284C7)',
+                    }}
+                  />
+                </div>
+                <p className={`text-xs font-bold mt-1.5 ${progressoForm >= 100 ? 'text-emerald-600' : 'text-sky-600'}`}>
+                  {progressoForm >= 100 ? '🎉 Meta batida!' : `${progressoForm.toFixed(1)}% concluído`}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Tags */}
+          <div>
+            <div className="flex items-center gap-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+              <Tag className="h-3.5 w-3.5" /> Tags
+            </div>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {(form.tags || []).length === 0 && !editing && (
+                <span className="text-sm text-gray-400 italic">Sem tags.</span>
+              )}
+              {(form.tags || []).map(t => (
+                <span
+                  key={t}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200"
+                >
+                  #{t}
+                  {editing && (
+                    <button onClick={() => removeTag(t)} className="text-gray-400 hover:text-red-500">
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </span>
+              ))}
+            </div>
+            {editing && (
+              <div className="flex gap-2">
+                <Input
+                  value={tagInput}
+                  onChange={e => setTagInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTag(); }
+                  }}
+                  placeholder="Digite e pressione Enter..."
+                  className="rounded-xl text-sm h-9"
+                />
+                <Button type="button" variant="outline" onClick={addTag} className="rounded-xl h-9 px-3">
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+          </div>
+
           {/* Aparência (só em edição) */}
           {editing && (
             <div className="rounded-xl border border-gray-100 p-4 bg-gray-50 space-y-4">
               <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
                 <Palette className="h-3.5 w-3.5" /> Aparência
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Tipo do nó</label>
+                <select
+                  value={form.tipo || 'etapa_funil'}
+                  onChange={e => {
+                    const t = e.target.value as NodeTipo;
+                    // Ao virar meta, já dá um alvo padrão para a barra aparecer.
+                    setForm(f => ({
+                      ...f,
+                      tipo: t,
+                      metaAlvo: t === 'meta' && f.metaAlvo == null ? 100 : f.metaAlvo,
+                      metaAtual: t === 'meta' && f.metaAtual == null ? 0 : f.metaAtual,
+                    }));
+                  }}
+                  className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs bg-white"
+                >
+                  {(Object.entries(TIPO_LABELS) as [NodeTipo, string][]).map(([v, l]) => (
+                    <option key={v} value={v}>{l}</option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -825,6 +1134,231 @@ function SpotlightSearch({
   );
 }
 
+// ─── Export SVG ──────────────────────────────────────────────────────────────
+
+function escapeXml(s: string): string {
+  return s.replace(/[<>&"']/g, c => (
+    ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[c] as string
+  ));
+}
+
+/** Quebra o texto em linhas que caibam na largura da caixa. */
+function quebrarTexto(texto: string, largura: number, fontSize: number): string[] {
+  const porLinha = Math.max(6, Math.floor((largura - 16) / (fontSize * 0.58)));
+  const palavras = texto.split(/\s+/).filter(Boolean);
+  const linhas: string[] = [];
+  let atual = '';
+  palavras.forEach(p => {
+    const teste = atual ? `${atual} ${p}` : p;
+    if (teste.length <= porLinha) { atual = teste; return; }
+    if (atual) linhas.push(atual);
+    atual = p.length > porLinha ? `${p.slice(0, porLinha - 1)}…` : p;
+  });
+  if (atual) linhas.push(atual);
+  return linhas.slice(0, 3);
+}
+
+/** Ponto onde a aresta encontra a borda da caixa, na direção do outro nó. */
+function ancora(
+  cx: number, cy: number, w: number, h: number, alvoX: number, alvoY: number,
+): { x: number; y: number } {
+  const dx = alvoX - cx;
+  const dy = alvoY - cy;
+  if (dx === 0 && dy === 0) return { x: cx, y: cy };
+  const escalaX = dx === 0 ? Infinity : (w / 2) / Math.abs(dx);
+  const escalaY = dy === 0 ? Infinity : (h / 2) / Math.abs(dy);
+  const t = Math.min(escalaX, escalaY);
+  return { x: cx + dx * t, y: cy + dy * t };
+}
+
+/** Monta o SVG completo do mapa a partir dos dados (nós inclusos). */
+function buildSvg(nodes: Node<NodeData>[], edges: Edge[], titulo: string): string {
+  const margem = 60;
+  const caixas = nodes.map(n => {
+    const { w, h } = nodeSize(n.data);
+    return {
+      id: n.id,
+      x: n.position.x,
+      y: n.position.y,
+      w: n.width ?? w,
+      h: n.height ?? h,
+      data: n.data,
+    };
+  });
+
+  const minX = Math.min(...caixas.map(c => c.x)) - margem;
+  const minY = Math.min(...caixas.map(c => c.y)) - margem - 30;
+  const maxX = Math.max(...caixas.map(c => c.x + c.w)) + margem;
+  const maxY = Math.max(...caixas.map(c => c.y + c.h)) + margem;
+  const width = Math.max(320, Math.round(maxX - minX));
+  const height = Math.max(240, Math.round(maxY - minY));
+
+  const porId = new Map(caixas.map(c => [c.id, c]));
+  const partes: string[] = [];
+
+  partes.push(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
+    `viewBox="${Math.round(minX)} ${Math.round(minY)} ${width} ${height}" ` +
+    `font-family="Inter, Segoe UI, system-ui, sans-serif">`,
+  );
+  partes.push(`<rect x="${Math.round(minX)}" y="${Math.round(minY)}" width="${width}" height="${height}" fill="#ffffff"/>`);
+  partes.push(
+    `<text x="${Math.round(minX) + 24}" y="${Math.round(minY) + 34}" font-size="17" font-weight="700" fill="#0f172a">` +
+    `${escapeXml(titulo)}</text>`,
+  );
+
+  // Arestas (antes dos nós, para ficarem atrás)
+  const marcadores = new Set<string>();
+  const svgEdges: string[] = [];
+  edges.forEach(e => {
+    const de = porId.get(e.source);
+    const para = porId.get(e.target);
+    if (!de || !para) return;
+    const d = (e.data || {}) as EdgeData;
+    const cor = d.cor || '#94a3b8';
+    const esp = d.espessura || 2;
+    marcadores.add(cor);
+
+    const c1 = { x: de.x + de.w / 2, y: de.y + de.h / 2 };
+    const c2 = { x: para.x + para.w / 2, y: para.y + para.h / 2 };
+    const p1 = ancora(c1.x, c1.y, de.w, de.h, c2.x, c2.y);
+    const p2 = ancora(c2.x, c2.y, para.w, para.h, c1.x, c1.y);
+
+    let dash = '';
+    if (d.estilo === 'tracejada') dash = ' stroke-dasharray="10 5"';
+    if (d.estilo === 'pontilhada') dash = ' stroke-dasharray="3 5"';
+
+    // Curva suave, exceto quando o estilo pedir linha reta.
+    const dxCtrl = (p2.x - p1.x) * 0.4;
+    const path = d.tipo === 'reta'
+      ? `M ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} L ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`
+      : `M ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} C ${(p1.x + dxCtrl).toFixed(1)} ${p1.y.toFixed(1)}, ` +
+        `${(p2.x - dxCtrl).toFixed(1)} ${p2.y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+
+    svgEdges.push(
+      `<path d="${path}" fill="none" stroke="${cor}" stroke-width="${esp}"${dash} ` +
+      `marker-end="url(#seta-${cor.replace('#', '')})"/>`,
+    );
+
+    if (d.label) {
+      const mx = (p1.x + p2.x) / 2;
+      const my = (p1.y + p2.y) / 2;
+      const larguraRot = d.label.length * 6.2 + 14;
+      svgEdges.push(
+        `<rect x="${(mx - larguraRot / 2).toFixed(1)}" y="${(my - 10).toFixed(1)}" width="${larguraRot.toFixed(1)}" ` +
+        `height="19" rx="8" fill="#ffffff" stroke="${cor}" stroke-width="1.4"/>`,
+        `<text x="${mx.toFixed(1)}" y="${(my + 3.5).toFixed(1)}" font-size="10" font-weight="700" fill="${cor}" ` +
+        `text-anchor="middle">${escapeXml(d.label)}</text>`,
+      );
+    }
+  });
+
+  partes.push('<defs>');
+  marcadores.forEach(cor => {
+    partes.push(
+      `<marker id="seta-${cor.replace('#', '')}" viewBox="0 0 10 10" refX="9" refY="5" ` +
+      `markerWidth="6" markerHeight="6" orient="auto-start-reverse">` +
+      `<path d="M 0 0 L 10 5 L 0 10 z" fill="${cor}"/></marker>`,
+    );
+  });
+  partes.push('</defs>');
+  partes.push(...svgEdges);
+
+  // Nós
+  caixas.forEach(c => {
+    const d = c.data;
+    const cor = d.cor || '#8B5CF6';
+    const corTexto = d.corTexto || '#ffffff';
+    const formato = d.formato || 'redondo';
+    const isMeta = d.tipo === 'meta';
+
+    let forma: string;
+    if (formato === 'diamante') {
+      const pts = `${c.x + c.w / 2},${c.y} ${c.x + c.w},${c.y + c.h / 2} ${c.x + c.w / 2},${c.y + c.h} ${c.x},${c.y + c.h / 2}`;
+      forma = `<polygon points="${pts}" fill="${cor}" stroke="rgba(0,0,0,0.18)" stroke-width="1.5"/>`;
+    } else if (formato === 'hexagono') {
+      const pts = `${c.x + c.w * 0.25},${c.y} ${c.x + c.w * 0.75},${c.y} ${c.x + c.w},${c.y + c.h / 2} ` +
+        `${c.x + c.w * 0.75},${c.y + c.h} ${c.x + c.w * 0.25},${c.y + c.h} ${c.x},${c.y + c.h / 2}`;
+      forma = `<polygon points="${pts}" fill="${cor}" stroke="rgba(0,0,0,0.18)" stroke-width="1.5"/>`;
+    } else {
+      const rx = formato === 'redondo' ? Math.min(c.h / 2, 50) : formato === 'quadrado' ? 10 : 14;
+      forma = `<rect x="${c.x}" y="${c.y}" width="${c.w}" height="${c.h}" rx="${rx}" fill="${cor}" ` +
+        `stroke="rgba(0,0,0,0.18)" stroke-width="1.5"/>`;
+    }
+    partes.push(forma);
+
+    // Badge da fase
+    if (d.fase && d.fase !== 'nenhuma') {
+      const rotulo = d.fase === 'pos_venda' ? 'PÓS-VENDA' : d.fase.toUpperCase();
+      const bw = rotulo.length * 5.4 + 14;
+      partes.push(
+        `<rect x="${(c.x + c.w / 2 - bw / 2).toFixed(1)}" y="${c.y - 19}" width="${bw.toFixed(1)}" height="15" ` +
+        `rx="7.5" fill="${FASE_COLORS[d.fase as FaseFunil]}"/>`,
+        `<text x="${(c.x + c.w / 2).toFixed(1)}" y="${c.y - 8}" font-size="7.5" font-weight="700" fill="#ffffff" ` +
+        `text-anchor="middle" letter-spacing="0.5">${escapeXml(rotulo)}</text>`,
+      );
+    }
+
+    const fontSize = d.fontSize || 12;
+    const linhas = quebrarTexto(d.label || '', c.w, fontSize);
+    const temEmoji = !!d.emoji;
+    const blocoAltura = (temEmoji ? 20 : 0) + linhas.length * (fontSize + 3) + (isMeta ? 22 : 0);
+    let cursorY = c.y + c.h / 2 - blocoAltura / 2 + fontSize;
+
+    if (temEmoji) {
+      partes.push(
+        `<text x="${(c.x + c.w / 2).toFixed(1)}" y="${cursorY.toFixed(1)}" font-size="16" ` +
+        `text-anchor="middle">${escapeXml(d.emoji as string)}</text>`,
+      );
+      cursorY += 20;
+    }
+
+    linhas.forEach(l => {
+      partes.push(
+        `<text x="${(c.x + c.w / 2).toFixed(1)}" y="${cursorY.toFixed(1)}" font-size="${fontSize}" ` +
+        `font-weight="${d.fontWeight || '700'}" fill="${corTexto}" text-anchor="middle">${escapeXml(l)}</text>`,
+      );
+      cursorY += fontSize + 3;
+    });
+
+    // Barra de progresso da meta
+    if (isMeta) {
+      const bw = c.w * 0.78;
+      const bx = c.x + (c.w - bw) / 2;
+      const by = cursorY - 2;
+      const p = metaProgresso(d);
+      partes.push(
+        `<text x="${bx.toFixed(1)}" y="${(by - 3).toFixed(1)}" font-size="7.5" font-weight="700" fill="${corTexto}">` +
+        `${escapeXml(formatMetaValor(d.metaAtual, d.metaUnidade))}</text>`,
+        `<text x="${(bx + bw).toFixed(1)}" y="${(by - 3).toFixed(1)}" font-size="7.5" font-weight="700" ` +
+        `fill="${corTexto}" opacity="0.7" text-anchor="end">${escapeXml(formatMetaValor(d.metaAlvo, d.metaUnidade))}</text>`,
+        `<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${bw.toFixed(1)}" height="5" rx="2.5" fill="rgba(0,0,0,0.28)"/>`,
+        `<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${(bw * p / 100).toFixed(1)}" height="5" rx="2.5" ` +
+        `fill="${p >= 100 ? '#34D399' : 'rgba(255,255,255,0.9)'}"/>`,
+        `<text x="${bx.toFixed(1)}" y="${(by + 15).toFixed(1)}" font-size="8" font-weight="800" fill="${corTexto}">` +
+        `${p.toFixed(0)}%</text>`,
+      );
+    }
+
+    if (d.responsavelNome) {
+      partes.push(
+        `<text x="${(c.x + c.w - 7).toFixed(1)}" y="${(c.y + c.h - 6).toFixed(1)}" font-size="7" ` +
+        `fill="rgba(255,255,255,0.85)" text-anchor="end">👤 ${escapeXml(d.responsavelNome.split(' ')[0])}</text>`,
+      );
+    }
+  });
+
+  partes.push('</svg>');
+  return partes.join('\n');
+}
+
+/** Lê width/height do SVG gerado, para dimensionar o canvas do PNG. */
+function svgSize(svg: string): { width: number; height: number } {
+  const w = /width="(\d+)"/.exec(svg);
+  const h = /height="(\d+)"/.exec(svg);
+  return { width: Number(w?.[1] ?? 1200), height: Number(h?.[1] ?? 800) };
+}
+
 // ─── Componente Principal ────────────────────────────────────────────────────
 
 function MapaMentalInner() {
@@ -879,14 +1413,56 @@ function MapaMentalInner() {
     nome: '', emoji: '🧠', cor: '#AC1131', tipo: 'mapa',
   });
   const [deletingPage, setDeletingPage] = useState<MindMapPage | null>(null);
+  const [scaffoldFunil, setScaffoldFunil] = useState(true);
+  // Página recém-criada que ainda precisa receber a estrutura inicial.
+  const pendingScaffoldRef = useRef<string | null>(null);
 
   const currentPage = useMemo(
     () => pages.find(p => p.workspace === currentWorkspace) || null,
     [pages, currentWorkspace]
   );
 
+  // Histórico desfazer/refazer
+  const [undoStack, setUndoStack] = useState<HistoryEntry[]>([]);
+  const [redoStack, setRedoStack] = useState<HistoryEntry[]>([]);
+  const [busyHistory, setBusyHistory] = useState(false);
+
+  // Filtros do canvas
+  const [filtroFase, setFiltroFase] = useState<FaseFunil | 'todas'>('todas');
+  const [filtroResponsavel, setFiltroResponsavel] = useState<string>('todos');
+  const [filtroTag, setFiltroTag] = useState<string>('todas');
+  const filtroAtivo = filtroFase !== 'todas' || filtroResponsavel !== 'todos' || filtroTag !== 'todas';
+
+  // Área de transferência (copiar/colar/duplicar)
+  const clipboardRef = useRef<NodeData[]>([]);
+
+  // Grade magnética
+  const [snapToGrid, setSnapToGrid] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem(SNAP_KEY) === '1';
+  });
+
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [duplicatingPage, setDuplicatingPage] = useState(false);
+
   const nodeTypes: NodeTypes = useMemo(() => ({ mindmap: MindMapNode }), []);
   const edgeTypes = useMemo(() => ({ custom: CustomEdge }), []);
+
+  /** Registra uma ação no histórico e zera o redo (novo caminho). */
+  const pushHistory = useCallback((entry: HistoryEntry) => {
+    setUndoStack(s => [...s.slice(-(MAX_HISTORY - 1)), entry]);
+    setRedoStack([]);
+  }, []);
+
+  // Espelhos do estado para os callbacks não capturarem valor velho.
+  const nodesRef = useRef<Node<NodeData>[]>([]);
+  const edgesRef = useRef<Edge[]>([]);
+  const selecionadosRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    nodesRef.current = nodes;
+    selecionadosRef.current = new Set(nodes.filter(n => n.selected).map(n => n.id));
+  }, [nodes]);
+  useEffect(() => { edgesRef.current = edges; }, [edges]);
 
   // ── Verificar role ──────────────────────────────────────────────────────────
 
@@ -1005,6 +1581,10 @@ function MapaMentalInner() {
       }).select().single();
       if (error || !data) { toast({ variant: 'destructive', title: 'Erro ao criar página' }); return; }
       toast({ title: '✨ Página criada!', description: pageForm.nome.trim() });
+      // O funil só pode ser montado depois que o workspace novo virar o atual.
+      if (pageForm.tipo === 'funil' && scaffoldFunil) {
+        pendingScaffoldRef.current = data.workspace;
+      }
       switchPage(data.workspace);
     }
     setShowPageDialog(false);
@@ -1040,11 +1620,8 @@ function MapaMentalInner() {
     ]);
 
     if (nodesRes.data) {
-      const rfNodes: Node<NodeData>[] = nodesRes.data.map((n: any) => ({
-        id: n.id.toString(),
-        type: 'mindmap',
-        position: { x: n.posicao_x ?? 200, y: n.posicao_y ?? 200 },
-        data: {
+      const rfNodes: Node<NodeData>[] = nodesRes.data.map((n: any) => {
+        const data: NodeData = {
           label: n.titulo || '',
           sublabel: n.sublabel || '',
           descricao: n.descricao || '',
@@ -1056,8 +1633,8 @@ function MapaMentalInner() {
           espessuraBorda: n.espessura_borda || 2,
           tamanho: (n.tamanho || 'medio') as NodeTamanho,
           formato: (n.formato || 'redondo') as NodeFormato,
-          largura: n.largura || 155,
-          altura: n.altura || 74,
+          largura: n.largura || TAMANHO_PRESETS.medio.w,
+          altura: n.altura || TAMANHO_PRESETS.medio.h,
           fontSize: n.font_size || 13,
           fontWeight: n.font_weight || '700',
           fontStyle: n.font_style || 'normal',
@@ -1067,8 +1644,22 @@ function MapaMentalInner() {
           responsavelNome: n.responsavel_nome || '',
           tags: n.tags || [],
           dataCriacao: n.created_at || '',
-        },
-      }));
+          metaAlvo: n.meta_alvo ?? undefined,
+          metaAtual: n.meta_atual ?? undefined,
+          metaUnidade: n.meta_unidade || '',
+        };
+        const { w, h } = nodeSize(data);
+        return {
+          id: n.id.toString(),
+          type: 'mindmap',
+          position: { x: n.posicao_x ?? 200, y: n.posicao_y ?? 200 },
+          width: w,
+          height: h,
+          // O realtime recarrega a cada edição; sem isso a seleção se perdia.
+          selected: selecionadosRef.current.has(n.id.toString()),
+          data,
+        };
+      });
       setNodes(rfNodes);
     }
 
@@ -1110,22 +1701,25 @@ function MapaMentalInner() {
 
   // ── Keyboard shortcuts ──────────────────────────────────────────────────────
 
+  // Persiste a preferência de grade magnética.
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setShowSearch(true); }
-      if (e.key === 'Escape') { setShowSearch(false); setShowDetail(false); }
-      if (e.key === 'Delete' && canEdit && (selectedNodeId || selectedEdgeId)) deleteSelected();
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [selectedNodeId, selectedEdgeId, canEdit]);
+    localStorage.setItem(SNAP_KEY, snapToGrid ? '1' : '0');
+  }, [snapToGrid]);
+
+  // Troca de página zera o histórico (as ações não valem no outro quadro).
+  useEffect(() => {
+    setUndoStack([]);
+    setRedoStack([]);
+  }, [currentWorkspace]);
 
   // ── Selecionar nó ───────────────────────────────────────────────────────────
 
-  const onNodeClick = useCallback((_: any, node: Node<NodeData>) => {
+  const onNodeClick = useCallback((e: React.MouseEvent, node: Node<NodeData>) => {
     setSelectedNodeId(node.id);
     setSelectedEdgeId(null);
     setPanelOpen(false);
+    // Durante multisseleção (Shift/Ctrl) o modal não deve abrir.
+    if (e.shiftKey || e.ctrlKey || e.metaKey) return;
     setDetailNode(node);
     setShowDetail(true);
   }, []);
@@ -1149,37 +1743,43 @@ function MapaMentalInner() {
 
   // ── Update nó ───────────────────────────────────────────────────────────────
 
-  const updateNode = useCallback(async (nodeId: string, updates: Partial<NodeData>) => {
-    setNodes(nds => nds.map(n => n.id === nodeId ? { ...n, data: { ...n.data, ...updates } } : n));
-    // Também atualiza detailNode se aberto
+  /** Aplica um patch no nó (estado + banco) sem tocar no histórico. */
+  const applyNodeUpdate = useCallback(async (nodeId: string, updates: Partial<NodeData>) => {
+    setNodes(nds => nds.map(n => {
+      if (n.id !== nodeId) return n;
+      const data = { ...n.data, ...updates };
+      // Se mudou o tamanho, a dimensão nativa do React Flow tem que acompanhar.
+      const mexeuNoTamanho = updates.tamanho !== undefined
+        || updates.largura !== undefined
+        || updates.altura !== undefined;
+      if (!mexeuNoTamanho) return { ...n, data };
+      const { w, h } = nodeSize(data);
+      return { ...n, data, width: w, height: h };
+    }));
     setDetailNode(prev => prev && prev.id === nodeId ? { ...prev, data: { ...prev.data, ...updates } } : prev);
 
-    const db: any = {};
-    if (updates.label !== undefined) db.titulo = updates.label;
-    if (updates.sublabel !== undefined) db.sublabel = updates.sublabel;
-    if (updates.descricao !== undefined) db.descricao = updates.descricao;
-    if (updates.notas !== undefined) db.notas = updates.notas;
-    if (updates.emoji !== undefined) db.emoji = updates.emoji;
-    if (updates.cor !== undefined) db.cor = updates.cor;
-    if (updates.corTexto !== undefined) db.cor_texto = updates.corTexto;
-    if (updates.corBorda !== undefined) db.cor_borda = updates.corBorda;
-    if (updates.espessuraBorda !== undefined) db.espessura_borda = updates.espessuraBorda;
-    if (updates.tamanho !== undefined) db.tamanho = updates.tamanho;
-    if (updates.formato !== undefined) db.formato = updates.formato;
-    if (updates.largura !== undefined) db.largura = updates.largura;
-    if (updates.altura !== undefined) db.altura = updates.altura;
-    if (updates.fontSize !== undefined) db.font_size = updates.fontSize;
-    if (updates.fontWeight !== undefined) db.font_weight = updates.fontWeight;
-    if (updates.fontStyle !== undefined) db.font_style = updates.fontStyle;
-    if (updates.fase !== undefined) db.fase = updates.fase;
-    if (updates.responsavelId !== undefined) db.responsavel_id = updates.responsavelId;
-    if (updates.responsavelNome !== undefined) db.responsavel_nome = updates.responsavelNome;
-    if (updates.tags !== undefined) db.tags = updates.tags;
-
+    const db = nodeDataToDb(updates);
     if (Object.keys(db).length > 0) {
       await supabase.from('mind_map_nodes').update(db).eq('id', nodeId);
     }
   }, [setNodes]);
+
+  /** Update com registro no histórico (usado pela UI). */
+  const updateNode = useCallback(async (nodeId: string, updates: Partial<NodeData>) => {
+    const anterior = nodesRef.current.find(n => n.id === nodeId)?.data;
+    if (anterior) {
+      const inverso: Partial<NodeData> = {};
+      (Object.keys(updates) as (keyof NodeData)[]).forEach(k => {
+        (inverso as Record<string, unknown>)[k as string] = anterior[k];
+      });
+      pushHistory({
+        label: 'Editar nó',
+        undo: () => applyNodeUpdate(nodeId, inverso),
+        redo: () => applyNodeUpdate(nodeId, updates),
+      });
+    }
+    await applyNodeUpdate(nodeId, updates);
+  }, [applyNodeUpdate, pushHistory]);
 
   // ── Update aresta ───────────────────────────────────────────────────────────
 
@@ -1206,27 +1806,152 @@ function MapaMentalInner() {
     }
   }, [setEdges]);
 
-  // ── Drag stop ───────────────────────────────────────────────────────────────
+  // ── Mover nós ───────────────────────────────────────────────────────────────
 
-  const onNodeDragStop = useCallback(async (_: any, node: Node) => {
+  /** Grava posições em lote e devolve as anteriores (para o histórico). */
+  const persistPositions = useCallback(async (
+    alvos: { id: string; x: number; y: number }[],
+  ) => {
+    await Promise.all(alvos.map(p =>
+      supabase.from('mind_map_nodes')
+        .update({ posicao_x: Math.round(p.x), posicao_y: Math.round(p.y) })
+        .eq('id', p.id)
+    ));
+    setNodes(nds => nds.map(n => {
+      const alvo = alvos.find(a => a.id === n.id);
+      return alvo ? { ...n, position: { x: alvo.x, y: alvo.y } } : n;
+    }));
+  }, [setNodes]);
+
+  // Posições no início do arraste, para saber o que desfazer.
+  const dragStartRef = useRef<{ id: string; x: number; y: number }[]>([]);
+
+  const onNodeDragStart = useCallback((_e: React.MouseEvent, _n: Node, arrastados: Node[]) => {
+    dragStartRef.current = (arrastados?.length ? arrastados : []).map(n => ({
+      id: n.id, x: n.position.x, y: n.position.y,
+    }));
+  }, []);
+
+  /**
+   * O React Flow entrega no 3º argumento TODOS os nós arrastados — com
+   * multisseleção o código antigo salvava só um e os outros voltavam ao
+   * recarregar a página.
+   */
+  const onNodeDragStop = useCallback(async (_e: React.MouseEvent, node: Node, arrastados: Node[]) => {
     if (!canEdit) return;
-    await supabase.from('mind_map_nodes').update({
-      posicao_x: Math.round(node.position.x),
-      posicao_y: Math.round(node.position.y),
-    }).eq('id', node.id);
-  }, [canEdit]);
+    const movidos = (arrastados?.length ? arrastados : [node]).map(n => ({
+      id: n.id, x: n.position.x, y: n.position.y,
+    }));
+    const antes = dragStartRef.current.filter(a => movidos.some(m => m.id === a.id));
+    dragStartRef.current = [];
+
+    const mudou = movidos.some(m => {
+      const a = antes.find(x => x.id === m.id);
+      return !a || Math.round(a.x) !== Math.round(m.x) || Math.round(a.y) !== Math.round(m.y);
+    });
+
+    await Promise.all(movidos.map(m =>
+      supabase.from('mind_map_nodes')
+        .update({ posicao_x: Math.round(m.x), posicao_y: Math.round(m.y) })
+        .eq('id', m.id)
+    ));
+
+    if (mudou && antes.length > 0) {
+      pushHistory({
+        label: movidos.length > 1 ? `Mover ${movidos.length} nós` : 'Mover nó',
+        undo: () => persistPositions(antes),
+        redo: () => persistPositions(movidos),
+      });
+    }
+  }, [canEdit, pushHistory, persistPositions]);
+
+  /**
+   * Intercepta as mudanças do canvas para persistir o redimensionamento.
+   * Antes o NodeResizer aparecia mas o tamanho ficava travado no preset e nada
+   * era salvo — agora o fim do resize grava largura/altura e marca o nó como
+   * "personalizado".
+   */
+  const handleNodesChange = useCallback((changes: NodeChange<Node<NodeData>>[]) => {
+    onNodesChange(changes);
+    if (!canEdit) return;
+
+    changes.forEach(ch => {
+      if (ch.type !== 'dimensions' || ch.resizing !== false) return;
+      const atual = nodesRef.current.find(n => n.id === ch.id);
+      if (!atual) return;
+
+      const w = Math.round(ch.dimensions?.width ?? atual.width ?? TAMANHO_PRESETS.medio.w);
+      const h = Math.round(ch.dimensions?.height ?? atual.height ?? TAMANHO_PRESETS.medio.h);
+      const anterior = { tamanho: atual.data.tamanho, largura: atual.data.largura, altura: atual.data.altura };
+      if (Math.round(anterior.largura ?? 0) === w && Math.round(anterior.altura ?? 0) === h
+        && anterior.tamanho === 'personalizado') return;
+
+      const patch: Partial<NodeData> = { tamanho: 'personalizado', largura: w, altura: h };
+      pushHistory({
+        label: 'Redimensionar nó',
+        undo: () => applyNodeUpdate(ch.id, anterior),
+        redo: () => applyNodeUpdate(ch.id, patch),
+      });
+      applyNodeUpdate(ch.id, patch);
+    });
+  }, [onNodesChange, canEdit, applyNodeUpdate, pushHistory]);
+
+  // ── Serialização (histórico, copiar/colar, export) ──────────────────────────
+
+  const nodeToRow = useCallback((n: Node<NodeData>): NodeRow => ({
+    id: n.id,
+    ...nodeDataToDb(n.data),
+    posicao_x: Math.round(n.position.x),
+    posicao_y: Math.round(n.position.y),
+    workspace: currentWorkspace,
+    user_id: user?.id ?? null,
+  }), [currentWorkspace, user]);
+
+  const edgeToRow = useCallback((e: Edge): NodeRow => {
+    const d = (e.data || {}) as EdgeData;
+    return {
+      id: e.id,
+      no_origem_id: e.source,
+      no_destino_id: e.target,
+      label: d.label ?? '',
+      cor: d.cor ?? '#94a3b8',
+      espessura: d.espessura ?? 2,
+      tipo_linha: d.tipo ?? 'bezier',
+      estilo: d.estilo ?? 'solida',
+      animado: d.animado ?? false,
+      workspace: currentWorkspace,
+      user_id: user?.id ?? null,
+    };
+  }, [currentWorkspace, user]);
+
+  /** Recria nós/arestas com os mesmos ids (usado no desfazer de exclusões). */
+  const restoreRows = useCallback(async (nodeRows: NodeRow[], edgeRows: NodeRow[]) => {
+    if (nodeRows.length) await supabase.from('mind_map_nodes').insert(nodeRows as never);
+    if (edgeRows.length) await supabase.from('mind_map_connections').insert(edgeRows as never);
+    await fetchData(currentWorkspace);
+  }, [fetchData, currentWorkspace]);
+
+  /** Apaga nós e tudo que os conecta. */
+  const purgeNodes = useCallback(async (ids: string[]) => {
+    if (!ids.length) return;
+    await supabase.from('mind_map_connections').delete().in('no_origem_id', ids);
+    await supabase.from('mind_map_connections').delete().in('no_destino_id', ids);
+    await supabase.from('mind_map_nodes').delete().in('id', ids);
+    setNodes(nds => nds.filter(n => !ids.includes(n.id)));
+    setEdges(eds => eds.filter(e => !ids.includes(e.source) && !ids.includes(e.target)));
+  }, [setNodes, setEdges]);
 
   // ── Conectar ────────────────────────────────────────────────────────────────
 
   const onConnect = useCallback(async (params: Connection) => {
     if (!user || !params.source || !params.target || !canEdit) return;
-    const exists = edges.some(e =>
+    const exists = edgesRef.current.some(e =>
       (e.source === params.source && e.target === params.target) ||
       (e.source === params.target && e.target === params.source)
     );
     if (exists) { toast({ title: 'Conexão já existe.' }); return; }
 
-    const { data, error } = await supabase.from('mind_map_connections').insert({
+    const row = {
       user_id: user.id,
       no_origem_id: params.source,
       no_destino_id: params.target,
@@ -1237,60 +1962,94 @@ function MapaMentalInner() {
       estilo: 'solida',
       animado: false,
       workspace: currentWorkspace,
-    }).select().single();
+    };
+    const { data, error } = await supabase.from('mind_map_connections').insert(row).select().single();
 
     if (error) { toast({ variant: 'destructive', title: 'Erro ao conectar' }); return; }
+    const edgeId = data.id.toString();
     setEdges(eds => addEdge({
       ...params,
-      id: data.id.toString(),
+      id: edgeId,
       type: 'custom',
       markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8', width: 16, height: 16 },
       data: { label: '', cor: '#94a3b8', espessura: 2, tipo: 'bezier', estilo: 'solida', animado: false },
     }, eds));
-  }, [user, edges, setEdges, canEdit, currentWorkspace]);
+
+    pushHistory({
+      label: 'Conectar',
+      undo: async () => {
+        await supabase.from('mind_map_connections').delete().eq('id', edgeId);
+        setEdges(eds => eds.filter(e => e.id !== edgeId));
+      },
+      redo: () => restoreRows([], [{ ...row, id: edgeId }]),
+    });
+  }, [user, setEdges, canEdit, currentWorkspace, pushHistory, restoreRows]);
 
   // ── Criar nó ────────────────────────────────────────────────────────────────
 
+  /** Insere um lote de nós já montados e devolve os ids criados. */
+  const insertNodes = useCallback(async (
+    itens: { data: NodeData; position: { x: number; y: number } }[],
+  ): Promise<string[]> => {
+    if (!itens.length || !user) return [];
+    const rows = itens.map(it => ({
+      ...nodeDataToDb(it.data),
+      posicao_x: Math.round(it.position.x),
+      posicao_y: Math.round(it.position.y),
+      workspace: currentWorkspace,
+      user_id: user.id,
+    }));
+    const { data, error } = await supabase.from('mind_map_nodes').insert(rows as never).select();
+    if (error || !data) {
+      toast({ variant: 'destructive', title: 'Erro ao criar nó(s)' });
+      return [];
+    }
+    const inseridos = data as { id: string }[];
+    const criados = inseridos.map(d => String(d.id));
+    setNodes(nds => [
+      ...nds,
+      ...criados.map((id, i) => {
+        const { w, h } = nodeSize(itens[i].data);
+        return {
+          id,
+          type: 'mindmap',
+          position: itens[i].position,
+          width: w,
+          height: h,
+          data: itens[i].data,
+        } as Node<NodeData>;
+      }),
+    ]);
+
+    const snapshots = criados.map((id, i) => ({ ...rows[i], id }));
+    pushHistory({
+      label: itens.length > 1 ? `Criar ${itens.length} nós` : 'Criar nó',
+      undo: () => purgeNodes(criados),
+      redo: () => restoreRows(snapshots, []),
+    });
+    return criados;
+  }, [user, currentWorkspace, setNodes, pushHistory, purgeNodes, restoreRows]);
+
   const createNode = async () => {
     if (!newTitle.trim() || !user || !canEdit) return;
-    const cor = NODE_COLORS[newTipo];
-    const { data, error } = await supabase.from('mind_map_nodes').insert({
-      user_id: user.id,
-      titulo: newTitle.trim(),
+    const data: NodeData = {
+      label: newTitle.trim(),
       tipo: newTipo,
-      posicao_x: Math.round(clickPos.x),
-      posicao_y: Math.round(clickPos.y),
-      cor,
+      cor: NODE_COLORS[newTipo],
+      corTexto: '#ffffff',
+      corBorda: 'rgba(255,255,255,0.2)',
+      espessuraBorda: 2,
       tamanho: 'medio',
       formato: 'redondo',
-      cor_texto: '#ffffff',
-      cor_borda: 'rgba(255,255,255,0.2)',
-      espessura_borda: 2,
-      font_size: 13,
-      font_weight: '700',
-      font_style: 'normal',
+      fontSize: 13,
+      fontWeight: '700',
+      fontStyle: 'normal',
       emoji: newEmoji,
       fase: newFase,
-      workspace: currentWorkspace,
-    }).select().single();
-
-    if (error) { toast({ variant: 'destructive', title: 'Erro ao criar nó' }); return; }
-
-    setNodes(nds => [...nds, {
-      id: data.id.toString(),
-      type: 'mindmap',
-      position: clickPos,
-      data: {
-        label: newTitle.trim(),
-        tipo: newTipo,
-        cor,
-        corTexto: '#ffffff',
-        tamanho: 'medio',
-        formato: 'redondo',
-        emoji: newEmoji,
-        fase: newFase,
-      },
-    }]);
+      ...(newTipo === 'meta' ? { metaAlvo: 100, metaAtual: 0, metaUnidade: '' } : {}),
+    };
+    const criados = await insertNodes([{ data, position: clickPos }]);
+    if (!criados.length) return;
 
     toast({ title: '✨ Nó criado!', description: newTitle.trim() });
     setShowCreateDialog(false);
@@ -1301,34 +2060,330 @@ function MapaMentalInner() {
 
   // ── Deletar ─────────────────────────────────────────────────────────────────
 
-  const deleteSelected = async () => {
+  /** Apaga nós registrando o histórico para dar Ctrl+Z. */
+  const deleteNodesWithHistory = useCallback(async (ids: string[]) => {
+    if (!canEdit || !ids.length) return;
+    const nodeRows = nodesRef.current.filter(n => ids.includes(n.id)).map(nodeToRow);
+    const edgeRows = edgesRef.current
+      .filter(e => ids.includes(e.source) || ids.includes(e.target))
+      .map(edgeToRow);
+
+    await purgeNodes(ids);
+    pushHistory({
+      label: ids.length > 1 ? `Excluir ${ids.length} nós` : 'Excluir nó',
+      undo: () => restoreRows(nodeRows, edgeRows),
+      redo: () => purgeNodes(ids),
+    });
+    toast({
+      title: ids.length > 1 ? `${ids.length} nós excluídos.` : 'Nó excluído.',
+      description: 'Ctrl+Z desfaz.',
+    });
+  }, [canEdit, nodeToRow, edgeToRow, purgeNodes, pushHistory, restoreRows]);
+
+  const deleteEdgeWithHistory = useCallback(async (edgeId: string) => {
     if (!canEdit) return;
-    if (selectedNodeId) {
-      await supabase.from('mind_map_connections').delete()
-        .or(`no_origem_id.eq.${selectedNodeId},no_destino_id.eq.${selectedNodeId}`);
-      await supabase.from('mind_map_nodes').delete().eq('id', selectedNodeId);
-      setNodes(nds => nds.filter(n => n.id !== selectedNodeId));
-      setEdges(eds => eds.filter(e => e.source !== selectedNodeId && e.target !== selectedNodeId));
+    const edge = edgesRef.current.find(e => e.id === edgeId);
+    if (!edge) return;
+    const row = edgeToRow(edge);
+    await supabase.from('mind_map_connections').delete().eq('id', edgeId);
+    setEdges(eds => eds.filter(e => e.id !== edgeId));
+    pushHistory({
+      label: 'Excluir conexão',
+      undo: () => restoreRows([], [row]),
+      redo: async () => {
+        await supabase.from('mind_map_connections').delete().eq('id', edgeId);
+        setEdges(eds => eds.filter(e => e.id !== edgeId));
+      },
+    });
+    toast({ title: 'Conexão excluída.', description: 'Ctrl+Z desfaz.' });
+  }, [canEdit, edgeToRow, setEdges, pushHistory, restoreRows]);
+
+  const deleteSelected = useCallback(async () => {
+    if (!canEdit) return;
+    const selecionados = nodesRef.current.filter(n => n.selected).map(n => n.id);
+    const ids = selecionados.length ? selecionados : (selectedNodeId ? [selectedNodeId] : []);
+    if (ids.length) {
+      await deleteNodesWithHistory(ids);
       setSelectedNodeId(null);
-      toast({ title: 'Nó deletado.' });
+      setShowDetail(false);
+      setDetailNode(null);
     } else if (selectedEdgeId) {
-      await supabase.from('mind_map_connections').delete().eq('id', selectedEdgeId);
-      setEdges(eds => eds.filter(e => e.id !== selectedEdgeId));
+      await deleteEdgeWithHistory(selectedEdgeId);
       setSelectedEdgeId(null);
       setPanelOpen(false);
-      toast({ title: 'Conexão deletada.' });
     }
-  };
+  }, [canEdit, selectedNodeId, selectedEdgeId, deleteNodesWithHistory, deleteEdgeWithHistory]);
 
-  const deleteNode = async (nodeId: string) => {
+  const deleteNode = useCallback(async (nodeId: string) => {
+    await deleteNodesWithHistory([nodeId]);
+  }, [deleteNodesWithHistory]);
+
+  // ── Desfazer / Refazer ──────────────────────────────────────────────────────
+
+  const doUndo = useCallback(async () => {
+    if (busyHistory) return;
+    const entry = undoStack[undoStack.length - 1];
+    if (!entry) return;
+    setBusyHistory(true);
+    try {
+      await entry.undo();
+      setUndoStack(s => s.slice(0, -1));
+      setRedoStack(s => [...s, entry]);
+      toast({ title: `↩️ Desfeito: ${entry.label.toLowerCase()}` });
+    } catch {
+      toast({ variant: 'destructive', title: 'Não foi possível desfazer' });
+    } finally {
+      setBusyHistory(false);
+    }
+  }, [undoStack, busyHistory]);
+
+  const doRedo = useCallback(async () => {
+    if (busyHistory) return;
+    const entry = redoStack[redoStack.length - 1];
+    if (!entry) return;
+    setBusyHistory(true);
+    try {
+      await entry.redo();
+      setRedoStack(s => s.slice(0, -1));
+      setUndoStack(s => [...s, entry]);
+      toast({ title: `↪️ Refeito: ${entry.label.toLowerCase()}` });
+    } catch {
+      toast({ variant: 'destructive', title: 'Não foi possível refazer' });
+    } finally {
+      setBusyHistory(false);
+    }
+  }, [redoStack, busyHistory]);
+
+  // ── Copiar / colar / duplicar ───────────────────────────────────────────────
+
+  const selectedNodes = useCallback(
+    () => nodesRef.current.filter(n => n.selected || n.id === selectedNodeId),
+    [selectedNodeId],
+  );
+
+  const copySelection = useCallback(() => {
+    const sel = selectedNodes();
+    if (!sel.length) return;
+    clipboardRef.current = sel.map(n => ({ ...n.data }));
+    toast({ title: `${sel.length} nó(s) copiado(s)` });
+  }, [selectedNodes]);
+
+  const pasteClipboard = useCallback(async () => {
+    if (!canEdit || !clipboardRef.current.length) return;
+    const base = rfi
+      ? rfi.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
+      : { x: 240, y: 240 };
+    await insertNodes(clipboardRef.current.map((d, i) => ({
+      data: { ...d, label: d.label },
+      position: { x: base.x + i * 28, y: base.y + i * 28 },
+    })));
+  }, [canEdit, rfi, insertNodes]);
+
+  const duplicateSelection = useCallback(async () => {
     if (!canEdit) return;
-    await supabase.from('mind_map_connections').delete()
-      .or(`no_origem_id.eq.${nodeId},no_destino_id.eq.${nodeId}`);
-    await supabase.from('mind_map_nodes').delete().eq('id', nodeId);
-    setNodes(nds => nds.filter(n => n.id !== nodeId));
-    setEdges(eds => eds.filter(e => e.source !== nodeId && e.target !== nodeId));
-    toast({ title: 'Nó deletado.' });
-  };
+    const sel = selectedNodes();
+    if (!sel.length) return;
+    await insertNodes(sel.map(n => ({
+      data: { ...n.data },
+      position: { x: n.position.x + 40, y: n.position.y + 40 },
+    })));
+    toast({ title: `${sel.length} nó(s) duplicado(s)` });
+  }, [canEdit, selectedNodes, insertNodes]);
+
+  // ── Organizar automaticamente ───────────────────────────────────────────────
+
+  /** Distribui os nós em colunas por fase do funil. */
+  const layoutPorFase = useCallback(async () => {
+    if (!canEdit) return;
+    const ordem: FaseFunil[] = ['topo', 'meio', 'fundo', 'pos_venda', 'nenhuma'];
+    const antes = nodesRef.current.map(n => ({ id: n.id, x: n.position.x, y: n.position.y }));
+    const alvos: { id: string; x: number; y: number }[] = [];
+
+    ordem.forEach((fase, col) => {
+      const doFase = nodesRef.current.filter(n => (n.data.fase || 'nenhuma') === fase);
+      doFase.forEach((n, i) => {
+        alvos.push({ id: n.id, x: 80 + col * 300, y: 80 + i * 130 });
+      });
+    });
+    if (!alvos.length) return;
+
+    await persistPositions(alvos);
+    pushHistory({
+      label: 'Organizar por fase',
+      undo: () => persistPositions(antes),
+      redo: () => persistPositions(alvos),
+    });
+    setTimeout(() => rfi?.fitView({ padding: 0.15, duration: 500 }), 60);
+    toast({ title: '✨ Organizado por fase do funil' });
+  }, [canEdit, persistPositions, pushHistory, rfi]);
+
+  /** Layout hierárquico: profundidade a partir dos nós sem entrada. */
+  const layoutArvore = useCallback(async () => {
+    if (!canEdit) return;
+    const ns = nodesRef.current;
+    const es = edgesRef.current;
+    if (!ns.length) return;
+
+    const temEntrada = new Set(es.map(e => e.target));
+    const filhos = new Map<string, string[]>();
+    es.forEach(e => {
+      filhos.set(e.source, [...(filhos.get(e.source) || []), e.target]);
+    });
+
+    const nivel = new Map<string, number>();
+    const fila: string[] = ns.filter(n => !temEntrada.has(n.id)).map(n => n.id);
+    // Grafo sem raiz (ciclo): usa o primeiro nó como âncora.
+    if (!fila.length && ns[0]) fila.push(ns[0].id);
+    fila.forEach(id => nivel.set(id, 0));
+
+    for (let i = 0; i < fila.length; i++) {
+      const id = fila[i];
+      const d = nivel.get(id) ?? 0;
+      (filhos.get(id) || []).forEach(f => {
+        if (nivel.has(f)) return;
+        nivel.set(f, d + 1);
+        fila.push(f);
+      });
+    }
+    // Nós isolados que o BFS não alcançou.
+    ns.forEach(n => { if (!nivel.has(n.id)) nivel.set(n.id, 0); });
+
+    const porNivel = new Map<number, string[]>();
+    ns.forEach(n => {
+      const d = nivel.get(n.id) ?? 0;
+      porNivel.set(d, [...(porNivel.get(d) || []), n.id]);
+    });
+
+    const antes = ns.map(n => ({ id: n.id, x: n.position.x, y: n.position.y }));
+    const alvos: { id: string; x: number; y: number }[] = [];
+    [...porNivel.keys()].sort((a, b) => a - b).forEach(d => {
+      (porNivel.get(d) || []).forEach((id, i) => {
+        alvos.push({ id, x: 80 + d * 300, y: 80 + i * 130 });
+      });
+    });
+
+    await persistPositions(alvos);
+    pushHistory({
+      label: 'Organizar em árvore',
+      undo: () => persistPositions(antes),
+      redo: () => persistPositions(alvos),
+    });
+    setTimeout(() => rfi?.fitView({ padding: 0.15, duration: 500 }), 60);
+    toast({ title: '✨ Organizado em árvore' });
+  }, [canEdit, persistPositions, pushHistory, rfi]);
+
+  /** Alinha/distribui os nós selecionados. */
+  const alinhar = useCallback(async (
+    modo: 'esquerda' | 'direita' | 'topo' | 'base' | 'centro-h' | 'centro-v' | 'dist-h' | 'dist-v',
+  ) => {
+    if (!canEdit) return;
+    const sel = nodesRef.current.filter(n => n.selected);
+    if (sel.length < 2) {
+      toast({ title: 'Selecione 2 ou mais nós', description: 'Shift + clique para selecionar vários.' });
+      return;
+    }
+    const antes = sel.map(n => ({ id: n.id, x: n.position.x, y: n.position.y }));
+    const larguras = new Map(sel.map(n => [n.id, n.width ?? nodeSize(n.data).w]));
+    const alturas = new Map(sel.map(n => [n.id, n.height ?? nodeSize(n.data).h]));
+
+    const xs = sel.map(n => n.position.x);
+    const ys = sel.map(n => n.position.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const mediaCentroX = sel.reduce((s, n) => s + n.position.x + (larguras.get(n.id) ?? 0) / 2, 0) / sel.length;
+    const mediaCentroY = sel.reduce((s, n) => s + n.position.y + (alturas.get(n.id) ?? 0) / 2, 0) / sel.length;
+
+    let alvos: { id: string; x: number; y: number }[];
+    if (modo === 'dist-h' || modo === 'dist-v') {
+      const eixo = modo === 'dist-h' ? 'x' : 'y';
+      const ordenados = [...sel].sort((a, b) => a.position[eixo] - b.position[eixo]);
+      const ini = ordenados[0].position[eixo];
+      const fim = ordenados[ordenados.length - 1].position[eixo];
+      const passo = (fim - ini) / (ordenados.length - 1);
+      alvos = ordenados.map((n, i) => ({
+        id: n.id,
+        x: eixo === 'x' ? ini + passo * i : n.position.x,
+        y: eixo === 'y' ? ini + passo * i : n.position.y,
+      }));
+    } else {
+      alvos = sel.map(n => {
+        const w = larguras.get(n.id) ?? 0;
+        const h = alturas.get(n.id) ?? 0;
+        switch (modo) {
+          case 'esquerda': return { id: n.id, x: minX, y: n.position.y };
+          case 'direita': return { id: n.id, x: maxX, y: n.position.y };
+          case 'topo': return { id: n.id, x: n.position.x, y: minY };
+          case 'base': return { id: n.id, x: n.position.x, y: maxY };
+          case 'centro-h': return { id: n.id, x: mediaCentroX - w / 2, y: n.position.y };
+          case 'centro-v': return { id: n.id, x: n.position.x, y: mediaCentroY - h / 2 };
+        }
+      });
+    }
+
+    await persistPositions(alvos);
+    pushHistory({
+      label: 'Alinhar nós',
+      undo: () => persistPositions(antes),
+      redo: () => persistPositions(alvos),
+    });
+  }, [canEdit, persistPositions, pushHistory]);
+
+  // ── Montar funil ────────────────────────────────────────────────────────────
+
+  const montarFunil = useCallback(async () => {
+    if (!canEdit || !user) return;
+    const base = rfi
+      ? rfi.screenToFlowPosition({ x: 180, y: 220 })
+      : { x: 100, y: 200 };
+
+    const itens = ETAPAS_FUNIL.map((et, i) => ({
+      data: {
+        label: et.titulo,
+        emoji: et.emoji,
+        tipo: 'etapa_funil' as NodeTipo,
+        cor: FASE_COLORS[et.fase],
+        corTexto: '#ffffff',
+        corBorda: 'rgba(255,255,255,0.2)',
+        espessuraBorda: 2,
+        tamanho: 'grande' as NodeTamanho,
+        formato: 'retangulo' as NodeFormato,
+        fontSize: 13,
+        fontWeight: '700',
+        fontStyle: 'normal',
+        fase: et.fase,
+      } as NodeData,
+      position: { x: base.x + i * 280, y: base.y },
+    }));
+
+    const ids = await insertNodes(itens);
+    if (ids.length < 2) return;
+
+    // Liga as etapas em sequência.
+    const conexoes = ids.slice(0, -1).map((id, i) => ({
+      user_id: user.id,
+      no_origem_id: id,
+      no_destino_id: ids[i + 1],
+      label: '',
+      cor: '#94a3b8',
+      espessura: 3,
+      tipo_linha: 'suave',
+      estilo: 'solida',
+      animado: true,
+      workspace: currentWorkspace,
+    }));
+    await supabase.from('mind_map_connections').insert(conexoes as never);
+    await fetchData(currentWorkspace);
+    setTimeout(() => rfi?.fitView({ padding: 0.2, duration: 500 }), 80);
+    toast({ title: '🎉 Funil montado!', description: 'Topo → Meio → Fundo → Pós-venda' });
+  }, [canEdit, user, rfi, insertNodes, currentWorkspace, fetchData]);
+
+  // Monta o funil da página nova assim que ela passa a ser a página atual.
+  useEffect(() => {
+    if (!pendingScaffoldRef.current || !pagesLoaded) return;
+    if (pendingScaffoldRef.current !== currentWorkspace) return;
+    pendingScaffoldRef.current = null;
+    montarFunil();
+  }, [currentWorkspace, pagesLoaded, montarFunil]);
 
   const onPaneDoubleClick = useCallback((e: React.MouseEvent) => {
     if (!rfi || !canEdit) return;
@@ -1359,28 +2414,236 @@ function MapaMentalInner() {
     setShowDetail(true);
   };
 
-  const exportSvg = () => {
-    const svg = document.querySelector('.react-flow__renderer svg') as SVGElement;
-    if (!svg) return;
-    const blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' });
+  // ── Exportar ────────────────────────────────────────────────────────────────
+
+  const baixar = (href: string, nome: string) => {
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `mapa-mental-${Date.now()}.svg`;
+    a.href = href;
+    a.download = nome;
     a.click();
-    toast({ title: 'SVG exportado!' });
+  };
+
+  const nomeArquivo = () =>
+    `${(currentPage?.nome || 'mapa-mental').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${new Date().toISOString().slice(0, 10)}`;
+
+  /**
+   * O export antigo serializava só o <svg> das arestas — os nós são divs HTML e
+   * ficavam de fora, gerando um arquivo praticamente vazio. Agora o SVG é
+   * desenhado do zero a partir dos dados, com caixas, textos e setas.
+   */
+  const exportarSvg = () => {
+    if (!nodes.length) { toast({ title: 'Nada para exportar' }); return; }
+    const svg = buildSvg(nodes, edges, currentPage?.nome || 'Mapa Mental');
+    const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    baixar(url, `${nomeArquivo()}.svg`);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast({ title: 'SVG exportado!', description: 'Com nós, textos e conexões.' });
+  };
+
+  const exportarPng = async () => {
+    if (!nodes.length) { toast({ title: 'Nada para exportar' }); return; }
+    const svg = buildSvg(nodes, edges, currentPage?.nome || 'Mapa Mental');
+    const { width, height } = svgSize(svg);
+    const escala = 2;
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width * escala;
+      canvas.height = height * escala;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.setTransform(escala, 0, 0, escala, 0, 0);
+      ctx.drawImage(img, 0, 0);
+      baixar(canvas.toDataURL('image/png'), `${nomeArquivo()}.png`);
+      toast({ title: 'PNG exportado!', description: `${width * escala}×${height * escala}px` });
+    };
+    img.onerror = () => toast({ variant: 'destructive', title: 'Falha ao gerar PNG' });
+    img.src = url;
+  };
+
+  const exportarJson = () => {
+    const payload = {
+      pagina: currentPage?.nome,
+      tipo: currentPage?.tipo,
+      exportadoEm: new Date().toISOString(),
+      nos: nodes.map(n => ({ id: n.id, position: n.position, ...n.data })),
+      conexoes: edges.map(e => ({ id: e.id, de: e.source, para: e.target, ...(e.data as EdgeData) })),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    baixar(url, `${nomeArquivo()}.json`);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast({ title: 'JSON exportado!' });
+  };
+
+  // ── Duplicar página ─────────────────────────────────────────────────────────
+
+  const duplicarPagina = useCallback(async (page: MindMapPage) => {
+    if (!canEdit || duplicatingPage) return;
+    setDuplicatingPage(true);
+    try {
+      const { data: nova, error } = await supabase.from('mind_map_pages').insert({
+        nome: `${page.nome} (cópia)`,
+        emoji: page.emoji,
+        cor: page.cor,
+        tipo: page.tipo,
+        ordem: pages.length,
+        criado_por: user?.id,
+      }).select().single();
+      if (error || !nova) throw error;
+
+      const [ns, es] = await Promise.all([
+        supabase.from('mind_map_nodes').select('*').eq('workspace', page.workspace),
+        supabase.from('mind_map_connections').select('*').eq('workspace', page.workspace),
+      ]);
+
+      // Ids antigos → novos, para religar as conexões na página clonada.
+      const mapaIds = new Map<string, string>();
+      const nosOrigem = (ns.data ?? []) as NodeRow[];
+      if (nosOrigem.length) {
+        const rows = nosOrigem.map(n => {
+          const { id: _id, created_at: _criado, ...resto } = n;
+          return { ...resto, workspace: nova.workspace };
+        });
+        const { data: criados } = await supabase.from('mind_map_nodes').insert(rows as never).select();
+        (criados as { id: string }[] | null)?.forEach((c, i) => {
+          mapaIds.set(String(nosOrigem[i].id), String(c.id));
+        });
+      }
+
+      const conexoesOrigem = (es.data ?? []) as NodeRow[];
+      if (conexoesOrigem.length) {
+        const rows = conexoesOrigem.flatMap(e => {
+          const { id: _id, created_at: _criado, ...resto } = e;
+          const origem = mapaIds.get(String(e.no_origem_id));
+          const destino = mapaIds.get(String(e.no_destino_id));
+          if (!origem || !destino) return [];
+          return [{ ...resto, no_origem_id: origem, no_destino_id: destino, workspace: nova.workspace }];
+        });
+        if (rows.length) await supabase.from('mind_map_connections').insert(rows as never);
+      }
+
+      await fetchPages();
+      switchPage(nova.workspace);
+      toast({ title: '📑 Página duplicada!', description: nova.nome });
+    } catch {
+      toast({ variant: 'destructive', title: 'Erro ao duplicar página' });
+    } finally {
+      setDuplicatingPage(false);
+    }
+  }, [canEdit, duplicatingPage, pages.length, user, fetchPages, switchPage]);
+
+  // ── Filtro do canvas ────────────────────────────────────────────────────────
+
+  const todasAsTags = useMemo(() => {
+    const set = new Set<string>();
+    nodes.forEach(n => (n.data.tags || []).forEach(t => set.add(t)));
+    return [...set].sort();
+  }, [nodes]);
+
+  const nodeCombina = useCallback((d: NodeData) => (
+    (filtroFase === 'todas' || (d.fase || 'nenhuma') === filtroFase)
+    && (filtroResponsavel === 'todos' || d.responsavelId === filtroResponsavel)
+    && (filtroTag === 'todas' || (d.tags || []).includes(filtroTag))
+  ), [filtroFase, filtroResponsavel, filtroTag]);
+
+  /** Nós enviados ao canvas: fora do filtro ficam apagados, não escondidos. */
+  const displayNodes = useMemo(() => {
+    if (!filtroAtivo) return nodes;
+    return nodes.map(n => (
+      nodeCombina(n.data) ? n : { ...n, data: { ...n.data, dimmed: true }, selectable: false }
+    ));
+  }, [nodes, filtroAtivo, nodeCombina]);
+
+  const displayEdges = useMemo(() => {
+    if (!filtroAtivo) return edges;
+    const visiveis = new Set(nodes.filter(n => nodeCombina(n.data)).map(n => n.id));
+    return edges.map(e => (
+      visiveis.has(e.source) && visiveis.has(e.target)
+        ? e
+        : { ...e, style: { ...(e.style || {}), opacity: 0.08 } }
+    ));
+  }, [edges, nodes, filtroAtivo, nodeCombina]);
+
+  const limparFiltros = () => {
+    setFiltroFase('todas');
+    setFiltroResponsavel('todos');
+    setFiltroTag('todas');
   };
 
   // Estatísticas rápidas
-  const stats = useMemo(() => ({
-    total: nodes.length,
-    porFase: {
-      topo: nodes.filter(n => n.data.fase === 'topo').length,
-      meio: nodes.filter(n => n.data.fase === 'meio').length,
-      fundo: nodes.filter(n => n.data.fase === 'fundo').length,
-      pos_venda: nodes.filter(n => n.data.fase === 'pos_venda').length,
-    },
-    conexoes: edges.length,
-  }), [nodes, edges]);
+  const stats = useMemo(() => {
+    const metas = nodes.filter(n => n.data.tipo === 'meta');
+    const progressoMedio = metas.length
+      ? metas.reduce((s, n) => s + metaProgresso(n.data), 0) / metas.length
+      : 0;
+    return {
+      total: nodes.length,
+      porFase: {
+        topo: nodes.filter(n => n.data.fase === 'topo').length,
+        meio: nodes.filter(n => n.data.fase === 'meio').length,
+        fundo: nodes.filter(n => n.data.fase === 'fundo').length,
+        pos_venda: nodes.filter(n => n.data.fase === 'pos_venda').length,
+      },
+      conexoes: edges.length,
+      metas: metas.length,
+      metasBatidas: metas.filter(n => metaProgresso(n.data) >= 100).length,
+      progressoMedio,
+      visiveis: filtroAtivo ? nodes.filter(n => nodeCombina(n.data)).length : nodes.length,
+    };
+  }, [nodes, edges, filtroAtivo, nodeCombina]);
+
+  // ── Atalhos de teclado ──────────────────────────────────────────────────────
+  // Fica depois das ações porque o array de dependências as referencia.
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Não sequestra atalhos enquanto o usuário digita.
+      const alvo = e.target as HTMLElement | null;
+      const digitando = !!alvo && (
+        alvo.tagName === 'INPUT' || alvo.tagName === 'TEXTAREA' || alvo.isContentEditable
+      );
+      const mod = e.metaKey || e.ctrlKey;
+
+      if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); setShowSearch(true); return; }
+      if (e.key === 'Escape') {
+        setShowSearch(false); setShowDetail(false); setShowShortcuts(false);
+        return;
+      }
+      if (digitando) return;
+
+      if (e.key === '?') { e.preventDefault(); setShowShortcuts(v => !v); return; }
+
+      if (mod && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) doRedo(); else doUndo();
+        return;
+      }
+      if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); doRedo(); return; }
+
+      if (!canEdit) return;
+
+      if (mod && e.key.toLowerCase() === 'c') { e.preventDefault(); copySelection(); return; }
+      if (mod && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteClipboard(); return; }
+      if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSelection(); return; }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        const temSelecao = nodesRef.current.some(n => n.selected) || selectedNodeId || selectedEdgeId;
+        if (temSelecao) { e.preventDefault(); deleteSelected(); }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [
+    selectedNodeId, selectedEdgeId, canEdit, deleteSelected,
+    doUndo, doRedo, copySelection, pasteClipboard, duplicateSelection,
+  ]);
 
   return (
     <div className="h-full flex flex-col" style={{ background: '#f1f5f9' }}>
@@ -1418,6 +2681,10 @@ function MapaMentalInner() {
                     <DropdownMenuItem onClick={() => openEditPageDialog(page)}>
                       <Pencil className="h-3.5 w-3.5 mr-2" /> Renomear / editar
                     </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => duplicarPagina(page)} disabled={duplicatingPage}>
+                      <Copy className="h-3.5 w-3.5 mr-2" /> Duplicar página
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
                     <DropdownMenuItem
                       className="text-red-600 focus:text-red-600"
                       onClick={() => setDeletingPage(page)}
@@ -1460,6 +2727,134 @@ function MapaMentalInner() {
             <span className="hidden sm:inline text-xs">Buscar</span>
             <kbd className="hidden sm:inline text-xs bg-gray-100 px-1 rounded">⌘K</kbd>
           </Button>
+
+          {canEdit && (
+            <>
+              {/* Desfazer / Refazer */}
+              <div className="flex items-center rounded-lg border border-gray-200 overflow-hidden">
+                <button
+                  onClick={doUndo}
+                  disabled={!undoStack.length || busyHistory}
+                  title={undoStack.length ? `Desfazer: ${undoStack[undoStack.length - 1].label} (Ctrl+Z)` : 'Nada para desfazer'}
+                  className="px-2 py-1.5 text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                >
+                  <Undo2 className="h-4 w-4" />
+                </button>
+                <div className="w-px h-5 bg-gray-200" />
+                <button
+                  onClick={doRedo}
+                  disabled={!redoStack.length || busyHistory}
+                  title={redoStack.length ? `Refazer: ${redoStack[redoStack.length - 1].label} (Ctrl+Shift+Z)` : 'Nada para refazer'}
+                  className="px-2 py-1.5 text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                >
+                  <Redo2 className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Organizar / montar */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline" className="gap-1.5 rounded-lg text-gray-600">
+                    <Wand2 className="h-4 w-4" />
+                    <span className="hidden lg:inline text-xs">Montar</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-56">
+                  <DropdownMenuItem onClick={montarFunil}>
+                    <ArrowRight className="h-3.5 w-3.5 mr-2" /> Montar funil completo
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={layoutPorFase}>
+                    <Layers className="h-3.5 w-3.5 mr-2" /> Organizar por fase
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={layoutArvore}>
+                    <Network className="h-3.5 w-3.5 mr-2" /> Organizar em árvore
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => alinhar('esquerda')}>
+                    <AlignLeft className="h-3.5 w-3.5 mr-2" /> Alinhar à esquerda
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => alinhar('centro-h')}>
+                    <AlignCenter className="h-3.5 w-3.5 mr-2" /> Centralizar na horizontal
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => alinhar('topo')}>
+                    <AlignStartVertical className="h-3.5 w-3.5 mr-2" /> Alinhar ao topo
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => alinhar('dist-h')}>
+                    <Columns className="h-3.5 w-3.5 mr-2" /> Distribuir na horizontal
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => alinhar('dist-v')}>
+                    <Rows className="h-3.5 w-3.5 mr-2" /> Distribuir na vertical
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setSnapToGrid(v => !v)}>
+                    <Grid3x3 className="h-3.5 w-3.5 mr-2" />
+                    Grade magnética {snapToGrid ? '✓' : ''}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          )}
+
+          {/* Filtros */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="sm"
+                variant={filtroAtivo ? 'default' : 'outline'}
+                className={`gap-1.5 rounded-lg ${filtroAtivo ? 'bg-[#AC1131] hover:bg-[#8f0e29] text-white' : 'text-gray-600'}`}
+              >
+                <Filter className="h-4 w-4" />
+                <span className="hidden lg:inline text-xs">
+                  {filtroAtivo ? `${stats.visiveis}/${stats.total}` : 'Filtrar'}
+                </span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-64 p-3 space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">Fase do funil</label>
+                <select
+                  value={filtroFase}
+                  onChange={e => setFiltroFase(e.target.value as FaseFunil | 'todas')}
+                  className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs bg-white"
+                >
+                  <option value="todas">Todas as fases</option>
+                  {(Object.entries(FASE_LABELS) as [FaseFunil, string][]).map(([v, l]) => (
+                    <option key={v} value={v}>{l}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">Responsável</label>
+                <select
+                  value={filtroResponsavel}
+                  onChange={e => setFiltroResponsavel(e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs bg-white"
+                >
+                  <option value="todos">Todos</option>
+                  {usuarios.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}
+                </select>
+              </div>
+              {todasAsTags.length > 0 && (
+                <div>
+                  <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">Tag</label>
+                  <select
+                    value={filtroTag}
+                    onChange={e => setFiltroTag(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs bg-white"
+                  >
+                    <option value="todas">Todas</option>
+                    {todasAsTags.map(t => <option key={t} value={t}>#{t}</option>)}
+                  </select>
+                </div>
+              )}
+              {filtroAtivo && (
+                <Button size="sm" variant="outline" onClick={limparFiltros} className="w-full rounded-lg text-xs">
+                  <X className="h-3.5 w-3.5 mr-1.5" /> Limpar filtros
+                </Button>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {/* Stats */}
@@ -1480,17 +2875,65 @@ function MapaMentalInner() {
             <Link2 className="h-3 w-3 text-gray-400" />
             <span className="text-xs text-gray-500">{stats.conexoes} conexões</span>
           </div>
+
+          {/* Rollup das metas da página */}
+          {stats.metas > 0 && (
+            <div className="flex items-center gap-2 ml-2 pl-2 border-l border-gray-200">
+              <Target className="h-3.5 w-3.5 text-sky-500" />
+              <span className="text-xs text-gray-500">
+                {stats.metasBatidas}/{stats.metas} metas
+              </span>
+              <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{
+                    width: `${stats.progressoMedio}%`,
+                    background: stats.progressoMedio >= 100
+                      ? 'linear-gradient(90deg,#34D399,#059669)'
+                      : 'linear-gradient(90deg,#38BDF8,#0284C7)',
+                  }}
+                />
+              </div>
+              <span className="text-xs font-bold text-gray-700">{stats.progressoMedio.toFixed(0)}%</span>
+            </div>
+          )}
         </div>
 
         <div className="ml-auto flex gap-2 items-center">
           <span className="text-xs text-gray-400 hidden lg:block">
             {canEdit ? 'Duplo clique no canvas para criar · Arraste bordas para conectar' : 'Clique em qualquer nó para ver detalhes'}
           </span>
-          <Button size="sm" variant="outline" onClick={() => rfi?.fitView({ padding: 0.15, duration: 500 })} className="gap-1.5 rounded-lg">
+          <Button size="sm" variant="outline" onClick={() => rfi?.fitView({ padding: 0.15, duration: 500 })} className="gap-1.5 rounded-lg" title="Enquadrar tudo">
             <Maximize2 className="h-4 w-4" />
           </Button>
-          <Button size="sm" variant="outline" onClick={exportSvg} className="rounded-lg" title="Exportar SVG">
-            <Download className="h-4 w-4" />
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="outline" className="rounded-lg" title="Exportar">
+                <Download className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={exportarPng}>
+                <ImageIcon className="h-3.5 w-3.5 mr-2" /> Imagem PNG (2x)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={exportarSvg}>
+                <FileText className="h-3.5 w-3.5 mr-2" /> Vetor SVG
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={exportarJson}>
+                <FileJson className="h-3.5 w-3.5 mr-2" /> Dados JSON
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowShortcuts(true)}
+            className="rounded-lg"
+            title="Atalhos de teclado (?)"
+          >
+            <Keyboard className="h-4 w-4" />
           </Button>
           {selectedEdgeId && canEdit && (
             <Button size="sm" variant="ghost" onClick={() => setPanelOpen(v => !v)} className="rounded-lg">
@@ -1506,11 +2949,12 @@ function MapaMentalInner() {
         {/* Canvas */}
         <div className="flex-1 relative">
           <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={canEdit ? onNodesChange : undefined}
+            nodes={displayNodes}
+            edges={displayEdges}
+            onNodesChange={canEdit ? handleNodesChange : undefined}
             onEdgesChange={canEdit ? onEdgesChange : undefined}
             onConnect={canEdit ? onConnect : undefined}
+            onNodeDragStart={canEdit ? onNodeDragStart : undefined}
             onNodeDragStop={canEdit ? onNodeDragStop : undefined}
             onNodeClick={onNodeClick}
             onEdgeClick={onEdgeClick}
@@ -1521,10 +2965,15 @@ function MapaMentalInner() {
             onInit={setRfi}
             minZoom={0.08}
             maxZoom={4}
-            deleteKeyCode={canEdit ? 'Delete' : null}
+            /* O Delete é tratado no nosso handler, que também apaga no banco. */
+            deleteKeyCode={null}
+            snapToGrid={snapToGrid}
+            snapGrid={[20, 20]}
             nodesDraggable={canEdit}
             nodesConnectable={canEdit}
             elementsSelectable={true}
+            selectionOnDrag
+            multiSelectionKeyCode="Shift"
             fitView
             fitViewOptions={{ padding: 0.15 }}
             style={{ background: 'transparent' }}
@@ -1818,6 +3267,22 @@ function MapaMentalInner() {
                 </div>
               </div>
 
+              {/* Estrutura inicial (só ao criar página de funil) */}
+              {!editingPage && pageForm.tipo === 'funil' && (
+                <label className="flex items-start gap-2 p-3 rounded-xl bg-blue-50/70 border border-blue-100 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={scaffoldFunil}
+                    onChange={e => setScaffoldFunil(e.target.checked)}
+                    className="mt-0.5 rounded accent-[#AC1131]"
+                  />
+                  <span className="text-xs text-gray-600 leading-relaxed">
+                    Já criar as 4 etapas conectadas
+                    <span className="block text-gray-400">Topo → Meio → Fundo → Pós-venda</span>
+                  </span>
+                </label>
+              )}
+
               {/* Preview */}
               <div className="flex items-center gap-2 p-3 rounded-xl bg-gray-50">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center text-lg flex-shrink-0" style={{ background: `${pageForm.cor}20` }}>
@@ -1838,6 +3303,44 @@ function MapaMentalInner() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Atalhos de teclado ── */}
+      <Dialog open={showShortcuts} onOpenChange={setShowShortcuts}>
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold flex items-center gap-2">
+              <Keyboard className="h-5 w-5 text-[#AC1131]" /> Atalhos de teclado
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-1 py-2">
+            {[
+              ['Ctrl + K', 'Buscar nós'],
+              ['Ctrl + Z', 'Desfazer'],
+              ['Ctrl + Shift + Z', 'Refazer'],
+              ['Ctrl + C', 'Copiar seleção'],
+              ['Ctrl + V', 'Colar'],
+              ['Ctrl + D', 'Duplicar seleção'],
+              ['Delete', 'Excluir seleção'],
+              ['Shift + clique', 'Selecionar vários nós'],
+              ['Duplo clique no canvas', 'Criar nó ali'],
+              ['?', 'Abrir/fechar esta janela'],
+              ['Esc', 'Fechar janelas'],
+            ].map(([tecla, acao]) => (
+              <div key={tecla} className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-0">
+                <span className="text-sm text-gray-600">{acao}</span>
+                <kbd className="text-xs bg-gray-100 border border-gray-200 text-gray-600 px-2 py-1 rounded font-mono">
+                  {tecla}
+                </kbd>
+              </div>
+            ))}
+          </div>
+          {!canEdit && (
+            <p className="text-xs text-gray-400 italic">
+              Você está em modo visualização — os atalhos de edição estão desativados.
+            </p>
+          )}
         </DialogContent>
       </Dialog>
 
