@@ -49,6 +49,22 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { toast } from '@/components/ui/use-toast';
 import {
   Plus, Trash2, Download, ChevronRight, ChevronLeft,
@@ -57,6 +73,7 @@ import {
   Eye, Edit3, Lock, Unlock, Layers, ZoomIn, ZoomOut,
   RotateCcw, MessageSquare, Calendar, CheckCircle2,
   ChevronDown, Users, Tag, ArrowRight, Sparkles,
+  MoreVertical, Pencil, FolderPlus, Target, Filter,
 } from 'lucide-react';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -110,6 +127,19 @@ interface EdgeData extends Record<string, unknown> {
   animado?: boolean;
 }
 
+type PaginaTipo = 'mapa' | 'funil' | 'metas' | 'livre';
+
+interface MindMapPage {
+  id: string;
+  workspace: string;
+  nome: string;
+  emoji: string;
+  cor: string;
+  descricao?: string;
+  tipo: PaginaTipo;
+  ordem: number;
+}
+
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
 const NODE_COLORS: Record<NodeTipo, string> = {
@@ -159,6 +189,15 @@ const FORMATO_OPTIONS: { value: NodeFormato; label: string; preview: string }[] 
   { value: 'diamante', label: 'Diamante', preview: '◆' },
   { value: 'hexagono', label: 'Hexágono', preview: '⬡' },
 ];
+
+const PAGINA_TIPO_OPTIONS: { value: PaginaTipo; label: string; emoji: string }[] = [
+  { value: 'mapa', label: 'Mapa Mental', emoji: '🧠' },
+  { value: 'funil', label: 'Funil', emoji: '📊' },
+  { value: 'metas', label: 'Metas', emoji: '🎯' },
+  { value: 'livre', label: 'Página livre', emoji: '📄' },
+];
+
+const LAST_WORKSPACE_KEY = 'mapa_mental_last_workspace';
 
 // ─── Nó Customizado ───────────────────────────────────────────────────────────
 
@@ -827,6 +866,25 @@ function MapaMentalInner() {
   // Usuários para responsável
   const [usuarios, setUsuarios] = useState<Responsavel[]>([]);
 
+  // Páginas do mapa mental (múltiplos quadros)
+  const [pages, setPages] = useState<MindMapPage[]>([]);
+  const [currentWorkspace, setCurrentWorkspace] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'empresa';
+    return localStorage.getItem(LAST_WORKSPACE_KEY) || 'empresa';
+  });
+  const [pagesLoaded, setPagesLoaded] = useState(false);
+  const [showPageDialog, setShowPageDialog] = useState(false);
+  const [editingPage, setEditingPage] = useState<MindMapPage | null>(null);
+  const [pageForm, setPageForm] = useState<{ nome: string; emoji: string; cor: string; tipo: PaginaTipo }>({
+    nome: '', emoji: '🧠', cor: '#AC1131', tipo: 'mapa',
+  });
+  const [deletingPage, setDeletingPage] = useState<MindMapPage | null>(null);
+
+  const currentPage = useMemo(
+    () => pages.find(p => p.workspace === currentWorkspace) || null,
+    [pages, currentWorkspace]
+  );
+
   const nodeTypes: NodeTypes = useMemo(() => ({ mindmap: MindMapNode }), []);
   const edgeTypes = useMemo(() => ({ custom: CustomEdge }), []);
 
@@ -860,13 +918,125 @@ function MapaMentalInner() {
     fetchUsuarios();
   }, []);
 
+  // ── Carregar páginas (quadros) ──────────────────────────────────────────────
+
+  const fetchPages = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('mind_map_pages')
+      .select('id, workspace, nome, emoji, cor, descricao, tipo, ordem')
+      .order('ordem', { ascending: true })
+      .order('created_at', { ascending: true });
+
+    if (error || !data || data.length === 0) {
+      setPagesLoaded(true);
+      return;
+    }
+
+    const loaded: MindMapPage[] = data.map((p: any) => ({
+      id: p.id,
+      workspace: p.workspace,
+      nome: p.nome,
+      emoji: p.emoji || '🧠',
+      cor: p.cor || '#AC1131',
+      descricao: p.descricao || '',
+      tipo: (p.tipo || 'mapa') as PaginaTipo,
+      ordem: p.ordem ?? 0,
+    }));
+    setPages(loaded);
+
+    setCurrentWorkspace(prev => {
+      if (loaded.some(p => p.workspace === prev)) return prev;
+      return loaded[0].workspace;
+    });
+    setPagesLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    fetchPages();
+    const ch = supabase.channel('mind-map-pages')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mind_map_pages' }, fetchPages)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [fetchPages]);
+
+  const switchPage = useCallback((workspace: string) => {
+    setCurrentWorkspace(workspace);
+    localStorage.setItem(LAST_WORKSPACE_KEY, workspace);
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+    setPanelOpen(false);
+    setShowDetail(false);
+    setDetailNode(null);
+  }, []);
+
+  const openNewPageDialog = () => {
+    setEditingPage(null);
+    setPageForm({ nome: '', emoji: '🧠', cor: '#AC1131', tipo: 'mapa' });
+    setShowPageDialog(true);
+  };
+
+  const openEditPageDialog = (page: MindMapPage) => {
+    setEditingPage(page);
+    setPageForm({ nome: page.nome, emoji: page.emoji, cor: page.cor, tipo: page.tipo });
+    setShowPageDialog(true);
+  };
+
+  const savePage = async () => {
+    if (!pageForm.nome.trim()) return;
+
+    if (editingPage) {
+      const { error } = await supabase.from('mind_map_pages').update({
+        nome: pageForm.nome.trim(),
+        emoji: pageForm.emoji || '🧠',
+        cor: pageForm.cor,
+        tipo: pageForm.tipo,
+        updated_at: new Date().toISOString(),
+      }).eq('id', editingPage.id);
+      if (error) { toast({ variant: 'destructive', title: 'Erro ao salvar página' }); return; }
+      toast({ title: 'Página atualizada!' });
+    } else {
+      const { data, error } = await supabase.from('mind_map_pages').insert({
+        nome: pageForm.nome.trim(),
+        emoji: pageForm.emoji || '🧠',
+        cor: pageForm.cor,
+        tipo: pageForm.tipo,
+        ordem: pages.length,
+        criado_por: user?.id,
+      }).select().single();
+      if (error || !data) { toast({ variant: 'destructive', title: 'Erro ao criar página' }); return; }
+      toast({ title: '✨ Página criada!', description: pageForm.nome.trim() });
+      switchPage(data.workspace);
+    }
+    setShowPageDialog(false);
+    setEditingPage(null);
+  };
+
+  const confirmDeletePage = async () => {
+    if (!deletingPage) return;
+    if (pages.length <= 1) {
+      toast({ variant: 'destructive', title: 'Não é possível excluir a última página.' });
+      setDeletingPage(null);
+      return;
+    }
+    await supabase.from('mind_map_connections').delete().eq('workspace', deletingPage.workspace);
+    await supabase.from('mind_map_nodes').delete().eq('workspace', deletingPage.workspace);
+    await supabase.from('mind_map_pages').delete().eq('id', deletingPage.id);
+
+    if (currentWorkspace === deletingPage.workspace) {
+      const remaining = pages.filter(p => p.id !== deletingPage.id);
+      if (remaining[0]) switchPage(remaining[0].workspace);
+    }
+    toast({ title: 'Página excluída.' });
+    setDeletingPage(null);
+  };
+
   // ── Carregar mapa ───────────────────────────────────────────────────────────
 
-  const fetchData = useCallback(async () => {
-    // Mapa público: busca sem filtro por user_id
+  const fetchData = useCallback(async (workspace: string) => {
+    // Mapa por página: filtra por workspace (id da página)
     const [nodesRes, connRes] = await Promise.all([
-      supabase.from('mind_map_nodes').select('id, titulo, tipo, cor, cor_texto, cor_borda, espessura_borda, tamanho, formato, font_size, font_weight, font_style, largura, altura, posicao_x, posicao_y, x, y, width, height, pai_id, user_id, workspace, sublabel, emoji, descricao, notas, fase, responsavel_id, responsavel_nome, tags, created_at').limit(500),
-      supabase.from('mind_map_connections').select('id, no_origem_id, no_destino_id, origem_id, destino_id, cor, label, tipo, animado, tipo_linha, espessura, marcador_inicio, marcador_fim, user_id, estilo, workspace').limit(1000),
+      supabase.from('mind_map_nodes').select('id, titulo, tipo, cor, cor_texto, cor_borda, espessura_borda, tamanho, formato, font_size, font_weight, font_style, largura, altura, posicao_x, posicao_y, x, y, width, height, pai_id, user_id, workspace, sublabel, emoji, descricao, notas, fase, responsavel_id, responsavel_nome, tags, created_at').eq('workspace', workspace).limit(500),
+      supabase.from('mind_map_connections').select('id, no_origem_id, no_destino_id, origem_id, destino_id, cor, label, tipo, animado, tipo_linha, espessura, marcador_inicio, marcador_fim, user_id, estilo, workspace').eq('workspace', workspace).limit(1000),
     ]);
 
     if (nodesRes.data) {
@@ -924,18 +1094,19 @@ function MapaMentalInner() {
   }, [setNodes, setEdges]);
 
   useEffect(() => {
-    fetchData();
+    if (!pagesLoaded || !currentWorkspace) return;
+    fetchData(currentWorkspace);
     let debounceMapTimer: ReturnType<typeof setTimeout> | null = null;
     const triggerReload = () => {
       if (debounceMapTimer) clearTimeout(debounceMapTimer);
-      debounceMapTimer = setTimeout(() => fetchData(), 2000);
+      debounceMapTimer = setTimeout(() => fetchData(currentWorkspace), 1200);
     };
-    const ch = supabase.channel('mind-map-public')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mind_map_nodes' }, triggerReload)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mind_map_connections' }, triggerReload)
+    const ch = supabase.channel(`mind-map-${currentWorkspace}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mind_map_nodes', filter: `workspace=eq.${currentWorkspace}` }, triggerReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mind_map_connections', filter: `workspace=eq.${currentWorkspace}` }, triggerReload)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [fetchData]);
+  }, [fetchData, currentWorkspace, pagesLoaded]);
 
   // ── Keyboard shortcuts ──────────────────────────────────────────────────────
 
@@ -1065,6 +1236,7 @@ function MapaMentalInner() {
       tipo_linha: 'bezier',
       estilo: 'solida',
       animado: false,
+      workspace: currentWorkspace,
     }).select().single();
 
     if (error) { toast({ variant: 'destructive', title: 'Erro ao conectar' }); return; }
@@ -1075,7 +1247,7 @@ function MapaMentalInner() {
       markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8', width: 16, height: 16 },
       data: { label: '', cor: '#94a3b8', espessura: 2, tipo: 'bezier', estilo: 'solida', animado: false },
     }, eds));
-  }, [user, edges, setEdges, canEdit]);
+  }, [user, edges, setEdges, canEdit, currentWorkspace]);
 
   // ── Criar nó ────────────────────────────────────────────────────────────────
 
@@ -1099,6 +1271,7 @@ function MapaMentalInner() {
       font_style: 'normal',
       emoji: newEmoji,
       fase: newFase,
+      workspace: currentWorkspace,
     }).select().single();
 
     if (error) { toast({ variant: 'destructive', title: 'Erro ao criar nó' }); return; }
@@ -1211,6 +1384,62 @@ function MapaMentalInner() {
 
   return (
     <div className="h-full flex flex-col" style={{ background: '#f1f5f9' }}>
+
+      {/* ── Páginas (quadros) ── */}
+      <div className="border-b border-gray-200 bg-white shrink-0 px-3 pt-2.5 pb-0 flex items-end gap-1 overflow-x-auto">
+        {pages.map(page => {
+          const active = page.workspace === currentWorkspace;
+          const tipoInfo = PAGINA_TIPO_OPTIONS.find(t => t.value === page.tipo);
+          return (
+            <div
+              key={page.id}
+              className={`group flex items-center gap-1.5 pl-3 pr-1.5 py-2 rounded-t-lg text-sm font-medium cursor-pointer whitespace-nowrap transition-colors border ${
+                active
+                  ? 'bg-[#f1f5f9] border-gray-200 border-b-transparent text-gray-800'
+                  : 'bg-gray-50 border-transparent text-gray-500 hover:bg-gray-100'
+              }`}
+              style={active ? { boxShadow: `inset 0 2px 0 ${page.cor}` } : undefined}
+              onClick={() => switchPage(page.workspace)}
+              title={tipoInfo?.label}
+            >
+              <span>{page.emoji}</span>
+              <span className="max-w-[140px] truncate">{page.nome}</span>
+              {canEdit && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      onClick={e => e.stopPropagation()}
+                      className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-gray-200 transition-opacity"
+                    >
+                      <MoreVertical className="h-3.5 w-3.5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem onClick={() => openEditPageDialog(page)}>
+                      <Pencil className="h-3.5 w-3.5 mr-2" /> Renomear / editar
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-red-600 focus:text-red-600"
+                      onClick={() => setDeletingPage(page)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-2" /> Excluir página
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
+          );
+        })}
+        {canEdit && (
+          <button
+            onClick={openNewPageDialog}
+            className="flex items-center gap-1 px-2.5 py-2 mb-0.5 rounded-lg text-gray-400 hover:text-[#AC1131] hover:bg-red-50 transition-colors text-sm font-medium shrink-0"
+            title="Nova página"
+          >
+            <FolderPlus className="h-4 w-4" />
+          </button>
+        )}
+      </div>
 
       {/* ── Toolbar Premium ── */}
       <div className="border-b border-gray-200 px-4 py-2.5 flex items-center gap-2 bg-white shrink-0 shadow-sm">
@@ -1530,6 +1759,105 @@ function MapaMentalInner() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── Dialog Nova/Editar Página ── */}
+      <Dialog open={showPageDialog} onOpenChange={setShowPageDialog}>
+        <DialogContent className="max-w-sm rounded-2xl p-0 overflow-hidden">
+          <div className="h-1.5 w-full" style={{ background: pageForm.cor }} />
+          <div className="p-6">
+            <DialogHeader className="mb-4">
+              <DialogTitle className="text-lg font-bold flex items-center gap-2">
+                <FolderPlus className="h-5 w-5 text-[#AC1131]" />
+                {editingPage ? 'Editar Página' : 'Nova Página'}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <div className="w-16">
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">Ícone</label>
+                  <Input value={pageForm.emoji} onChange={e => setPageForm(f => ({ ...f, emoji: e.target.value }))}
+                    placeholder="🧠" className="rounded-xl text-center text-lg" />
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">Nome *</label>
+                  <Input value={pageForm.nome} onChange={e => setPageForm(f => ({ ...f, nome: e.target.value }))}
+                    placeholder="Ex: Funil de Vendas, Metas 2026..." className="rounded-xl"
+                    onKeyDown={e => e.key === 'Enter' && savePage()}
+                    autoFocus />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">Tipo de página</label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {PAGINA_TIPO_OPTIONS.map(t => (
+                    <button
+                      key={t.value}
+                      onClick={() => setPageForm(f => ({ ...f, tipo: t.value, emoji: f.emoji === '🧠' || f.emoji === '' ? t.emoji : f.emoji }))}
+                      className={`flex items-center gap-1.5 py-1.5 px-2 text-xs rounded-lg border transition-colors ${
+                        pageForm.tipo === t.value ? 'bg-[#AC1131] text-white border-[#AC1131]' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span>{t.emoji}</span> {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">Cor da aba</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {PRESET_COLORS.map(c => (
+                    <button
+                      key={c}
+                      onClick={() => setPageForm(f => ({ ...f, cor: c }))}
+                      className={`w-6 h-6 rounded-md transition-all ${pageForm.cor === c ? 'ring-2 ring-offset-1 ring-blue-500 scale-110' : ''}`}
+                      style={{ background: c }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Preview */}
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-gray-50">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-lg flex-shrink-0" style={{ background: `${pageForm.cor}20` }}>
+                  {pageForm.emoji || '🧠'}
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-800">{pageForm.nome || 'Nome da página'}</p>
+                  <p className="text-xs text-gray-400">{PAGINA_TIPO_OPTIONS.find(t => t.value === pageForm.tipo)?.label}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-5">
+              <Button variant="outline" onClick={() => setShowPageDialog(false)} className="rounded-xl">Cancelar</Button>
+              <Button onClick={savePage} disabled={!pageForm.nome.trim()}
+                className="flex-1 bg-[#AC1131] hover:bg-[#8f0e29] text-white rounded-xl">
+                {editingPage ? <><CheckCircle2 className="h-4 w-4 mr-1.5" /> Salvar</> : <><Plus className="h-4 w-4 mr-1.5" /> Criar Página</>}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Confirmar exclusão de página ── */}
+      <AlertDialog open={!!deletingPage} onOpenChange={o => { if (!o) setDeletingPage(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir "{deletingPage?.nome}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Isso vai apagar permanentemente todos os nós e conexões desta página. Essa ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeletePage} className="bg-red-600 hover:bg-red-700">
+              Excluir página
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
