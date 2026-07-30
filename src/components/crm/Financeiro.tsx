@@ -18,7 +18,7 @@ import {
   TrendingUp, Target, Phone, Pencil, Building2, CheckCircle2,
   Copy, Download, ExternalLink, Upload, FileText,
   Send, MessageSquare, Shield, ChevronDown, ChevronRight,
-  Play, Square, CheckCircle, XCircle, Clock, RefreshCw, History,
+  Play, Square, CheckCircle, XCircle, Clock, RefreshCw, History, UserPlus,
 } from 'lucide-react';
 import { format, isSameMonth, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -55,6 +55,15 @@ interface CobrancaLogAluno {
   created_at: string;
   respondeu_em?: string | null;
   ultima_resposta?: string | null;
+}
+
+interface IndicadoLead {
+  id: string;
+  nome: string;
+  telefone: string | null;
+  whatsapp: string | null;
+  status: string | null;
+  criado_em: string;
 }
 
 interface Lancamento {
@@ -124,6 +133,7 @@ interface Pagamento {
   data_pagamento?: string;
   numero_parcela: number;
   status: 'pago' | 'pendente' | 'atrasado' | 'isento';
+  canal_cobranca?: string | null;
   created_at: string;
 }
 
@@ -912,6 +922,9 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
   const [alunoToDelete, setAlunoToDelete] = useState<Aluno | null>(null);
   const [cobrancaLogsAluno, setCobrancaLogsAluno] = useState<CobrancaLogAluno[]>([]);
   const [loadingCobrancaLogsAluno, setLoadingCobrancaLogsAluno] = useState(false);
+  const [indicadosAluno, setIndicadosAluno] = useState<IndicadoLead[]>([]);
+  const [loadingIndicadosAluno, setLoadingIndicadosAluno] = useState(false);
+  const [canaisCobranca, setCanaisCobranca] = useState<{ id: string; nome: string }[]>([]);
   const [turmaToEdit, setTurmaToEdit] = useState<Turma | null>(null);
 
   // Inline edit turma card
@@ -932,7 +945,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
   const [uploadingContrato, setUploadingContrato] = useState(false);
   const [savingTurma, setSavingTurma] = useState(false);
   const [showPagoDialog, setShowPagoDialog] = useState(false);
-  const [pagoInfo, setPagoInfo] = useState<{ pagamentoId: string; alunoId: string; data: string } | null>(null);
+  const [pagoInfo, setPagoInfo] = useState<{ pagamentoId: string; alunoId: string; data: string; canal_cobranca: string } | null>(null);
   const [statusFilter, setStatusFilter] = useState<'todos' | 'ativo' | 'inadimplente' | 'cancelado' | 'pre_matricula'>('todos');
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('todos');
   const [dueDayFilter, setDueDayFilter] = useState<DueDayFilter>('todos');
@@ -993,7 +1006,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
       for (let from = 0; ; from += PAGE) {
         const { data } = await supabase
           .from('pagamentos')
-          .select('id, aluno_id, turma_id, produto, valor, mes_referencia, data_vencimento, data_pagamento, numero_parcela, status, created_at')
+          .select('id, aluno_id, turma_id, produto, valor, mes_referencia, data_vencimento, data_pagamento, numero_parcela, status, canal_cobranca, created_at')
           .order('created_at', { ascending: false })
           .range(from, from + PAGE - 1);
         if (!data?.length) break;
@@ -1517,6 +1530,31 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
       });
   }, [alunoDetail?.id]);
 
+  useEffect(() => {
+    if (!alunoDetail?.id) { setIndicadosAluno([]); return; }
+    const email = alunoDetail.email?.trim();
+    const telefoneDigits = (alunoDetail.whatsapp || '').replace(/\D/g, '').slice(-11);
+    if (!email && !telefoneDigits) { setIndicadosAluno([]); return; }
+    setLoadingIndicadosAluno(true);
+    const filtros = [email && `observacoes.ilike.%${email}%`, telefoneDigits && `observacoes.ilike.%${telefoneDigits}%`].filter(Boolean).join(',');
+    supabase
+      .from('leads')
+      .select('id, nome, telefone, whatsapp, status, criado_em')
+      .eq('origem', 'indicacao_matricula')
+      .or(filtros)
+      .order('criado_em', { ascending: false })
+      .then(({ data }) => {
+        setIndicadosAluno((data as IndicadoLead[]) || []);
+        setLoadingIndicadosAluno(false);
+      });
+  }, [alunoDetail?.id]);
+
+  useEffect(() => {
+    supabase.from('canais_cobranca').select('id, nome').eq('ativo', true).order('nome').then(({ data }) => {
+      if (data) setCanaisCobranca(data);
+    });
+  }, []);
+
   const openAlunoDetail = (a: Aluno) => {
     setAlunoDetail(a);
     const parcela2 = (pagamentosPorAluno[a.id] || []).find(p => p.numero_parcela === 2);
@@ -1966,13 +2004,17 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
 
   const abrirPagoDialog = (pagamentoId: string, alunoId: string) => {
     const hoje = todayDateInput();
-    setPagoInfo({ pagamentoId, alunoId, data: hoje });
+    setPagoInfo({ pagamentoId, alunoId, data: hoje, canal_cobranca: '' });
     setShowPagoDialog(true);
   };
 
   const confirmarPago = async () => {
     if (!pagoInfo) return;
-    const { error } = await supabase.from('pagamentos').update({ status: 'pago', data_pagamento: pagoInfo.data }).eq('id', pagoInfo.pagamentoId);
+    const { error } = await supabase.from('pagamentos').update({
+      status: 'pago',
+      data_pagamento: pagoInfo.data,
+      canal_cobranca: pagoInfo.canal_cobranca || null,
+    }).eq('id', pagoInfo.pagamentoId);
     if (error) { toast({ variant: 'destructive', title: 'Erro', description: error.message }); return; }
     await atualizarContadoresAluno(pagoInfo.alunoId);
     toast({ title: 'Pagamento confirmado!' });
@@ -3637,6 +3679,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                                   <th className="text-left py-2 px-2 font-medium text-xs">Pago em</th>
                                   <th className="text-left py-2 px-2 font-medium text-xs">Valor</th>
                                   <th className="text-left py-2 px-2 font-medium text-xs">Status</th>
+                                  <th className="text-left py-2 px-2 font-medium text-xs">Canal</th>
                                   <th className="text-left py-2 px-3 font-medium">Acoes</th>
                                 </tr>
                               </thead>
@@ -3656,6 +3699,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                                         {p.status === 'pago' ? 'Pago' : p.status === 'atrasado' ? 'Atrasado' : 'Pendente'}
                                       </Badge>
                                     </td>
+                                    <td className="py-2 px-2 text-xs text-muted-foreground">{p.canal_cobranca || '—'}</td>
                                     <td className="py-2 px-2">
                                       {p.status === 'pago'
                                         ? <Button variant="ghost" size="sm" onClick={() => estornarPagamento(p.id, alunoDetail.id)} className="text-orange-500 hover:text-orange-700 h-6 px-2 text-[10px]">Estornar</Button>
@@ -3799,6 +3843,44 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                   )}
                 </div>
 
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                    <UserPlus className="h-3.5 w-3.5" />Indicações feitas por {alunoDetail.nome.split(' ')[0]}
+                  </p>
+                  {loadingIndicadosAluno ? (
+                    <p className="text-xs text-muted-foreground py-2">Carregando...</p>
+                  ) : indicadosAluno.length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-2">Este aluno ainda não indicou ninguém pela Ficha de Matrícula.</p>
+                  ) : (
+                    <div className="overflow-x-auto rounded-md border border-border">
+                      <table className="w-full text-xs">
+                        <thead className="bg-muted/50">
+                          <tr>
+                            <th className="text-left py-1.5 px-2 font-medium">Indicado(a)</th>
+                            <th className="text-left py-1.5 px-2 font-medium">WhatsApp</th>
+                            <th className="text-left py-1.5 px-2 font-medium">Status</th>
+                            <th className="text-left py-1.5 px-2 font-medium">Quando</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {indicadosAluno.map(ind => (
+                            <tr key={ind.id} className="border-t border-border">
+                              <td className="py-1.5 px-2 font-medium">{ind.nome}</td>
+                              <td className="py-1.5 px-2 text-muted-foreground">{ind.whatsapp || ind.telefone || '—'}</td>
+                              <td className="py-1.5 px-2">
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0">{ind.status || '—'}</Badge>
+                              </td>
+                              <td className="py-1.5 px-2 text-muted-foreground whitespace-nowrap">
+                                {new Date(ind.criado_em).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
               </div>
             );
           })()}
@@ -3819,6 +3901,19 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
           <div>
             <label className="text-sm font-medium">Data do Pagamento</label>
             <Input type="date" value={pagoInfo?.data || ''} onChange={e => setPagoInfo(prev => prev ? { ...prev, data: e.target.value } : prev)} className="mt-1" />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Canal de cobrança</label>
+            <Select value={pagoInfo?.canal_cobranca || ''} onValueChange={v => setPagoInfo(prev => prev ? { ...prev, canal_cobranca: v } : prev)}>
+              <SelectTrigger className="mt-1"><SelectValue placeholder="De onde veio esse pagamento?" /></SelectTrigger>
+              <SelectContent>
+                {canaisCobranca.length === 0 && (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">Nenhum canal cadastrado — crie em Configurações</div>
+                )}
+                {canaisCobranca.map(c => <SelectItem key={c.id} value={c.nome}>{c.nome}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground mt-1">Usado para calcular a taxa exata de gateway desse pagamento.</p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowPagoDialog(false)}>Cancelar</Button>
