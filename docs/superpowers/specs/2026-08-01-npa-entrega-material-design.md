@@ -1,7 +1,12 @@
 # NPA — Página de entrega do material (e-book + telas)
 
 **Data:** 2026-08-01
-**Status:** aprovado para virar plano de implementação
+**Status:** SUBSTITUÍDO — o usuário decidiu que a página fica na Área de Membros IDM
+(`idm-membros`), em `/npa-presencial`, não neste projeto. Ver o spec atualizado em
+`idm-membros/docs/superpowers/specs/2026-08-01-npa-presencial-entrega-design.md`. A
+migration em `npa_eventos`/`npa_evento_leads` descrita abaixo continua válida — só o
+código que acessa essas tabelas passou a viver no idm-membros em vez de numa Edge
+Function deste projeto.
 
 ## Contexto e motivação
 
