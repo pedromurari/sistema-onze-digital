@@ -998,7 +998,7 @@ export function Balanco() {
                                     Bruto <strong>R$ {fmt(subtotal)}</strong> · Taxa <strong className="text-red-500">−R$ {fmt(subtaxas)}</strong> · Líq <strong className="text-emerald-600">R$ {fmt(subtotal - subtaxas)}</strong>
                                   </span>
                                 </div>
-                                <div className="divide-y divide-border/40">
+                                <div className="p-3 space-y-2 bg-muted/10">
                                   {itens.map(r => {
                                     const taxa = calcTaxaTransacao(r.valor, r.produto || '', r.forma_pagamento, taxasRates);
                                     const liquidoLinha = r.valor - taxa;
@@ -1007,53 +1007,93 @@ export function Balanco() {
                                     const comercial = (r.numero_parcela ?? 1) <= 1;
                                     const conferido = !!r.conferido_em;
                                     return (
-                                      <div key={r.id} className={`px-4 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm ${conferido ? 'bg-emerald-50/30' : ''}`}>
-                                        <div className="min-w-[150px]">
-                                          <div className="flex items-center gap-1.5 flex-wrap">
-                                            <span className="font-medium">{r.aluno_nome || '—'}</span>
-                                            <Badge className={`text-[9px] px-1.5 py-0 border ${comercial ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-sky-50 text-sky-700 border-sky-200'}`}>
-                                              {comercial ? 'Comercial' : 'Recorrência'}
+                                      <Card key={r.id} className={`border shadow-none ${conferido ? 'border-emerald-200 bg-emerald-50/20' : 'border-amber-200 bg-amber-50/20'}`}>
+                                        <div className="px-4 py-3 space-y-2">
+                                          {/* Header */}
+                                          <div className="flex items-start justify-between gap-3">
+                                            <div>
+                                              <div className="flex items-center gap-2 flex-wrap">
+                                                {conferido
+                                                  ? <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                                                  : <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />}
+                                                <span className="font-semibold text-sm">{r.aluno_nome || '—'}</span>
+                                                <Badge className={`text-[10px] border ${comercial ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-sky-50 text-sky-700 border-sky-200'}`}>
+                                                  {comercial ? 'Comercial' : 'Recorrência'}
+                                                </Badge>
+                                              </div>
+                                              <p className="text-xs text-muted-foreground mt-0.5 pl-6">
+                                                {turma?.nome || 'Sem turma'}
+                                              </p>
+                                            </div>
+                                            <Badge className={`text-[10px] shrink-0 ${conferido ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}
+                                              title={conferido && r.conferido_por ? `Conferido por ${r.conferido_por}` : undefined}>
+                                              {conferido ? '✓ Conferido' : 'Pendente'}
                                             </Badge>
                                           </div>
-                                          <p className="text-xs text-muted-foreground">{turma?.nome || 'Sem turma'}</p>
+
+                                          {/* Repasse por responsável */}
+                                          {resps.length > 0 && (
+                                            <div className="flex flex-wrap gap-2 pl-6">
+                                              {resps.map(r2 => (
+                                                <span key={r2.id} className="text-xs bg-muted/50 px-2 py-0.5 rounded-full">
+                                                  {r2.nome_ref} <strong>R$ {fmt(liquidoLinha * (r2.percentual / 100))}</strong> <span className="text-muted-foreground">({r2.percentual}%)</span>
+                                                </span>
+                                              ))}
+                                            </div>
+                                          )}
+
+                                          {/* Valores */}
+                                          <div className="pl-6 grid grid-cols-2 sm:grid-cols-5 gap-2">
+                                            <div>
+                                              <label className="text-[10px] text-muted-foreground font-medium block mb-1">Forma</label>
+                                              <Badge className={`text-[10px] border ${FORMA_COR[r.forma_pagamento] || 'bg-muted text-muted-foreground'}`}>
+                                                {FORMA_LABELS[r.forma_pagamento] || r.forma_pagamento}
+                                              </Badge>
+                                            </div>
+                                            <div>
+                                              <label className="text-[10px] text-muted-foreground font-medium block mb-1">Canal</label>
+                                              <Select
+                                                value={r.canal_cobranca || '__none__'}
+                                                onValueChange={v => handleUpdateCanal(r.id, v === '__none__' ? '' : v)}
+                                              >
+                                                <SelectTrigger className="h-7 text-xs" disabled={savingCanal === r.id}>
+                                                  <SelectValue placeholder="Canal" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                  <SelectItem value="__none__">— Canal —</SelectItem>
+                                                  {canaisCobranca.map(c => <SelectItem key={c.id} value={c.nome}>{c.nome}</SelectItem>)}
+                                                </SelectContent>
+                                              </Select>
+                                            </div>
+                                            <div>
+                                              <label className="text-[10px] text-muted-foreground font-medium block mb-1">Valor</label>
+                                              <div className="h-7 flex items-center text-xs font-semibold">R$ {fmt(r.valor)}</div>
+                                            </div>
+                                            <div>
+                                              <label className="text-[10px] text-muted-foreground font-medium block mb-1">Taxa</label>
+                                              <div className="h-7 flex items-center text-xs text-red-500 font-semibold">−R$ {fmt(taxa)}</div>
+                                            </div>
+                                            <div>
+                                              <label className="text-[10px] text-muted-foreground font-medium block mb-1">Líquido</label>
+                                              <div className="h-7 flex items-center text-xs text-emerald-600 font-semibold">R$ {fmt(liquidoLinha)}</div>
+                                            </div>
+                                          </div>
+
+                                          {/* Botão confirmar */}
+                                          {!conferido && (
+                                            <div className="pl-6">
+                                              <Button
+                                                size="sm" className="h-7 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                                                onClick={() => handleConfirmarPagamento(r.id)}
+                                                disabled={savingConferencia === r.id}
+                                              >
+                                                <CheckCircle2 className="h-3 w-3" />
+                                                {savingConferencia === r.id ? 'Salvando…' : 'Confirmar pagamento'}
+                                              </Button>
+                                            </div>
+                                          )}
                                         </div>
-                                        <Badge className={`text-[10px] border ${FORMA_COR[r.forma_pagamento] || 'bg-muted text-muted-foreground'}`}>
-                                          {FORMA_LABELS[r.forma_pagamento] || r.forma_pagamento}
-                                        </Badge>
-                                        <Select
-                                          value={r.canal_cobranca || '__none__'}
-                                          onValueChange={v => handleUpdateCanal(r.id, v === '__none__' ? '' : v)}
-                                        >
-                                          <SelectTrigger className="h-6 text-[11px] w-32" disabled={savingCanal === r.id}>
-                                            <SelectValue placeholder="Canal" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            <SelectItem value="__none__">— Canal —</SelectItem>
-                                            {canaisCobranca.map(c => <SelectItem key={c.id} value={c.nome}>{c.nome}</SelectItem>)}
-                                          </SelectContent>
-                                        </Select>
-                                        <span className="tabular-nums font-semibold">R$ {fmt(r.valor)}</span>
-                                        <span className="tabular-nums text-red-500 text-xs">−R$ {fmt(taxa)}</span>
-                                        <span className="tabular-nums text-emerald-600 text-xs font-semibold">R$ {fmt(liquidoLinha)}</span>
-                                        {conferido ? (
-                                          <span className="text-[10px] text-emerald-600 flex items-center gap-1 flex-shrink-0" title={r.conferido_por ? `Conferido por ${r.conferido_por}` : undefined}>
-                                            <CheckCircle2 className="h-3 w-3" /> Conferido
-                                          </span>
-                                        ) : (
-                                          <button
-                                            onClick={() => handleConfirmarPagamento(r.id)}
-                                            disabled={savingConferencia === r.id}
-                                            className="text-[10px] text-muted-foreground hover:text-emerald-600 hover:border-emerald-300 flex items-center gap-1 flex-shrink-0 border border-border rounded-full px-2 py-0.5 transition-colors"
-                                          >
-                                            <CheckCircle2 className="h-3 w-3" /> {savingConferencia === r.id ? 'Confirmando…' : 'Confirmar'}
-                                          </button>
-                                        )}
-                                        {resps.length > 0 && (
-                                          <span className="text-xs text-muted-foreground w-full pl-0.5">
-                                            {resps.map(r2 => `${r2.nome_ref}: R$ ${fmt(liquidoLinha * (r2.percentual / 100))} (${r2.percentual}%)`).join(' · ')}
-                                          </span>
-                                        )}
-                                      </div>
+                                      </Card>
                                     );
                                   })}
                                 </div>
