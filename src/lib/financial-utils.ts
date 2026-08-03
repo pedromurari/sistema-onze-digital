@@ -1,6 +1,13 @@
 // Utilitários financeiros — reutilizados por FinanceiroCFO e Balanco
 // Cada função documenta sua FONTE (qual tabela/query alimenta o cálculo)
 
+import {
+  startOfDay, endOfDay, startOfWeek, endOfWeek,
+  startOfMonth, endOfMonth, startOfQuarter, endOfQuarter,
+  startOfYear, endOfYear, addDays, addWeeks, addMonths,
+  addQuarters, addYears, format,
+} from 'date-fns';
+
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 export interface Produto {
@@ -252,6 +259,144 @@ export function agruparReceitaMensal(
     .sort(([a], [b]) => a.localeCompare(b))
     .slice(-6)
     .map(([, v]) => v);
+}
+
+// ─── Períodos de fechamento (Balanço) ─────────────────────────────────────────
+//
+// FONTE: usado por Balanco.tsx para filtrar pagamentos/vw_receita_por_fonte
+// por qualquer período (dia/semana/mês/trimestre/semestre/ano), e como chave
+// única do snapshot travado em `fechamentos.periodo_key`.
+
+export type PeriodoTipo = 'dia' | 'semana' | 'mes' | 'trimestre' | 'semestre' | 'ano';
+
+const PERIODO_TIPO_LABELS: Record<PeriodoTipo, string> = {
+  dia: 'Dia', semana: 'Semana', mes: 'Mês', trimestre: 'Trimestre', semestre: 'Semestre', ano: 'Ano',
+};
+
+export function periodoTipoLabel(tipo: PeriodoTipo): string {
+  return PERIODO_TIPO_LABELS[tipo];
+}
+
+function semestreDeAno(d: Date): { inicio: Date; fim: Date; numero: 1 | 2 } {
+  const ano = d.getFullYear();
+  return d.getMonth() < 6
+    ? { inicio: new Date(ano, 0, 1), fim: new Date(ano, 5, 30), numero: 1 }
+    : { inicio: new Date(ano, 6, 1), fim: new Date(ano, 11, 31), numero: 2 };
+}
+
+export interface PeriodoRange {
+  start: string;  // 'yyyy-MM-dd' — início do período (inclusive)
+  end: string;    // 'yyyy-MM-dd' — fim do período (inclusive)
+  label: string;  // rótulo amigável pra exibir na UI
+  key: string;    // identificador único — vira fechamentos.periodo_key
+}
+
+export function getPeriodRange(tipo: PeriodoTipo, ref: Date = new Date()): PeriodoRange {
+  switch (tipo) {
+    case 'dia': {
+      const d = startOfDay(ref);
+      const iso = format(d, 'yyyy-MM-dd');
+      return { start: iso, end: iso, label: format(d, 'dd/MM/yyyy'), key: iso };
+    }
+    case 'semana': {
+      const s = startOfWeek(ref, { weekStartsOn: 1 });
+      const e = endOfWeek(ref, { weekStartsOn: 1 });
+      return { start: format(s, 'yyyy-MM-dd'), end: format(e, 'yyyy-MM-dd'), label: `${format(s, 'dd/MM')} a ${format(e, 'dd/MM/yyyy')}`, key: format(s, 'yyyy-MM-dd') };
+    }
+    case 'mes': {
+      const s = startOfMonth(ref);
+      const e = endOfMonth(ref);
+      const chave = format(s, 'yyyy-MM');
+      return { start: format(s, 'yyyy-MM-dd'), end: format(e, 'yyyy-MM-dd'), label: mesLabel(chave), key: chave };
+    }
+    case 'trimestre': {
+      const s = startOfQuarter(ref);
+      const e = endOfQuarter(ref);
+      const q = Math.floor(s.getMonth() / 3) + 1;
+      return { start: format(s, 'yyyy-MM-dd'), end: format(e, 'yyyy-MM-dd'), label: `${q}º trimestre/${s.getFullYear()}`, key: `${s.getFullYear()}-Q${q}` };
+    }
+    case 'semestre': {
+      const { inicio, fim, numero } = semestreDeAno(ref);
+      return { start: format(inicio, 'yyyy-MM-dd'), end: format(fim, 'yyyy-MM-dd'), label: `${numero}º semestre/${inicio.getFullYear()}`, key: `${inicio.getFullYear()}-S${numero}` };
+    }
+    case 'ano': {
+      const s = startOfYear(ref);
+      const e = endOfYear(ref);
+      return { start: format(s, 'yyyy-MM-dd'), end: format(e, 'yyyy-MM-dd'), label: `${s.getFullYear()}`, key: `${s.getFullYear()}` };
+    }
+  }
+}
+
+// Navega pro período anterior/seguinte do mesmo tipo a partir de uma data
+// de referência dentro do período atual (usado pelas setas ‹ › da Balanço).
+export function shiftPeriodo(tipo: PeriodoTipo, ref: Date, direcao: 1 | -1): Date {
+  switch (tipo) {
+    case 'dia':       return addDays(ref, direcao);
+    case 'semana':    return addWeeks(ref, direcao);
+    case 'mes':       return addMonths(ref, direcao);
+    case 'trimestre': return addQuarters(ref, direcao);
+    case 'semestre':  return addMonths(ref, direcao * 6);
+    case 'ano':       return addYears(ref, direcao);
+  }
+}
+
+// ─── Repasse por turma ────────────────────────────────────────────────────────
+//
+// FONTE: turma_responsaveis (turma_id, user_id → responsaveis.id, percentual)
+// LÓGICA: cada turma pode ter N responsáveis com % somando até 100; o que
+// sobra até 100% fica retido pelo IDM. RETORNO: quanto cada responsável
+// recebe sobre o líquido gerado no período, e quanto fica com o IDM.
+
+export interface ResponsavelRow { id: string; nome: string; ativo?: boolean; email?: string | null; }
+export interface TurmaResponsavelRow { id: string; turma_id: string; user_id: string | null; nome_ref: string | null; percentual: number; }
+
+export interface RepasseCalculado {
+  responsavel_id: string | null;
+  nome: string;
+  percentual: number; // participação desse responsável no líquido total do período
+  valor: number;
+}
+
+export interface RepasseResultado {
+  repasses: RepasseCalculado[];
+  percentualIdm: number;
+  valorIdm: number;
+}
+
+// `liquidoPorTurma`: mapa turma_id → líquido gerado por essa turma no período
+export function calcRepasses(
+  liquidoPorTurma: Record<string, number>,
+  turmaResponsaveis: TurmaResponsavelRow[],
+  responsaveisList: ResponsavelRow[],
+): RepasseResultado {
+  const porResponsavel: Record<string, RepasseCalculado> = {};
+  let totalLiquido = 0;
+  let totalRepassado = 0;
+
+  for (const [turmaId, liquido] of Object.entries(liquidoPorTurma)) {
+    totalLiquido += liquido;
+    for (const linha of turmaResponsaveis.filter(r => r.turma_id === turmaId)) {
+      const nome = linha.nome_ref
+        || responsaveisList.find(r => r.id === linha.user_id)?.nome
+        || 'Sem nome';
+      const key = linha.user_id || nome;
+      const valor = liquido * (linha.percentual / 100);
+      totalRepassado += valor;
+      if (!porResponsavel[key]) porResponsavel[key] = { responsavel_id: linha.user_id, nome, percentual: 0, valor: 0 };
+      porResponsavel[key].valor += valor;
+    }
+  }
+
+  const valorIdm = totalLiquido - totalRepassado;
+  for (const r of Object.values(porResponsavel)) {
+    r.percentual = totalLiquido > 0 ? (r.valor / totalLiquido) * 100 : 0;
+  }
+
+  return {
+    repasses: Object.values(porResponsavel).sort((a, b) => b.valor - a.valor),
+    percentualIdm: totalLiquido > 0 ? (valorIdm / totalLiquido) * 100 : 100,
+    valorIdm,
+  };
 }
 
 // ─── Breakdown por forma de pagamento ────────────────────────────────────────

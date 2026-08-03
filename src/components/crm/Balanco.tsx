@@ -9,10 +9,18 @@ import { Badge } from '@/components/ui/badge';
 import {
   TrendingUp, TrendingDown, DollarSign, Plus, Trash2,
   RefreshCw, CheckCircle2, AlertTriangle, XCircle, Settings, Info,
-  CalendarDays, Receipt, UserCheck, ShoppingBag,
+  Receipt, UserCheck, ShoppingBag, ChevronLeft, ChevronRight,
+  Lock, Unlock, Download, Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { calcTaxaTransacao, type TaxaDetalhe } from '@/lib/financial-utils';
+import {
+  calcTaxaTransacao, calcRepasses, getPeriodRange, shiftPeriodo, periodoTipoLabel,
+  type TaxaDetalhe, type PeriodoTipo, type ResponsavelRow, type TurmaResponsavelRow,
+  type RepasseCalculado, type Produto,
+} from '@/lib/financial-utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { TaxasPagamentoConfig } from './finance/TaxasPagamentoConfig';
+import { RepasseTurmasConfig } from './finance/RepasseTurmasConfig';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -20,9 +28,10 @@ type Tipo = 'entrada' | 'saida';
 type Categoria =
   | 'matricula' | 'outro_entrada'
   | 'custo_fixo' | 'custo_variavel' | 'ads' | 'alocacao' | 'outro_saida';
-type View = 'overview' | 'entradas' | 'despesas' | 'config' | 'diario';
+type View = 'overview' | 'entradas' | 'despesas' | 'config' | 'fechamento';
 type Health = 'ok' | 'warn' | 'bad';
 type Empresa = 'onze_digital' | 'idm';
+type StatusFechamento = 'aberto' | 'fechado';
 
 const EMPRESA_LABELS: Record<Empresa, string> = { onze_digital: 'Onze Digital', idm: 'IDM' };
 const EMPRESA_COR: Record<Empresa, { badge: string; ring: string }> = {
@@ -51,7 +60,7 @@ interface BalancoItem {
   created_at: string;
 }
 
-// ─── Tipos: Balanço Diário ─────────────────────────────────────────────────────
+// ─── Tipos: Fechamento por período ─────────────────────────────────────────────
 
 interface ReceitaHoje {
   id: string;
@@ -62,6 +71,8 @@ interface ReceitaHoje {
   produto_label: string;
   forma_pagamento: string;
   mes_referencia: string;
+  data_pagamento: string;
+  canal_cobranca: string | null;
 }
 
 interface AlunoNovo {
@@ -82,10 +93,30 @@ interface TurmaInfo {
   valor_mensalidade: number | null;
 }
 
-interface TurmaResp {
-  turma_id: string;
-  nome_ref: string;
-  percentual: number;
+interface CanalCobranca {
+  id: string;
+  nome: string;
+  ativo: boolean;
+}
+
+interface FechamentoRow {
+  id: string;
+  periodo_tipo: PeriodoTipo;
+  periodo_key: string;
+  periodo_inicio: string;
+  periodo_fim: string;
+  status: StatusFechamento;
+  bruto: number;
+  taxas: number;
+  liquido: number;
+  repasses: RepasseCalculado[];
+  saldo_idm: number;
+  saidas_operacionais: number;
+  saldo_final: number;
+  total_pagamentos: number;
+  fechado_em: string | null;
+  fechado_por: string | null;
+  reaberto_em: string | null;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -101,14 +132,6 @@ function mesLabel(mes: string) {
 function mesAtual() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
-function todayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-function todayLabel() {
-  const d = new Date();
-  return d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
 }
 const FORMA_LABELS: Record<string, string> = {
   boleto: 'Boleto', cartao: 'Cartão', pix: 'PIX', avista: 'À Vista',
@@ -253,21 +276,33 @@ export function Balanco() {
   const [receitaRealTotal, setReceitaRealTotal] = useState(0);
   const [receitaRealPorProduto, setReceitaRealPorProduto] = useState<Record<string, { total: number; nome: string }>>({});
 
-  // ─── Estado: Balanço Diário ──────────────────────────────────────────────
+  // ─── Estado: Fechamento por período ──────────────────────────────────────
+  const { user: currentUser } = useAuth();
+  const [periodoTipo, setPeriodoTipo]       = useState<PeriodoTipo>('dia');
+  const [refDate, setRefDate]               = useState(() => new Date());
+  const range = useMemo(() => getPeriodRange(periodoTipo, refDate), [periodoTipo, refDate]);
+
   const [loadingDiario, setLoadingDiario]   = useState(false);
   const [receitasHoje, setReceitasHoje]     = useState<ReceitaHoje[]>([]);
   const [alunosHoje, setAlunosHoje]         = useState<AlunoNovo[]>([]);
   const [turmasInfo, setTurmasInfo]         = useState<TurmaInfo[]>([]);
-  const [turmasResp, setTurmasResp]         = useState<TurmaResp[]>([]);
+  const [turmasResp, setTurmasResp]         = useState<TurmaResponsavelRow[]>([]);
+  const [responsaveisList, setResponsaveisList] = useState<ResponsavelRow[]>([]);
   const [taxasRates, setTaxasRates]         = useState<TaxaDetalhe[]>([]);
+  const [produtos, setProdutos]             = useState<Produto[]>([]);
+  const [canaisCobranca, setCanaisCobranca] = useState<CanalCobranca[]>([]);
   const [gastosHoje, setGastosHoje]         = useState<BalancoItem[]>([]);
+  const [fechamentoAtual, setFechamentoAtual] = useState<FechamentoRow | null>(null);
+  const [savingFechamento, setSavingFechamento] = useState(false);
+  const [reabrindo, setReabrindo]           = useState(false);
   const [confirmados, setConfirmados]       = useState<Set<string>>(new Set());
   // draft por aluno: forma_pagamento, valor e empresa editáveis
   const [matriculasDraft, setMatriculasDraft] = useState<Record<string, { forma: string; valor: string; empresa: Empresa }>>({});
   const [savingAluno, setSavingAluno]       = useState<string | null>(null);
-  // form gasto rápido do dia
+  // form gasto rápido do período
   const [gastoForm, setGastoForm]           = useState({ descricao: '', valor: '', categoria: 'custo_variavel' as Categoria });
   const [savingGasto, setSavingGasto]       = useState(false);
+  const [savingCanal, setSavingCanal]       = useState<string | null>(null);
 
   // ─── Load ──────────────────────────────────────────────────────────────────
 
@@ -311,47 +346,69 @@ export function Balanco() {
     load();
   }, [mes, empresa]);
 
-  // ─── Load: Balanço Diário ─────────────────────────────────────────────────
+  // ─── Load: dados de referência (não dependem do período) ─────────────────
+  // Turmas, repasse por turma, responsáveis, taxas e canais de cobrança são
+  // config — carregam uma vez, não a cada troca de período.
 
-  const loadDiario = useCallback(async () => {
+  useEffect(() => {
+    const loadReferencias = async () => {
+      const [turRes, respRes, respListRes, taxRes, prodRes, canaisRes] = await Promise.all([
+        supabase.from('turmas').select('id, nome, produto, valor_mensalidade'),
+        supabase.from('turma_responsaveis').select('id, turma_id, user_id, nome_ref, percentual'),
+        supabase.from('responsaveis').select('id, nome, email, ativo'),
+        supabase.from('payment_method_rates').select('*').eq('ativo', true),
+        supabase.from('produtos').select('id, nome, slug, cor, ativo, ordem').eq('ativo', true).order('ordem'),
+        supabase.from('canais_cobranca').select('id, nome, ativo').eq('ativo', true).order('nome'),
+      ]);
+      setTurmasInfo((turRes.data || []) as TurmaInfo[]);
+      setTurmasResp((respRes.data || []) as TurmaResponsavelRow[]);
+      setResponsaveisList((respListRes.data || []) as ResponsavelRow[]);
+      setTaxasRates((taxRes.data || []) as TaxaDetalhe[]);
+      setProdutos((prodRes.data || []) as Produto[]);
+      setCanaisCobranca((canaisRes.data || []) as CanalCobranca[]);
+    };
+    loadReferencias();
+  }, []);
+
+  const reloadTurmaResponsaveis = useCallback(async () => {
+    const { data } = await supabase.from('turma_responsaveis').select('id, turma_id, user_id, nome_ref, percentual');
+    setTurmasResp((data || []) as TurmaResponsavelRow[]);
+  }, []);
+
+  // ─── Load: Fechamento do período selecionado ─────────────────────────────
+
+  const loadPeriodo = useCallback(async () => {
     setLoadingDiario(true);
-    const today = todayStr();
     try {
-      const [recRes, aluRes, turRes, respRes, taxRes, gasRes] = await Promise.all([
-        // Pagamentos recebidos hoje (produto + forma_pagamento via view)
+      const [recRes, aluRes, gasRes, fechRes] = await Promise.all([
+        // Pagamentos recebidos no período (produto + forma_pagamento + canal via view)
         supabase.from('vw_receita_por_fonte')
-          .select('id, aluno_id, turma_id, valor, produto, produto_label, forma_pagamento, mes_referencia')
-          .eq('data_pagamento', today),
-        // Novos alunos cadastrados hoje
+          .select('id, aluno_id, turma_id, valor, produto, produto_label, forma_pagamento, mes_referencia, data_pagamento, canal_cobranca')
+          .gte('data_pagamento', range.start)
+          .lte('data_pagamento', range.end),
+        // Novos alunos cadastrados no período
         supabase.from('alunos')
           .select('id, nome, turma_id, status, forma_pagamento, valor_mensalidade, total_mensalidades, created_at')
-          .gte('created_at', today + 'T00:00:00')
-          .lt('created_at', today + 'T23:59:59'),
-        // Turmas para lookup de produto e nome
-        supabase.from('turmas').select('id, nome, produto, valor_mensalidade'),
-        // Responsáveis por turma
-        supabase.from('turma_responsaveis').select('turma_id, nome_ref, percentual'),
-        // Taxas de processamento
-        supabase.from('payment_method_rates').select('*').eq('ativo', true),
-        // Lançamentos manuais de saída feitos hoje
+          .gte('created_at', range.start + 'T00:00:00')
+          .lt('created_at', range.end + 'T23:59:59'),
+        // Lançamentos manuais de saída feitos no período
         supabase.from('balanco_itens')
           .select('*')
           .eq('tipo', 'saida')
-          .gte('created_at', today + 'T00:00:00')
-          .lt('created_at', today + 'T23:59:59'),
+          .gte('created_at', range.start + 'T00:00:00')
+          .lt('created_at', range.end + 'T23:59:59'),
+        // Snapshot de fechamento (se já foi fechado)
+        supabase.from('fechamentos').select('*').eq('periodo_tipo', periodoTipo).eq('periodo_key', range.key).maybeSingle(),
       ]);
       setReceitasHoje((recRes.data || []) as ReceitaHoje[]);
       const novos = (aluRes.data || []) as AlunoNovo[];
       setAlunosHoje(novos);
-      setTurmasInfo((turRes.data || []) as TurmaInfo[]);
-      setTurmasResp((respRes.data || []) as TurmaResp[]);
-      setTaxasRates((taxRes.data || []) as TaxaDetalhe[]);
       setGastosHoje((gasRes.data || []) as BalancoItem[]);
+      setFechamentoAtual((fechRes.data || null) as FechamentoRow | null);
       // Inicializa o draft com os valores atuais de cada aluno novo
-      const turmasList = (turRes.data || []) as TurmaInfo[];
       const draft: Record<string, { forma: string; valor: string; empresa: Empresa }> = {};
       for (const a of novos) {
-        const turmaInfo = turmasList.find(t => t.id === a.turma_id);
+        const turmaInfo = turmasInfo.find(t => t.id === a.turma_id);
         draft[a.id] = {
           forma: a.forma_pagamento || 'boleto',
           valor: a.valor_mensalidade ? String(a.valor_mensalidade) : '',
@@ -360,15 +417,16 @@ export function Balanco() {
       }
       setMatriculasDraft(draft);
     } catch {
-      toast.error('Erro ao carregar balanço diário.');
+      toast.error('Erro ao carregar o fechamento do período.');
     } finally {
       setLoadingDiario(false);
     }
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [range.start, range.end, range.key, periodoTipo]);
 
   useEffect(() => {
-    if (view === 'diario') loadDiario();
-  }, [view, loadDiario]);
+    if (view === 'fechamento') loadPeriodo();
+  }, [view, loadPeriodo]);
 
   // ─── Computed ──────────────────────────────────────────────────────────────
 
@@ -477,7 +535,7 @@ export function Balanco() {
     toast.success('Removido!');
   };
 
-  // ─── Actions: Balanço Diário ─────────────────────────────────────────────
+  // ─── Actions: Fechamento por período ──────────────────────────────────────
 
   async function handleConfirmarAluno(alunoId: string) {
     const draft = matriculasDraft[alunoId];
@@ -504,7 +562,7 @@ export function Balanco() {
         tipo: 'entrada',
         categoria: 'matricula',
         produto: prodNorm,
-        mes_referencia: mesAtual(),
+        mes_referencia: range.start.slice(0, 7),
         recorrente: false,
         retorno_realizado: 0,
         empresa: draft.empresa,
@@ -533,7 +591,7 @@ export function Balanco() {
       tipo: 'saida',
       categoria: gastoForm.categoria,
       produto: 'geral',
-      mes_referencia: mesAtual(),
+      mes_referencia: range.start.slice(0, 7),
       recorrente: false,
       retorno_realizado: 0,
       empresa,
@@ -544,6 +602,79 @@ export function Balanco() {
     setItems(prev => [data as BalancoItem, ...prev]); // atualiza overview também
     setGastoForm({ descricao: '', valor: '', categoria: 'custo_variavel' });
     toast.success('Gasto registrado!');
+  }
+
+  async function handleUpdateCanal(pagamentoId: string, canal: string) {
+    setSavingCanal(pagamentoId);
+    const { error } = await supabase.from('pagamentos').update({ canal_cobranca: canal || null }).eq('id', pagamentoId);
+    setSavingCanal(null);
+    if (error) { toast.error('Erro ao salvar canal.'); return; }
+    setReceitasHoje(prev => prev.map(r => r.id === pagamentoId ? { ...r, canal_cobranca: canal || null } : r));
+  }
+
+  function exportarCSVPeriodo(receitas: ReceitaHoje[], taxaFn: (r: ReceitaHoje) => number) {
+    const headers = ['Data', 'Turma', 'Produto', 'Forma', 'Canal', 'Valor', 'Taxa', 'Líquido'];
+    const rows = receitas.map(r => {
+      const turma = turmasInfo.find(t => t.id === r.turma_id);
+      const taxa = taxaFn(r);
+      const [y, m, d] = r.data_pagamento.split('T')[0].split('-');
+      return [
+        `${d}/${m}/${y}`,
+        turma?.nome || '—',
+        r.produto_label,
+        FORMA_LABELS[r.forma_pagamento] || r.forma_pagamento,
+        r.canal_cobranca || '',
+        r.valor.toFixed(2).replace('.', ','),
+        taxa.toFixed(2).replace('.', ','),
+        (r.valor - taxa).toFixed(2).replace('.', ','),
+      ];
+    });
+    const csv = [headers, ...rows].map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `fechamento_${periodoTipo}_${range.key}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleFecharPeriodo(payload: Omit<FechamentoRow, 'id' | 'periodo_tipo' | 'periodo_key' | 'periodo_inicio' | 'periodo_fim' | 'status' | 'fechado_em' | 'fechado_por' | 'reaberto_em'>) {
+    setSavingFechamento(true);
+    const { data, error } = await supabase
+      .from('fechamentos')
+      .upsert({
+        periodo_tipo: periodoTipo,
+        periodo_key: range.key,
+        periodo_inicio: range.start,
+        periodo_fim: range.end,
+        status: 'fechado' as StatusFechamento,
+        ...payload,
+        fechado_em: new Date().toISOString(),
+        fechado_por: currentUser?.nome || null,
+        reaberto_em: null,
+      }, { onConflict: 'periodo_tipo,periodo_key' })
+      .select('*')
+      .single();
+    setSavingFechamento(false);
+    if (error || !data) { toast.error('Erro ao fechar período.'); return; }
+    setFechamentoAtual(data as FechamentoRow);
+    toast.success(`${periodoTipoLabel(periodoTipo)} fechado!`);
+  }
+
+  async function handleReabrirPeriodo() {
+    if (!fechamentoAtual) return;
+    setReabrindo(true);
+    const { data, error } = await supabase
+      .from('fechamentos')
+      .update({ status: 'aberto' as StatusFechamento, reaberto_em: new Date().toISOString() })
+      .eq('id', fechamentoAtual.id)
+      .select('*')
+      .single();
+    setReabrindo(false);
+    if (error || !data) { toast.error('Erro ao reabrir período.'); return; }
+    setFechamentoAtual(data as FechamentoRow);
+    toast.success('Período reaberto — os números voltam a ser recalculados ao vivo.');
   }
 
   async function handleDeleteGastoHoje(id: string) {
@@ -561,7 +692,7 @@ export function Balanco() {
     margem, pct_ads, h_margem, h_ads, h_roi, entradas, saidas } = calc;
 
   const tabs: { id: View; label: string }[] = [
-    { id: 'diario',   label: '📅 Hoje' },
+    { id: 'fechamento', label: '🔒 Fechamento' },
     { id: 'overview', label: 'Visão Geral' },
     { id: 'entradas', label: `Entradas (${entradas.length})` },
     { id: 'despesas', label: `Despesas (${saidas.length})` },
@@ -622,22 +753,79 @@ export function Balanco() {
       ) : (
 
         <>
-          {/* ────────────────── HOJE ────────────────── */}
-          {view === 'diario' && (
+          {/* ────────────────── FECHAMENTO ────────────────── */}
+          {view === 'fechamento' && (
             <div className="space-y-5">
+
+              {/* Seletor de período */}
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex gap-1 p-1 rounded-lg border border-border bg-muted/30">
+                  {(['dia', 'semana', 'mes', 'trimestre', 'semestre', 'ano'] as PeriodoTipo[]).map(tipo => (
+                    <button
+                      key={tipo}
+                      onClick={() => setPeriodoTipo(tipo)}
+                      className={`px-3 py-1.5 rounded text-xs font-semibold transition-all ${
+                        periodoTipo === tipo ? 'bg-white shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {periodoTipoLabel(tipo)}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setRefDate(d => shiftPeriodo(periodoTipo, d, -1))}>
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="text-sm font-medium min-w-[140px] text-center">{range.label}</span>
+                  <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setRefDate(d => shiftPeriodo(periodoTipo, d, 1))}>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+                {fechamentoAtual?.status === 'fechado' ? (
+                  <Badge className="bg-slate-100 text-slate-700 border-slate-300 gap-1">
+                    <Lock className="h-3 w-3" />
+                    Fechado em {new Date(fechamentoAtual.fechado_em!).toLocaleDateString('pt-BR')} às {new Date(fechamentoAtual.fechado_em!).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                    {fechamentoAtual.fechado_por ? ` por ${fechamentoAtual.fechado_por}` : ''}
+                  </Badge>
+                ) : (
+                  <Badge className="bg-amber-50 text-amber-700 border-amber-200 gap-1">
+                    <Unlock className="h-3 w-3" /> Não fechado — números ao vivo
+                  </Badge>
+                )}
+                <Button size="sm" variant="ghost" className="h-8 text-xs gap-1.5" onClick={loadPeriodo}>
+                  <RefreshCw className="h-3 w-3" /> Atualizar
+                </Button>
+              </div>
 
               {loadingDiario ? (
                 <div className="flex justify-center py-16">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
                 </div>
               ) : (() => {
-                // ── Computed dentro da view ──────────────────────────────
-                const brutoHoje = receitasHoje.reduce((s, r) => s + r.valor, 0);
-                const taxasHoje = receitasHoje.reduce((s, r) =>
+                // ── Computado ao vivo a partir dos pagamentos do período ──
+                const brutoVivo = receitasHoje.reduce((s, r) => s + r.valor, 0);
+                const taxasVivo = receitasHoje.reduce((s, r) =>
                   s + calcTaxaTransacao(r.valor, r.produto || '', r.forma_pagamento, taxasRates), 0);
-                const liquidoHoje = brutoHoje - taxasHoje;
-                const saidasHojeTot = gastosHoje.reduce((s, g) => s + g.valor, 0);
-                const saldoHoje = liquidoHoje - saidasHojeTot;
+                const liquidoVivo = brutoVivo - taxasVivo;
+                const saidasVivo = gastosHoje.reduce((s, g) => s + g.valor, 0);
+
+                const liquidoPorTurma: Record<string, number> = {};
+                for (const r of receitasHoje) {
+                  if (!r.turma_id) continue;
+                  const taxa = calcTaxaTransacao(r.valor, r.produto || '', r.forma_pagamento, taxasRates);
+                  liquidoPorTurma[r.turma_id] = (liquidoPorTurma[r.turma_id] || 0) + (r.valor - taxa);
+                }
+                const repasseVivo = calcRepasses(liquidoPorTurma, turmasResp, responsaveisList);
+                const saldoFinalVivo = repasseVivo.valorIdm - saidasVivo;
+
+                const isFechado = fechamentoAtual?.status === 'fechado';
+                const bruto      = isFechado ? fechamentoAtual!.bruto : brutoVivo;
+                const taxasTotal = isFechado ? fechamentoAtual!.taxas : taxasVivo;
+                const liquido    = isFechado ? fechamentoAtual!.liquido : liquidoVivo;
+                const repasses: RepasseCalculado[] = isFechado ? fechamentoAtual!.repasses : repasseVivo.repasses;
+                const saldoIdm    = isFechado ? fechamentoAtual!.saldo_idm : repasseVivo.valorIdm;
+                const saidasTotal = isFechado ? fechamentoAtual!.saidas_operacionais : saidasVivo;
+                const saldoFinal  = isFechado ? fechamentoAtual!.saldo_final : saldoFinalVivo;
 
                 // agrupa entradas por produto
                 const porProduto: Record<string, { label: string; itens: ReceitaHoje[] }> = {};
@@ -651,22 +839,39 @@ export function Balanco() {
 
                 return (
                   <>
-                    {/* Header do dia */}
-                    <div className="flex items-center gap-2">
-                      <CalendarDays className="h-4 w-4 text-muted-foreground" />
-                      <p className="text-sm font-medium capitalize">{todayLabel()}</p>
-                      <Button size="sm" variant="ghost" className="ml-auto h-7 text-xs gap-1.5" onClick={loadDiario}>
-                        <RefreshCw className="h-3 w-3" /> Atualizar
+                    {/* Ações de fechamento */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {!isFechado ? (
+                        <Button
+                          size="sm" className="gap-1.5 bg-slate-800 hover:bg-slate-900 text-white"
+                          disabled={savingFechamento}
+                          onClick={() => handleFecharPeriodo({
+                            bruto: brutoVivo, taxas: taxasVivo, liquido: liquidoVivo,
+                            repasses: repasseVivo.repasses, saldo_idm: repasseVivo.valorIdm,
+                            saidas_operacionais: saidasVivo, saldo_final: saldoFinalVivo,
+                            total_pagamentos: receitasHoje.length,
+                          })}
+                        >
+                          <Lock className="h-3.5 w-3.5" /> {savingFechamento ? 'Fechando…' : `Fechar ${periodoTipoLabel(periodoTipo).toLowerCase()}`}
+                        </Button>
+                      ) : (
+                        <Button size="sm" variant="outline" className="gap-1.5" disabled={reabrindo} onClick={handleReabrirPeriodo}>
+                          <Unlock className="h-3.5 w-3.5" /> {reabrindo ? 'Reabrindo…' : 'Reabrir período'}
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline" className="gap-1.5"
+                        onClick={() => exportarCSVPeriodo(receitasHoje, r => calcTaxaTransacao(r.valor, r.produto || '', r.forma_pagamento, taxasRates))}>
+                        <Download className="h-3.5 w-3.5" /> Exportar CSV
                       </Button>
                     </div>
 
-                    {/* KPI do dia */}
+                    {/* KPI do período */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       {[
-                        { icon: <Receipt className="h-4 w-4" />, label: 'Bruto hoje', value: brutoHoje, cls: 'text-emerald-600' },
-                        { icon: <Info className="h-4 w-4" />, label: 'Taxas', value: taxasHoje, cls: 'text-red-500', prefix: '−' },
-                        { icon: <DollarSign className="h-4 w-4" />, label: 'Líquido hoje', value: liquidoHoje, cls: 'text-sky-600' },
-                        { icon: <ShoppingBag className="h-4 w-4" />, label: 'Saídas', value: saidasHojeTot, cls: 'text-orange-600', prefix: '−' },
+                        { icon: <Receipt className="h-4 w-4" />, label: 'Bruto', value: bruto, cls: 'text-emerald-600' },
+                        { icon: <Info className="h-4 w-4" />, label: 'Taxas', value: taxasTotal, cls: 'text-red-500', prefix: '−' },
+                        { icon: <DollarSign className="h-4 w-4" />, label: 'Líquido', value: liquido, cls: 'text-sky-600' },
+                        { icon: <ShoppingBag className="h-4 w-4" />, label: 'Saídas', value: saidasTotal, cls: 'text-orange-600', prefix: '−' },
                       ].map(k => (
                         <Card key={k.label} className="p-4 border-border/60 shadow-none">
                           <div className="flex items-center gap-1.5 mb-1 text-muted-foreground">{k.icon}<span className="text-[10px] font-semibold uppercase tracking-wide">{k.label}</span></div>
@@ -674,21 +879,48 @@ export function Balanco() {
                         </Card>
                       ))}
                     </div>
-                    <Card className={`p-4 border shadow-none ${saldoHoje >= 0 ? 'border-emerald-200 bg-emerald-50/40' : 'border-red-200 bg-red-50/30'}`}>
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Saldo do dia (líquido − saídas)</p>
-                      <p className={`text-2xl font-bold tabular-nums mt-1 ${saldoHoje >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                        {saldoHoje >= 0 ? '' : '−'}R$ {fmt(Math.abs(saldoHoje))}
+
+                    {/* Repasse por responsável */}
+                    {repasses.length > 0 && (
+                      <Card className="p-4 border-border/60 shadow-none">
+                        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                          <Users className="h-3.5 w-3.5" /> Repasse do período
+                        </p>
+                        <div className="space-y-2">
+                          {repasses.map(r => (
+                            <div key={r.responsavel_id || r.nome} className="flex items-center justify-between">
+                              <span className="text-sm font-medium">{r.nome} <span className="text-xs text-muted-foreground">({r.percentual.toFixed(1)}%)</span></span>
+                              <span className="text-sm font-bold text-violet-700 tabular-nums">R$ {fmt(r.valor)}</span>
+                            </div>
+                          ))}
+                          <div className="border-t border-border/40 pt-2 flex justify-between">
+                            <span className="text-xs text-muted-foreground">Fica no IDM</span>
+                            <span className="text-sm font-bold tabular-nums">R$ {fmt(saldoIdm)}</span>
+                          </div>
+                        </div>
+                      </Card>
+                    )}
+
+                    <Card className={`p-4 border shadow-none ${saldoFinal >= 0 ? 'border-emerald-200 bg-emerald-50/40' : 'border-red-200 bg-red-50/30'}`}>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        Saldo final ({repasses.length > 0 ? 'IDM pós-repasse' : 'líquido'} − saídas)
                       </p>
+                      <p className={`text-2xl font-bold tabular-nums mt-1 ${saldoFinal >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                        {saldoFinal >= 0 ? '' : '−'}R$ {fmt(Math.abs(saldoFinal))}
+                      </p>
+                      {isFechado && (
+                        <p className="text-[10px] text-muted-foreground mt-1">Valores congelados no fechamento — a lista de pagamentos abaixo continua ao vivo.</p>
+                      )}
                     </Card>
 
-                    {/* Entradas do dia por produto */}
+                    {/* Entradas do período por produto */}
                     <div>
                       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                        <TrendingUp className="h-3.5 w-3.5" /> Entradas hoje — {receitasHoje.length} pagamento{receitasHoje.length !== 1 ? 's' : ''}
+                        <TrendingUp className="h-3.5 w-3.5" /> Entradas — {receitasHoje.length} pagamento{receitasHoje.length !== 1 ? 's' : ''}
                       </p>
                       {receitasHoje.length === 0 ? (
                         <Card className="p-6 text-center border-border/50 shadow-none">
-                          <p className="text-sm text-muted-foreground">Nenhum pagamento recebido hoje</p>
+                          <p className="text-sm text-muted-foreground">Nenhum pagamento recebido nesse período</p>
                         </Card>
                       ) : (
                         <div className="space-y-3">
@@ -715,6 +947,18 @@ export function Balanco() {
                                         <Badge className={`text-[10px] border ${FORMA_COR[r.forma_pagamento] || 'bg-muted text-muted-foreground'}`}>
                                           {FORMA_LABELS[r.forma_pagamento] || r.forma_pagamento}
                                         </Badge>
+                                        <Select
+                                          value={r.canal_cobranca || '__none__'}
+                                          onValueChange={v => handleUpdateCanal(r.id, v === '__none__' ? '' : v)}
+                                        >
+                                          <SelectTrigger className="h-6 text-[11px] w-32" disabled={savingCanal === r.id}>
+                                            <SelectValue placeholder="Canal" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="__none__">— Canal —</SelectItem>
+                                            {canaisCobranca.map(c => <SelectItem key={c.id} value={c.nome}>{c.nome}</SelectItem>)}
+                                          </SelectContent>
+                                        </Select>
                                         <span className="tabular-nums font-semibold">R$ {fmt(r.valor)}</span>
                                         <span className="tabular-nums text-red-500 text-xs">−R$ {fmt(taxa)}</span>
                                         <span className="tabular-nums text-emerald-600 text-xs font-semibold">R$ {fmt(r.valor - taxa)}</span>
@@ -734,17 +978,17 @@ export function Balanco() {
                       )}
                     </div>
 
-                    {/* Matrículas do dia */}
+                    {/* Matrículas do período */}
                     <div>
                       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                        <UserCheck className="h-3.5 w-3.5" /> Matrículas hoje — {alunosHoje.length} novo{alunosHoje.length !== 1 ? 's' : ''}
+                        <UserCheck className="h-3.5 w-3.5" /> Matrículas — {alunosHoje.length} nova{alunosHoje.length !== 1 ? 's' : ''}
                         {pendenteCount > 0 && (
                           <Badge className="ml-1 bg-amber-50 text-amber-700 border border-amber-200 text-[10px]">{pendenteCount} pendente{pendenteCount !== 1 ? 's' : ''}</Badge>
                         )}
                       </p>
                       {alunosHoje.length === 0 ? (
                         <Card className="p-6 text-center border-border/50 shadow-none">
-                          <p className="text-sm text-muted-foreground">Nenhum aluno cadastrado hoje</p>
+                          <p className="text-sm text-muted-foreground">Nenhum aluno cadastrado nesse período</p>
                         </Card>
                       ) : (
                         <div className="space-y-3">
@@ -893,14 +1137,14 @@ export function Balanco() {
                       )}
                     </div>
 
-                    {/* Saídas do dia */}
+                    {/* Saídas do período */}
                     <div>
                       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                        <TrendingDown className="h-3.5 w-3.5" /> Saídas hoje
+                        <TrendingDown className="h-3.5 w-3.5" /> Saídas do período
                       </p>
                       {/* Quick add */}
                       <Card className="p-3 border-border/60 shadow-none mb-3">
-                        <p className="text-xs font-medium mb-2">Registrar gasto de hoje</p>
+                        <p className="text-xs font-medium mb-2">Registrar gasto nesse período</p>
                         <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
                           <Input
                             className="h-8 text-sm sm:col-span-2"
@@ -935,7 +1179,7 @@ export function Balanco() {
                       </Card>
                       {/* Lista */}
                       {gastosHoje.length === 0 ? (
-                        <p className="text-sm text-muted-foreground text-center py-3">Nenhuma saída registrada hoje</p>
+                        <p className="text-sm text-muted-foreground text-center py-3">Nenhuma saída registrada nesse período</p>
                       ) : (
                         <div className="space-y-1.5">
                           {gastosHoje.map(g => (
@@ -949,7 +1193,7 @@ export function Balanco() {
                             </div>
                           ))}
                           <div className="flex justify-end px-3 pt-1">
-                            <span className="text-sm font-bold text-red-500">Total saídas: −R$ {fmt(saidasHojeTot)}</span>
+                            <span className="text-sm font-bold text-red-500">Total saídas: −R$ {fmt(gastosHoje.reduce((s, g) => s + g.valor, 0))}</span>
                           </div>
                         </div>
                       )}
@@ -1290,15 +1534,18 @@ export function Balanco() {
 
           {/* ────────────────── CONFIG ────────────────── */}
           {view === 'config' && (
-            <div className="space-y-6 max-w-2xl">
+            <div className="space-y-6">
 
-              <Card className="p-5 border-border/60 shadow-none">
+              <TaxasPagamentoConfig produtos={produtos} taxas={taxasRates} onSaved={setTaxasRates} />
+              <RepasseTurmasConfig turmas={turmasInfo} onSaved={reloadTurmaResponsaveis} />
+
+              <Card className="p-5 border-border/60 shadow-none max-w-2xl">
                 <div className="flex items-center gap-2 mb-1">
                   <Settings className="h-4 w-4 text-muted-foreground" />
-                  <p className="font-semibold text-sm">Taxas Financeiras</p>
+                  <p className="font-semibold text-sm">Taxas Financeiras (flat, % da receita total)</p>
                 </div>
                 <p className="text-xs text-muted-foreground mb-4">
-                  Taxa de cartão, boleto, antecipação, gateway etc. São descontadas automaticamente da receita bruta no fluxo.
+                  Estimativa simples de taxa sobre o total lançado manualmente aqui no Balanço. Para a taxa exata por forma de pagamento (usada no Fechamento), use o card "Taxas por Forma de Pagamento" acima.
                 </p>
                 <div className="space-y-2">
                   {editConfig.taxas.map((t, i) => (
@@ -1332,10 +1579,10 @@ export function Balanco() {
                 </div>
               </Card>
 
-              <Card className="p-5 border-border/60 shadow-none">
+              <Card className="p-5 border-border/60 shadow-none max-w-2xl">
                 <div className="flex items-center gap-2 mb-1">
                   <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                  <p className="font-semibold text-sm">Repartição entre Sócios</p>
+                  <p className="font-semibold text-sm">Repartição entre Sócios (lucro da IDM)</p>
                 </div>
                 <p className="text-xs text-muted-foreground mb-4">
                   Percentual do lucro para cada sócio. O restante até 100% fica no caixa da empresa.

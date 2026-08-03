@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DollarSign, TrendingUp, AlertTriangle, Target, Info, Calendar,
-  Users, BarChart3, CheckCircle2, TrendingDown, Pencil, Save, X, Settings2,
+  Users, BarChart3, CheckCircle2, TrendingDown, Pencil, Save, X,
   Layers, Droplets, Plus, Trash2, ChevronDown, Copy, FileText,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -26,6 +26,8 @@ import {
   agruparReceitaSemanal, agruparReceitaMensal, agruparReceitaPorMetodo,
   fmtBRL, mesLabel,
 } from '@/lib/financial-utils';
+import { TaxasPagamentoConfig } from './finance/TaxasPagamentoConfig';
+import { RepasseTurmasConfig } from './finance/RepasseTurmasConfig';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -76,9 +78,6 @@ function mesStr(offset = 0) {
   d.setMonth(d.getMonth() - offset);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
-
-const OWNERS = ['Onze Digital', 'Rodrygo', 'Keila'] as const;
-type Owner = typeof OWNERS[number] | '';
 
 const METAS_KEY = 'cfo_metas_v2';
 const METAS_DEFAULT: Metas = {
@@ -235,19 +234,11 @@ export function FinanceiroCFO() {
   // ── Novos estados: produtos, taxas e receita por fonte ─────────────────────
   const [produtos, setProdutos]                       = useState<Produto[]>([]);
   const [taxasDetalhe, setTaxasDetalhe]               = useState<TaxaDetalhe[]>([]);
-  const [taxasDraft, setTaxasDraft]                   = useState<TaxaDetalhe[]>([]);
-  const [editingTaxas, setEditingTaxas]               = useState(false);
-  const [savingTaxas, setSavingTaxas]                 = useState(false);
   const [pagamentosComFonte, setPagamentosComFonte]   = useState<PagamentoComFonte[]>([]);
   const [granularidadeFluxo, setGranularidadeFluxo]   = useState<GranularidadeFluxo>('diario');
   const [produtosDraft, setProdutosDraft]             = useState<Produto[]>([]);
   const [editingProdutos, setEditingProdutos]         = useState(false);
   const [savingProdutos, setSavingProdutos]           = useState(false);
-
-  // Configuração de responsáveis por turma
-  type RespEntry = { owner1: Owner; pct1: number; owner2: Owner; pct2: number };
-  const [cfgResp, setCfgResp]       = useState<Record<string, RespEntry>>({});
-  const [savingResp, setSavingResp] = useState(false);
 
   const mesAtual   = useMemo(() => mesStr(0), []);
   const mesAnterior = useMemo(() => mesStr(1), []);
@@ -268,7 +259,7 @@ export function FinanceiroCFO() {
           supabase.from('alunos').select('id, nome, turma_id, status, dia_vencimento, valor_mensalidade, mensalidades_pagas, total_mensalidades'),
           supabase.from('pagamentos').select('id, aluno_id, turma_id, valor, status, data_pagamento, data_vencimento, mes_referencia'),
           supabase.from('turma_responsaveis').select('id, turma_id, user_id, nome_ref, percentual'),
-          supabase.from('responsaveis').select('id, nome'),
+          supabase.from('responsaveis').select('id, nome, email, ativo'),
           // Produtos configuráveis (não mais hardcoded)
           supabase.from('produtos').select('id, nome, slug, cor, ativo, ordem').eq('ativo', true).order('ordem'),
           // Taxas por produto + método de pagamento
@@ -285,7 +276,6 @@ export function FinanceiroCFO() {
         setResponsaveisList(rl || []);
         setProdutos((prod || []) as Produto[]);
         setTaxasDetalhe((taxas || []) as TaxaDetalhe[]);
-        setTaxasDraft((taxas || []) as TaxaDetalhe[]);
         setPagamentosComFonte((recFonte || []) as PagamentoComFonte[]);
       } catch {
         toast.error('Erro ao carregar dados financeiros. Recarregue a página.');
@@ -296,22 +286,10 @@ export function FinanceiroCFO() {
     load();
   }, []);
 
-  // ── Build cfgResp from loaded responsaveis ───────────────────────────────
-  useEffect(() => {
-    const cfg: Record<string, RespEntry> = {};
-    for (const turma of turmas) {
-      const entries = responsaveis.filter(r => r.turma_id === turma.id && r.nome_ref);
-      const [e1, e2] = entries;
-      cfg[turma.id] = {
-        owner1: (e1?.nome_ref as Owner) || '',
-        pct1:   e1?.percentual ?? 100,
-        owner2: (e2?.nome_ref as Owner) || '',
-        pct2:   e2?.percentual ?? 0,
-      };
-    }
-    setCfgResp(cfg);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [turmas, responsaveis]);
+  const reloadTurmaResponsaveis = useCallback(async () => {
+    const { data: r } = await supabase.from('turma_responsaveis').select('id, turma_id, user_id, nome_ref, percentual');
+    setResponsaveis(r || []);
+  }, []);
 
   // ── Base sets ────────────────────────────────────────────────────────────
 
@@ -453,7 +431,7 @@ export function FinanceiroCFO() {
 
   const receitaPorOwner = useMemo(() => {
     const map: Record<string, { nome: string; mrr: number; recebido: number; txColeta: number }> = {};
-    for (const owner of OWNERS) map[owner] = { nome: owner, mrr: 0, recebido: 0, txColeta: 0 };
+    for (const resp of responsaveisList) map[resp.nome] = { nome: resp.nome, mrr: 0, recebido: 0, txColeta: 0 };
 
     for (const turma of turmas) {
       const ativosRaw = alunosAtivos.filter(a => a.turma_id === turma.id);
@@ -624,26 +602,6 @@ export function FinanceiroCFO() {
     ? ((receitaMesAtual - receitaMesAnterior) / receitaMesAnterior) * 100
     : 0;
 
-  // ── Resp config save ─────────────────────────────────────────────────────
-
-  async function handleSaveResp() {
-    setSavingResp(true);
-    const turmaIds = Object.keys(cfgResp);
-    if (turmaIds.length) {
-      await supabase.from('turma_responsaveis').delete().in('turma_id', turmaIds);
-    }
-    const rows: { turma_id: string; nome_ref: string; percentual: number; user_id: string }[] = [];
-    for (const [turmaId, entry] of Object.entries(cfgResp)) {
-      if (entry.owner1) rows.push({ turma_id: turmaId, nome_ref: entry.owner1, percentual: entry.pct1, user_id: crypto.randomUUID() });
-      if (entry.owner2) rows.push({ turma_id: turmaId, nome_ref: entry.owner2, percentual: entry.pct2, user_id: crypto.randomUUID() });
-    }
-    if (rows.length) await supabase.from('turma_responsaveis').insert(rows);
-    const { data: r } = await supabase.from('turma_responsaveis').select('id, turma_id, user_id, nome_ref, percentual');
-    setResponsaveis(r || []);
-    setSavingResp(false);
-    toast.success('Distribuição salva!');
-  }
-
   // ── Produtos handlers ─────────────────────────────────────────────────────
 
   async function handleSaveProdutos() {
@@ -668,32 +626,6 @@ export function FinanceiroCFO() {
       toast.error('Erro ao salvar produtos. Tente novamente.');
     } finally {
       setSavingProdutos(false);
-    }
-  }
-
-  // ── Taxas handlers ────────────────────────────────────────────────────────
-
-  async function handleSaveTaxas() {
-    setSavingTaxas(true);
-    try {
-      const rows = taxasDraft.map(t => ({ ...t, updated_at: new Date().toISOString() }));
-      const { error } = await supabase.from('payment_method_rates').upsert(rows, { onConflict: 'id' });
-      if (error) throw error;
-      const deletedIds = taxasDetalhe
-        .filter(t => !taxasDraft.find(d => d.id === t.id))
-        .map(t => t.id);
-      if (deletedIds.length) {
-        await supabase.from('payment_method_rates').delete().in('id', deletedIds);
-      }
-      const { data: fresh } = await supabase.from('payment_method_rates').select('*').eq('ativo', true);
-      setTaxasDetalhe((fresh || []) as TaxaDetalhe[]);
-      setTaxasDraft((fresh || []) as TaxaDetalhe[]);
-      setEditingTaxas(false);
-      toast.success('Taxas salvas!');
-    } catch {
-      toast.error('Erro ao salvar taxas. Tente novamente.');
-    } finally {
-      setSavingTaxas(false);
     }
   }
 
@@ -762,7 +694,7 @@ export function FinanceiroCFO() {
           {/* Owner filter */}
           <div className="flex items-center gap-2 flex-wrap">
             <Users className="h-4 w-4 text-muted-foreground shrink-0" />
-            {(['', ...OWNERS] as const).map(owner => (
+            {['', ...responsaveisList.map(r => r.nome)].map(owner => (
               <button
                 key={owner || '__todos__'}
                 onClick={() => setOwnerFilter(owner === ownerFilter ? '' : owner)}
@@ -1140,112 +1072,8 @@ export function FinanceiroCFO() {
             </div>
           )}
 
-          {/* Configurar distribuição por turma */}
-          <Card className="border border-border/60 bg-white">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <Settings2 size={14} className="text-muted-foreground" />
-                  Configurar distribuição por turma
-                  <InfoTip text="Defina qual % de cada turma pertence a cada responsável. Onze Digital, Rodrygo e Keila podem dividir a mesma turma proporcionalmente. Total deve somar 100%." />
-                </CardTitle>
-                <Button size="sm" className="gap-1.5 text-xs" onClick={handleSaveResp} disabled={savingResp}>
-                  {savingResp ? <><span className="animate-spin">⏳</span> Salvando...</> : <><Save className="h-3 w-3" /> Salvar</>}
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {turmas.filter(t => {
-                  const ativos = alunos.filter(a => a.turma_id === t.id && a.status === 'ativo');
-                  return ativos.length > 0;
-                }).map(turma => {
-                  const entry = cfgResp[turma.id] ?? { owner1: '', pct1: 100, owner2: '', pct2: 0 };
-                  const pct1 = entry.pct1;
-                  const pct2 = entry.pct2;
-                  const total = (entry.owner1 ? pct1 : 0) + (entry.owner2 ? pct2 : 0);
-                  const ok = !entry.owner1 || total === 100;
-                  return (
-                    <div key={turma.id} className={`rounded-lg border px-4 py-3 ${ok ? 'border-border/60' : 'border-amber-300 bg-amber-50/30'}`}>
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <span className="text-sm font-medium w-32 shrink-0">{turma.nome}</span>
-                        {/* Owner 1 */}
-                        <Select
-                          value={entry.owner1 || '__none__'}
-                          onValueChange={v => {
-                            const owner = v === '__none__' ? '' : v;
-                            setCfgResp(prev => ({
-                              ...prev,
-                              [turma.id]: { ...entry, owner1: owner as Owner, pct1: owner ? (entry.owner2 ? entry.pct1 : 100) : 100 },
-                            }));
-                          }}
-                        >
-                          <SelectTrigger className="h-8 text-xs w-36">
-                            <SelectValue placeholder="Responsável 1..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">— Nenhum —</SelectItem>
-                            {OWNERS.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                        {entry.owner1 && (
-                          <div className="flex items-center gap-1">
-                            <Input
-                              type="number" min={0} max={100} className="h-8 w-16 text-xs"
-                              value={pct1}
-                              onChange={e => setCfgResp(prev => ({ ...prev, [turma.id]: { ...entry, pct1: Number(e.target.value) } }))}
-                            />
-                            <span className="text-xs text-muted-foreground">%</span>
-                          </div>
-                        )}
-                        {/* Owner 2 (opcional) */}
-                        {entry.owner1 && (
-                          <>
-                            <span className="text-xs text-muted-foreground">+</span>
-                            <Select
-                              value={entry.owner2 || '__none__'}
-                              onValueChange={v => {
-                                const owner = v === '__none__' ? '' : v;
-                                setCfgResp(prev => ({
-                                  ...prev,
-                                  [turma.id]: { ...entry, owner2: owner as Owner, pct2: owner ? 100 - entry.pct1 : 0 },
-                                }));
-                              }}
-                            >
-                              <SelectTrigger className="h-8 text-xs w-36">
-                                <SelectValue placeholder="Responsável 2..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="__none__">— Nenhum —</SelectItem>
-                                {OWNERS.filter(o => o !== entry.owner1).map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                            {entry.owner2 && (
-                              <div className="flex items-center gap-1">
-                                <Input
-                                  type="number" min={0} max={100} className="h-8 w-16 text-xs"
-                                  value={pct2}
-                                  onChange={e => setCfgResp(prev => ({ ...prev, [turma.id]: { ...entry, pct2: Number(e.target.value) } }))}
-                                />
-                                <span className="text-xs text-muted-foreground">%</span>
-                              </div>
-                            )}
-                          </>
-                        )}
-                        {/* Validação total */}
-                        {entry.owner1 && !ok && (
-                          <span className="text-xs text-amber-700 font-medium">total {total}% (precisa ser 100%)</span>
-                        )}
-                        {entry.owner1 && ok && (
-                          <span className="text-xs text-emerald-600">✓</span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
+          {/* Configurar responsáveis + repasse por turma (compartilhado com a Balanço) */}
+          <RepasseTurmasConfig turmas={turmas} onSaved={reloadTurmaResponsaveis} />
         </TabsContent>
 
         {/* ── Por Vencimento ────────────────────────────────────────────────── */}
@@ -1558,150 +1386,7 @@ export function FinanceiroCFO() {
             </CardContent>
           </Card>
 
-          <Card className="border border-border/60 bg-white">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between flex-wrap gap-3">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <Settings2 size={14} className="text-muted-foreground" />
-                  Configuração de Taxas
-                  <InfoTip text="Taxas por produto + método + gateway. Regra mais específica prevalece. Editável sem deploy — alterações salvas em payment_method_rates." />
-                </CardTitle>
-                {!editingTaxas ? (
-                  <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => { setTaxasDraft([...taxasDetalhe]); setEditingTaxas(true); }}>
-                    <Pencil className="h-3 w-3" /> Editar taxas
-                  </Button>
-                ) : (
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => { setEditingTaxas(false); setTaxasDraft([...taxasDetalhe]); }}>
-                      <X className="h-3 w-3" /> Cancelar
-                    </Button>
-                    <Button size="sm" className="gap-1.5 text-xs" onClick={handleSaveTaxas} disabled={savingTaxas}>
-                      <Save className="h-3 w-3" /> {savingTaxas ? 'Salvando…' : 'Salvar'}
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {editingTaxas ? (
-                <div className="space-y-2">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b">
-                          <th className="text-left py-2 pr-2">Produto</th>
-                          <th className="text-left py-2 pr-2">Método</th>
-                          <th className="text-left py-2 pr-2">Gateway</th>
-                          <th className="text-right py-2 pr-2">% Taxa</th>
-                          <th className="text-right py-2 pr-2">R$ Fixo</th>
-                          <th className="text-left py-2 pr-2">Observação</th>
-                          <th className="py-2" />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {taxasDraft.map((taxa, idx) => (
-                          <tr key={taxa.id} className="border-b border-border/40">
-                            <td className="py-1.5 pr-2">
-                              <Select value={taxa.produto_slug} onValueChange={v => setTaxasDraft(prev => prev.map((t, i) => i === idx ? { ...t, produto_slug: v } : t))}>
-                                <SelectTrigger className="h-7 text-xs w-32"><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="*">Todos (*)</SelectItem>
-                                  {produtos.map(p => <SelectItem key={p.slug} value={p.slug}>{p.nome}</SelectItem>)}
-                                </SelectContent>
-                              </Select>
-                            </td>
-                            <td className="py-1.5 pr-2">
-                              <Select value={taxa.forma_pagamento} onValueChange={v => setTaxasDraft(prev => prev.map((t, i) => i === idx ? { ...t, forma_pagamento: v } : t))}>
-                                <SelectTrigger className="h-7 text-xs w-24"><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="*">Todos (*)</SelectItem>
-                                  <SelectItem value="boleto">Boleto</SelectItem>
-                                  <SelectItem value="cartao">Cartão</SelectItem>
-                                  <SelectItem value="pix">PIX</SelectItem>
-                                  <SelectItem value="avista">À Vista</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </td>
-                            <td className="py-1.5 pr-2">
-                              <Select value={taxa.gateway} onValueChange={v => setTaxasDraft(prev => prev.map((t, i) => i === idx ? { ...t, gateway: v } : t))}>
-                                <SelectTrigger className="h-7 text-xs w-24"><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="asaas">Asaas</SelectItem>
-                                  <SelectItem value="vega">Vega</SelectItem>
-                                  <SelectItem value="stripe">Stripe</SelectItem>
-                                  <SelectItem value="outros">Outros</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </td>
-                            <td className="py-1.5 pr-2">
-                              <Input type="number" step="0.01" className="h-7 text-xs w-20 text-right"
-                                value={taxa.percentual}
-                                onChange={e => setTaxasDraft(prev => prev.map((t, i) => i === idx ? { ...t, percentual: parseFloat(e.target.value) || 0 } : t))} />
-                            </td>
-                            <td className="py-1.5 pr-2">
-                              <Input type="number" step="0.01" className="h-7 text-xs w-20 text-right"
-                                value={taxa.fixo_por_transacao}
-                                onChange={e => setTaxasDraft(prev => prev.map((t, i) => i === idx ? { ...t, fixo_por_transacao: parseFloat(e.target.value) || 0 } : t))} />
-                            </td>
-                            <td className="py-1.5 pr-2">
-                              <Input className="h-7 text-xs w-48" value={taxa.observacao || ''}
-                                onChange={e => setTaxasDraft(prev => prev.map((t, i) => i === idx ? { ...t, observacao: e.target.value } : t))}
-                                placeholder="Observação opcional" />
-                            </td>
-                            <td className="py-1.5">
-                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
-                                onClick={() => setTaxasDraft(prev => prev.filter((_, i) => i !== idx))}>
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <Button size="sm" variant="outline" className="gap-1.5 text-xs"
-                    onClick={() => setTaxasDraft(prev => [...prev, {
-                      id: crypto.randomUUID(), produto_slug: '*', forma_pagamento: '*', gateway: 'asaas',
-                      percentual: 0, fixo_por_transacao: 0, faixa_min: 0, faixa_max: 999999.99, ativo: true, observacao: '',
-                    }])}>
-                    <Plus className="h-3 w-3" /> Nova taxa
-                  </Button>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left py-2 pr-3">Produto</th>
-                        <th className="text-left py-2 pr-3">Método</th>
-                        <th className="text-left py-2 pr-3">Gateway</th>
-                        <th className="text-right py-2 pr-3">% Taxa</th>
-                        <th className="text-right py-2 pr-3">R$ Fixo</th>
-                        <th className="text-left py-2">Observação</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {taxasDetalhe.map(taxa => (
-                        <tr key={taxa.id} className="border-b border-border/30">
-                          <td className="py-1.5 pr-3 font-medium">
-                            {taxa.produto_slug === '*' ? 'Todos' : (produtos.find(p => p.slug === taxa.produto_slug)?.nome || taxa.produto_slug)}
-                          </td>
-                          <td className="py-1.5 pr-3 capitalize">{taxa.forma_pagamento === '*' ? 'Todos' : taxa.forma_pagamento}</td>
-                          <td className="py-1.5 pr-3 capitalize">{taxa.gateway}</td>
-                          <td className="py-1.5 pr-3 text-right tabular-nums">{taxa.percentual.toFixed(2)}%</td>
-                          <td className="py-1.5 pr-3 text-right tabular-nums">{taxa.fixo_por_transacao > 0 ? `R$ ${taxa.fixo_por_transacao.toFixed(2)}` : '—'}</td>
-                          <td className="py-1.5 text-muted-foreground">{taxa.observacao || '—'}</td>
-                        </tr>
-                      ))}
-                      {taxasDetalhe.length === 0 && (
-                        <tr><td colSpan={6} className="py-6 text-center text-muted-foreground">Nenhuma taxa. Clique em "Editar taxas" para adicionar.</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <TaxasPagamentoConfig produtos={produtos} taxas={taxasDetalhe} onSaved={setTaxasDetalhe} />
         </TabsContent>
 
         {/* ── Fontes ─────────────────────────────────────────────────────────── */}
