@@ -340,12 +340,19 @@ export function shiftPeriodo(tipo: PeriodoTipo, ref: Date, direcao: 1 | -1): Dat
   }
 }
 
-// ─── Repasse por turma ────────────────────────────────────────────────────────
+// ─── Repasse por pagamento ─────────────────────────────────────────────────────
 //
+// REGRA DE NEGÓCIO (definida pelo usuário):
+//   • Comercial (1ª parcela) de Psicanálise (PSI) → 100% Onze Digital ("11ds"),
+//     independente de quem está cadastrado como investidor da turma.
+//   • Recorrência (parcela 2+, qualquer produto) → 50% IDM + 50% rateado entre
+//     o(s) investidor(es) da turma (turma_responsaveis). Turma sem investidor
+//     cadastrado: os 50% "do investidor" ficam com o IDM também (100% IDM).
+//   • Comercial de outros produtos (ex: numerologia) → mantém a regra antiga:
+//     100% rateado pelos investidores da turma (turma_responsaveis); sem
+//     investidor cadastrado, fica 100% com o IDM.
 // FONTE: turma_responsaveis (turma_id, user_id → responsaveis.id, percentual)
-// LÓGICA: cada turma pode ter N responsáveis com % somando até 100; o que
-// sobra até 100% fica retido pelo IDM. RETORNO: quanto cada responsável
-// recebe sobre o líquido gerado no período, e quanto fica com o IDM.
+//        + responsaveis (para resolver nome "Onze Digital" / "IDM")
 
 export interface ResponsavelRow { id: string; nome: string; ativo?: boolean; email?: string | null; }
 export interface TurmaResponsavelRow { id: string; turma_id: string; user_id: string | null; nome_ref: string | null; percentual: number; }
@@ -353,7 +360,7 @@ export interface TurmaResponsavelRow { id: string; turma_id: string; user_id: st
 export interface RepasseCalculado {
   responsavel_id: string | null;
   nome: string;
-  percentual: number; // participação desse responsável no líquido total do período
+  percentual: number; // participação desse responsável no líquido do pagamento (ou do período, no agregado)
   valor: number;
 }
 
@@ -363,37 +370,114 @@ export interface RepasseResultado {
   valorIdm: number;
 }
 
-// `liquidoPorTurma`: mapa turma_id → líquido gerado por essa turma no período
+export interface PagamentoParaRepasse {
+  turma_id: string | null;
+  produto: string | null;
+  numero_parcela: number | null;
+  liquido: number; // valor - taxa
+}
+
+const NOME_ONZE_DIGITAL = 'Onze Digital';
+const NOME_IDM = 'IDM';
+
+function resolveNomeInvestidor(tr: TurmaResponsavelRow, responsaveisList: ResponsavelRow[]): string {
+  return tr.nome_ref || responsaveisList.find(r => r.id === tr.user_id)?.nome || 'Sem nome';
+}
+
+// Mescla linhas do mesmo responsável (ex: quando o próprio "IDM" também está
+// cadastrado como investidor da turma, o 50% base + o 50% do investidor devem
+// virar uma única linha de 100%, não duas linhas separadas de 50%).
+function mesclarLinhas(linhas: RepasseCalculado[]): RepasseCalculado[] {
+  const porChave: Record<string, RepasseCalculado> = {};
+  for (const linha of linhas) {
+    const key = linha.responsavel_id || linha.nome;
+    if (!porChave[key]) porChave[key] = { ...linha };
+    else {
+      porChave[key].valor += linha.valor;
+      porChave[key].percentual += linha.percentual;
+    }
+  }
+  return Object.values(porChave);
+}
+
+// Calcula o repasse de UM pagamento — reutilizado tanto no agregado do
+// período quanto na exibição linha-a-linha de cada entrada no Fechamento.
+export function calcRepassePagamento(
+  liquido: number,
+  produto: string | null,
+  numeroParcela: number | null,
+  turmaId: string | null,
+  turmaResponsaveis: TurmaResponsavelRow[],
+  responsaveisList: ResponsavelRow[],
+): RepasseCalculado[] {
+  const comercial = (numeroParcela ?? 1) <= 1;
+  const isPsi = produto === 'psicanalise';
+  const investidores = turmaResponsaveis.filter(tr => tr.turma_id === turmaId);
+  const findId = (nome: string) => responsaveisList.find(r => r.nome === nome)?.id ?? null;
+
+  // Comercial de Psicanálise: 100% Onze Digital, sempre.
+  if (comercial && isPsi) {
+    return [{ responsavel_id: findId(NOME_ONZE_DIGITAL), nome: NOME_ONZE_DIGITAL, percentual: 100, valor: liquido }];
+  }
+
+  // Recorrência (qualquer produto): 50% IDM + 50% investidor(es) da turma.
+  if (!comercial) {
+    if (investidores.length === 0) {
+      return [{ responsavel_id: findId(NOME_IDM), nome: NOME_IDM, percentual: 100, valor: liquido }];
+    }
+    const totalPct = investidores.reduce((s, tr) => s + tr.percentual, 0) || 100;
+    const linhas: RepasseCalculado[] = [
+      { responsavel_id: findId(NOME_IDM), nome: NOME_IDM, percentual: 50, valor: liquido * 0.5 },
+    ];
+    for (const inv of investidores) {
+      const pct = (inv.percentual / totalPct) * 50;
+      linhas.push({ responsavel_id: inv.user_id, nome: resolveNomeInvestidor(inv, responsaveisList), percentual: pct, valor: liquido * (pct / 100) });
+    }
+    return mesclarLinhas(linhas);
+  }
+
+  // Comercial de outros produtos (ex: numerologia): 100% rateado pelos investidores da turma.
+  if (investidores.length === 0) {
+    return [{ responsavel_id: findId(NOME_IDM), nome: NOME_IDM, percentual: 100, valor: liquido }];
+  }
+  const totalPct = investidores.reduce((s, tr) => s + tr.percentual, 0) || 100;
+  return mesclarLinhas(investidores.map(inv => ({
+    responsavel_id: inv.user_id,
+    nome: resolveNomeInvestidor(inv, responsaveisList),
+    percentual: (inv.percentual / totalPct) * 100,
+    valor: liquido * (inv.percentual / totalPct),
+  })));
+}
+
+// Agrega o repasse de vários pagamentos do período — soma por responsável e
+// separa o que fica retido no IDM (valorIdm) do que é de fato repassado a
+// terceiros (repasses).
 export function calcRepasses(
-  liquidoPorTurma: Record<string, number>,
+  pagamentos: PagamentoParaRepasse[],
   turmaResponsaveis: TurmaResponsavelRow[],
   responsaveisList: ResponsavelRow[],
 ): RepasseResultado {
   const porResponsavel: Record<string, RepasseCalculado> = {};
   let totalLiquido = 0;
-  let totalRepassado = 0;
 
-  for (const [turmaId, liquido] of Object.entries(liquidoPorTurma)) {
-    totalLiquido += liquido;
-    for (const linha of turmaResponsaveis.filter(r => r.turma_id === turmaId)) {
-      const nome = linha.nome_ref
-        || responsaveisList.find(r => r.id === linha.user_id)?.nome
-        || 'Sem nome';
-      const key = linha.user_id || nome;
-      const valor = liquido * (linha.percentual / 100);
-      totalRepassado += valor;
-      if (!porResponsavel[key]) porResponsavel[key] = { responsavel_id: linha.user_id, nome, percentual: 0, valor: 0 };
-      porResponsavel[key].valor += valor;
+  for (const p of pagamentos) {
+    totalLiquido += p.liquido;
+    const linhas = calcRepassePagamento(p.liquido, p.produto, p.numero_parcela, p.turma_id, turmaResponsaveis, responsaveisList);
+    for (const linha of linhas) {
+      const key = linha.responsavel_id || linha.nome;
+      if (!porResponsavel[key]) porResponsavel[key] = { responsavel_id: linha.responsavel_id, nome: linha.nome, percentual: 0, valor: 0 };
+      porResponsavel[key].valor += linha.valor;
     }
   }
 
-  const valorIdm = totalLiquido - totalRepassado;
-  for (const r of Object.values(porResponsavel)) {
+  const valorIdm = Object.values(porResponsavel).find(r => r.nome === NOME_IDM)?.valor || 0;
+  const repasses = Object.values(porResponsavel).filter(r => r.nome !== NOME_IDM);
+  for (const r of repasses) {
     r.percentual = totalLiquido > 0 ? (r.valor / totalLiquido) * 100 : 0;
   }
 
   return {
-    repasses: Object.values(porResponsavel).sort((a, b) => b.valor - a.valor),
+    repasses: repasses.sort((a, b) => b.valor - a.valor),
     percentualIdm: totalLiquido > 0 ? (valorIdm / totalLiquido) * 100 : 100,
     valorIdm,
   };

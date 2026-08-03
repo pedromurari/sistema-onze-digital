@@ -13,9 +13,9 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-  calcTaxaTransacao, calcRepasses, getPeriodRange, shiftPeriodo, periodoTipoLabel,
+  calcTaxaTransacao, calcRepasses, calcRepassePagamento, getPeriodRange, shiftPeriodo, periodoTipoLabel,
   type TaxaDetalhe, type PeriodoTipo, type ResponsavelRow, type TurmaResponsavelRow,
-  type RepasseCalculado, type Produto,
+  type RepasseCalculado, type Produto, type PagamentoParaRepasse,
 } from '@/lib/financial-utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { TaxasPagamentoConfig } from './finance/TaxasPagamentoConfig';
@@ -491,9 +491,27 @@ export function Balanco() {
               ) : (() => {
                 const filtroAtivo = responsavelFiltro !== '';
                 const respSelecionado = responsaveisList.find(r => r.id === responsavelFiltro);
+                // Matrículas (ainda sem pagamento) continuam ligadas à turma; o repasse de
+                // pagamento em si (abaixo) não depende mais de "turma do responsável", já
+                // que comercial de PSI vai pra Onze Digital e recorrência é 50/50 com o IDM
+                // independente de quem está cadastrado como investidor da turma.
                 const turmaIdsResp = new Set(turmasResp.filter(tr => tr.user_id === responsavelFiltro).map(tr => tr.turma_id));
-                const receitasView = filtroAtivo ? receitasHoje.filter(r => r.turma_id && turmaIdsResp.has(r.turma_id)) : receitasHoje;
                 const alunosView = filtroAtivo ? alunosHoje.filter(a => turmaIdsResp.has(a.turma_id)) : alunosHoje;
+
+                // repasse calculado pagamento a pagamento (sempre a partir do período geral)
+                const pagamentosComRepasse = receitasHoje.map(r => {
+                  const taxa = calcTaxaTransacao(r.valor, r.produto || '', r.forma_pagamento, taxasRates);
+                  const liquido = r.valor - taxa;
+                  const linhas = calcRepassePagamento(liquido, r.produto, r.numero_parcela, r.turma_id, turmasResp, responsaveisList);
+                  return { r, taxa, liquido, linhas };
+                });
+
+                // no fechamento por responsável, só entram pagamentos onde ele de fato recebe algo
+                const receitasView = filtroAtivo
+                  ? pagamentosComRepasse.filter(x => x.linhas.some(l => l.responsavel_id === responsavelFiltro)).map(x => x.r)
+                  : receitasHoje;
+                const meuRepasseTotal = pagamentosComRepasse.reduce(
+                  (s, x) => s + (x.linhas.find(l => l.responsavel_id === responsavelFiltro)?.valor || 0), 0);
 
                 // ── Computado ao vivo a partir dos pagamentos do período ──
                 const brutoVivo = receitasView.reduce((s, r) => s + r.valor, 0);
@@ -502,15 +520,14 @@ export function Balanco() {
                 const liquidoVivo = brutoVivo - taxasVivo;
                 const saidasVivo = filtroAtivo ? 0 : gastosHoje.reduce((s, g) => s + g.valor, 0);
 
-                const liquidoPorTurma: Record<string, number> = {};
-                for (const r of receitasView) {
-                  if (!r.turma_id) continue;
-                  const taxa = calcTaxaTransacao(r.valor, r.produto || '', r.forma_pagamento, taxasRates);
-                  liquidoPorTurma[r.turma_id] = (liquidoPorTurma[r.turma_id] || 0) + (r.valor - taxa);
-                }
-                const repasseVivo = calcRepasses(liquidoPorTurma, turmasResp, responsaveisList);
+                const pagamentosParaRepasse: PagamentoParaRepasse[] = receitasHoje.map(r => ({
+                  turma_id: r.turma_id,
+                  produto: r.produto,
+                  numero_parcela: r.numero_parcela,
+                  liquido: r.valor - calcTaxaTransacao(r.valor, r.produto || '', r.forma_pagamento, taxasRates),
+                }));
+                const repasseVivo = calcRepasses(pagamentosParaRepasse, turmasResp, responsaveisList);
                 const saldoFinalVivo = repasseVivo.valorIdm - saidasVivo;
-                const meuRepasse = filtroAtivo ? repasseVivo.repasses.find(r => r.responsavel_id === responsavelFiltro) : undefined;
 
                 const isFechado = !filtroAtivo && fechamentoAtual?.status === 'fechado';
                 const bruto      = isFechado ? fechamentoAtual!.bruto : brutoVivo;
@@ -578,10 +595,10 @@ export function Balanco() {
                     {/* KPI do período */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       {(filtroAtivo ? [
-                        { icon: <Receipt className="h-4 w-4" />, label: 'Bruto (suas turmas)', value: bruto, cls: 'text-emerald-600' },
+                        { icon: <Receipt className="h-4 w-4" />, label: 'Bruto (pagamentos c/ sua parte)', value: bruto, cls: 'text-emerald-600' },
                         { icon: <Info className="h-4 w-4" />, label: 'Taxas', value: taxasTotal, cls: 'text-red-500', prefix: '−' },
                         { icon: <DollarSign className="h-4 w-4" />, label: 'Líquido', value: liquido, cls: 'text-sky-600' },
-                        { icon: <Users className="h-4 w-4" />, label: 'Seu repasse', value: meuRepasse?.valor || 0, cls: 'text-violet-600' },
+                        { icon: <Users className="h-4 w-4" />, label: 'Seu repasse', value: meuRepasseTotal, cls: 'text-violet-600' },
                       ] : [
                         { icon: <Receipt className="h-4 w-4" />, label: 'Bruto', value: bruto, cls: 'text-emerald-600' },
                         { icon: <Info className="h-4 w-4" />, label: 'Taxas', value: taxasTotal, cls: 'text-red-500', prefix: '−' },
@@ -688,7 +705,7 @@ export function Balanco() {
                                   {itens.map(r => {
                                     const taxa = calcTaxaTransacao(r.valor, r.produto || '', r.forma_pagamento, taxasRates);
                                     const liquidoLinha = r.valor - taxa;
-                                    const resps = turmasResp.filter(tr => tr.turma_id === r.turma_id);
+                                    const resps = calcRepassePagamento(liquidoLinha, r.produto, r.numero_parcela, r.turma_id, turmasResp, responsaveisList);
                                     const turma = turmasInfo.find(t => t.id === r.turma_id);
                                     const comercial = (r.numero_parcela ?? 1) <= 1;
                                     const conferido = !!r.conferido_em;
@@ -717,12 +734,12 @@ export function Balanco() {
                                             </Badge>
                                           </div>
 
-                                          {/* Repasse por responsável */}
+                                          {/* Repasse por responsável (comercial PSI = 100% Onze Digital; recorrência = 50% IDM + 50% investidor) */}
                                           {resps.length > 0 && (
                                             <div className="flex flex-wrap gap-2 pl-6">
-                                              {resps.map(r2 => (
-                                                <span key={r2.id} className="text-xs bg-muted/50 px-2 py-0.5 rounded-full">
-                                                  {r2.nome_ref} <strong>R$ {fmt(liquidoLinha * (r2.percentual / 100))}</strong> <span className="text-muted-foreground">({r2.percentual}%)</span>
+                                              {resps.map((r2, i) => (
+                                                <span key={r2.responsavel_id || `${r2.nome}-${i}`} className="text-xs bg-muted/50 px-2 py-0.5 rounded-full">
+                                                  {r2.nome} <strong>R$ {fmt(r2.valor)}</strong> <span className="text-muted-foreground">({r2.percentual.toFixed(0)}%)</span>
                                                 </span>
                                               ))}
                                             </div>
