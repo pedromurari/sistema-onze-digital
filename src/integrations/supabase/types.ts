@@ -4448,6 +4448,8 @@ export type Database = {
           aluno_id: string | null
           canal_cobranca: string | null
           cobranca_contatado_em: string | null
+          conferido_em: string | null
+          conferido_por: string | null
           created_at: string | null
           data_pagamento: string | null
           data_vencimento: string | null
@@ -4465,6 +4467,8 @@ export type Database = {
           aluno_id?: string | null
           canal_cobranca?: string | null
           cobranca_contatado_em?: string | null
+          conferido_em?: string | null
+          conferido_por?: string | null
           created_at?: string | null
           data_pagamento?: string | null
           data_vencimento?: string | null
@@ -4482,6 +4486,8 @@ export type Database = {
           aluno_id?: string | null
           canal_cobranca?: string | null
           cobranca_contatado_em?: string | null
+          conferido_em?: string | null
+          conferido_por?: string | null
           created_at?: string | null
           data_pagamento?: string | null
           data_vencimento?: string | null
@@ -7662,7 +7668,10 @@ export type Database = {
       vw_receita_por_fonte: {
         Row: {
           aluno_id: string | null
+          aluno_nome: string | null
           canal_cobranca: string | null
+          conferido_em: string | null
+          conferido_por: string | null
           data_pagamento: string | null
           forma_pagamento: string | null
           id: string | null

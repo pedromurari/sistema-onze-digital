@@ -73,6 +73,10 @@ interface ReceitaHoje {
   mes_referencia: string;
   data_pagamento: string;
   canal_cobranca: string | null;
+  numero_parcela: number | null;
+  aluno_nome: string | null;
+  conferido_em: string | null;
+  conferido_por: string | null;
 }
 
 interface AlunoNovo {
@@ -303,6 +307,7 @@ export function Balanco() {
   const [gastoForm, setGastoForm]           = useState({ descricao: '', valor: '', categoria: 'custo_variavel' as Categoria });
   const [savingGasto, setSavingGasto]       = useState(false);
   const [savingCanal, setSavingCanal]       = useState<string | null>(null);
+  const [savingConferencia, setSavingConferencia] = useState<string | null>(null);
 
   // ─── Load ──────────────────────────────────────────────────────────────────
 
@@ -383,7 +388,7 @@ export function Balanco() {
       const [recRes, aluRes, gasRes, fechRes] = await Promise.all([
         // Pagamentos recebidos no período (produto + forma_pagamento + canal via view)
         supabase.from('vw_receita_por_fonte')
-          .select('id, aluno_id, turma_id, valor, produto, produto_label, forma_pagamento, mes_referencia, data_pagamento, canal_cobranca')
+          .select('id, aluno_id, turma_id, valor, produto, produto_label, forma_pagamento, mes_referencia, data_pagamento, canal_cobranca, numero_parcela, aluno_nome, conferido_em, conferido_por')
           .gte('data_pagamento', range.start)
           .lte('data_pagamento', range.end),
         // Novos alunos cadastrados no período
@@ -612,21 +617,35 @@ export function Balanco() {
     setReceitasHoje(prev => prev.map(r => r.id === pagamentoId ? { ...r, canal_cobranca: canal || null } : r));
   }
 
+  async function handleConfirmarPagamento(pagamentoId: string) {
+    setSavingConferencia(pagamentoId);
+    const agora = new Date().toISOString();
+    const { error } = await supabase.from('pagamentos')
+      .update({ conferido_em: agora, conferido_por: currentUser?.nome || null })
+      .eq('id', pagamentoId);
+    setSavingConferencia(null);
+    if (error) { toast.error('Erro ao confirmar pagamento.'); return; }
+    setReceitasHoje(prev => prev.map(r => r.id === pagamentoId ? { ...r, conferido_em: agora, conferido_por: currentUser?.nome || null } : r));
+  }
+
   function exportarCSVPeriodo(receitas: ReceitaHoje[], taxaFn: (r: ReceitaHoje) => number) {
-    const headers = ['Data', 'Turma', 'Produto', 'Forma', 'Canal', 'Valor', 'Taxa', 'Líquido'];
+    const headers = ['Data', 'Aluno', 'Turma', 'Tipo', 'Produto', 'Forma', 'Canal', 'Valor', 'Taxa', 'Líquido', 'Conferido'];
     const rows = receitas.map(r => {
       const turma = turmasInfo.find(t => t.id === r.turma_id);
       const taxa = taxaFn(r);
       const [y, m, d] = r.data_pagamento.split('T')[0].split('-');
       return [
         `${d}/${m}/${y}`,
+        r.aluno_nome || '—',
         turma?.nome || '—',
+        (r.numero_parcela ?? 0) <= 1 ? 'Comercial' : 'Recorrência',
         r.produto_label,
         FORMA_LABELS[r.forma_pagamento] || r.forma_pagamento,
         r.canal_cobranca || '',
         r.valor.toFixed(2).replace('.', ','),
         taxa.toFixed(2).replace('.', ','),
         (r.valor - taxa).toFixed(2).replace('.', ','),
+        r.conferido_em ? 'Sim' : 'Não',
       ];
     });
     const csv = [headers, ...rows].map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
@@ -835,6 +854,18 @@ export function Balanco() {
                   porProduto[key].itens.push(r);
                 }
 
+                // comercial (1ª parcela = matrícula nova) × recorrência (parcelas seguintes)
+                const comercialItens = receitasHoje.filter(r => (r.numero_parcela ?? 1) <= 1);
+                const recorrenciaItens = receitasHoje.filter(r => (r.numero_parcela ?? 1) > 1);
+                const comercialTotal = comercialItens.reduce((s, r) => s + r.valor, 0);
+                const recorrenciaTotal = recorrenciaItens.reduce((s, r) => s + r.valor, 0);
+
+                // turmas que geraram receita nesse período
+                const turmasDoPeriodo = Array.from(new Set(receitasHoje.map(r => r.turma_id).filter((id): id is string => !!id)))
+                  .map(id => ({ turma: turmasInfo.find(t => t.id === id), count: receitasHoje.filter(r => r.turma_id === id).length }))
+                  .filter(t => t.turma)
+                  .sort((a, b) => b.count - a.count);
+
                 const pendenteCount = alunosHoje.filter(a => !confirmados.has(a.id) && !a.forma_pagamento).length;
 
                 return (
@@ -918,6 +949,37 @@ export function Balanco() {
                       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
                         <TrendingUp className="h-3.5 w-3.5" /> Entradas — {receitasHoje.length} pagamento{receitasHoje.length !== 1 ? 's' : ''}
                       </p>
+
+                      {receitasHoje.length > 0 && (
+                        <>
+                          {/* Comercial × Recorrência */}
+                          <div className="grid grid-cols-2 gap-3 mb-3">
+                            <Card className="p-3 border-emerald-200 bg-emerald-50/30 shadow-none">
+                              <p className="text-[10px] font-semibold text-emerald-700 uppercase tracking-wide">Comercial · matrículas novas</p>
+                              <p className="text-lg font-bold text-emerald-700 tabular-nums">R$ {fmt(comercialTotal)}</p>
+                              <p className="text-[10px] text-muted-foreground">{comercialItens.length} pagamento{comercialItens.length !== 1 ? 's' : ''}</p>
+                            </Card>
+                            <Card className="p-3 border-sky-200 bg-sky-50/30 shadow-none">
+                              <p className="text-[10px] font-semibold text-sky-700 uppercase tracking-wide">Recorrência · parcelas</p>
+                              <p className="text-lg font-bold text-sky-700 tabular-nums">R$ {fmt(recorrenciaTotal)}</p>
+                              <p className="text-[10px] text-muted-foreground">{recorrenciaItens.length} pagamento{recorrenciaItens.length !== 1 ? 's' : ''}</p>
+                            </Card>
+                          </div>
+
+                          {/* Turmas do período */}
+                          {turmasDoPeriodo.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Turmas do período:</span>
+                              {turmasDoPeriodo.map(({ turma, count }) => (
+                                <span key={turma!.id} className="text-[11px] bg-muted/60 px-2 py-0.5 rounded-full border border-border/50">
+                                  {turma!.nome} <span className="text-muted-foreground">({count})</span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )}
+
                       {receitasHoje.length === 0 ? (
                         <Card className="p-6 text-center border-border/50 shadow-none">
                           <p className="text-sm text-muted-foreground">Nenhum pagamento recebido nesse período</p>
@@ -939,11 +1001,22 @@ export function Balanco() {
                                 <div className="divide-y divide-border/40">
                                   {itens.map(r => {
                                     const taxa = calcTaxaTransacao(r.valor, r.produto || '', r.forma_pagamento, taxasRates);
+                                    const liquidoLinha = r.valor - taxa;
                                     const resps = turmasResp.filter(tr => tr.turma_id === r.turma_id);
                                     const turma = turmasInfo.find(t => t.id === r.turma_id);
+                                    const comercial = (r.numero_parcela ?? 1) <= 1;
+                                    const conferido = !!r.conferido_em;
                                     return (
-                                      <div key={r.id} className="px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                                        <span className="font-medium flex-1 min-w-0 truncate">{turma?.nome || '—'}</span>
+                                      <div key={r.id} className={`px-4 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm ${conferido ? 'bg-emerald-50/30' : ''}`}>
+                                        <div className="min-w-[150px]">
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className="font-medium">{r.aluno_nome || '—'}</span>
+                                            <Badge className={`text-[9px] px-1.5 py-0 border ${comercial ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-sky-50 text-sky-700 border-sky-200'}`}>
+                                              {comercial ? 'Comercial' : 'Recorrência'}
+                                            </Badge>
+                                          </div>
+                                          <p className="text-xs text-muted-foreground">{turma?.nome || 'Sem turma'}</p>
+                                        </div>
                                         <Badge className={`text-[10px] border ${FORMA_COR[r.forma_pagamento] || 'bg-muted text-muted-foreground'}`}>
                                           {FORMA_LABELS[r.forma_pagamento] || r.forma_pagamento}
                                         </Badge>
@@ -961,10 +1034,23 @@ export function Balanco() {
                                         </Select>
                                         <span className="tabular-nums font-semibold">R$ {fmt(r.valor)}</span>
                                         <span className="tabular-nums text-red-500 text-xs">−R$ {fmt(taxa)}</span>
-                                        <span className="tabular-nums text-emerald-600 text-xs font-semibold">R$ {fmt(r.valor - taxa)}</span>
+                                        <span className="tabular-nums text-emerald-600 text-xs font-semibold">R$ {fmt(liquidoLinha)}</span>
+                                        {conferido ? (
+                                          <span className="text-[10px] text-emerald-600 flex items-center gap-1 flex-shrink-0" title={r.conferido_por ? `Conferido por ${r.conferido_por}` : undefined}>
+                                            <CheckCircle2 className="h-3 w-3" /> Conferido
+                                          </span>
+                                        ) : (
+                                          <button
+                                            onClick={() => handleConfirmarPagamento(r.id)}
+                                            disabled={savingConferencia === r.id}
+                                            className="text-[10px] text-muted-foreground hover:text-emerald-600 hover:border-emerald-300 flex items-center gap-1 flex-shrink-0 border border-border rounded-full px-2 py-0.5 transition-colors"
+                                          >
+                                            <CheckCircle2 className="h-3 w-3" /> {savingConferencia === r.id ? 'Confirmando…' : 'Confirmar'}
+                                          </button>
+                                        )}
                                         {resps.length > 0 && (
                                           <span className="text-xs text-muted-foreground w-full pl-0.5">
-                                            {resps.map(r2 => `${r2.nome_ref} ${r2.percentual}%`).join(' · ')}
+                                            {resps.map(r2 => `${r2.nome_ref}: R$ ${fmt(liquidoLinha * (r2.percentual / 100))} (${r2.percentual}%)`).join(' · ')}
                                           </span>
                                         )}
                                       </div>
