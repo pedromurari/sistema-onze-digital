@@ -5,7 +5,6 @@ import { Lead } from '@/types/crm';
 import { Header } from './Header';
 import { Sidebar, MobileNav, type View } from './Sidebar';
 import { LeadModal } from './LeadModal';
-import { FlashLeadModal } from './FlashLeadModal';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, Lock } from 'lucide-react';
 
@@ -24,7 +23,6 @@ const Cobranca         = lazy(() => import('./Cobranca').then(m => ({ default: m
 const FunilLancamento  = lazy(() => import('./FunilLancamento').then(m => ({ default: m.FunilLancamento })));
 const DisparosMonitor  = lazy(() => import('./DisparosMonitor').then(m => ({ default: m.DisparosMonitor })));
 const AquecimentoChips = lazy(() => import('./AquecimentoChips').then(m => ({ default: m.AquecimentoChips })));
-const Rodrygo          = lazy(() => import('./Rodrygo').then(m => ({ default: m.Rodrygo })));
 const LancamentoKanban = lazy(() => import('./LancamentoKanban').then(m => ({ default: m.LancamentoKanban })));
 const NPAKanban        = lazy(() => import('./NPAKanban'));
 const AulaSecretaKanban = lazy(() => import('./AulaSecretaKanban').then(m => ({ default: m.AulaSecretaKanban })));
@@ -70,8 +68,8 @@ export function CRMLayout() {
     catch { return 'dashboard'; }
   });
   const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
-  const [isFlashLeadModalOpen, setIsFlashLeadModalOpen] = useState(false);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [lancamentoId, setLancamentoId] = useState<string | null>(null);
   const [loadingLancamento, setLoadingLancamento] = useState(false);
   const [npaEventoId, setNpaEventoId] = useState<string | null>(null);
@@ -79,8 +77,6 @@ export function CRMLayout() {
   const [aulaSecretaId, setAulaSecretaId] = useState<string | null>(null);
   const [loadingAulaSecreta, setLoadingAulaSecreta] = useState(false);
 
-  const handleAddLead = () => { setEditingLead(null); setIsLeadModalOpen(true); };
-  const handleAddFlashLead = () => { setIsFlashLeadModalOpen(true); };
   const handleEditLead = (lead: Lead) => { setEditingLead(lead); setIsLeadModalOpen(true); };
 
   useEffect(() => {
@@ -241,7 +237,6 @@ export function CRMLayout() {
         ? <DisparosMonitor onCreateFunnel={() => setCurrentView('funil_lancamento')} />
         : <RestrictedView />;
       case 'aquecimento_chips': return isAdmin ? <AquecimentoChips /> : <RestrictedView />;
-      case 'rodrygo': return <Rodrygo />;
       case 'team': return user?.tipo === 'admin' || permissions.canViewTeam ? <TeamManagement /> : <RestrictedView />;
       case 'settings': return permissions.canViewSettings || isAdmin ? <Settings /> : <RestrictedView />;
       case 'operacoes_tarefas': return <Operacoes currentPage={currentView} />;
@@ -262,16 +257,20 @@ export function CRMLayout() {
 
   return (
     <div className="min-h-screen bg-white">
-      <Header onAddLead={handleAddLead} onAddFlashLead={handleAddFlashLead} />
+      <Header onOpenMobileMenu={() => setMobileMenuOpen(true)} />
       <div className="flex h-[calc(100vh-4rem)]">
-        <Sidebar currentView={currentView} onViewChange={setCurrentView} />
+        <Sidebar
+          currentView={currentView}
+          onViewChange={setCurrentView}
+          mobileMenuOpen={mobileMenuOpen}
+          onMobileMenuOpenChange={setMobileMenuOpen}
+        />
         <main className="flex-1 overflow-auto pb-16 lg:pb-0">
           <Suspense fallback={<ModuleLoader />}>{renderView()}</Suspense>
         </main>
       </div>
-      <MobileNav currentView={currentView} onViewChange={setCurrentView} />
+      <MobileNav currentView={currentView} onViewChange={setCurrentView} onOpenMore={() => setMobileMenuOpen(true)} />
       <LeadModal isOpen={isLeadModalOpen} onClose={() => setIsLeadModalOpen(false)} editingLead={editingLead} />
-      <FlashLeadModal isOpen={isFlashLeadModalOpen} onClose={() => setIsFlashLeadModalOpen(false)} />
     </div>
   );
 }
