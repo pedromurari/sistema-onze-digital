@@ -7,8 +7,8 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
   LayoutDashboard, Kanban, Settings, UserCog,
-  Rocket, BarChart3, CheckSquare, ChevronDown,
-  ChevronLeft, ChevronRight, Plus, Brain, Scale,
+  Rocket, BarChart3, ChevronDown,
+  ChevronLeft, ChevronRight, Plus, Brain, Scale, Menu,
   GripVertical, Pencil, Check, MessageSquare, TrendingUp, GitBranch, CalendarDays, ShoppingBag, Radio, Image, Handshake, Bot, Video, Flame,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { LancamentoWizard } from '@/components/crm/LancamentoWizard';
 
 export type View = AppView;
@@ -23,6 +24,8 @@ export type View = AppView;
 interface SidebarProps {
   currentView: View;
   onViewChange: (view: View) => void;
+  mobileMenuOpen: boolean;
+  onMobileMenuOpenChange: (open: boolean) => void;
 }
 
 type MenuItem =
@@ -35,16 +38,18 @@ const BASE_MENU: MenuItem[] = [
   { key: 'operacoes_calendario_geral', label: 'Calendário',          icon: CalendarDays },
   // CRM
   { key: 'pipeline',                   label: 'Leads Diretos',       icon: Kanban },
+  // Vendas & Parcerias
   { key: 'produtos',                   label: 'Produtos',            icon: ShoppingBag, adminOnly: true },
-  { key: 'posts',                      label: 'Post',                 icon: Image,       adminOnly: true },
   { key: 'parceiros',                  label: 'Parceiros',           icon: Handshake,   adminOnly: true },
-  { key: 'equipe_11ds',                label: 'Equipe 11DS',         icon: Bot,         adminOnly: true },
+  { key: 'franquia_psi',              label: 'IDM PSI Franquias',    icon: TrendingUp },
+  // Conteúdo
+  { key: 'posts',                      label: 'Post',                 icon: Image,       adminOnly: true },
   { key: 'reels_idm',                  label: 'Reels IDM',           icon: Video,       adminOnly: true },
-  // Eventos & Funis
+  // Eventos
   { group: 'lancamentos_legado',       label: 'Semana do Despertar', icon: Rocket,       children: [] },
   { group: 'npa_dinamico',            label: 'IDM Pelo Brasil',       icon: BarChart3,    children: [] },
   { group: 'aula_secreta',            label: 'Aula Secreta',         icon: Rocket,       children: [] },
-  { key: 'franquia_psi',              label: 'IDM PSI Franquias',    icon: TrendingUp },
+  // Funil & Automação
   { key: 'funil_lancamento',          label: 'Funil de Lançamento',  icon: GitBranch },
   { key: 'disparos_monitor',          label: 'Central de Disparos',  icon: Radio },
   { key: 'aquecimento_chips',         label: 'Aquecimento de Chips', icon: Flame,       adminOnly: true },
@@ -55,7 +60,7 @@ const BASE_MENU: MenuItem[] = [
   { key: 'cobranca',                 label: 'Cobrança',              icon: MessageSquare },
   // Gestão
   { key: 'mapa_mental',              label: 'Mapa Mental',           icon: Brain },
-  { key: 'rodrygo',                  label: 'Tarefas Rodrygo',       icon: CheckSquare },
+  { key: 'equipe_11ds',              label: 'Equipe 11DS',           icon: Bot,        adminOnly: true },
   // Admin
   { key: 'team',                    label: 'Equipe',                  icon: UserCog, adminOnly: true },
   { key: 'settings',                label: 'Configurações',           icon: Settings },
@@ -89,7 +94,7 @@ function SectionDivider({ label }: { label: string }) {
   );
 }
 
-export function Sidebar({ currentView, onViewChange }: SidebarProps) {
+export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMenuOpenChange }: SidebarProps) {
   const { user } = useAuth();
   const isAdmin = user?.tipo === 'admin';
   const permissions = user?.permissions ?? getDefaultPermissions(user?.tipo);
@@ -97,7 +102,10 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
   const SECTION_BEFORE: Record<string, string> = {
     dashboard:          'Início',
     pipeline:           'CRM',
-    lancamentos_legado: 'Eventos & Funis',
+    produtos:           'Vendas & Parcerias',
+    posts:              'Conteúdo',
+    lancamentos_legado: 'Eventos',
+    funil_lancamento:   'Funil & Automação',
     financeiro:         'Financeiro',
     mapa_mental:        'Gestão',
     ...(isAdmin ? { team: 'Admin' } : { settings: 'Admin' }),
@@ -244,6 +252,94 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
     setWizardOpen(true);
   };
 
+  const closeMobileMenu = () => onMobileMenuOpenChange(false);
+
+  const navigateMobile = (view: View) => {
+    onViewChange(view);
+    closeMobileMenu();
+  };
+
+  const renderMobileMenuItems = () => MENU.map((item) => {
+    if ('adminOnly' in item && item.adminOnly && !isAdmin) return null;
+    if ('key' in item && !canAccessView(item.key, permissions, Boolean(isAdmin))) return null;
+
+    if ('group' in item) {
+      let renderedChildren = item.children;
+      if (item.group === 'lancamentos_legado') renderedChildren = accessibleLancamentos.map(l => ({ key: `lancamentos_${l.id}` as View, label: l.nome }));
+      else if (item.group === 'npa_dinamico') renderedChildren = npaEventos.map(e => ({ key: `npa_${e.id}` as View, label: e.nome }));
+      else if (item.group === 'aula_secreta') renderedChildren = aulaSecretaEventos.map(e => ({ key: `aula_secreta_${e.id}` as View, label: e.nome }));
+
+      if (item.group === 'lancamentos_legado' && !permissions.canViewLancamentos && !isAdmin) return null;
+      if (item.group === 'npa_dinamico' && !permissions.canViewNpa && !isAdmin) return null;
+      if (item.group === 'aula_secreta' && !permissions.canViewAulaSecreta && !isAdmin) return null;
+      if (renderedChildren.length === 0 && !isAdmin) return null;
+
+      const isOpen = Boolean(expanded[item.group]);
+      const groupActive = renderedChildren.some(c => c.key === currentView);
+      const groupSection = SECTION_BEFORE[item.group];
+
+      return (
+        <React.Fragment key={`mobile-${item.group}`}>
+          {groupSection && <SectionDivider label={groupSection} />}
+          <button
+            onClick={() => toggle(item.group)}
+            className={cn(
+              'w-full flex items-center gap-2.5 px-3 py-2.5 rounded text-left text-sm font-600 transition-colors',
+              groupActive ? 'text-primary bg-primary/8' : 'text-foreground hover:bg-primary/5',
+            )}
+          >
+            <item.icon className={cn('h-4.5 w-4.5 flex-shrink-0', groupActive ? 'text-primary' : 'text-foreground/60')} />
+            <span className="flex-1">{item.label}</span>
+            <ChevronDown className={cn('h-3.5 w-3.5 flex-shrink-0 transition-transform duration-300', isOpen ? 'rotate-180 text-primary' : 'text-foreground/40')} />
+          </button>
+          {isOpen && (
+            <div className="ml-0 mt-1 mb-1 space-y-0.5 pl-3 border-l-2 border-primary/15">
+              {renderedChildren.length === 0 && (
+                <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum item ainda</p>
+              )}
+              {renderedChildren.map((child) => (
+                <button
+                  key={child.key}
+                  onClick={() => navigateMobile(child.key)}
+                  className={cn(
+                    'w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs transition-colors',
+                    currentView === child.key ? 'bg-primary/12 text-primary font-600' : 'text-foreground/70 hover:bg-primary/5',
+                  )}
+                >
+                  <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', currentView === child.key ? 'bg-primary' : 'bg-foreground/30')} />
+                  <span className="truncate">{child.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </React.Fragment>
+      );
+    }
+
+    const mi = item as { key: View; label: string; icon: React.ElementType };
+    const keySection = SECTION_BEFORE[mi.key];
+    return (
+      <React.Fragment key={`mobile-${mi.key}`}>
+        {keySection && <SectionDivider label={keySection} />}
+        <button
+          onClick={() => navigateMobile(mi.key)}
+          className={cn(
+            'w-full flex items-center gap-2.5 px-3 py-2.5 rounded text-left text-sm font-600 transition-colors',
+            currentView === mi.key ? 'bg-primary/8 text-primary' : 'text-foreground hover:bg-primary/5',
+          )}
+        >
+          <mi.icon className={cn('h-4.5 w-4.5 flex-shrink-0', currentView === mi.key ? 'text-primary' : 'text-foreground/60')} />
+          <span className="flex-1">{mi.label}</span>
+          {mi.key === 'financeiro' && vencimentosHoje > 0 && (
+            <span className="bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 leading-none">
+              {vencimentosHoje}
+            </span>
+          )}
+        </button>
+      </React.Fragment>
+    );
+  });
+
   const handleAddAulaSecreta = async () => {
     if (!newAulaSecretaName.trim()) return;
     try {
@@ -265,6 +361,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
   };
 
   return (
+    <>
     <aside
       className={cn(
         'bg-white border-r border-border min-h-[calc(100vh-4rem)] hidden lg:flex flex-col overflow-y-auto transition-all duration-300 relative flex-shrink-0',
@@ -484,31 +581,41 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
         existingTipo={wizardExistingTipo}
       />
     </aside>
+
+    <Sheet open={mobileMenuOpen} onOpenChange={onMobileMenuOpenChange}>
+      <SheetContent side="left" className="w-72 max-w-[85vw] p-0 flex flex-col gap-0 lg:hidden">
+        <SheetHeader className="p-4 border-b border-border text-left">
+          <SheetTitle className="text-base">Menu</SheetTitle>
+        </SheetHeader>
+        <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
+          {renderMobileMenuItems()}
+        </nav>
+      </SheetContent>
+    </Sheet>
+    </>
   );
 }
 
 interface MobileNavProps {
   currentView: View;
   onViewChange: (view: View) => void;
+  onOpenMore: () => void;
 }
 
-export function MobileNav({ currentView, onViewChange }: MobileNavProps) {
+export function MobileNav({ currentView, onViewChange, onOpenMore }: MobileNavProps) {
   const { user } = useAuth();
   const isAdmin = user?.tipo === 'admin';
   const permissions = user?.permissions ?? getDefaultPermissions(user?.tipo);
 
-  const allMobileItems: { key: View; label: string; icon: React.ElementType }[] = [
-    { key: 'dashboard',          label: 'Início',    icon: LayoutDashboard },
-    { key: 'pipeline',           label: 'Leads',     icon: Kanban },
-    { key: 'financeiro',                  label: 'Financeiro', icon: BarChart3 },
-    { key: 'cobranca',                    label: 'Cobrança',   icon: MessageSquare },
-    { key: 'operacoes_calendario_geral',  label: 'Calendário', icon: CalendarDays },
-    { key: 'settings',           label: 'Config',    icon: Settings },
+  // Atalhos rápidos — o restante das páginas fica disponível no menu "Mais" (todas as categorias do sidebar).
+  const quickItems: { key: View; label: string; icon: React.ElementType }[] = [
+    { key: 'dashboard',                  label: 'Início',     icon: LayoutDashboard },
+    { key: 'pipeline',                   label: 'Leads',      icon: Kanban },
+    { key: 'financeiro',                 label: 'Financeiro', icon: BarChart3 },
+    { key: 'operacoes_calendario_geral', label: 'Calendário', icon: CalendarDays },
   ];
 
-  const visibleItems = allMobileItems
-    .filter(item => canAccessView(item.key, permissions, Boolean(isAdmin)))
-    .slice(0, 5); // limite de 5 itens no nav mobile
+  const visibleItems = quickItems.filter(item => canAccessView(item.key, permissions, Boolean(isAdmin)));
 
   return (
     <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border z-50 safe-area-pb">
@@ -526,6 +633,13 @@ export function MobileNav({ currentView, onViewChange }: MobileNavProps) {
             <span className="text-[10px] font-medium">{item.label}</span>
           </button>
         ))}
+        <button
+          onClick={onOpenMore}
+          className="flex flex-col items-center gap-0.5 px-2 py-2 rounded-lg transition-colors flex-1 text-muted-foreground"
+        >
+          <Menu className="h-5 w-5" />
+          <span className="text-[10px] font-medium">Mais</span>
+        </button>
       </div>
     </nav>
   );
