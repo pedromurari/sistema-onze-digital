@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Loader2, LogOut, ShoppingBag, BarChart3, ClipboardList, Wallet, CheckCircle2, Ticket, UserCircle, Copy, Link2, MousePointerClick } from 'lucide-react';
+import { Loader2, LogOut, ShoppingBag, BarChart3, ClipboardList, Ticket, UserCircle, Copy, Link2, MousePointerClick } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,16 +13,14 @@ import { EntregasParceiros } from './EntregasParceiros';
 import { TrafegoParceiros } from './TrafegoParceiros';
 import { LinksParceiros } from './LinksParceiros';
 
-function conectarMercadoPago(parceiraId: string) {
-  const clientId = import.meta.env.VITE_MP_CLIENT_ID;
-  if (!clientId) { toast.error('Conexão com Mercado Pago ainda não configurada pelo time do IDM.'); return; }
-  const redirectUri = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mp-oauth-callback`;
-  const url = `https://auth.mercadopago.com.br/authorization?client_id=${clientId}&response_type=code&platform_id=mp&state=${parceiraId}&redirect_uri=${encodeURIComponent(redirectUri)}`;
-  window.location.href = url;
-}
+// Dominio proprio pros links rastreaveis (em vez do dominio feio do Vercel).
+// Precisa de um CNAME em ir.idmpsi.com.br apontando pra este projeto Vercel.
+const LINK_BASE_URL = 'https://ir.idmpsi.com.br';
 
+// Link rastreavel (pagina de vendas, com clique + UTM) da aba Links -- em vez
+// do antigo /comprar/:produtoId (checkout interno via Mercado Pago, abandonado).
 function linkCheckout(produtoId: string) {
-  return `${window.location.origin}/comprar/${produtoId}`;
+  return `${LINK_BASE_URL}/ir/${produtoId.slice(0, 8)}-vendas`;
 }
 
 function copiarLink(link: string) {
@@ -111,6 +109,7 @@ type MeuCupom = {
   id: string;
   codigo: string;
   comissao_pct: number | null;
+  desconto_pct: number | null;
   ativo: boolean;
   produto_id: string;
   parceiros_produtos: { nome: string; parceiros: { nome: string } | null } | null;
@@ -123,7 +122,7 @@ function MeusCupons({ parceiraId }: { parceiraId: string }) {
   useEffect(() => {
     supabase
       .from('parceiros_cupons' as any)
-      .select('id, codigo, comissao_pct, ativo, produto_id, parceiros_produtos(nome, parceiros(nome))')
+      .select('id, codigo, comissao_pct, desconto_pct, ativo, produto_id, parceiros_produtos(nome, parceiros(nome))')
       .eq('parceiro_afiliado_id', parceiraId)
       .order('codigo')
       .then(({ data }) => { setCupons((data as any) || []); setLoading(false); });
@@ -141,12 +140,16 @@ function MeusCupons({ parceiraId }: { parceiraId: string }) {
             <p className="text-sm font-mono font-semibold text-foreground">{c.codigo}</p>
             <p className="text-xs text-muted-foreground truncate">
               {c.parceiros_produtos?.nome} ({c.parceiros_produtos?.parceiros?.nome})
+              {c.desconto_pct != null && ` · ${c.desconto_pct}% de desconto`}
               {c.comissao_pct != null && ` · sua comissão: ${c.comissao_pct}%`}
             </p>
           </div>
           <Badge variant="outline" className={cn(c.ativo ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-gray-100 text-gray-600 border-gray-200')}>
             {c.ativo ? 'Ativo' : 'Inativo'}
           </Badge>
+          <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => copiarLink(c.codigo)}>
+            <Copy className="h-3.5 w-3.5" /> Copiar código
+          </Button>
           <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => copiarLink(linkCheckout(c.produto_id))}>
             <Copy className="h-3.5 w-3.5" /> Copiar link
           </Button>
@@ -156,32 +159,12 @@ function MeusCupons({ parceiraId }: { parceiraId: string }) {
   );
 }
 
-function MeuPerfil({ parceiraId, nomeParceira, mpConectado }: { parceiraId: string; nomeParceira: string; mpConectado: boolean }) {
+function MeuPerfil({ nomeParceira }: { nomeParceira: string }) {
   return (
     <div className="space-y-4 max-w-lg">
       <div className="bg-white border border-border rounded-xl p-4 space-y-1">
         <p className="text-xs text-muted-foreground">Nome</p>
         <p className="text-sm font-medium text-foreground">{nomeParceira}</p>
-      </div>
-
-      <div className={cn(
-        'flex items-center justify-between gap-3 rounded-xl border p-4',
-        mpConectado ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200',
-      )}>
-        <div className="flex items-center gap-2">
-          {mpConectado ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : <Wallet className="h-5 w-5 text-amber-600" />}
-          <div>
-            <p className="text-sm font-medium text-foreground">
-              {mpConectado ? 'Mercado Pago conectado' : 'Conecte sua conta do Mercado Pago'}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {mpConectado ? 'Sua parte das vendas e comissões cai direto na sua conta.' : 'Sem isso você não recebe automaticamente as vendas e comissões.'}
-            </p>
-          </div>
-        </div>
-        {!mpConectado && (
-          <Button size="sm" onClick={() => conectarMercadoPago(parceiraId)}>Conectar</Button>
-        )}
       </div>
     </div>
   );
@@ -192,27 +175,17 @@ export function ParceiroPortal() {
   const [tab, setTab] = useState<Tab>('produtos');
   const [parceiraId, setParceiraId] = useState<string | null>(null);
   const [nomeParceira, setNomeParceira] = useState('');
-  const [mpConectado, setMpConectado] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!user) return;
-    supabase.from('parceiros' as any).select('id, nome, mp_connected_at').eq('user_id', user.id).maybeSingle()
+    supabase.from('parceiros' as any).select('id, nome').eq('user_id', user.id).maybeSingle()
       .then(({ data }) => {
         setParceiraId((data as any)?.id ?? null);
         setNomeParceira((data as any)?.nome ?? user.nome);
-        setMpConectado(!!(data as any)?.mp_connected_at);
         setLoading(false);
       });
   }, [user]);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const mp = params.get('mp');
-    if (mp === 'ok') { toast.success('Mercado Pago conectado com sucesso!'); setMpConectado(true); }
-    if (mp === 'erro') toast.error('Não deu pra conectar o Mercado Pago. Tente novamente.');
-    if (mp) window.history.replaceState({}, '', window.location.pathname);
-  }, []);
 
   return (
     <div className="min-h-screen bg-muted/20">
@@ -261,7 +234,7 @@ export function ParceiroPortal() {
             {tab === 'desempenho' && <DesempenhoParceiros scopedParceiroId={parceiraId} />}
             {tab === 'trafego' && <TrafegoParceiros scopedParceiroId={parceiraId} />}
             {tab === 'entregas' && <EntregasParceiros scopedParceiroId={parceiraId} />}
-            {tab === 'perfil' && <MeuPerfil parceiraId={parceiraId} nomeParceira={nomeParceira} mpConectado={mpConectado} />}
+            {tab === 'perfil' && <MeuPerfil nomeParceira={nomeParceira} />}
           </>
         )}
       </main>

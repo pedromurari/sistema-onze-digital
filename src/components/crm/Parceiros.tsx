@@ -64,15 +64,8 @@ type Produto = {
   bump_preco: number | null;
   syncpay_product_token: string | null;
   syncpay_checkout_url: string | null;
+  syncpay_taxa_fixa: number | null;
 };
-
-function conectarMercadoPago(parceiraId: string) {
-  const clientId = import.meta.env.VITE_MP_CLIENT_ID;
-  if (!clientId) { toast.error('Conexão com Mercado Pago ainda não configurada.'); return; }
-  const redirectUri = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mp-oauth-callback`;
-  const url = `https://auth.mercadopago.com.br/authorization?client_id=${clientId}&response_type=code&platform_id=mp&state=${parceiraId}&redirect_uri=${encodeURIComponent(redirectUri)}`;
-  window.location.href = url;
-}
 
 const STATUS_CONFIG: Record<ProdutoStatus, { label: string; className: string }> = {
   em_analise: { label: 'Em análise', className: 'bg-amber-100 text-amber-700 border-amber-200' },
@@ -126,7 +119,7 @@ function ProdutosTab() {
   const [bumpForm, setBumpForm] = useState({ bump_ativo: false, bump_nome: '', bump_descricao: '', bump_preco: '' });
   const [savingBump, setSavingBump] = useState(false);
   const [syncDialog, setSyncDialog] = useState<Produto | null>(null);
-  const [syncForm, setSyncForm] = useState({ syncpay_product_token: '', syncpay_checkout_url: '' });
+  const [syncForm, setSyncForm] = useState({ syncpay_product_token: '', syncpay_checkout_url: '', syncpay_taxa_fixa: '' });
   const [savingSync, setSavingSync] = useState(false);
 
   const loadParceiros = useCallback(async () => {
@@ -137,7 +130,7 @@ function ProdutosTab() {
   const loadProdutos = useCallback(async () => {
     setLoading(true);
     const { data, error } = await (supabase.from('parceiros_produtos' as any) as any)
-      .select('id, parceiro_id, nome, descricao, preco, status, comissao_idm_pct, comissao_parceiro_pct, comissao_afiliado_padrao_pct, material_url, created_at, parceiros(id, nome), meta_campaign_id, meta_ad_account_id, meta_access_token, bump_ativo, bump_nome, bump_descricao, bump_preco, syncpay_product_token, syncpay_checkout_url')
+      .select('id, parceiro_id, nome, descricao, preco, status, comissao_idm_pct, comissao_parceiro_pct, comissao_afiliado_padrao_pct, material_url, created_at, parceiros(id, nome), meta_campaign_id, meta_ad_account_id, meta_access_token, bump_ativo, bump_nome, bump_descricao, bump_preco, syncpay_product_token, syncpay_checkout_url, syncpay_taxa_fixa')
       .order('created_at', { ascending: false });
     if (error) {
       toast.error(`Erro ao carregar produtos: ${error.message}`);
@@ -279,6 +272,7 @@ function ProdutosTab() {
     setSyncForm({
       syncpay_product_token: produto.syncpay_product_token || '',
       syncpay_checkout_url: produto.syncpay_checkout_url || '',
+      syncpay_taxa_fixa: produto.syncpay_taxa_fixa != null ? String(produto.syncpay_taxa_fixa) : '',
     });
   };
 
@@ -288,6 +282,7 @@ function ProdutosTab() {
     const { error } = await (supabase.from('parceiros_produtos' as any) as any).update({
       syncpay_product_token: syncForm.syncpay_product_token.trim() || null,
       syncpay_checkout_url: syncForm.syncpay_checkout_url.trim() || null,
+      syncpay_taxa_fixa: syncForm.syncpay_taxa_fixa ? Number(syncForm.syncpay_taxa_fixa) : 0,
     }).eq('id', syncDialog.id);
     setSavingSync(false);
     if (error) { toast.error(`Erro ao salvar SyncPay: ${error.message}`); return; }
@@ -520,6 +515,10 @@ function ProdutosTab() {
               <Label className="text-xs text-muted-foreground">Link de checkout (SyncPay)</Label>
               <Input placeholder="https://link.syncpayments.com.br/..." value={syncForm.syncpay_checkout_url} onChange={e => setSyncForm(f => ({ ...f, syncpay_checkout_url: e.target.value }))} />
             </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Taxa fixa da SyncPay por venda (R$)</Label>
+              <Input type="number" step="0.01" placeholder="0,00 (ex: Pix até R$100 = grátis)" value={syncForm.syncpay_taxa_fixa} onChange={e => setSyncForm(f => ({ ...f, syncpay_taxa_fixa: e.target.value }))} />
+            </div>
             {syncDialog && (
               <p className="text-[11px] text-muted-foreground bg-muted/50 rounded-lg p-2 break-all">
                 URL do webhook a registrar na SyncPay: <br />
@@ -676,13 +675,6 @@ function ParceirosTab() {
               ) : (
                 <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => abrirDialogAcesso(p)}>
                   <KeyRound className="h-3.5 w-3.5 mr-1" /> Criar acesso
-                </Button>
-              )}
-              {p.mp_connected_at ? (
-                <Badge variant="outline" className="bg-emerald-100 text-emerald-700 border-emerald-200">Mercado Pago conectado</Badge>
-              ) : (
-                <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => conectarMercadoPago(p.id)}>
-                  Conectar Mercado Pago
                 </Button>
               )}
             </div>

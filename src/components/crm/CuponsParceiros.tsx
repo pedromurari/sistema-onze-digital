@@ -12,12 +12,12 @@ import { toast } from 'sonner';
 type ProdutoLite = { id: string; nome: string; parceiro_id: string; comissao_afiliado_padrao_pct: number | null; parceiros: { nome: string } | null };
 type ParceiroLite = { id: string; nome: string };
 type Cupom = {
-  id: string; produto_id: string; parceiro_afiliado_id: string; codigo: string; comissao_pct: number | null; ativo: boolean;
+  id: string; produto_id: string; parceiro_afiliado_id: string; codigo: string; comissao_pct: number | null; desconto_pct: number | null; ativo: boolean;
   parceiros_produtos: { nome: string; parceiros: { nome: string } | null } | null;
   parceiros: { nome: string } | null;
 };
 
-const EMPTY_FORM = { produto_id: '', parceiro_afiliado_id: '', codigo: '', comissao_pct: '' };
+const EMPTY_FORM = { produto_id: '', parceiro_afiliado_id: '', codigo: '', comissao_pct: '', desconto_pct: '' };
 
 function sugerirCodigo(nomeParceira: string, nomeProduto: string) {
   const base = (nomeParceira.split(' ')[0] || 'PARC').toUpperCase().replace(/[^A-Z]/g, '');
@@ -37,7 +37,7 @@ export function CuponsParceiros() {
     setLoading(true);
     const [cupRes, prodRes, parRes] = await Promise.all([
       supabase.from('parceiros_cupons' as any)
-        .select('id, produto_id, parceiro_afiliado_id, codigo, comissao_pct, ativo, parceiros_produtos(nome, parceiros(nome)), parceiros(nome)')
+        .select('id, produto_id, parceiro_afiliado_id, codigo, comissao_pct, desconto_pct, ativo, parceiros_produtos(nome, parceiros(nome)), parceiros(nome)')
         .order('codigo'),
       supabase.from('parceiros_produtos' as any).select('id, nome, parceiro_id, comissao_afiliado_padrao_pct, parceiros(nome)').eq('status', 'ativo').order('nome'),
       supabase.from('parceiros' as any).select('id, nome').eq('ativo', true).order('nome'),
@@ -71,6 +71,7 @@ export function CuponsParceiros() {
       parceiro_afiliado_id: form.parceiro_afiliado_id,
       codigo: form.codigo.trim().toUpperCase(),
       comissao_pct: form.comissao_pct ? Number(form.comissao_pct) : null,
+      desconto_pct: form.desconto_pct ? Number(form.desconto_pct) : null,
     });
     setSaving(false);
     if (error) {
@@ -100,7 +101,7 @@ export function CuponsParceiros() {
       <div className="bg-white border border-border rounded-xl p-4 space-y-3">
         <p className="text-sm font-semibold text-foreground">Novo cupom de afiliada</p>
         <p className="text-xs text-muted-foreground">Qualquer parceira pode virar afiliada de qualquer produto ativo — inclusive de produtos que não são dela (rede cruzada).</p>
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           <Select value={form.produto_id} onValueChange={v => { setForm(f => ({ ...f, produto_id: v })); aplicarSugestao(v, form.parceiro_afiliado_id); }}>
             <SelectTrigger className="h-9"><SelectValue placeholder="Produto" /></SelectTrigger>
             <SelectContent>
@@ -115,6 +116,7 @@ export function CuponsParceiros() {
           </Select>
           <Input className="h-9" placeholder="Código do cupom" value={form.codigo} onChange={e => setForm(f => ({ ...f, codigo: e.target.value.toUpperCase() }))} />
           <Input className="h-9" type="number" placeholder="Comissão (%)" value={form.comissao_pct} onChange={e => setForm(f => ({ ...f, comissao_pct: e.target.value }))} />
+          <Input className="h-9" type="number" placeholder="Desconto pro comprador (%)" value={form.desconto_pct} onChange={e => setForm(f => ({ ...f, desconto_pct: e.target.value }))} />
         </div>
         {produtoSelecionado && produtoSelecionado.parceiro_id === form.parceiro_afiliado_id && (
           <p className="text-xs text-amber-600">Essa parceira já é a dona deste produto — normalmente cupom de afiliada é pra promover produto de outra parceira.</p>
@@ -135,7 +137,8 @@ export function CuponsParceiros() {
                 <p className="text-sm font-mono font-semibold text-foreground">{c.codigo}</p>
                 <p className="text-xs text-muted-foreground truncate">
                   {c.parceiros_produtos?.nome} ({c.parceiros_produtos?.parceiros?.nome}) · afiliada: {c.parceiros?.nome}
-                  {c.comissao_pct != null && ` · ${c.comissao_pct}%`}
+                  {c.desconto_pct != null && ` · ${c.desconto_pct}% off pro comprador`}
+                  {c.comissao_pct != null && ` · comissão ${c.comissao_pct}%`}
                 </p>
               </div>
               <Badge

@@ -1,14 +1,17 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { format } from 'date-fns';
+import { format, startOfDay, endOfDay, startOfMonth, endOfMonth, subDays } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import {
-  Loader2, DollarSign, ShoppingCart, MousePointerClick, Target, TrendingUp,
+  Loader2, DollarSign, ShoppingCart, MousePointerClick, Target, TrendingUp, HandCoins, Receipt, CalendarDays,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { VendasParceiros } from './VendasParceiros';
+import { VendasParceiros, type ResumoVendas, type PeriodoRange } from './VendasParceiros';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -16,12 +19,48 @@ type ParceiroLite = { id: string; nome: string };
 
 type ProdutoLite = {
   id: string; nome: string; parceiro_id: string;
+  comissao_parceiro_pct: number | null; syncpay_taxa_fixa: number | null;
   meta_campaign_id: string | null; meta_ad_account_id: string | null; meta_access_token: string | null;
 };
 
 type AdsInsights = { spend: string; clicks: string; cpc: string; leads: number; cpl: number };
 
-function currentMonthStr() { return format(new Date(), 'yyyy-MM'); }
+type PeriodoTipo = 'todos' | 'hoje' | 'ontem' | '7d' | '14d' | 'mes' | 'custom';
+type Periodo = { tipo: PeriodoTipo; inicio?: string; fim?: string };
+
+const PERIODO_LABEL: Record<Exclude<PeriodoTipo, 'custom'>, string> = {
+  todos: 'Todos os períodos',
+  hoje: 'Hoje',
+  ontem: 'Ontem',
+  '7d': 'Últimos 7 dias',
+  '14d': 'Últimos 14 dias',
+  mes: 'Este mês',
+};
+
+function resolvePeriodo(p: Periodo): PeriodoRange {
+  const hoje = new Date();
+  switch (p.tipo) {
+    case 'todos':
+      return { inicio: null, fim: null };
+    case 'hoje':
+      return { inicio: startOfDay(hoje).toISOString(), fim: endOfDay(hoje).toISOString() };
+    case 'ontem': {
+      const d = subDays(hoje, 1);
+      return { inicio: startOfDay(d).toISOString(), fim: endOfDay(d).toISOString() };
+    }
+    case '7d':
+      return { inicio: startOfDay(subDays(hoje, 6)).toISOString(), fim: endOfDay(hoje).toISOString() };
+    case '14d':
+      return { inicio: startOfDay(subDays(hoje, 13)).toISOString(), fim: endOfDay(hoje).toISOString() };
+    case 'mes':
+      return { inicio: startOfMonth(hoje).toISOString(), fim: endOfMonth(hoje).toISOString() };
+    case 'custom':
+      return {
+        inicio: p.inicio ? startOfDay(new Date(p.inicio)).toISOString() : null,
+        fim: p.fim ? endOfDay(new Date(p.fim)).toISOString() : null,
+      };
+  }
+}
 
 function StatCard({ icon: Icon, label, value, sub, color }: { icon: React.ElementType; label: string; value: string; sub?: string; color: string }) {
   return (
@@ -38,6 +77,58 @@ function StatCard({ icon: Icon, label, value, sub, color }: { icon: React.Elemen
   );
 }
 
+// ── Filtro de período ────────────────────────────────────────────────────────
+
+function FiltroPeriodo({ periodo, onChange }: { periodo: Periodo; onChange: (p: Periodo) => void }) {
+  const [range, setRange] = useState<{ from?: Date; to?: Date }>({});
+
+  return (
+    <div className="flex items-center gap-2">
+      <Select
+        value={periodo.tipo}
+        onValueChange={(v) => {
+          if (v === 'custom') { onChange({ tipo: 'custom', inicio: periodo.inicio, fim: periodo.fim }); return; }
+          onChange({ tipo: v as PeriodoTipo });
+        }}
+      >
+        <SelectTrigger className="w-[180px] h-9"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          {(Object.keys(PERIODO_LABEL) as (keyof typeof PERIODO_LABEL)[]).map(k => (
+            <SelectItem key={k} value={k}>{PERIODO_LABEL[k]}</SelectItem>
+          ))}
+          <SelectItem value="custom">Personalizado…</SelectItem>
+        </SelectContent>
+      </Select>
+
+      {periodo.tipo === 'custom' && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" className="h-9 gap-1.5">
+              <CalendarDays className="h-3.5 w-3.5" />
+              {periodo.inicio && periodo.fim
+                ? `${format(new Date(periodo.inicio), 'dd/MM/yy')} – ${format(new Date(periodo.fim), 'dd/MM/yy')}`
+                : 'Escolher datas'}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <Calendar
+              mode="range"
+              selected={range as any}
+              onSelect={(r: any) => {
+                setRange(r || {});
+                if (r?.from && r?.to) {
+                  onChange({ tipo: 'custom', inicio: format(r.from, 'yyyy-MM-dd'), fim: format(r.to, 'yyyy-MM-dd') });
+                }
+              }}
+              numberOfMonths={2}
+            />
+          </PopoverContent>
+        </Popover>
+      )}
+    </div>
+  );
+}
+
 // ── Componente principal ─────────────────────────────────────────────────────
 
 export function DesempenhoParceiros({ scopedParceiroId }: { scopedParceiroId?: string }) {
@@ -45,12 +136,13 @@ export function DesempenhoParceiros({ scopedParceiroId }: { scopedParceiroId?: s
   const [produtos, setProdutos] = useState<ProdutoLite[]>([]);
   const [filtroParceira, setFiltroParceira] = useState<string>(scopedParceiroId || 'all');
   const [filtroProduto, setFiltroProduto] = useState<string>('all');
-  const [mes, setMes] = useState(currentMonthStr());
+  const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'mes' });
   const [adsInsights, setAdsInsights] = useState<AdsInsights | null>(null);
   const [loadingAds, setLoadingAds] = useState(false);
-  const [resumoVendas, setResumoVendas] = useState({ total: 0, qtd: 0 });
+  const [resumoVendas, setResumoVendas] = useState<ResumoVendas>({ total: 0, qtd: 0, pendentesQtd: 0, porProduto: {} });
 
   const admin = !scopedParceiroId;
+  const periodoRange = useMemo(() => resolvePeriodo(periodo), [periodo]);
 
   useEffect(() => {
     if (!admin) return;
@@ -62,7 +154,7 @@ export function DesempenhoParceiros({ scopedParceiroId }: { scopedParceiroId?: s
 
   const loadProdutos = useCallback(async () => {
     let query = supabase.from('parceiros_produtos' as any)
-      .select('id, nome, parceiro_id, meta_campaign_id, meta_ad_account_id, meta_access_token');
+      .select('id, nome, parceiro_id, comissao_parceiro_pct, syncpay_taxa_fixa, meta_campaign_id, meta_ad_account_id, meta_access_token');
     if (parceiraAtual) query = query.eq('parceiro_id', parceiraAtual);
     const { data } = await query.order('nome');
     setProdutos((data as any) || []);
@@ -89,6 +181,22 @@ export function DesempenhoParceiros({ scopedParceiroId }: { scopedParceiroId?: s
     }).catch(() => setAdsInsights(null)).finally(() => setLoadingAds(false));
   }, [produtoSelecionado?.meta_campaign_id, produtoSelecionado?.meta_access_token]);
 
+  const suaParte = useMemo(() => {
+    return produtos.reduce((s, p) => {
+      const dados = resumoVendas.porProduto[p.id];
+      if (!dados || p.comissao_parceiro_pct == null) return s;
+      return s + dados.valor * (p.comissao_parceiro_pct / 100);
+    }, 0);
+  }, [produtos, resumoVendas]);
+
+  const taxaSyncPay = useMemo(() => {
+    return produtos.reduce((s, p) => {
+      const dados = resumoVendas.porProduto[p.id];
+      if (!dados || !p.syncpay_taxa_fixa) return s;
+      return s + dados.qtd * p.syncpay_taxa_fixa;
+    }, 0);
+  }, [produtos, resumoVendas]);
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2">
@@ -108,7 +216,7 @@ export function DesempenhoParceiros({ scopedParceiroId }: { scopedParceiroId?: s
             {produtos.map(p => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Input type="month" className="w-[160px] h-9" value={mes} onChange={e => setMes(e.target.value)} />
+        <FiltroPeriodo periodo={periodo} onChange={setPeriodo} />
       </div>
 
       <div className="space-y-5">
@@ -120,7 +228,27 @@ export function DesempenhoParceiros({ scopedParceiroId }: { scopedParceiroId?: s
             sub={`${resumoVendas.qtd} venda(s) aprovada(s)`}
             color="bg-emerald-50 text-emerald-600"
           />
-          <StatCard icon={ShoppingCart} label="Carrinhos" value="—" sub="Aguardando checkout próprio" color="bg-gray-100 text-gray-500" />
+          <StatCard
+            icon={ShoppingCart}
+            label="Carrinho abandonado"
+            value={String(resumoVendas.pendentesQtd)}
+            sub="Pix gerado, não pago"
+            color="bg-amber-50 text-amber-600"
+          />
+          <StatCard
+            icon={HandCoins}
+            label="Sua parte"
+            value={suaParte.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            sub="Com base na coprodução configurada"
+            color="bg-violet-50 text-violet-600"
+          />
+          <StatCard
+            icon={Receipt}
+            label="Taxa SyncPay"
+            value={taxaSyncPay.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            sub="Estimada, configurada por produto"
+            color="bg-gray-100 text-gray-500"
+          />
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -145,7 +273,7 @@ export function DesempenhoParceiros({ scopedParceiroId }: { scopedParceiroId?: s
         <VendasParceiros
           scopedParceiroId={parceiraAtual ?? undefined}
           produtoId={filtroProduto !== 'all' ? filtroProduto : undefined}
-          mes={mes}
+          periodo={periodoRange}
           onResumo={setResumoVendas}
         />
       </div>
