@@ -201,9 +201,28 @@ export function Dashboard() {
       if (showLoading) setLoading(true);
 
       const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+      // Busca todos os pagamentos em lotes de 1000 (mesmo padrão de Financeiro.tsx)
+      // -- o servidor limita cada resposta a 1000 linhas independente do .limit()
+      // pedido; sem paginar, MRR/receita/inadimplência ficavam truncados nos
+      // ~1000 pagamentos mais recentes, escondendo boa parte dos inadimplentes.
+      const fetchAllPagamentos = async () => {
+        const PAGE = 1000;
+        const all: any[] = [];
+        for (let from = 0; ; from += PAGE) {
+          const { data } = await supabase
+            .from('pagamentos')
+            .select('id, aluno_id, turma_id, valor, mes_referencia, status, data_pagamento, data_vencimento, created_at')
+            .order('created_at', { ascending: false })
+            .range(from, from + PAGE - 1);
+          if (!data?.length) break;
+          all.push(...data);
+          if (data.length < PAGE) break;
+        }
+        return { data: all };
+      };
       const [alunosRes, pagRes, tasksRes, turmasRes, lancRes, npaEvtRes, evtCalRes, respRes, turmaRespRes] = await Promise.all([
         supabase.from('alunos').select('id, nome, produto, status, turma_id, data_inicio, data_matricula, created_at, valor_mensalidade, mensalidades_pagas, total_mensalidades').limit(500),
-        supabase.from('pagamentos').select('id, aluno_id, turma_id, valor, mes_referencia, status, data_pagamento, data_vencimento, created_at').order('created_at', { ascending: false }).limit(5000),
+        fetchAllPagamentos(),
         supabase.from('tarefas').select('id, titulo, status, prioridade, responsavel_id, responsaveis, prazo, categoria, pagina, created_at').order('prazo').limit(50),
         supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades, data_inicio, data_fim, responsavel_id'),
         supabase.from('lancamentos').select('id, nome, ativo, created_at, data_live').order('created_at', { ascending: false }).limit(20),

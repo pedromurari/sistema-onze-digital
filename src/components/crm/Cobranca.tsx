@@ -534,8 +534,26 @@ export function Cobranca() {
 
     // Inadimplência canônica (todos os métodos de pagamento, todas as turmas) —
     // mesma fonte e regra do Dashboard/Financeiro, pra o KPI do topo bater.
-    const [{ data: pagInad }, { data: alunosInad }] = await Promise.all([
-      supabase.from('pagamentos').select('aluno_id, valor, status, data_vencimento'),
+    // Busca pagamentos em lotes de 1000 (mesmo padrão de Financeiro.tsx) -- o
+    // servidor corta cada resposta em ~1000 linhas independente do que se pede,
+    // e são 2400+ pagamentos no total; sem paginar, a contagem vinha bem menor
+    // que a real.
+    const fetchAllPagamentosInad = async () => {
+      const PAGE = 1000;
+      const all: any[] = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data } = await supabase
+          .from('pagamentos')
+          .select('aluno_id, valor, status, data_vencimento')
+          .range(from, from + PAGE - 1);
+        if (!data?.length) break;
+        all.push(...data);
+        if (data.length < PAGE) break;
+      }
+      return all;
+    };
+    const [pagInad, { data: alunosInad }] = await Promise.all([
+      fetchAllPagamentosInad(),
       supabase.from('alunos').select('id, status, tipo_pagamento'),
     ]);
     if (pagInad && alunosInad) {

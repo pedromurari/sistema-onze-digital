@@ -266,14 +266,33 @@ export function FinanceiroCFO() {
       try {
         const dataCorte = subDays(new Date(), 90).toISOString().slice(0, 10);
         const mesCorteItens = mesStr(11); // últimos 12 meses de custos p/ DRE/burn rate
+        // Busca todos os pagamentos em lotes de 1000 (mesmo padrão de Financeiro.tsx
+        // e Dashboard.tsx) -- sem .limit()/.range() o servidor cortava em ~1000
+        // linhas, escondendo boa parte da inadimplência real (contagem vinha
+        // menor que a de Financeiro/Dashboard mesmo já usando a regra canônica).
+        const fetchAllPagamentos = async () => {
+          const PAGE = 1000;
+          const all: any[] = [];
+          for (let from = 0; ; from += PAGE) {
+            const { data } = await supabase
+              .from('pagamentos')
+              .select('id, aluno_id, turma_id, valor, status, data_pagamento, data_vencimento, mes_referencia')
+              .order('created_at', { ascending: false })
+              .range(from, from + PAGE - 1);
+            if (!data?.length) break;
+            all.push(...data);
+            if (data.length < PAGE) break;
+          }
+          return all;
+        };
         const [
-          { data: t }, { data: a }, { data: p }, { data: r }, { data: rl },
+          { data: t }, { data: a }, p, { data: r }, { data: rl },
           { data: prod }, { data: taxas }, { data: recFonte },
           { data: bc }, { data: bi },
         ] = await Promise.all([
           supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades, responsavel_id'),
           supabase.from('alunos').select('id, nome, turma_id, status, data_matricula, dia_vencimento, valor_mensalidade, mensalidades_pagas, total_mensalidades'),
-          supabase.from('pagamentos').select('id, aluno_id, turma_id, valor, status, data_pagamento, data_vencimento, mes_referencia'),
+          fetchAllPagamentos(),
           supabase.from('turma_responsaveis').select('id, turma_id, user_id, nome_ref, percentual'),
           supabase.from('responsaveis').select('id, nome, email, ativo'),
           // Produtos configuráveis (não mais hardcoded)
