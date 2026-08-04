@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import { Plus, Search, AlertCircle, Users, Target, CheckCircle, DollarSign, Loader2, Power } from 'lucide-react';
 import { format } from 'date-fns';
+import { isPagamentoRealizado } from '@/lib/financial-utils';
 
 type LaunchStatus = 'planejamento' | 'em_andamento' | 'finalizado';
 type LaunchPhase = 'planilha' | 'grupo_lancamento' | 'grupo_oferta' | 'follow_up_01' | 'follow_up_02' | 'follow_up_03' | 'matricula';
@@ -65,6 +66,7 @@ export function Lancamentos() {
     meta_matriculas: 0,
     descricao: '',
   });
+  const [receitaRecebidaReal, setReceitaRecebidaReal] = useState(0);
 
   const vinicius = users.find(u => u.nome?.toLowerCase().includes('vinicius'));
 
@@ -109,6 +111,26 @@ export function Lancamentos() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
+  }, [currentLaunchId]);
+
+  // Receita real recebida: soma de pagamentos.valor (status='pago') dos alunos
+  // matriculados a partir deste lançamento — diferente da estimativa por
+  // preço-padrão × contagem (que é "contratado", não necessariamente recebido).
+  useEffect(() => {
+    if (!currentLaunchId) { setReceitaRecebidaReal(0); return; }
+    const load = async () => {
+      const { data: alunosDoLanc } = await supabase
+        .from('alunos').select('id').eq('lancamento_id', currentLaunchId);
+      const alunoIds = (alunosDoLanc || []).map(a => a.id);
+      if (!alunoIds.length) { setReceitaRecebidaReal(0); return; }
+      const { data: pags } = await supabase
+        .from('pagamentos').select('valor, status, data_pagamento').in('aluno_id', alunoIds);
+      const total = (pags || [])
+        .filter(isPagamentoRealizado)
+        .reduce((s, p) => s + (p.valor || 0), 0);
+      setReceitaRecebidaReal(total);
+    };
+    load();
   }, [currentLaunchId]);
 
   const currentLaunch = launches.find(l => l.id === currentLaunchId);
@@ -235,7 +257,9 @@ export function Lancamentos() {
   const grupoLancamento = launchLeads.filter(l => l.no_grupo).length;
   const grupoOferta = launchLeads.filter(l => l.grupo_oferta).length;
   const matriculas = launchLeads.filter(l => l.matriculado).length;
-  const receitaMatriculas = matriculas * 109.90;
+  // Estimativa por preço-padrão × contagem de matriculados — NÃO é a soma real
+  // de pagamentos.valor (ver receitaRecebidaReal, calculada à parte).
+  const receitaEstimada = matriculas * 109.90;
 
   if (loading || !currentLaunch) {
     return (
@@ -385,7 +409,7 @@ export function Lancamentos() {
       </div>
 
       {/* Metrics */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <Card className="p-4 border border-border">
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs font-500 text-muted-foreground">Total de Leads</p>
@@ -413,7 +437,17 @@ export function Lancamentos() {
             <DollarSign className="h-4 w-4 text-green-500" />
           </div>
           <p className="text-2xl font-bold">{matriculas}</p>
-          <p className="text-xs text-muted-foreground mt-1">R$ {receitaMatriculas.toLocaleString('pt-BR')}</p>
+          <p className="text-xs text-muted-foreground mt-1" title="Estimativa: matrículas × preço-padrão, não é soma de pagamentos reais">
+            ~R$ {receitaEstimada.toLocaleString('pt-BR')} (estimado)
+          </p>
+        </Card>
+        <Card className="p-4 border border-border">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-500 text-muted-foreground">Recebido (real)</p>
+            <DollarSign className="h-4 w-4 text-emerald-600" />
+          </div>
+          <p className="text-2xl font-bold">R$ {receitaRecebidaReal.toLocaleString('pt-BR')}</p>
+          <p className="text-xs text-muted-foreground mt-1">Soma de pagamentos pagos</p>
         </Card>
       </div>
 

@@ -663,18 +663,21 @@ export type Database = {
       balanco_config: {
         Row: {
           id: string
+          parametros_cfo: Json
           socios: Json
           taxas: Json
           updated_at: string | null
         }
         Insert: {
           id?: string
+          parametros_cfo?: Json
           socios?: Json
           taxas?: Json
           updated_at?: string | null
         }
         Update: {
           id?: string
+          parametros_cfo?: Json
           socios?: Json
           taxas?: Json
           updated_at?: string | null
@@ -1022,6 +1025,7 @@ export type Database = {
           enviado_em: string | null
           enviado_por: string | null
           erro_msg: string | null
+          grupo_envio_id: string | null
           id: string
           manual: boolean
           mensagem: string
@@ -1042,6 +1046,7 @@ export type Database = {
           enviado_em?: string | null
           enviado_por?: string | null
           erro_msg?: string | null
+          grupo_envio_id?: string | null
           id?: string
           manual?: boolean
           mensagem: string
@@ -1062,6 +1067,7 @@ export type Database = {
           enviado_em?: string | null
           enviado_por?: string | null
           erro_msg?: string | null
+          grupo_envio_id?: string | null
           id?: string
           manual?: boolean
           mensagem?: string
@@ -7743,6 +7749,7 @@ export type Database = {
           dias_offset: number
           link_pagamento: string
           pagamento_id: string
+          pagamento_status: string
           parcela: number
           telefone: string
           valor: number

@@ -21,13 +21,17 @@ import {
   ReferenceLine, ResponsiveContainer,
 } from 'recharts';
 import {
-  type Produto, type TaxaDetalhe, type PagamentoComFonte,
+  type Produto, type TaxaDetalhe, type PagamentoComFonte, type ParametrosCfo,
   calcTaxaTransacao, calcLiquidoPorProduto, calcTotaisLiquido,
   agruparReceitaSemanal, agruparReceitaMensal, agruparReceitaPorMetodo,
   fmtBRL, mesLabel,
+  isAlunoAtivo, calcInadimplencia, isPagamentoInadimplente, makeGetOwnerShare,
+  PARAMETROS_CFO_DEFAULT, EMPRESA_CFO_PADRAO,
+  calcChurnRate, calcPaybackPeriod, calcLtvCacRatio,
 } from '@/lib/financial-utils';
 import { TaxasPagamentoConfig } from './finance/TaxasPagamentoConfig';
 import { RepasseTurmasConfig } from './finance/RepasseTurmasConfig';
+import { CfoParametrosConfig } from './finance/CfoParametrosConfig';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -41,7 +45,8 @@ interface Responsavel {
 }
 interface Aluno {
   id: string; nome: string; turma_id: string;
-  status: 'ativo' | 'inadimplente' | 'cancelado' | 'concluido';
+  status: 'ativo' | 'inadimplente' | 'cancelado' | 'concluido' | 'pre_matricula';
+  data_matricula?: string | null;
   dia_vencimento?: number | null; valor_mensalidade?: number | null;
   mensalidades_pagas?: number | null; total_mensalidades?: number | null;
 }
@@ -57,6 +62,13 @@ interface TurmaResponsavel {
 interface Metas {
   mrr: number; coleta_mes: number; inadimplencia_max: number; receita_hoje: number;
   cac_estimado: number; gross_margin_pct: number;
+}
+// FONTE: balanco_itens — livro-razão de custos/entradas manuais (categoria
+// 'custo_fixo' | 'custo_variavel' | 'ads' | 'outro_saida' | 'outro_entrada' | 'alocacao').
+// Alimenta o DRE Gerencial, Ponto de Equilíbrio e CAC/LTV/Payback desta tela.
+interface BalancoItem {
+  id: string; descricao: string; valor: number; tipo: 'entrada' | 'saida';
+  categoria: string; produto?: string | null; mes_referencia: string; recorrente?: boolean | null;
 }
 
 type Periodo = 'hoje' | 'semana' | 'mes' | '3m';
@@ -239,6 +251,8 @@ export function FinanceiroCFO() {
   const [produtosDraft, setProdutosDraft]             = useState<Produto[]>([]);
   const [editingProdutos, setEditingProdutos]         = useState(false);
   const [savingProdutos, setSavingProdutos]           = useState(false);
+  const [parametrosCfo, setParametrosCfo]             = useState<ParametrosCfo>(PARAMETROS_CFO_DEFAULT);
+  const [balancoItens, setBalancoItens]               = useState<BalancoItem[]>([]);
 
   const mesAtual   = useMemo(() => mesStr(0), []);
   const mesAnterior = useMemo(() => mesStr(1), []);
@@ -251,12 +265,14 @@ export function FinanceiroCFO() {
       setLoading(true);
       try {
         const dataCorte = subDays(new Date(), 90).toISOString().slice(0, 10);
+        const mesCorteItens = mesStr(11); // últimos 12 meses de custos p/ DRE/burn rate
         const [
           { data: t }, { data: a }, { data: p }, { data: r }, { data: rl },
           { data: prod }, { data: taxas }, { data: recFonte },
+          { data: bc }, { data: bi },
         ] = await Promise.all([
           supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades, responsavel_id'),
-          supabase.from('alunos').select('id, nome, turma_id, status, dia_vencimento, valor_mensalidade, mensalidades_pagas, total_mensalidades'),
+          supabase.from('alunos').select('id, nome, turma_id, status, data_matricula, dia_vencimento, valor_mensalidade, mensalidades_pagas, total_mensalidades'),
           supabase.from('pagamentos').select('id, aluno_id, turma_id, valor, status, data_pagamento, data_vencimento, mes_referencia'),
           supabase.from('turma_responsaveis').select('id, turma_id, user_id, nome_ref, percentual'),
           supabase.from('responsaveis').select('id, nome, email, ativo'),
@@ -268,6 +284,12 @@ export function FinanceiroCFO() {
           supabase.from('vw_receita_por_fonte')
             .select('id, aluno_id, turma_id, valor, data_pagamento, mes_referencia, numero_parcela, produto, forma_pagamento, produto_label')
             .gte('data_pagamento', dataCorte),
+          // Parâmetros manuais da Análise CFO (impostos, CAC, margem, caixa)
+          supabase.from('balanco_config').select('id, parametros_cfo').eq('id', EMPRESA_CFO_PADRAO).maybeSingle(),
+          // Custos/entradas manuais (DRE, Ponto de Equilíbrio, CAC/LTV/Payback)
+          supabase.from('balanco_itens')
+            .select('id, descricao, valor, tipo, categoria, produto, mes_referencia, recorrente')
+            .gte('mes_referencia', mesCorteItens),
         ]);
         setTurmas(t || []);
         setAlunos(a || []);
@@ -276,6 +298,8 @@ export function FinanceiroCFO() {
         setResponsaveisList(rl || []);
         setProdutos((prod || []) as Produto[]);
         setTaxasDetalhe((taxas || []) as TaxaDetalhe[]);
+        setParametrosCfo({ ...PARAMETROS_CFO_DEFAULT, ...(((bc as any)?.parametros_cfo) || {}) });
+        setBalancoItens((bi || []) as BalancoItem[]);
         setPagamentosComFonte((recFonte || []) as PagamentoComFonte[]);
       } catch {
         toast.error('Erro ao carregar dados financeiros. Recarregue a página.');
@@ -293,29 +317,25 @@ export function FinanceiroCFO() {
 
   // ── Base sets ────────────────────────────────────────────────────────────
 
+  // Aluno ativo canônico: 'ativo' literal OU 'pre_matricula' cuja data_matricula
+  // já chegou — antes este filtro só aceitava 'ativo' literal, subcontando
+  // matrículas recém-efetivadas até alguém abrir a tela Financeiro (que
+  // corrigia o status no banco como side-effect).
   const alunosAtivos = useMemo(() =>
-    alunos.filter(a => a.status === 'ativo'),
+    alunos.filter(a => isAlunoAtivo(a)),
   [alunos]);
 
   const pagamentosPagos = useMemo(() =>
     pagamentos.filter(p => (p.status || '') === 'pago' && p.data_pagamento),
   [pagamentos]);
 
-  // Returns MRR share for a turma considering owner filter.
+  // getOwnerShare canônico (compartilhado com Dashboard/Balanco).
   // Primary: turmas.responsavel_id → responsaveis.nome (1-to-1 ownership).
-  // Fallback: turma_responsaveis with nome_ref (split ownership).
-  const getOwnerShare = useCallback((turmaId: string | null): number => {
-    if (!ownerFilter || !turmaId) return 1;
-    const turma = turmas.find(t => t.id === turmaId);
-    if (turma?.responsavel_id) {
-      const resp = responsaveisList.find(r => r.id === turma.responsavel_id);
-      if (resp) return resp.nome === ownerFilter ? 1 : 0;
-    }
-    const turmaResps = responsaveis.filter(r => r.turma_id === turmaId && r.nome_ref);
-    if (!turmaResps.length) return 0;
-    const ownerPct = turmaResps.filter(r => r.nome_ref === ownerFilter).reduce((s, r) => s + r.percentual, 0);
-    return ownerPct / 100;
-  }, [ownerFilter, responsaveis, turmas, responsaveisList]);
+  // Fallback: turma_responsaveis com nome_ref (split ownership).
+  const getOwnerShare = useMemo(
+    () => makeGetOwnerShare(ownerFilter, turmas, responsaveis, responsaveisList),
+    [ownerFilter, responsaveis, turmas, responsaveisList]
+  );
 
   // ── MRR ──────────────────────────────────────────────────────────────────
 
@@ -369,14 +389,22 @@ export function FinanceiroCFO() {
   // ── Inadimplência ─────────────────────────────────────────────────────────
 
   const inadimplencia = useMemo(() => {
-    const atrasados = pagamentos.filter(p => (p.status || '') === 'atrasado');
-    const valorTotal = atrasados.reduce((s, p) => {
+    // Elegível: pagamento de aluno ativo, dentro do share do responsável filtrado.
+    const alunoAtivoIds = new Set(alunosAtivos.map(a => a.id));
+    const elegiveis = pagamentos.filter(p =>
+      p.aluno_id && alunoAtivoIds.has(p.aluno_id) && getOwnerShare(p.turma_id) > 0
+    );
+    // Canônico: 'atrasado' literal OU 'pendente' com vencimento já passado —
+    // antes só considerava 'atrasado', deixando de fora parcelas pendentes
+    // já vencidas.
+    const emAtraso = elegiveis.filter(p => isPagamentoInadimplente(p, parseISO(hoje)));
+    const valorTotal = emAtraso.reduce((s, p) => {
       const share = getOwnerShare(p.turma_id);
       return s + (p.valor || 0) * share;
     }, 0);
     const buckets = { b0_30: 0, b31_60: 0, b61_90: 0, b90p: 0 };
     const counts  = { b0_30: 0, b31_60: 0, b61_90: 0, b90p: 0 };
-    for (const pag of atrasados) {
+    for (const pag of emAtraso) {
       if (!pag.data_vencimento) continue;
       const dias = differenceInDays(parseISO(hoje), parseISO(pag.data_vencimento));
       const share = getOwnerShare(pag.turma_id);
@@ -386,13 +414,14 @@ export function FinanceiroCFO() {
       else if (dias <= 90)  { buckets.b61_90 += val; counts.b61_90++; }
       else                  { buckets.b90p   += val; counts.b90p++;   }
     }
-    const totalInadimplentes = alunos.filter(a =>
-      a.status === 'inadimplente' && getOwnerShare(a.turma_id) > 0
-    ).length;
+    // Contagem canônica de inadimplentes: derivada de pagamentos, nunca do
+    // campo manual alunos.status='inadimplente' (que pode ficar dessincronizado
+    // do estado real de pagamentos em atraso).
+    const totalInadimplentes = calcInadimplencia(emAtraso).count;
     const ativosOwner = alunosAtivos.filter(a => getOwnerShare(a.turma_id) > 0).length;
     const txInadimplencia = ativosOwner > 0 ? pct(totalInadimplentes, ativosOwner) : 0;
     return { valorTotal, buckets, counts, totalInadimplentes, txInadimplencia };
-  }, [pagamentos, alunos, alunosAtivos, hoje, getOwnerShare]);
+  }, [pagamentos, alunosAtivos, hoje, getOwnerShare]);
 
   // ── LTV Restante ──────────────────────────────────────────────────────────
 
@@ -656,6 +685,54 @@ export function FinanceiroCFO() {
   const pagsMesCount = pagamentosPagos.filter(p => (p.mes_referencia || '').startsWith(mesAtual)).length;
   const ticketMedio = pagsMesCount > 0 ? receitaMesAtual / pagsMesCount : 0;
 
+  // ── DRE Gerencial / Ponto de Equilíbrio / CAC-LTV-Payback / Saúde de Caixa ──
+  // FONTE: balanco_itens (custos manuais por categoria) + parametros_cfo
+  // (impostos, CAC, margem, caixa) + totaisLiquido (receita/taxas já canônicos).
+  const balancoItensMes = balancoItens.filter(bi => bi.mes_referencia?.startsWith(mesAtual));
+  const somaCategoria = (categoria: string, tipo: 'entrada' | 'saida', itens: BalancoItem[] = balancoItensMes) =>
+    itens.filter(bi => bi.categoria === categoria && bi.tipo === tipo).reduce((s, bi) => s + (bi.valor || 0), 0);
+
+  const custoFixoMes     = somaCategoria('custo_fixo', 'saida');
+  const custoVariavelMes = somaCategoria('custo_variavel', 'saida');
+  const adsMes           = somaCategoria('ads', 'saida');
+  const outraSaidaMes    = somaCategoria('outro_saida', 'saida');
+  const outraEntradaMes  = somaCategoria('outro_entrada', 'entrada');
+
+  const receitaBrutaDre       = totaisLiquido.bruto;
+  const impostosDre           = receitaBrutaDre * ((parametrosCfo.impostos_pct ?? 0) / 100);
+  const receitaLiquidaDre     = receitaBrutaDre - impostosDre;
+  const margemContribuicao    = receitaLiquidaDre - totaisLiquido.taxas - custoVariavelMes - adsMes;
+  const margemContribuicaoPct = receitaLiquidaDre > 0 ? (margemContribuicao / receitaLiquidaDre) * 100 : 0;
+  const ebitda                = margemContribuicao - custoFixoMes;
+  const lucroLiquidoDre       = ebitda - outraSaidaMes + outraEntradaMes;
+
+  // Ponto de equilíbrio: quanto precisa faturar (ou quantas vendas, no ticket
+  // médio atual) pra cobrir os custos fixos do mês com a margem de contribuição atual.
+  const pontoEquilibrioReais    = margemContribuicaoPct > 0 ? custoFixoMes / (margemContribuicaoPct / 100) : 0;
+  const pontoEquilibrioUnidades = ticketMedio > 0 ? pontoEquilibrioReais / ticketMedio : 0;
+
+  // CAC / LTV / Payback — unit economics
+  const matriculasNovasMes = alunos.filter(a => a.data_matricula?.startsWith(mesAtual)).length;
+  const cacEhReal = adsMes > 0 && matriculasNovasMes > 0;
+  const cacEfetivo = cacEhReal ? adsMes / matriculasNovasMes : (parametrosCfo.cac_estimado ?? 0);
+  // Aproximado: sem campo de data de cancelamento em alunos, não dá pra isolar
+  // "cancelou neste mês" — usa a razão acumulada de todos os tempos como proxy.
+  const churnMensalAprox = calcChurnRate(alunosCancelados.length, alunos.length);
+  const ltvMedio    = churnMensalAprox > 0 ? ticketMedio * (100 / churnMensalAprox) : 0;
+  const ltvCacRatio = calcLtvCacRatio(ltvMedio, cacEfetivo);
+  const paybackMeses = calcPaybackPeriod(cacEfetivo, ticketMedio, parametrosCfo.gross_margin_pct ?? 0);
+
+  // Saúde de caixa — burn rate = média dos últimos 3 meses de custo fixo+variável+ads
+  const burnRateMeses = [0, 1, 2].map(i => mesStr(i));
+  const burnRateMensal = burnRateMeses.reduce((s, mesKey) => {
+    const itensDoMes = balancoItens.filter(bi => bi.mes_referencia?.startsWith(mesKey));
+    return s + somaCategoria('custo_fixo', 'saida', itensDoMes) + somaCategoria('custo_variavel', 'saida', itensDoMes) + somaCategoria('ads', 'saida', itensDoMes);
+  }, 0) / burnRateMeses.length;
+  const saldoCaixaAtual = parametrosCfo.saldo_caixa_manual ?? 0;
+  const runwayMeses  = burnRateMensal > 0 ? saldoCaixaAtual / burnRateMensal : null; // null = sem burn, "infinito"
+  const reservaMeta  = burnRateMensal * (parametrosCfo.reserva_emergencia_meta_meses ?? 0);
+  const reservaPct   = reservaMeta > 0 ? (saldoCaixaAtual / reservaMeta) * 100 : 0;
+
   function gerarRelatorioDiario() {
     const hoje_ = format(new Date(), "dd/MM/yyyy", { locale: ptBR });
     const text = [
@@ -860,6 +937,10 @@ export function FinanceiroCFO() {
           <TabsTrigger value="receita">Receita</TabsTrigger>
           <TabsTrigger value="fluxo">Fluxo</TabsTrigger>
           <TabsTrigger value="liquido">Líquido Real</TabsTrigger>
+          <TabsTrigger value="dre">DRE Gerencial</TabsTrigger>
+          <TabsTrigger value="equilibrio">Ponto de Equilíbrio</TabsTrigger>
+          <TabsTrigger value="unitecon">CAC / LTV / Payback</TabsTrigger>
+          <TabsTrigger value="caixa">Saúde de Caixa</TabsTrigger>
           <TabsTrigger value="fontes">Fontes</TabsTrigger>
           <TabsTrigger value="turmas">Por Turma</TabsTrigger>
           <TabsTrigger value="responsavel">Responsáveis</TabsTrigger>
@@ -1389,6 +1470,206 @@ export function FinanceiroCFO() {
           <TaxasPagamentoConfig produtos={produtos} taxas={taxasDetalhe} onSaved={setTaxasDetalhe} />
         </TabsContent>
 
+        {/* ── DRE Gerencial ─────────────────────────────────────────────────── */}
+        <TabsContent value="dre" className="mt-4 space-y-4">
+          <Card className="border border-border/60 bg-white">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <FileText size={14} className="text-muted-foreground" />
+                DRE Gerencial — {format(new Date(), 'MMMM yyyy', { locale: ptBR })}
+                <InfoTip text="Receita Bruta (pagamentos reais) → Impostos → Receita Líquida → Taxas de gateway/Custos variáveis/Ads → Margem de Contribuição → Custos Fixos → EBITDA → outras saídas/entradas → Lucro Líquido. Custos vêm de lançamentos manuais em Balanço (balanco_itens) — se não houver lançamento, o valor aparece zerado." />
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1.5">
+              <Row label="Receita Bruta" value={fmt(receitaBrutaDre)} />
+              <Row label={`(–) Impostos (${(parametrosCfo.impostos_pct ?? 0).toFixed(1)}%)`} value={`−${fmt(impostosDre)}`} />
+              <Row label="= Receita Líquida" value={fmt(receitaLiquidaDre)} bold />
+              <Row label="(–) Taxas de gateway" value={`−${fmt(totaisLiquido.taxas)}`} />
+              <Row label="(–) Custos variáveis" value={`−${fmt(custoVariavelMes)}`} sub="lançados em Balanço, categoria custo_variavel" />
+              <Row label="(–) Ads / Marketing" value={`−${fmt(adsMes)}`} sub="lançados em Balanço, categoria ads" />
+              <Row label={`= Margem de Contribuição (${margemContribuicaoPct.toFixed(1)}%)`} value={fmt(margemContribuicao)} bold />
+              <Row label="(–) Custos fixos" value={`−${fmt(custoFixoMes)}`} sub="lançados em Balanço, categoria custo_fixo" />
+              <Row label="= EBITDA" value={fmt(ebitda)} bold />
+              <Row label="(–) Outras saídas" value={`−${fmt(outraSaidaMes)}`} />
+              <Row label="(+) Outras entradas" value={`+${fmt(outraEntradaMes)}`} />
+              <Row label="= Lucro Líquido" value={fmt(lucroLiquidoDre)} bold />
+            </CardContent>
+          </Card>
+          <Card className="border border-blue-100 bg-blue-50/30">
+            <CardContent className="p-4">
+              <p className="text-xs text-blue-700 font-medium mb-1">📊 Fonte dos dados</p>
+              <p className="text-xs text-blue-600">
+                Receita = pagamentos reais (mesma fonte das abas Receita/Líquido Real). Custos = lançamentos manuais em <strong>Balanço</strong> (categorias custo_fixo/custo_variavel/ads/outro_saida/outro_entrada) para o mês corrente.
+                Alíquota de impostos e demais parâmetros editáveis na aba <strong>Config</strong>.
+              </p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Ponto de Equilíbrio ───────────────────────────────────────────── */}
+        <TabsContent value="equilibrio" className="mt-4 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <KPICard
+              icon={<Target className="h-4 w-4" />}
+              label="Margem de Contribuição"
+              value={`${margemContribuicaoPct.toFixed(1)}%`}
+              sub={fmt(margemContribuicao)}
+              color={margemContribuicaoPct >= 50 ? 'emerald' : margemContribuicaoPct >= 20 ? 'amber' : 'red'}
+              fonte="Margem de Contribuição % = (Receita Líquida − Taxas − Custos Variáveis − Ads) / Receita Líquida. Quanto sobra de cada real de receita depois dos custos que variam com a venda."
+            />
+            <KPICard
+              icon={<DollarSign className="h-4 w-4" />}
+              label="Ponto de Equilíbrio"
+              value={fmtK(pontoEquilibrioReais)}
+              sub="faturamento mensal mínimo"
+              color="violet"
+              fonte="Ponto de Equilíbrio (R$) = Custos Fixos do mês / Margem de Contribuição %. Abaixo disso, o mês fecha no prejuízo."
+            />
+            <KPICard
+              icon={<Users className="h-4 w-4" />}
+              label="Ponto de Equilíbrio (alunos)"
+              value={pontoEquilibrioUnidades > 0 ? Math.ceil(pontoEquilibrioUnidades).toString() : '—'}
+              sub={`no ticket médio de ${fmtK(ticketMedio)}`}
+              color="blue"
+              fonte="Ponto de Equilíbrio (R$) / ticket médio do mês — quantas matrículas/parcelas equivalentes cobrem o custo fixo."
+            />
+          </div>
+          <Card className="border border-border/60 bg-white">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Layers size={14} className="text-muted-foreground" />
+                Margem de Contribuição por Produto — {format(new Date(), 'MMMM yyyy', { locale: ptBR })}
+                <InfoTip text="Margem de contribuição de cada produto: bruto − taxas de gateway (não inclui rateio de custo fixo, que é da empresa como um todo)." />
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Produto</TableHead>
+                    <TableHead className="text-right">Bruto</TableHead>
+                    <TableHead className="text-right">Taxas</TableHead>
+                    <TableHead className="text-right">Margem</TableHead>
+                    <TableHead className="text-right">Margem %</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {Object.entries(liquidoPorProduto).map(([slug, d]) => {
+                    const nome = produtos.find(p => p.slug === slug)?.nome || slug;
+                    const mPct = d.bruto > 0 ? (d.liquido / d.bruto) * 100 : 0;
+                    return (
+                      <TableRow key={slug}>
+                        <TableCell className="font-medium">{nome}</TableCell>
+                        <TableCell className="text-right tabular-nums">{fmt(d.bruto)}</TableCell>
+                        <TableCell className="text-right tabular-nums text-red-600">−{fmt(d.taxas)}</TableCell>
+                        <TableCell className="text-right tabular-nums font-semibold">{fmt(d.liquido)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{mPct.toFixed(1)}%</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {Object.keys(liquidoPorProduto).length === 0 && (
+                    <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-6">Sem pagamentos no mês</TableCell></TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── CAC / LTV / Payback ───────────────────────────────────────────── */}
+        <TabsContent value="unitecon" className="mt-4 space-y-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <KPICard
+              icon={<DollarSign className="h-4 w-4" />}
+              label="CAC"
+              value={fmt(cacEfetivo)}
+              sub={cacEhReal ? `real — ${fmt(adsMes)} em ads / ${matriculasNovasMes} matrículas` : 'estimado (sem gasto de ads lançado no mês)'}
+              color={cacEhReal ? 'emerald' : 'amber'}
+              fonte="CAC = gasto com 'ads' lançado em Balanço no mês / matrículas novas no mês. Sem lançamento de ads, usa o CAC estimado configurado em Config."
+            />
+            <KPICard
+              icon={<TrendingUp className="h-4 w-4" />}
+              label="LTV Médio"
+              value={fmtK(ltvMedio)}
+              sub="valor vitalício estimado por aluno"
+              color="violet"
+              fonte="LTV = ticket médio mensal × (1 / churn mensal aproximado). Estimativa — ver nota sobre churn abaixo."
+            />
+            <KPICard
+              icon={<Target className="h-4 w-4" />}
+              label="LTV : CAC"
+              value={ltvCacRatio > 0 ? `${ltvCacRatio.toFixed(1)}x` : '—'}
+              sub={ltvCacRatio >= 3 ? 'saudável (≥ 3x)' : 'abaixo do saudável (< 3x)'}
+              color={ltvCacRatio >= 3 ? 'emerald' : ltvCacRatio > 0 ? 'amber' : 'blue'}
+              fonte="Referência de mercado (SaaS Metrics 2.0): ≥ 3:1 saudável, ≥ 5:1 excelente."
+            />
+            <KPICard
+              icon={<CheckCircle2 className="h-4 w-4" />}
+              label="Payback"
+              value={paybackMeses > 0 ? `${paybackMeses.toFixed(1)} meses` : '—'}
+              sub={`margem bruta de ${(parametrosCfo.gross_margin_pct ?? 0).toFixed(0)}%`}
+              color={paybackMeses > 0 && paybackMeses <= 6 ? 'emerald' : 'amber'}
+              fonte="Payback = CAC / (ticket médio mensal × margem bruta %). Tempo para recuperar o investimento de aquisição. Referência: ≤ 6 meses saudável."
+            />
+          </div>
+          <Card className="border border-amber-100 bg-amber-50/40">
+            <CardContent className="p-4">
+              <p className="text-xs text-amber-700 font-medium mb-1">⚠️ Limitações destes números</p>
+              <p className="text-xs text-amber-700">
+                Churn mensal é aproximado: não existe campo de data de cancelamento em <code className="bg-amber-100 px-1 rounded">alunos</code>, então usamos a razão acumulada de todos os tempos (cancelados / total) como proxy — não é um churn "deste mês" de verdade.
+                CAC real depende de lançar o gasto de tráfego em Balanço (categoria "ads") todo mês; sem isso, usa o valor estimado em Config.
+              </p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Saúde de Caixa ────────────────────────────────────────────────── */}
+        <TabsContent value="caixa" className="mt-4 space-y-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <KPICard
+              icon={<DollarSign className="h-4 w-4" />}
+              label="Saldo em Caixa"
+              value={fmt(saldoCaixaAtual)}
+              sub={parametrosCfo.saldo_caixa_atualizado_em ? `atualizado em ${new Date(parametrosCfo.saldo_caixa_atualizado_em + 'T00:00:00').toLocaleDateString('pt-BR')}` : 'nunca atualizado — configure em Config'}
+              color="blue"
+              fonte="Input manual — não há integração bancária. Editável na aba Config."
+            />
+            <KPICard
+              icon={<TrendingDown className="h-4 w-4" />}
+              label="Burn Rate Mensal"
+              value={fmt(burnRateMensal)}
+              sub="média de custo fixo + variável + ads, últimos 3 meses"
+              color="amber"
+              fonte="Burn Rate = média mensal de (custo fixo + custo variável + ads) lançados em Balanço nos últimos 3 meses."
+            />
+            <KPICard
+              icon={<Calendar className="h-4 w-4" />}
+              label="Runway"
+              value={runwayMeses === null ? '∞' : `${runwayMeses.toFixed(1)} meses`}
+              sub={runwayMeses === null ? 'sem burn rate no período' : 'até o caixa zerar, no ritmo atual'}
+              color={runwayMeses !== null && runwayMeses < 3 ? 'red' : runwayMeses !== null && runwayMeses < 6 ? 'amber' : 'emerald'}
+              fonte="Runway = Saldo em Caixa / Burn Rate Mensal. Quantos meses o caixa atual sustenta no ritmo de gasto atual."
+            />
+            <KPICard
+              icon={<AlertTriangle className="h-4 w-4" />}
+              label="Reserva de Emergência"
+              value={`${reservaPct.toFixed(0)}%`}
+              sub={`meta: ${(parametrosCfo.reserva_emergencia_meta_meses ?? 0)} meses de burn (${fmtK(reservaMeta)})`}
+              color={reservaPct >= 100 ? 'emerald' : reservaPct >= 50 ? 'amber' : 'red'}
+              progress={Math.min(reservaPct, 100)}
+              fonte="Reserva de Emergência % = Saldo em Caixa / (Burn Rate × meta de meses configurada em Config)."
+            />
+          </div>
+          <Card className="border border-blue-100 bg-blue-50/30">
+            <CardContent className="p-4">
+              <p className="text-xs text-blue-700 font-medium mb-1">📊 Fonte dos dados</p>
+              <p className="text-xs text-blue-600">
+                Não há integração bancária — o saldo em caixa é 100% manual (configurável em <strong>Config</strong>) e pode estar desatualizado. Use isso como orientação, não como saldo exato do banco.
+              </p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* ── Fontes ─────────────────────────────────────────────────────────── */}
         <TabsContent value="fontes" className="mt-4 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1735,6 +2016,8 @@ export function FinanceiroCFO() {
               )}
             </CardContent>
           </Card>
+
+          <CfoParametrosConfig parametros={parametrosCfo} onSaved={setParametrosCfo} />
 
           <Card className="border border-blue-100 bg-blue-50/30">
             <CardContent className="p-4">

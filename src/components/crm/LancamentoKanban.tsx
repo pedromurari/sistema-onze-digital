@@ -27,6 +27,7 @@ import {
 } from './kanban/KanbanColunasUI';
 import { buildCapturaHTML } from '@/lib/captura-template';
 import type { CapturaTemplateData } from '@/lib/captura-template';
+import { isPagamentoRealizado } from '@/lib/financial-utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -94,6 +95,30 @@ const VALOR_MATRICULA_PADRAO = 109.90;
 
 function fmt(v: number) {
   return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Receita real recebida: soma de pagamentos.valor (status='pago') dos alunos
+// matriculados a partir deste lançamento — diferente de `matriculas × valor
+// padrão` (que é uma estimativa "contratada", não necessariamente recebida).
+function useReceitaRealLancamento(lancamentoId: string | undefined): number {
+  const [receita, setReceita] = useState(0);
+  useEffect(() => {
+    if (!lancamentoId) { setReceita(0); return; }
+    let cancelado = false;
+    const load = async () => {
+      const { data: alunosDoLanc } = await supabase
+        .from('alunos').select('id').eq('lancamento_id', lancamentoId);
+      const alunoIds = (alunosDoLanc || []).map(a => a.id);
+      if (!alunoIds.length) { if (!cancelado) setReceita(0); return; }
+      const { data: pags } = await supabase
+        .from('pagamentos').select('valor, status, data_pagamento').in('aluno_id', alunoIds);
+      const total = (pags || []).filter(isPagamentoRealizado).reduce((s, p) => s + (p.valor || 0), 0);
+      if (!cancelado) setReceita(total);
+    };
+    load();
+    return () => { cancelado = true; };
+  }, [lancamentoId]);
+  return receita;
 }
 
 // Normalize column name for fuzzy matching
@@ -188,7 +213,10 @@ function MetaTab({
   const totalLeads = leads.length;
   const matriculas = leads.filter(l => l.matriculado).length;
   const valorMatricula = Number(lancamento.valor_matricula) || VALOR_MATRICULA_PADRAO;
-  const receitaReal = matriculas * valorMatricula;
+  // Estimativa (contratado): matrículas × valor-padrão — não é soma de
+  // pagamentos reais. Ver receitaRecebidaReal, calculada à parte.
+  const receitaEstimada = matriculas * valorMatricula;
+  const receitaRecebidaReal = useReceitaRealLancamento(lancamento.id);
 
   const handleSave = async () => {
     setSaving(true);
@@ -255,19 +283,20 @@ function MetaTab({
           color="bg-green-500"
         />
         <MetaBar
-          label={`Faturamento (R$ ${fmt(receitaReal)})`}
-          atual={receitaReal}
+          label={`Faturamento estimado (R$ ${fmt(receitaEstimada)})`}
+          atual={receitaEstimada}
           meta={lancamento.meta_faturamento ?? 0}
           color="bg-purple-500"
         />
       </Card>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
           { label: 'Total Leads', value: String(totalLeads), color: 'text-blue-600' },
           { label: 'Matrículas', value: String(matriculas), color: 'text-green-600' },
-          { label: 'Faturamento Real', value: `R$ ${fmt(receitaReal)}`, color: 'text-purple-600' },
+          { label: 'Faturamento Estimado', value: `R$ ${fmt(receitaEstimada)}`, color: 'text-purple-600' },
+          { label: 'Recebido (real)', value: `R$ ${fmt(receitaRecebidaReal)}`, color: 'text-emerald-600' },
           { label: 'Meta Leads', value: String(lancamento.meta_leads ?? 0), color: 'text-muted-foreground' },
           { label: 'Meta Matrículas', value: String(lancamento.meta_matriculas ?? 0), color: 'text-muted-foreground' },
           { label: 'Meta Faturamento', value: `R$ ${fmt(lancamento.meta_faturamento ?? 0)}`, color: 'text-muted-foreground' },
@@ -294,7 +323,10 @@ function RelatorioTab({ lancamento, leads }: { lancamento: Launch; leads: Launch
   const follow2 = leads.filter(l => l.follow_up_02 && !l.follow_up_03 && !l.matriculado).length;
   const follow3 = leads.filter(l => l.follow_up_03 && !l.matriculado).length;
   const matriculas = leads.filter(l => l.matriculado).length;
-  const receitaReal = matriculas * valorMatricula;
+  // Estimativa (contratado): matrículas × valor-padrão — não é soma de
+  // pagamentos reais.
+  const receitaEstimada = matriculas * valorMatricula;
+  const receitaRecebidaReal = useReceitaRealLancamento(lancamento.id);
 
   const funil = [
     { label: 'Planilha (Total)', value: totalLeads, color: 'bg-gray-400' },
@@ -339,9 +371,14 @@ function RelatorioTab({ lancamento, leads }: { lancamento: Launch; leads: Launch
           <p className="text-xs text-muted-foreground mt-1">{matriculas} de {totalLeads} leads</p>
         </Card>
         <Card className="p-4 border border-border">
-          <p className="text-xs text-muted-foreground">Faturamento</p>
-          <p className="text-2xl font-bold text-purple-600 mt-1">R$ {fmt(receitaReal)}</p>
+          <p className="text-xs text-muted-foreground">Faturamento estimado</p>
+          <p className="text-2xl font-bold text-purple-600 mt-1">R$ {fmt(receitaEstimada)}</p>
           <p className="text-xs text-muted-foreground mt-1">R$ {fmt(valorMatricula)} / matrícula</p>
+        </Card>
+        <Card className="p-4 border border-border">
+          <p className="text-xs text-muted-foreground">Recebido (real)</p>
+          <p className="text-2xl font-bold text-emerald-600 mt-1">R$ {fmt(receitaRecebidaReal)}</p>
+          <p className="text-xs text-muted-foreground mt-1">Soma de pagamentos pagos</p>
         </Card>
         <Card className="p-4 border border-border">
           <p className="text-xs text-muted-foreground">Grupo Lançamento</p>
@@ -2222,7 +2259,10 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
   const grupoLancamento = countLeadsByFase(leads, grupoLancamentoColunaId, lead => lead.no_grupo && !lead.grupo_oferta && !lead.follow_up_01 && !lead.follow_up_02 && !lead.follow_up_03 && !lead.matriculado);
   const grupoOferta = countLeadsByFase(leads, grupoOfertaColunaId, lead => lead.grupo_oferta && !lead.follow_up_01 && !lead.follow_up_02 && !lead.follow_up_03 && !lead.matriculado);
   const matriculas = countLeadsByFase(leads, matriculaColunaId, lead => lead.matriculado);
-  const receitaMatriculas = matriculas * valorMatricula;
+  // Estimativa (contratado): matrículas × valor-padrão — não é soma de
+  // pagamentos reais.
+  const receitaEstimada = matriculas * valorMatricula;
+  const receitaRecebidaReal = useReceitaRealLancamento(lancamentoId);
 
   // ── Filter ──────────────────────────────────────────────────────────────────
   const filteredLeads = useMemo(() => {
@@ -2301,7 +2341,7 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
       </div>
 
       {/* ── Metrics ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <Card className="p-4 border border-border">
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs font-medium text-muted-foreground">Total de Leads</p>
@@ -2338,8 +2378,16 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
             </div>
           </div>
           <p className="text-2xl font-bold">{matriculas}</p>
-          <p className="text-xs text-green-600 font-medium mt-1">R$ {fmt(receitaMatriculas)}</p>
+          <p className="text-xs text-green-600 font-medium mt-1" title="Estimativa: matrículas × preço-padrão, não é soma de pagamentos reais">~R$ {fmt(receitaEstimada)} (estimado)</p>
           <p className="text-xs text-muted-foreground">R$ {fmt(valorMatricula)} / un</p>
+        </Card>
+        <Card className="p-4 border border-border">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-medium text-muted-foreground">Recebido (real)</p>
+            <DollarSign className="h-4 w-4 text-emerald-600" />
+          </div>
+          <p className="text-2xl font-bold">R$ {fmt(receitaRecebidaReal)}</p>
+          <p className="text-xs text-muted-foreground mt-1">Soma de pagamentos pagos</p>
         </Card>
       </div>
 

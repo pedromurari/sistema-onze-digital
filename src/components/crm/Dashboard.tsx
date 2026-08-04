@@ -12,17 +12,22 @@ import {
 } from 'lucide-react';
 import { isPast, format, differenceInDays, isToday, isTomorrow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import {
+  isAlunoAtivo, calcMRR, calcInadimplencia, makeGetOwnerShare,
+  filtrarPagamentosPorPeriodo, getPeriodRange,
+  type TurmaResponsavelRow, type ResponsavelRow,
+} from '@/lib/financial-utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Aluno {
   id: string; nome: string; produto: 'psicanalise' | 'numerologia';
   status: 'ativo' | 'inadimplente' | 'cancelado' | 'concluido' | 'pre_matricula';
-  turma_id?: string; data_inicio: string; created_at: string;
+  turma_id?: string; data_inicio: string; created_at: string; data_matricula?: string | null;
   valor_mensalidade?: number; mensalidades_pagas?: number; total_mensalidades?: number;
 }
 interface Pagamento {
-  id: string; aluno_id: string; valor: number; mes_referencia: string;
+  id: string; aluno_id: string; turma_id?: string | null; valor: number; mes_referencia: string;
   status: 'pago' | 'pendente' | 'atrasado'; data_pagamento?: string;
   data_vencimento?: string; created_at: string;
 }
@@ -171,6 +176,7 @@ export function Dashboard() {
   const [pagamentos, setPagamentos]   = useState<Pagamento[]>([]);
   const [tasks, setTasks]             = useState<Task[]>([]);
   const [turmas, setTurmas]           = useState<Turma[]>([]);
+  const [turmaResponsaveis, setTurmaResponsaveis] = useState<TurmaResponsavelRow[]>([]);
   const [lancamentos, setLancamentos] = useState<any[]>([]);
   const [lancLeads, setLancLeads]     = useState<any[]>([]);    // deduped per lancamento
   const [allLancLeads, setAllLancLeads] = useState<any[]>([]);  // all, for cross-lancamento dedup
@@ -192,9 +198,9 @@ export function Dashboard() {
       if (showLoading) setLoading(true);
 
       const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-      const [alunosRes, pagRes, tasksRes, turmasRes, lancRes, npaEvtRes, evtCalRes, respRes] = await Promise.all([
-        supabase.from('alunos').select('id, nome, produto, status, turma_id, data_inicio, created_at, valor_mensalidade, mensalidades_pagas, total_mensalidades').limit(500),
-        supabase.from('pagamentos').select('id, aluno_id, valor, mes_referencia, status, data_pagamento, data_vencimento, created_at').order('created_at', { ascending: false }).limit(5000),
+      const [alunosRes, pagRes, tasksRes, turmasRes, lancRes, npaEvtRes, evtCalRes, respRes, turmaRespRes] = await Promise.all([
+        supabase.from('alunos').select('id, nome, produto, status, turma_id, data_inicio, data_matricula, created_at, valor_mensalidade, mensalidades_pagas, total_mensalidades').limit(500),
+        supabase.from('pagamentos').select('id, aluno_id, turma_id, valor, mes_referencia, status, data_pagamento, data_vencimento, created_at').order('created_at', { ascending: false }).limit(5000),
         supabase.from('tarefas').select('id, titulo, status, prioridade, responsavel_id, responsaveis, prazo, categoria, pagina, created_at').order('prazo').limit(50),
         supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades, data_inicio, data_fim, responsavel_id'),
         supabase.from('lancamentos').select('id, nome, ativo, created_at, data_live').order('created_at', { ascending: false }).limit(20),
@@ -204,6 +210,7 @@ export function Dashboard() {
           .or(`data_inicio.gte.${hoje.toISOString()},data_fim.gte.${hoje.toISOString()}`)
           .order('data_inicio').limit(30),
         supabase.from('responsaveis').select('id, nome'),
+        supabase.from('turma_responsaveis').select('id, turma_id, user_id, nome_ref, percentual'),
       ]);
 
       if (alunosRes.data) setAlunos(alunosRes.data as Aluno[]);
@@ -211,6 +218,7 @@ export function Dashboard() {
       if (tasksRes.data) setTasks(tasksRes.data as Task[]);
       if (turmasRes.data) setTurmas(turmasRes.data as Turma[]);
       if (respRes.data) setResponsaveisList(respRes.data as Responsavel[]);
+      if (turmaRespRes.data) setTurmaResponsaveis(turmaRespRes.data as TurmaResponsavelRow[]);
       if (evtCalRes.data) setEventosCalendario(evtCalRes.data as any);
 
       const lancList = lancRes.data || [];
@@ -305,43 +313,35 @@ export function Dashboard() {
   // ── Financial KPIs ────────────────────────────────────────────────────────
 
   const mesAtual = new Date().toISOString().slice(0, 7); // 'YYYY-MM'
+  const mesRange = useMemo(() => getPeriodRange('mes'), [mesAtual]);
 
-  const alunosAtivos = useMemo(() => alunos.filter(a => a.status === 'ativo' || a.status === 'pre_matricula'), [alunos]);
+  // Aluno ativo canônico: 'ativo' literal OU 'pre_matricula' cuja data_matricula
+  // já chegou — derivado na leitura, não depende de nenhum job de correção.
+  const alunosAtivos = useMemo(() => alunos.filter(a => isAlunoAtivo(a)), [alunos]);
 
-  // Owner filter: 1 = include, 0 = exclude
-  const ownerTurmaIds = useMemo(() => {
-    if (!ownerFilter) return null; // null = todos
-    const ids = new Set<string>();
-    for (const turma of turmas) {
-      if (!turma.responsavel_id) continue;
-      const resp = responsaveisList.find(r => r.id === turma.responsavel_id);
-      if (resp?.nome === ownerFilter) ids.add(turma.id);
-    }
-    return ids;
-  }, [ownerFilter, turmas, responsaveisList]);
-
-  const ownerAlunoIds = useMemo(() => {
-    if (!ownerTurmaIds) return null;
-    return new Set(alunos.filter(a => a.turma_id && ownerTurmaIds.has(a.turma_id)).map(a => a.id));
-  }, [alunos, ownerTurmaIds]);
+  // getOwnerShare canônico (compartilhado com FinanceiroCFO/Balanco): binário via
+  // turmas.responsavel_id quando existir, proporcional via turma_responsaveis senão.
+  const getOwnerShare = useMemo(
+    () => makeGetOwnerShare(ownerFilter, turmas, turmaResponsaveis, responsaveisList),
+    [ownerFilter, turmas, turmaResponsaveis, responsaveisList]
+  );
 
   const filteredAlunosAtivos = useMemo(() =>
-    ownerAlunoIds ? alunosAtivos.filter(a => ownerAlunoIds.has(a.id)) : alunosAtivos,
-  [alunosAtivos, ownerAlunoIds]);
+    alunosAtivos.filter(a => getOwnerShare(a.turma_id ?? null) > 0),
+  [alunosAtivos, getOwnerShare]);
 
-  const mrrEfetivo = useMemo(() => {
-    return filteredAlunosAtivos.reduce((sum, a) => {
-      const turma = turmas.find(t => t.id === a.turma_id);
-      const val = a.valor_mensalidade ?? turma?.valor_mensalidade ?? 0;
-      return sum + val;
-    }, 0);
-  }, [filteredAlunosAtivos, turmas]);
+  const mrrEfetivo = useMemo(
+    () => calcMRR(alunos, turmas, getOwnerShare),
+    [alunos, turmas, getOwnerShare]
+  );
 
+  // Recebido no mês: campo canônico de data é data_pagamento (data real do
+  // caixa), não mes_referencia — um pagamento quitado com atraso conta no mês
+  // em que o dinheiro efetivamente entrou.
   const recebidoMes = useMemo(() =>
-    pagamentos
-      .filter(p => p.status === 'pago' && p.mes_referencia?.startsWith(mesAtual) && (!ownerAlunoIds || ownerAlunoIds.has(p.aluno_id)))
-      .reduce((s, p) => s + p.valor, 0),
-  [pagamentos, mesAtual, ownerAlunoIds]);
+    filtrarPagamentosPorPeriodo(pagamentos, mesRange.start, mesRange.end)
+      .reduce((s, p) => s + (p.valor || 0) * getOwnerShare(p.turma_id ?? null), 0),
+  [pagamentos, mesRange, getOwnerShare]);
 
   const taxaColeta = mrrEfetivo > 0 ? Math.round((recebidoMes / mrrEfetivo) * 100) : 0;
 
@@ -349,36 +349,35 @@ export function Dashboard() {
     const d = new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0, 10);
   }, []);
 
-  const pagamentosAtrasados = useMemo(() =>
-    pagamentos.filter(p =>
-      p.status === 'atrasado' ||
-      (p.status === 'pendente' && p.data_vencimento && p.data_vencimento < hojeStr)
-    ),
-  [pagamentos, hojeStr]);
+  // Inadimplência canônica: só entre alunos ativos, ponderada pelo rateio de
+  // responsável (compartilhado com FinanceiroCFO/Balanco).
+  const alunoAtivoIds = useMemo(() => new Set(alunosAtivos.map(a => a.id)), [alunosAtivos]);
 
-  const alunoInadimplentesIds = useMemo(() =>
-    new Set(pagamentosAtrasados.map(p => p.aluno_id)),
-  [pagamentosAtrasados]);
+  const pagamentosInadimplentesElegiveis = useMemo(
+    () => pagamentos.filter(p => alunoAtivoIds.has(p.aluno_id)),
+    [pagamentos, alunoAtivoIds]
+  );
 
-  const ativosIds = useMemo(() =>
-    new Set(alunos.filter(a => a.status === 'ativo').map(a => a.id)),
-  [alunos]);
+  // Versão global (sem filtro de responsável) — usada no breakdown por produto.
+  const inadimplenciaGlobal = useMemo(
+    () => calcInadimplencia(pagamentosInadimplentesElegiveis),
+    [pagamentosInadimplentesElegiveis]
+  );
+  const alunoInadimplentesIds = useMemo(
+    () => new Set(Object.keys(inadimplenciaGlobal.porAluno)),
+    [inadimplenciaGlobal]
+  );
 
-  const inadimplentesCount = useMemo(() => {
-    let count = 0;
-    for (const id of alunoInadimplentesIds) {
-      if (!ativosIds.has(id)) continue;
-      if (ownerAlunoIds && !ownerAlunoIds.has(id)) continue;
-      count++;
-    }
-    return count;
-  }, [alunoInadimplentesIds, ativosIds, ownerAlunoIds]);
+  // Versão filtrada por responsável — usada nos KPIs do topo.
+  const inadimplenciaOwner = useMemo(() => {
+    const elegiveis = pagamentosInadimplentesElegiveis
+      .filter(p => getOwnerShare(p.turma_id ?? null) > 0)
+      .map(p => ({ ...p, valor: (p.valor || 0) * getOwnerShare(p.turma_id ?? null) }));
+    return calcInadimplencia(elegiveis);
+  }, [pagamentosInadimplentesElegiveis, getOwnerShare]);
 
-  const valorInadimplente = useMemo(() =>
-    pagamentosAtrasados
-      .filter(p => (!ownerAlunoIds || ownerAlunoIds.has(p.aluno_id)))
-      .reduce((s, p) => s + p.valor, 0),
-  [pagamentosAtrasados, ownerAlunoIds]);
+  const inadimplentesCount  = inadimplenciaOwner.count;
+  const valorInadimplente   = inadimplenciaOwner.valorTotal;
 
   // Receita restante (parcelas futuras ainda a receber)
   const receitaRestante = useMemo(() => {
@@ -388,9 +387,9 @@ export function Dashboard() {
       const total = a.total_mensalidades ?? 15;
       const pagas = a.mensalidades_pagas ?? 0;
       const restantes = Math.max(total - pagas, 0);
-      return sum + val * restantes;
+      return sum + val * restantes * getOwnerShare(a.turma_id ?? null);
     }, 0);
-  }, [filteredAlunosAtivos, turmas]);
+  }, [filteredAlunosAtivos, turmas, getOwnerShare]);
 
   // ── Funil Lancamento ──────────────────────────────────────────────────────
 
@@ -482,7 +481,8 @@ export function Dashboard() {
   const getSaude = (produto: 'psicanalise' | 'numerologia') => {
     const ativos = alunosAtivos.filter(a => a.produto === produto);
     const ids = new Set(ativos.map(a => a.id));
-    const recebido = pagamentos.filter(p => p.status === 'pago' && ids.has(p.aluno_id) && p.mes_referencia?.startsWith(mesAtual)).reduce((s, p) => s + p.valor, 0);
+    const recebido = filtrarPagamentosPorPeriodo(pagamentos, mesRange.start, mesRange.end)
+      .filter(p => ids.has(p.aluno_id)).reduce((s, p) => s + (p.valor || 0), 0);
     const inadimp = ativos.filter(a => alunoInadimplentesIds.has(a.id)).length;
     const txInad = ativos.length > 0 ? Math.round((inadimp / ativos.length) * 100) : 0;
     const proxTurma = turmas.filter(t => t.produto === produto).sort((a, b) => new Date(a.data_inicio || '').getTime() - new Date(b.data_inicio || '').getTime())[0];

@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { format, isSameMonth, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { isPagamentoInadimplente } from '@/lib/financial-utils';
 
 interface Turma {
   id: string;
@@ -1055,7 +1056,10 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
     return map;
   }, [filteredPagamentos]);
 
-  // Inadimplencia calculada a partir dos pagamentos reais (nao do campo manual)
+  // Inadimplencia calculada a partir dos pagamentos reais (nao do campo manual).
+  // Canônica (compartilhada com Dashboard/FinanceiroCFO/Cobranca): 'atrasado'
+  // OU 'pendente' com vencimento já passado — sem restrição de forma de
+  // pagamento (antes só contava boleto, ignorando cartão/PIX vencidos).
   const inadimplenciaMap = useMemo(() => {
     const map: Record<string, { diasAtraso: number; valorEmAtraso: number; parcelasAtrasadas: number }> = {};
     const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
@@ -1064,18 +1068,14 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
       if (!aluno) return;
       if (aluno.status === 'cancelado' || aluno.status === 'concluido') return;
       if (aluno.tipo_pagamento === 'bolsa' || aluno.tipo_pagamento === 'cortesia') return;
-      if (normalizePaymentMethod(aluno.forma_pagamento) !== 'boleto') return;
+      if (!isPagamentoInadimplente(p, hoje)) return;
 
-      if (p.status !== 'pago') {
-        const venc = new Date(p.data_vencimento + 'T12:00:00');
-        if (venc < hoje) {
-          if (!map[p.aluno_id]) map[p.aluno_id] = { diasAtraso: 0, valorEmAtraso: 0, parcelasAtrasadas: 0 };
-          const dias = Math.floor((hoje.getTime() - venc.getTime()) / (1000 * 60 * 60 * 24));
-          map[p.aluno_id].diasAtraso = Math.max(map[p.aluno_id].diasAtraso, dias);
-          map[p.aluno_id].valorEmAtraso += p.valor;
-          map[p.aluno_id].parcelasAtrasadas += 1;
-        }
-      }
+      if (!map[p.aluno_id]) map[p.aluno_id] = { diasAtraso: 0, valorEmAtraso: 0, parcelasAtrasadas: 0 };
+      const venc = p.data_vencimento ? new Date(p.data_vencimento + 'T12:00:00') : hoje;
+      const dias = Math.max(0, Math.floor((hoje.getTime() - venc.getTime()) / (1000 * 60 * 60 * 24)));
+      map[p.aluno_id].diasAtraso = Math.max(map[p.aluno_id].diasAtraso, dias);
+      map[p.aluno_id].valorEmAtraso += p.valor;
+      map[p.aluno_id].parcelasAtrasadas += 1;
     });
     return map;
   }, [filteredPagamentos, alunos]);

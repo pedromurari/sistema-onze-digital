@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { isPagamentoInadimplente } from '@/lib/financial-utils';
 import {
   Card, CardContent, CardHeader, CardTitle, CardDescription,
 } from '@/components/ui/card';
@@ -654,6 +655,11 @@ export function Cobranca() {
       if (!porAluno.has(item.aluno_id)) porAluno.set(item.aluno_id, []);
       porAluno.get(item.aluno_id)!.push(item);
     }
+    // Canônico (compartilhado com Dashboard/FinanceiroCFO/Financeiro): 'atrasado'
+    // OU 'pendente' com vencimento já passado -- antes só considerava 'atrasado'
+    // literal, deixando de fora quem está com parcela pendente vencida mas
+    // ainda não teve o status atualizado no banco.
+    const hojeSP = new Date(hojeSaoPaulo() + 'T00:00:00.000Z');
     const grupos: AlunoGrupo[] = [];
     for (const [alunoId, parcelas] of porAluno) {
       const elegiveis = parcelas.filter(item => {
@@ -673,7 +679,9 @@ export function Cobranca() {
         elegiveis,
         critica,
         totalDevido: parcelas.reduce((s, p) => s + Number(p.valor), 0),
-        isInadimplente: parcelas.some(p => p.pagamento_status === 'atrasado'),
+        isInadimplente: parcelas.some(p =>
+          isPagamentoInadimplente({ status: p.pagamento_status, data_vencimento: p.data_vencimento }, hojeSP)
+        ),
       });
     }
     return grupos.sort((a, b) => b.critica.dias_offset - a.critica.dias_offset);

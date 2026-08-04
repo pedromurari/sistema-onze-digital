@@ -471,7 +471,7 @@ function Relatorio({
         <StatCard icon={<Target className="h-4 w-4" />}    label="Presentes"         value={String(presentesEvento)} color="#8b5cf6" />
         <StatCard icon={<ShoppingBag className="h-4 w-4" />} label="Compraram Material" value={String(comprouMaterial)} sub={fmt(receitaMateriais)} color="#ec4899" />
         <StatCard icon={<Trophy className="h-4 w-4" />}    label="Matrículas"        value={String(totalMatriculas)} sub={fmt(receitaMatriculas)} color="#16a34a" />
-        <StatCard icon={<DollarSign className="h-4 w-4" />} label="Faturamento Total" value={fmt(receitaTotal)} color="#be123c" />
+        <StatCard icon={<DollarSign className="h-4 w-4" />} label="Faturamento Estimado" value={fmt(receitaTotal)} sub="preço configurado × contagem, não é soma de pagamentos reais" color="#be123c" />
         <StatCard icon={<TrendingUp className="h-4 w-4" />} label="Ticket Médio Mat." value={totalMatriculas > 0 ? fmt(receitaMatriculas / totalMatriculas) : 'R$ 0'} color="#0ea5e9" />
         <StatCard icon={<Percent className="h-4 w-4" />}   label="Conv. → Matrícula" value={`${convMatricula}%`} sub="dos presentes" color="#f59e0b" />
       </div>
@@ -529,7 +529,7 @@ function Relatorio({
           <MetaBar label="Presentes"         value={presentesEvento} meta={mPres} color="#8b5cf6" />
           <MetaBar label="Matrículas"        value={totalMatriculas} meta={mMat}  color="#16a34a" />
           <MetaBar
-            label="Faturamento Total"
+            label="Faturamento Estimado"
             value={Math.round(receitaTotal)}
             meta={mFat}
             color="#be123c"
@@ -737,7 +737,7 @@ function MetaTab({
           <MetaBar label="Ingressos Pagos"   value={ingressosPagos}  meta={mIng}  color="#f97316" />
           <MetaBar label="Presentes"         value={presentesEvento} meta={mPres} color="#8b5cf6" />
           <MetaBar label="Matrículas"        value={totalMatriculas} meta={mMat}  color="#16a34a" />
-          <MetaBar label="Faturamento Total" value={Math.round(receitaTotal)} meta={mFat} color="#be123c" />
+          <MetaBar label="Faturamento Estimado" value={Math.round(receitaTotal)} meta={mFat} color="#be123c" />
         </div>
       </Card>
 
@@ -765,10 +765,11 @@ function MetaTab({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <DollarSign className="h-4 w-4 text-[#be123c]" />
-              <span className="text-sm font-bold text-gray-800">Faturamento Total</span>
+              <span className="text-sm font-bold text-gray-800">Faturamento Estimado</span>
             </div>
             <span className="text-xl font-black text-[#be123c]">{fmt(receitaTotal)}</span>
           </div>
+          <p className="text-[10px] text-gray-400 mt-1">Preço configurado × contagem — não é soma de pagamentos reais</p>
           {mFat > 0 && (
             <p className="text-xs text-gray-500 mt-1">
               {pct(Math.round(receitaTotal), mFat)}% da meta de {fmt(mFat)}

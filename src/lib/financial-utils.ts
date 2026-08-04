@@ -63,6 +63,117 @@ export const fmtBRLCompact = (v: number) =>
 
 export const fmtPct = (v: number) => `${v.toFixed(1)}%`;
 
+// ─── Aluno ativo (canônico) ───────────────────────────────────────────────────
+//
+// FONTE: alunos.status + alunos.data_matricula
+// REGRA: 'ativo' literal, OU 'pre_matricula' cuja data_matricula já chegou.
+// Existe para não depender de um job/side-effect de escrita corrigir o status
+// no banco antes de qualquer tela contar o aluno corretamente — é sempre
+// derivado na leitura, a partir do dado bruto.
+export interface AlunoStatusRow {
+  status: string | null;
+  data_matricula?: string | null;
+}
+export function isAlunoAtivo(aluno: AlunoStatusRow, hoje: Date = new Date()): boolean {
+  if (aluno.status === 'ativo') return true;
+  if (aluno.status !== 'pre_matricula' || !aluno.data_matricula) return false;
+  const hojeStr = hoje.toISOString().slice(0, 10);
+  return aluno.data_matricula <= hojeStr;
+}
+
+// ─── Pagamento realizado / filtro de período (canônico) ──────────────────────
+//
+// FONTE: pagamentos.status + pagamentos.data_pagamento
+// Campo de data canônico da receita é data_pagamento (data real do caixa), não
+// mes_referencia — um pagamento quitado com atraso deve contar no mês em que o
+// dinheiro efetivamente entrou, não no mês da parcela original.
+export interface PagamentoRealizadoRow {
+  status: string | null;
+  data_pagamento?: string | null;
+}
+export function isPagamentoRealizado(p: PagamentoRealizadoRow): boolean {
+  return p.status === 'pago' && !!p.data_pagamento;
+}
+
+export function filtrarPagamentosPorPeriodo<T extends PagamentoRealizadoRow>(
+  pagamentos: T[], inicio: string, fim: string
+): T[] {
+  return pagamentos.filter(p =>
+    isPagamentoRealizado(p) && p.data_pagamento! >= inicio && p.data_pagamento! <= fim
+  );
+}
+
+// ─── Inadimplência (canônica) ─────────────────────────────────────────────────
+//
+// FONTE: pagamentos.status + pagamentos.data_vencimento
+// REGRA: 'atrasado' literal, OU 'pendente' com data_vencimento já passada — sem
+// restrição de forma de pagamento (boleto/cartão/PIX contam igual). Filtros de
+// elegibilidade do aluno (bolsa, cortesia, cancelado, etc.) são responsabilidade
+// de quem chama — pré-filtre a lista de pagamentos antes de passar pra cá.
+export interface PagamentoInadimplenteRow {
+  aluno_id?: string | null;
+  valor?: number | null;
+  status: string | null;
+  data_vencimento?: string | null;
+}
+export function isPagamentoInadimplente(p: PagamentoInadimplenteRow, hoje: Date = new Date()): boolean {
+  if (p.status === 'atrasado') return true;
+  if (p.status !== 'pendente' || !p.data_vencimento) return false;
+  const hojeStr = hoje.toISOString().slice(0, 10);
+  return p.data_vencimento < hojeStr;
+}
+
+export interface InadimplenciaResumo {
+  count: number;
+  valorTotal: number;
+  porAluno: Record<string, { valor: number; parcelas: number }>;
+}
+export function calcInadimplencia(
+  pagamentos: PagamentoInadimplenteRow[], hoje: Date = new Date()
+): InadimplenciaResumo {
+  const porAluno: Record<string, { valor: number; parcelas: number }> = {};
+  let valorTotal = 0;
+  for (const p of pagamentos) {
+    if (!isPagamentoInadimplente(p, hoje)) continue;
+    const val = p.valor || 0;
+    valorTotal += val;
+    if (p.aluno_id) {
+      if (!porAluno[p.aluno_id]) porAluno[p.aluno_id] = { valor: 0, parcelas: 0 };
+      porAluno[p.aluno_id].valor += val;
+      porAluno[p.aluno_id].parcelas += 1;
+    }
+  }
+  return { count: Object.keys(porAluno).length, valorTotal, porAluno };
+}
+
+// ─── MRR (canônico) ────────────────────────────────────────────────────────────
+//
+// FONTE: alunos (filtrados via isAlunoAtivo) + valor_mensalidade (aluno ou turma)
+export interface AlunoMrrRow {
+  id: string;
+  turma_id?: string | null;
+  status: string | null;
+  data_matricula?: string | null;
+  valor_mensalidade?: number | null;
+}
+export interface TurmaMrrRow {
+  id: string;
+  valor_mensalidade?: number | null;
+}
+export function calcMRR(
+  alunos: AlunoMrrRow[],
+  turmas: TurmaMrrRow[],
+  getOwnerShare: (turmaId: string | null | undefined) => number,
+  hoje: Date = new Date()
+): number {
+  return alunos.reduce((sum, a) => {
+    if (!isAlunoAtivo(a, hoje)) return sum;
+    const turma = turmas.find(t => t.id === a.turma_id);
+    const val = a.valor_mensalidade ?? turma?.valor_mensalidade ?? 0;
+    return sum + val * getOwnerShare(a.turma_id);
+  }, 0);
+}
+
 // Converte 'YYYY-MM' → 'Jun/2026'
 // Fonte: campo mes_referencia nos pagamentos e balanco_itens
 export function mesLabel(mes: string): string {
@@ -364,6 +475,35 @@ export function shiftPeriodo(tipo: PeriodoTipo, ref: Date, direcao: 1 | -1): Dat
 export interface ResponsavelRow { id: string; nome: string; ativo?: boolean; email?: string | null; }
 export interface TurmaResponsavelRow { id: string; turma_id: string; user_id: string | null; nome_ref: string | null; percentual: number; }
 
+// ─── getOwnerShare compartilhado ───────────────────────────────────────────────
+//
+// FONTE: turmas.responsavel_id (prioritário, 1-para-1) + turma_responsaveis
+//        (fallback proporcional, split % entre investidores da turma)
+// Isto decide "quanto dessa turma pertence ao responsável filtrado" para fins de
+// VISIBILIDADE/filtro de tela (ex: dono de turma vendo só o que é seu) — é uma
+// pergunta diferente de calcRepasses (que decide o repasse de receita a
+// investidores como regra de negócio); não devem ser unificadas.
+export interface TurmaOwnerRow { id: string; responsavel_id?: string | null; }
+export function makeGetOwnerShare(
+  ownerFilter: string,
+  turmas: TurmaOwnerRow[],
+  turmaResponsaveis: TurmaResponsavelRow[],
+  responsaveisList: ResponsavelRow[],
+): (turmaId: string | null | undefined) => number {
+  return (turmaId: string | null | undefined) => {
+    if (!ownerFilter || !turmaId) return 1;
+    const turma = turmas.find(t => t.id === turmaId);
+    if (turma?.responsavel_id) {
+      const resp = responsaveisList.find(r => r.id === turma.responsavel_id);
+      if (resp) return resp.nome === ownerFilter ? 1 : 0;
+    }
+    const turmaResps = turmaResponsaveis.filter(r => r.turma_id === turmaId && r.nome_ref);
+    if (!turmaResps.length) return 0;
+    const ownerPct = turmaResps.filter(r => r.nome_ref === ownerFilter).reduce((s, r) => s + r.percentual, 0);
+    return ownerPct / 100;
+  };
+}
+
 export interface RepasseCalculado {
   responsavel_id: string | null;
   nome: string;
@@ -514,6 +654,31 @@ export function calcRepasses(
     valorIdm,
   };
 }
+
+// ─── Parâmetros da Análise CFO (DRE, Ponto de Equilíbrio, CAC/LTV/Payback, Caixa) ──
+//
+// FONTE: balanco_config.parametros_cfo (jsonb, 1 linha por empresa — hoje só
+// 'onze_digital' é usado pela UI). Não existe integração bancária nem fonte
+// automática de impostos/CAC real — todo campo aqui é input manual.
+export interface ParametrosCfo {
+  impostos_pct?: number;
+  cac_estimado?: number;
+  gross_margin_pct?: number;
+  saldo_caixa_manual?: number;
+  saldo_caixa_atualizado_em?: string;
+  reserva_emergencia_meta_meses?: number;
+}
+
+export const PARAMETROS_CFO_DEFAULT: Required<ParametrosCfo> = {
+  impostos_pct: 6,
+  cac_estimado: 150,
+  gross_margin_pct: 70,
+  saldo_caixa_manual: 0,
+  saldo_caixa_atualizado_em: '',
+  reserva_emergencia_meta_meses: 3,
+};
+
+export const EMPRESA_CFO_PADRAO = 'onze_digital';
 
 // ─── Breakdown por forma de pagamento ────────────────────────────────────────
 //
