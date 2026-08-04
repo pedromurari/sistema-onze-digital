@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { isPagamentoInadimplente } from '@/lib/financial-utils';
+import { isPagamentoInadimplente, calcInadimplencia } from '@/lib/financial-utils';
 import {
   Card, CardContent, CardHeader, CardTitle, CardDescription,
 } from '@/components/ui/card';
@@ -439,6 +439,11 @@ export function Cobranca() {
   const [templates, setTemplates]     = useState<Template[]>([]);
   const [logs, setLogs]               = useState<CobrancaLog[]>([]);
   const [fila, setFila]               = useState<FilaItem[]>([]);
+  // Contagem canônica de inadimplentes (compartilhada com Dashboard/Financeiro/
+  // FinanceiroCFO) — independente da fila de disparo, que só cobre boleto +
+  // turma com cobrança ativa + telefone cadastrado. O KPI do topo precisa
+  // refletir o total real do negócio, não só quem é elegível pra automação.
+  const [inadimplenciaGlobal, setInadimplenciaGlobal] = useState({ count: 0, valorTotal: 0 });
   // Chaves "pagamento_id:template_id" já enviadas com sucesso -- usado pra tirar da fila
   // quem já foi cobrado na janela/fase atual (mesma regra do backend, ver
   // proximoEnvioElegivel em enviar-cobranca), em vez de reaparecer todo dia até bater
@@ -526,6 +531,24 @@ export function Cobranca() {
     const filaRes = await supabase.rpc('get_alunos_para_cobranca' as any, { p_data: hojeSaoPaulo() });
     const filaData = (filaRes.data as FilaItem[]) ?? [];
     if (filaRes.data) setFila(filaData);
+
+    // Inadimplência canônica (todos os métodos de pagamento, todas as turmas) —
+    // mesma fonte e regra do Dashboard/Financeiro, pra o KPI do topo bater.
+    const [{ data: pagInad }, { data: alunosInad }] = await Promise.all([
+      supabase.from('pagamentos').select('aluno_id, valor, status, data_vencimento'),
+      supabase.from('alunos').select('id, status, tipo_pagamento'),
+    ]);
+    if (pagInad && alunosInad) {
+      const alunoElegivelIds = new Set(
+        (alunosInad as any[])
+          .filter(a => a.status !== 'cancelado' && a.status !== 'concluido'
+            && a.tipo_pagamento !== 'bolsa' && a.tipo_pagamento !== 'cortesia')
+          .map(a => a.id)
+      );
+      const elegiveis = (pagInad as any[]).filter(p => alunoElegivelIds.has(p.aluno_id));
+      const resumo = calcInadimplencia(elegiveis);
+      setInadimplenciaGlobal({ count: resumo.count, valorTotal: resumo.valorTotal });
+    }
 
     const pagamentoIds = filaData.map(f => f.pagamento_id);
     if (pagamentoIds.length) {
@@ -708,11 +731,18 @@ export function Cobranca() {
   }, [alunoGruposElegiveis, cobrancaCfg]);
 
   // ── Fila breakdown ────────────────────────────────────────────────────────
+  // `inadimplentes` é o recorte da FILA (só boleto + turma com cobrança ativa +
+  // telefone cadastrado) — usado nos breakdowns "de X na fila, Y são
+  // inadimplentes". `inadimplentesTotal` é a contagem canônica do negócio
+  // inteiro (todas as turmas/formas de pagamento, mesma fonte do
+  // Dashboard/Financeiro/CFO) — usada só no KPI do topo, que precisa bater
+  // com as outras telas em vez de refletir só quem é elegível pra automação.
   const filaStats = useMemo(() => ({
     inadimplentes: alunoGruposElegiveis.filter(g => g.isInadimplente).length,
+    inadimplentesTotal: inadimplenciaGlobal.count,
     mesMes: alunoGruposElegiveis.filter(g => !g.isInadimplente).length,
     totalEmAberto: alunoGrupos.reduce((s, g) => s + g.totalDevido, 0),
-  }), [alunoGruposElegiveis, alunoGrupos]);
+  }), [alunoGruposElegiveis, alunoGrupos, inadimplenciaGlobal]);
 
   // Parcelas já cobradas hoje -- pra marcar na tabela da fila em vez de deixar parecer
   // que ninguém foi tocado ainda
@@ -1162,7 +1192,7 @@ export function Cobranca() {
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
         {[
           { label: 'Na fila hoje', value: stats.filaHoje, icon: Calendar, color: 'text-blue-600' },
-          { label: 'Inadimplentes', value: filaStats.inadimplentes, icon: AlertTriangle, color: 'text-red-500' },
+          { label: 'Inadimplentes', value: filaStats.inadimplentesTotal, icon: AlertTriangle, color: 'text-red-500' },
           { label: 'Total em aberto', value: `R$ ${fmt(filaStats.totalEmAberto)}`, icon: TrendingDown, color: 'text-red-500' },
           { label: 'Enviados hoje', value: stats.hoje,    icon: CheckCircle2, color: 'text-emerald-600' },
           { label: 'Total enviados', value: stats.enviados, icon: Send, color: 'text-primary' },

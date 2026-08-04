@@ -186,7 +186,10 @@ export function Dashboard() {
   const [responsaveisList, setResponsaveisList] = useState<Responsavel[]>([]);
   const [selLancId, setSelLancId]     = useState('');
   const [selNpaId, setSelNpaId]       = useState('');
-  const [ownerFilter, setOwnerFilter] = useState<string>('Onze Digital');
+  // Default 'Todos' (vazio) — antes vinha filtrado silenciosamente por 'Onze
+  // Digital', fazendo o Dashboard mostrar só uma fatia dos inadimplentes/MRR
+  // reais em vez do total (divergindo de Financeiro/CFO, que não filtram).
+  const [ownerFilter, setOwnerFilter] = useState<string>('');
   const [loading, setLoading]         = useState(true);
   const isAdmin = user?.tipo === 'admin';
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
