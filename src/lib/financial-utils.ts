@@ -439,18 +439,14 @@ export function calcRepassePagamento(
   const investidores = turmaResponsaveis.filter(tr => tr.turma_id === turmaId);
   const findId = (nome: string) => responsaveisList.find(r => r.nome === nome)?.id ?? null;
 
-  // Comercial de Psicanálise: 100% Onze Digital, sempre.
+  // Comercial de Psicanálise: 100% Onze Digital, sempre. Única exceção à regra
+  // geral abaixo — todo o resto (recorrência de qualquer produto, e comercial
+  // de produtos que não sejam PSI, ex: numerologia) é 50% IDM + 50% investidor.
   if (comercial && isPsi) {
     return [{ responsavel_id: findId(NOME_ONZE_DIGITAL), nome: NOME_ONZE_DIGITAL, percentual: 100, valor: liquido }];
   }
 
-  // Recorrência (qualquer produto): 50% IDM + 50% investidor(es) da turma.
-  if (!comercial) {
-    return metadeComInvestidor(liquido, NOME_IDM, investidores, responsaveisList, findId);
-  }
-
-  // Comercial de outros produtos (ex: numerologia): 50% Onze Digital + 50% investidor(es) da turma.
-  return metadeComInvestidor(liquido, NOME_ONZE_DIGITAL, investidores, responsaveisList, findId);
+  return metadeComInvestidor(liquido, NOME_IDM, investidores, responsaveisList, findId);
 }
 
 // Agrega o repasse de vários pagamentos do período — soma por responsável e
