@@ -343,14 +343,21 @@ export function shiftPeriodo(tipo: PeriodoTipo, ref: Date, direcao: 1 | -1): Dat
 // ─── Repasse por pagamento ─────────────────────────────────────────────────────
 //
 // REGRA DE NEGÓCIO (definida pelo usuário):
-//   • Comercial (1ª parcela) de Psicanálise (PSI) → 100% Onze Digital ("11ds"),
-//     independente de quem está cadastrado como investidor da turma.
+//   • Comercial (1ª parcela) de Psicanálise (PSI):
+//       - Turma da Onze (sem investidor cadastrado em turma_responsaveis):
+//         divide 50% Onze Digital / 50% IDM, sobre o valor cheio do pagamento
+//         (não importa se foi pago em boleto, à vista, ou o curso inteiro de
+//         uma vez no cartão).
+//       - Turma de investidor (com investidor cadastrado): só o valor de UMA
+//         mensalidade da turma (turmas.valor_mensalidade, ex: R$109,90) vai
+//         100% para Onze Digital — o restante do pagamento (o que sobra
+//         quando o aluno paga o curso inteiro de uma vez, ex: cartão/à vista)
+//         divide 50% IDM / 50% investidor(es) da turma.
 //   • Recorrência (parcela 2+, qualquer produto) → 50% IDM + 50% rateado entre
 //     o(s) investidor(es) da turma (turma_responsaveis). Turma sem investidor
 //     cadastrado: os 50% "do investidor" ficam com o IDM também (100% IDM).
-//   • Comercial de outros produtos (ex: numerologia) → mantém a regra antiga:
-//     100% rateado pelos investidores da turma (turma_responsaveis); sem
-//     investidor cadastrado, fica 100% com o IDM.
+//   • Comercial de outros produtos (ex: numerologia) → mesma regra da
+//     recorrência: 50% IDM + 50% investidor(es); sem investidor, 100% IDM.
 // FONTE: turma_responsaveis (turma_id, user_id → responsaveis.id, percentual)
 //        + responsaveis (para resolver nome "Onze Digital" / "IDM")
 
@@ -375,6 +382,7 @@ export interface PagamentoParaRepasse {
   produto: string | null;
   numero_parcela: number | null;
   liquido: number; // valor - taxa
+  valorMensalidadeTurma?: number | null; // turmas.valor_mensalidade — referência de 1 mensalidade, só usada no comercial de PSI em turma com investidor
 }
 
 const NOME_ONZE_DIGITAL = 'Onze Digital';
@@ -433,19 +441,43 @@ export function calcRepassePagamento(
   turmaId: string | null,
   turmaResponsaveis: TurmaResponsavelRow[],
   responsaveisList: ResponsavelRow[],
+  valorMensalidadeTurma: number | null = null,
 ): RepasseCalculado[] {
   const comercial = (numeroParcela ?? 1) <= 1;
   const isPsi = produto === 'psicanalise';
   const investidores = turmaResponsaveis.filter(tr => tr.turma_id === turmaId);
   const findId = (nome: string) => responsaveisList.find(r => r.nome === nome)?.id ?? null;
 
-  // Comercial de Psicanálise: 100% Onze Digital, sempre. Única exceção à regra
-  // geral abaixo — todo o resto (recorrência de qualquer produto, e comercial
-  // de produtos que não sejam PSI, ex: numerologia) é 50% IDM + 50% investidor.
   if (comercial && isPsi) {
-    return [{ responsavel_id: findId(NOME_ONZE_DIGITAL), nome: NOME_ONZE_DIGITAL, percentual: 100, valor: liquido }];
+    let linhas: RepasseCalculado[];
+    if (investidores.length === 0) {
+      // Turma da Onze (sem investidor cadastrado): 50/50 Onze Digital / IDM,
+      // sobre o valor cheio — não tem investidor pra separar uma "parte comercial".
+      linhas = [
+        { responsavel_id: findId(NOME_ONZE_DIGITAL), nome: NOME_ONZE_DIGITAL, percentual: 0, valor: liquido * 0.5 },
+        { responsavel_id: findId(NOME_IDM), nome: NOME_IDM, percentual: 0, valor: liquido * 0.5 },
+      ];
+    } else {
+      // Turma de investidor: só 1 mensalidade vai pra Onze Digital; o resto
+      // (ex: aluno pagou o curso inteiro de uma vez no cartão/à vista) divide
+      // 50/50 entre IDM e o(s) investidor(es).
+      const parteComercial = Math.min(liquido, Math.max(0, valorMensalidadeTurma ?? 0));
+      const parteRestante = liquido - parteComercial;
+      linhas = [];
+      if (parteComercial > 0) {
+        linhas.push({ responsavel_id: findId(NOME_ONZE_DIGITAL), nome: NOME_ONZE_DIGITAL, percentual: 0, valor: parteComercial });
+      }
+      if (parteRestante > 0) {
+        linhas.push(...metadeComInvestidor(parteRestante, NOME_IDM, investidores, responsaveisList, findId));
+      }
+    }
+    const merged = mesclarLinhas(linhas);
+    for (const l of merged) l.percentual = liquido > 0 ? (l.valor / liquido) * 100 : 0;
+    return merged;
   }
 
+  // Recorrência (qualquer produto) e comercial de produtos que não sejam PSI
+  // (ex: numerologia): 50% IDM + 50% investidor(es); sem investidor, 100% IDM.
   return metadeComInvestidor(liquido, NOME_IDM, investidores, responsaveisList, findId);
 }
 
@@ -462,7 +494,7 @@ export function calcRepasses(
 
   for (const p of pagamentos) {
     totalLiquido += p.liquido;
-    const linhas = calcRepassePagamento(p.liquido, p.produto, p.numero_parcela, p.turma_id, turmaResponsaveis, responsaveisList);
+    const linhas = calcRepassePagamento(p.liquido, p.produto, p.numero_parcela, p.turma_id, turmaResponsaveis, responsaveisList, p.valorMensalidadeTurma);
     for (const linha of linhas) {
       const key = linha.responsavel_id || linha.nome;
       if (!porResponsavel[key]) porResponsavel[key] = { responsavel_id: linha.responsavel_id, nome: linha.nome, percentual: 0, valor: 0 };

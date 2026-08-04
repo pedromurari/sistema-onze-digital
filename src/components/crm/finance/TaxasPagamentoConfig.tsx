@@ -38,7 +38,28 @@ export function TaxasPagamentoConfig({ produtos, taxas, onSaved }: Props) {
   const startEditing = () => { setDraft([...taxas]); setEditing(true); };
   const cancelEditing = () => { setEditing(false); setDraft([...taxas]); };
 
+  function findDuplicataChave(): string | null {
+    const vistas = new Map<string, number>();
+    for (const t of draft) {
+      const chave = `${t.produto_slug}|${t.forma_pagamento}|${t.gateway}|${t.faixa_min}`;
+      vistas.set(chave, (vistas.get(chave) || 0) + 1);
+    }
+    for (const [chave, qtd] of vistas) {
+      if (qtd > 1) {
+        const [produto, forma, gateway] = chave.split('|');
+        const produtoNome = produto === '*' ? 'Todos' : (produtos.find(p => p.slug === produto)?.nome || produto);
+        return `Duas linhas com a mesma combinação: ${produtoNome} + ${forma === '*' ? 'Todos' : forma} + ${gateway}. Ajuste ou remova uma delas antes de salvar.`;
+      }
+    }
+    return null;
+  }
+
   async function handleSave() {
+    const duplicata = findDuplicataChave();
+    if (duplicata) {
+      toast.error(duplicata);
+      return;
+    }
     setSaving(true);
     try {
       const rows = draft.map(t => ({ ...t, updated_at: new Date().toISOString() }));
@@ -52,8 +73,12 @@ export function TaxasPagamentoConfig({ produtos, taxas, onSaved }: Props) {
       onSaved((fresh || []) as TaxaDetalhe[]);
       setEditing(false);
       toast.success('Taxas salvas!');
-    } catch {
-      toast.error('Erro ao salvar taxas. Tente novamente.');
+    } catch (err) {
+      const msg = err && typeof err === 'object' && 'message' in err ? String((err as { message: unknown }).message) : '';
+      const duplicada = msg.includes('duplicate key') || msg.includes('unique constraint');
+      toast.error(duplicada
+        ? 'Já existe uma taxa com esse Produto + Método + Gateway. Edite a taxa existente em vez de criar outra igual.'
+        : 'Erro ao salvar taxas. Tente novamente.');
     } finally {
       setSaving(false);
     }

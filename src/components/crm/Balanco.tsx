@@ -492,17 +492,19 @@ export function Balanco() {
                 const filtroAtivo = responsavelFiltro !== '';
                 const respSelecionado = responsaveisList.find(r => r.id === responsavelFiltro);
                 // Matrículas (ainda sem pagamento) continuam ligadas à turma; o repasse de
-                // pagamento em si (abaixo) não depende mais de "turma do responsável", já
-                // que comercial de PSI vai pra Onze Digital e recorrência é 50/50 com o IDM
-                // independente de quem está cadastrado como investidor da turma.
+                // pagamento em si (abaixo) é que decide, por pagamento, se a turma tem
+                // investidor cadastrado (turma_responsaveis) — isso muda a divisão do
+                // comercial de PSI (ver calcRepassePagamento).
                 const turmaIdsResp = new Set(turmasResp.filter(tr => tr.user_id === responsavelFiltro).map(tr => tr.turma_id));
                 const alunosView = filtroAtivo ? alunosHoje.filter(a => turmaIdsResp.has(a.turma_id)) : alunosHoje;
+                const valorMensalidadeDaTurma = (turmaId: string | null) =>
+                  turmasInfo.find(t => t.id === turmaId)?.valor_mensalidade ?? null;
 
                 // repasse calculado pagamento a pagamento (sempre a partir do período geral)
                 const pagamentosComRepasse = receitasHoje.map(r => {
                   const taxa = calcTaxaTransacao(r.valor, r.produto || '', r.forma_pagamento, taxasRates);
                   const liquido = r.valor - taxa;
-                  const linhas = calcRepassePagamento(liquido, r.produto, r.numero_parcela, r.turma_id, turmasResp, responsaveisList);
+                  const linhas = calcRepassePagamento(liquido, r.produto, r.numero_parcela, r.turma_id, turmasResp, responsaveisList, valorMensalidadeDaTurma(r.turma_id));
                   return { r, taxa, liquido, linhas };
                 });
 
@@ -525,6 +527,7 @@ export function Balanco() {
                   produto: r.produto,
                   numero_parcela: r.numero_parcela,
                   liquido: r.valor - calcTaxaTransacao(r.valor, r.produto || '', r.forma_pagamento, taxasRates),
+                  valorMensalidadeTurma: valorMensalidadeDaTurma(r.turma_id),
                 }));
                 const repasseVivo = calcRepasses(pagamentosParaRepasse, turmasResp, responsaveisList);
                 const saldoFinalVivo = repasseVivo.valorIdm - saidasVivo;
@@ -705,8 +708,8 @@ export function Balanco() {
                                   {itens.map(r => {
                                     const taxa = calcTaxaTransacao(r.valor, r.produto || '', r.forma_pagamento, taxasRates);
                                     const liquidoLinha = r.valor - taxa;
-                                    const resps = calcRepassePagamento(liquidoLinha, r.produto, r.numero_parcela, r.turma_id, turmasResp, responsaveisList);
                                     const turma = turmasInfo.find(t => t.id === r.turma_id);
+                                    const resps = calcRepassePagamento(liquidoLinha, r.produto, r.numero_parcela, r.turma_id, turmasResp, responsaveisList, turma?.valor_mensalidade ?? null);
                                     const comercial = (r.numero_parcela ?? 1) <= 1;
                                     const conferido = !!r.conferido_em;
                                     return (
