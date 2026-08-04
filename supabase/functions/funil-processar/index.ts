@@ -186,7 +186,9 @@ serve(async (req) => {
           .eq('ativo', true)
           .order('prioridade', { ascending: true });
         const scopedQS = await scopeInstancesByTask(supabase, 'funil', (evoRowsQS ?? []) as { id: string; api_url: string; api_key: string; instance_name: string }[]);
-        const evoInstancesQS = scopedQS.map((inst: { api_url: string; instance_name: string; api_key: string }) => {
+        const connectedQS = await getConnectedInstanceIds(scopedQS);
+        const availableQS = scopedQS.filter(i => connectedQS.has(i.id));
+        const evoInstancesQS = availableQS.map((inst: { api_url: string; instance_name: string; api_key: string }) => {
           const rawBase = inst.api_url.replace(/\/$/, '');
           return { base: /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`, instance: inst.instance_name, apikey: inst.api_key };
         });
@@ -197,7 +199,9 @@ serve(async (req) => {
           .eq('funnel_name', body.funnel_name ?? '')
           .maybeSingle();
 
-        let lastErr: Error | null = null;
+        let lastErr: Error | null = evoInstancesQS.length === 0
+          ? new Error('Nenhuma instância do Funil conectada no momento (verifique em Configurações → WhatsApp)')
+          : null;
         for (const { base, instance, apikey } of evoInstancesQS) {
           try {
             await processMessage(body, base, instance, apikey, supabase, funnelCfg);
@@ -262,7 +266,9 @@ serve(async (req) => {
     }
 
     const scopedFunil = await scopeInstancesByTask(supabase, 'funil', evoRows as { id: string; api_url: string; api_key: string; instance_name: string }[]);
-    const evoInstances = scopedFunil.map((inst: { api_url: string; instance_name: string; api_key: string }) => {
+    const connectedFunil = await getConnectedInstanceIds(scopedFunil);
+    const availableFunil = scopedFunil.filter(i => connectedFunil.has(i.id));
+    const evoInstances = availableFunil.map((inst: { api_url: string; instance_name: string; api_key: string }) => {
       const rawBase = inst.api_url.replace(/\/$/, '');
       return {
         base:     /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`,
@@ -302,7 +308,9 @@ serve(async (req) => {
           .eq('funnel_name', msg.funnel_name)
           .maybeSingle();
 
-        let lastErr: Error | null = null;
+        let lastErr: Error | null = evoInstances.length === 0
+          ? new Error('Nenhuma instância do Funil conectada no momento (verifique em Configurações → WhatsApp)')
+          : null;
         let usedInstance = '';
         let ambiguous = false;
         for (const { base, instance, apikey } of evoInstances) {
