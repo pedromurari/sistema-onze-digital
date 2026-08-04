@@ -589,8 +589,13 @@ export function calcRepassePagamento(
   const findId = (nome: string) => responsaveisList.find(r => r.nome === nome)?.id ?? null;
 
   if (comercial && isPsi) {
+    // Se o único "investidor" cadastrado da turma é a própria Onze Digital, não
+    // conta como investidor de verdade pra essa regra (senão ela ganharia duas
+    // vezes: a parte comercial + a metade do investidor, que é ela mesma) —
+    // trata como turma da Onze (50/50 direto).
+    const investidoresReais = investidores.filter(tr => resolveNomeInvestidor(tr, responsaveisList) !== NOME_ONZE_DIGITAL);
     let linhas: RepasseCalculado[];
-    if (investidores.length === 0) {
+    if (investidoresReais.length === 0) {
       // Turma da Onze (sem investidor cadastrado): 50/50 Onze Digital / IDM,
       // sobre o valor cheio — não tem investidor pra separar uma "parte comercial".
       linhas = [
@@ -608,7 +613,7 @@ export function calcRepassePagamento(
         linhas.push({ responsavel_id: findId(NOME_ONZE_DIGITAL), nome: NOME_ONZE_DIGITAL, percentual: 0, valor: parteComercial });
       }
       if (parteRestante > 0) {
-        linhas.push(...metadeComInvestidor(parteRestante, NOME_IDM, investidores, responsaveisList, findId));
+        linhas.push(...metadeComInvestidor(parteRestante, NOME_IDM, investidoresReais, responsaveisList, findId));
       }
     }
     const merged = mesclarLinhas(linhas);
