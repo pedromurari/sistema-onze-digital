@@ -407,13 +407,14 @@ function EvolutionTab() {
           <p className="text-sm text-muted-foreground mb-5">
             Selecione qual número envia cada tipo de mensagem e adicione backups opcionais.
           </p>
-          <div className="grid gap-6 md:grid-cols-3">
-            {(['cobranca', 'funil', 'disparo'] as const).map(task => {
-              const labels: Record<string, string> = { cobranca: 'Cobrança', funil: 'Funil', disparo: 'Disparo' };
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            {(['cobranca', 'funil', 'disparo', 'boas_vindas'] as const).map(task => {
+              const labels: Record<string, string> = { cobranca: 'Cobrança', funil: 'Funil', disparo: 'Disparo', boas_vindas: 'Boas-vindas' };
+              const icons: Record<string, string> = { cobranca: '💳', funil: '🎯', disparo: '📢', boas_vindas: '👋' };
               return (
                 <div key={task} className="rounded-lg border p-4 space-y-3">
                   <p className="text-sm font-semibold text-foreground">
-                    {task === 'cobranca' ? '💳' : task === 'funil' ? '🎯' : '📢'} {labels[task]}
+                    {icons[task]} {labels[task]}
                   </p>
                   <EvolutionTaskPanel task={task} label={labels[task]} />
                 </div>

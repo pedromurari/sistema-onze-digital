@@ -131,6 +131,26 @@ async function getConnectedInstanceIds(
   return connected;
 }
 
+// Aplica a seleção feita em Configurações -> WhatsApp -> "Prioridade por Serviço"
+// (tabela evolution_task_config, task = 'funil'). Sem seleção salva, cai no
+// fallback: todas as instâncias ativas por prioridade global.
+async function scopeInstancesByTask<T extends { id: string }>(
+  supabase: ReturnType<typeof createClient>,
+  task: string,
+  allInstances: T[],
+): Promise<T[]> {
+  const { data: taskCfg } = await supabase
+    .from('evolution_task_config')
+    .select('instance_ids')
+    .eq('task', task)
+    .maybeSingle();
+  const ids = (taskCfg as { instance_ids?: string[] } | null)?.instance_ids;
+  if (!ids?.length) return allInstances;
+  const byId = new Map(allInstances.map(i => [i.id, i]));
+  const scoped = ids.map(id => byId.get(id)).filter(Boolean) as T[];
+  return scoped.length ? scoped : allInstances;
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 serve(async (req) => {
@@ -162,10 +182,11 @@ serve(async (req) => {
       try {
         const { data: evoRowsQS } = await supabase
           .from('evolution_config')
-          .select('api_url, api_key, instance_name')
+          .select('id, api_url, api_key, instance_name')
           .eq('ativo', true)
           .order('prioridade', { ascending: true });
-        const evoInstancesQS = (evoRowsQS ?? []).map((inst: { api_url: string; instance_name: string; api_key: string }) => {
+        const scopedQS = await scopeInstancesByTask(supabase, 'funil', (evoRowsQS ?? []) as { id: string; api_url: string; api_key: string; instance_name: string }[]);
+        const evoInstancesQS = scopedQS.map((inst: { api_url: string; instance_name: string; api_key: string }) => {
           const rawBase = inst.api_url.replace(/\/$/, '');
           return { base: /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`, instance: inst.instance_name, apikey: inst.api_key };
         });
@@ -230,7 +251,7 @@ serve(async (req) => {
     // Só busca Evolution config se há mensagens para enviar
     const { data: evoRows } = await supabase
       .from('evolution_config')
-      .select('api_url, api_key, instance_name')
+      .select('id, api_url, api_key, instance_name')
       .eq('ativo', true)
       .order('prioridade', { ascending: true });
 
@@ -240,7 +261,8 @@ serve(async (req) => {
       });
     }
 
-    const evoInstances = evoRows.map((inst: { api_url: string; instance_name: string; api_key: string }) => {
+    const scopedFunil = await scopeInstancesByTask(supabase, 'funil', evoRows as { id: string; api_url: string; api_key: string; instance_name: string }[]);
+    const evoInstances = scopedFunil.map((inst: { api_url: string; instance_name: string; api_key: string }) => {
       const rawBase = inst.api_url.replace(/\/$/, '');
       return {
         base:     /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`,
