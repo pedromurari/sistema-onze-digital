@@ -400,6 +400,30 @@ function mesclarLinhas(linhas: RepasseCalculado[]): RepasseCalculado[] {
   return Object.values(porChave);
 }
 
+// 50% pra um responsável "base" (IDM ou Onze Digital, dependendo da regra) +
+// 50% rateado entre o(s) investidor(es) da turma. Sem investidor cadastrado,
+// os 50% que seriam dele ficam com o próprio "base" (vira 100% base).
+function metadeComInvestidor(
+  liquido: number,
+  nomeBase: string,
+  investidores: TurmaResponsavelRow[],
+  responsaveisList: ResponsavelRow[],
+  findId: (nome: string) => string | null,
+): RepasseCalculado[] {
+  if (investidores.length === 0) {
+    return [{ responsavel_id: findId(nomeBase), nome: nomeBase, percentual: 100, valor: liquido }];
+  }
+  const totalPct = investidores.reduce((s, tr) => s + tr.percentual, 0) || 100;
+  const linhas: RepasseCalculado[] = [
+    { responsavel_id: findId(nomeBase), nome: nomeBase, percentual: 50, valor: liquido * 0.5 },
+  ];
+  for (const inv of investidores) {
+    const pct = (inv.percentual / totalPct) * 50;
+    linhas.push({ responsavel_id: inv.user_id, nome: resolveNomeInvestidor(inv, responsaveisList), percentual: pct, valor: liquido * (pct / 100) });
+  }
+  return mesclarLinhas(linhas);
+}
+
 // Calcula o repasse de UM pagamento — reutilizado tanto no agregado do
 // período quanto na exibição linha-a-linha de cada entrada no Fechamento.
 export function calcRepassePagamento(
@@ -422,31 +446,11 @@ export function calcRepassePagamento(
 
   // Recorrência (qualquer produto): 50% IDM + 50% investidor(es) da turma.
   if (!comercial) {
-    if (investidores.length === 0) {
-      return [{ responsavel_id: findId(NOME_IDM), nome: NOME_IDM, percentual: 100, valor: liquido }];
-    }
-    const totalPct = investidores.reduce((s, tr) => s + tr.percentual, 0) || 100;
-    const linhas: RepasseCalculado[] = [
-      { responsavel_id: findId(NOME_IDM), nome: NOME_IDM, percentual: 50, valor: liquido * 0.5 },
-    ];
-    for (const inv of investidores) {
-      const pct = (inv.percentual / totalPct) * 50;
-      linhas.push({ responsavel_id: inv.user_id, nome: resolveNomeInvestidor(inv, responsaveisList), percentual: pct, valor: liquido * (pct / 100) });
-    }
-    return mesclarLinhas(linhas);
+    return metadeComInvestidor(liquido, NOME_IDM, investidores, responsaveisList, findId);
   }
 
-  // Comercial de outros produtos (ex: numerologia): 100% rateado pelos investidores da turma.
-  if (investidores.length === 0) {
-    return [{ responsavel_id: findId(NOME_IDM), nome: NOME_IDM, percentual: 100, valor: liquido }];
-  }
-  const totalPct = investidores.reduce((s, tr) => s + tr.percentual, 0) || 100;
-  return mesclarLinhas(investidores.map(inv => ({
-    responsavel_id: inv.user_id,
-    nome: resolveNomeInvestidor(inv, responsaveisList),
-    percentual: (inv.percentual / totalPct) * 100,
-    valor: liquido * (inv.percentual / totalPct),
-  })));
+  // Comercial de outros produtos (ex: numerologia): 50% Onze Digital + 50% investidor(es) da turma.
+  return metadeComInvestidor(liquido, NOME_ONZE_DIGITAL, investidores, responsaveisList, findId);
 }
 
 // Agrega o repasse de vários pagamentos do período — soma por responsável e
