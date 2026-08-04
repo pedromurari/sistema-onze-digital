@@ -293,8 +293,15 @@ async function enviarPorLogId(db: any, evoInstances: EvoInstance[], logId: strin
   });
 }
 
+// Envio manual a partir do card do aluno: quando a mensagem cobre várias parcelas
+// (aluno com 2+ parcelas em aberto), o frontend já resolveu qual template casa com a
+// fase de cada pagamento (mesma lógica de resolveTemplateParaItem, espelhada em
+// templateParaOffset no Cobranca.tsx) e manda em `cobertura`. Cada pagamento precisa do
+// seu próprio template_id pra a linha de log dele valer como "essa fase foi enviada" no
+// índice único -- não dá pra gravar todas as linhas com o template que o operador editou
+// na tela, senão o dedupe por fase de cada parcela individual quebra.
 async function enviarManual(db: any, evoInstances: EvoInstance[], body: any, userId: string | null, cors: any) {
-  const { aluno_id, pagamento_id, mensagem, template_nome, template_tipo, template_id, aluno_nome, telefone } = body;
+  const { aluno_id, pagamento_id, cobertura, mensagem, template_nome, template_tipo, template_id, aluno_nome, telefone } = body;
 
   let phone = telefone;
   let nome  = aluno_nome;
@@ -316,28 +323,52 @@ async function enviarManual(db: any, evoInstances: EvoInstance[], body: any, use
     });
   }
 
-  const { data: logRow } = await db.from("cobranca_logs").insert({
-    aluno_id,
-    pagamento_id: pagamento_id || null,
-    aluno_nome: nome || "Aluno",
-    telefone: phone,
-    mensagem,
-    template_nome: template_nome || "Manual",
-    template_tipo: template_tipo || null,
-    template_id: template_id || null,
-    status: "pendente",
-    enviado_por: userId,
-    manual: true,
-    agendado_para: new Date().toISOString(),
-  }).select("id").single();
+  const cobrindoVarias: { pagamento_id: string; template_id: string | null }[] =
+    Array.isArray(cobertura) && cobertura.length
+      ? cobertura
+      : [{ pagamento_id: pagamento_id || null, template_id: template_id || null }];
+
+  const grupoEnvioId = cobrindoVarias.length > 1 ? crypto.randomUUID() : null;
+
+  const { data: logRows, error: insertErr } = await db.from("cobranca_logs").insert(
+    cobrindoVarias.map(c => ({
+      aluno_id,
+      pagamento_id: c.pagamento_id,
+      aluno_nome: nome || "Aluno",
+      telefone: phone,
+      mensagem,
+      template_nome: template_nome || "Manual",
+      template_tipo: template_tipo || null,
+      template_id: c.template_id,
+      status: "pendente",
+      enviado_por: userId,
+      manual: true,
+      agendado_para: new Date().toISOString(),
+      grupo_envio_id: grupoEnvioId,
+    })),
+  ).select("id");
+
+  // Índice único (pagamento_id, template_id) barrou pelo menos uma dessas fases -- outro
+  // envio (automático ou manual) já reservou/mandou a mesma janela pra alguma parcela
+  // dessa leva. Não manda nada pra não duplicar metade da dívida numa mensagem e a outra
+  // metade depois.
+  if (insertErr) {
+    const jaReservado = insertErr.code === "23505";
+    return new Response(JSON.stringify({
+      error: jaReservado
+        ? "Essa cobrança (ou parte dela) já foi enviada por outro processo nesse meio tempo -- atualize a fila."
+        : insertErr.message,
+    }), { status: jaReservado ? 409 : 500, headers: { ...cors, "Content-Type": "application/json" } });
+  }
 
   const result = await sendViaEvolution(db, evoInstances, phone, mensagem);
+  const logIds = (logRows as any[]).map(r => r.id);
 
   await db.from("cobranca_logs").update({
     status: result.ok ? "enviado" : "erro",
     erro_msg: result.ok ? null : result.error,
     enviado_em: result.ok ? new Date().toISOString() : null,
-  }).eq("id", logRow?.id);
+  }).in("id", logIds);
 
   return new Response(JSON.stringify({ success: result.ok, error: result.error }), {
     status: result.ok ? 200 : 502,
@@ -345,58 +376,157 @@ async function enviarManual(db: any, evoInstances: EvoInstance[], body: any, use
   });
 }
 
-// Determina, pra um item da fila, se existe template configurado pro offset dele e se
-// aquela fase ainda não foi enviada -- mesma regra usada tanto no lote manual quanto no
-// tique. pos_vencimento casa por FAIXA de dias (fase), não dia exato: 1-3, 4-7, 8-15,
+// Acha, pra um item da fila, o template configurado pro offset dele -- mesma regra de
+// sempre. pos_vencimento casa por FAIXA de dias (fase), não dia exato: 1-3, 4-7, 8-15,
 // 16+ (aberta), pra ninguém ficar em limbo sem nunca bater um dia fixo configurado --
 // isso também resolve sozinho o backlog de quem acumulou atraso enquanto a cobrança
 // esteve parada. pre_vencimento/vencimento continuam por dia exato (evento de data
 // futura conhecida, sem acúmulo possível).
-async function proximoEnvioElegivel(
-  db: any,
-  fila: any[],
-  templates: any[],
-  cfg: any,
-  hoje: string,
-): Promise<{ item: any; template: any; mensagem: string } | null> {
-  for (const item of fila) {
-    const offset = item.dias_offset;
-    let template = null;
-    if (offset < 0 && cfg.enviar_pre_vencimento) {
-      template = templates.find((t: any) => t.tipo === "pre_vencimento" && t.dias_offset === offset);
-    } else if (offset === 0 && cfg.enviar_no_vencimento) {
-      template = templates.find((t: any) => t.tipo === "vencimento" && t.dias_offset === 0);
-    } else if (offset > 0 && cfg.enviar_pos_vencimento) {
-      template = templates.find((t: any) =>
-        t.tipo === "pos_vencimento" &&
-        offset >= t.dias_offset &&
-        (t.dias_offset_fim === null || t.dias_offset_fim === undefined || offset <= t.dias_offset_fim),
-      );
-    }
-    if (!template) continue;
-
-    // Dedupe por sempre (não só "hoje") -- uma fase de vários dias não pode repetir a
-    // mesma mensagem em cada tique enquanto o pagamento permanecer nela. Casa por
-    // template_id (estável), não template_nome (texto) -- renomear um template não pode
-    // fazer o sistema "esquecer" que já mandou aquela fase e reenviar duplicado.
-    const { count } = await db
-      .from("cobranca_logs")
-      .select("id", { count: "exact", head: true })
-      .eq("pagamento_id", item.pagamento_id)
-      .eq("template_id", template.id)
-      .eq("status", "enviado");
-    if (count && count > 0) continue;
-
-    const vencimento = new Date(item.data_vencimento).toLocaleDateString("pt-BR");
-    const valor = Number(item.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
-    const vars: Record<string, string | number | null> = {
-      nome: item.aluno_nome, valor, parcela: item.parcela, vencimento,
-      dias_atraso: offset > 0 ? offset : null,
-      link_pagamento: item.link_pagamento || null,
-    };
-    return { item, template, mensagem: renderTemplate(template.mensagem, vars) };
+function resolveTemplateParaItem(item: any, templates: any[], cfg: any): any | null {
+  const offset = item.dias_offset;
+  if (offset < 0 && cfg.enviar_pre_vencimento) {
+    return templates.find((t: any) => t.tipo === "pre_vencimento" && t.dias_offset === offset) ?? null;
+  }
+  if (offset === 0 && cfg.enviar_no_vencimento) {
+    return templates.find((t: any) => t.tipo === "vencimento" && t.dias_offset === 0) ?? null;
+  }
+  if (offset > 0 && cfg.enviar_pos_vencimento) {
+    return templates.find((t: any) =>
+      t.tipo === "pos_vencimento" &&
+      offset >= t.dias_offset &&
+      (t.dias_offset_fim === null || t.dias_offset_fim === undefined || offset <= t.dias_offset_fim),
+    ) ?? null;
   }
   return null;
+}
+
+async function jaEnviadoNestaFase(db: any, pagamentoId: string, templateId: string): Promise<boolean> {
+  // Casa por template_id (estável), não template_nome (texto) -- renomear um template
+  // não pode fazer o sistema "esquecer" que já mandou aquela fase e reenviar duplicado.
+  const { count } = await db
+    .from("cobranca_logs")
+    .select("id", { count: "exact", head: true })
+    .eq("pagamento_id", pagamentoId)
+    .eq("template_id", templateId)
+    .eq("status", "enviado");
+  return Boolean(count && count > 0);
+}
+
+interface GrupoElegivel {
+  aluno_id: string;
+  aluno_nome: string;
+  telefone: string;
+  mensagem: string;
+  cobertura: { pagamento_id: string; template_id: string; template_nome: string; template_tipo: string }[];
+}
+
+// Um aluno com 2+ parcelas em aberto recebia 1 mensagem por parcela -- spam, e os
+// templates só falam de "sua parcela" no singular. Agrupa a fila por aluno e manda 1
+// mensagem só cobrindo tudo que está em aberto, usando o tom da parcela mais crítica
+// (mais dias de atraso) como base. `qtd_parcelas`/`total_devido`/`lista_parcelas` sempre
+// refletem TODAS as parcelas em aberto do aluno (não só as elegíveis dessa rodada), pra
+// mensagem nunca subestimar a dívida real. `cobertura` marca como enviada a fase de CADA
+// parcela elegível dessa rodada (não só a crítica) -- senão uma parcela que não era a
+// "mais crítica" dessa vez nunca marcaria sua própria fase como enviada e voltaria a
+// disparar de novo depois, mesmo já tendo sido citada na mensagem.
+function proximoGrupoElegivel(fila: any[], templates: any[], cfg: any, jaEnviado: Map<string, boolean>): GrupoElegivel | null {
+  const porAluno = new Map<string, any[]>();
+  for (const item of fila) {
+    if (!porAluno.has(item.aluno_id)) porAluno.set(item.aluno_id, []);
+    porAluno.get(item.aluno_id)!.push(item);
+  }
+
+  for (const [, itens] of porAluno) {
+    const resolvidos = itens
+      .map(item => ({ item, template: resolveTemplateParaItem(item, templates, cfg) }))
+      .filter(r => r.template);
+    if (!resolvidos.length) continue;
+
+    const elegiveis = resolvidos.filter(r => !jaEnviado.get(`${r.item.pagamento_id}:${r.template.id}`));
+    if (!elegiveis.length) continue;
+
+    elegiveis.sort((a, b) => b.item.dias_offset - a.item.dias_offset);
+    const critica = elegiveis[0];
+
+    const outras = itens.filter(i => i.pagamento_id !== critica.item.pagamento_id);
+    const qtdParcelas = itens.length;
+    const totalDevido = itens.reduce((s, i) => s + Number(i.valor), 0);
+    const listaParcelas = outras
+      .map(i => `• Parcela ${i.parcela} — R$ ${Number(i.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} (venc. ${new Date(i.data_vencimento).toLocaleDateString("pt-BR")})`)
+      .join("\n");
+
+    const vencimento = new Date(critica.item.data_vencimento).toLocaleDateString("pt-BR");
+    const valor = Number(critica.item.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+    const vars: Record<string, string | number | null> = {
+      nome: critica.item.aluno_nome, valor, parcela: critica.item.parcela, vencimento,
+      dias_atraso: critica.item.dias_offset > 0 ? critica.item.dias_offset : null,
+      link_pagamento: critica.item.link_pagamento || null,
+      qtd_parcelas: qtdParcelas,
+      total_devido: totalDevido.toLocaleString("pt-BR", { minimumFractionDigits: 2 }),
+      lista_parcelas: listaParcelas || null,
+      multiplas: qtdParcelas > 1,
+    };
+
+    return {
+      aluno_id: critica.item.aluno_id,
+      aluno_nome: critica.item.aluno_nome,
+      telefone: critica.item.telefone,
+      mensagem: renderTemplate(critica.template.mensagem, vars),
+      cobertura: elegiveis.map(e => ({
+        pagamento_id: e.item.pagamento_id,
+        template_id: e.template.id,
+        template_nome: e.template.nome,
+        template_tipo: e.template.tipo,
+      })),
+    };
+  }
+  return null;
+}
+
+// Pré-calcula, pra cada (pagamento_id, template_id) que aparece na fila, se aquela fase já
+// foi enviada -- feito à parte (função async) porque proximoGrupoElegivel precisa ser
+// síncrona pra poder ser chamada várias vezes em memória dentro do loop do disparo em
+// lote sem depender de round-trip no banco a cada tentativa.
+async function calcularElegibilidade(db: any, fila: any[], templates: any[], cfg: any): Promise<Map<string, boolean>> {
+  const resolvidos = fila
+    .map(item => ({ item, template: resolveTemplateParaItem(item, templates, cfg) }))
+    .filter(r => r.template);
+  const mapa = new Map<string, boolean>();
+  await Promise.all(resolvidos.map(async r => {
+    mapa.set(`${r.item.pagamento_id}:${r.template.id}`, await jaEnviadoNestaFase(db, r.item.pagamento_id, r.template.id));
+  }));
+  return mapa;
+}
+
+// Reserva atomicamente a fase de cada pagamento coberto pela mensagem (1 INSERT
+// multi-linha só -- se qualquer linha colidir com o índice único
+// ux_cobranca_logs_pagamento_template_ativo, o INSERT inteiro falha e nenhuma linha entra,
+// então não manda a mensagem). Isso fecha a race que causava duplicidade: antes a
+// checagem "já enviei essa fase" e o INSERT eram dois passos separados, e dois processos
+// concorrentes (tique automático + "Disparar agora" manual, ou dois tiques sobrepostos)
+// podiam os dois passar pela checagem antes de qualquer um gravar.
+async function reservarGrupo(db: any, grupo: GrupoElegivel, now: Date, userId: string | null = null): Promise<{ ok: true; logIds: string[] } | { ok: false; colisao: boolean; error?: string }> {
+  const grupoEnvioId = grupo.cobertura.length > 1 ? crypto.randomUUID() : null;
+  const { data: logRows, error } = await db.from("cobranca_logs").insert(
+    grupo.cobertura.map(c => ({
+      aluno_id: grupo.aluno_id,
+      pagamento_id: c.pagamento_id,
+      aluno_nome: grupo.aluno_nome,
+      telefone: grupo.telefone,
+      mensagem: grupo.mensagem,
+      template_nome: c.template_nome,
+      template_tipo: c.template_tipo,
+      template_id: c.template_id,
+      status: "pendente",
+      manual: false,
+      enviado_por: userId,
+      agendado_para: now.toISOString(),
+      grupo_envio_id: grupoEnvioId,
+    })),
+  ).select("id");
+
+  if (error) return { ok: false, colisao: error.code === "23505", error: error.message };
+  return { ok: true, logIds: (logRows as any[]).map(r => r.id) };
 }
 
 // Modo tique: chamado a cada poucos minutos por um cron externo. Manda no máximo 1
@@ -443,7 +573,8 @@ async function processarTick(db: any, cors: any) {
   const { data: fila } = await db.rpc("get_alunos_para_cobranca", { p_data: sp.dateStr });
   if (!fila?.length) return json({ ok: true, enviados: 0 });
 
-  const proximo = await proximoEnvioElegivel(db, fila, templates, cfg, sp.dateStr);
+  const jaEnviado = await calcularElegibilidade(db, fila, templates, cfg);
+  const proximo = proximoGrupoElegivel(fila, templates, cfg, jaEnviado);
   if (!proximo) return json({ ok: true, enviados: 0 });
 
   const allInstances = await resolveInstances(db, cfg);
@@ -459,21 +590,21 @@ async function processarTick(db: any, cors: any) {
     return json({ ok: false, error: "Nenhuma instância conectada disponível (sessão do WhatsApp fechada)" });
   }
 
-  const { item, template, mensagem } = proximo;
-  const { data: logRow } = await db.from("cobranca_logs").insert({
-    aluno_id: item.aluno_id, pagamento_id: item.pagamento_id, aluno_nome: item.aluno_nome,
-    telefone: item.telefone, mensagem, template_nome: template.nome, template_tipo: template.tipo,
-    template_id: template.id,
-    status: "pendente", manual: false, agendado_para: now.toISOString(),
-  }).select("id").single();
+  const reserva = await reservarGrupo(db, proximo, now);
+  if (!reserva.ok) {
+    // Colisão com outro processo (outro tique ou um "Disparar agora" manual) reservando a
+    // mesma fase quase ao mesmo tempo -- não é erro de envio, só desiste dessa rodada; a
+    // fila é recalculada do zero no próximo tique.
+    return json({ ok: reserva.colisao, enviados: 0, colisao: reserva.colisao, error: reserva.error });
+  }
 
-  const result = await sendViaEvolution(db, connected, item.telefone, mensagem);
+  const result = await sendViaEvolution(db, connected, proximo.telefone, proximo.mensagem);
 
   await db.from("cobranca_logs").update({
     status: result.ok ? "enviado" : "erro",
     erro_msg: result.ok ? null : result.error,
     enviado_em: result.ok ? now.toISOString() : null,
-  }).eq("id", logRow?.id);
+  }).in("id", reserva.logIds);
 
   if (result.ok) {
     await db.from("cobranca_config").update({
@@ -502,7 +633,7 @@ async function processarTick(db: any, cors: any) {
 // Modo status: mesmas checagens do tique (horário seguro, limite diário, fim de semana,
 // delay desde o último envio, fila elegível), mas sem enviar nem gravar nada -- só pra
 // tela mostrar quando o próximo disparo automático deve acontecer. Reaproveita
-// proximoEnvioElegivel pra achar quem seria o próximo, garantindo que a tela nunca diga
+// proximoGrupoElegivel pra achar quem seria o próximo, garantindo que a tela nunca diga
 // algo diferente do que o tique realmente faria.
 async function statusTick(db: any, cors: any) {
   const json = (payload: any) => new Response(JSON.stringify(payload), { headers: { ...cors, "Content-Type": "application/json" } });
@@ -544,8 +675,10 @@ async function statusTick(db: any, cors: any) {
   if (!templates?.length) return json({ estado: "sem_templates" });
 
   const { data: fila } = await db.rpc("get_alunos_para_cobranca", { p_data: sp.dateStr });
-  const proximo = fila?.length ? await proximoEnvioElegivel(db, fila, templates, cfg, sp.dateStr) : null;
-  if (!proximo) return json({ estado: "sem_elegiveis", fila_total: fila?.length ?? 0 });
+  const alunosNaFila = fila?.length ? new Set(fila.map((f: any) => f.aluno_id)).size : 0;
+  const jaEnviado = fila?.length ? await calcularElegibilidade(db, fila, templates, cfg) : new Map<string, boolean>();
+  const proximo = fila?.length ? proximoGrupoElegivel(fila, templates, cfg, jaEnviado) : null;
+  if (!proximo) return json({ estado: "sem_elegiveis", fila_total: alunosNaFila });
 
   if (cfg.ultimo_envio_em) {
     const elapsedS = (now.getTime() - new Date(cfg.ultimo_envio_em).getTime()) / 1000;
@@ -554,13 +687,13 @@ async function statusTick(db: any, cors: any) {
         estado: "aguardando_delay",
         proximo_em_s: cfg.delay_min_s - elapsedS,
         proximo_em_s_max: cfg.delay_max_s - elapsedS,
-        proximo_lead: proximo.item.aluno_nome,
-        fila_total: fila.length,
+        proximo_lead: proximo.aluno_nome,
+        fila_total: alunosNaFila,
       });
     }
   }
 
-  return json({ estado: "pronto", proximo_lead: proximo.item.aluno_nome, fila_total: fila.length });
+  return json({ estado: "pronto", proximo_lead: proximo.aluno_nome, fila_total: alunosNaFila });
 }
 
 async function processarFilaAutomatica(db: any, userId: string | null, cors: any) {
@@ -604,30 +737,35 @@ async function processarFilaAutomatica(db: any, userId: string | null, cors: any
   let erros    = 0;
   let errosSeq = cfg.erros_seq ?? 0;
   const remaining = [...elegiveis];
+  // Pré-calcula 1 vez (não muda durante o loop -- itens já enviados nessa rodada saem de
+  // `remaining`, então não são reconsiderados de qualquer forma).
+  const jaEnviado = await calcularElegibilidade(db, remaining, templates, cfg);
 
   while (remaining.length && errosSeq < cfg.max_errors_seq && enviadosHoje < cfg.daily_limit) {
-    const proximo = await proximoEnvioElegivel(db, remaining, templates, cfg, hoje);
+    const proximo = proximoGrupoElegivel(remaining, templates, cfg, jaEnviado);
     if (!proximo) break;
 
-    // Remove o item processado da lista local pra não repeti-lo no próximo loop
-    const idx = remaining.findIndex((r: any) => r.pagamento_id === proximo.item.pagamento_id);
-    if (idx >= 0) remaining.splice(idx, 1);
+    // Remove TODAS as parcelas cobertas por essa mensagem (não só a mais crítica) da lista
+    // local, pra não tentar de novo o mesmo aluno no próximo giro do loop.
+    const cobertos = new Set(proximo.cobertura.map(c => c.pagamento_id));
+    for (let i = remaining.length - 1; i >= 0; i--) {
+      if (cobertos.has(remaining[i].pagamento_id)) remaining.splice(i, 1);
+    }
 
-    const { data: logRow } = await db.from("cobranca_logs").insert({
-      aluno_id: proximo.item.aluno_id, pagamento_id: proximo.item.pagamento_id,
-      aluno_nome: proximo.item.aluno_nome, telefone: proximo.item.telefone, mensagem: proximo.mensagem,
-      template_nome: proximo.template.nome, template_tipo: proximo.template.tipo,
-      template_id: proximo.template.id,
-      status: "pendente", enviado_por: userId, manual: false, agendado_para: new Date().toISOString(),
-    }).select("id").single();
+    const reserva = await reservarGrupo(db, proximo, new Date(), userId);
+    if (!reserva.ok) {
+      // Colisão com outro processo -- já foi removido de `remaining` acima, só segue pro
+      // próximo aluno sem contar como erro de envio.
+      continue;
+    }
 
-    const result = await sendViaEvolution(db, connected, proximo.item.telefone, proximo.mensagem);
+    const result = await sendViaEvolution(db, connected, proximo.telefone, proximo.mensagem);
 
     await db.from("cobranca_logs").update({
       status: result.ok ? "enviado" : "erro",
       erro_msg: result.ok ? null : result.error,
       enviado_em: result.ok ? new Date().toISOString() : null,
-    }).eq("id", logRow?.id);
+    }).in("id", reserva.logIds);
 
     if (result.ok) { enviados++; enviadosHoje++; errosSeq = 0; } else if (!result.ambiguous) { erros++; errosSeq++; } else { erros++; }
 

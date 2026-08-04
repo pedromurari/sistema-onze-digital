@@ -80,6 +80,28 @@ interface CobrancaLog {
   pagamento_id: string | null;
   respondeu_em: string | null;
   ultima_resposta: string | null;
+  grupo_envio_id: string | null;
+}
+
+// Uma mensagem consolidada gera N linhas em cobranca_logs (uma por parcela coberta,
+// compartilhando grupo_envio_id) -- HistoricoEnvio junta essas linhas de volta em "1
+// envio" pro Histórico não mostrar a mesma mensagem repetida N vezes. Envios antigos
+// (sem grupo_envio_id, de antes dessa mudança, ou manuais avulsos) viram grupo de 1 linha
+// só, usando o próprio id como chave.
+interface HistoricoEnvio {
+  chave: string;
+  linhas: CobrancaLog[];
+  representante: CobrancaLog;
+  qtdParcelas: number;
+}
+
+interface AlunoHistorico {
+  aluno_id: string | null;
+  aluno_nome: string;
+  telefone: string;
+  envios: HistoricoEnvio[];
+  ultimoEnvio: HistoricoEnvio;
+  respondeuAlguma: boolean;
 }
 
 type EstadoDisparo =
@@ -137,6 +159,24 @@ interface FilaItem {
   pagamento_status: string;
 }
 
+// Um aluno com 2+ parcelas em aberto agora vira 1 card, não N linhas -- `parcelas` é
+// TODO o débito em aberto dele (pra mostrar o total real), `elegiveis` é só quem ainda
+// não recebeu a mensagem da fase atual (mesma regra do backend em
+// proximoGrupoElegivel/enviar-cobranca) -- é o que decide se o aluno aparece "pendente de
+// contato" hoje. `critica` é a parcela mais grave entre as elegíveis (ou, se não houver
+// nenhuma elegível, entre todas -- pra ainda dar pra mostrar a severidade de quem já foi
+// cobrado).
+interface AlunoGrupo {
+  aluno_id: string;
+  aluno_nome: string;
+  telefone: string;
+  parcelas: FilaItem[];
+  elegiveis: FilaItem[];
+  critica: FilaItem;
+  totalDevido: number;
+  isInadimplente: boolean;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const TIPO_LABELS: Record<string, string> = {
@@ -164,7 +204,10 @@ function fmtDate(iso: string | null) {
   return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
-const VARIAVEIS = ['{{nome}}', '{{valor}}', '{{parcela}}', '{{vencimento}}', '{{dias_atraso}}', '{{link_pagamento}}'];
+const VARIAVEIS = [
+  '{{nome}}', '{{valor}}', '{{parcela}}', '{{vencimento}}', '{{dias_atraso}}', '{{link_pagamento}}',
+  '{{qtd_parcelas}}', '{{total_devido}}', '{{lista_parcelas}}',
+];
 
 function addMinutesToTime(base: string, extraMin: number): string {
   const [h, m] = base.split(':').map(Number);
@@ -211,6 +254,178 @@ function DaysChips({ values, onChange }: { values: number[]; onChange: (v: numbe
   );
 }
 
+// Severidade calculada sobre a parcela mais crítica do grupo -- vira a cor da borda do
+// card (vermelho: já vencida há vários dias; âmbar: vencida há pouco ou vence hoje; azul:
+// ainda não venceu), independente do tipo de template configurado pra ela.
+function severidadeGrupo(critica: FilaItem): 'severe' | 'medium' | 'low' {
+  if (critica.dias_offset >= 8) return 'severe';
+  if (critica.dias_offset >= 0) return 'medium';
+  return 'low';
+}
+
+const SEVERIDADE_BORDA: Record<'severe' | 'medium' | 'low', string> = {
+  severe: 'border-l-4 border-l-red-500',
+  medium: 'border-l-4 border-l-amber-500',
+  low:    'border-l-4 border-l-blue-500',
+};
+
+function SituacaoBadge({ critica, isInadimplente }: { critica: FilaItem; isInadimplente: boolean }) {
+  const atraso = critica.dias_offset;
+  if (isInadimplente || atraso > 0) {
+    return <Badge className="bg-red-50 text-red-700 border border-red-200 text-xs gap-1"><AlertTriangle size={10}/>{atraso}d em atraso</Badge>;
+  }
+  if (atraso === 0) {
+    return <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-xs">Vence hoje</Badge>;
+  }
+  return <Badge className="bg-blue-50 text-blue-700 border border-blue-200 text-xs">Vence em {Math.abs(atraso)}d</Badge>;
+}
+
+// Card por aluno na Fila: agrupa todas as parcelas em aberto dele (não só a que está
+// elegível pra cobrança hoje), pra deixar claro o tamanho real da dívida de uma vez.
+function AlunoFilaCard({
+  grupo, horaEstimada, jaCobradoHoje, isSending, onEnviar,
+}: {
+  grupo: AlunoGrupo;
+  horaEstimada?: string;
+  jaCobradoHoje: boolean;
+  isSending: boolean;
+  onEnviar: () => void;
+}) {
+  const severidade = severidadeGrupo(grupo.critica);
+  return (
+    <Card className={`transition-colors ${SEVERIDADE_BORDA[severidade]}`}>
+      <CardContent className="py-4 px-4">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center text-sm font-bold shrink-0">
+              {grupo.aluno_nome[0]}
+            </div>
+            <div>
+              <p className="font-semibold text-sm">{grupo.aluno_nome}</p>
+              <p className="text-xs text-muted-foreground font-mono">{grupo.telefone}</p>
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                <SituacaoBadge critica={grupo.critica} isInadimplente={grupo.isInadimplente} />
+                {jaCobradoHoje && (
+                  <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs gap-1">
+                    <CheckCircle2 size={10}/>Já cobrado hoje
+                  </Badge>
+                )}
+                {horaEstimada && (
+                  <span className="text-xs text-muted-foreground font-mono">~{horaEstimada}</span>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="text-left sm:text-right shrink-0">
+            <p className="text-lg font-bold">R$ {fmt(grupo.totalDevido)}</p>
+            <p className="text-xs text-muted-foreground">
+              {grupo.parcelas.length > 1 ? `${grupo.parcelas.length} parcelas em aberto` : '1 parcela em aberto'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {grupo.parcelas.map(p => {
+            const venceu = p.dias_offset > 0;
+            const data = new Date(p.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR');
+            return (
+              <span key={p.pagamento_id} className="text-xs px-2 py-1 rounded-md bg-muted/60 border text-muted-foreground">
+                #{p.parcela} · R$ {fmt(p.valor)} · {venceu ? `venceu ${data}` : p.dias_offset === 0 ? `vence hoje` : `vence ${data}`}
+              </span>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center gap-2 mt-3">
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7" disabled={isSending} onClick={onEnviar}>
+            {isSending ? <RefreshCw size={12} className="animate-spin"/> : <Send size={12}/>}
+            {grupo.elegiveis.length ? 'Ver mensagem' : 'Reenviar'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Card por aluno no Histórico: agrupa os envios dele, colapsado por padrão (nome,
+// telefone, total de envios, se respondeu alguma vez, quando foi o último). Expande pra
+// ver a timeline -- envios com o mesmo grupo_envio_id já chegam colapsados em 1 entrada
+// (agrupamento feito em historicoPorAluno), então uma mensagem consolidada de 3 parcelas
+// aparece como 1 linha na timeline, não 3.
+function AlunoHistoricoCard({
+  aluno, expandido, onToggle, onClickEnvio, onReenviar, enviandoIds,
+}: {
+  aluno: AlunoHistorico;
+  expandido: boolean;
+  onToggle: () => void;
+  onClickEnvio: (log: CobrancaLog) => void;
+  onReenviar: (log: CobrancaLog) => void;
+  enviandoIds: Set<string>;
+}) {
+  const totalErros = aluno.envios.filter(e => e.representante.status === 'erro').length;
+  return (
+    <Card className="border overflow-hidden">
+      <button type="button" onClick={onToggle} className="w-full text-left">
+        <CardContent className="py-3 px-4 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-bold shrink-0">
+            {aluno.aluno_nome[0]}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-sm truncate">{aluno.aluno_nome}</p>
+            <p className="text-xs text-muted-foreground font-mono">{aluno.telefone}</p>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Badge variant="outline" className="text-xs">{aluno.envios.length} envio{aluno.envios.length > 1 ? 's' : ''}</Badge>
+            {totalErros > 0 && <Badge className="bg-red-50 text-red-700 border border-red-200 text-xs">{totalErros} erro{totalErros > 1 ? 's' : ''}</Badge>}
+            {aluno.respondeuAlguma && (
+              <Badge className="bg-violet-50 text-violet-700 border border-violet-200 text-xs gap-1"><MessageSquare size={10}/>Respondeu</Badge>
+            )}
+          </div>
+          <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
+            {fmtDate(aluno.ultimoEnvio.representante.enviado_em ?? aluno.ultimoEnvio.representante.created_at)}
+          </span>
+          <span className="text-xs text-muted-foreground shrink-0">{expandido ? '▾' : '▸'}</span>
+        </CardContent>
+      </button>
+      {expandido && (
+        <div className="border-t divide-y">
+          {aluno.envios.map(envio => (
+            <div
+              key={envio.chave}
+              className="px-4 py-2.5 pl-14 flex flex-wrap items-center gap-2 hover:bg-muted/30 cursor-pointer transition-colors"
+              onClick={() => onClickEnvio(envio.representante)}
+            >
+              <StatusBadge status={envio.representante.status} />
+              <span className="text-xs text-muted-foreground flex-1 min-w-[120px] truncate">
+                {envio.representante.template_nome ?? 'Manual'}
+                {envio.qtdParcelas > 1 && ` · ${envio.qtdParcelas} parcelas`}
+              </span>
+              <span className="text-xs text-muted-foreground font-mono shrink-0">
+                {fmtDate(envio.representante.enviado_em ?? envio.representante.created_at)}
+              </span>
+              {envio.representante.manual
+                ? <Badge variant="outline" className="text-xs shrink-0">Manual</Badge>
+                : <Badge className="bg-primary/10 text-primary border-primary/20 text-xs shrink-0">Auto</Badge>}
+              {envio.representante.respondeu_em && (
+                <span className="text-xs text-violet-600 flex items-center gap-1 shrink-0"><MessageSquare size={10}/>respondeu</span>
+              )}
+              {envio.representante.status === 'erro' && (
+                <Button
+                  size="sm" variant="outline" className="gap-1 text-xs h-6 shrink-0"
+                  disabled={enviandoIds.has(envio.representante.id)}
+                  onClick={e => { e.stopPropagation(); onReenviar(envio.representante); }}
+                >
+                  <RefreshCw size={10}/> Reenviar
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function Cobranca() {
@@ -236,8 +451,9 @@ export function Cobranca() {
   // Template modal
   const [templateModal, setTemplateModal] = useState<Partial<Template> | null>(null);
 
-  // Send manual modal
-  const [sendModal, setSendModal] = useState<FilaItem | null>(null);
+  // Send manual modal -- guarda o grupo (aluno) inteiro, não 1 parcela, pra poder
+  // recalcular a mensagem consolidada quando o operador troca o template no dropdown.
+  const [sendModal, setSendModal] = useState<AlunoGrupo | null>(null);
   const [sendMensagem, setSendMensagem] = useState('');
   const [sendTemplate, setSendTemplate] = useState('');
 
@@ -254,6 +470,12 @@ export function Cobranca() {
 
   // Search
   const [searchLog, setSearchLog] = useState('');
+  const [historicoExpandido, setHistoricoExpandido] = useState<Set<string>>(new Set());
+  const toggleHistoricoExpandido = (chave: string) => setHistoricoExpandido(prev => {
+    const next = new Set(prev);
+    if (next.has(chave)) next.delete(chave); else next.add(chave);
+    return next;
+  });
 
   // Turmas administradas
   const [turmas, setTurmas] = useState<Turma[]>([]);
@@ -421,35 +643,68 @@ export function Cobranca() {
     );
   };
 
-  // Fila "de verdade": tira quem já recebeu a mensagem da fase/janela atual (mesma regra
-  // de dedupe do backend). Sem isso, quem está numa janela de vários dias (ex: 8-15 dias
-  // após vencimento) aparecia repetido todo dia até bater o próximo dia exato configurado,
-  // dando a impressão de que a cobrança ainda funciona por dia em vez de por janela.
-  const filaElegivel = useMemo(() => {
-    return fila.filter(item => {
-      const tpl = templateParaOffset(item.dias_offset);
-      if (!tpl) return true;
-      return !envioPorFase.has(`${item.pagamento_id}:${tpl.id}`);
-    });
+  // Agrupa a fila por aluno (mesma regra do backend em proximoGrupoElegivel) -- um aluno
+  // com 2+ parcelas em aberto vira 1 card com o débito todo, em vez de N itens separados.
+  // `elegiveis` tira quem já recebeu a mensagem da fase/janela atual (mesma regra de
+  // dedupe do backend); sem isso, quem está numa janela de vários dias (ex: 8-15 dias após
+  // vencimento) aparecia repetido todo dia até bater o próximo dia exato configurado.
+  const alunoGrupos = useMemo<AlunoGrupo[]>(() => {
+    const porAluno = new Map<string, FilaItem[]>();
+    for (const item of fila) {
+      if (!porAluno.has(item.aluno_id)) porAluno.set(item.aluno_id, []);
+      porAluno.get(item.aluno_id)!.push(item);
+    }
+    const grupos: AlunoGrupo[] = [];
+    for (const [alunoId, parcelas] of porAluno) {
+      const elegiveis = parcelas.filter(item => {
+        const tpl = templateParaOffset(item.dias_offset);
+        if (!tpl) return true;
+        return !envioPorFase.has(`${item.pagamento_id}:${tpl.id}`);
+      });
+      // Severidade calculada sobre TODAS as parcelas em aberto (não só as elegíveis) --
+      // um aluno já cobrado hoje mas ainda com dívida grave não pode "sumir" da leitura
+      // de gravidade só porque não tem uma nova mensagem pendente agora.
+      const critica = [...parcelas].sort((a, b) => b.dias_offset - a.dias_offset)[0];
+      grupos.push({
+        aluno_id: alunoId,
+        aluno_nome: critica.aluno_nome,
+        telefone: critica.telefone,
+        parcelas,
+        elegiveis,
+        critica,
+        totalDevido: parcelas.reduce((s, p) => s + Number(p.valor), 0),
+        isInadimplente: parcelas.some(p => p.pagamento_status === 'atrasado'),
+      });
+    }
+    return grupos.sort((a, b) => b.critica.dias_offset - a.critica.dias_offset);
   }, [fila, templates, envioPorFase]);
+
+  // "Fila de hoje" de verdade: só quem tem pelo menos 1 parcela cuja fase ainda não foi
+  // cobrada -- mesmo conceito de antes, agora por aluno em vez de por parcela.
+  const alunoGruposElegiveis = useMemo(
+    () => alunoGrupos.filter(g => g.elegiveis.length > 0),
+    [alunoGrupos],
+  );
 
   // ── Schedule calculation ──────────────────────────────────────────────────
   const schedule = useMemo(() => {
-    if (!cobrancaCfg || filaElegivel.length === 0) return null;
+    if (!cobrancaCfg || alunoGruposElegiveis.length === 0) return null;
     const inicio = cobrancaCfg.horario_inicio_envio || cobrancaCfg.horario_envio || '09:00';
     const fim = cobrancaCfg.horario_fim_envio || '18:00';
     const totalMin = timeToMin(fim) - timeToMin(inicio);
     if (totalMin <= 0) return null;
-    const intervalMin = filaElegivel.length > 1 ? Math.floor(totalMin / (filaElegivel.length - 1)) : totalMin;
-    const slots = filaElegivel.map((_, i) => addMinutesToTime(inicio, i * intervalMin));
+    const n = alunoGruposElegiveis.length;
+    const intervalMin = n > 1 ? Math.floor(totalMin / (n - 1)) : totalMin;
+    const slots = alunoGruposElegiveis.map((_, i) => addMinutesToTime(inicio, i * intervalMin));
     return { intervalMin, inicio, fim, slots, totalMin };
-  }, [filaElegivel, cobrancaCfg]);
+  }, [alunoGruposElegiveis, cobrancaCfg]);
 
   // ── Fila breakdown ────────────────────────────────────────────────────────
   const filaStats = useMemo(() => ({
-    inadimplentes: filaElegivel.filter(f => f.pagamento_status === 'atrasado').length,
-    mesMes: filaElegivel.filter(f => f.pagamento_status === 'pendente').length,
-  }), [filaElegivel]);
+    inadimplentes: alunoGruposElegiveis.filter(g => g.isInadimplente).length,
+    mesMes: alunoGruposElegiveis.filter(g => !g.isInadimplente).length,
+    totalEmAberto: alunoGrupos.reduce((s, g) => s + g.totalDevido, 0),
+  }), [alunoGruposElegiveis, alunoGrupos]);
 
   // Parcelas já cobradas hoje -- pra marcar na tabela da fila em vez de deixar parecer
   // que ninguém foi tocado ainda
@@ -534,31 +789,58 @@ export function Cobranca() {
   };
 
   // ── Envio manual ──────────────────────────────────────────────────────────
-  const abrirSendModal = (item: FilaItem) => {
-    const tpl = templateParaOffset(item.dias_offset);
+  // Monta as variáveis da mensagem consolidada pro grupo inteiro (mesma lógica do
+  // backend em proximoGrupoElegivel): tom da parcela mais crítica entre as elegíveis
+  // (ou entre todas, se já foi tudo cobrado), qtd_parcelas/total_devido/lista_parcelas
+  // sempre refletindo TODA a dívida em aberto do aluno.
+  const varsParaGrupo = (grupo: AlunoGrupo): { critica: FilaItem; vars: Record<string, string | number | boolean | null> } => {
+    const base = grupo.elegiveis.length ? grupo.elegiveis : grupo.parcelas;
+    const critica = [...base].sort((a, b) => b.dias_offset - a.dias_offset)[0];
+    const outras = grupo.parcelas.filter(p => p.pagamento_id !== critica.pagamento_id);
+    const listaParcelas = outras
+      .map(p => `• Parcela ${p.parcela} — R$ ${fmt(p.valor)} (venc. ${new Date(p.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR')})`)
+      .join('\n');
+    const vencimento = new Date(critica.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR');
+    return {
+      critica,
+      vars: {
+        nome: critica.aluno_nome,
+        valor: fmt(critica.valor),
+        parcela: critica.parcela,
+        vencimento,
+        dias_atraso: critica.dias_offset > 0 ? critica.dias_offset : null,
+        link_pagamento: critica.link_pagamento || null,
+        qtd_parcelas: grupo.parcelas.length,
+        total_devido: fmt(grupo.totalDevido),
+        lista_parcelas: listaParcelas || null,
+        multiplas: grupo.parcelas.length > 1,
+      },
+    };
+  };
+
+  const abrirSendModal = (grupo: AlunoGrupo) => {
+    const { critica, vars } = varsParaGrupo(grupo);
+    const tpl = templateParaOffset(critica.dias_offset);
     if (tpl) {
       setSendTemplate(tpl.id);
-      const vencimento = new Date(item.data_vencimento).toLocaleDateString('pt-BR');
-      const vars: Record<string, string | number | null> = {
-        nome: item.aluno_nome,
-        valor: fmt(item.valor),
-        parcela: item.parcela,
-        vencimento,
-        dias_atraso: item.dias_offset > 0 ? item.dias_offset : null,
-        link_pagamento: item.link_pagamento || null,
-      };
       setSendMensagem(renderMensagem(tpl.mensagem, vars));
     } else {
       setSendTemplate('');
       setSendMensagem('');
     }
-    setSendModal(item);
+    setSendModal(grupo);
   };
 
   const enviarManual = async () => {
     if (!sendModal || !sendMensagem.trim()) return;
     const tpl = templates.find(t => t.id === sendTemplate);
-    setEnviandoIds(p => new Set([...p, sendModal.pagamento_id]));
+    // Cobre todas as parcelas elegíveis (ou todas, se nenhuma elegível -- reenvio manual
+    // de quem já foi cobrado) -- cada uma com o template que casa com a fase DELA, pra
+    // marcar a fase certa como enviada no índice único, independente de qual template o
+    // operador escolheu pro texto final.
+    const base = sendModal.elegiveis.length ? sendModal.elegiveis : sendModal.parcelas;
+    const cobertura = base.map(p => ({ pagamento_id: p.pagamento_id, template_id: templateParaOffset(p.dias_offset)?.id ?? null }));
+    setEnviandoIds(p => new Set([...p, ...cobertura.map(c => c.pagamento_id)]));
 
     const { data: sess } = await supabase.auth.getSession();
     const token = sess.session?.access_token;
@@ -574,11 +856,10 @@ export function Cobranca() {
         },
         body: JSON.stringify({
           aluno_id:      sendModal.aluno_id,
-          pagamento_id:  sendModal.pagamento_id,
+          cobertura,
           mensagem:      sendMensagem,
           template_nome: tpl?.nome ?? 'Manual',
           template_tipo: tpl?.tipo ?? null,
-          template_id:   tpl?.id ?? null,
           aluno_nome:    sendModal.aluno_nome,
           telefone:      sendModal.telefone,
         }),
@@ -588,9 +869,9 @@ export function Cobranca() {
     if (json.success) toast.success(`Mensagem enviada para ${sendModal.aluno_nome}!`);
     else toast.error('Erro ao enviar: ' + (json.error ?? 'desconhecido'));
 
+    setEnviandoIds(p => { const next = new Set(p); cobertura.forEach(c => next.delete(c.pagamento_id)); return next; });
     setSendModal(null);
     setSendMensagem('');
-    setEnviandoIds(p => { const next = new Set(p); next.delete(sendModal.pagamento_id); return next; });
     await loadAll();
   };
 
@@ -682,14 +963,66 @@ export function Cobranca() {
     ),
   [logs, searchLog]);
 
+  // Agrupa o histórico por aluno, colapsando linhas do mesmo grupo_envio_id (uma
+  // mensagem consolidada gera N linhas em cobranca_logs, uma por parcela coberta) numa
+  // única entrada de timeline -- senão o Histórico mostra a mesma mensagem repetida N
+  // vezes pra quem tinha várias parcelas em aberto.
+  const historicoPorAluno = useMemo<AlunoHistorico[]>(() => {
+    const porGrupo = new Map<string, CobrancaLog[]>();
+    for (const log of filteredLogs) {
+      const chave = log.grupo_envio_id ?? log.id;
+      if (!porGrupo.has(chave)) porGrupo.set(chave, []);
+      porGrupo.get(chave)!.push(log);
+    }
+    const envios: HistoricoEnvio[] = Array.from(porGrupo.entries()).map(([chave, linhas]) => ({
+      chave, linhas, representante: linhas[0], qtdParcelas: linhas.length,
+    }));
+
+    const porAluno = new Map<string, HistoricoEnvio[]>();
+    for (const envio of envios) {
+      const chaveAluno = envio.representante.aluno_id ?? envio.representante.telefone;
+      if (!porAluno.has(chaveAluno)) porAluno.set(chaveAluno, []);
+      porAluno.get(chaveAluno)!.push(envio);
+    }
+
+    const quando = (e: HistoricoEnvio) => new Date(e.representante.enviado_em ?? e.representante.created_at).getTime();
+    const resultado: AlunoHistorico[] = [];
+    for (const [, envios] of porAluno) {
+      const ordenados = [...envios].sort((a, b) => quando(b) - quando(a));
+      resultado.push({
+        aluno_id: ordenados[0].representante.aluno_id,
+        aluno_nome: ordenados[0].representante.aluno_nome,
+        telefone: ordenados[0].representante.telefone,
+        envios: ordenados,
+        ultimoEnvio: ordenados[0],
+        respondeuAlguma: envios.some(e => e.linhas.some(l => !!l.respondeu_em)),
+      });
+    }
+    return resultado.sort((a, b) => quando(b.ultimoEnvio) - quando(a.ultimoEnvio));
+  }, [filteredLogs]);
+
   // ── Stats ─────────────────────────────────────────────────────────────────
+  // Uma mensagem consolidada grava N linhas em cobranca_logs (1 por parcela coberta,
+  // compartilhando grupo_envio_id) -- conta mensagens de verdade, não linhas de log,
+  // senão "Total enviados"/"Enviados hoje" infla artificialmente pra quem tem várias
+  // parcelas em aberto.
+  const contarMensagens = (rows: CobrancaLog[]): number => {
+    const grupos = new Set<string>();
+    let avulsas = 0;
+    for (const r of rows) {
+      if (r.grupo_envio_id) grupos.add(r.grupo_envio_id);
+      else avulsas++;
+    }
+    return grupos.size + avulsas;
+  };
+
   const stats = useMemo(() => ({
-    enviados: logs.filter(l => l.status === 'enviado').length,
-    erros:    logs.filter(l => l.status === 'erro').length,
-    hoje:     logs.filter(l => l.status === 'enviado' && l.enviado_em && dataSaoPaulo(new Date(l.enviado_em)) === hojeSaoPaulo()).length,
-    filaHoje: filaElegivel.length,
-    respondidos: logs.filter(l => !!l.respondeu_em).length,
-  }), [logs, filaElegivel]);
+    enviados: contarMensagens(logs.filter(l => l.status === 'enviado')),
+    erros:    contarMensagens(logs.filter(l => l.status === 'erro')),
+    hoje:     contarMensagens(logs.filter(l => l.status === 'enviado' && l.enviado_em && dataSaoPaulo(new Date(l.enviado_em)) === hojeSaoPaulo())),
+    filaHoje: alunoGruposElegiveis.length,
+    respondidos: contarMensagens(logs.filter(l => !!l.respondeu_em)),
+  }), [logs, alunoGruposElegiveis]);
 
   if (loading) {
     return (
@@ -722,7 +1055,7 @@ export function Cobranca() {
           <Button variant="outline" size="sm" onClick={loadAll} className="gap-1.5">
             <RefreshCw size={14}/> Atualizar
           </Button>
-          {cobrancaCfg?.ativo && filaElegivel.length > 0 && (
+          {cobrancaCfg?.ativo && alunoGruposElegiveis.length > 0 && (
             <Button size="sm" onClick={() => setBulkConfirmOpen(true)} className="gap-1.5">
               <Play size={14}/> Disparar agora
             </Button>
@@ -818,9 +1151,11 @@ export function Cobranca() {
       )}
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
         {[
           { label: 'Na fila hoje', value: stats.filaHoje, icon: Calendar, color: 'text-blue-600' },
+          { label: 'Inadimplentes', value: filaStats.inadimplentes, icon: AlertTriangle, color: 'text-red-500' },
+          { label: 'Total em aberto', value: `R$ ${fmt(filaStats.totalEmAberto)}`, icon: TrendingDown, color: 'text-red-500' },
           { label: 'Enviados hoje', value: stats.hoje,    icon: CheckCircle2, color: 'text-emerald-600' },
           { label: 'Total enviados', value: stats.enviados, icon: Send, color: 'text-primary' },
           { label: 'Erros',          value: stats.erros,   icon: XCircle, color: 'text-red-500' },
@@ -841,7 +1176,7 @@ export function Cobranca() {
       {/* Tabs */}
       <Tabs value={tab} onValueChange={v => setTab(v as any)}>
         <TabsList className="w-full sm:w-auto">
-          <TabsTrigger value="fila"      className="gap-1.5 flex-1 sm:flex-none"><Calendar size={14}/> Fila ({filaElegivel.length})</TabsTrigger>
+          <TabsTrigger value="fila"      className="gap-1.5 flex-1 sm:flex-none"><Calendar size={14}/> Fila ({alunoGruposElegiveis.length})</TabsTrigger>
           <TabsTrigger value="historico" className="gap-1.5 flex-1 sm:flex-none"><History size={14}/> Histórico</TabsTrigger>
           <TabsTrigger value="templates" className="gap-1.5 flex-1 sm:flex-none"><FileText size={14}/> Templates ({templates.length})</TabsTrigger>
           <TabsTrigger value="config"    className="gap-1.5 flex-1 sm:flex-none"><Settings size={14}/> Configuração</TabsTrigger>
@@ -851,14 +1186,14 @@ export function Cobranca() {
         <TabsContent value="fila" className="mt-4 space-y-4">
 
           {/* Schedule info banner */}
-          {filaElegivel.length > 0 && schedule && (
+          {alunoGruposElegiveis.length > 0 && schedule && (
             <Card className="border-blue-200 bg-blue-50/60">
               <CardContent className="py-3 px-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-start gap-3">
                     <Info size={16} className="text-blue-600 mt-0.5 shrink-0" />
                     <div className="text-sm text-blue-800">
-                      <span className="font-semibold">{filaElegivel.length} contatos na fila</span>
+                      <span className="font-semibold">{alunoGruposElegiveis.length} contatos na fila</span>
                       {' — '}intervalo de <span className="font-semibold">{schedule.intervalMin} min</span> entre envios,
                       de <span className="font-semibold">{schedule.inicio}</span> às <span className="font-semibold">{schedule.fim}</span>
                     </div>
@@ -886,102 +1221,33 @@ export function Cobranca() {
                 <Calendar size={16}/> Fila de hoje
               </CardTitle>
               <CardDescription>
-                Apenas cobranças deste mês (pendente) e inadimplentes de meses anteriores, que ainda não
-                receberam a mensagem da janela/fase atual
+                Um card por aluno, com todo o débito em aberto — cobranças deste mês e inadimplentes de meses
+                anteriores que ainda não receberam a mensagem da janela/fase atual
               </CardDescription>
             </CardHeader>
-            <CardContent className="p-0">
-              {fila.length - filaElegivel.length > 0 && (
-                <div className="px-4 pt-3">
-                  <span className="text-xs text-muted-foreground">
-                    {fila.length - filaElegivel.length} já cobrado(s) nesta janela — aparecem de novo só na próxima janela configurada
-                  </span>
-                </div>
+            <CardContent className={alunoGruposElegiveis.length === 0 ? 'p-0' : 'space-y-3'}>
+              {alunoGrupos.length - alunoGruposElegiveis.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {alunoGrupos.length - alunoGruposElegiveis.length} aluno(s) já cobrado(s) nesta janela — aparecem de novo só na próxima janela configurada
+                </p>
               )}
-              {filaElegivel.length === 0 ? (
+              {alunoGruposElegiveis.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
                   <CheckCircle2 size={40} className="text-emerald-400"/>
                   <p className="font-medium">Nenhum envio pendente para hoje</p>
                   <p className="text-xs">A fila mostra apenas cobranças do mês atual e inadimplentes</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-muted/20">
-                        <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Aluno</th>
-                        <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Telefone</th>
-                        <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Parcela</th>
-                        <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Valor</th>
-                        <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Vencimento</th>
-                        <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Situação</th>
-                        <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Cobrado hoje</th>
-                        {schedule && <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Hora estimada</th>}
-                        <th className="px-4 py-3"/>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filaElegivel.map((item, idx) => {
-                        const atraso = item.dias_offset;
-                        const isSending = enviandoIds.has(item.pagamento_id);
-                        const isInadimplente = item.pagamento_status === 'atrasado';
-                        const jaCobrado = enviadosHojeSet.has(item.pagamento_id);
-                        return (
-                          <tr key={item.pagamento_id} className="border-b hover:bg-muted/30 transition-colors">
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-2">
-                                <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">
-                                  {item.aluno_nome[0]}
-                                </div>
-                                <span className="font-medium">{item.aluno_nome}</span>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{item.telefone}</td>
-                            <td className="px-4 py-3">
-                              <Badge variant="outline" className="text-xs">#{item.parcela}</Badge>
-                            </td>
-                            <td className="px-4 py-3 font-semibold">R$ {fmt(item.valor)}</td>
-                            <td className="px-4 py-3 text-muted-foreground">
-                              {new Date(item.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR')}
-                            </td>
-                            <td className="px-4 py-3">
-                              {isInadimplente
-                                ? <Badge className="bg-red-50 text-red-700 border border-red-200 text-xs gap-1"><AlertTriangle size={10}/>{atraso}d em atraso</Badge>
-                                : atraso < 0
-                                  ? <Badge className="bg-blue-50 text-blue-700 border border-blue-200 text-xs">{Math.abs(atraso)}d antes</Badge>
-                                  : atraso === 0
-                                    ? <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-xs">Vence hoje</Badge>
-                                    : <Badge className="bg-orange-50 text-orange-700 border border-orange-200 text-xs">{atraso}d após</Badge>
-                              }
-                            </td>
-                            <td className="px-4 py-3">
-                              {jaCobrado
-                                ? <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs gap-1"><CheckCircle2 size={10}/>Já cobrado</Badge>
-                                : <span className="text-muted-foreground text-xs">—</span>}
-                            </td>
-                            {schedule && (
-                              <td className="px-4 py-3 text-muted-foreground font-mono text-xs">
-                                {schedule.slots[idx]}
-                              </td>
-                            )}
-                            <td className="px-4 py-3">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="gap-1.5 text-xs h-7"
-                                disabled={isSending}
-                                onClick={() => abrirSendModal(item)}
-                              >
-                                {isSending ? <RefreshCw size={12} className="animate-spin"/> : <Send size={12}/>}
-                                {jaCobrado ? 'Reenviar' : 'Enviar'}
-                              </Button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                alunoGruposElegiveis.map((grupo, idx) => (
+                  <AlunoFilaCard
+                    key={grupo.aluno_id}
+                    grupo={grupo}
+                    horaEstimada={schedule?.slots[idx]}
+                    jaCobradoHoje={grupo.parcelas.some(p => enviadosHojeSet.has(p.pagamento_id))}
+                    isSending={grupo.elegiveis.some(p => enviandoIds.has(p.pagamento_id))}
+                    onEnviar={() => abrirSendModal(grupo)}
+                  />
+                ))
               )}
             </CardContent>
           </Card>
@@ -996,7 +1262,7 @@ export function Cobranca() {
                   <CardTitle className="text-base flex items-center gap-2">
                     <History size={16}/> Histórico de envios
                   </CardTitle>
-                  <CardDescription>Últimas 200 mensagens enviadas ou com erro</CardDescription>
+                  <CardDescription>Um card por aluno, agrupando envios da mesma mensagem consolidada</CardDescription>
                 </div>
                 <Input
                   placeholder="Buscar aluno, telefone..."
@@ -1006,78 +1272,24 @@ export function Cobranca() {
                 />
               </div>
             </CardHeader>
-            <CardContent className="p-0">
-              {filteredLogs.length === 0 ? (
+            <CardContent className={historicoPorAluno.length === 0 ? 'p-0' : 'space-y-2'}>
+              {historicoPorAluno.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
                   <History size={40} className="opacity-30"/>
                   <p>Nenhum envio registrado ainda</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-muted/20">
-                        <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Aluno</th>
-                        <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Template</th>
-                        <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Status</th>
-                        <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Enviado em</th>
-                        <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Tipo</th>
-                        <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wide text-muted-foreground">Resposta</th>
-                        <th className="px-4 py-3"/>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredLogs.map(log => (
-                        <tr key={log.id} className="border-b hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => setLogDetail(log)}>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-xs font-bold">
-                                {log.aluno_nome[0]}
-                              </div>
-                              <div>
-                                <p className="font-medium leading-none">{log.aluno_nome}</p>
-                                <p className="text-xs text-muted-foreground font-mono mt-0.5">{log.telefone}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-muted-foreground text-xs">{log.template_nome ?? '—'}</td>
-                          <td className="px-4 py-3"><StatusBadge status={log.status}/></td>
-                          <td className="px-4 py-3 text-muted-foreground text-xs">{fmtDate(log.enviado_em ?? log.created_at)}</td>
-                          <td className="px-4 py-3">
-                            {log.manual
-                              ? <Badge variant="outline" className="text-xs">Manual</Badge>
-                              : <Badge className="bg-primary/10 text-primary border-primary/20 text-xs">Auto</Badge>
-                            }
-                          </td>
-                          <td className="px-4 py-3">
-                            {log.respondeu_em ? (
-                              <div className="flex items-start gap-1.5 max-w-[220px]">
-                                <MessageSquare size={12} className="text-violet-600 mt-0.5 shrink-0"/>
-                                <div className="min-w-0">
-                                  <p className="text-xs text-foreground truncate" title={log.ultima_resposta ?? ''}>{log.ultima_resposta}</p>
-                                  <p className="text-[10px] text-muted-foreground">{fmtDate(log.respondeu_em)}</p>
-                                </div>
-                              </div>
-                            ) : <span className="text-muted-foreground text-xs">—</span>}
-                          </td>
-                          <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                            {log.status === 'erro' && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="gap-1 text-xs h-7"
-                                disabled={enviandoIds.has(log.id)}
-                                onClick={() => reenviarLog(log)}
-                              >
-                                <RefreshCw size={11}/> Reenviar
-                              </Button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                historicoPorAluno.map(aluno => (
+                  <AlunoHistoricoCard
+                    key={aluno.aluno_id ?? aluno.telefone}
+                    aluno={aluno}
+                    expandido={historicoExpandido.has(aluno.aluno_id ?? aluno.telefone)}
+                    onToggle={() => toggleHistoricoExpandido(aluno.aluno_id ?? aluno.telefone)}
+                    onClickEnvio={setLogDetail}
+                    onReenviar={reenviarLog}
+                    enviandoIds={enviandoIds}
+                  />
+                ))
               )}
             </CardContent>
           </Card>
@@ -1376,13 +1588,13 @@ export function Cobranca() {
                     className="gap-1.5"
                     onClick={() => setTab('fila')}
                   >
-                    <Info size={13}/> Ver fila atual ({filaElegivel.length})
+                    <Info size={13}/> Ver fila atual ({alunoGruposElegiveis.length})
                   </Button>
                   <Button
                     size="sm"
                     className="gap-1.5"
                     onClick={() => setBulkConfirmOpen(true)}
-                    disabled={filaElegivel.length === 0}
+                    disabled={alunoGruposElegiveis.length === 0}
                   >
                     <Play size={13}/> Enviar agora
                   </Button>
@@ -1471,8 +1683,8 @@ export function Cobranca() {
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div className="p-3 rounded-lg bg-blue-50 border border-blue-100 text-center">
-                <p className="text-2xl font-bold text-blue-700">{filaElegivel.length}</p>
-                <p className="text-xs text-blue-600">total na fila</p>
+                <p className="text-2xl font-bold text-blue-700">{alunoGruposElegiveis.length}</p>
+                <p className="text-xs text-blue-600">alunos na fila</p>
               </div>
               <div className="p-3 rounded-lg bg-red-50 border border-red-100 text-center">
                 <p className="text-2xl font-bold text-red-700">{filaStats.inadimplentes}</p>
@@ -1490,7 +1702,7 @@ export function Cobranca() {
                   <span>1 envio a cada <strong className="text-foreground">{schedule.intervalMin} min</strong></span>
                 </div>
                 <div className="text-xs text-muted-foreground pt-1">
-                  {filaElegivel.length > 0 && `Primeiro: ${schedule.slots[0]} • Último: ${schedule.slots[schedule.slots.length - 1]}`}
+                  {alunoGruposElegiveis.length > 0 && `Primeiro: ${schedule.slots[0]} • Último: ${schedule.slots[schedule.slots.length - 1]}`}
                 </div>
               </div>
             )}
@@ -1501,7 +1713,7 @@ export function Cobranca() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setBulkConfirmOpen(false)}>Cancelar</Button>
             <Button onClick={dispararBulk} className="gap-1.5">
-              <Play size={14}/> Disparar {filaElegivel.length} envios
+              <Play size={14}/> Disparar {alunoGruposElegiveis.length} mensagens
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1526,8 +1738,10 @@ export function Cobranca() {
                   <p className="text-xs text-muted-foreground font-mono">{sendModal.telefone}</p>
                 </div>
                 <div className="ml-auto text-right">
-                  <p className="text-xs text-muted-foreground">Parcela {sendModal.parcela}</p>
-                  <p className="font-bold text-sm">R$ {fmt(sendModal.valor)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {sendModal.parcelas.length > 1 ? `${sendModal.parcelas.length} parcelas em aberto` : `Parcela ${sendModal.parcelas[0].parcela}`}
+                  </p>
+                  <p className="font-bold text-sm">R$ {fmt(sendModal.totalDevido)}</p>
                 </div>
               </div>
 
@@ -1537,13 +1751,7 @@ export function Cobranca() {
                   setSendTemplate(tid);
                   const tpl = templates.find(t => t.id === tid);
                   if (tpl) {
-                    const venc = new Date(sendModal.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR');
-                    const vars: Record<string, string | number | null> = {
-                      nome: sendModal.aluno_nome, valor: fmt(sendModal.valor),
-                      parcela: sendModal.parcela, vencimento: venc,
-                      dias_atraso: sendModal.dias_offset > 0 ? sendModal.dias_offset : null,
-                      link_pagamento: sendModal.link_pagamento || null,
-                    };
+                    const { vars } = varsParaGrupo(sendModal);
                     setSendMensagem(renderMensagem(tpl.mensagem, vars));
                   }
                 }}>
@@ -1588,7 +1796,7 @@ export function Cobranca() {
             <Button variant="outline" onClick={() => setSendModal(null)}>Cancelar</Button>
             <Button
               onClick={enviarManual}
-              disabled={!sendMensagem.trim() || enviandoIds.has(sendModal?.pagamento_id ?? '')}
+              disabled={!sendMensagem.trim() || (sendModal ? (sendModal.elegiveis.length ? sendModal.elegiveis : sendModal.parcelas) : []).some(p => enviandoIds.has(p.pagamento_id))}
               className="gap-1.5"
             >
               <Send size={14}/> Enviar agora
@@ -1767,7 +1975,7 @@ export function Cobranca() {
 }
 
 // Utilitário de render de template (client-side, para preview)
-function renderMensagem(template: string, vars: Record<string, string | number | null>): string {
+function renderMensagem(template: string, vars: Record<string, string | number | boolean | null>): string {
   let result = template;
   result = result.replace(/\{\{#(\w+)\}\}([\s\S]*?)\{\{\/\1\}\}/g, (_, key, content) => {
     return vars[key] ? content : '';
