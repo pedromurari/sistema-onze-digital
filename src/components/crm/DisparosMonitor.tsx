@@ -1914,8 +1914,8 @@ function CampanhaCard({ campanha: c, onOpen, onPause, onResume, onDelete, onUpda
                 <Pause className="h-4 w-4" />
               </button>
             )}
-            {c.status === 'pausado' && (
-              <button onClick={onResume} title="Retomar"
+            {(c.status === 'pausado' || c.status === 'rascunho') && (
+              <button onClick={onResume} title={c.status === 'rascunho' ? 'Iniciar' : 'Retomar'}
                 className="p-1.5 rounded hover:bg-emerald-50 text-emerald-600 transition-colors">
                 <Play className="h-4 w-4" />
               </button>
@@ -2093,9 +2093,9 @@ function CampanhaDetalheView({
                 <Pause className="h-3.5 w-3.5" /> Pausar
               </Button>
             )}
-            {c.status === 'pausado' && (
+            {(c.status === 'pausado' || c.status === 'rascunho') && (
               <Button variant="outline" size="sm" onClick={onResume} className="gap-1.5 text-emerald-600 border-emerald-200 hover:bg-emerald-50">
-                <Play className="h-3.5 w-3.5" /> Retomar
+                <Play className="h-3.5 w-3.5" /> {c.status === 'rascunho' ? 'Iniciar' : 'Retomar'}
               </Button>
             )}
             <Button variant="outline" size="sm" onClick={onDelete} className="gap-1.5 text-red-500 border-red-200 hover:bg-red-50">
