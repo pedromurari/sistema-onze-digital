@@ -48,7 +48,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // ── sessionStorage cache para lista de usuários (TTL 10 min) ─────────────────
-const USERS_CACHE_KEY = 'auth_users_v1';
+const USERS_CACHE_KEY = 'auth_users_v2';
 const USERS_CACHE_TTL = 10 * 60 * 1000;
 
 function readUsersCache(): AppUser[] | null {

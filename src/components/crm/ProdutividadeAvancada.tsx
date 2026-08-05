@@ -368,7 +368,7 @@ export function ProdutividadeAvancada() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todos</SelectItem>
-                  {users.map((u) => (
+                  {users.filter(u => u.ativo).map((u) => (
                     <SelectItem key={u.id} value={u.id}>
                       {u.nome}
                     </SelectItem>
@@ -476,7 +476,7 @@ export function ProdutividadeAvancada() {
                     <SelectValue placeholder="Selecionar..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {users.map((u) => (
+                    {users.filter(u => u.ativo).map((u) => (
                       <SelectItem key={u.id} value={u.id}>
                         {u.nome}
                       </SelectItem>

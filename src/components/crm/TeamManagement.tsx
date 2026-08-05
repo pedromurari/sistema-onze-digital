@@ -82,6 +82,12 @@ export function TeamManagement() {
   const [nomenOpen, setNomenOpen]           = useState(false);
   const [nomenDraft, setNomenDraft]         = useState<Record<string, string>>({});
 
+  // Inativos ficam ocultos por padrão — exclusão real fica bloqueada quando o usuário
+  // tem histórico vinculado (leads, tarefas etc.), então "excluir" na prática é isso.
+  const [showInactive, setShowInactive] = useState(false);
+  const inactiveCount = users.filter(u => !u.ativo).length;
+  const visibleUsers = users.filter(u => showInactive || u.ativo);
+
   useEffect(() => {
     const load = async () => {
       const [{ data: l }, { data: ft }] = await Promise.all([
@@ -211,9 +217,15 @@ export function TeamManagement() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Gestão da Equipe</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{users.length} colaboradores cadastrados</p>
+          <p className="text-sm text-muted-foreground mt-0.5">{visibleUsers.length} colaboradores cadastrados</p>
         </div>
         <div className="flex items-center gap-2">
+          {inactiveCount > 0 && (
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowInactive(v => !v)}>
+              {showInactive ? <XCircle size={14}/> : <CheckCircle2 size={14}/>}
+              {showInactive ? 'Ocultar inativos' : `Mostrar inativos (${inactiveCount})`}
+            </Button>
+          )}
           <Button variant="outline" size="sm" className="gap-1.5" onClick={openNomen}>
             <Tag size={14}/> Nomenclaturas
           </Button>
@@ -389,7 +401,7 @@ export function TeamManagement() {
 
       {/* User cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {users.map(u => {
+        {visibleUsers.map(u => {
           const enabledModules = MODULE_PERMISSIONS.filter(item => u.permissions[item.key]);
           const disabledModules = MODULE_PERMISSIONS.filter(item => !u.permissions[item.key]);
           const roleLabel = getDisplayRole(u, nomenclaturas);
