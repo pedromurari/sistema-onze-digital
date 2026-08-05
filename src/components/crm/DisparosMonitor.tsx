@@ -77,6 +77,8 @@ interface DisparoLead {
   respondeu_em: string | null;
   ultima_resposta: string | null;
   ack_status: 'entregue' | 'lido' | 'falhou' | null;
+  instance_id: string | null;
+  evolution_message_id: string | null;
 }
 
 type ViewMode   = 'table' | 'kanban';
@@ -1966,7 +1968,7 @@ function CampanhaDetalheView({
   const load = useCallback(async () => {
     const { data, error } = await supabase
       .from('disparo_leads')
-      .select('id, nome, phone, status, sent_at, error_msg, temperatura, ordem, respondeu_em, ultima_resposta, ack_status')
+      .select('id, nome, phone, status, sent_at, error_msg, temperatura, ordem, respondeu_em, ultima_resposta, ack_status, instance_id, evolution_message_id')
       .eq('campanha_id', c.id)
       .order('ordem', { ascending: true, nullsFirst: false });
     if (error) { toast.error('Erro ao carregar leads'); setLoading(false); return; }
@@ -2040,6 +2042,7 @@ function CampanhaDetalheView({
     { key: 'nome', label: 'Nome' },
     { key: null, label: 'Telefone' },
     { key: 'status', label: 'Status' },
+    { key: null, label: 'Instância' },
     { key: 'sent_at', label: 'Enviado em' },
     { key: null, label: 'Erro' },
     { key: 'respondeu_em', label: 'Última resposta' },
@@ -2192,7 +2195,14 @@ function CampanhaDetalheView({
                         );
                       })()}
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{l.sent_at ? fmtDatetime(l.sent_at) : '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
+                      {l.instance_id ? (instanceNames[l.instance_id] ?? l.instance_id) : '—'}
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap"
+                      title={l.evolution_message_id ? `ID da mensagem na Evolution: ${l.evolution_message_id}` : undefined}>
+                      {l.sent_at ? fmtDatetime(l.sent_at) : '—'}
+                      {l.evolution_message_id && <CheckCircle2 className="inline h-3 w-3 ml-1 text-emerald-500" />}
+                    </td>
                     <td className="px-3 py-2.5 text-xs text-red-500 max-w-[160px] truncate" title={l.error_msg ?? undefined}>{l.error_msg ?? '—'}</td>
                     <td className="px-3 py-2.5 max-w-[240px]">
                       {l.respondeu_em ? (
