@@ -178,6 +178,37 @@ interface AlunoGrupo {
   isInadimplente: boolean;
 }
 
+// Conversa de cobrança tocada pelo agente de IA (ver cobranca-ia-responder) --
+// aciona quando um aluno já cadastrado responde a uma mensagem de cobrança.
+// Escopo raso: rapport + entender o atraso + coletar uma data estimada, nunca
+// negocia valor/desconto/cancelamento.
+interface CobrancaIaConversa {
+  id: string;
+  aluno_id: string;
+  pagamento_id: string | null;
+  aluno_nome: string;
+  telefone: string;
+  evolution_instance: string;
+  cobranca_log_id: string | null;
+  status: 'ativo' | 'dado_coletado' | 'aguardando_humano' | 'encerrado';
+  data_prometida: string | null;
+  resumo_ia: string | null;
+  motivo_handoff: string | null;
+  turnos_ia: number;
+  ultima_mensagem_em: string | null;
+  resolvido_por: string | null;
+  resolvido_em: string | null;
+  created_at: string;
+}
+
+interface CobrancaIaMensagem {
+  id: string;
+  conversa_id: string;
+  papel: 'lead' | 'agente';
+  conteudo: string;
+  created_at: string;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const TIPO_LABELS: Record<string, string> = {
@@ -427,13 +458,112 @@ function AlunoHistoricoCard({
   );
 }
 
+const STATUS_IA_LABELS: Record<CobrancaIaConversa['status'], string> = {
+  ativo: 'Conversando',
+  dado_coletado: 'Data coletada',
+  aguardando_humano: 'Aguardando humano',
+  encerrado: 'Encerrado',
+};
+
+const STATUS_IA_CLASSES: Record<CobrancaIaConversa['status'], string> = {
+  ativo: 'bg-blue-50 text-blue-700 border-blue-200',
+  dado_coletado: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  aguardando_humano: 'bg-amber-50 text-amber-700 border-amber-200',
+  encerrado: 'bg-muted text-muted-foreground border-border',
+};
+
+function StatusIaBadge({ status }: { status: CobrancaIaConversa['status'] }) {
+  return <Badge className={`text-xs border ${STATUS_IA_CLASSES[status]}`}>{STATUS_IA_LABELS[status]}</Badge>;
+}
+
+function MensagemBubble({ mensagem }: { mensagem: CobrancaIaMensagem }) {
+  const isAgente = mensagem.papel === 'agente';
+  return (
+    <div className={`flex ${isAgente ? 'justify-end' : 'justify-start'}`}>
+      <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+        isAgente ? 'bg-primary/10 text-foreground' : 'bg-muted text-foreground'
+      }`}>
+        <p className="whitespace-pre-wrap">{mensagem.conteudo}</p>
+        <p className="text-[10px] text-muted-foreground mt-1">{fmtDate(mensagem.created_at)}</p>
+      </div>
+    </div>
+  );
+}
+
+// Card por conversa na aba "Conversas IA": nome/telefone/status/data prometida
+// colapsado por padrão, expande pra ver a transcript completa (carregada sob
+// demanda, não pré-carregada com o resto da tela).
+function ConversaIaCard({
+  conversa, expandido, onToggle, mensagens, carregandoTranscript, onResolver, resolvendo,
+}: {
+  conversa: CobrancaIaConversa;
+  expandido: boolean;
+  onToggle: () => void;
+  mensagens: CobrancaIaMensagem[];
+  carregandoTranscript: boolean;
+  onResolver: () => void;
+  resolvendo: boolean;
+}) {
+  return (
+    <Card className="border overflow-hidden">
+      <button type="button" onClick={onToggle} className="w-full text-left">
+        <CardContent className="py-3 px-4 flex flex-wrap items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-bold shrink-0">
+            {conversa.aluno_nome?.[0] ?? '?'}
+          </div>
+          <div className="flex-1 min-w-[160px]">
+            <p className="font-medium text-sm truncate">{conversa.aluno_nome || 'Aluno'}</p>
+            <p className="text-xs text-muted-foreground font-mono">{conversa.telefone}</p>
+            {conversa.resumo_ia && (
+              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{conversa.resumo_ia}</p>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {conversa.data_prometida && (
+              <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs gap-1">
+                <Calendar size={10}/> Prometeu {new Date(conversa.data_prometida + 'T00:00:00').toLocaleDateString('pt-BR')}
+              </Badge>
+            )}
+            <StatusIaBadge status={conversa.status} />
+          </div>
+          <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
+            {fmtDate(conversa.ultima_mensagem_em ?? conversa.created_at)}
+          </span>
+          <span className="text-xs text-muted-foreground shrink-0">{expandido ? '▾' : '▸'}</span>
+        </CardContent>
+      </button>
+      {expandido && (
+        <div className="border-t px-4 py-3 space-y-3">
+          {carregandoTranscript ? (
+            <p className="text-xs text-muted-foreground">Carregando conversa...</p>
+          ) : mensagens.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Nenhuma mensagem registrada.</p>
+          ) : (
+            <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+              {mensagens.map(m => <MensagemBubble key={m.id} mensagem={m} />)}
+            </div>
+          )}
+          {conversa.status !== 'encerrado' && (
+            <div className="flex justify-end pt-2 border-t">
+              <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7" disabled={resolvendo} onClick={onResolver}>
+                {resolvendo ? <RefreshCw size={12} className="animate-spin"/> : <CheckCircle2 size={12}/>}
+                Marcar como resolvido
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function Cobranca() {
   const { user } = useAuth();
 
   // ── State ─────────────────────────────────────────────────────────────────
-  const [tab, setTab] = useState<'fila' | 'historico' | 'templates' | 'config'>('fila');
+  const [tab, setTab] = useState<'fila' | 'historico' | 'templates' | 'config' | 'conversas_ia'>('fila');
 
   const [cobrancaCfg, setCobrancaCfg] = useState<CobrancaConfig | null>(null);
   const [templates, setTemplates]     = useState<Template[]>([]);
@@ -483,6 +613,14 @@ export function Cobranca() {
     return next;
   });
 
+  // Conversas IA (aba "Conversas IA") -- transcript carregado sob demanda, não
+  // pré-carregado com o resto da tela.
+  const [conversasIA, setConversasIA] = useState<CobrancaIaConversa[]>([]);
+  const [conversaIaExpandida, setConversaIaExpandida] = useState<Set<string>>(new Set());
+  const [mensagensPorConversa, setMensagensPorConversa] = useState<Record<string, CobrancaIaMensagem[]>>({});
+  const [carregandoTranscriptIds, setCarregandoTranscriptIds] = useState<Set<string>>(new Set());
+  const [resolvendoConversaIds, setResolvendoConversaIds] = useState<Set<string>>(new Set());
+
   // Turmas administradas
   const [turmas, setTurmas] = useState<Turma[]>([]);
   const [turmasAtivas, setTurmasAtivas] = useState<Set<string>>(new Set());
@@ -499,19 +637,21 @@ export function Cobranca() {
   // ── Load data ─────────────────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [cfgRes, tplRes, logRes, turmasRes, turmasAtivasRes, biaRes] = await Promise.all([
+    const [cfgRes, tplRes, logRes, turmasRes, turmasAtivasRes, biaRes, conversasIaRes] = await Promise.all([
       supabase.from('cobranca_config'  as any).select('*').eq('id', 'default').single(),
       supabase.from('cobranca_templates' as any).select('*').order('ordem'),
       supabase.from('cobranca_logs' as any).select('*').order('created_at', { ascending: false }).limit(200),
       supabase.from('turmas').select('id, nome').order('nome'),
       supabase.from('cobranca_turmas_ativas' as any).select('turma_id'),
       supabase.from('equipe_11ds_agentes' as any).select('id').eq('slug', 'bia-comunicacao').maybeSingle(),
+      supabase.from('cobranca_ia_conversas' as any).select('*').order('ultima_mensagem_em', { ascending: false, nullsFirst: false }),
     ]);
 
     if (cfgRes.data) setCobrancaCfg(cfgRes.data as CobrancaConfig);
     if (tplRes.data) setTemplates(tplRes.data as Template[]);
     if (logRes.data) setLogs(logRes.data as CobrancaLog[]);
     if (turmasRes.data) setTurmas(turmasRes.data as Turma[]);
+    if (conversasIaRes.data) setConversasIA(conversasIaRes.data as unknown as CobrancaIaConversa[]);
     if (turmasAtivasRes.data) setTurmasAtivas(new Set((turmasAtivasRes.data as any[]).map(r => r.turma_id)));
 
     const biaId = (biaRes.data as any)?.id ?? null;
@@ -736,16 +876,28 @@ export function Cobranca() {
   );
 
   // ── Schedule calculation ──────────────────────────────────────────────────
+  // Antes dividia a janela (09:00-20:00) igualmente pelo tamanho da fila, o que dava a
+  // entender que tudo sairia espalhado ao longo do dia -- mas o ritmo real de quem manda
+  // (o tique automático) é o delay anti-ban configurado (delay_min_s/delay_max_s) entre
+  // cada envio, não uma divisão artificial da janela. Com uma fila grande e um delay de
+  // dezenas de minutos, isso não cabe num dia só -- o cálculo agora reflete isso (spilla
+  // pros dias seguintes, mesma janela horária), em vez de prometer um horário do mesmo dia
+  // que nunca vai bater.
   const schedule = useMemo(() => {
     if (!cobrancaCfg || alunoGruposElegiveis.length === 0) return null;
     const inicio = cobrancaCfg.horario_inicio_envio || cobrancaCfg.horario_envio || '09:00';
     const fim = cobrancaCfg.horario_fim_envio || '18:00';
     const totalMin = timeToMin(fim) - timeToMin(inicio);
     if (totalMin <= 0) return null;
-    const n = alunoGruposElegiveis.length;
-    const intervalMin = n > 1 ? Math.floor(totalMin / (n - 1)) : totalMin;
-    const slots = alunoGruposElegiveis.map((_, i) => addMinutesToTime(inicio, i * intervalMin));
-    return { intervalMin, inicio, fim, slots, totalMin };
+    const intervalMin = Math.max(1, Math.round((cobrancaCfg.delay_min_s + cobrancaCfg.delay_max_s) / 2 / 60));
+    const porDia = Math.max(1, Math.floor(totalMin / intervalMin) + 1);
+    const slots = alunoGruposElegiveis.map((_, i) => {
+      const dia = Math.floor(i / porDia);
+      const hhmm = addMinutesToTime(inicio, (i % porDia) * intervalMin);
+      return dia === 0 ? hhmm : `dia +${dia} ${hhmm}`;
+    });
+    const diasNecessarios = Math.ceil(alunoGruposElegiveis.length / porDia);
+    return { intervalMin, inicio, fim, slots, totalMin, diasNecessarios };
   }, [alunoGruposElegiveis, cobrancaCfg]);
 
   // ── Fila breakdown ────────────────────────────────────────────────────────
@@ -954,30 +1106,62 @@ export function Cobranca() {
     await loadAll();
   };
 
+  const toggleConversaIaExpandida = (conversaId: string) => {
+    const abrindo = !conversaIaExpandida.has(conversaId);
+    setConversaIaExpandida(prev => {
+      const next = new Set(prev);
+      if (next.has(conversaId)) next.delete(conversaId); else next.add(conversaId);
+      return next;
+    });
+    if (abrindo && !mensagensPorConversa[conversaId]) {
+      void loadTranscriptIa(conversaId);
+    }
+  };
+
+  const loadTranscriptIa = async (conversaId: string) => {
+    setCarregandoTranscriptIds(p => new Set([...p, conversaId]));
+    const { data, error } = await supabase
+      .from('cobranca_ia_mensagens' as any)
+      .select('*')
+      .eq('conversa_id', conversaId)
+      .order('created_at', { ascending: true });
+    if (error) toast.error('Erro ao carregar conversa: ' + error.message);
+    else setMensagensPorConversa(prev => ({ ...prev, [conversaId]: (data ?? []) as unknown as CobrancaIaMensagem[] }));
+    setCarregandoTranscriptIds(p => { const next = new Set(p); next.delete(conversaId); return next; });
+  };
+
+  const marcarConversaIaResolvida = async (conversaId: string) => {
+    setResolvendoConversaIds(p => new Set([...p, conversaId]));
+    const { error } = await supabase
+      .from('cobranca_ia_conversas' as any)
+      .update({ status: 'encerrado', resolvido_por: user?.id ?? null, resolvido_em: new Date().toISOString() })
+      .eq('id', conversaId);
+    if (error) toast.error('Erro ao resolver: ' + error.message);
+    else toast.success('Conversa marcada como resolvida!');
+    setResolvendoConversaIds(p => { const next = new Set(p); next.delete(conversaId); return next; });
+    await loadAll();
+  };
+
+  // "Disparar agora" processava a fila inteira numa invocação só, com só ~5s entre
+  // envios (a função não consegue dar sleep de minutos parada no meio de uma requisição
+  // HTTP) -- na prática mandava dezenas de mensagens em rajada de segundos, ignorando o
+  // delay anti-ban configurado (2000-2350s) e o texto do próprio modal ("janela 09:00 às
+  // 20:00"). Em vez de tentar reimplementar um sleep de minutos dentro de 1 requisição
+  // (que a plataforma mata por timeout bem antes de terminar uma fila grande), só liga a
+  // automação -- o tique automático (pg_cron, a cada minuto, já testado e no ar) drena a
+  // fila no ritmo real e seguro, um envio por vez.
   const dispararBulk = async () => {
     setBulkConfirmOpen(false);
-    const { data: sess } = await supabase.auth.getSession();
-    const token = sess.session?.access_token;
-    toast.info('Processando fila de cobrança...');
-    const res = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/enviar-cobranca`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ bulk: true }),
-      }
-    );
-    const json = await res.json();
-    if (json.enviados !== undefined) {
-      toast.success(`${json.enviados} mensagens enviadas${json.erros ? `, ${json.erros} erros` : ''}`);
-    } else {
-      toast.error(json.error ?? 'Erro ao processar fila');
-    }
+    setSaving(true);
+    const { error } = await (supabase as any)
+      .from('cobranca_config')
+      .update({ ativo: true, pausado_por_erro: false, erros_seq: 0 })
+      .eq('id', 'default');
+    setSaving(false);
+    if (error) { toast.error('Erro ao ativar: ' + error.message); return; }
+    toast.success('Automação ativada — a fila será processada aos poucos pelo tique automático, respeitando o intervalo anti-ban.');
     await loadAll();
+    await carregarStatusDisparo();
   };
 
   // ── Resumo diário ─────────────────────────────────────────────────────────
@@ -1111,9 +1295,9 @@ export function Cobranca() {
           <Button variant="outline" size="sm" onClick={loadAll} className="gap-1.5">
             <RefreshCw size={14}/> Atualizar
           </Button>
-          {cobrancaCfg?.ativo && alunoGruposElegiveis.length > 0 && (
+          {!cobrancaCfg?.ativo && alunoGruposElegiveis.length > 0 && (
             <Button size="sm" onClick={() => setBulkConfirmOpen(true)} className="gap-1.5">
-              <Play size={14}/> Disparar agora
+              <Zap size={14}/> Ativar automação
             </Button>
           )}
         </div>
@@ -1236,6 +1420,10 @@ export function Cobranca() {
           <TabsTrigger value="historico" className="gap-1.5 flex-1 sm:flex-none"><History size={14}/> Histórico</TabsTrigger>
           <TabsTrigger value="templates" className="gap-1.5 flex-1 sm:flex-none"><FileText size={14}/> Templates ({templates.length})</TabsTrigger>
           <TabsTrigger value="config"    className="gap-1.5 flex-1 sm:flex-none"><Settings size={14}/> Configuração</TabsTrigger>
+          <TabsTrigger value="conversas_ia" className="gap-1.5 flex-1 sm:flex-none">
+            <MessageSquare size={14}/> Conversas IA
+            {conversasIA.filter(c => c.status !== 'encerrado').length > 0 && ` (${conversasIA.filter(c => c.status !== 'encerrado').length})`}
+          </TabsTrigger>
         </TabsList>
 
         {/* ─── FILA ───────────────────────────────────────────────────────── */}
@@ -1252,6 +1440,7 @@ export function Cobranca() {
                       <span className="font-semibold">{alunoGruposElegiveis.length} contatos na fila</span>
                       {' — '}intervalo de <span className="font-semibold">{schedule.intervalMin} min</span> entre envios,
                       de <span className="font-semibold">{schedule.inicio}</span> às <span className="font-semibold">{schedule.fim}</span>
+                      {schedule.diasNecessarios > 1 && <> · leva <span className="font-semibold">~{schedule.diasNecessarios} dias</span> pra esvaziar a fila toda nesse ritmo</>}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 ml-7 sm:ml-0">
@@ -1602,7 +1791,7 @@ export function Cobranca() {
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    O tique automático (via cron externo) espera um intervalo aleatório entre esse mínimo e máximo antes de cada envio, e se desliga sozinho se passar do limite de erros seguidos. Delays de minutos só funcionam de verdade nesse modo — o botão "Disparar agora" processa a fila num único disparo, com um respiro curto entre cada envio (não consegue esperar minutos parado no meio da requisição).
+                    O tique automático espera um intervalo aleatório entre esse mínimo e máximo antes de cada envio, e se desliga sozinho se passar do limite de erros seguidos. O botão "Ativar automação" na Fila usa exatamente esse mesmo ritmo — ele só liga a automação, não manda nada de uma vez.
                   </p>
                 </div>
 
@@ -1646,14 +1835,16 @@ export function Cobranca() {
                   >
                     <Info size={13}/> Ver fila atual ({alunoGruposElegiveis.length})
                   </Button>
-                  <Button
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() => setBulkConfirmOpen(true)}
-                    disabled={alunoGruposElegiveis.length === 0}
-                  >
-                    <Play size={13}/> Enviar agora
-                  </Button>
+                  {!cobrancaCfg?.ativo && (
+                    <Button
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => setBulkConfirmOpen(true)}
+                      disabled={alunoGruposElegiveis.length === 0}
+                    >
+                      <Zap size={13}/> Ativar automação
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -1726,14 +1917,51 @@ export function Cobranca() {
 
           </div>
         </TabsContent>
+
+        {/* ─── CONVERSAS IA ───────────────────────────────────────────────── */}
+        <TabsContent value="conversas_ia" className="mt-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <MessageSquare size={16}/> Conversas IA
+              </CardTitle>
+              <CardDescription>
+                Quando um aluno cadastrado responde a uma cobrança, a IA assume a conversa — cria rapport,
+                entende o atraso e coleta uma data estimada de pagamento. Aqui fica a fila do que ela já
+                resolveu ou precisou encaminhar pro time.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className={conversasIA.length === 0 ? 'p-0' : 'space-y-2'}>
+              {conversasIA.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
+                  <MessageSquare size={40} className="opacity-30"/>
+                  <p>Nenhuma conversa de IA ainda</p>
+                </div>
+              ) : (
+                conversasIA.map(conversa => (
+                  <ConversaIaCard
+                    key={conversa.id}
+                    conversa={conversa}
+                    expandido={conversaIaExpandida.has(conversa.id)}
+                    onToggle={() => toggleConversaIaExpandida(conversa.id)}
+                    mensagens={mensagensPorConversa[conversa.id] ?? []}
+                    carregandoTranscript={carregandoTranscriptIds.has(conversa.id)}
+                    onResolver={() => marcarConversaIaResolvida(conversa.id)}
+                    resolvendo={resolvendoConversaIds.has(conversa.id)}
+                  />
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
-      {/* ─── Modal: Confirmar disparo em lote ────────────────────────────── */}
+      {/* ─── Modal: Confirmar ativação da automação ────────────────────────── */}
       <Dialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Play size={16}/> Confirmar disparo em lote
+              <Zap size={16}/> Ativar automação de cobrança
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -1755,21 +1983,26 @@ export function Cobranca() {
                 </div>
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Info size={13}/>
-                  <span>1 envio a cada <strong className="text-foreground">{schedule.intervalMin} min</strong></span>
+                  <span>1 envio a cada <strong className="text-foreground">{schedule.intervalMin} min</strong> (anti-ban)</span>
                 </div>
-                <div className="text-xs text-muted-foreground pt-1">
-                  {alunoGruposElegiveis.length > 0 && `Primeiro: ${schedule.slots[0]} • Último: ${schedule.slots[schedule.slots.length - 1]}`}
-                </div>
+                {schedule.diasNecessarios > 1 && (
+                  <div className="flex items-center gap-2 text-amber-700">
+                    <AlertTriangle size={13}/>
+                    <span>Nesse ritmo, leva <strong>~{schedule.diasNecessarios} dias</strong> pra esvaziar a fila toda</span>
+                  </div>
+                )}
               </div>
             )}
             <p className="text-sm text-muted-foreground">
-              Os envios serão realizados sequencialmente. Apenas cobranças do mês atual e inadimplentes de meses anteriores serão incluídos.
+              Isto <strong>não manda tudo agora</strong> — só liga a automação. Um envio por vez sai sozinho a cada
+              tique do cron (a cada minuto, respeitando o delay acima), não uma rajada. Você pode desligar a qualquer
+              momento no toggle "Automação ativa" em Configuração.
             </p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setBulkConfirmOpen(false)}>Cancelar</Button>
-            <Button onClick={dispararBulk} className="gap-1.5">
-              <Play size={14}/> Disparar {alunoGruposElegiveis.length} mensagens
+            <Button onClick={dispararBulk} className="gap-1.5" disabled={saving}>
+              {saving ? <RefreshCw size={14} className="animate-spin"/> : <Zap size={14}/>} Ativar automação
             </Button>
           </DialogFooter>
         </DialogContent>
