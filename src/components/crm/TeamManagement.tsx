@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { Plus, Edit, Trash2, UserCheck, UserX, Loader2, Tag, CheckCircle2, XCircle } from 'lucide-react';
+import { loadNomenclaturas as loadNomenclaturasShared, saveNomenclaturas as saveNomenclaturasShared, getRoleLabel as getRoleLabelShared, getDisplayRole } from '@/lib/role-labels';
 
 const COLORS = [
   '#A93356', '#D65876', '#4A90E2', '#28A745', '#F4A460',
@@ -49,26 +50,13 @@ const MODULE_PERMISSIONS: Array<{ key: keyof AccessPermissions; label: string; e
   { key: 'canViewSettings',    label: 'Configurações',  emoji: '⚙️' },
 ];
 
-// ─── Custom nomenclature (localStorage) ──────────────────────────────────────
+// ─── Custom nomenclature (localStorage, fallback padrão por tipo) ───────────
+// Nomenclaturas por tipo ficam em localStorage/role-labels.ts; o cargo individual
+// (por pessoa) é persistido no banco (profiles.cargo) e tem prioridade — ver getDisplayRole.
 
-const NOMEN_KEY = 'colab_nomenclaturas';
-
-function loadNomenclaturas(): Record<string, string> {
-  try { return JSON.parse(localStorage.getItem(NOMEN_KEY) ?? '{}'); }
-  catch { return {}; }
-}
-
-function saveNomenclaturas(n: Record<string, string>) {
-  localStorage.setItem(NOMEN_KEY, JSON.stringify(n));
-}
-
-function getRoleLabel(tipo: string, nomen: Record<string, string>): string {
-  if (nomen[tipo]) return nomen[tipo];
-  if (tipo === 'admin') return 'Administrador';
-  if (tipo === 'professora') return 'Professora';
-  if (tipo === 'parceiro') return 'Parceiro(a)';
-  return 'Vendedor';
-}
+const loadNomenclaturas = loadNomenclaturasShared;
+const saveNomenclaturas = saveNomenclaturasShared;
+const getRoleLabel = getRoleLabelShared;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -86,7 +74,7 @@ export function TeamManagement() {
   const [availableFinanceiroTurmas, setAvailableFinanceiroTurmas] = useState<TurmaOption[]>([]);
   const [permissions, setPermissions] = useState<AccessPermissions>(getDefaultPermissions('vendedor'));
   const [formData, setFormData]   = useState({
-    nome: '', email: '', senha: '', tipo: 'vendedor' as UserRole, cor: COLORS[0],
+    nome: '', email: '', senha: '', tipo: 'vendedor' as UserRole, cor: COLORS[0], cargo: '',
   });
 
   // Nomenclature editor
@@ -108,14 +96,14 @@ export function TeamManagement() {
 
   const resetForm = () => {
     const nextRole: UserRole = 'vendedor';
-    setFormData({ nome: '', email: '', senha: '', tipo: nextRole, cor: COLORS[Math.floor(Math.random() * COLORS.length)] });
+    setFormData({ nome: '', email: '', senha: '', tipo: nextRole, cor: COLORS[Math.floor(Math.random() * COLORS.length)], cargo: '' });
     setPermissions(getDefaultPermissions(nextRole));
     setEditingUser(null);
   };
 
   const openEdit = (userToEdit: AppUser) => {
     setEditingUser(userToEdit);
-    setFormData({ nome: userToEdit.nome, email: userToEdit.email, senha: '', tipo: userToEdit.tipo, cor: userToEdit.cor });
+    setFormData({ nome: userToEdit.nome, email: userToEdit.email, senha: '', tipo: userToEdit.tipo, cor: userToEdit.cor, cargo: userToEdit.cargo ?? '' });
     setPermissions({ ...userToEdit.permissions });
     setIsOpen(true);
   };
@@ -150,7 +138,7 @@ export function TeamManagement() {
     }
 
     if (editingUser) {
-      const result = await updateUser(editingUser.id, { nome: formData.nome, tipo: formData.tipo, cor: formData.cor });
+      const result = await updateUser(editingUser.id, { nome: formData.nome, tipo: formData.tipo, cor: formData.cor, cargo: formData.cargo.trim() || null });
       if (!result.success) { toast.error(result.error || 'Erro ao atualizar usuário.'); setLoading(false); return; }
       const permResult = await updateUserPermissions(editingUser.id, permissions);
       if (!permResult.success) { toast.error(permResult.error || 'Erro ao atualizar permissões.'); setLoading(false); return; }
@@ -175,6 +163,10 @@ export function TeamManagement() {
       toast.warning('Usuário criado, mas houve erro ao salvar permissões. Revise manualmente.');
       setLoading(false);
       return;
+    }
+    if (formData.cargo.trim()) {
+      const cargoResult = await updateUser(result.user.id, { cargo: formData.cargo.trim() });
+      if (!cargoResult.success) toast.warning('Usuário criado, mas houve erro ao salvar o cargo. Revise manualmente.');
     }
     toast.success(`Usuário criado! Email: ${result.user.email} | Senha: ${formData.senha}`);
     setIsOpen(false);
@@ -264,6 +256,18 @@ export function TeamManagement() {
                           <SelectItem value="parceiro">Parceiro(a)</SelectItem>
                         </SelectContent>
                       </Select>
+                      <p className="text-xs text-muted-foreground">Define o conjunto de permissões padrão e o comportamento de login (ex: Parceiro cai direto no Portal da Parceira).</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="cargo">Cargo / título exibido</Label>
+                      <Input
+                        id="cargo"
+                        value={formData.cargo}
+                        onChange={e => setFormData({ ...formData, cargo: e.target.value })}
+                        placeholder={`Ex: Diretor IDM, Investidora... (padrão: ${getRoleLabel(formData.tipo, nomenclaturas)})`}
+                        disabled={loading}
+                      />
+                      <p className="text-xs text-muted-foreground">Título mostrado para essa pessoa em toda a plataforma. Deixe vazio para usar o padrão do tipo de acesso.</p>
                     </div>
                     <div className="space-y-2">
                       <Label>Cor de identificação</Label>
@@ -388,7 +392,7 @@ export function TeamManagement() {
         {users.map(u => {
           const enabledModules = MODULE_PERMISSIONS.filter(item => u.permissions[item.key]);
           const disabledModules = MODULE_PERMISSIONS.filter(item => !u.permissions[item.key]);
-          const roleLabel = u.tipo === 'admin' ? 'Administrador' : getRoleLabel(u.tipo, nomenclaturas);
+          const roleLabel = getDisplayRole(u, nomenclaturas);
 
           return (
             <Card key={u.id} className={`p-4 bg-card border-border flex flex-col gap-4 ${!u.ativo ? 'opacity-60' : ''}`}>

@@ -11,6 +11,7 @@ export interface Profile {
   email: string;
   cor: string;
   avatar?: string;
+  cargo?: string | null;
   ativo: boolean;
   created_at: string;
   updated_at: string;
@@ -23,6 +24,7 @@ export interface AppUser {
   tipo: UserRole;
   cor: string;
   avatar?: string;
+  cargo?: string | null;
   ativo: boolean;
   criadoEm: string;
   permissions: AccessPermissions;
@@ -35,7 +37,7 @@ interface AuthContextType {
   login: (email: string, senha: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   addUser: (userData: { nome: string; email: string; senha: string; tipo: UserRole; cor: string }) => Promise<{ success: boolean; error?: string; user?: AppUser }>;
-  updateUser: (id: string, data: Partial<{ nome: string; cor: string; ativo: boolean; tipo: UserRole }>) => Promise<{ success: boolean; error?: string }>;
+  updateUser: (id: string, data: Partial<{ nome: string; cor: string; ativo: boolean; tipo: UserRole; cargo: string | null }>) => Promise<{ success: boolean; error?: string }>;
   updateUserPermissions: (id: string, permissions: AccessPermissions) => Promise<{ success: boolean; error?: string }>;
   deleteUser: (id: string) => Promise<{ success: boolean; error?: string }>;
   getActiveVendedores: () => AppUser[];
@@ -99,6 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         tipo:        (roleData?.role as UserRole) || 'vendedor',
         cor:         profile.cor,
         avatar:      profile.avatar ?? undefined,
+        cargo:       profile.cargo ?? null,
         ativo:       profile.ativo,
         criadoEm:    profile.created_at,
         permissions: normalizePermissionsRow(permissionsRow, roleData?.role),
@@ -140,6 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           tipo:        (userRole?.role as UserRole) || 'vendedor',
           cor:         profile.cor,
           avatar:      profile.avatar ?? undefined,
+          cargo:       profile.cargo ?? null,
           ativo:       profile.ativo,
           criadoEm:    profile.created_at,
           permissions: normalizePermissionsRow(permRow, userRole?.role),
@@ -277,12 +281,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const updateUser = async (id: string, data: Partial<{ nome: string; cor: string; ativo: boolean; tipo: UserRole }>): Promise<{ success: boolean; error?: string }> => {
+  const updateUser = async (id: string, data: Partial<{ nome: string; cor: string; ativo: boolean; tipo: UserRole; cargo: string | null }>): Promise<{ success: boolean; error?: string }> => {
     try {
-      const profileUpdates: Partial<{ nome: string; cor: string; ativo: boolean }> = {};
+      const profileUpdates: Partial<{ nome: string; cor: string; ativo: boolean; cargo: string | null }> = {};
       if (data.nome  !== undefined) profileUpdates.nome  = data.nome;
       if (data.cor   !== undefined) profileUpdates.cor   = data.cor;
       if (data.ativo !== undefined) profileUpdates.ativo = data.ativo;
+      if (data.cargo !== undefined) profileUpdates.cargo = data.cargo;
 
       if (Object.keys(profileUpdates).length > 0) {
         const { error: profileError } = await supabase.from('profiles').update(profileUpdates).eq('id', id);

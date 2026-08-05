@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { getDisplayRole } from '@/lib/role-labels';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -712,7 +713,7 @@ export function Dashboard() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold truncate">{u.nome}</p>
-                      <p className="text-xs text-muted-foreground capitalize">{u.tipo}</p>
+                      <p className="text-xs text-muted-foreground">{getDisplayRole(u)}</p>
                     </div>
                     <div className="flex items-center gap-3 text-right shrink-0">
                       <div><p className="text-sm font-bold text-amber-600">{stats.tarefasPendentes}</p><p className="text-xs text-muted-foreground">A fazer</p></div>

@@ -5317,6 +5317,7 @@ export type Database = {
         Row: {
           ativo: boolean
           avatar: string | null
+          cargo: string | null
           cor: string
           created_at: string
           email: string
@@ -5328,6 +5329,7 @@ export type Database = {
         Insert: {
           ativo?: boolean
           avatar?: string | null
+          cargo?: string | null
           cor?: string
           created_at?: string
           email: string
@@ -5339,6 +5341,7 @@ export type Database = {
         Update: {
           ativo?: boolean
           avatar?: string | null
+          cargo?: string | null
           cor?: string
           created_at?: string
           email?: string
