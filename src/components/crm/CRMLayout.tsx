@@ -239,6 +239,13 @@ export function CRMLayout() {
             onNavigateToAluno={(alunoId) => setCurrentView(`financeiro_aluno_${alunoId}` as View)}
           />
         : <RestrictedView />;
+      case 'chat_conversas':  return permissions.canViewCobranca || isAdmin
+        ? <DisparosMonitor
+            initialMainTab="chat"
+            onCreateFunnel={() => setCurrentView('funil_lancamento')}
+            onNavigateToAluno={(alunoId) => setCurrentView(`financeiro_aluno_${alunoId}` as View)}
+          />
+        : <RestrictedView />;
       case 'aquecimento_chips': return isAdmin ? <AquecimentoChips /> : <RestrictedView />;
       case 'team': return user?.tipo === 'admin' || permissions.canViewTeam ? <TeamManagement /> : <RestrictedView />;
       case 'settings': return permissions.canViewSettings || isAdmin ? <Settings /> : <RestrictedView />;

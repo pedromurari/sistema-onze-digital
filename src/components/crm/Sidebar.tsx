@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Kanban, Settings, UserCog,
   Rocket, BarChart3, ChevronDown,
   ChevronLeft, ChevronRight, Plus, Brain, Scale, Menu,
-  GripVertical, Pencil, Check, MessageSquare, TrendingUp, GitBranch, CalendarDays, ShoppingBag, Radio, Image, Handshake, Bot, Video, Flame,
+  GripVertical, Pencil, Check, MessageSquare, MessageCircle, TrendingUp, GitBranch, CalendarDays, ShoppingBag, Radio, Image, Handshake, Bot, Video, Flame,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -52,6 +52,7 @@ const BASE_MENU: MenuItem[] = [
   // Funil & Automação
   { key: 'funil_lancamento',          label: 'Funil de Lançamento',  icon: GitBranch },
   { key: 'disparos_monitor',          label: 'Central de Disparos',  icon: Radio },
+  { key: 'chat_conversas',            label: 'Chat',                 icon: MessageCircle },
   { key: 'aquecimento_chips',         label: 'Aquecimento de Chips', icon: Flame,       adminOnly: true },
   // Financeiro
   { key: 'financeiro',                label: 'Financeiro',           icon: BarChart3 },

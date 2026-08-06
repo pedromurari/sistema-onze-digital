@@ -245,11 +245,12 @@ function nextCommercialSlot(safeStart: number, safeEnd: number): Date {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
-export function DisparosMonitor({ onCreateFunnel, onNavigateToAluno }: {
+export function DisparosMonitor({ onCreateFunnel, onNavigateToAluno, initialMainTab }: {
   onCreateFunnel: () => void;
   onNavigateToAluno?: (alunoId: string) => void;
+  initialMainTab?: MainTab;
 }) {
-  const [mainTab, setMainTab] = useState<MainTab>('campanhas');
+  const [mainTab, setMainTab] = useState<MainTab>(initialMainTab ?? 'campanhas');
 
   return (
     <div className="h-full flex flex-col bg-gray-50/40">
