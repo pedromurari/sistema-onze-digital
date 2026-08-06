@@ -57,6 +57,128 @@ async function registrarOptOut(supabase: any, telefone: string, mensagem: string
   else console.log(`opt-out registrado para telefone=${telefone}`);
 }
 
+function applyVars(text: string, vars: Record<string, string>): string {
+  return text.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`);
+}
+
+type EvoInstance = { id: string; api_url: string; api_key: string; instance_name: string };
+
+async function isInstanceConnected(inst: EvoInstance): Promise<boolean> {
+  const rawBase = inst.api_url.replace(/\/$/, '');
+  const base = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
+  try {
+    const res = await fetch(`${base}/instance/connectionState/${encodeURIComponent(inst.instance_name)}`, {
+      headers: { apikey: inst.api_key },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return false;
+    const data = await res.json() as { instance?: { state?: string } };
+    return data.instance?.state === 'open';
+  } catch {
+    return false;
+  }
+}
+
+// ── Follow-up "respondeu ao áudio" (Semana do Despertar) ────────────────────
+// Boas-vindas dos funis "Semana do Despertar" (tudo que não é NPA, ver
+// tipoFunilBV no front) manda um ÁUDIO de boas-vindas. Quando o lead responde
+// pela primeira vez, dispara pro mesmo número o texto já cadastrado em
+// boas_vindas_config.wpp_mensagem (hoje só usado no e-mail pra esse tipo de
+// funil -- nunca ia pro WhatsApp porque o endpoint de áudio não aceita texto
+// junto) com o link do grupo + das 3 aulas, puxados de funnel_configs.
+// A instância "ig" nunca pode disparar esse follow-up.
+const INSTANCIA_PROIBIDA_FOLLOWUP = 'ig';
+
+async function dispararFollowUpAudio(
+  supabase: ReturnType<typeof createClient>,
+  log: { funnel_name: string; whatsapp: string | null; nome: string | null; email: string | null },
+  phoneFallback: string,
+): Promise<void> {
+  try {
+    const { data: cfg } = await supabase
+      .from('boas_vindas_config')
+      .select('ativo, wpp_ativo, wpp_message_type, wpp_mensagem, wpp_instance_name')
+      .eq('funnel_name', log.funnel_name)
+      .maybeSingle();
+
+    if (!cfg?.ativo || !cfg.wpp_ativo || cfg.wpp_message_type !== 'audio' || !cfg.wpp_mensagem) return;
+
+    const { data: funnelCfg } = await supabase
+      .from('funnel_configs')
+      .select('grupo_1_id, grupo_2_id, variaveis')
+      .eq('funnel_name', log.funnel_name)
+      .maybeSingle();
+
+    const vars: Record<string, string> = {
+      nome: log.nome ?? '',
+      turma: log.funnel_name,
+      whatsapp: log.whatsapp ?? phoneFallback,
+      email: log.email ?? '',
+      grupo_1: funnelCfg?.grupo_1_id ?? '',
+      grupo_2: funnelCfg?.grupo_2_id ?? '',
+      ...(funnelCfg?.variaveis as Record<string, string> | undefined ?? {}),
+    };
+    const mensagem = applyVars(cfg.wpp_mensagem, vars);
+
+    const { data: evoRows } = await supabase
+      .from('evolution_config')
+      .select('id, api_url, api_key, instance_name')
+      .eq('ativo', true)
+      .order('prioridade', { ascending: true });
+
+    const semIg = ((evoRows ?? []) as EvoInstance[])
+      .filter(r => r.instance_name.toLowerCase() !== INSTANCIA_PROIBIDA_FOLLOWUP);
+    if (!semIg.length) {
+      console.error(`follow-up audio: nenhuma instância disponível (fora "${INSTANCIA_PROIBIDA_FOLLOWUP}") funil=${log.funnel_name}`);
+      return;
+    }
+
+    let candidatas = semIg;
+    if (cfg.wpp_instance_name && cfg.wpp_instance_name.toLowerCase() !== INSTANCIA_PROIBIDA_FOLLOWUP) {
+      const scoped = semIg.filter(r => r.instance_name === cfg.wpp_instance_name);
+      if (scoped.length) candidatas = scoped;
+    } else {
+      const { data: taskCfg } = await supabase
+        .from('evolution_task_config')
+        .select('instance_ids')
+        .eq('task', 'boas_vindas')
+        .maybeSingle();
+      if (taskCfg?.instance_ids?.length) {
+        const byId = new Map(semIg.map(i => [i.id, i]));
+        const scoped = (taskCfg.instance_ids as string[]).map(id => byId.get(id)).filter(Boolean) as EvoInstance[];
+        if (scoped.length) candidatas = scoped;
+      }
+    }
+
+    const conectadas = await Promise.all(candidatas.map(isInstanceConnected));
+    const ativas = candidatas.filter((_, i) => conectadas[i]);
+    if (!ativas.length) {
+      console.error(`follow-up audio: nenhuma instância conectada funil=${log.funnel_name}`);
+      return;
+    }
+
+    const number = (log.whatsapp ?? phoneFallback).replace(/\D/g, '');
+    for (const inst of ativas) {
+      const rawBase = inst.api_url.replace(/\/$/, '');
+      const base = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
+      try {
+        const res = await fetch(`${base}/message/sendText/${encodeURIComponent(inst.instance_name)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: inst.api_key },
+          body: JSON.stringify({ number, text: mensagem, delay: 1200 }),
+        });
+        if (!res.ok) throw new Error(`Evolution ${res.status}: ${(await res.text()).slice(0, 200)}`);
+        console.log(`follow-up audio enviado funil=${log.funnel_name} instance=${inst.instance_name}`);
+        return;
+      } catch (e) {
+        console.error(`follow-up audio falhou instance=${inst.instance_name}:`, (e as Error).message);
+      }
+    }
+  } catch (e: unknown) {
+    console.error('dispararFollowUpAudio fatal:', (e as Error).message);
+  }
+}
+
 function extractText(message: Record<string, unknown>): { text: string; tipo: string } {
   if (message.conversation)
     return { text: String(message.conversation), tipo: 'text' };
@@ -73,6 +195,61 @@ function extractText(message: Record<string, unknown>): { text: string; tipo: st
   if (message.stickerMessage)
     return { text: '[sticker]', tipo: 'sticker' };
   return { text: '[mensagem]', tipo: 'unknown' };
+}
+
+// ── IA de cobrança: aciona cobranca-ia-responder quando um aluno responde ───
+// Bloco isolado, sem relação com o follow-up de áudio acima. Dispara o agente
+// de IA (supabase/functions/cobranca-ia-responder) só quando o telefone bateu
+// com uma linha de cobranca_logs que tem aluno_id preenchido -- esse é o
+// único proxy hoje pra "aluno de verdade no sistema" (as outras 3 tabelas de
+// lead casadas acima não são aluno-específicas). Nunca é chamado pra grupo
+// (já descartado no topo do handler) nem pra mensagens não-texto.
+type CobrancaLogComAluno = {
+  id: string; telefone: string; aluno_id: string | null; aluno_nome: string | null;
+  pagamento_id: string | null; created_at: string;
+};
+
+async function tentarAcionarIaCobranca(
+  supabase: ReturnType<typeof createClient>,
+  cobrancaLogs: CobrancaLogComAluno[],
+  phone: string,
+  mensagem: string,
+  instance: string,
+): Promise<void> {
+  try {
+    const comAluno = cobrancaLogs.filter(l => l.aluno_id);
+    if (!comAluno.length) return;
+
+    // Se o telefone bateu com mais de um log, usa o mais recente.
+    const escolhido = comAluno.sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
+
+    const { data: optOut } = await supabase
+      .from('whatsapp_opt_out')
+      .select('telefone')
+      .eq('telefone', phone)
+      .maybeSingle();
+    if (optOut) return;
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+    const res = await fetch(`${supabaseUrl}/functions/v1/cobranca-ia-responder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey },
+      body: JSON.stringify({
+        aluno_id: escolhido.aluno_id,
+        telefone: phone,
+        mensagem,
+        evolution_instance: instance,
+        cobranca_log_id: escolhido.id,
+      }),
+    });
+    if (!res.ok) {
+      console.error(`cobranca-ia-responder respondeu ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    }
+  } catch (e: unknown) {
+    console.error('tentarAcionarIaCobranca: falha ao acionar cobranca-ia-responder:', (e as Error).message);
+  }
 }
 
 serve(async (req) => {
@@ -223,7 +400,7 @@ serve(async (req) => {
     // resposta na tela de Boas-vindas, independente do funil de origem.
     const { data: bvLogs } = await supabase
       .from('boas_vindas_logs')
-      .select('id, whatsapp')
+      .select('id, whatsapp, nome, email, funnel_name, respondeu_em, wpp_status')
       .filter('whatsapp', 'ilike', `%${s8}`);
 
     if (bvLogs?.length) {
@@ -233,6 +410,17 @@ serve(async (req) => {
         .update({ respondeu_em: now, ultima_resposta: mensagem.slice(0, 500) })
         .in('id', ids);
       console.log(`resposta gravada em ${ids.length} boas_vindas_logs para phone suffix=${s8}`);
+
+      // Primeira resposta a um boas-vindas de áudio da Semana do Despertar
+      // (funil não-NPA) -- dispara o follow-up com link do grupo + 3 aulas.
+      const primeirasRespostasAudio = (bvLogs as {
+        id: string; whatsapp: string | null; nome: string | null; email: string | null;
+        funnel_name: string; respondeu_em: string | null; wpp_status: string;
+      }[]).filter(l => !l.respondeu_em && l.wpp_status === 'sent' && !/^NPA\b/i.test(l.funnel_name));
+
+      for (const log of primeirasRespostasAudio) {
+        await dispararFollowUpAudio(supabase, log, phone);
+      }
     }
 
     // Mesma lógica pros logs de cobrança -- alimenta a coluna de resposta na tela de
@@ -240,7 +428,7 @@ serve(async (req) => {
     // precisar abrir o WhatsApp real pra cada aluno.
     const { data: cobrancaLogs } = await supabase
       .from('cobranca_logs')
-      .select('id, telefone')
+      .select('id, telefone, aluno_id, aluno_nome, pagamento_id, created_at')
       .filter('telefone', 'ilike', `%${s8}`);
 
     if (cobrancaLogs?.length) {
@@ -252,10 +440,36 @@ serve(async (req) => {
       console.log(`resposta gravada em ${ids.length} cobranca_logs para phone suffix=${s8}`);
     }
 
+    // ── IA de cobrança: aluno respondeu a uma mensagem de cobrança ──────────
+    // Bloco isolado -- não interage com o follow-up de áudio acima nem com o
+    // resto do matching por sufixo de telefone. Só aciona pra quem já é aluno
+    // cadastrado (aluno_id não-nulo em cobranca_logs, preenchido só quando a
+    // mensagem original foi mandada via get_alunos_para_cobranca) -- nunca
+    // pra contato desconhecido nem pra grupo (grupo já foi descartado acima).
+    if (mensagemTipo === 'text' && cobrancaLogs?.length) {
+      await tentarAcionarIaCobranca(supabase, cobrancaLogs as CobrancaLogComAluno[], phone, mensagem, instance);
+    }
+
     if (!saved.length && !disparoLeads?.length && !bvLogs?.length && !cobrancaLogs?.length) {
       console.log(`phone suffix ${s8} not found in lancamento_leads, disparo_leads, boas_vindas_logs nem cobranca_logs — ignoring`);
       return ok({ ok: true, skipped: true, reason: 'phone not found' });
     }
+
+    // Avisa os admins de qualquer resposta identificada (aluno de cobrança, lead de
+    // funil ou boas-vindas) -- 1 notificação por mensagem recebida, não 1 por tabela
+    // atualizada. Prioriza o nome de quem já é aluno cadastrado (cobrança), depois lead
+    // de lançamento, depois boas-vindas; cai pro telefone se nada tiver nome.
+    const nomeIdentificado =
+      (cobrancaLogs as { aluno_nome?: string }[] | null)?.[0]?.aluno_nome
+      ?? (leads ?? []).find(l => saved.includes(l.id))?.nome
+      ?? (bvLogs as { nome?: string | null }[] | null)?.[0]?.nome
+      ?? phone;
+    await supabase.rpc('notificar_admins', {
+      p_tipo: 'lead_respondeu',
+      p_titulo: `${nomeIdentificado} respondeu no WhatsApp`,
+      p_descricao: mensagem.slice(0, 200),
+      p_link: cobrancaLogs?.length ? '/cobranca' : null,
+    });
 
     return ok({
       ok: true,

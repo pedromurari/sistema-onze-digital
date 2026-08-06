@@ -141,14 +141,23 @@ export function Pipeline({ onEditLead }: PipelineProps) {
     if (!handoffModal) return;
     try {
       await supabase.from('leads').update({ status: handoffModal.targetStage }).eq('id', handoffModal.lead.id);
-      // Create notification for Rodrygo (find user named Rodrygo)
+      // Notifica o Rodrygo de verdade (antes gravava o user_id de quem estava logado --
+      // ou seja, quem fazia o handoff notificava a si mesmo, nunca o Rodrygo).
       if (user) {
-        await supabase.from('notifications').insert({
-          user_id: user.id, // Ideally this would be Rodrygo's user_id
-          tipo: 'handoff_rodrygo',
-          titulo: `Handoff: ${handoffModal.lead.nome}`,
-          descricao: handoffObs || `Lead transferido por ${user.nome}`,
-        } as any);
+        const { data: rodrygo } = await supabase
+          .from('profiles')
+          .select('id')
+          .ilike('nome', '%rodrygo%')
+          .limit(1)
+          .maybeSingle();
+        if (rodrygo) {
+          await supabase.rpc('notificar' as any, {
+            p_user_id: rodrygo.id,
+            p_tipo: 'handoff_rodrygo',
+            p_titulo: `Handoff: ${handoffModal.lead.nome}`,
+            p_descricao: handoffObs || `Lead transferido por ${user.nome}`,
+          });
+        }
       }
       fetchLeads();
       toast({ title: 'Handoff confirmado', description: `${handoffModal.lead.nome} foi transferido para Rodrygo.` });

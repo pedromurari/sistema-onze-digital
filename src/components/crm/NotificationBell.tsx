@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Bell } from 'lucide-react';
+import { Bell, BellRing, BellOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -12,10 +12,22 @@ import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import type { Notification } from '@/types/crm';
 
+// applicationServerKey do pushManager.subscribe() precisa de um
+// Uint8Array/BufferSource, não da string base64url que a VAPID pública é.
+function urlBase64ToUint8Array(base64url: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64url.length % 4)) % 4);
+  const base64 = (base64url + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+type PushStatus = 'unsupported' | 'denied' | 'inactive' | 'active' | 'loading';
+
 export function NotificationBell() {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [open, setOpen] = useState(false);
+  const [pushStatus, setPushStatus] = useState<PushStatus>('loading');
 
   useEffect(() => {
     if (!user) return;
@@ -42,6 +54,66 @@ export function NotificationBell() {
     return () => { supabase.removeChannel(channel); };
   }, [user]);
 
+  // Reflete o estado real do navegador (não um estado nosso) -- permissão pode ter sido
+  // concedida numa sessão anterior (já existe inscrição) ou negada/revogada fora do app.
+  const refreshPushStatus = useCallback(async () => {
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setPushStatus('unsupported');
+      return;
+    }
+    if (Notification.permission === 'denied') {
+      setPushStatus('denied');
+      return;
+    }
+    try {
+      const reg = await navigator.serviceWorker.getRegistration('/sw.js');
+      const sub = await reg?.pushManager.getSubscription();
+      setPushStatus(sub ? 'active' : 'inactive');
+    } catch {
+      setPushStatus('inactive');
+    }
+  }, []);
+
+  useEffect(() => { refreshPushStatus(); }, [refreshPushStatus]);
+
+  const ativarPush = async () => {
+    if (!user) return;
+    setPushStatus('loading');
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        setPushStatus(permission === 'denied' ? 'denied' : 'inactive');
+        return;
+      }
+      const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
+      if (!vapidKey) throw new Error('VITE_VAPID_PUBLIC_KEY não configurada');
+
+      const reg = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidKey),
+        });
+      }
+
+      const json = sub.toJSON();
+      await supabase.from('push_subscriptions' as any).upsert({
+        user_id: user.id,
+        endpoint: json.endpoint,
+        p256dh: json.keys?.p256dh,
+        auth: json.keys?.auth,
+        user_agent: navigator.userAgent,
+      }, { onConflict: 'user_id,endpoint' });
+
+      setPushStatus('active');
+    } catch (e) {
+      console.error('Erro ao ativar push:', e);
+      setPushStatus('inactive');
+    }
+  };
+
   const unread = notifications.filter(n => !n.lida).length;
 
   const markAllRead = async () => {
@@ -56,13 +128,15 @@ export function NotificationBell() {
     tarefa_atrasada: '⏰',
     handoff_rodrygo: '🟣',
     lead_quente: '🔥',
+    cobranca_pausada: '🚨',
+    lead_respondeu: '💬',
   };
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
+          {pushStatus === 'active' ? <BellRing className="h-5 w-5" /> : <Bell className="h-5 w-5" />}
           {unread > 0 && (
             <Badge className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center text-[10px] bg-destructive text-destructive-foreground border-0">
               {unread > 9 ? '9+' : unread}
@@ -79,6 +153,24 @@ export function NotificationBell() {
             </button>
           )}
         </div>
+        {pushStatus === 'inactive' && (
+          <button
+            onClick={ativarPush}
+            className="w-full flex items-center gap-2 px-4 py-2.5 border-b border-border text-xs text-primary hover:bg-muted/50 transition-colors text-left"
+          >
+            <BellRing size={14} /> Ativar notificações no navegador
+          </button>
+        )}
+        {pushStatus === 'denied' && (
+          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border text-xs text-muted-foreground">
+            <BellOff size={14} /> Notificações bloqueadas — ative nas permissões do navegador pra este site
+          </div>
+        )}
+        {pushStatus === 'active' && (
+          <div className="flex items-center gap-2 px-4 py-2 border-b border-border text-[11px] text-muted-foreground">
+            <BellRing size={12} className="text-primary" /> Notificações ativadas neste navegador
+          </div>
+        )}
         <ScrollArea className="max-h-80">
           {notifications.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8">Nenhuma notificação</p>

@@ -525,6 +525,20 @@ async function reservarGrupo(db: any, grupo: GrupoElegivel, now: Date, userId: s
   return { ok: true, logIds: (logRows as any[]).map(r => r.id) };
 }
 
+// A automação se desliga sozinha (pausado_por_erro) quando bate o limite de erros
+// sequenciais ou fica sem instância conectada -- antes disso só aparecia como banner na
+// tela de Cobrança, então se ninguém estivesse olhando a fila simplesmente parava de
+// andar sem avisar ninguém. Chamado só no momento em que a pausa acontece de fato (não a
+// cada erro individual), pra não gerar 1 notificação por tentativa antes do limite.
+async function notificarCobrancaPausada(db: any, motivo: string): Promise<void> {
+  await db.rpc("notificar_admins", {
+    p_tipo: "cobranca_pausada",
+    p_titulo: "Cobrança automática pausada",
+    p_descricao: motivo,
+    p_link: "/cobranca",
+  });
+}
+
 // Modo tique: chamado a cada poucos minutos por um cron externo. Manda no máximo 1
 // mensagem por chamada, só se estiver dentro do horário seguro, do limite diário, com
 // instância conectada e sem estar em pausa por erro sequencial -- mesmo princípio do
@@ -579,10 +593,12 @@ async function processarTick(db: any, cors: any) {
 
   if (!connected.length) {
     const newErrors = (cfg.erros_seq ?? 0) + 1;
+    const pausou = newErrors >= cfg.max_errors_seq;
     await db.from("cobranca_config").update({
       erros_seq: newErrors,
-      ...(newErrors >= cfg.max_errors_seq ? { pausado_por_erro: true, ativo: false } : {}),
+      ...(pausou ? { pausado_por_erro: true, ativo: false } : {}),
     }).eq("id", "default");
+    if (pausou) await notificarCobrancaPausada(db, "Nenhuma instância de WhatsApp conectada -- sessão pode ter caído.");
     return json({ ok: false, error: "Nenhuma instância conectada disponível (sessão do WhatsApp fechada)" });
   }
 
@@ -617,11 +633,13 @@ async function processarTick(db: any, cors: any) {
   }
 
   const newErrors = (cfg.erros_seq ?? 0) + 1;
+  const pausou = newErrors >= cfg.max_errors_seq;
   await db.from("cobranca_config").update({
     erros_seq: newErrors,
     ultimo_envio_em: now.toISOString(),
-    ...(newErrors >= cfg.max_errors_seq ? { pausado_por_erro: true, ativo: false } : {}),
+    ...(pausou ? { pausado_por_erro: true, ativo: false } : {}),
   }).eq("id", "default");
+  if (pausou) await notificarCobrancaPausada(db, `${newErrors} erros seguidos ao enviar -- último: ${result.error ?? "desconhecido"}`);
 
   return json({ ok: false, error: result.error });
 }
