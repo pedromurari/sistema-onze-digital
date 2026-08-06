@@ -1,7 +1,9 @@
 # Chat de conversas (estilo WhatsApp) — design
 
 Data: 2026-08-06
-Componentes: `DisparosMonitor.tsx` (existente, novo mainTab), `leads_unificados` (existente, view), `disparo_leads`/`alunos`/`turmas`/`pagamentos` (existentes), `Financeiro.tsx` (existente, ficha do aluno é extraída), `financial-utils.ts` (existente, cálculo canônico de inadimplência), `evo-resposta`/`disparo-runner`/`boas-vindas-enviar`/`enviar-cobranca` (existentes, ganham instrumentação), novos: tabela `whatsapp_mensagens`, componente `FichaAlunoModal`.
+Componentes: `DisparosMonitor.tsx` (existente, novo mainTab), `leads_unificados` (existente, view), `disparo_leads`/`alunos`/`turmas`/`pagamentos` (existentes, só leitura), `financial-utils.ts` (existente, cálculo canônico de inadimplência), `evo-resposta`/`disparo-runner`/`boas-vindas-enviar`/`enviar-cobranca` (existentes, ganham instrumentação), novos: tabela `whatsapp_mensagens`, componente `FichaAlunoResumo` (somente leitura).
+
+**`Financeiro.tsx` não é modificado por esta entrega.**
 
 ## 1. Estado atual (confirmado por investigação de código)
 
@@ -13,8 +15,10 @@ Componentes: `DisparosMonitor.tsx` (existente, novo mainTab), `leads_unificados`
 - `leads_unificados` (view, `20260727100000_leads_unificados_view.sql`) já unifica `lancamento_leads`, `npa_evento_leads`, `alunos` (com turma via join com `turmas`) e `seu_numerologo_leads`, com `temperatura` calculada (`quente`/`morno`/`frio`) e `origem` (nome legível do lançamento/evento, ou `'Aluno: ' || turma.nome`).
 - `disparo_leads` é um snapshot no momento da criação da campanha (`nome`, `phone`, `temperatura`) — não tem FK de volta pra `leads_unificados`. Leads importados por CSV ou grupo de WhatsApp só existem aqui, nunca aparecem em `leads_unificados`.
 - Os 3 pontos de envio que vão alimentar o histórico (`disparo-runner`, `boas-vindas-enviar`, `enviar-cobranca`) já têm a mensagem final (com variáveis já aplicadas) disponível em uma variável local logo antes da chamada `fetch` pro endpoint `sendText` da Evolution API — não precisa reconstruir o template em lugar nenhum.
-- **Ficha do aluno já existe**, mas embutida em `Financeiro.tsx` (~4000 linhas): é o `Dialog` controlado por `alunoDetail`/`setAlunoDetail` (linha ~922 em diante), com dados cadastrais, parcelas (`marcarComoPago`/`estornarPagamento`), status do contrato (forms/enviado/assinado), links de assinatura e área de membros, upload de contrato, indicações e exportação de PDF (`downloadFichaPDF`). Depende de estado local do `Financeiro` (`pagamentos`, `turmas`, `editAlunoForm`, `filteredPagamentos`), então **não é reutilizável como está**.
-- Já existe deep-link pra essa ficha vindo de outra tela: `CRMLayout.tsx:223` reconhece a view `financeiro_aluno_<id>` e passa `initialAlunoId` pro `Financeiro`, que abre a ficha daquele aluno (`Financeiro.tsx:978`). Hoje é usado pelo `Equipe11ds` (`onNavigateToAluno`). Esse caminho **troca de tela** — não serve pro requisito de abrir a ficha sem sair do Chat.
+- **Ficha do aluno completa (editável) já existe**, embutida em `Financeiro.tsx`: `Dialog` controlado por `alunoDetail`/`setAlunoDetail`, ocupando as linhas **3195–3895 (700 linhas de JSX)**, mais handlers espalhados (`saveAlunoDetail`, `marcarComoPago`, `estornarPagamento`, `downloadFichaPDF`, upload de contrato) e ~30 pedaços de estado do componente pai (`pagamentos`, `turmas`, `editAlunoForm`, `parcelasLocais`, `pagoInfo`, `canaisCobranca`, ...). Também dispara um segundo modal (confirmar pagamento, linha 3898) que vive fora dela.
+- **O projeto não tem nenhum teste automatizado** — sem vitest/jest/playwright configurado e sem nenhum arquivo `.test`/`.spec` em `src/`. A única verificação automática disponível é `tsc --noEmit` e o build.
+- Já existe deep-link pra ficha completa vindo de outra tela: `CRMLayout.tsx:223` reconhece a view `financeiro_aluno_<id>` e passa `initialAlunoId` pro `Financeiro`, que abre a ficha daquele aluno (`Financeiro.tsx:978`). Hoje é usado pelo `Equipe11ds` (`onNavigateToAluno`). Serve como saída pra edição a partir do Chat.
+- `alunos` tem os campos que a ficha resumida precisa: dados cadastrais, `status`, `forma_pagamento`, `valor_mensalidade`, `dia_vencimento`, `data_matricula`, `mensalidades_pagas`/`total_mensalidades` e o bloco de contrato (`forms_respondido`, `contrato_enviado`, `contrato_assinado`).
 - `financial-utils.ts` tem o cálculo canônico de inadimplência (`isPagamentoInadimplente`, `calcInadimplencia`), compartilhado hoje por Dashboard/Financeiro/FinanceiroCFO/Cobranca. É a fonte de verdade pra "situação" do aluno — não replicar a regra.
 
 ## 2. Escopo desta entrega (validado com o usuário)
@@ -27,12 +31,14 @@ Componentes: `DisparosMonitor.tsx` (existente, novo mainTab), `leads_unificados`
 
 ### Restrição inegociável: dados reais de alunos pagantes
 
-A ficha do aluno mexe em matrícula, contrato e parcelas de alunos reais. A extração descrita na seção 7 é **puramente estrutural** — mover código pra outro arquivo sem alterar comportamento:
+Estes são alunos pagantes reais, e o código que gera parcelas e dá baixa em pagamento não tem cobertura de teste nenhuma. A decisão de design que segue disso: **esta entrega inteira é somente leitura sobre o financeiro.**
 
-- Nenhuma mudança de schema em `alunos`, `pagamentos` ou `turmas` faz parte desta entrega.
-- Nenhuma alteração na lógica de `marcarComoPago`, `estornarPagamento`, geração/regeneração de parcelas, ou no cálculo de status do aluno (`deriveAlunoStatus`) — o código move de arquivo, não muda.
-- A aba Cobrança do Chat é **somente leitura** sobre a carteira; a única forma de escrever é pela ficha extraída, que é a mesma ficha de hoje com o mesmo comportamento.
-- Verificação obrigatória antes de considerar pronto: abrir a ficha pelo Financeiro (caminho atual) e conferir que tudo que já funcionava continua funcionando — parcelas, marcar pago/estornar, contrato, PDF, indicações — comparando com o comportamento anterior à mudança.
+- Nenhuma linha de `Financeiro.tsx` é modificada. A ficha completa e editável continua exatamente como está hoje, no lugar onde está hoje.
+- Nenhuma mudança de schema em `alunos`, `pagamentos` ou `turmas`.
+- Nenhum código do Chat escreve em `alunos` ou `pagamentos` — a única tabela que esta entrega escreve é `whatsapp_mensagens` (nova, isolada, sem FK pro financeiro).
+- A ficha dentro do Chat (`FichaAlunoResumo`, seção 7) **só faz SELECT**. Não tem botão de salvar, marcar pago, estornar, editar nem upload. Para qualquer alteração, o usuário é levado pra ficha completa no Financeiro pelo deep-link que já existe.
+
+Foi considerada e **descartada** a alternativa de extrair a ficha editável de `Financeiro.tsx` pra um componente reutilizável: 700 linhas de JSX + ~30 dependências de estado do pai, sem nenhum teste automatizado no projeto pra pegar regressão, e cuja validação exigiria dar baixa/estornar pagamento em aluno real só pra testar. O ganho (editar sem trocar de tela) não paga esse risco.
 
 ## 3. Tabela nova: `whatsapp_mensagens`
 
@@ -97,11 +103,19 @@ Diferente das outras 3 abas: não é uma lista de conversas, é a **carteira com
 
 Filtro rápido no topo (Todos / Em dia / Inadimplentes) e busca por nome. Ordenação: inadimplentes primeiro, depois alfabética.
 
-**Painel direito.** Ao selecionar um aluno, mostra a conversa dele (mesma thread das outras abas — vazia com "Nenhuma mensagem ainda" se nunca trocou nada) e, no header, um botão **"Ficha de matrícula"** que abre a ficha completa em modal, sem sair do Chat.
+**Painel direito.** Ao selecionar um aluno, mostra a conversa dele (mesma thread das outras abas — vazia com "Nenhuma mensagem ainda" se nunca trocou nada) e, no header, um botão **"Ficha de matrícula"** que abre `FichaAlunoResumo` em modal, sem sair do Chat.
 
-**Extração da ficha (`FichaAlunoModal`).** A ficha sai de dentro de `Financeiro.tsx` pra um componente novo em `src/components/crm/finance/FichaAlunoModal.tsx`, com interface mínima: recebe `alunoId` e `onClose`, e busca os próprios dados (aluno, turma, parcelas). `Financeiro.tsx` passa a renderizar esse componente no lugar do `Dialog` inline, mantendo o comportamento atual — incluindo o deep-link `financeiro_aluno_<id>` que já existe. O Chat renderiza o mesmo componente.
+**`FichaAlunoResumo` — ficha somente leitura.** Componente novo em `src/components/crm/finance/FichaAlunoResumo.tsx`. Recebe `alunoId` + `onClose`, busca os próprios dados (`alunos` + `turmas` + `pagamentos` daquele aluno) e mostra:
 
-A refatoração é estrutural: mover o JSX e os handlers da ficha (`marcarComoPago`, `estornarPagamento`, upload de contrato, `downloadFichaPDF`, salvar edição) sem alterar a lógica de nenhum deles. Onde hoje eles dependem de estado do `Financeiro` (`pagamentos`, `turmas`, `filteredPagamentos`), o componente extraído busca o equivalente por `alunoId`. Depois de salvar/pagar/estornar, o componente notifica o pai via callback pra que o `Financeiro` recarregue suas listas como já faz hoje.
+- **Cabeçalho**: nome, turma, status do aluno, badge de situação (mesma regra da lista).
+- **Dados cadastrais**: WhatsApp, e-mail, CPF, data de nascimento, cidade/estado, origem do lead.
+- **Financeiro**: forma de pagamento, valor da mensalidade, dia de vencimento, data de matrícula, progresso `mensalidades_pagas`/`total_mensalidades`, e a **lista de parcelas** (número, vencimento, valor, status) — apenas exibida, sem nenhum botão de ação.
+- **Contrato**: os três marcos (forms respondido / contrato enviado / assinado) como indicadores, com as datas.
+- **Rodapé**: botão **"Editar no Financeiro"**, que fecha o Chat e navega pra `financeiro_aluno_<id>` — o deep-link que já existe e já é usado pelo `Equipe11ds`. É o único caminho de escrita, e ele leva pra ficha completa de sempre.
+
+O componente não tem nenhum `insert`/`update`/`delete`, nenhum campo editável e nenhum upload. Reaproveita `isPagamentoInadimplente` de `financial-utils.ts` pra situação e formata valores com o mesmo padrão pt-BR do resto do sistema.
+
+**Navegação.** Pra `DisparosMonitor` conseguir navegar pro Financeiro, ele recebe uma prop opcional `onNavigateToAluno?: (alunoId: string) => void`, repassada pelo `CRMLayout` como `setCurrentView(\`financeiro_aluno_${id}\`)` — exatamente o mesmo padrão que o `Equipe11ds` já usa hoje (`CRMLayout.tsx:250`). Se a prop não vier, o botão simplesmente não aparece.
 
 ## 8. Testes/verificação
 
@@ -112,12 +126,10 @@ A refatoração é estrutural: mover o JSX e os handlers da ficha (`marcarComoPa
 - Conferir que um telefone sem nenhuma mensagem não aparece nas abas Aluno/Lead Frio/Lead Quente (mas aparece na aba Cobrança, se for aluno).
 - Disparar uma mensagem de boas-vindas e uma de cobrança de teste e confirmar que ambas aparecem no histórico com a `origem` certa.
 
-**Regressão da ficha do aluno (obrigatório — dados reais de alunos pagantes):** antes e depois da extração, percorrer a ficha aberta pelo caminho atual (tela Financeiro) e confirmar comportamento idêntico em:
-- Lista de parcelas com valores e status corretos; marcar como pago e estornar refletindo no banco e na tela.
-- Status do contrato (forms/enviado/assinado), links de assinatura e área de membros, envio por WhatsApp.
-- Upload e remoção de arquivo de contrato.
-- Exportar ficha em PDF.
-- Salvar edição do aluno (turma, forma de pagamento, dia de vencimento, valor, data de matrícula) e conferir que a regeneração de parcelas se comporta como antes.
-- Lista de indicações.
-- Deep-link `financeiro_aluno_<id>` (vindo da tela Equipe 11DS) continua abrindo a ficha certa.
-- Conferir que a mesma ficha aberta pelo Chat mostra e salva exatamente o mesmo que pelo Financeiro.
+**Aba Cobrança e ficha resumida:**
+- Conferir que a badge de situação bate com o que a tela de Cobrança/Financeiro já mostra pro mesmo aluno (inadimplente lá = inadimplente aqui).
+- Abrir a ficha resumida de um aluno e comparar os dados com a ficha completa no Financeiro: parcelas (número, vencimento, valor, status), progresso de mensalidades, marcos do contrato.
+- Conferir que a ficha resumida não oferece nenhuma ação de escrita, e que "Editar no Financeiro" abre a ficha completa do aluno certo.
+- Conferir que aluno sem nenhuma parcela cadastrada não quebra a ficha (estado vazio).
+
+**Garantia de não-regressão do financeiro:** `git diff` da entrega não pode conter nenhuma alteração em `Financeiro.tsx`, `Cobranca.tsx`, `financial-utils.ts` nem em migrations de `alunos`/`pagamentos`/`turmas`. Se aparecer, algo saiu do escopo combinado.
