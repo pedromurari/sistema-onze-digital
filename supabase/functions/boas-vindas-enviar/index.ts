@@ -138,6 +138,39 @@ function toGroupJid(value: string): string {
 
 type EvoInstance = { id: string; api_url: string; api_key: string; instance_name: string };
 
+// Historico de conversa (tabela whatsapp_mensagens) -- alimenta a aba Chat.
+// Mesmo formato de telefone de normalizePhone() em evo-resposta (sem DDI 55,
+// 11 digitos), senao a conversa racha em duas.
+//
+// Best-effort: a mensagem ja foi entregue quando isso roda. Grupo (@g.us) fica
+// de fora -- evo-resposta descarta grupo no inbound, entao seria uma "conversa"
+// que nunca recebe resposta.
+async function registrarMensagemEnviada(
+  supabase: ReturnType<typeof createClient>,
+  numberOuJid: string,
+  conteudo: string,
+  tipo: string,
+  instanceName: string,
+): Promise<void> {
+  try {
+    if (numberOuJid.includes('@g.us')) return;
+    const d = numberOuJid.replace(/\D/g, '');
+    const telefone = (d.length === 13 || d.length === 12) && d.startsWith('55') ? d.slice(2) : d.slice(-11);
+    if (!telefone) return;
+    const { error } = await supabase.from('whatsapp_mensagens').insert({
+      telefone,
+      direcao: 'enviada',
+      conteudo,
+      tipo: tipo || 'text',
+      origem: 'boas_vindas',
+      evolution_instance: instanceName || null,
+    });
+    if (error) console.error('registrarMensagemEnviada:', error.message);
+  } catch (e: unknown) {
+    console.error('registrarMensagemEnviada falhou:', (e as Error).message);
+  }
+}
+
 // Resolução da instância: override específico do funil (wpp_instance_name) -> instância(s)
 // escolhida(s) na tela de Boas-vindas (evolution_task_config, task 'boas_vindas') -> todas
 // as instâncias ativas por prioridade global. Mesmo padrão do enviar-cobranca.
@@ -264,6 +297,7 @@ serve(async (req) => {
         const audioPayload = msgType === 'audio' ? await prepareAudioPayload(mediaUrl) : '';
 
         let lastErr: Error | null = null;
+        let sentInstance = '';
         for (const inst of activeInstances) {
           const rawBase = (inst.api_url as string).replace(/\/$/, '');
           const base    = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
@@ -293,6 +327,7 @@ serve(async (req) => {
             const txt = await res.text();
             if (!res.ok) throw new Error(`Evolution ${res.status}: ${txt.slice(0, 200)}`);
             lastErr = null;
+            sentInstance = instance;
             break;
           } catch (e) {
             lastErr = e as Error;
@@ -301,6 +336,7 @@ serve(async (req) => {
 
         if (lastErr) throw lastErr;
         wppStatus = 'sent';
+        await registrarMensagemEnviada(supabase, number, mensagem, msgType, sentInstance);
 
       } catch (e: unknown) {
         wppStatus = 'error';

@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { LancamentoWizard } from '@/components/crm/LancamentoWizard';
 import { EvolutionTaskPanel } from './EvolutionTaskPanel';
 import { LeadsQuadros, type LeadsFiltro } from './leads/LeadsQuadros';
+import { ChatConversas } from './chat/ChatConversas';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
@@ -19,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -83,7 +85,7 @@ interface DisparoLead {
 
 type ViewMode   = 'table' | 'kanban';
 type DateFilter = 'proximos' | 'hoje' | 'semana' | 'todos';
-type MainTab    = 'funil' | 'campanhas' | 'boasvindas' | 'leads';
+type MainTab    = 'funil' | 'campanhas' | 'boasvindas' | 'leads' | 'chat';
 
 interface BoasVindasConfig {
   id: string;
@@ -243,7 +245,10 @@ function nextCommercialSlot(safeStart: number, safeEnd: number): Date {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
-export function DisparosMonitor({ onCreateFunnel }: { onCreateFunnel: () => void }) {
+export function DisparosMonitor({ onCreateFunnel, onNavigateToAluno }: {
+  onCreateFunnel: () => void;
+  onNavigateToAluno?: (alunoId: string) => void;
+}) {
   const [mainTab, setMainTab] = useState<MainTab>('campanhas');
 
   return (
@@ -283,6 +288,13 @@ export function DisparosMonitor({ onCreateFunnel }: { onCreateFunnel: () => void
             >
               <Users className="h-3.5 w-3.5" /> Leads
             </button>
+            <button
+              onClick={() => setMainTab('chat')}
+              className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all',
+                mainTab === 'chat' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}
+            >
+              <MessageSquare className="h-3.5 w-3.5" /> Chat
+            </button>
           </div>
         </div>
       </div>
@@ -291,6 +303,11 @@ export function DisparosMonitor({ onCreateFunnel }: { onCreateFunnel: () => void
       {mainTab === 'funil' && <FunilTab onCreateFunnel={onCreateFunnel} />}
       {mainTab === 'boasvindas' && <BoasVindasTab />}
       {mainTab === 'leads' && <LeadsTab />}
+      {mainTab === 'chat' && (
+        <div className="flex-1 flex flex-col overflow-hidden p-6">
+          <ChatConversas onNavigateToAluno={onNavigateToAluno} />
+        </div>
+      )}
     </div>
   );
 }
@@ -1964,6 +1981,7 @@ function CampanhaDetalheView({
   const [editOpen, setEditOpen] = useState(false);
   const [sortKey, setSortKey] = useState<LeadSortKey>('ordem');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [leadViewMode, setLeadViewMode] = useState<'tabela' | 'kanban'>('tabela');
 
   const load = useCallback(async () => {
     const { data, error } = await supabase
@@ -2013,6 +2031,22 @@ function CampanhaDetalheView({
       return dir * ((a.ordem ?? 0) - (b.ordem ?? 0));
     });
   }, [leads, search, statusFilter, sortKey, sortDir]);
+
+  // Kanban ignora o filtro de status (as colunas já cumprem esse papel), só aplica a busca.
+  const searchFiltered = useMemo(() => {
+    if (!search.trim()) return leads;
+    const q = search.toLowerCase();
+    return leads.filter(l => (l.nome ?? '').toLowerCase().includes(q) || l.phone.includes(q));
+  }, [leads, search]);
+
+  async function moverLeadStatus(lead: DisparoLead, novoStatus: 'pendente' | 'erro') {
+    const patch = novoStatus === 'pendente'
+      ? { status: 'pendente', sent_at: null, error_msg: null, instance_id: null, evolution_message_id: null, ack_status: null }
+      : { status: 'erro', error_msg: 'Marcado manualmente como erro' };
+    setLeads(prev => prev.map(l => (l.id === lead.id ? { ...l, ...patch } as DisparoLead : l)));
+    const { error } = await supabase.from('disparo_leads').update(patch).eq('id', lead.id);
+    if (error) { toast.error('Erro ao mover lead: ' + error.message); load(); }
+  }
 
   function exportCSV() {
     const headers = ['Nome', 'Telefone', 'Status', 'Confirmação WhatsApp', 'Enviado em', 'Erro', 'Respondeu em', 'Última resposta'];
@@ -2133,22 +2167,35 @@ function CampanhaDetalheView({
             <Input placeholder="Buscar nome ou telefone…" value={search}
               onChange={e => setSearch(e.target.value)} className="pl-8 h-8 w-56 text-sm" />
           </div>
+          {leadViewMode === 'tabela' && (
+            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+              {([
+                { key: 'all' as const, label: 'Todos' },
+                { key: 'pendente' as const, label: 'Pendente' },
+                { key: 'enviado' as const, label: 'Enviado' },
+                { key: 'erro' as const, label: 'Erro' },
+                { key: 'respondeu' as const, label: 'Respondeu' },
+              ]).map(f => (
+                <button key={f.key} onClick={() => setStatusFilter(f.key)}
+                  className={cn('px-2.5 py-1 rounded-md text-xs font-medium transition-all',
+                    statusFilter === f.key ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          )}
+          <span className="text-xs text-muted-foreground ml-1">
+            {leadViewMode === 'tabela' ? filtered.length : searchFiltered.length} leads
+          </span>
           <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
-            {([
-              { key: 'all' as const, label: 'Todos' },
-              { key: 'pendente' as const, label: 'Pendente' },
-              { key: 'enviado' as const, label: 'Enviado' },
-              { key: 'erro' as const, label: 'Erro' },
-              { key: 'respondeu' as const, label: 'Respondeu' },
-            ]).map(f => (
-              <button key={f.key} onClick={() => setStatusFilter(f.key)}
-                className={cn('px-2.5 py-1 rounded-md text-xs font-medium transition-all',
-                  statusFilter === f.key ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
-                {f.label}
+            {(['tabela', 'kanban'] as const).map(v => (
+              <button key={v} onClick={() => setLeadViewMode(v)}
+                className={cn('flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all',
+                  leadViewMode === v ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+                {v === 'tabela' ? <><TableIcon className="h-3.5 w-3.5" /> Planilha</> : <><Kanban className="h-3.5 w-3.5" /> Kanban</>}
               </button>
             ))}
           </div>
-          <span className="text-xs text-muted-foreground ml-1">{filtered.length} leads</span>
           <Button variant="outline" size="sm" onClick={exportCSV} className="ml-auto gap-1.5">
             <Download className="h-3.5 w-3.5" /> CSV
           </Button>
@@ -2160,6 +2207,15 @@ function CampanhaDetalheView({
           <div className="flex items-center justify-center h-40">
             <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
+        ) : leadViewMode === 'kanban' ? (
+          searchFiltered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-40 text-center">
+              <Users className="h-8 w-8 text-muted-foreground/40 mb-2" />
+              <p className="text-sm text-muted-foreground">Nenhum lead encontrado pra essa busca</p>
+            </div>
+          ) : (
+            <CampanhaLeadsKanban leads={searchFiltered} onMover={moverLeadStatus} />
+          )
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-40 text-center">
             <Users className="h-8 w-8 text-muted-foreground/40 mb-2" />
@@ -2225,6 +2281,120 @@ function CampanhaDetalheView({
 
       {editOpen && (
         <EditCampanhaModal campanha={c} onClose={() => setEditOpen(false)} onSaved={updated => { onUpdate(updated); setEditOpen(false); }} />
+      )}
+    </div>
+  );
+}
+
+// ── Kanban de leads de uma campanha ─────────────────────────────────────────────
+// Colunas fixas (não customizáveis) — a coluna de cada lead é calculada por
+// prioridade: se respondeu, vai pra "Respondeu" independente do status de envio.
+// Mover só é permitido Erro↔Pendente (retry manual / marcar como erro pra pular
+// no próximo ciclo) — "Enviado" e "Respondeu" só são preenchidos pelo sistema
+// real (disparo-runner / webhook evo-resposta), nunca por ação manual.
+
+type LeadColuna = 'pendente' | 'enviado' | 'erro' | 'respondeu';
+
+const LEAD_COLUNAS: { key: LeadColuna; label: string }[] = [
+  { key: 'pendente',  label: 'Pendente' },
+  { key: 'enviado',   label: 'Enviado' },
+  { key: 'erro',      label: 'Erro' },
+  { key: 'respondeu', label: 'Respondeu' },
+];
+
+function colunaDoLead(l: DisparoLead): LeadColuna {
+  if (l.respondeu_em) return 'respondeu';
+  if (l.status === 'enviado') return 'enviado';
+  if (l.status === 'erro') return 'erro';
+  return 'pendente';
+}
+
+function CampanhaLeadsKanban({
+  leads, onMover,
+}: {
+  leads: DisparoLead[];
+  onMover: (lead: DisparoLead, novoStatus: 'pendente' | 'erro') => void;
+}) {
+  const porColuna = useMemo(() => {
+    const map: Record<LeadColuna, DisparoLead[]> = { pendente: [], enviado: [], erro: [], respondeu: [] };
+    for (const l of leads) map[colunaDoLead(l)].push(l);
+    return map;
+  }, [leads]);
+
+  return (
+    <div className="overflow-x-auto">
+      <div className="flex gap-4 min-w-full pb-4 items-start">
+        {LEAD_COLUNAS.map(col => {
+          const colLeads = porColuna[col.key];
+          return (
+            <div key={col.key} className="flex-shrink-0 w-72">
+              <div className="bg-muted rounded-lg p-3 h-full">
+                <div className="flex items-center justify-between px-1 pb-2">
+                  <h4 className="font-semibold text-sm">{col.label}</h4>
+                  <span className="text-xs text-muted-foreground bg-white rounded-full px-2 py-0.5">{colLeads.length}</span>
+                </div>
+                <div className="space-y-2 max-h-[600px] overflow-y-auto">
+                  {colLeads.map(l => <DisparoLeadCard key={l.id} lead={l} coluna={col.key} onMover={onMover} />)}
+                  {colLeads.length === 0 && <p className="text-xs text-center text-muted-foreground py-4">Vazio</p>}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DisparoLeadCard({ lead, coluna, onMover }: {
+  lead: DisparoLead;
+  coluna: LeadColuna;
+  onMover: (lead: DisparoLead, novoStatus: 'pendente' | 'erro') => void;
+}) {
+  const tempCfg = TEMP_CFG[lead.temperatura];
+  return (
+    <div className="p-3 rounded-lg border bg-white hover:shadow-sm transition-shadow space-y-1.5">
+      <p className="font-medium text-sm truncate">{lead.nome || '—'}</p>
+      <p className="text-xs text-muted-foreground font-mono truncate">{maskPhone(lead.phone)}</p>
+      <div className="flex items-center gap-1 flex-wrap">
+        <span className={cn('inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium', tempCfg.bg, tempCfg.color)}>
+          <tempCfg.icon className="h-2.5 w-2.5" />{tempCfg.label}
+        </span>
+        {coluna === 'enviado' && (() => {
+          const d = leadStatusDisplay(lead.status, lead.ack_status);
+          return <span className={cn('px-1.5 py-0.5 rounded-full text-[10px] font-medium', d.className)}>{d.label}</span>;
+        })()}
+      </div>
+
+      {coluna === 'erro' && lead.error_msg && (
+        <p className="text-[10px] text-red-500 truncate" title={lead.error_msg}>{lead.error_msg}</p>
+      )}
+
+      {coluna === 'respondeu' && lead.respondeu_em && (
+        <div className="flex items-start gap-1 pt-1 border-t">
+          <MessageSquare className="h-3 w-3 text-violet-500 mt-0.5 flex-none" />
+          <div className="min-w-0">
+            <p className="text-[11px] text-foreground/90 truncate" title={lead.ultima_resposta ?? undefined}>{lead.ultima_resposta || '—'}</p>
+            <p className="text-[10px] text-muted-foreground">{fmtDatetime(lead.respondeu_em)}</p>
+          </div>
+        </div>
+      )}
+
+      {coluna === 'erro' && (
+        <Select onValueChange={v => v === 'pendente' && onMover(lead, 'pendente')}>
+          <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Mover pra…" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="pendente">Pendente (reenviar)</SelectItem>
+          </SelectContent>
+        </Select>
+      )}
+      {coluna === 'pendente' && (
+        <Select onValueChange={v => v === 'erro' && onMover(lead, 'erro')}>
+          <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Mover pra…" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="erro">Erro (marcar manualmente)</SelectItem>
+          </SelectContent>
+        </Select>
       )}
     </div>
   );

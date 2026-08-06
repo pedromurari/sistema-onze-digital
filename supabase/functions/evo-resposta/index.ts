@@ -61,6 +61,31 @@ function applyVars(text: string, vars: Record<string, string>): string {
   return text.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`);
 }
 
+// Historico de conversa (tabela whatsapp_mensagens) -- alimenta a aba Chat.
+// Best-effort: erro aqui nunca pode impedir o resto do processamento da
+// resposta (opt-out, matching por tabela, notificacao dos admins).
+async function registrarMensagemRecebida(
+  supabase: ReturnType<typeof createClient>,
+  telefone: string,
+  conteudo: string,
+  tipo: string,
+  instance: string,
+): Promise<void> {
+  try {
+    const { error } = await supabase.from('whatsapp_mensagens').insert({
+      telefone,
+      direcao: 'recebida',
+      conteudo,
+      tipo,
+      origem: 'inbound',
+      evolution_instance: instance || null,
+    });
+    if (error) console.error('registrarMensagemRecebida:', error.message);
+  } catch (e: unknown) {
+    console.error('registrarMensagemRecebida falhou:', (e as Error).message);
+  }
+}
+
 type EvoInstance = { id: string; api_url: string; api_key: string; instance_name: string };
 
 async function isInstanceConnected(inst: EvoInstance): Promise<boolean> {
@@ -326,6 +351,11 @@ serve(async (req) => {
     const s8       = phone.slice(-8);
 
     const { text: mensagem, tipo: mensagemTipo } = extractText(message);
+
+    // Historico de conversa (aba Chat) -- gravado ANTES de qualquer match por
+    // tabela, e independente de casar com alguma. Um numero desconhecido hoje
+    // pode virar lead/aluno amanha, e ai a conversa ja esta completa.
+    await registrarMensagemRecebida(supabase, phone, mensagem, mensagemTipo, instance);
 
     if (mensagemTipo === 'text' && detectarOptOut(mensagem)) {
       await registrarOptOut(supabase, phone, mensagem);

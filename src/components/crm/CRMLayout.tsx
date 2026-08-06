@@ -234,7 +234,10 @@ export function CRMLayout() {
       case 'cobranca':         return permissions.canViewCobranca || isAdmin ? <Cobranca /> : <RestrictedView />;
       case 'funil_lancamento':  return permissions.canViewCobranca || isAdmin ? <FunilLancamento /> : <RestrictedView />;
       case 'disparos_monitor':  return permissions.canViewCobranca || isAdmin
-        ? <DisparosMonitor onCreateFunnel={() => setCurrentView('funil_lancamento')} />
+        ? <DisparosMonitor
+            onCreateFunnel={() => setCurrentView('funil_lancamento')}
+            onNavigateToAluno={(alunoId) => setCurrentView(`financeiro_aluno_${alunoId}` as View)}
+          />
         : <RestrictedView />;
       case 'aquecimento_chips': return isAdmin ? <AquecimentoChips /> : <RestrictedView />;
       case 'team': return user?.tipo === 'admin' || permissions.canViewTeam ? <TeamManagement /> : <RestrictedView />;

@@ -284,6 +284,7 @@ serve(async (req) => {
       const nextSendAt = new Date(now.getTime() + delayS * 1000).toISOString();
 
       if (sendOk) {
+        await registrarMensagemEnviada(supabase, phone, message, camp.message_type, sentInstanceId, orderedInstances);
         await supabase.from('disparo_leads')
           .update({ status: 'enviado', sent_at: sentAt, error_msg: null, instance_id: sentInstanceId, evolution_message_id: sentMessageId })
           .eq('id', lead.id);
@@ -454,6 +455,38 @@ function formatPhone(raw: string): string | null {
   if (d.length === 11) return '55' + d;
   if (d.length === 10) return '55' + d;
   return null;
+}
+
+// Historico de conversa (tabela whatsapp_mensagens) -- alimenta a aba Chat.
+// Best-effort: se falhar, so loga. O envio ja aconteceu de verdade neste ponto,
+// entao nada aqui pode derrubar o processamento do lead.
+//
+// Grupo (@g.us) fica de fora de proposito: evo-resposta descarta mensagem de
+// grupo no inbound, entao gravar o outbound criaria uma "conversa" que nunca
+// pode receber resposta.
+async function registrarMensagemEnviada(
+  supabase: any,
+  phoneComDdi: string,
+  conteudo: string,
+  messageType: string | null | undefined,
+  instanceId: string,
+  instancias: { id: string; instance_name: string }[],
+): Promise<void> {
+  try {
+    if (phoneComDdi.includes('@g.us')) return;
+    const instanceName = instancias.find(i => i.id === instanceId)?.instance_name ?? null;
+    const { error } = await supabase.from('whatsapp_mensagens').insert({
+      telefone: toOptOutKey(phoneComDdi),
+      direcao: 'enviada',
+      conteudo,
+      tipo: messageType || 'text',
+      origem: 'disparo',
+      evolution_instance: instanceName,
+    });
+    if (error) console.error('registrarMensagemEnviada:', error.message);
+  } catch (e: unknown) {
+    console.error('registrarMensagemEnviada falhou:', (e as Error).message);
+  }
 }
 
 // Chave de opt-out usa o mesmo formato de normalizePhone() em evo-resposta

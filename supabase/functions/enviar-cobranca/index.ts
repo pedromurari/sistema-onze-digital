@@ -159,6 +159,30 @@ async function estaOptOut(db: any, phone: string): Promise<boolean> {
   return Boolean(data);
 }
 
+// Historico de conversa (tabela whatsapp_mensagens) -- alimenta a aba Chat.
+// Best-effort: a mensagem ja foi entregue quando isso roda, entao falha aqui
+// so vira log, nunca muda o resultado do envio.
+async function registrarMensagemEnviada(
+  db: any,
+  phone: string,
+  conteudo: string,
+  instanceName: string,
+): Promise<void> {
+  try {
+    const { error } = await db.from("whatsapp_mensagens").insert({
+      telefone: toOptOutKey(phone),
+      direcao: "enviada",
+      conteudo,
+      tipo: "text",
+      origem: "cobranca",
+      evolution_instance: instanceName,
+    });
+    if (error) console.error("registrarMensagemEnviada:", error.message);
+  } catch (e: any) {
+    console.error("registrarMensagemEnviada falhou:", e?.message);
+  }
+}
+
 async function sendViaEvolution(
   db: any,
   evoInstances: EvoInstance[],
@@ -180,7 +204,10 @@ async function sendViaEvolution(
         body: JSON.stringify({ number: formatPhone(phone), text: message, delay: 1000 }),
         signal: AbortSignal.timeout(30_000),
       });
-      if (res.ok) return { ok: true };
+      if (res.ok) {
+        await registrarMensagemEnviada(db, phone, message, cfg.instance_name);
+        return { ok: true };
+      }
       const body = await res.text();
       lastError = `[${cfg.instance_name}] ${res.status}: ${body.slice(0, 200)}`;
       console.warn(`enviar-cobranca: instância ${cfg.instance_name} falhou (${res.status}), tentando próxima...`);
