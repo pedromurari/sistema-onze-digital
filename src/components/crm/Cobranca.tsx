@@ -998,16 +998,20 @@ export function Cobranca() {
 
   // ── Envio manual ──────────────────────────────────────────────────────────
   // Monta as variáveis da mensagem consolidada pro grupo inteiro (mesma lógica do
-  // backend em proximoGrupoElegivel): tom da parcela mais crítica entre as elegíveis
-  // (ou entre todas, se já foi tudo cobrado), qtd_parcelas/total_devido/lista_parcelas
-  // sempre refletindo TODA a dívida em aberto do aluno.
+  // backend em proximoGrupoElegivel): tom da parcela mais crítica (a mais antiga, mesma
+  // que decide a gravidade do card -- grupo.critica), qtd_parcelas/total_devido/
+  // lista_parcelas sempre refletindo TODA a dívida em aberto do aluno.
+  // Usa SEMPRE a parcela mais antiga entre TODAS (não só as "elegíveis") -- elegível
+  // aqui só quer dizer "essa fase ainda não foi cobrada automaticamente", e quando as
+  // parcelas mais antigas (e mais graves) já foram cobradas, sobrava só a mais nova
+  // (ainda nem vencida, sem template configurado) como "elegível", fazendo a cobrança
+  // manual falar da parcela errada -- a mais nova em vez da mais antiga/urgente.
   // "Outras parcelas" só entra se tiver a MESMA urgência da crítica (as duas vencidas, ou
   // as duas ainda por vencer) -- nunca mistura, senão uma mensagem de "50 dias em atraso"
   // cita junto uma parcela do mês corrente que nem venceu ainda, parecendo dívida vencida
   // que não é (mesma regra espelhada em proximoGrupoElegivel no enviar-cobranca).
   const varsParaGrupo = (grupo: AlunoGrupo): { critica: FilaItem; vars: Record<string, string | number | boolean | null> } => {
-    const base = grupo.elegiveis.length ? grupo.elegiveis : grupo.parcelas;
-    const critica = [...base].sort((a, b) => b.dias_offset - a.dias_offset)[0];
+    const critica = grupo.critica;
     const criticaVencida = critica.dias_offset > 0;
     const outras = grupo.parcelas.filter(p => p.pagamento_id !== critica.pagamento_id && (p.dias_offset > 0) === criticaVencida);
     const consideradas = [critica, ...outras];
