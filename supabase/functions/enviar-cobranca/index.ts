@@ -445,13 +445,13 @@ interface GrupoElegivel {
 
 // Um aluno com 2+ parcelas em aberto recebia 1 mensagem por parcela -- spam, e os
 // templates só falam de "sua parcela" no singular. Agrupa a fila por aluno e manda 1
-// mensagem só cobrindo tudo que está em aberto, usando o tom da parcela mais crítica
-// (mais dias de atraso) como base. `qtd_parcelas`/`total_devido`/`lista_parcelas` sempre
-// refletem TODAS as parcelas em aberto do aluno (não só as elegíveis dessa rodada), pra
-// mensagem nunca subestimar a dívida real. `cobertura` marca como enviada a fase de CADA
-// parcela elegível dessa rodada (não só a crítica) -- senão uma parcela que não era a
-// "mais crítica" dessa vez nunca marcaria sua própria fase como enviada e voltaria a
-// disparar de novo depois, mesmo já tendo sido citada na mensagem.
+// mensagem só cobrindo as parcelas na MESMA faixa de urgência da crítica (mais dias de
+// atraso), usando o tom dela como base -- `qtd_parcelas`/`total_devido`/`lista_parcelas`
+// nunca misturam parcela vencida com parcela que ainda nem venceu (ver comentário mais
+// abaixo). `cobertura` marca como enviada a fase de CADA parcela elegível dessa rodada
+// (não só a crítica) -- senão uma parcela que não era a "mais crítica" dessa vez nunca
+// marcaria sua própria fase como enviada e voltaria a disparar de novo depois, mesmo já
+// tendo sido citada na mensagem.
 function proximoGrupoElegivel(fila: any[], templates: any[], cfg: any, jaEnviado: Map<string, boolean>): GrupoElegivel | null {
   const porAluno = new Map<string, any[]>();
   for (const item of fila) {
@@ -471,11 +471,25 @@ function proximoGrupoElegivel(fila: any[], templates: any[], cfg: any, jaEnviado
     elegiveis.sort((a, b) => b.item.dias_offset - a.item.dias_offset);
     const critica = elegiveis[0];
 
-    const outras = itens.filter(i => i.pagamento_id !== critica.item.pagamento_id);
-    const qtdParcelas = itens.length;
-    const totalDevido = itens.reduce((s, i) => s + Number(i.valor), 0);
+    // "Outras parcelas" só entra na mensagem se tiver a MESMA urgência da crítica (as duas
+    // vencidas, ou as duas ainda por vencer) -- nunca mistura. Sem isso, uma mensagem
+    // urgente de "50 dias em atraso, acesso pode ser suspenso" citava junto a parcela do
+    // mês corrente que nem tinha vencido ainda, dando a entender que já era dívida vencida
+    // (aconteceu de verdade: aluna recebeu "parcela 3, venc. 20/08" dentro de uma mensagem
+    // de atraso quando essa parcela só venceria dali a duas semanas).
+    const criticaVencida = critica.item.dias_offset > 0;
+    const outras = itens.filter(i =>
+      i.pagamento_id !== critica.item.pagamento_id && (i.dias_offset > 0) === criticaVencida,
+    );
+    const consideradas = [critica.item, ...outras];
+    const qtdParcelas = consideradas.length;
+    const totalDevido = consideradas.reduce((s, i) => s + Number(i.valor), 0);
     const listaParcelas = outras
-      .map(i => `• Parcela ${i.parcela} — R$ ${Number(i.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} (venc. ${new Date(i.data_vencimento).toLocaleDateString("pt-BR")})`)
+      .map(i => {
+        const data = new Date(i.data_vencimento).toLocaleDateString("pt-BR");
+        const valorFmt = Number(i.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+        return `• Parcela ${i.parcela}: R$ ${valorFmt}, ${i.dias_offset > 0 ? `venceu em ${data}` : `vence em ${data}`}`;
+      })
       .join("\n");
 
     const vencimento = new Date(critica.item.data_vencimento).toLocaleDateString("pt-BR");

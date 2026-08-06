@@ -1001,12 +1001,21 @@ export function Cobranca() {
   // backend em proximoGrupoElegivel): tom da parcela mais crítica entre as elegíveis
   // (ou entre todas, se já foi tudo cobrado), qtd_parcelas/total_devido/lista_parcelas
   // sempre refletindo TODA a dívida em aberto do aluno.
+  // "Outras parcelas" só entra se tiver a MESMA urgência da crítica (as duas vencidas, ou
+  // as duas ainda por vencer) -- nunca mistura, senão uma mensagem de "50 dias em atraso"
+  // cita junto uma parcela do mês corrente que nem venceu ainda, parecendo dívida vencida
+  // que não é (mesma regra espelhada em proximoGrupoElegivel no enviar-cobranca).
   const varsParaGrupo = (grupo: AlunoGrupo): { critica: FilaItem; vars: Record<string, string | number | boolean | null> } => {
     const base = grupo.elegiveis.length ? grupo.elegiveis : grupo.parcelas;
     const critica = [...base].sort((a, b) => b.dias_offset - a.dias_offset)[0];
-    const outras = grupo.parcelas.filter(p => p.pagamento_id !== critica.pagamento_id);
+    const criticaVencida = critica.dias_offset > 0;
+    const outras = grupo.parcelas.filter(p => p.pagamento_id !== critica.pagamento_id && (p.dias_offset > 0) === criticaVencida);
+    const consideradas = [critica, ...outras];
     const listaParcelas = outras
-      .map(p => `• Parcela ${p.parcela} — R$ ${fmt(p.valor)} (venc. ${new Date(p.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR')})`)
+      .map(p => {
+        const data = new Date(p.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR');
+        return `• Parcela ${p.parcela}: R$ ${fmt(p.valor)}, ${p.dias_offset > 0 ? `venceu em ${data}` : `vence em ${data}`}`;
+      })
       .join('\n');
     const vencimento = new Date(critica.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR');
     return {
@@ -1018,10 +1027,10 @@ export function Cobranca() {
         vencimento,
         dias_atraso: critica.dias_offset > 0 ? critica.dias_offset : null,
         link_pagamento: critica.link_pagamento || null,
-        qtd_parcelas: grupo.parcelas.length,
-        total_devido: fmt(grupo.totalDevido),
+        qtd_parcelas: consideradas.length,
+        total_devido: fmt(consideradas.reduce((s, p) => s + Number(p.valor), 0)),
         lista_parcelas: listaParcelas || null,
-        multiplas: grupo.parcelas.length > 1,
+        multiplas: consideradas.length > 1,
       },
     };
   };
