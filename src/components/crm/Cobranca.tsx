@@ -389,16 +389,15 @@ function AlunoFilaCard({
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-1.5 mt-3">
+        <div className="flex flex-wrap items-center gap-1.5 mt-3">
           {grupo.parcelas.map(p => {
             const venceu = p.dias_offset > 0;
             const data = new Date(p.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR');
             return (
-              <span key={p.pagamento_id} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-muted/60 border text-muted-foreground">
-                #{p.parcela} · R$ {fmt(p.valor)} · {venceu ? `venceu ${data}` : p.dias_offset === 0 ? `vence hoje` : `vence ${data}`}
-                {p.data_prevista_pagamento && (
-                  <span className="text-amber-700">· previsto {new Date(p.data_prevista_pagamento + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
-                )}
+              <span key={p.pagamento_id} className="inline-flex items-center gap-1.5">
+                <span className="text-xs px-2 py-1 rounded-md bg-muted/60 border text-muted-foreground">
+                  #{p.parcela} · R$ {fmt(p.valor)} · {venceu ? `venceu ${data}` : p.dias_offset === 0 ? `vence hoje` : `vence ${data}`}
+                </span>
                 {venceu && (
                   <PrevisaoPagamentoPopover
                     valorAtual={p.data_prevista_pagamento}
@@ -424,8 +423,10 @@ function AlunoFilaCard({
   );
 }
 
-// Ícone de calendário num chip de parcela vencida -- abre um popover pequeno com 1 campo de
-// data opcional pra registrar a previsão de pagamento que o aluno deu. Independente do botão
+// Pill própria (não só um ícone solto) pra parcela vencida, com rótulo em texto -- abre um
+// popover pequeno com 1 campo de data opcional pra registrar a previsão de pagamento que o
+// aluno deu. Sem previsão ainda: pill tracejada "+ Previsão" (convida a clicar). Com previsão:
+// pill sólida âmbar mostrando a data, também clicável pra editar. Independente do botão
 // "Marquei que cobrei": dá pra editar/limpar a qualquer momento, sem contar como um novo contato.
 function PrevisaoPagamentoPopover({ valorAtual, onSalvar }: { valorAtual: string | null; onSalvar: (data: string) => void }) {
   const [aberto, setAberto] = useState(false);
@@ -434,8 +435,19 @@ function PrevisaoPagamentoPopover({ valorAtual, onSalvar }: { valorAtual: string
   return (
     <Popover open={aberto} onOpenChange={v => { setAberto(v); if (v) setData(valorAtual ?? ''); }}>
       <PopoverTrigger asChild>
-        <button type="button" className="text-muted-foreground hover:text-foreground shrink-0" title="Definir previsão de pagamento">
+        <button
+          type="button"
+          title="Previsão de pagamento"
+          className={
+            valorAtual
+              ? 'inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-amber-50 border border-amber-300 text-amber-800 font-medium hover:bg-amber-100 shrink-0'
+              : 'inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-dashed text-muted-foreground hover:text-foreground hover:border-foreground/40 shrink-0'
+          }
+        >
           <Calendar size={12}/>
+          {valorAtual
+            ? `Previsto ${new Date(valorAtual + 'T00:00:00').toLocaleDateString('pt-BR')}`
+            : 'Previsão'}
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-56 p-3 space-y-2" align="start">
