@@ -1010,6 +1010,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
           .from('pagamentos')
           .select('id, aluno_id, turma_id, produto, valor, mes_referencia, data_vencimento, data_pagamento, numero_parcela, status, canal_cobranca, data_prevista_pagamento, created_at')
           .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
           .range(from, from + PAGE - 1);
         if (!data?.length) break;
         allPags.push(...data);
