@@ -7,16 +7,24 @@ import {
 } from '@/components/ui/dialog';
 import { RefreshCw, ExternalLink, CheckCircle2, Circle, AlertTriangle } from 'lucide-react';
 import { isPagamentoInadimplente } from '@/lib/financial-utils';
+import { PrevisaoPagamentoPopover } from './PrevisaoPagamentoPopover';
+import { toast } from 'sonner';
 
 /**
- * Ficha do aluno SOMENTE LEITURA, pra abrir de dentro do Chat.
+ * Ficha do aluno praticamente SOMENTE LEITURA, pra abrir de dentro do Chat.
  *
  * A ficha completa e editavel (parcelas com baixa/estorno, contrato, upload,
  * PDF, edicao cadastral) continua sendo a de Financeiro.tsx e so existe la --
- * este componente nao duplica nem substitui aquela. Aqui nao ha nenhum
- * insert/update/delete: sao alunos pagantes reais e o codigo de parcela nao
- * tem cobertura de teste, entao a escrita fica concentrada em um lugar so.
+ * este componente nao duplica nem substitui aquela. Aqui nao ha praticamente
+ * nenhum insert/update/delete: sao alunos pagantes reais e o codigo de parcela
+ * nao tem cobertura de teste, entao a escrita fica concentrada em um lugar so.
  * Pra editar, o botao do rodape leva pra ficha completa no Financeiro.
+ *
+ * Exceção deliberada: a previsão de pagamento (data_prevista_pagamento) é
+ * editável aqui também -- é o lugar onde o operador está no meio da conversa
+ * com o aluno no WhatsApp, é um campo isolado (não mexe em status/baixa/
+ * estorno) e a Fila de Cobrança some o card assim que a parcela é marcada
+ * como cobrada, tirando o único outro acesso rápido a essa edição.
  */
 
 interface AlunoFicha {
@@ -156,6 +164,14 @@ export function FichaAlunoResumo({ alunoId, onClose, onEditarNoFinanceiro }: {
   const valorEmAtraso = emAtraso.reduce((s, p) => s + Number(p.valor ?? 0), 0);
   const encerrado = aluno?.status === 'cancelado' || aluno?.status === 'concluido';
 
+  const salvarPrevisao = async (pagamentoId: string, data: string) => {
+    const valor = data || null;
+    const { error } = await supabase.from('pagamentos').update({ data_prevista_pagamento: valor }).eq('id', pagamentoId);
+    if (error) { toast.error('Erro ao salvar previsão: ' + error.message); return; }
+    setParcelas(prev => prev.map(p => p.id === pagamentoId ? { ...p, data_prevista_pagamento: valor } : p));
+    toast.success(valor ? 'Previsão salva!' : 'Previsão removida.');
+  };
+
   return (
     <Dialog open onOpenChange={v => { if (!v) onClose(); }}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
@@ -246,7 +262,16 @@ export function FichaAlunoResumo({ alunoId, onClose, onEditarNoFinanceiro }: {
                               <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium', cfg.className)}>{cfg.label}</span>
                             </td>
                             <td className="px-3 py-2 text-muted-foreground">{fmtDate(p.data_pagamento)}</td>
-                            <td className="px-3 py-2 text-muted-foreground">{fmtDate(p.data_prevista_pagamento)}</td>
+                            <td className="px-3 py-2">
+                              {atrasada ? (
+                                <PrevisaoPagamentoPopover
+                                  valorAtual={p.data_prevista_pagamento}
+                                  onSalvar={data => salvarPrevisao(p.id, data)}
+                                />
+                              ) : (
+                                <span className="text-muted-foreground">{fmtDate(p.data_prevista_pagamento)}</span>
+                              )}
+                            </td>
                           </tr>
                         );
                       })}

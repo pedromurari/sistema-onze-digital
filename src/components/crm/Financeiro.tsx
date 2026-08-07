@@ -15,6 +15,7 @@ import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/ui/use-toast';
 import { AlunoObservacoes } from './finance/AlunoObservacoes';
 import { AlunoGruposBonus } from './finance/AlunoGruposBonus';
+import { PrevisaoPagamentoPopover } from './finance/PrevisaoPagamentoPopover';
 import {
   Plus, DollarSign, Users, AlertCircle, Eye, Trash2,
   TrendingUp, Target, Phone, Pencil, Building2, CheckCircle2,
@@ -2115,6 +2116,16 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
     loadData();
   };
 
+  // A previsão de pagamento (data que o aluno prometeu pagar) também pode ser definida na
+  // Fila de Cobrança, mas o card de lá some assim que a parcela é marcada como cobrada --
+  // aqui na ficha dá pra editar a qualquer momento, independente do estado da cobrança.
+  const salvarPrevisaoPagamento = async (pagamentoId: string, data: string) => {
+    const { error } = await supabase.from('pagamentos').update({ data_prevista_pagamento: data || null }).eq('id', pagamentoId);
+    if (error) { toast({ variant: 'destructive', title: 'Erro', description: error.message }); return; }
+    toast({ title: data ? 'Previsão salva!' : 'Previsão removida.' });
+    loadData();
+  };
+
   // Sub-componente compartilhado para Alunos e Turmas
   const ProdutoContent = () => (
     <div className="space-y-4">
@@ -3753,7 +3764,16 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                                       </Badge>
                                     </td>
                                     <td className="py-2 px-2 text-xs text-muted-foreground">{p.canal_cobranca || '—'}</td>
-                                    <td className="py-2 px-2 text-xs text-muted-foreground">{p.data_prevista_pagamento ? safeDate(p.data_prevista_pagamento) : '—'}</td>
+                                    <td className="py-2 px-2">
+                                      {isPagamentoInadimplente(p) ? (
+                                        <PrevisaoPagamentoPopover
+                                          valorAtual={p.data_prevista_pagamento ?? null}
+                                          onSalvar={data => salvarPrevisaoPagamento(p.id, data)}
+                                        />
+                                      ) : (
+                                        <span className="text-xs text-muted-foreground">—</span>
+                                      )}
+                                    </td>
                                     <td className="py-2 px-2">
                                       {p.status === 'pago'
                                         ? <Button variant="ghost" size="sm" onClick={() => estornarPagamento(p.id, alunoDetail.id)} className="text-orange-500 hover:text-orange-700 h-6 px-2 text-[10px]">Estornar</Button>

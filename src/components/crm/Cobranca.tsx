@@ -30,6 +30,7 @@ import {
   AlertTriangle, TrendingDown,
 } from 'lucide-react';
 import { EvolutionTaskPanel } from './EvolutionTaskPanel';
+import { PrevisaoPagamentoPopover } from './finance/PrevisaoPagamentoPopover';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -423,46 +424,6 @@ function AlunoFilaCard({
   );
 }
 
-// Pill própria (não só um ícone solto) pra parcela vencida, com rótulo em texto -- abre um
-// popover pequeno com 1 campo de data opcional pra registrar a previsão de pagamento que o
-// aluno deu. Sem previsão ainda: pill tracejada "+ Previsão" (convida a clicar). Com previsão:
-// pill sólida âmbar mostrando a data, também clicável pra editar. Independente do botão
-// "Marquei que cobrei": dá pra editar/limpar a qualquer momento, sem contar como um novo contato.
-function PrevisaoPagamentoPopover({ valorAtual, onSalvar }: { valorAtual: string | null; onSalvar: (data: string) => void }) {
-  const [aberto, setAberto] = useState(false);
-  const [data, setData] = useState(valorAtual ?? '');
-
-  return (
-    <Popover open={aberto} onOpenChange={v => { setAberto(v); if (v) setData(valorAtual ?? ''); }}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          title="Previsão de pagamento"
-          className={
-            valorAtual
-              ? 'inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-amber-50 border border-amber-300 text-amber-800 font-medium hover:bg-amber-100 shrink-0'
-              : 'inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-dashed text-muted-foreground hover:text-foreground hover:border-foreground/40 shrink-0'
-          }
-        >
-          <Calendar size={12}/>
-          {valorAtual
-            ? `Previsto ${new Date(valorAtual + 'T00:00:00').toLocaleDateString('pt-BR')}`
-            : 'Previsão'}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-56 p-3 space-y-2" align="start">
-        <p className="text-xs font-medium">Previsão de pagamento</p>
-        <Input type="date" value={data} onChange={e => setData(e.target.value)} className="h-8 text-xs" />
-        <div className="flex justify-end gap-1.5">
-          {valorAtual && (
-            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { onSalvar(''); setAberto(false); }}>Limpar</Button>
-          )}
-          <Button size="sm" className="h-7 text-xs" onClick={() => { onSalvar(data); setAberto(false); }}>Salvar</Button>
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 // Card por aluno no Histórico: agrupa os envios dele, colapsado por padrão (nome,
 // telefone, total de envios, se respondeu alguma vez, quando foi o último). Expande pra
