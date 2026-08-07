@@ -86,6 +86,8 @@ interface Aluno {
   whatsapp?: string;
   email?: string;
   cpf?: string;
+  rg?: string;
+  sexo?: string;
   data_nascimento?: string;
   endereco?: string;
   cep?: string;
@@ -990,8 +992,8 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
     }
   }, [initialAlunoId, loading, alunos]);
 
-  const ALUNOS_SELECT_FULL = 'id, turma_id, produto, nome, whatsapp, email, cpf, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, tipo_pagamento, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, lancamento_id, valor_mensalidade, forma_pagamento, observacoes, grupo_turma_confirmado_em, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, contrato_baixado, contrato_arquivo_url, contrato_arquivo_nome, asaas_integrado, asaas_link, voomp_integrado, voomp_link, contrato_token, token_acesso, link_grupo_whatsapp, created_at';
-  const ALUNOS_SELECT_BASE = 'id, turma_id, produto, nome, whatsapp, email, cpf, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, tipo_pagamento, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, valor_mensalidade, forma_pagamento, observacoes, grupo_turma_confirmado_em, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, created_at';
+  const ALUNOS_SELECT_FULL = 'id, turma_id, produto, nome, whatsapp, email, cpf, rg, sexo, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, tipo_pagamento, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, lancamento_id, valor_mensalidade, forma_pagamento, observacoes, grupo_turma_confirmado_em, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, contrato_baixado, contrato_arquivo_url, contrato_arquivo_nome, asaas_integrado, asaas_link, voomp_integrado, voomp_link, contrato_token, token_acesso, link_grupo_whatsapp, created_at';
+  const ALUNOS_SELECT_BASE = 'id, turma_id, produto, nome, whatsapp, email, cpf, rg, sexo, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, tipo_pagamento, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, valor_mensalidade, forma_pagamento, observacoes, grupo_turma_confirmado_em, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, created_at';
 
   const loadData = async () => {
     setLoading(true);
@@ -1587,6 +1589,8 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
       whatsapp: a.whatsapp || '',
       email: a.email || '',
       cpf: a.cpf || '',
+      rg: a.rg || '',
+      sexo: a.sexo || '',
       data_nascimento: a.data_nascimento || '',
       pais: a.pais || 'Brasil',
       endereco: a.endereco || '',
@@ -1671,6 +1675,8 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
         whatsapp: editAlunoForm.whatsapp || null,
         email: editAlunoForm.email || null,
         cpf: editAlunoForm.cpf || null,
+        rg: editAlunoForm.rg || null,
+        sexo: editAlunoForm.sexo || null,
         data_nascimento: editAlunoForm.data_nascimento || null,
         pais: editAlunoForm.pais || 'Brasil',
         endereco: editAlunoForm.endereco || null,
@@ -3473,7 +3479,20 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                     <div><label className="text-xs text-muted-foreground">WhatsApp</label><Input value={editAlunoForm.whatsapp || ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, whatsapp: e.target.value })} className="mt-1 h-8 text-sm" /></div>
                     <div><label className="text-xs text-muted-foreground">Email</label><Input type="email" value={editAlunoForm.email || ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, email: e.target.value })} className="mt-1 h-8 text-sm" /></div>
                     <div><label className="text-xs text-muted-foreground">CPF</label><Input value={editAlunoForm.cpf || ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, cpf: e.target.value })} placeholder="000.000.000-00" className="mt-1 h-8 text-sm" /></div>
+                    <div><label className="text-xs text-muted-foreground">RG</label><Input value={editAlunoForm.rg || ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, rg: e.target.value })} className="mt-1 h-8 text-sm" /></div>
                     <div><label className="text-xs text-muted-foreground">Data de nascimento</label><Input type="date" value={editAlunoForm.data_nascimento || ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, data_nascimento: e.target.value })} className="mt-1 h-8 text-sm" /></div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Sexo</label>
+                      <Select value={editAlunoForm.sexo || ''} onValueChange={v => setEditAlunoForm({ ...editAlunoForm, sexo: v })}>
+                        <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Masculino">Masculino</SelectItem>
+                          <SelectItem value="Feminino">Feminino</SelectItem>
+                          <SelectItem value="Outro">Outro</SelectItem>
+                          <SelectItem value="Prefiro não informar">Prefiro não informar</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div><label className="text-xs text-muted-foreground">Pais</label><Input value={editAlunoForm.pais || ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, pais: e.target.value })} className="mt-1 h-8 text-sm" /></div>
                     <div><label className="text-xs text-muted-foreground">CEP</label><Input value={editAlunoForm.cep || ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, cep: e.target.value })} className="mt-1 h-8 text-sm" /></div>
                     <div><label className="text-xs text-muted-foreground">Cidade / Estado</label><Input value={editAlunoForm.cidade_estado || ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, cidade_estado: e.target.value })} className="mt-1 h-8 text-sm" /></div>

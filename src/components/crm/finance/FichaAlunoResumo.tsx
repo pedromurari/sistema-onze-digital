@@ -34,6 +34,8 @@ interface AlunoFicha {
   whatsapp: string | null;
   email: string | null;
   cpf: string | null;
+  rg: string | null;
+  sexo: string | null;
   data_nascimento: string | null;
   cidade_estado: string | null;
   origem_lead: string | null;
@@ -129,7 +131,7 @@ export function FichaAlunoResumo({ alunoId, onClose, onEditarNoFinanceiro }: {
       const [alunoRes, parcelasRes] = await Promise.all([
         supabase
           .from('alunos')
-          .select('id, nome, turma_id, whatsapp, email, cpf, data_nascimento, cidade_estado, origem_lead, status, forma_pagamento, valor_mensalidade, dia_vencimento, data_matricula, mensalidades_pagas, total_mensalidades, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em')
+          .select('id, nome, turma_id, whatsapp, email, cpf, rg, sexo, data_nascimento, cidade_estado, origem_lead, status, forma_pagamento, valor_mensalidade, dia_vencimento, data_matricula, mensalidades_pagas, total_mensalidades, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em')
           .eq('id', alunoId)
           .maybeSingle(),
         supabase
@@ -212,6 +214,8 @@ export function FichaAlunoResumo({ alunoId, onClose, onEditarNoFinanceiro }: {
                 <Campo label="WhatsApp" valor={aluno.whatsapp} />
                 <Campo label="E-mail" valor={aluno.email} />
                 <Campo label="CPF" valor={aluno.cpf} />
+                <Campo label="RG" valor={aluno.rg} />
+                <Campo label="Sexo" valor={aluno.sexo} />
                 <Campo label="Nascimento" valor={fmtDate(aluno.data_nascimento)} />
                 <Campo label="Cidade / Estado" valor={aluno.cidade_estado} />
                 <Campo label="Origem" valor={aluno.origem_lead} />
