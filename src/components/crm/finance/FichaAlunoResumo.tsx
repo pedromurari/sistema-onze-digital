@@ -51,6 +51,7 @@ interface ParcelaFicha {
   data_vencimento: string | null;
   data_pagamento: string | null;
   status: string;
+  data_prevista_pagamento: string | null;
 }
 
 const PARCELA_CFG: Record<string, { label: string; className: string }> = {
@@ -125,7 +126,7 @@ export function FichaAlunoResumo({ alunoId, onClose, onEditarNoFinanceiro }: {
           .maybeSingle(),
         supabase
           .from('pagamentos')
-          .select('id, numero_parcela, valor, data_vencimento, data_pagamento, status')
+          .select('id, numero_parcela, valor, data_vencimento, data_pagamento, status, data_prevista_pagamento')
           .eq('aluno_id', alunoId)
           .order('numero_parcela', { ascending: true }),
       ]);
@@ -228,6 +229,7 @@ export function FichaAlunoResumo({ alunoId, onClose, onEditarNoFinanceiro }: {
                         <th className="text-left px-3 py-2 font-medium">Valor</th>
                         <th className="text-left px-3 py-2 font-medium">Status</th>
                         <th className="text-left px-3 py-2 font-medium">Pago em</th>
+                        <th className="text-left px-3 py-2 font-medium">Previsão</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -244,6 +246,7 @@ export function FichaAlunoResumo({ alunoId, onClose, onEditarNoFinanceiro }: {
                               <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium', cfg.className)}>{cfg.label}</span>
                             </td>
                             <td className="px-3 py-2 text-muted-foreground">{fmtDate(p.data_pagamento)}</td>
+                            <td className="px-3 py-2 text-muted-foreground">{fmtDate(p.data_prevista_pagamento)}</td>
                           </tr>
                         );
                       })}

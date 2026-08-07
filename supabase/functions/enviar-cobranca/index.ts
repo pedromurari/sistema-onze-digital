@@ -271,6 +271,10 @@ serve(async (req) => {
     return await statusTick(db, corsHeaders);
   }
 
+  if (body.marcar_manual) {
+    return await marcarCobradoManual(db, body, userId, corsHeaders);
+  }
+
   if (body.log_id) {
     const { data: cfg } = await db.from("cobranca_config").select("evolution_config_ids").eq("id", "default").single();
     const instances = await resolveInstances(db, cfg ?? {});
@@ -397,6 +401,43 @@ async function enviarManual(db: any, evoInstances: EvoInstance[], body: any, use
     status: result.ok ? 200 : 502,
     headers: { ...cors, "Content-Type": "application/json" },
   });
+}
+
+// Registra que o operador cobrou o aluno pelo WhatsApp pessoal dele, fora do sistema -- sem
+// mandar nada pela Evolution API. Grava em cobranca_logs igual a um envio de verdade (mesmo
+// índice único de dedupe), pra: (1) o automático não mandar a mesma fase de novo, (2) o badge
+// "Cobrado ..." do card da Fila aparecer. `cobertura` já vem calculada pelo frontend (mesmo
+// formato pagamento_id+template_id que um envio manual usa).
+async function marcarCobradoManual(db: any, body: any, userId: string | null, cors: any) {
+  const { aluno_id, aluno_nome, telefone, cobertura } = body;
+  if (!aluno_id || !Array.isArray(cobertura) || !cobertura.length) {
+    return new Response(JSON.stringify({ error: "Parâmetros inválidos" }), {
+      status: 400, headers: { ...cors, "Content-Type": "application/json" },
+    });
+  }
+
+  const grupoEnvioId = cobertura.length > 1 ? crypto.randomUUID() : null;
+  const agora = new Date().toISOString();
+  const { error } = await db.from("cobranca_logs").insert(
+    cobertura.map((c: { pagamento_id: string; template_id: string | null }) => ({
+      aluno_id, pagamento_id: c.pagamento_id, aluno_nome: aluno_nome || "Aluno", telefone,
+      mensagem: "Cobrança feita manualmente pelo WhatsApp pessoal do operador.",
+      template_nome: "Manual (fora do sistema)", template_tipo: null, template_id: c.template_id,
+      status: "enviado", manual: true, enviado_por: userId,
+      enviado_em: agora, agendado_para: agora, grupo_envio_id: grupoEnvioId,
+    })),
+  );
+
+  if (error) {
+    const jaReservado = error.code === "23505";
+    return new Response(JSON.stringify({
+      error: jaReservado
+        ? "Essa fase já foi cobrada por outro processo nesse meio tempo -- atualize a fila."
+        : error.message,
+    }), { status: jaReservado ? 409 : 500, headers: { ...cors, "Content-Type": "application/json" } });
+  }
+
+  return new Response(JSON.stringify({ success: true }), { headers: { ...cors, "Content-Type": "application/json" } });
 }
 
 // Acha, pra um item da fila, o template configurado pro offset dele -- mesma regra de

@@ -21,9 +21,12 @@ import {
   Tabs, TabsContent, TabsList, TabsTrigger,
 } from '@/components/ui/tabs';
 import {
+  Popover, PopoverContent, PopoverTrigger,
+} from '@/components/ui/popover';
+import {
   MessageSquare, Send, Settings, FileText, History, Clock,
   Plus, Trash2, Pencil, Play, CheckCircle2, XCircle, AlertCircle,
-  RefreshCw, Zap, Phone, Calendar, Info,
+  RefreshCw, Zap, Phone, Calendar, Info, Check,
   AlertTriangle, TrendingDown,
 } from 'lucide-react';
 import { EvolutionTaskPanel } from './EvolutionTaskPanel';
@@ -158,6 +161,7 @@ interface FilaItem {
   dias_offset: number;
   link_pagamento: string;
   pagamento_status: string;
+  data_prevista_pagamento: string | null;
 }
 
 // Um aluno com 2+ parcelas em aberto agora vira 1 card, não N linhas -- `parcelas` é
@@ -335,13 +339,15 @@ function SituacaoBadge({ critica, isInadimplente }: { critica: FilaItem; isInadi
 // Card por aluno na Fila: agrupa todas as parcelas em aberto dele (não só a que está
 // elegível pra cobrança hoje), pra deixar claro o tamanho real da dívida de uma vez.
 function AlunoFilaCard({
-  grupo, horaEstimada, jaCobradoHoje, isSending, onEnviar, ultimoContato,
+  grupo, horaEstimada, jaCobradoHoje, isSending, onEnviar, onMarcarCobrado, onSalvarPrevisao, ultimoContato,
 }: {
   grupo: AlunoGrupo;
   horaEstimada?: string;
   jaCobradoHoje: boolean;
   isSending: boolean;
   onEnviar: () => void;
+  onMarcarCobrado: () => void;
+  onSalvarPrevisao: (pagamentoId: string, data: string) => void;
   ultimoContato?: UltimoContato;
 }) {
   const severidade = severidadeGrupo(grupo.critica);
@@ -388,8 +394,17 @@ function AlunoFilaCard({
             const venceu = p.dias_offset > 0;
             const data = new Date(p.data_vencimento + 'T00:00:00').toLocaleDateString('pt-BR');
             return (
-              <span key={p.pagamento_id} className="text-xs px-2 py-1 rounded-md bg-muted/60 border text-muted-foreground">
+              <span key={p.pagamento_id} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-muted/60 border text-muted-foreground">
                 #{p.parcela} · R$ {fmt(p.valor)} · {venceu ? `venceu ${data}` : p.dias_offset === 0 ? `vence hoje` : `vence ${data}`}
+                {p.data_prevista_pagamento && (
+                  <span className="text-amber-700">· previsto {new Date(p.data_prevista_pagamento + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
+                )}
+                {venceu && (
+                  <PrevisaoPagamentoPopover
+                    valorAtual={p.data_prevista_pagamento}
+                    onSalvar={data => onSalvarPrevisao(p.pagamento_id, data)}
+                  />
+                )}
               </span>
             );
           })}
@@ -400,9 +415,40 @@ function AlunoFilaCard({
             {isSending ? <RefreshCw size={12} className="animate-spin"/> : <Send size={12}/>}
             {grupo.elegiveis.length ? 'Ver mensagem' : 'Reenviar'}
           </Button>
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7" disabled={isSending} onClick={onMarcarCobrado}>
+            <Check size={12}/>Marquei que cobrei
+          </Button>
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// Ícone de calendário num chip de parcela vencida -- abre um popover pequeno com 1 campo de
+// data opcional pra registrar a previsão de pagamento que o aluno deu. Independente do botão
+// "Marquei que cobrei": dá pra editar/limpar a qualquer momento, sem contar como um novo contato.
+function PrevisaoPagamentoPopover({ valorAtual, onSalvar }: { valorAtual: string | null; onSalvar: (data: string) => void }) {
+  const [aberto, setAberto] = useState(false);
+  const [data, setData] = useState(valorAtual ?? '');
+
+  return (
+    <Popover open={aberto} onOpenChange={v => { setAberto(v); if (v) setData(valorAtual ?? ''); }}>
+      <PopoverTrigger asChild>
+        <button type="button" className="text-muted-foreground hover:text-foreground shrink-0" title="Definir previsão de pagamento">
+          <Calendar size={12}/>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-3 space-y-2" align="start">
+        <p className="text-xs font-medium">Previsão de pagamento</p>
+        <Input type="date" value={data} onChange={e => setData(e.target.value)} className="h-8 text-xs" />
+        <div className="flex justify-end gap-1.5">
+          {valorAtual && (
+            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { onSalvar(''); setAberto(false); }}>Limpar</Button>
+          )}
+          <Button size="sm" className="h-7 text-xs" onClick={() => { onSalvar(data); setAberto(false); }}>Salvar</Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -1123,6 +1169,53 @@ export function Cobranca() {
     await loadAll();
   };
 
+  // Registra que o operador já cobrou esse aluno pelo WhatsApp pessoal dele, fora do sistema --
+  // não manda nada, só grava em cobranca_logs (mesma cobertura que "Ver mensagem" cobriria) pra
+  // contar pro dedupe do automático e alimentar o badge "Cobrado ..." do card.
+  const marcarCobradoManual = async (grupo: AlunoGrupo) => {
+    const base = grupo.elegiveis.length ? grupo.elegiveis : grupo.parcelas;
+    const cobertura = base.map(p => ({ pagamento_id: p.pagamento_id, template_id: templateParaOffset(p.dias_offset)?.id ?? null }));
+    setEnviandoIds(p => new Set([...p, ...cobertura.map(c => c.pagamento_id)]));
+
+    const { data: sess } = await supabase.auth.getSession();
+    const token = sess.session?.access_token;
+
+    const res = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/enviar-cobranca`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          marcar_manual: true,
+          aluno_id:   grupo.aluno_id,
+          aluno_nome: grupo.aluno_nome,
+          telefone:   grupo.telefone,
+          cobertura,
+        }),
+      }
+    );
+    const json = await res.json();
+    if (json.success) toast.success(`Marcado como cobrado: ${grupo.aluno_nome}`);
+    else toast.error('Erro ao marcar: ' + (json.error ?? 'desconhecido'));
+
+    setEnviandoIds(p => { const next = new Set(p); cobertura.forEach(c => next.delete(c.pagamento_id)); return next; });
+    await loadAll();
+  };
+
+  // Grava/edita a previsão de pagamento de UMA parcela (não passa pelo enviar-cobranca -- não
+  // afeta dedupe nem elegibilidade, é só informativo). `data` vazio limpa a previsão.
+  const salvarPrevisaoPagamento = async (pagamentoId: string, data: string) => {
+    const valor = data || null;
+    const { error } = await supabase.from('pagamentos').update({ data_prevista_pagamento: valor }).eq('id', pagamentoId);
+    if (error) { toast.error('Erro ao salvar previsão: ' + error.message); return; }
+    setFila(prev => prev.map(item => item.pagamento_id === pagamentoId ? { ...item, data_prevista_pagamento: valor } : item));
+    toast.success(valor ? 'Previsão salva!' : 'Previsão removida.');
+  };
+
   const reenviarLog = async (log: CobrancaLog) => {
     setEnviandoIds(p => new Set([...p, log.id]));
     const { data: sess } = await supabase.auth.getSession();
@@ -1554,6 +1647,8 @@ export function Cobranca() {
                     jaCobradoHoje={grupo.parcelas.some(p => enviadosHojeSet.has(p.pagamento_id))}
                     isSending={grupo.elegiveis.some(p => enviandoIds.has(p.pagamento_id))}
                     onEnviar={() => abrirSendModal(grupo)}
+                    onMarcarCobrado={() => marcarCobradoManual(grupo)}
+                    onSalvarPrevisao={salvarPrevisaoPagamento}
                     ultimoContato={ultimoContatoPorAluno.get(grupo.aluno_id)}
                   />
                 ))

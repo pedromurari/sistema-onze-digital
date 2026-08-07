@@ -135,6 +135,7 @@ interface Pagamento {
   numero_parcela: number;
   status: 'pago' | 'pendente' | 'atrasado' | 'isento';
   canal_cobranca?: string | null;
+  data_prevista_pagamento?: string | null;
   created_at: string;
 }
 
@@ -1007,7 +1008,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
       for (let from = 0; ; from += PAGE) {
         const { data } = await supabase
           .from('pagamentos')
-          .select('id, aluno_id, turma_id, produto, valor, mes_referencia, data_vencimento, data_pagamento, numero_parcela, status, canal_cobranca, created_at')
+          .select('id, aluno_id, turma_id, produto, valor, mes_referencia, data_vencimento, data_pagamento, numero_parcela, status, canal_cobranca, data_prevista_pagamento, created_at')
           .order('created_at', { ascending: false })
           .range(from, from + PAGE - 1);
         if (!data?.length) break;
@@ -3680,6 +3681,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                                   <th className="text-left py-2 px-2 font-medium text-xs">Valor</th>
                                   <th className="text-left py-2 px-2 font-medium text-xs">Status</th>
                                   <th className="text-left py-2 px-2 font-medium text-xs">Canal</th>
+                                  <th className="text-left py-2 px-2 font-medium text-xs">Previsão</th>
                                   <th className="text-left py-2 px-3 font-medium">Acoes</th>
                                 </tr>
                               </thead>
@@ -3700,6 +3702,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                                       </Badge>
                                     </td>
                                     <td className="py-2 px-2 text-xs text-muted-foreground">{p.canal_cobranca || '—'}</td>
+                                    <td className="py-2 px-2 text-xs text-muted-foreground">{p.data_prevista_pagamento ? safeDate(p.data_prevista_pagamento) : '—'}</td>
                                     <td className="py-2 px-2">
                                       {p.status === 'pago'
                                         ? <Button variant="ghost" size="sm" onClick={() => estornarPagamento(p.id, alunoDetail.id)} className="text-orange-500 hover:text-orange-700 h-6 px-2 text-[10px]">Estornar</Button>
