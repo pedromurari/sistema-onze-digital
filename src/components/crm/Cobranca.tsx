@@ -930,7 +930,14 @@ export function Cobranca() {
     for (const [alunoId, parcelas] of porAluno) {
       const elegiveis = parcelas.filter(item => {
         const tpl = templateParaOffset(item.dias_offset);
-        if (!tpl) return true;
+        // Sem template configurado pra esse offset (ex: parcela ainda longe do
+        // vencimento, fora das janelas de pré-vencimento) não é "pendente de cobrança
+        // agora" -- não tem nem como marcar essa fase como enviada, então nunca fica
+        // "resolvida". Contar como elegível aqui (como fazia antes) fazia o card do
+        // aluno nunca sumir da fila mesmo depois de cobrado, sempre que ele tivesse
+        // pelo menos 1 parcela nessa situação -- mesma regra do backend em
+        // proximoGrupoElegivel, que já filtra isso fora (`resolvidos`).
+        if (!tpl) return false;
         return !envioPorFase.has(`${item.pagamento_id}:${tpl.id}`);
       });
       // Severidade calculada sobre TODAS as parcelas em aberto (não só as elegíveis) --
