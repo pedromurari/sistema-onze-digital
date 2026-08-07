@@ -162,12 +162,16 @@ serve(async (req) => {
 
       console.log(`Contrato assinado: aluno=${aluno.id} (${aluno.nome})`);
 
-      // Audit log
-      sb.from('audit_logs').insert({
-        action: 'contrato_assinado',
-        target_id: aluno.id,
-        details: { document_id: documentId, aluno_nome: aluno.nome },
-      }).catch(() => {});
+      // Audit log — o builder do supabase-js não tem .catch(), só .then()/await
+      try {
+        await sb.from('audit_logs').insert({
+          action: 'contrato_assinado',
+          target_id: aluno.id,
+          details: { document_id: documentId, aluno_nome: aluno.nome },
+        });
+      } catch (e) {
+        console.error('audit_logs insert error:', e);
+      }
 
       if (aluno.whatsapp) {
         try {
