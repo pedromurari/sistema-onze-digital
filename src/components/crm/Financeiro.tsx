@@ -13,6 +13,8 @@ import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/ui/use-toast';
+import { AlunoObservacoes } from './finance/AlunoObservacoes';
+import { AlunoGruposBonus } from './finance/AlunoGruposBonus';
 import {
   Plus, DollarSign, Users, AlertCircle, Eye, Trash2,
   TrendingUp, Target, Phone, Pencil, Building2, CheckCircle2,
@@ -101,6 +103,7 @@ interface Aluno {
   valor_mensalidade?: number;
   forma_pagamento?: string;
   observacoes?: string;
+  grupo_turma_confirmado_em?: string | null;
   forms_respondido?: boolean;
   forms_respondido_em?: string;
   contrato_enviado?: boolean;
@@ -909,6 +912,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
   const [subView, setSubView] = useState<SubView>('alunos');
   const [turmas, setTurmas] = useState<Turma[]>([]);
   const [alunos, setAlunos] = useState<Aluno[]>([]);
+  const [obsPendentesPorAluno, setObsPendentesPorAluno] = useState<Record<string, string>>({});
   const [pagamentos, setPagamentos] = useState<Pagamento[]>([]);
   const [selectedTurmaId, setSelectedTurmaId] = useState('todas');
   const [loading, setLoading] = useState(true);
@@ -923,6 +927,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
   const [alunoDetail, setAlunoDetail] = useState<Aluno | null>(null);
   const [alunoToDelete, setAlunoToDelete] = useState<Aluno | null>(null);
   const [cobrancaLogsAluno, setCobrancaLogsAluno] = useState<CobrancaLogAluno[]>([]);
+  const [latestObsTexto, setLatestObsTexto] = useState('');
   const [loadingCobrancaLogsAluno, setLoadingCobrancaLogsAluno] = useState(false);
   const [indicadosAluno, setIndicadosAluno] = useState<IndicadoLead[]>([]);
   const [loadingIndicadosAluno, setLoadingIndicadosAluno] = useState(false);
@@ -984,8 +989,8 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
     }
   }, [initialAlunoId, loading, alunos]);
 
-  const ALUNOS_SELECT_FULL = 'id, turma_id, produto, nome, whatsapp, email, cpf, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, tipo_pagamento, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, lancamento_id, valor_mensalidade, forma_pagamento, observacoes, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, contrato_baixado, contrato_arquivo_url, contrato_arquivo_nome, asaas_integrado, asaas_link, voomp_integrado, voomp_link, contrato_token, token_acesso, link_grupo_whatsapp, created_at';
-  const ALUNOS_SELECT_BASE = 'id, turma_id, produto, nome, whatsapp, email, cpf, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, tipo_pagamento, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, valor_mensalidade, forma_pagamento, observacoes, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, created_at';
+  const ALUNOS_SELECT_FULL = 'id, turma_id, produto, nome, whatsapp, email, cpf, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, tipo_pagamento, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, lancamento_id, valor_mensalidade, forma_pagamento, observacoes, grupo_turma_confirmado_em, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, contrato_baixado, contrato_arquivo_url, contrato_arquivo_nome, asaas_integrado, asaas_link, voomp_integrado, voomp_link, contrato_token, token_acesso, link_grupo_whatsapp, created_at';
+  const ALUNOS_SELECT_BASE = 'id, turma_id, produto, nome, whatsapp, email, cpf, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, tipo_pagamento, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, valor_mensalidade, forma_pagamento, observacoes, grupo_turma_confirmado_em, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, created_at';
 
   const loadData = async () => {
     setLoading(true);
@@ -1022,6 +1027,16 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
       if (respRes.data) setResponsaveis(respRes.data);
       const lancRes = await supabase.from('lancamentos').select('id, nome, status, data_live, ativo').order('created_at', { ascending: false });
       if (lancRes.data) setLancamentos(lancRes.data);
+      const { data: obsPendentes } = await supabase
+        .from('aluno_observacoes')
+        .select('aluno_id, texto')
+        .eq('status', 'pendente')
+        .order('created_at', { ascending: false });
+      if (obsPendentes) {
+        const map: Record<string, string> = {};
+        for (const o of obsPendentes) if (!map[o.aluno_id]) map[o.aluno_id] = o.texto;
+        setObsPendentesPorAluno(map);
+      }
     } catch (e) {
       toast({ variant: 'destructive', title: 'Erro', description: 'Falha ao carregar dados' });
     } finally {
@@ -1493,9 +1508,15 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
         lancamento_id: newAlunoForm.lancamento_id || null,
         valor_mensalidade: valorAluno,
         forma_pagamento: method,
-        observacoes: newAlunoForm.observacoes || null,
       }).select().single();
       if (error) throw error;
+      if (newAlunoForm.observacoes?.trim()) {
+        await supabase.from('aluno_observacoes').insert({
+          aluno_id: inserted.id,
+          texto: newAlunoForm.observacoes.trim(),
+          criado_por: user?.id ?? null,
+        });
+      }
       const rows = buildInstallments({
         alunoId: inserted.id,
         turmaId: newAlunoForm.turma_id,
@@ -1601,7 +1622,9 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
       total_mensalidades: a.total_mensalidades,
       data_segunda_parcela: toDateInput(parcela2?.data_vencimento),
       observacoes: a.observacoes || '',
+      grupo_turma_confirmado_em: a.grupo_turma_confirmado_em ?? null,
     });
+    setLatestObsTexto('');
     setShowAlunoDetail(true);
   };
 
@@ -1680,7 +1703,6 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
         voomp_integrado: editAlunoForm.voomp_integrado ?? false,
         voomp_link: editAlunoForm.voomp_link || null,
         total_mensalidades: targetTotal,
-        observacoes: editAlunoForm.observacoes || null,
       };
       const { error } = await supabase.from('alunos').update(updateData).eq('id', alunoDetail.id);
       if (error) throw error;
@@ -1909,7 +1931,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
     <div class="field"><label>Status</label><span>${editAlunoForm.status || alunoDetail.status || '—'}</span></div>
   </div>
 
-  ${(editAlunoForm.observacoes || alunoDetail.observacoes) ? `<div class="field" style="margin-bottom:16px"><label>Observações</label><span>${editAlunoForm.observacoes || alunoDetail.observacoes}</span></div>` : ''}
+  ${latestObsTexto ? `<div class="field" style="margin-bottom:16px"><label>Observações</label><span>${latestObsTexto}</span></div>` : ''}
 
   <hr class="divider"/>
 
@@ -2602,9 +2624,9 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                                     <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${urgDot.cls}`} title={urgDot.tip} />
                                     <span className={`font-medium ${aluno.status === 'cancelado' ? 'text-muted-foreground line-through' : 'text-foreground'}`}>{aluno.nome}</span>
                                   </div>
-                                  {aluno.observacoes && (
-                                    <p className="text-[11px] text-muted-foreground font-normal mt-0.5 leading-tight max-w-[180px] truncate" title={aluno.observacoes}>
-                                      {aluno.observacoes}
+                                  {obsPendentesPorAluno[aluno.id] && (
+                                    <p className="text-[11px] text-muted-foreground font-normal mt-0.5 leading-tight max-w-[180px] truncate" title={obsPendentesPorAluno[aluno.id]}>
+                                      {obsPendentesPorAluno[aluno.id]}
                                     </p>
                                   )}
                                 </td>
@@ -3471,12 +3493,40 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                         </Select>
                       </div>
                     )}
-                    <div className="col-span-2">
-                      <label className="text-xs text-muted-foreground">Observacoes</label>
-                      <Textarea value={editAlunoForm.observacoes || ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, observacoes: e.target.value })} placeholder="Observacoes sobre contrato, cobranca ou atendimento..." className="mt-1 min-h-16 text-sm" />
-                    </div>
                   </div>
                 </div>
+
+                {/* Observacoes (historico) */}
+                {alunoDetail && (
+                  <div>
+                    <AlunoObservacoes
+                      alunoId={alunoDetail.id}
+                      onLoaded={list => {
+                        setLatestObsTexto(list[0]?.texto || '');
+                        const pendente = list.find(o => o.status === 'pendente')?.texto || '';
+                        setObsPendentesPorAluno(prev => {
+                          const next = { ...prev };
+                          if (pendente) next[alunoDetail.id] = pendente;
+                          else delete next[alunoDetail.id];
+                          return next;
+                        });
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* Grupo e bonus */}
+                {alunoDetail && (
+                  <div>
+                    <AlunoGruposBonus
+                      aluno={{ id: alunoDetail.id, grupo_turma_confirmado_em: editAlunoForm.grupo_turma_confirmado_em ?? null }}
+                      onGrupoTurmaChange={confirmadoEm => {
+                        setEditAlunoForm(f => ({ ...f, grupo_turma_confirmado_em: confirmadoEm }));
+                        setAlunos(prev => prev.map(a => a.id === alunoDetail.id ? { ...a, grupo_turma_confirmado_em: confirmadoEm } : a));
+                      }}
+                    />
+                  </div>
+                )}
 
                 {/* Financeiro */}
                 <div>
