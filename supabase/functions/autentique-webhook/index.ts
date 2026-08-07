@@ -89,8 +89,21 @@ serve(async (req) => {
       });
     }
 
-    const event      = String(payload?.event ?? payload?.type ?? '');
-    const documentId = String(payload?.document?.id ?? (payload?.data as any)?.document?.id ?? '');
+    // Envelope real da Autentique: { id, object: "webhook", event: { type, data: { object } } }
+    // Docs: https://docs.autentique.com.br/api/integration-basics/webhooks
+    const eventType = String((payload?.event as any)?.type ?? '');
+    const eventData = ((payload?.event as any)?.data?.object ?? {}) as Record<string, unknown>;
+
+    const isDocumentEvent  = eventType.startsWith('document.');
+    const isSignatureEvent = eventType.startsWith('signature.');
+
+    // Em eventos de documento, o id vem em data.object.id; em eventos de
+    // assinatura, data.object é a assinatura e o documento fica em data.object.document
+    const documentId = isDocumentEvent
+      ? String(eventData?.id ?? '')
+      : isSignatureEvent
+        ? String(eventData?.document ?? '')
+        : '';
 
     if (!documentId) {
       return new Response(JSON.stringify({ error: 'document_id não encontrado no payload' }), {
@@ -98,7 +111,23 @@ serve(async (req) => {
       });
     }
 
-    console.log(`Autentique webhook: event=${event} doc=${documentId}`);
+    // Timestamp real da assinatura: signatures[].signed (evento de documento)
+    // ou data.object.signed (evento de assinatura individual)
+    function ultimaAssinatura(signatures: unknown): string | null {
+      if (!Array.isArray(signatures)) return null;
+      const datas = signatures
+        .map((s: any) => s?.signed)
+        .filter((v: unknown): v is string => typeof v === 'string' && v.length > 0);
+      return datas.length ? datas.sort().at(-1)! : null;
+    }
+
+    const signedAt = isDocumentEvent
+      ? ultimaAssinatura(eventData?.signatures)
+      : isSignatureEvent && typeof eventData?.signed === 'string'
+        ? eventData.signed as string
+        : null;
+
+    console.log(`Autentique webhook: event=${eventType} doc=${documentId} signedAt=${signedAt}`);
 
     const { data: aluno } = await sb
       .from('alunos')
@@ -113,7 +142,9 @@ serve(async (req) => {
       });
     }
 
-    if (event.includes('sign') || event.includes('complet') || event === 'document.finished') {
+    const isCompletionEvent = eventType === 'document.finished' || eventType === 'signature.accepted';
+
+    if (isCompletionEvent) {
       // Idempotência: só processa se ainda não estava assinado
       if (aluno.contrato_assinado) {
         console.log(`Contrato já assinado: aluno=${aluno.id} — ignorando duplicata`);
@@ -124,7 +155,9 @@ serve(async (req) => {
 
       await sb.from('alunos').update({
         contrato_assinado:    true,
-        contrato_assinado_em: new Date().toISOString(),
+        // Data real informada pela Autentique; se algum evento não trouxer o
+        // campo, usa o instante de recebimento do webhook como último recurso
+        contrato_assinado_em: signedAt ?? new Date().toISOString(),
       }).eq('id', aluno.id);
 
       console.log(`Contrato assinado: aluno=${aluno.id} (${aluno.nome})`);
