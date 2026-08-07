@@ -178,6 +178,14 @@ interface AlunoGrupo {
   isInadimplente: boolean;
 }
 
+// Último contato de cobrança já feito com o aluno (independente da parcela) -- alimenta o
+// badge "Cobrado ontem, HH:MM" / "Respondeu" no card da Fila, pra quem for mandar uma
+// cobrança manual saber se já falou com essa pessoa antes de decidir o tom.
+interface UltimoContato {
+  ultimoEnvio: string;
+  respondeu: boolean;
+}
+
 // Conversa de cobrança tocada pelo agente de IA (ver cobranca-ia-responder) --
 // aciona quando um aluno já cadastrado responde a uma mensagem de cobrança.
 // Escopo raso: rapport + entender o atraso + coletar uma data estimada, nunca
@@ -234,6 +242,18 @@ function fmt(v: number) {
 function fmtDate(iso: string | null) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+// "Cobrado hoje/ontem, HH:MM" no card da Fila -- fuso São Paulo (mesmo padrão de
+// hojeSaoPaulo/dataSaoPaulo), pra bater com o dia "de verdade" do operador, não o UTC.
+function fmtContatoRelativo(iso: string): string {
+  const d = new Date(iso);
+  const dia = dataSaoPaulo(d);
+  const hora = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+  if (dia === hojeSaoPaulo()) return `Cobrado hoje, ${hora}`;
+  if (dia === dataSaoPaulo(new Date(Date.now() - 86_400_000))) return `Cobrado ontem, ${hora}`;
+  const dataFmt = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' });
+  return `Cobrado em ${dataFmt}, ${hora}`;
 }
 
 const VARIAVEIS = [
@@ -315,13 +335,14 @@ function SituacaoBadge({ critica, isInadimplente }: { critica: FilaItem; isInadi
 // Card por aluno na Fila: agrupa todas as parcelas em aberto dele (não só a que está
 // elegível pra cobrança hoje), pra deixar claro o tamanho real da dívida de uma vez.
 function AlunoFilaCard({
-  grupo, horaEstimada, jaCobradoHoje, isSending, onEnviar,
+  grupo, horaEstimada, jaCobradoHoje, isSending, onEnviar, ultimoContato,
 }: {
   grupo: AlunoGrupo;
   horaEstimada?: string;
   jaCobradoHoje: boolean;
   isSending: boolean;
   onEnviar: () => void;
+  ultimoContato?: UltimoContato;
 }) {
   const severidade = severidadeGrupo(grupo.critica);
   return (
@@ -344,6 +365,12 @@ function AlunoFilaCard({
                 )}
                 {horaEstimada && (
                   <span className="text-xs text-muted-foreground font-mono">~{horaEstimada}</span>
+                )}
+                {ultimoContato && (
+                  <Badge variant="outline" className="text-xs">{fmtContatoRelativo(ultimoContato.ultimoEnvio)}</Badge>
+                )}
+                {ultimoContato?.respondeu && (
+                  <Badge className="bg-violet-50 text-violet-700 border border-violet-200 text-xs gap-1"><MessageSquare size={10}/>Respondeu</Badge>
                 )}
               </div>
             </div>
@@ -1206,6 +1233,29 @@ export function Cobranca() {
     }
   };
 
+  // Último contato de cobrança por aluno (pra badge "Cobrado ontem, HH:MM"/"Respondeu" no
+  // card da Fila) -- deriva de `logs` inteiro, não de `filteredLogs`, que é filtrado pela
+  // busca da aba Histórico e não deve afetar a Fila. Só conta envio que realmente saiu
+  // (status 'enviado'); uma tentativa que deu erro não é "contato feito".
+  const ultimoContatoPorAluno = useMemo<Map<string, UltimoContato>>(() => {
+    const porAluno = new Map<string, CobrancaLog[]>();
+    for (const log of logs) {
+      if (log.status !== 'enviado' || !log.enviado_em) continue;
+      const chave = log.aluno_id ?? log.telefone;
+      if (!porAluno.has(chave)) porAluno.set(chave, []);
+      porAluno.get(chave)!.push(log);
+    }
+    const resultado = new Map<string, UltimoContato>();
+    for (const [chave, envios] of porAluno) {
+      const ordenados = [...envios].sort((a, b) => new Date(b.enviado_em!).getTime() - new Date(a.enviado_em!).getTime());
+      resultado.set(chave, {
+        ultimoEnvio: ordenados[0].enviado_em!,
+        respondeu: envios.some(l => !!l.respondeu_em),
+      });
+    }
+    return resultado;
+  }, [logs]);
+
   // ── Filtered logs ─────────────────────────────────────────────────────────
   const filteredLogs = useMemo(() =>
     logs.filter(l =>
@@ -1504,6 +1554,7 @@ export function Cobranca() {
                     jaCobradoHoje={grupo.parcelas.some(p => enviadosHojeSet.has(p.pagamento_id))}
                     isSending={grupo.elegiveis.some(p => enviandoIds.has(p.pagamento_id))}
                     onEnviar={() => abrirSendModal(grupo)}
+                    ultimoContato={ultimoContatoPorAluno.get(grupo.aluno_id)}
                   />
                 ))
               )}
