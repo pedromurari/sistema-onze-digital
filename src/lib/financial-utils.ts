@@ -23,7 +23,7 @@ export interface TaxaDetalhe {
   id: string;
   produto_slug: string;       // 'psicanalise' | 'npa' | '*' (curinga = todos)
   forma_pagamento: string;    // 'boleto' | 'cartao' | 'pix' | 'avista' | '*'
-  gateway: string;            // 'asaas' | 'vega' | 'stripe' | 'outros'
+  gateway: string;            // nome de public.canais_cobranca (ex: 'Voomp - Recorrência') | '*' (curinga = qualquer canal)
   percentual: number;         // ex: 2.99 = 2.99%
   fixo_por_transacao: number; // ex: 1.99 (Asaas cobra por boleto emitido)
   faixa_min: number;
@@ -44,6 +44,8 @@ export interface PagamentoComFonte {
   produto: string | null;
   forma_pagamento: string;    // vem do JOIN com alunos via vw_receita_por_fonte
   produto_label: string;      // 'PSI' | 'NPA' | nome do produto
+  canal_cobranca?: string | null;  // canal real escolhido na confirmação (vw_receita_por_fonte)
+  taxa_valor?: number | null;      // taxa travada na confirmação, se houver (vw_receita_por_fonte)
 }
 
 export interface LiquidoProduto {
@@ -185,34 +187,51 @@ export function mesLabel(mes: string): string {
 // ─── Cálculo de taxa por transação ───────────────────────────────────────────
 //
 // FONTE: tabela payment_method_rates (banco de dados)
-// LÓGICA: Encontra a regra mais específica que case com produto + forma + valor.
-//   Prioridade: produto exato + forma exata (score 3)
-//            > produto exato + forma '*'  (score 2)
-//            > produto '*' + forma exata  (score 1)
-//            > produto '*' + forma '*'    (score 0)
+// LÓGICA: Encontra a regra mais específica que case com produto + forma +
+//   canal + valor. canal='' (ainda não escolhido, ex: estimativa antes da
+//   confirmação) só casa com regras de canal curinga ('*') — regras de canal
+//   específico exigem o canal exato.
+//   Prioridade (score, do mais específico pro menos):
+//     produto exato (+4) + forma exata (+2) + canal exato (+1)
 // RETORNO: valor em R$ da taxa para aquela transação (percentual + fixo)
 export function calcTaxaTransacao(
   valor: number,
   produto: string,
   forma: string,
+  canal: string,
   taxas: TaxaDetalhe[]
 ): number {
   const candidatos = taxas.filter(t =>
     t.ativo &&
     (t.produto_slug === produto || t.produto_slug === '*') &&
     (t.forma_pagamento === forma   || t.forma_pagamento === '*') &&
+    (t.gateway === canal || t.gateway === '*') &&
     valor >= t.faixa_min &&
     valor <= t.faixa_max
   );
   if (!candidatos.length) return 0;
 
   const match = candidatos.sort((a, b) => {
-    const scoreA = (a.produto_slug !== '*' ? 2 : 0) + (a.forma_pagamento !== '*' ? 1 : 0);
-    const scoreB = (b.produto_slug !== '*' ? 2 : 0) + (b.forma_pagamento !== '*' ? 1 : 0);
+    const scoreA = (a.produto_slug !== '*' ? 4 : 0) + (a.forma_pagamento !== '*' ? 2 : 0) + (a.gateway !== '*' ? 1 : 0);
+    const scoreB = (b.produto_slug !== '*' ? 4 : 0) + (b.forma_pagamento !== '*' ? 2 : 0) + (b.gateway !== '*' ? 1 : 0);
     return scoreB - scoreA;
   })[0];
 
   return (valor * match.percentual / 100) + match.fixo_por_transacao;
+}
+
+// ─── Taxa efetiva de um pagamento (canônica) ─────────────────────────────────
+//
+// Prefere a taxa travada em pagamentos.taxa_valor (gravada na confirmação —
+// ver Balanco.tsx/Financeiro.tsx); só recalcula ao vivo via calcTaxaTransacao
+// quando o pagamento ainda não tem taxa travada (não confirmado, ou
+// confirmado antes desta trava existir).
+export function taxaDoPagamento(
+  p: { valor: number | null; produto: string | null; forma_pagamento: string; canal_cobranca?: string | null; taxa_valor?: number | null },
+  taxas: TaxaDetalhe[]
+): number {
+  if (p.taxa_valor != null) return p.taxa_valor;
+  return calcTaxaTransacao(p.valor || 0, p.produto || '', p.forma_pagamento, p.canal_cobranca || '', taxas);
 }
 
 // ─── Breakdown de líquido por produto ────────────────────────────────────────
@@ -233,12 +252,7 @@ export function calcLiquidoPorProduto(
     if (share === 0) continue;
 
     const val  = (p.valor || 0) * share;
-    const taxa = calcTaxaTransacao(
-      p.valor || 0,
-      p.produto || '',
-      p.forma_pagamento,
-      taxas
-    ) * share;
+    const taxa = taxaDoPagamento(p, taxas) * share;
 
     const slug = p.produto || 'outros';
     if (!resultado[slug]) resultado[slug] = { bruto: 0, taxas: 0, liquido: 0, count: 0 };

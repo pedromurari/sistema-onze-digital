@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { format, isSameMonth, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { isPagamentoInadimplente } from '@/lib/financial-utils';
+import { isPagamentoInadimplente, calcTaxaTransacao, taxaDoPagamento, type TaxaDetalhe } from '@/lib/financial-utils';
 
 interface Turma {
   id: string;
@@ -141,6 +141,7 @@ interface Pagamento {
   numero_parcela: number;
   status: 'pago' | 'pendente' | 'atrasado' | 'isento';
   canal_cobranca?: string | null;
+  taxa_valor?: number | null;
   data_prevista_pagamento?: string | null;
   created_at: string;
 }
@@ -935,6 +936,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
   const [indicadosAluno, setIndicadosAluno] = useState<IndicadoLead[]>([]);
   const [loadingIndicadosAluno, setLoadingIndicadosAluno] = useState(false);
   const [canaisCobranca, setCanaisCobranca] = useState<{ id: string; nome: string }[]>([]);
+  const [taxasRates, setTaxasRates] = useState<TaxaDetalhe[]>([]);
   const [turmaToEdit, setTurmaToEdit] = useState<Turma | null>(null);
 
   // Inline edit turma card
@@ -1016,7 +1018,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
       for (let from = 0; ; from += PAGE) {
         const { data } = await supabase
           .from('pagamentos')
-          .select('id, aluno_id, turma_id, produto, valor, mes_referencia, data_vencimento, data_pagamento, numero_parcela, status, canal_cobranca, data_prevista_pagamento, created_at')
+          .select('id, aluno_id, turma_id, produto, valor, mes_referencia, data_vencimento, data_pagamento, numero_parcela, status, canal_cobranca, taxa_valor, data_prevista_pagamento, created_at')
           .order('created_at', { ascending: false })
           .order('id', { ascending: false })
           .range(from, from + PAGE - 1);
@@ -1579,6 +1581,9 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
     supabase.from('canais_cobranca').select('id, nome').eq('ativo', true).order('nome').then(({ data }) => {
       if (data) setCanaisCobranca(data);
     });
+    supabase.from('payment_method_rates').select('*').eq('ativo', true).then(({ data }) => {
+      if (data) setTaxasRates(data as TaxaDetalhe[]);
+    });
   }, []);
 
   const openAlunoDetail = (a: Aluno) => {
@@ -2041,10 +2046,20 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
 
   const confirmarPago = async () => {
     if (!pagoInfo) return;
+    if (!pagoInfo.canal_cobranca) {
+      toast({ variant: 'destructive', title: 'Selecione o canal', description: 'É o canal que decide a taxa correta desse pagamento.' });
+      return;
+    }
+    const pagamento = pagamentos.find(p => p.id === pagoInfo.pagamentoId);
+    const aluno = alunos.find(a => a.id === pagoInfo.alunoId);
+    const taxa = pagamento
+      ? calcTaxaTransacao(pagamento.valor, pagamento.produto || '', aluno?.forma_pagamento || 'boleto', pagoInfo.canal_cobranca, taxasRates)
+      : 0;
     const { error } = await supabase.from('pagamentos').update({
       status: 'pago',
       data_pagamento: pagoInfo.data,
       canal_cobranca: pagoInfo.canal_cobranca || null,
+      taxa_valor: taxa,
     }).eq('id', pagoInfo.pagamentoId);
     if (error) { toast({ variant: 'destructive', title: 'Erro', description: error.message }); return; }
     await atualizarContadoresAluno(pagoInfo.alunoId);
@@ -3762,6 +3777,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                                   <th className="text-left py-2 px-2 font-medium text-xs">Valor</th>
                                   <th className="text-left py-2 px-2 font-medium text-xs">Status</th>
                                   <th className="text-left py-2 px-2 font-medium text-xs">Canal</th>
+                                  <th className="text-left py-2 px-2 font-medium text-xs">Taxa</th>
                                   <th className="text-left py-2 px-2 font-medium text-xs">Previsão</th>
                                   <th className="text-left py-2 px-3 font-medium">Acoes</th>
                                 </tr>
@@ -3783,6 +3799,11 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                                       </Badge>
                                     </td>
                                     <td className="py-2 px-2 text-xs text-muted-foreground">{p.canal_cobranca || '—'}</td>
+                                    <td className="py-2 px-2 text-xs">
+                                      {p.status === 'pago'
+                                        ? <span className="text-red-600">−{formatCurrency(taxaDoPagamento({ ...p, forma_pagamento: alunoDetail?.forma_pagamento || 'boleto' }, taxasRates))}</span>
+                                        : <span className="text-muted-foreground">—</span>}
+                                    </td>
                                     <td className="py-2 px-2">
                                       {isPagamentoInadimplente(p) ? (
                                         <PrevisaoPagamentoPopover
@@ -4006,11 +4027,18 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                 {canaisCobranca.map(c => <SelectItem key={c.id} value={c.nome}>{c.nome}</SelectItem>)}
               </SelectContent>
             </Select>
-            <p className="text-[11px] text-muted-foreground mt-1">Usado para calcular a taxa exata de gateway desse pagamento.</p>
+            <p className="text-[11px] text-muted-foreground mt-1">Usado para calcular e travar a taxa exata de gateway desse pagamento.</p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowPagoDialog(false)}>Cancelar</Button>
-            <Button onClick={confirmarPago} className="bg-green-600 hover:bg-green-700 text-white">Confirmar Pago</Button>
+            <Button
+              onClick={confirmarPago}
+              disabled={!pagoInfo?.canal_cobranca}
+              title={!pagoInfo?.canal_cobranca ? 'Selecione o canal antes de confirmar' : undefined}
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              Confirmar Pago
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

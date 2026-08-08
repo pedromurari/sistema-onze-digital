@@ -27,10 +27,11 @@ function InfoTip({ text }: { text: string }) {
 interface Props {
   produtos: Produto[];
   taxas: TaxaDetalhe[];
+  canais: { id: string; nome: string }[];
   onSaved: (fresh: TaxaDetalhe[]) => void;
 }
 
-export function TaxasPagamentoConfig({ produtos, taxas, onSaved }: Props) {
+export function TaxasPagamentoConfig({ produtos, taxas, canais, onSaved }: Props) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<TaxaDetalhe[]>(taxas);
   const [saving, setSaving] = useState(false);
@@ -46,9 +47,9 @@ export function TaxasPagamentoConfig({ produtos, taxas, onSaved }: Props) {
     }
     for (const [chave, qtd] of vistas) {
       if (qtd > 1) {
-        const [produto, forma, gateway] = chave.split('|');
+        const [produto, forma, canal] = chave.split('|');
         const produtoNome = produto === '*' ? 'Todos' : (produtos.find(p => p.slug === produto)?.nome || produto);
-        return `Duas linhas com a mesma combinação: ${produtoNome} + ${forma === '*' ? 'Todos' : forma} + ${gateway}. Ajuste ou remova uma delas antes de salvar.`;
+        return `Duas linhas com a mesma combinação: ${produtoNome} + ${forma === '*' ? 'Todos' : forma} + ${canal === '*' ? 'Qualquer canal' : canal}. Ajuste ou remova uma delas antes de salvar.`;
       }
     }
     return null;
@@ -77,7 +78,7 @@ export function TaxasPagamentoConfig({ produtos, taxas, onSaved }: Props) {
       const msg = err && typeof err === 'object' && 'message' in err ? String((err as { message: unknown }).message) : '';
       const duplicada = msg.includes('duplicate key') || msg.includes('unique constraint');
       toast.error(duplicada
-        ? 'Já existe uma taxa com esse Produto + Método + Gateway. Edite a taxa existente em vez de criar outra igual.'
+        ? 'Já existe uma taxa com esse Produto + Método + Canal. Edite a taxa existente em vez de criar outra igual.'
         : 'Erro ao salvar taxas. Tente novamente.');
     } finally {
       setSaving(false);
@@ -91,7 +92,7 @@ export function TaxasPagamentoConfig({ produtos, taxas, onSaved }: Props) {
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
             <Settings2 size={14} className="text-muted-foreground" />
             Taxas por Forma de Pagamento
-            <InfoTip text="Taxa por produto + método (boleto/pix/cartão/à vista) + gateway. Regra mais específica prevalece. Editável sem deploy — salvo em payment_method_rates." />
+            <InfoTip text="Taxa por produto + método (boleto/pix/cartão/à vista) + canal de cobrança (Mercado Pago, Voomp, Asaas...). Regra mais específica prevalece; 'Qualquer canal' é o curinga. O canal é escolhido na hora de confirmar o pagamento, e decide qual taxa se aplica. Editável sem deploy — salvo em payment_method_rates." />
           </CardTitle>
           {!editing ? (
             <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={startEditing}>
@@ -118,7 +119,7 @@ export function TaxasPagamentoConfig({ produtos, taxas, onSaved }: Props) {
                   <tr className="border-b">
                     <th className="text-left py-2 pr-2">Produto</th>
                     <th className="text-left py-2 pr-2">Método</th>
-                    <th className="text-left py-2 pr-2">Gateway</th>
+                    <th className="text-left py-2 pr-2">Canal</th>
                     <th className="text-right py-2 pr-2">% Taxa</th>
                     <th className="text-right py-2 pr-2">R$ Fixo</th>
                     <th className="text-left py-2 pr-2">Observação</th>
@@ -151,12 +152,10 @@ export function TaxasPagamentoConfig({ produtos, taxas, onSaved }: Props) {
                       </td>
                       <td className="py-1.5 pr-2">
                         <Select value={taxa.gateway} onValueChange={v => setDraft(prev => prev.map((t, i) => i === idx ? { ...t, gateway: v } : t))}>
-                          <SelectTrigger className="h-7 text-xs w-24"><SelectValue /></SelectTrigger>
+                          <SelectTrigger className="h-7 text-xs w-40"><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="asaas">Asaas</SelectItem>
-                            <SelectItem value="vega">Vega</SelectItem>
-                            <SelectItem value="stripe">Stripe</SelectItem>
-                            <SelectItem value="outros">Outros</SelectItem>
+                            <SelectItem value="*">Qualquer canal (*)</SelectItem>
+                            {canais.map(c => <SelectItem key={c.id} value={c.nome}>{c.nome}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       </td>
@@ -188,7 +187,7 @@ export function TaxasPagamentoConfig({ produtos, taxas, onSaved }: Props) {
             </div>
             <Button size="sm" variant="outline" className="gap-1.5 text-xs"
               onClick={() => setDraft(prev => [...prev, {
-                id: crypto.randomUUID(), produto_slug: '*', forma_pagamento: '*', gateway: 'asaas',
+                id: crypto.randomUUID(), produto_slug: '*', forma_pagamento: '*', gateway: '*',
                 percentual: 0, fixo_por_transacao: 0, faixa_min: 0, faixa_max: 999999.99, ativo: true, observacao: '',
               }])}>
               <Plus className="h-3 w-3" /> Nova taxa
@@ -201,7 +200,7 @@ export function TaxasPagamentoConfig({ produtos, taxas, onSaved }: Props) {
                 <tr className="border-b">
                   <th className="text-left py-2 pr-3">Produto</th>
                   <th className="text-left py-2 pr-3">Método</th>
-                  <th className="text-left py-2 pr-3">Gateway</th>
+                  <th className="text-left py-2 pr-3">Canal</th>
                   <th className="text-right py-2 pr-3">% Taxa</th>
                   <th className="text-right py-2 pr-3">R$ Fixo</th>
                   <th className="text-left py-2">Observação</th>
@@ -214,7 +213,7 @@ export function TaxasPagamentoConfig({ produtos, taxas, onSaved }: Props) {
                       {taxa.produto_slug === '*' ? 'Todos' : (produtos.find(p => p.slug === taxa.produto_slug)?.nome || taxa.produto_slug)}
                     </td>
                     <td className="py-1.5 pr-3 capitalize">{taxa.forma_pagamento === '*' ? 'Todos' : taxa.forma_pagamento}</td>
-                    <td className="py-1.5 pr-3 capitalize">{taxa.gateway}</td>
+                    <td className="py-1.5 pr-3">{taxa.gateway === '*' ? 'Qualquer canal' : taxa.gateway}</td>
                     <td className="py-1.5 pr-3 text-right tabular-nums">{taxa.percentual.toFixed(2)}%</td>
                     <td className="py-1.5 pr-3 text-right tabular-nums">{taxa.fixo_por_transacao > 0 ? `R$ ${taxa.fixo_por_transacao.toFixed(2)}` : '—'}</td>
                     <td className="py-1.5 text-muted-foreground">{taxa.observacao || '—'}</td>

@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-  calcTaxaTransacao, calcRepasses, calcRepassePagamento, getPeriodRange, shiftPeriodo, periodoTipoLabel,
+  calcTaxaTransacao, taxaDoPagamento, calcRepasses, calcRepassePagamento, getPeriodRange, shiftPeriodo, periodoTipoLabel,
   type TaxaDetalhe, type PeriodoTipo, type ResponsavelRow, type TurmaResponsavelRow,
   type RepasseCalculado, type Produto, type PagamentoParaRepasse,
 } from '@/lib/financial-utils';
@@ -60,6 +60,7 @@ interface ReceitaHoje {
   aluno_nome: string | null;
   conferido_em: string | null;
   conferido_por: string | null;
+  taxa_valor: number | null;
 }
 
 interface AlunoNovo {
@@ -164,6 +165,7 @@ export function Balanco() {
   const [gastoForm, setGastoForm]           = useState({ descricao: '', valor: '', categoria: 'custo_variavel' as Categoria });
   const [savingGasto, setSavingGasto]       = useState(false);
   const [savingCanal, setSavingCanal]       = useState<string | null>(null);
+  const [savingTipo, setSavingTipo]         = useState<string | null>(null);
   const [savingConferencia, setSavingConferencia] = useState<string | null>(null);
 
   // ─── Load: dados de referência (não dependem do período) ─────────────────
@@ -203,7 +205,7 @@ export function Balanco() {
       const [recRes, aluRes, gasRes, fechRes] = await Promise.all([
         // Pagamentos recebidos no período (produto + forma_pagamento + canal via view)
         supabase.from('vw_receita_por_fonte')
-          .select('id, aluno_id, turma_id, valor, produto, produto_label, forma_pagamento, mes_referencia, data_pagamento, canal_cobranca, numero_parcela, aluno_nome, conferido_em, conferido_por')
+          .select('id, aluno_id, turma_id, valor, produto, produto_label, forma_pagamento, mes_referencia, data_pagamento, canal_cobranca, numero_parcela, aluno_nome, conferido_em, conferido_por, taxa_valor')
           .gte('data_pagamento', range.start)
           .lte('data_pagamento', range.end),
         // Novos alunos cadastrados no período
@@ -299,15 +301,34 @@ export function Balanco() {
     setReceitasHoje(prev => prev.map(r => r.id === pagamentoId ? { ...r, canal_cobranca: canal || null } : r));
   }
 
+  // Tipo (Comercial × Recorrência) é derivado de numero_parcela (<=1 = comercial), e
+  // decide a regra de repasse (calcRepassePagamento) — corrigível aqui quando a
+  // parcela veio errada da matrícula/funil.
+  async function handleUpdateTipo(pagamentoId: string, tipo: 'comercial' | 'recorrencia') {
+    const atual = receitasHoje.find(r => r.id === pagamentoId);
+    if (!atual) return;
+    const novoNumero = tipo === 'comercial' ? 1 : Math.max(2, atual.numero_parcela ?? 2);
+    if (novoNumero === atual.numero_parcela) return;
+    setSavingTipo(pagamentoId);
+    const { error } = await supabase.from('pagamentos').update({ numero_parcela: novoNumero }).eq('id', pagamentoId);
+    setSavingTipo(null);
+    if (error) { toast.error('Erro ao salvar tipo.'); return; }
+    setReceitasHoje(prev => prev.map(r => r.id === pagamentoId ? { ...r, numero_parcela: novoNumero } : r));
+  }
+
   async function handleConfirmarPagamento(pagamentoId: string) {
+    const receita = receitasHoje.find(r => r.id === pagamentoId);
+    if (!receita) return;
+    if (!receita.canal_cobranca) { toast.error('Selecione o canal antes de confirmar — é o que decide a taxa correta.'); return; }
     setSavingConferencia(pagamentoId);
     const agora = new Date().toISOString();
+    const taxa = calcTaxaTransacao(receita.valor, receita.produto || '', receita.forma_pagamento, receita.canal_cobranca, taxasRates);
     const { error } = await supabase.from('pagamentos')
-      .update({ conferido_em: agora, conferido_por: currentUser?.nome || null })
+      .update({ conferido_em: agora, conferido_por: currentUser?.nome || null, taxa_valor: taxa })
       .eq('id', pagamentoId);
     setSavingConferencia(null);
     if (error) { toast.error('Erro ao confirmar pagamento.'); return; }
-    setReceitasHoje(prev => prev.map(r => r.id === pagamentoId ? { ...r, conferido_em: agora, conferido_por: currentUser?.nome || null } : r));
+    setReceitasHoje(prev => prev.map(r => r.id === pagamentoId ? { ...r, conferido_em: agora, conferido_por: currentUser?.nome || null, taxa_valor: taxa } : r));
   }
 
   function exportarCSVPeriodo(receitas: ReceitaHoje[], taxaFn: (r: ReceitaHoje) => number) {
@@ -502,7 +523,7 @@ export function Balanco() {
 
                 // repasse calculado pagamento a pagamento (sempre a partir do período geral)
                 const pagamentosComRepasse = receitasHoje.map(r => {
-                  const taxa = calcTaxaTransacao(r.valor, r.produto || '', r.forma_pagamento, taxasRates);
+                  const taxa = taxaDoPagamento(r, taxasRates);
                   const liquido = r.valor - taxa;
                   const linhas = calcRepassePagamento(liquido, r.produto, r.numero_parcela, r.turma_id, turmasResp, responsaveisList, valorMensalidadeDaTurma(r.turma_id));
                   return { r, taxa, liquido, linhas };
@@ -518,7 +539,7 @@ export function Balanco() {
                 // ── Computado ao vivo a partir dos pagamentos do período ──
                 const brutoVivo = receitasView.reduce((s, r) => s + r.valor, 0);
                 const taxasVivo = receitasView.reduce((s, r) =>
-                  s + calcTaxaTransacao(r.valor, r.produto || '', r.forma_pagamento, taxasRates), 0);
+                  s + taxaDoPagamento(r, taxasRates), 0);
                 const liquidoVivo = brutoVivo - taxasVivo;
                 const saidasVivo = filtroAtivo ? 0 : gastosHoje.reduce((s, g) => s + g.valor, 0);
 
@@ -526,7 +547,7 @@ export function Balanco() {
                   turma_id: r.turma_id,
                   produto: r.produto,
                   numero_parcela: r.numero_parcela,
-                  liquido: r.valor - calcTaxaTransacao(r.valor, r.produto || '', r.forma_pagamento, taxasRates),
+                  liquido: r.valor - taxaDoPagamento(r, taxasRates),
                   valorMensalidadeTurma: valorMensalidadeDaTurma(r.turma_id),
                 }));
                 const repasseVivo = calcRepasses(pagamentosParaRepasse, turmasResp, responsaveisList);
@@ -590,7 +611,7 @@ export function Balanco() {
                         </Button>
                       )}
                       <Button size="sm" variant="outline" className="gap-1.5"
-                        onClick={() => exportarCSVPeriodo(receitasView, r => calcTaxaTransacao(r.valor, r.produto || '', r.forma_pagamento, taxasRates))}>
+                        onClick={() => exportarCSVPeriodo(receitasView, r => taxaDoPagamento(r, taxasRates))}>
                         <Download className="h-3.5 w-3.5" /> Exportar CSV
                       </Button>
                     </div>
@@ -695,7 +716,7 @@ export function Balanco() {
                           {Object.entries(porProduto).map(([slug, { label, itens }]) => {
                             const subtotal = itens.reduce((s, r) => s + r.valor, 0);
                             const subtaxas = itens.reduce((s, r) =>
-                              s + calcTaxaTransacao(r.valor, r.produto || '', r.forma_pagamento, taxasRates), 0);
+                              s + taxaDoPagamento(r, taxasRates), 0);
                             return (
                               <Card key={slug} className="border-border/60 shadow-none overflow-hidden">
                                 <div className="bg-muted/30 px-4 py-2 flex items-center justify-between">
@@ -706,7 +727,7 @@ export function Balanco() {
                                 </div>
                                 <div className="p-3 space-y-2 bg-muted/10">
                                   {itens.map(r => {
-                                    const taxa = calcTaxaTransacao(r.valor, r.produto || '', r.forma_pagamento, taxasRates);
+                                    const taxa = taxaDoPagamento(r, taxasRates);
                                     const liquidoLinha = r.valor - taxa;
                                     const turma = turmasInfo.find(t => t.id === r.turma_id);
                                     const resps = calcRepassePagamento(liquidoLinha, r.produto, r.numero_parcela, r.turma_id, turmasResp, responsaveisList, turma?.valor_mensalidade ?? null);
@@ -749,7 +770,7 @@ export function Balanco() {
                                           )}
 
                                           {/* Valores */}
-                                          <div className="pl-6 grid grid-cols-2 sm:grid-cols-5 gap-2">
+                                          <div className="pl-6 grid grid-cols-2 sm:grid-cols-6 gap-2">
                                             <div>
                                               <label className="text-[10px] text-muted-foreground font-medium block mb-1">Forma</label>
                                               <Badge className={`text-[10px] border ${FORMA_COR[r.forma_pagamento] || 'bg-muted text-muted-foreground'}`}>
@@ -757,12 +778,27 @@ export function Balanco() {
                                               </Badge>
                                             </div>
                                             <div>
-                                              <label className="text-[10px] text-muted-foreground font-medium block mb-1">Canal</label>
+                                              <label className="text-[10px] text-muted-foreground font-medium block mb-1">Tipo</label>
+                                              <Select
+                                                value={comercial ? 'comercial' : 'recorrencia'}
+                                                onValueChange={v => handleUpdateTipo(r.id, v as 'comercial' | 'recorrencia')}
+                                              >
+                                                <SelectTrigger className="h-7 text-xs" disabled={conferido || savingTipo === r.id}>
+                                                  <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                  <SelectItem value="comercial">Comercial</SelectItem>
+                                                  <SelectItem value="recorrencia">Recorrência</SelectItem>
+                                                </SelectContent>
+                                              </Select>
+                                            </div>
+                                            <div>
+                                              <label className="text-[10px] text-muted-foreground font-medium block mb-1">Canal *</label>
                                               <Select
                                                 value={r.canal_cobranca || '__none__'}
                                                 onValueChange={v => handleUpdateCanal(r.id, v === '__none__' ? '' : v)}
                                               >
-                                                <SelectTrigger className="h-7 text-xs" disabled={savingCanal === r.id}>
+                                                <SelectTrigger className={`h-7 text-xs ${!r.canal_cobranca && !conferido ? 'border-amber-400' : ''}`} disabled={conferido || savingCanal === r.id}>
                                                   <SelectValue placeholder="Canal" />
                                                 </SelectTrigger>
                                                 <SelectContent>
@@ -791,11 +827,15 @@ export function Balanco() {
                                               <Button
                                                 size="sm" className="h-7 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700"
                                                 onClick={() => handleConfirmarPagamento(r.id)}
-                                                disabled={savingConferencia === r.id}
+                                                disabled={savingConferencia === r.id || !r.canal_cobranca}
+                                                title={!r.canal_cobranca ? 'Selecione o canal antes de confirmar' : undefined}
                                               >
                                                 <CheckCircle2 className="h-3 w-3" />
                                                 {savingConferencia === r.id ? 'Salvando…' : 'Confirmar pagamento'}
                                               </Button>
+                                              {!r.canal_cobranca && (
+                                                <p className="text-[10px] text-amber-600 mt-1">Selecione o canal acima — é o que define a taxa correta.</p>
+                                              )}
                                             </div>
                                           )}
                                         </div>
@@ -829,7 +869,7 @@ export function Balanco() {
                             const resps = turmasResp.filter(tr => tr.turma_id === aluno.turma_id);
                             const draft = matriculasDraft[aluno.id] || { forma: aluno.forma_pagamento || 'boleto', valor: String(aluno.valor_mensalidade || '') };
                             const valorNum = parseFloat(draft.valor.replace(',', '.')) || 0;
-                            const taxaEst = calcTaxaTransacao(valorNum, turma?.produto || '', draft.forma, taxasRates);
+                            const taxaEst = calcTaxaTransacao(valorNum, turma?.produto || '', draft.forma, '', taxasRates);
                             const jaConfirmado = confirmados.has(aluno.id) || (!!aluno.forma_pagamento && aluno.forma_pagamento !== '');
                             const produto = turma?.produto || 'geral';
                             const PROD_COR: Record<string, string> = { psicanalise: '#3b82f6', npa: '#8b5cf6', geral: '#6b7280' };
@@ -1019,7 +1059,7 @@ export function Balanco() {
           {view === 'config' && (
             <div className="space-y-6">
 
-              <TaxasPagamentoConfig produtos={produtos} taxas={taxasRates} onSaved={setTaxasRates} />
+              <TaxasPagamentoConfig produtos={produtos} taxas={taxasRates} canais={canaisCobranca} onSaved={setTaxasRates} />
               <RepasseTurmasConfig turmas={turmasInfo} onSaved={reloadTurmaResponsaveis} />
             </div>
           )}

@@ -301,7 +301,7 @@ export function FinanceiroCFO() {
           supabase.from('payment_method_rates').select('*').eq('ativo', true),
           // Receita dos últimos 90 dias com produto + forma_pagamento (via JOIN view)
           supabase.from('vw_receita_por_fonte')
-            .select('id, aluno_id, turma_id, valor, data_pagamento, mes_referencia, numero_parcela, produto, forma_pagamento, produto_label')
+            .select('id, aluno_id, turma_id, valor, data_pagamento, mes_referencia, numero_parcela, produto, forma_pagamento, produto_label, canal_cobranca, taxa_valor')
             .gte('data_pagamento', dataCorte),
           // Parâmetros manuais da Análise CFO (impostos, CAC, margem, caixa)
           supabase.from('balanco_config').select('id, parametros_cfo').eq('id', EMPRESA_CFO_PADRAO).maybeSingle(),
@@ -577,7 +577,8 @@ export function FinanceiroCFO() {
 
   // ── Líquido por produto (mês atual) ──────────────────────────────────────
   // Fonte: vw_receita_por_fonte × payment_method_rates
-  // Método: calcTaxaTransacao() — regra mais específica prevalece (produto+forma > *+forma > produto+* > *+*)
+  // Método: taxaDoPagamento() — usa taxa travada em taxa_valor quando existe; senão calcTaxaTransacao()
+  //   com regra mais específica prevalecendo (produto+forma+canal > combinações com curinga '*')
   const liquidoPorProduto = useMemo(
     () => calcLiquidoPorProduto(pagamentosComFonte, taxasDetalhe, mesAtual, getOwnerShare),
     [pagamentosComFonte, taxasDetalhe, mesAtual, getOwnerShare]

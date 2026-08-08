@@ -14,6 +14,117 @@ export type Database = {
   }
   public: {
     Tables: {
+      aluno_bonus_eventos: {
+        Row: {
+          acao: string
+          aluno_id: string
+          bonus_id: string
+          created_at: string
+          criado_por: string | null
+          id: string
+        }
+        Insert: {
+          acao: string
+          aluno_id: string
+          bonus_id: string
+          created_at?: string
+          criado_por?: string | null
+          id?: string
+        }
+        Update: {
+          acao?: string
+          aluno_id?: string
+          bonus_id?: string
+          created_at?: string
+          criado_por?: string | null
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aluno_bonus_eventos_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "alunos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "aluno_bonus_eventos_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "v_pipeline_contratos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "aluno_bonus_eventos_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "vw_alunos_financeiro"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "aluno_bonus_eventos_bonus_id_fkey"
+            columns: ["bonus_id"]
+            isOneToOne: false
+            referencedRelation: "bonus_tipos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      aluno_observacoes: {
+        Row: {
+          aluno_id: string
+          created_at: string
+          criado_por: string | null
+          id: string
+          resolvido_em: string | null
+          resolvido_por: string | null
+          status: string
+          texto: string
+        }
+        Insert: {
+          aluno_id: string
+          created_at?: string
+          criado_por?: string | null
+          id?: string
+          resolvido_em?: string | null
+          resolvido_por?: string | null
+          status?: string
+          texto: string
+        }
+        Update: {
+          aluno_id?: string
+          created_at?: string
+          criado_por?: string | null
+          id?: string
+          resolvido_em?: string | null
+          resolvido_por?: string | null
+          status?: string
+          texto?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aluno_observacoes_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "alunos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "aluno_observacoes_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "v_pipeline_contratos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "aluno_observacoes_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "vw_alunos_financeiro"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       alunos: {
         Row: {
           asaas_integrado: boolean | null
@@ -46,6 +157,8 @@ export type Database = {
           forma_pagamento: string | null
           forms_respondido: boolean | null
           forms_respondido_em: string | null
+          grupo_turma_confirmado_em: string | null
+          grupo_turma_confirmado_por: string | null
           id: string
           lancamento_id: string | null
           lead_quente_contatado_em: string | null
@@ -99,6 +212,8 @@ export type Database = {
           forma_pagamento?: string | null
           forms_respondido?: boolean | null
           forms_respondido_em?: string | null
+          grupo_turma_confirmado_em?: string | null
+          grupo_turma_confirmado_por?: string | null
           id?: string
           lancamento_id?: string | null
           lead_quente_contatado_em?: string | null
@@ -152,6 +267,8 @@ export type Database = {
           forma_pagamento?: string | null
           forms_respondido?: boolean | null
           forms_respondido_em?: string | null
+          grupo_turma_confirmado_em?: string | null
+          grupo_turma_confirmado_por?: string | null
           id?: string
           lancamento_id?: string | null
           lead_quente_contatado_em?: string | null
@@ -777,6 +894,7 @@ export type Database = {
       boas_vindas_config: {
         Row: {
           ativo: boolean
+          auto_agendar: boolean
           created_at: string
           daily_limit: number
           delay_max_s: number
@@ -804,6 +922,7 @@ export type Database = {
         }
         Insert: {
           ativo?: boolean
+          auto_agendar?: boolean
           created_at?: string
           daily_limit?: number
           delay_max_s?: number
@@ -831,6 +950,7 @@ export type Database = {
         }
         Update: {
           ativo?: boolean
+          auto_agendar?: boolean
           created_at?: string
           daily_limit?: number
           delay_max_s?: number
@@ -903,6 +1023,30 @@ export type Database = {
         }
         Relationships: []
       }
+      bonus_tipos: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          id: string
+          nome: string
+          ordem: number
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          nome: string
+          ordem?: number
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          nome?: string
+          ordem?: number
+        }
+        Relationships: []
+      }
       canais_cobranca: {
         Row: {
           ativo: boolean
@@ -921,6 +1065,24 @@ export type Database = {
           criado_em?: string
           id?: string
           nome?: string
+        }
+        Relationships: []
+      }
+      chat_leituras: {
+        Row: {
+          lida_em: string
+          telefone: string
+          user_id: string
+        }
+        Insert: {
+          lida_em?: string
+          telefone: string
+          user_id: string
+        }
+        Update: {
+          lida_em?: string
+          telefone?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -1013,6 +1175,144 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "produtos"
             referencedColumns: ["slug"]
+          },
+        ]
+      }
+      cobranca_ia_conversas: {
+        Row: {
+          aluno_id: string
+          aluno_nome: string
+          cobranca_log_id: string | null
+          created_at: string
+          data_prometida: string | null
+          evolution_instance: string
+          id: string
+          motivo_handoff: string | null
+          pagamento_id: string | null
+          resolvido_em: string | null
+          resolvido_por: string | null
+          resumo_ia: string | null
+          status: string
+          telefone: string
+          turnos_ia: number
+          ultima_mensagem_em: string | null
+          updated_at: string
+        }
+        Insert: {
+          aluno_id: string
+          aluno_nome?: string
+          cobranca_log_id?: string | null
+          created_at?: string
+          data_prometida?: string | null
+          evolution_instance: string
+          id?: string
+          motivo_handoff?: string | null
+          pagamento_id?: string | null
+          resolvido_em?: string | null
+          resolvido_por?: string | null
+          resumo_ia?: string | null
+          status?: string
+          telefone: string
+          turnos_ia?: number
+          ultima_mensagem_em?: string | null
+          updated_at?: string
+        }
+        Update: {
+          aluno_id?: string
+          aluno_nome?: string
+          cobranca_log_id?: string | null
+          created_at?: string
+          data_prometida?: string | null
+          evolution_instance?: string
+          id?: string
+          motivo_handoff?: string | null
+          pagamento_id?: string | null
+          resolvido_em?: string | null
+          resolvido_por?: string | null
+          resumo_ia?: string | null
+          status?: string
+          telefone?: string
+          turnos_ia?: number
+          ultima_mensagem_em?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cobranca_ia_conversas_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "alunos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cobranca_ia_conversas_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "v_pipeline_contratos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cobranca_ia_conversas_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "vw_alunos_financeiro"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cobranca_ia_conversas_cobranca_log_id_fkey"
+            columns: ["cobranca_log_id"]
+            isOneToOne: false
+            referencedRelation: "cobranca_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cobranca_ia_conversas_pagamento_id_fkey"
+            columns: ["pagamento_id"]
+            isOneToOne: false
+            referencedRelation: "pagamentos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cobranca_ia_conversas_pagamento_id_fkey"
+            columns: ["pagamento_id"]
+            isOneToOne: false
+            referencedRelation: "vw_receita_por_fonte"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cobranca_ia_mensagens: {
+        Row: {
+          conteudo: string
+          conversa_id: string
+          created_at: string
+          id: string
+          meta: Json | null
+          papel: string
+        }
+        Insert: {
+          conteudo: string
+          conversa_id: string
+          created_at?: string
+          id?: string
+          meta?: Json | null
+          papel: string
+        }
+        Update: {
+          conteudo?: string
+          conversa_id?: string
+          created_at?: string
+          id?: string
+          meta?: Json | null
+          papel?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cobranca_ia_mensagens_conversa_id_fkey"
+            columns: ["conversa_id"]
+            isOneToOne: false
+            referencedRelation: "cobranca_ia_conversas"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -4141,24 +4441,33 @@ export type Database = {
       notifications: {
         Row: {
           created_at: string | null
+          descricao: string | null
           id: string
-          message: string | null
-          read: boolean | null
-          title: string | null
+          lida: boolean
+          link: string | null
+          tipo: string
+          titulo: string
+          user_id: string
         }
         Insert: {
           created_at?: string | null
+          descricao?: string | null
           id?: string
-          message?: string | null
-          read?: boolean | null
-          title?: string | null
+          lida?: boolean
+          link?: string | null
+          tipo: string
+          titulo: string
+          user_id: string
         }
         Update: {
           created_at?: string | null
+          descricao?: string | null
           id?: string
-          message?: string | null
-          read?: boolean | null
-          title?: string | null
+          lida?: boolean
+          link?: string | null
+          tipo?: string
+          titulo?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -4458,6 +4767,7 @@ export type Database = {
           conferido_por: string | null
           created_at: string | null
           data_pagamento: string | null
+          data_prevista_pagamento: string | null
           data_vencimento: string | null
           id: string
           mes_referencia: string
@@ -4465,6 +4775,7 @@ export type Database = {
           observacoes: string | null
           produto: string | null
           status: string | null
+          taxa_valor: number | null
           turma_id: string | null
           updated_at: string | null
           valor: number | null
@@ -4477,6 +4788,7 @@ export type Database = {
           conferido_por?: string | null
           created_at?: string | null
           data_pagamento?: string | null
+          data_prevista_pagamento?: string | null
           data_vencimento?: string | null
           id?: string
           mes_referencia: string
@@ -4484,6 +4796,7 @@ export type Database = {
           observacoes?: string | null
           produto?: string | null
           status?: string | null
+          taxa_valor?: number | null
           turma_id?: string | null
           updated_at?: string | null
           valor?: number | null
@@ -4496,6 +4809,7 @@ export type Database = {
           conferido_por?: string | null
           created_at?: string | null
           data_pagamento?: string | null
+          data_prevista_pagamento?: string | null
           data_vencimento?: string | null
           id?: string
           mes_referencia?: string
@@ -4503,6 +4817,7 @@ export type Database = {
           observacoes?: string | null
           produto?: string | null
           status?: string | null
+          taxa_valor?: number | null
           turma_id?: string | null
           updated_at?: string | null
           valor?: number | null
@@ -5349,6 +5664,36 @@ export type Database = {
           nome?: string
           role?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      push_subscriptions: {
+        Row: {
+          auth: string
+          created_at: string
+          endpoint: string
+          id: string
+          p256dh: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          auth: string
+          created_at?: string
+          endpoint: string
+          id?: string
+          p256dh: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          auth?: string
+          created_at?: string
+          endpoint?: string
+          id?: string
+          p256dh?: string
+          user_agent?: string | null
+          user_id?: string
         }
         Relationships: []
       }
@@ -6595,6 +6940,8 @@ export type Database = {
           empresa: string
           id: string
           nicho: string
+          oferta_recomendada: string | null
+          prioridade: string | null
           score: number
           sem_resposta_wpp: boolean
           site_url: string
@@ -6611,6 +6958,8 @@ export type Database = {
           empresa: string
           id?: string
           nicho?: string
+          oferta_recomendada?: string | null
+          prioridade?: string | null
           score?: number
           sem_resposta_wpp?: boolean
           site_url?: string
@@ -6627,6 +6976,8 @@ export type Database = {
           empresa?: string
           id?: string
           nicho?: string
+          oferta_recomendada?: string | null
+          prioridade?: string | null
           score?: number
           sem_resposta_wpp?: boolean
           site_url?: string
@@ -7312,6 +7663,42 @@ export type Database = {
           },
         ]
       }
+      whatsapp_mensagens: {
+        Row: {
+          conteudo: string
+          created_at: string
+          direcao: string
+          evolution_instance: string | null
+          evolution_message_id: string | null
+          id: string
+          origem: string
+          telefone: string
+          tipo: string
+        }
+        Insert: {
+          conteudo: string
+          created_at?: string
+          direcao: string
+          evolution_instance?: string | null
+          evolution_message_id?: string | null
+          id?: string
+          origem: string
+          telefone: string
+          tipo?: string
+        }
+        Update: {
+          conteudo?: string
+          created_at?: string
+          direcao?: string
+          evolution_instance?: string | null
+          evolution_message_id?: string | null
+          id?: string
+          origem?: string
+          telefone?: string
+          tipo?: string
+        }
+        Relationships: []
+      }
       whatsapp_opt_out: {
         Row: {
           criado_em: string
@@ -7689,6 +8076,7 @@ export type Database = {
           produto: string | null
           produto_label: string | null
           status: string | null
+          taxa_valor: number | null
           turma_id: string | null
           valor: number | null
         }
@@ -7748,6 +8136,7 @@ export type Database = {
         Returns: {
           aluno_id: string
           aluno_nome: string
+          data_prevista_pagamento: string
           data_vencimento: string
           dias_offset: number
           link_pagamento: string
@@ -7795,6 +8184,25 @@ export type Database = {
         Returns: boolean
       }
       marcar_pagamentos_atrasados: { Args: never; Returns: undefined }
+      notificar: {
+        Args: {
+          p_descricao?: string
+          p_link?: string
+          p_tipo: string
+          p_titulo: string
+          p_user_id: string
+        }
+        Returns: string
+      }
+      notificar_admins: {
+        Args: {
+          p_descricao?: string
+          p_link?: string
+          p_tipo: string
+          p_titulo: string
+        }
+        Returns: string[]
+      }
       sincronizar_inadimplencia: { Args: never; Returns: undefined }
     }
     Enums: {
