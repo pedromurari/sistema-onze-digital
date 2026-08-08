@@ -30,6 +30,7 @@ export interface TaxaDetalhe {
   faixa_max: number;
   ativo: boolean;
   observacao?: string;
+  created_at?: string;
 }
 
 export interface PagamentoComFonte {

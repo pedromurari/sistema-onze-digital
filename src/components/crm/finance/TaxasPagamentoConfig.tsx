@@ -189,6 +189,7 @@ export function TaxasPagamentoConfig({ produtos, taxas, canais, onSaved }: Props
               onClick={() => setDraft(prev => [...prev, {
                 id: crypto.randomUUID(), produto_slug: '*', forma_pagamento: '*', gateway: '*',
                 percentual: 0, fixo_por_transacao: 0, faixa_min: 0, faixa_max: 999999.99, ativo: true, observacao: '',
+                created_at: new Date().toISOString(),
               }])}>
               <Plus className="h-3 w-3" /> Nova taxa
             </Button>
