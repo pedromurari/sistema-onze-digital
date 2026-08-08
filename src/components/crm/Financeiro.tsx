@@ -2046,14 +2046,10 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
 
   const confirmarPago = async () => {
     if (!pagoInfo) return;
-    if (!pagoInfo.canal_cobranca) {
-      toast({ variant: 'destructive', title: 'Selecione o canal', description: 'É o canal que decide a taxa correta desse pagamento.' });
-      return;
-    }
     const pagamento = pagamentos.find(p => p.id === pagoInfo.pagamentoId);
     const aluno = alunos.find(a => a.id === pagoInfo.alunoId);
     const taxa = pagamento
-      ? calcTaxaTransacao(pagamento.valor, pagamento.produto || '', aluno?.forma_pagamento || 'boleto', pagoInfo.canal_cobranca, taxasRates)
+      ? calcTaxaTransacao(pagamento.valor, pagamento.produto || '', aluno?.forma_pagamento || 'boleto', pagoInfo.canal_cobranca || '', taxasRates)
       : 0;
     const { error } = await supabase.from('pagamentos').update({
       status: 'pago',
@@ -4027,14 +4023,12 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                 {canaisCobranca.map(c => <SelectItem key={c.id} value={c.nome}>{c.nome}</SelectItem>)}
               </SelectContent>
             </Select>
-            <p className="text-[11px] text-muted-foreground mt-1">Usado para calcular e travar a taxa exata de gateway desse pagamento.</p>
+            <p className="text-[11px] text-muted-foreground mt-1">Opcional — a taxa já é calculada pelo método de pagamento.</p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowPagoDialog(false)}>Cancelar</Button>
             <Button
               onClick={confirmarPago}
-              disabled={!pagoInfo?.canal_cobranca}
-              title={!pagoInfo?.canal_cobranca ? 'Selecione o canal antes de confirmar' : undefined}
               className="bg-green-600 hover:bg-green-700 text-white"
             >
               Confirmar Pago

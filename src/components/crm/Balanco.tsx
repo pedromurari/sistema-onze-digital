@@ -319,10 +319,9 @@ export function Balanco() {
   async function handleConfirmarPagamento(pagamentoId: string) {
     const receita = receitasHoje.find(r => r.id === pagamentoId);
     if (!receita) return;
-    if (!receita.canal_cobranca) { toast.error('Selecione o canal antes de confirmar — é o que decide a taxa correta.'); return; }
     setSavingConferencia(pagamentoId);
     const agora = new Date().toISOString();
-    const taxa = calcTaxaTransacao(receita.valor, receita.produto || '', receita.forma_pagamento, receita.canal_cobranca, taxasRates);
+    const taxa = calcTaxaTransacao(receita.valor, receita.produto || '', receita.forma_pagamento, receita.canal_cobranca || '', taxasRates);
     const { error } = await supabase.from('pagamentos')
       .update({ conferido_em: agora, conferido_por: currentUser?.nome || null, taxa_valor: taxa })
       .eq('id', pagamentoId);
@@ -793,12 +792,12 @@ export function Balanco() {
                                               </Select>
                                             </div>
                                             <div>
-                                              <label className="text-[10px] text-muted-foreground font-medium block mb-1">Canal *</label>
+                                              <label className="text-[10px] text-muted-foreground font-medium block mb-1">Canal</label>
                                               <Select
                                                 value={r.canal_cobranca || '__none__'}
                                                 onValueChange={v => handleUpdateCanal(r.id, v === '__none__' ? '' : v)}
                                               >
-                                                <SelectTrigger className={`h-7 text-xs ${!r.canal_cobranca && !conferido ? 'border-amber-400' : ''}`} disabled={conferido || savingCanal === r.id}>
+                                                <SelectTrigger className="h-7 text-xs" disabled={conferido || savingCanal === r.id}>
                                                   <SelectValue placeholder="Canal" />
                                                 </SelectTrigger>
                                                 <SelectContent>
@@ -827,15 +826,11 @@ export function Balanco() {
                                               <Button
                                                 size="sm" className="h-7 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700"
                                                 onClick={() => handleConfirmarPagamento(r.id)}
-                                                disabled={savingConferencia === r.id || !r.canal_cobranca}
-                                                title={!r.canal_cobranca ? 'Selecione o canal antes de confirmar' : undefined}
+                                                disabled={savingConferencia === r.id}
                                               >
                                                 <CheckCircle2 className="h-3 w-3" />
                                                 {savingConferencia === r.id ? 'Salvando…' : 'Confirmar pagamento'}
                                               </Button>
-                                              {!r.canal_cobranca && (
-                                                <p className="text-[10px] text-amber-600 mt-1">Selecione o canal acima — é o que define a taxa correta.</p>
-                                              )}
                                             </div>
                                           )}
                                         </div>
