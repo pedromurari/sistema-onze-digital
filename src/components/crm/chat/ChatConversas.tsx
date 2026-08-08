@@ -1,26 +1,32 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
-  Search, RefreshCw, MessageSquare, GraduationCap, Flame, Snowflake, Thermometer,
-  Wallet, FileText, Image as ImageIcon, Music, Video, Sticker,
+  Search, RefreshCw, MessageSquare, GraduationCap,
+  Wallet, FileText,
   ChevronDown, ChevronRight, ChevronLeft, Megaphone, CalendarDays, Sparkles, Radio, Layers,
 } from 'lucide-react';
 import { isPagamentoInadimplente } from '@/lib/financial-utils';
 import { FichaAlunoResumo } from '../finance/FichaAlunoResumo';
+import { useConversas, type Categoria } from '@/hooks/useConversas';
+import { useThread } from '@/hooks/useThread';
+import {
+  normalizePhone, maskPhone, fmtHora, fmtDiaSeparador, fmtRelativo,
+  TEMP_CFG, TIPO_ICON, TIPO_LABEL,
+} from '@/lib/chat-utils';
+import type { Conversa } from '@/hooks/useConversas';
 
 /**
  * Chat: historico de conversa de WhatsApp por lead/aluno, estilo caixa de
  * entrada. Somente leitura -- o envio continua sendo feito pelas campanhas,
  * funis, boas-vindas e cobranca.
  *
- * A conversa e identificada pelo telefone normalizado (11 digitos, sem DDI),
- * gravado por evo-resposta (inbound) e pelas 3 funcoes de envio. Quem e o dono
- * do telefone e resolvido aqui na leitura, casando pelo sufixo de 8 digitos --
- * mesmo criterio que evo-resposta ja usa -- porque o mesmo numero pode ser lead
- * hoje e aluno amanha.
+ * A busca de dados (identidade por sufixo de telefone, thread de uma
+ * conversa) mora em useConversas()/useThread() -- compartilhados com o
+ * ChatWidget.tsx (bolha flutuante). Este arquivo cuida só da UI completa:
+ * categorias por origem, grupos, aba Cobrança.
  *
  * Navegacao: em vez de abas fixas por temperatura, a lista lateral separa por
  * ORIGEM real do lead (categoria fechada por padrao -> instancia especifica
@@ -32,29 +38,7 @@ import { FichaAlunoResumo } from '../finance/FichaAlunoResumo';
  * inadimplencia).
  */
 
-type Categoria = 'lancamento' | 'npa' | 'turma' | 'disparo' | 'numerologo';
 type Modo = 'todos' | 'cobranca' | 'grupos' | { categoria: Categoria; grupo: string };
-
-interface MensagemRow {
-  id: string;
-  telefone: string;
-  direcao: 'recebida' | 'enviada';
-  conteudo: string;
-  tipo: string;
-  origem: string;
-  created_at: string;
-}
-
-interface Conversa {
-  telefone: string;
-  nome: string;
-  categoria: Categoria;
-  grupoNome: string;           // turma / lançamento / evento NPA / campanha de disparo / "Numerólogo"
-  temperatura: 'quente' | 'morno' | 'frio';
-  alunoId: string | null;
-  ultimaMensagem: string;
-  ultimaEm: string;
-}
 
 interface AlunoCarteira {
   id: string;
@@ -64,6 +48,7 @@ interface AlunoCarteira {
   status: string;
   inadimplente: boolean;
   valorEmAtraso: number;
+  diasAtrasoMax: number;
 }
 
 const CATEGORIA_CFG: Record<Categoria, { label: string; icon: React.ElementType }> = {
@@ -75,82 +60,34 @@ const CATEGORIA_CFG: Record<Categoria, { label: string; icon: React.ElementType 
 };
 const CATEGORIA_ORDEM: Categoria[] = ['lancamento', 'npa', 'turma', 'disparo', 'numerologo'];
 
-const TEMP_CFG: Record<'quente' | 'morno' | 'frio', { icon: React.ElementType; className: string }> = {
-  quente: { icon: Flame,       className: 'text-red-500' },
-  morno:  { icon: Thermometer, className: 'text-amber-500' },
-  frio:   { icon: Snowflake,   className: 'text-sky-500' },
-};
-
-const TIPO_ICON: Record<string, React.ElementType> = {
-  image: ImageIcon, video: Video, audio: Music, document: FileText, sticker: Sticker,
-};
-
-const TIPO_LABEL: Record<string, string> = {
-  image: 'Imagem', video: 'Vídeo', audio: 'Áudio',
-  document: 'Documento', sticker: 'Figurinha', unknown: 'Mensagem',
-};
-
-/** Mesmo formato de normalizePhone() em evo-resposta: sem DDI 55, 11 digitos. */
-function normalizePhone(raw: string | null | undefined): string {
-  if (!raw) return '';
-  const d = raw.replace(/\D/g, '');
-  if ((d.length === 13 || d.length === 12) && d.startsWith('55')) return d.slice(2);
-  return d.slice(-11);
-}
-
-function sufixo(tel: string): string {
-  return tel.slice(-8);
-}
-
-function maskPhone(phone: string) {
-  const d = phone.replace(/\D/g, '');
-  if (d.length >= 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}–${d.slice(7)}`;
-  return phone;
-}
-
-function fmtHora(iso: string) {
-  return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-}
-
-function fmtDiaSeparador(iso: string) {
-  const d = new Date(iso);
-  const hoje = new Date();
-  const ontem = new Date(hoje.getTime() - 86400000);
-  const mesmoDia = (a: Date, b: Date) => a.toDateString() === b.toDateString();
-  if (mesmoDia(d, hoje)) return 'Hoje';
-  if (mesmoDia(d, ontem)) return 'Ontem';
-  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-}
-
-function fmtRelativo(iso: string) {
-  const diff = Date.now() - new Date(iso).getTime();
-  const min = Math.floor(diff / 60000);
-  if (min < 1) return 'agora';
-  if (min < 60) return `${min}min`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `${h}h`;
-  const dias = Math.floor(h / 24);
-  if (dias < 7) return `${dias}d`;
-  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-}
-
 function fmtBRL(v: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 }
 
 function ConversaItem({ c, ativo, onClick }: { c: Conversa; ativo: boolean; onClick: () => void }) {
   const temp = TEMP_CFG[c.temperatura];
+  const mostraNaoLida = c.naoLida && !ativo;
   return (
     <button onClick={onClick}
       className={cn('w-full text-left px-3 py-2.5 border-b hover:bg-gray-50/60 transition-colors', ativo && 'bg-primary/5')}>
       <div className="flex items-center justify-between gap-2">
         <p className="font-medium text-sm truncate flex items-center gap-1.5 min-w-0">
+          {mostraNaoLida && <span className="h-2 w-2 rounded-full bg-primary flex-none" />}
           <temp.icon className={cn('h-3 w-3 flex-none', temp.className)} />
-          <span className="truncate">{c.nome}</span>
+          <span className={cn('truncate', mostraNaoLida && 'font-semibold')}>{c.nome}</span>
         </p>
         <span className="text-[10px] text-muted-foreground flex-none">{fmtRelativo(c.ultimaEm)}</span>
       </div>
-      {c.grupoNome && <p className="text-[10px] text-muted-foreground truncate">{c.grupoNome}</p>}
+      {(c.grupoNome || c.ultimaInstancia) && (
+        <p className="text-[10px] text-muted-foreground truncate flex items-center gap-1">
+          {c.grupoNome && <span className="truncate">{c.grupoNome}</span>}
+          {c.ultimaInstancia && (
+            <span className="inline-flex items-center gap-0.5 px-1 rounded bg-gray-100 text-gray-500 flex-none">
+              <Radio className="h-2.5 w-2.5" /> {c.ultimaInstancia}
+            </span>
+          )}
+        </p>
+      )}
       <p className="text-xs text-muted-foreground truncate mt-0.5">{c.ultimaMensagem}</p>
     </button>
   );
@@ -159,124 +96,14 @@ function ConversaItem({ c, ativo, onClick }: { c: Conversa; ativo: boolean; onCl
 export function ChatConversas({ onNavigateToAluno }: { onNavigateToAluno?: (alunoId: string) => void }) {
   const [modo, setModo] = useState<Modo>('todos');
   const [categoriasAbertas, setCategoriasAbertas] = useState<Set<Categoria>>(new Set());
-  const [conversas, setConversas] = useState<Conversa[]>([]);
+  const { conversas, loading } = useConversas();
   const [carteira, setCarteira] = useState<AlunoCarteira[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selecionado, setSelecionado] = useState<{ telefone: string; nome: string; rotulo: string | null; alunoId: string | null } | null>(null);
-  const [thread, setThread] = useState<MensagemRow[]>([]);
-  const [loadingThread, setLoadingThread] = useState(false);
+  const { thread, loading: loadingThread } = useThread(selecionado?.telefone ?? null);
   const [fichaAlunoId, setFichaAlunoId] = useState<string | null>(null);
   const [filtroCarteira, setFiltroCarteira] = useState<'todos' | 'em_dia' | 'inadimplentes'>('todos');
-
-  // ── Carrega conversas (agrupadas por telefone) + identidade de cada uma ────
-  const carregarConversas = useCallback(async () => {
-    setLoading(true);
-
-    // Ultimas mensagens; agrupa por telefone no cliente (a lista lateral e um
-    // "quem falou por ultimo", nao precisa varrer o historico inteiro).
-    const { data: msgs, error } = await supabase
-      .from('whatsapp_mensagens' as any)
-      .select('telefone, conteudo, tipo, created_at')
-      .order('created_at', { ascending: false })
-      .limit(2000);
-
-    if (error) { setLoading(false); return; }
-
-    const ultimaPorTelefone = new Map<string, { conteudo: string; tipo: string; created_at: string }>();
-    for (const m of (msgs ?? []) as any[]) {
-      if (!ultimaPorTelefone.has(m.telefone)) {
-        ultimaPorTelefone.set(m.telefone, { conteudo: m.conteudo, tipo: m.tipo, created_at: m.created_at });
-      }
-    }
-    const telefones = [...ultimaPorTelefone.keys()];
-    if (!telefones.length) { setConversas([]); setLoading(false); return; }
-
-    // Identidade: leads_unificados primeiro (ja traz a origem legivel: qual
-    // lancamento, evento NPA ou turma), disparo_leads como fallback (leads de
-    // CSV/grupo de WhatsApp so existem la, sem linha em leads_unificados) --
-    // usa o nome da campanha de disparo como grupo nesse caso. Casamento por
-    // sufixo de 8 digitos, igual ao evo-resposta -- o formato gravado varia
-    // entre as fontes.
-    const [unificadosRes, disparoRes, campanhasRes] = await Promise.all([
-      supabase.from('leads_unificados' as any).select('origem_tabela, origem_id, origem, nome, telefone, temperatura, criado_em'),
-      supabase.from('disparo_leads').select('nome, phone, temperatura, campanha_id'),
-      supabase.from('disparo_campanhas').select('id, nome'),
-    ]);
-
-    const campanhaNome = new Map<string, string>();
-    for (const c of (campanhasRes.data ?? []) as any[]) campanhaNome.set(c.id, c.nome);
-
-    const porSufixoUnificado = new Map<string, any>();
-    for (const r of (unificadosRes.data ?? []) as any[]) {
-      const s = sufixo(normalizePhone(r.telefone));
-      if (!s) continue;
-      const atual = porSufixoUnificado.get(s);
-      // aluno ganha de lead; empate resolve pelo mais recente
-      const ganha = !atual
-        || (r.origem_tabela === 'alunos' && atual.origem_tabela !== 'alunos')
-        || (r.origem_tabela === 'alunos' === (atual.origem_tabela === 'alunos')
-            && String(r.criado_em ?? '') > String(atual.criado_em ?? ''));
-      if (ganha) porSufixoUnificado.set(s, r);
-    }
-
-    const porSufixoDisparo = new Map<string, any>();
-    for (const r of (disparoRes.data ?? []) as any[]) {
-      const s = sufixo(normalizePhone(r.phone));
-      if (s && !porSufixoDisparo.has(s)) porSufixoDisparo.set(s, r);
-    }
-
-    const lista: Conversa[] = [];
-    for (const tel of telefones) {
-      const ultima = ultimaPorTelefone.get(tel)!;
-      const s = sufixo(tel);
-      const u = porSufixoUnificado.get(s);
-      const d = porSufixoDisparo.get(s);
-
-      let nome: string;
-      let categoria: Categoria;
-      let grupoNome: string;
-      let temperatura: 'quente' | 'morno' | 'frio';
-      let alunoId: string | null = null;
-
-      if (u) {
-        nome = u.nome || maskPhone(tel);
-        temperatura = u.temperatura;
-        const origem = String(u.origem ?? '');
-        if (u.origem_tabela === 'alunos') {
-          categoria = 'turma'; alunoId = u.origem_id;
-          grupoNome = origem.replace(/^Aluno:\s*/, '') || 'Sem turma';
-        } else if (u.origem_tabela === 'lancamento_leads') {
-          categoria = 'lancamento';
-          grupoNome = origem.replace(/^Lançamento:\s*/, '') || '(sem lançamento)';
-        } else if (u.origem_tabela === 'npa_evento_leads') {
-          categoria = 'npa';
-          grupoNome = origem.replace(/^Evento NPA:\s*/, '') || '(sem evento)';
-        } else {
-          categoria = 'numerologo';
-          grupoNome = 'Numerólogo';
-        }
-      } else if (d) {
-        nome = d.nome || maskPhone(tel);
-        temperatura = d.temperatura;
-        categoria = 'disparo';
-        grupoNome = campanhaNome.get(d.campanha_id) ?? '(campanha removida)';
-      } else {
-        // Telefone sem match em lugar nenhum: nunca foi lead nem aluno.
-        continue;
-      }
-
-      lista.push({
-        telefone: tel, nome, categoria, grupoNome, temperatura, alunoId,
-        ultimaMensagem: ultima.tipo !== 'text' ? `[${TIPO_LABEL[ultima.tipo] ?? 'Mensagem'}]` : ultima.conteudo,
-        ultimaEm: ultima.created_at,
-      });
-    }
-
-    lista.sort((a, b) => b.ultimaEm.localeCompare(a.ultimaEm));
-    setConversas(lista);
-    setLoading(false);
-  }, []);
+  const fimDaThreadRef = useRef<HTMLDivElement>(null);
 
   // ── Carteira de alunos (Cobrança) ──────────────────────────────────────────
   const carregarCarteira = useCallback(async () => {
@@ -289,12 +116,21 @@ export function ChatConversas({ onNavigateToAluno }: { onNavigateToAluno?: (alun
     const turmaNome = new Map<string, string>();
     for (const t of (turmasRes.data ?? []) as any[]) turmaNome.set(t.id, t.nome);
 
-    const atrasoPorAluno = new Map<string, { qtd: number; valor: number }>();
+    // diasMax = maior atraso entre as parcelas em aberto do aluno -- mesmo
+    // criterio de severidade que a tela de Cobranca usa pra ordenar a fila
+    // (dias_offset desc, ver Cobranca.tsx). Sem isso a lista aqui ordenava só
+    // por nome, sem refletir quem está mais atrasado / é mais urgente cobrar.
+    const hoje = Date.now();
+    const atrasoPorAluno = new Map<string, { qtd: number; valor: number; diasMax: number }>();
     for (const p of (pagsRes.data ?? []) as any[]) {
       if (!p.aluno_id || !isPagamentoInadimplente(p)) continue;
-      const cur = atrasoPorAluno.get(p.aluno_id) ?? { qtd: 0, valor: 0 };
+      const cur = atrasoPorAluno.get(p.aluno_id) ?? { qtd: 0, valor: 0, diasMax: 0 };
       cur.qtd += 1;
       cur.valor += Number(p.valor ?? 0);
+      if (p.data_vencimento) {
+        const dias = Math.floor((hoje - new Date(p.data_vencimento).getTime()) / 86_400_000);
+        if (dias > cur.diasMax) cur.diasMax = dias;
+      }
       atrasoPorAluno.set(p.aluno_id, cur);
     }
 
@@ -309,46 +145,22 @@ export function ChatConversas({ onNavigateToAluno }: { onNavigateToAluno?: (alun
         status: a.status,
         inadimplente: !encerrado && !!atraso,
         valorEmAtraso: atraso?.valor ?? 0,
+        diasAtrasoMax: atraso?.diasMax ?? 0,
       };
     });
 
-    lista.sort((a, b) => (Number(b.inadimplente) - Number(a.inadimplente)) || a.nome.localeCompare(b.nome));
+    lista.sort((a, b) => (Number(b.inadimplente) - Number(a.inadimplente)) || (b.diasAtrasoMax - a.diasAtrasoMax) || a.nome.localeCompare(b.nome));
     setCarteira(lista);
   }, []);
 
-  useEffect(() => { carregarConversas(); carregarCarteira(); }, [carregarConversas, carregarCarteira]);
+  useEffect(() => { carregarCarteira(); }, [carregarCarteira]);
 
-  // Mensagem nova em qualquer conversa reordena a lista lateral.
+  // Rola pro fim da thread ao abrir uma conversa e a cada mensagem nova --
+  // igual WhatsApp, sempre mostra a mais recente em vez de deixar a rolagem
+  // parada no topo (mensagens antigas).
   useEffect(() => {
-    const ch = supabase.channel('whatsapp_mensagens_lista')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'whatsapp_mensagens' }, () => carregarConversas())
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [carregarConversas]);
-
-  // ── Thread da conversa aberta ─────────────────────────────────────────────
-  const carregarThread = useCallback(async (telefone: string) => {
-    setLoadingThread(true);
-    const { data } = await supabase
-      .from('whatsapp_mensagens' as any)
-      .select('id, telefone, direcao, conteudo, tipo, origem, created_at')
-      .eq('telefone', telefone)
-      .order('created_at', { ascending: true });
-    setThread((data ?? []) as any as MensagemRow[]);
-    setLoadingThread(false);
-  }, []);
-
-  useEffect(() => {
-    if (!selecionado) { setThread([]); return; }
-    carregarThread(selecionado.telefone);
-    const ch = supabase.channel(`whatsapp_mensagens_thread_${selecionado.telefone}`)
-      .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'whatsapp_mensagens',
-        filter: `telefone=eq.${selecionado.telefone}`,
-      }, () => carregarThread(selecionado.telefone))
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [selecionado, carregarThread]);
+    fimDaThreadRef.current?.scrollIntoView({ block: 'end' });
+  }, [selecionado?.telefone, thread]);
 
   function toggleCategoria(cat: Categoria) {
     setCategoriasAbertas(prev => {
@@ -468,7 +280,9 @@ export function ChatConversas({ onNavigateToAluno }: { onNavigateToAluno?: (alun
                 </div>
                 <p className="text-xs text-muted-foreground truncate">{a.turmaNome ?? 'Sem turma'}</p>
                 {a.inadimplente && (
-                  <p className="text-[10px] text-red-600 mt-0.5">{fmtBRL(a.valorEmAtraso)} em atraso</p>
+                  <p className="text-[10px] text-red-600 mt-0.5">
+                    {fmtBRL(a.valorEmAtraso)} em atraso · {a.diasAtrasoMax}d
+                  </p>
                 )}
               </button>
             ))
@@ -529,6 +343,8 @@ export function ChatConversas({ onNavigateToAluno }: { onNavigateToAluno?: (alun
                 <p className="text-xs text-muted-foreground truncate">
                   {selecionado.rotulo ? `${selecionado.rotulo} · ` : ''}
                   {selecionado.telefone ? maskPhone(selecionado.telefone) : 'sem telefone'}
+                  {thread.length > 0 && thread[thread.length - 1].evolution_instance
+                    ? ` · via ${thread[thread.length - 1].evolution_instance}` : ''}
                 </p>
               </div>
               {selecionado.alunoId && (
@@ -570,12 +386,15 @@ export function ChatConversas({ onNavigateToAluno }: { onNavigateToAluno?: (alun
                               </span>
                             )}
                             <p className="text-sm whitespace-pre-wrap break-words">{m.conteudo}</p>
-                            <p className="text-[10px] opacity-50 text-right mt-0.5">{fmtHora(m.created_at)}</p>
+                            <p className="text-[10px] opacity-50 text-right mt-0.5">
+                              {m.evolution_instance ? `${m.evolution_instance} · ` : ''}{fmtHora(m.created_at)}
+                            </p>
                           </div>
                         </div>
                       </div>
                     );
                   })}
+                  <div ref={fimDaThreadRef} />
                 </div>
               )}
             </div>

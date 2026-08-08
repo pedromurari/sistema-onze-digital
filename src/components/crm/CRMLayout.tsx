@@ -5,6 +5,7 @@ import { Lead } from '@/types/crm';
 import { Header } from './Header';
 import { Sidebar, MobileNav, type View } from './Sidebar';
 import { LeadModal } from './LeadModal';
+import { ChatWidget } from './chat/ChatWidget';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, Lock } from 'lucide-react';
 
@@ -281,6 +282,7 @@ export function CRMLayout() {
       </div>
       <MobileNav currentView={currentView} onViewChange={setCurrentView} onOpenMore={() => setMobileMenuOpen(true)} />
       <LeadModal isOpen={isLeadModalOpen} onClose={() => setIsLeadModalOpen(false)} editingLead={editingLead} />
+      {(permissions.canViewCobranca || isAdmin) && <ChatWidget />}
     </div>
   );
 }
