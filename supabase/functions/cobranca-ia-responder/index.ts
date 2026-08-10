@@ -342,7 +342,14 @@ serve(async (req) => {
 
     // 8. Envia só pela instância que recebeu a mensagem -- nunca troca de
     // número no meio da conversa.
-    if (resposta) {
+    // Modo teste: aluno fictício usado pra validar o prompt (nome começa com
+    // "TESTE") nunca recebe mensagem de verdade no WhatsApp -- só loga a
+    // resposta pra revisão manual. Remover esse guard quando a validação do
+    // prompt terminar (ou manter como rede de segurança pra QA futuro).
+    const isTeste = (conversa.aluno_nome ?? "").startsWith("TESTE");
+    if (resposta && isTeste) {
+      await supabase.from("cobranca_ia_mensagens").insert({ conversa_id: conversa.id, papel: "agente", conteudo: resposta });
+    } else if (resposta) {
       const { data: instCfg } = await supabase
         .from("evolution_config")
         .select("api_url, api_key, instance_name")
