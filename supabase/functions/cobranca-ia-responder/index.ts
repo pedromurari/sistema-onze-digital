@@ -146,7 +146,7 @@ serve(async (req) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const openaiKey   = Deno.env.get("OPENAI_API_KEY");
+  const geminiKey   = Deno.env.get("GEMINI_API_KEY");
 
   // Function interna: só evo-resposta (server-to-server) pode chamar. Mais
   // rígido que o EVO_RESPOSTA_SECRET opcional do webhook, porque essa function
@@ -268,37 +268,36 @@ serve(async (req) => {
       .order("created_at", { ascending: true });
     const historico = (turnos ?? []).slice(-12).map((t: any) => `${t.papel}: ${t.conteudo}`).join("\n");
 
-    // 5. Chama GPT-4o-mini. Sem chave configurada ou falha na chamada = fail
-    // closed: nunca manda mensagem "no escuro", sempre encaminha pro humano.
-    if (!openaiKey) {
+    // 5. Chama Gemini (gemini-2.0-flash, tier gratuito). Sem chave configurada ou
+    // falha na chamada = fail closed: nunca manda mensagem "no escuro", sempre
+    // encaminha pro humano.
+    if (!geminiKey) {
       await handoffPorErro(supabase, conversa.id, "erro_ia", "IA indisponível (sem chave configurada) — revisar manualmente.", conversa.turnos_ia ?? 0);
       return json({ ok: true, conversa_id: conversa.id, status: "aguardando_humano", handoff: true, motivo_handoff: "erro_ia" });
     }
 
     let plano: Record<string, unknown> = {};
     try {
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
-          response_format: { type: "json_object" },
-          temperature: 0.2,
-          messages: [
-            { role: "system", content: buildSystemPrompt() },
+          systemInstruction: { parts: [{ text: buildSystemPrompt() }] },
+          contents: [
             {
               role: "user",
-              content: `Nome do aluno: ${conversa.aluno_nome || "aluno"}\n\nSituação financeira atual:\n${debtSummary}\n\nHistórico da conversa:\n${historico || "(primeira mensagem)"}\n\nNova mensagem do aluno: ${mensagem}`,
+              parts: [{ text: `Nome do aluno: ${conversa.aluno_nome || "aluno"}\n\nSituação financeira atual:\n${debtSummary}\n\nHistórico da conversa:\n${historico || "(primeira mensagem)"}\n\nNova mensagem do aluno: ${mensagem}` }],
             },
           ],
+          generationConfig: { temperature: 0.2, responseMimeType: "application/json" },
         }),
         signal: AbortSignal.timeout(25_000),
       });
-      if (!res.ok) throw new Error(`GPT respondeu ${res.status}: ${(await res.text()).slice(0, 300)}`);
+      if (!res.ok) throw new Error(`Gemini respondeu ${res.status}: ${(await res.text()).slice(0, 300)}`);
       const data = await res.json();
-      plano = extrairJson(String(data?.choices?.[0]?.message?.content ?? ""));
+      plano = extrairJson(String(data?.candidates?.[0]?.content?.parts?.[0]?.text ?? ""));
     } catch (e: unknown) {
-      console.error("cobranca-ia-responder: falha ao chamar GPT:", (e as Error).message);
+      console.error("cobranca-ia-responder: falha ao chamar Gemini:", (e as Error).message);
       await handoffPorErro(supabase, conversa.id, "erro_ia", "Falha técnica ao processar resposta do aluno — revisar manualmente.", (conversa.turnos_ia ?? 0) + 1);
       return json({ ok: true, conversa_id: conversa.id, status: "aguardando_humano", handoff: true, motivo_handoff: "erro_ia" });
     }
