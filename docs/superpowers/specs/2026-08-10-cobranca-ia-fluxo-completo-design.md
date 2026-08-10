@@ -53,10 +53,18 @@ Em `resolveTemplateParaItem` (`enviar-cobranca/index.ts`), antes da lógica atua
 
 `AlunoFilaCard` em `Cobranca.tsx` ganha um `Switch` pequeno ao lado do nome do aluno, ligado a `alunos.cobranca_ativa`. `onCheckedChange` faz `update` direto na tabela e atualiza o estado local (mesmo padrão de `onSalvarPrevisao`/`onMarcarCobrado` que já existem no componente). Quando desligado, o aluno some da Fila no próximo carregamento (já é o comportamento de `get_alunos_para_cobranca`, que filtra por `cobranca_ativa = TRUE`) — vale um toast explicando isso ao desligar, já que o card desaparece.
 
+### 6. Toggle separado: quais alunos a IA pode responder
+
+Independente de estar ou não na cobrança automática (mudança 5), o usuário quer controlar, aluno a aluno, se a IA tem permissão de assumir a conversa quando ele responder. É um controle novo, não reaproveita `cobranca_ativa` — um aluno pode estar fora da cobrança automática (time manda tudo na mão) e mesmo assim o usuário pode querer a IA ajudando nas respostas, ou o contrário.
+
+- Nova coluna `alunos.cobranca_ia_ativa BOOLEAN NOT NULL DEFAULT TRUE` (default `TRUE` pra preservar o comportamento atual — hoje a IA já responde por qualquer aluno com log de cobrança, sem esse filtro).
+- `tentarAcionarIaCobranca` em `evo-resposta/index.ts` passa a checar essa coluna pro `aluno_id` escolhido **antes** de chamar `cobranca-ia-responder` — se `false`, não aciona nada (nenhuma linha em `cobranca_ia_conversas` é criada, comportamento igual a hoje pra alunos sem log de cobrança: fica só o `respondeu_em` de sempre, 100% manual).
+- Segundo `Switch` no mesmo `AlunoFilaCard`, ao lado do de cobrança automática, rotulado algo como "Resposta da IA" — mesmo padrão de update direto na tabela.
+
 ## Fora de escopo (explicitamente, pra não confundir depois)
 
 - Não muda o `enviar-cobranca` pra também disparar automaticamente a *primeira* mensagem de cobrança — isso já é manual hoje (bem-vindo pelo time) e continua assim.
-- Não cria nenhuma tela nova — os 5 itens acima entram nas telas/arquivos que já existem (`Cobranca.tsx`, `cobranca-ia-responder/index.ts`, `enviar-cobranca/index.ts`).
+- Não cria nenhuma tela nova — os 6 itens acima entram nas telas/arquivos que já existem (`Cobranca.tsx`, `cobranca-ia-responder/index.ts`, `enviar-cobranca/index.ts`, `evo-resposta/index.ts`).
 - Não mexe no cap de 8 turnos, no fail-closed de erro de IA, nem em nenhum dos guardrails duros já validados no agente (nunca negociar valor/desconto/prazo) — só adiciona conhecimento e um motivo de handoff novo.
 
 ## Verificação
@@ -67,4 +75,5 @@ Em `resolveTemplateParaItem` (`enviar-cobranca/index.ts`), antes da lógica atua
 4. **Pausa automática**: com uma parcela de teste com `data_prevista_pagamento` = amanhã, rodar `processarTick` manualmente (ou aguardar o tique) e confirmar que ela NÃO é escolhida por `proximoGrupoElegivel`.
 5. **Cobrança no dia**: mesma parcela com `data_prevista_pagamento` = hoje, confirmar que dispara o template `promessa_vencida` em vez da fase normal.
 6. **Pós-promessa**: mesma parcela com `data_prevista_pagamento` = ontem (sem pagamento), confirmar que volta a cair na fase normal por `dias_offset`.
-7. **Toggle por aluno**: desligar `cobranca_ativa` de um aluno de teste na Fila, confirmar que ele some da lista após recarregar, e que `get_alunos_para_cobranca` de fato não retorna mais essa linha.
+7. **Toggle cobrança automática**: desligar `cobranca_ativa` de um aluno de teste na Fila, confirmar que ele some da lista após recarregar, e que `get_alunos_para_cobranca` de fato não retorna mais essa linha.
+8. **Toggle resposta da IA**: com `cobranca_ia_ativa=false` num aluno de teste que tenha log de cobrança, simular uma resposta dele no WhatsApp e confirmar que nenhuma linha nova aparece em `cobranca_ia_conversas` (só o `respondeu_em` do log de cobrança de sempre). Ligar o toggle de volta e confirmar que a próxima resposta já aciona a IA normalmente.
