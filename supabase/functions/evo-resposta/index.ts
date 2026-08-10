@@ -288,6 +288,16 @@ async function tentarAcionarIaCobranca(
     // Se o telefone bateu com mais de um log, usa o mais recente.
     const escolhido = comAluno.sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
 
+    // Toggle "Resposta da IA" por aluno (independente de cobranca_ativa, que só controla
+    // a cobrança automática) -- aluno com IA desligada continua só com respondeu_em
+    // atualizado (já feito antes desse bloco), sem abrir conversa de IA.
+    const { data: alunoCfg } = await supabase
+      .from('alunos')
+      .select('cobranca_ia_ativa')
+      .eq('id', escolhido.aluno_id)
+      .maybeSingle();
+    if (alunoCfg && alunoCfg.cobranca_ia_ativa === false) return;
+
     const { data: optOut } = await supabase
       .from('whatsapp_opt_out')
       .select('telefone')

@@ -134,6 +134,7 @@ export type Database = {
           cep: string | null
           cidade_estado: string | null
           cobranca_ativa: boolean
+          cobranca_ia_ativa: boolean
           cobranca_telefone: string | null
           contrato_arquivo_nome: string | null
           contrato_arquivo_url: string | null
@@ -189,6 +190,7 @@ export type Database = {
           cep?: string | null
           cidade_estado?: string | null
           cobranca_ativa?: boolean
+          cobranca_ia_ativa?: boolean
           cobranca_telefone?: string | null
           contrato_arquivo_nome?: string | null
           contrato_arquivo_url?: string | null
@@ -244,6 +246,7 @@ export type Database = {
           cep?: string | null
           cidade_estado?: string | null
           cobranca_ativa?: boolean
+          cobranca_ia_ativa?: boolean
           cobranca_telefone?: string | null
           contrato_arquivo_nome?: string | null
           contrato_arquivo_url?: string | null
@@ -8136,6 +8139,7 @@ export type Database = {
         Returns: {
           aluno_id: string
           aluno_nome: string
+          cobranca_ia_ativa: boolean
           data_prevista_pagamento: string
           data_vencimento: string
           dias_offset: number

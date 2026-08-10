@@ -163,6 +163,7 @@ interface FilaItem {
   link_pagamento: string;
   pagamento_status: string;
   data_prevista_pagamento: string | null;
+  cobranca_ia_ativa: boolean;
 }
 
 // Um aluno com 2+ parcelas em aberto agora vira 1 card, não N linhas -- `parcelas` é
@@ -181,6 +182,7 @@ interface AlunoGrupo {
   critica: FilaItem;
   totalDevido: number;
   isInadimplente: boolean;
+  cobrancaIaAtiva: boolean;
 }
 
 // Último contato de cobrança já feito com o aluno (independente da parcela) -- alimenta o
@@ -341,6 +343,7 @@ function SituacaoBadge({ critica, isInadimplente }: { critica: FilaItem; isInadi
 // elegível pra cobrança hoje), pra deixar claro o tamanho real da dívida de uma vez.
 function AlunoFilaCard({
   grupo, horaEstimada, jaCobradoHoje, isSending, onEnviar, onMarcarCobrado, onSalvarPrevisao, ultimoContato,
+  onToggleAutomacao, onToggleIa,
 }: {
   grupo: AlunoGrupo;
   horaEstimada?: string;
@@ -350,6 +353,8 @@ function AlunoFilaCard({
   onMarcarCobrado: () => void;
   onSalvarPrevisao: (pagamentoId: string, data: string) => void;
   ultimoContato?: UltimoContato;
+  onToggleAutomacao: (ativo: boolean) => void;
+  onToggleIa: (ativo: boolean) => void;
 }) {
   const severidade = severidadeGrupo(grupo.critica);
   return (
@@ -387,6 +392,16 @@ function AlunoFilaCard({
             <p className="text-xs text-muted-foreground">
               {grupo.parcelas.length > 1 ? `${grupo.parcelas.length} parcelas em aberto` : '1 parcela em aberto'}
             </p>
+            <div className="flex items-center justify-end gap-3 mt-1.5">
+              <label className="flex items-center gap-1 text-[11px] text-muted-foreground cursor-pointer" title="Desligar tira o aluno da fila de cobrança automática (continua podendo cobrar manualmente)">
+                Automático
+                <Switch checked={true} onCheckedChange={onToggleAutomacao} className="scale-75" />
+              </label>
+              <label className="flex items-center gap-1 text-[11px] text-muted-foreground cursor-pointer" title="Controla se a IA pode assumir a conversa quando esse aluno responder a uma cobrança">
+                IA
+                <Switch checked={grupo.cobrancaIaAtiva} onCheckedChange={onToggleIa} className="scale-75" />
+              </label>
+            </div>
           </div>
         </div>
 
@@ -916,6 +931,7 @@ export function Cobranca() {
         isInadimplente: parcelas.some(p =>
           isPagamentoInadimplente({ status: p.pagamento_status, data_vencimento: p.data_vencimento }, hojeSP)
         ),
+        cobrancaIaAtiva: critica.cobranca_ia_ativa,
       });
     }
     return grupos.sort((a, b) => b.critica.dias_offset - a.critica.dias_offset);
@@ -1186,14 +1202,36 @@ export function Cobranca() {
     await loadAll();
   };
 
-  // Grava/edita a previsão de pagamento de UMA parcela (não passa pelo enviar-cobranca -- não
-  // afeta dedupe nem elegibilidade, é só informativo). `data` vazio limpa a previsão.
+  // Grava/edita a previsão de pagamento de UMA parcela. Não passa pelo enviar-cobranca --
+  // o tique automático lê direto de pagamentos.data_prevista_pagamento (resolveTemplateParaItem
+  // em enviar-cobranca/index.ts) e pausa a cobrança dessa parcela até a data chegar, disparando
+  // o template "promessa_vencida" no dia exato. `data` vazio limpa a previsão (volta a cobrar
+  // normal pela fase de dias de atraso).
   const salvarPrevisaoPagamento = async (pagamentoId: string, data: string) => {
     const valor = data || null;
     const { error } = await supabase.from('pagamentos').update({ data_prevista_pagamento: valor }).eq('id', pagamentoId);
     if (error) { toast.error('Erro ao salvar previsão: ' + error.message); return; }
     setFila(prev => prev.map(item => item.pagamento_id === pagamentoId ? { ...item, data_prevista_pagamento: valor } : item));
     toast.success(valor ? 'Previsão salva!' : 'Previsão removida.');
+  };
+
+  // Toggle "Automático": alunos.cobranca_ativa, já é o filtro que get_alunos_para_cobranca
+  // usa -- desligar tira o aluno da fila no próximo carregamento (por isso o loadAll()).
+  const toggleCobrancaAutomatica = async (alunoId: string, ativo: boolean) => {
+    const { error } = await supabase.from('alunos').update({ cobranca_ativa: ativo }).eq('id', alunoId);
+    if (error) { toast.error('Erro ao atualizar: ' + error.message); return; }
+    toast.success(ativo ? 'Cobrança automática ligada.' : 'Cobrança automática desligada — o aluno some da fila.');
+    await loadAll();
+  };
+
+  // Toggle "IA": alunos.cobranca_ia_ativa, checado em evo-resposta antes de acionar
+  // cobranca-ia-responder. Independente do toggle de automação -- não tira o aluno da
+  // fila, então só atualiza o estado local (mesmo padrão de salvarPrevisaoPagamento).
+  const toggleIaAtiva = async (alunoId: string, ativo: boolean) => {
+    const { error } = await supabase.from('alunos').update({ cobranca_ia_ativa: ativo }).eq('id', alunoId);
+    if (error) { toast.error('Erro ao atualizar: ' + error.message); return; }
+    setFila(prev => prev.map(item => item.aluno_id === alunoId ? { ...item, cobranca_ia_ativa: ativo } : item));
+    toast.success(ativo ? 'IA pode responder esse aluno.' : 'IA não vai mais responder esse aluno.');
   };
 
   const reenviarLog = async (log: CobrancaLog) => {
@@ -1630,6 +1668,8 @@ export function Cobranca() {
                     onMarcarCobrado={() => marcarCobradoManual(grupo)}
                     onSalvarPrevisao={salvarPrevisaoPagamento}
                     ultimoContato={ultimoContatoPorAluno.get(grupo.aluno_id)}
+                    onToggleAutomacao={ativo => toggleCobrancaAutomatica(grupo.aluno_id, ativo)}
+                    onToggleIa={ativo => toggleIaAtiva(grupo.aluno_id, ativo)}
                   />
                 ))
               )}

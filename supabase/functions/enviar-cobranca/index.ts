@@ -451,7 +451,20 @@ async function marcarCobradoManual(db: any, body: any, userId: string | null, co
 // isso também resolve sozinho o backlog de quem acumulou atraso enquanto a cobrança
 // esteve parada. pre_vencimento/vencimento continuam por dia exato (evento de data
 // futura conhecida, sem acúmulo possível).
-function resolveTemplateParaItem(item: any, templates: any[], cfg: any): any | null {
+function resolveTemplateParaItem(item: any, templates: any[], cfg: any, hoje: string): any | null {
+  // Promessa de pagamento (pagamentos.data_prevista_pagamento, coletada pela IA de
+  // cobrança ou digitada manualmente na Fila) tem prioridade sobre a fase normal por
+  // dias de atraso: pausa a cobrança automática até a data prometida chegar, e no dia
+  // exato dispara um lembrete dedicado em vez da fase que bateria por dias_offset.
+  // Passada a data sem pagamento, cai de volta na lógica normal abaixo -- dias_offset
+  // continua contado a partir do vencimento original, sem relação com a promessa.
+  if (item.data_prevista_pagamento) {
+    if (item.data_prevista_pagamento > hoje) return null;
+    if (item.data_prevista_pagamento === hoje) {
+      return templates.find((t: any) => t.tipo === "promessa_vencida") ?? null;
+    }
+  }
+
   const offset = item.dias_offset;
   if (offset < 0 && cfg.enviar_pre_vencimento) {
     return templates.find((t: any) => t.tipo === "pre_vencimento" && t.dias_offset === offset) ?? null;
@@ -498,7 +511,7 @@ interface GrupoElegivel {
 // (não só a crítica) -- senão uma parcela que não era a "mais crítica" dessa vez nunca
 // marcaria sua própria fase como enviada e voltaria a disparar de novo depois, mesmo já
 // tendo sido citada na mensagem.
-function proximoGrupoElegivel(fila: any[], templates: any[], cfg: any, jaEnviado: Map<string, boolean>): GrupoElegivel | null {
+function proximoGrupoElegivel(fila: any[], templates: any[], cfg: any, jaEnviado: Map<string, boolean>, hoje: string): GrupoElegivel | null {
   const porAluno = new Map<string, any[]>();
   for (const item of fila) {
     if (!porAluno.has(item.aluno_id)) porAluno.set(item.aluno_id, []);
@@ -507,7 +520,7 @@ function proximoGrupoElegivel(fila: any[], templates: any[], cfg: any, jaEnviado
 
   for (const [, itens] of porAluno) {
     const resolvidos = itens
-      .map(item => ({ item, template: resolveTemplateParaItem(item, templates, cfg) }))
+      .map(item => ({ item, template: resolveTemplateParaItem(item, templates, cfg, hoje) }))
       .filter(r => r.template);
     if (!resolvidos.length) continue;
 
@@ -570,9 +583,9 @@ function proximoGrupoElegivel(fila: any[], templates: any[], cfg: any, jaEnviado
 // foi enviada -- feito à parte (função async) porque proximoGrupoElegivel precisa ser
 // síncrona pra poder ser chamada várias vezes em memória dentro do loop do disparo em
 // lote sem depender de round-trip no banco a cada tentativa.
-async function calcularElegibilidade(db: any, fila: any[], templates: any[], cfg: any): Promise<Map<string, boolean>> {
+async function calcularElegibilidade(db: any, fila: any[], templates: any[], cfg: any, hoje: string): Promise<Map<string, boolean>> {
   const resolvidos = fila
-    .map(item => ({ item, template: resolveTemplateParaItem(item, templates, cfg) }))
+    .map(item => ({ item, template: resolveTemplateParaItem(item, templates, cfg, hoje) }))
     .filter(r => r.template);
   const mapa = new Map<string, boolean>();
   await Promise.all(resolvidos.map(async r => {
@@ -670,8 +683,8 @@ async function processarTick(db: any, cors: any) {
   const { data: fila } = await db.rpc("get_alunos_para_cobranca", { p_data: sp.dateStr });
   if (!fila?.length) return json({ ok: true, enviados: 0 });
 
-  const jaEnviado = await calcularElegibilidade(db, fila, templates, cfg);
-  const proximo = proximoGrupoElegivel(fila, templates, cfg, jaEnviado);
+  const jaEnviado = await calcularElegibilidade(db, fila, templates, cfg, sp.dateStr);
+  const proximo = proximoGrupoElegivel(fila, templates, cfg, jaEnviado, sp.dateStr);
   if (!proximo) return json({ ok: true, enviados: 0 });
 
   const allInstances = await resolveInstances(db, cfg);
@@ -777,8 +790,8 @@ async function statusTick(db: any, cors: any) {
 
   const { data: fila } = await db.rpc("get_alunos_para_cobranca", { p_data: sp.dateStr });
   const alunosNaFila = fila?.length ? new Set(fila.map((f: any) => f.aluno_id)).size : 0;
-  const jaEnviado = fila?.length ? await calcularElegibilidade(db, fila, templates, cfg) : new Map<string, boolean>();
-  const proximo = fila?.length ? proximoGrupoElegivel(fila, templates, cfg, jaEnviado) : null;
+  const jaEnviado = fila?.length ? await calcularElegibilidade(db, fila, templates, cfg, sp.dateStr) : new Map<string, boolean>();
+  const proximo = fila?.length ? proximoGrupoElegivel(fila, templates, cfg, jaEnviado, sp.dateStr) : null;
   if (!proximo) return json({ estado: "sem_elegiveis", fila_total: alunosNaFila });
 
   if (cfg.ultimo_envio_em) {

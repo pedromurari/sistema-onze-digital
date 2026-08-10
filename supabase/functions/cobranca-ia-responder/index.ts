@@ -17,7 +17,7 @@ const corsHeaders = {
 type EvoInstance = { api_url: string; api_key: string; instance_name: string };
 
 const MOTIVOS_VALIDOS = [
-  "dado_coletado", "fora_de_escopo", "pedido_negociacao", "reclamacao", "baixa_confianca",
+  "dado_coletado", "fora_de_escopo", "pedido_negociacao", "reclamacao", "baixa_confianca", "pedido_cancelamento",
 ] as const;
 type MotivoHandoff = typeof MOTIVOS_VALIDOS[number] | "erro_ia" | "limite_turnos";
 
@@ -111,6 +111,7 @@ function resumoDeterministico(motivo: MotivoHandoff | null, dataPrometida: strin
     baixa_confianca: "IA não teve confiança suficiente para entender a resposta — revisar manualmente.",
     limite_turnos: "Conversa atingiu o limite de trocas automáticas sem coletar uma data — revisar manualmente.",
     erro_ia: "Falha técnica no processamento — revisar manualmente.",
+    pedido_cancelamento: "Aluno pediu para cancelar a matrícula — a IA não confirma nem nega, encaminhado para o time.",
   };
   return motivos[motivo ?? ""] ?? "Conversa encaminhada para revisão humana.";
 }
@@ -127,14 +128,16 @@ function buildSystemPrompt(): string {
   return [
     "Você é um assistente de cobrança de uma escola de psicanálise/numerologia, escrevendo em português do Brasil, em nome da secretaria financeira, num tom cordial e direto (sem parecer robótico).",
     "Seu ÚNICO trabalho nesta conversa: reconhecer a mensagem do aluno com empatia breve, entender em poucas palavras o motivo do atraso, e coletar UMA data estimada de pagamento (uma única data, formato AAAA-MM-DD).",
+    "Conhecimento que você pode usar pra responder dúvidas diretas, sem precisar de handoff: o pagamento é sempre feito pelo link da Voomp, nunca por Pix — o aluno faz parte do grupo Cogna, que tem parceria com a Universidade Anhanguera, e é pagando pelo link da Voomp que ele garante a extensão universitária no seu certificado. Se o aluno perguntar por que não pode pagar por Pix, ou o que ganha pagando pela Voomp, responda com essa explicação. Isso NÃO é uma negociação de valor/prazo/desconto — continua proibido oferecer qualquer coisa nesse sentido.",
     "PROIBIDO, sem exceção: oferecer, sugerir ou confirmar qualquer desconto, redução de valor, isenção de juros/multa, ou parcelamento diferente do já combinado. NUNCA prometer ou negar cancelamento, suspensão ou manutenção de acesso. NUNCA prometer o que o time humano vai decidir. NUNCA falar sobre conteúdo de curso, matrícula de terceiros, ou qualquer assunto que não seja este pagamento específico. NUNCA pedir ou aceitar número de cartão, senha, ou documento completo — se o aluno oferecer, diga que isso será tratado pelo time humano. NUNCA gere mais de uma mensagem de resposta.",
     "Se o aluno pedir desconto, negociação ou parcelamento diferente: handoff=true, motivo_handoff='pedido_negociacao', sem oferecer nada — só reconheça que vai encaminhar pro time.",
+    "Se o aluno pedir para cancelar a matrícula ou desistir do curso: handoff=true, motivo_handoff='pedido_cancelamento', sem confirmar nem negar o cancelamento — só reconheça que vai encaminhar pro time.",
     "Se o aluno reclamar, ficar hostil, ou pedir para falar com uma pessoa/humano: handoff=true, motivo_handoff='reclamacao'.",
-    "Se a mensagem não tiver relação com este pagamento: handoff=true, motivo_handoff='fora_de_escopo'.",
+    "Se a mensagem não tiver relação com este pagamento (e não for uma das dúvidas sobre Voomp/Pix que você já sabe responder): handoff=true, motivo_handoff='fora_de_escopo'.",
     "Se você não tiver certeza do que o aluno quis dizer: pergunte UMA vez pra esclarecer (handoff=false); se ainda assim não der pra entender na resposta seguinte, handoff=true, motivo_handoff='baixa_confianca'.",
     "Assim que o aluno confirmar uma data específica de pagamento: agradeça, confirme que o time vai dar seguimento, handoff=true, motivo_handoff='dado_coletado', data_prometida com essa data.",
-    "Responda APENAS em JSON válido, sem markdown, no formato exato: {\"resposta\": string, \"data_prometida\": \"AAAA-MM-DD\" ou null, \"handoff\": boolean, \"motivo_handoff\": \"dado_coletado\"|\"fora_de_escopo\"|\"pedido_negociacao\"|\"reclamacao\"|\"baixa_confianca\"|null, \"conversa_completa\": boolean}.",
-    "Mesmo quando handoff=true, 'resposta' deve trazer uma frase curta de fechamento apropriada (ex: 'Entendido, vou encaminhar pro nosso time, combinado?') — só deixe vazia se realmente não houver nada apropriado a dizer.",
+    "Responda APENAS em JSON válido, sem markdown, no formato exato: {\"resposta\": string, \"data_prometida\": \"AAAA-MM-DD\" ou null, \"handoff\": boolean, \"motivo_handoff\": \"dado_coletado\"|\"fora_de_escopo\"|\"pedido_negociacao\"|\"reclamacao\"|\"baixa_confianca\"|\"pedido_cancelamento\"|null, \"conversa_completa\": boolean}.",
+    "Toda vez que handoff=true (qualquer motivo), a 'resposta' precisa deixar claro que alguém do time vai continuar a conversa PELO MESMO NÚMERO de WhatsApp — nunca dê a entender que o contato vai mudar de canal. Frase de referência: 'Vou repassar pro nosso time, tá bem? Alguém da nossa equipe fala com você por aqui mesmo.' Adapte o tom, mas mantenha essa informação. Só deixe 'resposta' vazia se realmente não houver nada apropriado a dizer.",
   ].join(" ");
 }
 
@@ -364,6 +367,7 @@ serve(async (req) => {
     // 9. Atualiza o estado final da conversa.
     const novoStatus = handoff ? (dataPrometida ? "dado_coletado" : "aguardando_humano") : "ativo";
     const resumoIa = handoff ? resumoDeterministico(motivoHandoff, dataPrometida, principal) : conversa.resumo_ia;
+    const pagamentoIdFinal = conversa.pagamento_id ?? principal.id;
 
     await supabase.from("cobranca_ia_conversas").update({
       status: novoStatus,
@@ -371,9 +375,16 @@ serve(async (req) => {
       motivo_handoff: handoff ? motivoHandoff : null,
       resumo_ia: resumoIa,
       turnos_ia: novosTurnos,
-      pagamento_id: conversa.pagamento_id ?? principal.id,
+      pagamento_id: pagamentoIdFinal,
       updated_at: new Date().toISOString(),
     }).eq("id", conversa.id);
+
+    // Sem isso, a fila de cobrança automática nunca saberia da promessa -- é o
+    // gancho que faz enviar-cobranca pausar essa parcela até a data prometida
+    // (ver resolveTemplateParaItem em enviar-cobranca/index.ts).
+    if (dataPrometida) {
+      await supabase.from("pagamentos").update({ data_prevista_pagamento: dataPrometida }).eq("id", pagamentoIdFinal);
+    }
 
     return json({ ok: true, conversa_id: conversa.id, status: novoStatus, handoff, motivo_handoff: handoff ? motivoHandoff : null });
 
