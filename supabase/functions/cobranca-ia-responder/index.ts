@@ -268,8 +268,9 @@ serve(async (req) => {
       .order("created_at", { ascending: true });
     const historico = (turnos ?? []).slice(-12).map((t: any) => `${t.papel}: ${t.conteudo}`).join("\n");
 
-    // 5. Chama Gemini (gemini-2.0-flash, tier gratuito). Sem chave configurada ou
-    // falha na chamada = fail closed: nunca manda mensagem "no escuro", sempre
+    // 5. Chama Gemini (gemini-flash-lite-latest, tier gratuito -- gemini-2.0-flash
+    // foi descontinuado e nem aparece mais em ListModels). Sem chave configurada
+    // ou falha na chamada = fail closed: nunca manda mensagem "no escuro", sempre
     // encaminha pro humano.
     if (!geminiKey) {
       await handoffPorErro(supabase, conversa.id, "erro_ia", "IA indisponível (sem chave configurada) — revisar manualmente.", conversa.turnos_ia ?? 0);
@@ -278,7 +279,7 @@ serve(async (req) => {
 
     let plano: Record<string, unknown> = {};
     try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=${geminiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
