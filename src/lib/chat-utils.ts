@@ -19,6 +19,16 @@ export function sufixo(tel: string): string {
   return tel.slice(-8);
 }
 
+// Numeros pessoais (nao sao canal de atendimento) que nao devem aparecer no
+// Chat -- nem na barra de status, nem nas conversas. A instancia continua
+// existindo normalmente em Settings/disparo/EvolutionTaskPanel, so o Chat
+// (aba completa e widget) esconde ela.
+export const INSTANCIAS_OCULTAS_NO_CHAT = new Set(['ig']);
+
+export function instanciaOcultaNoChat(instanceName: string | null | undefined): boolean {
+  return !!instanceName && INSTANCIAS_OCULTAS_NO_CHAT.has(instanceName.toLowerCase());
+}
+
 export function maskPhone(phone: string) {
   const d = phone.replace(/\D/g, '');
   if (d.length >= 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}–${d.slice(7)}`;

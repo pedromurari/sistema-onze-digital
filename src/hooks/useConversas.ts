@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { normalizePhone, sufixo, maskPhone, TIPO_LABEL } from '@/lib/chat-utils';
+import { normalizePhone, sufixo, maskPhone, TIPO_LABEL, instanciaOcultaNoChat } from '@/lib/chat-utils';
 
 // Extraido de ChatConversas.tsx: busca as conversas (agrupadas por telefone,
 // identidade resolvida por sufixo de 8 digitos contra leads_unificados/
@@ -23,6 +23,7 @@ export interface Conversa {
   ultimaInstancia: string | null; // qual numero/instancia do WhatsApp mandou/recebeu a ultima mensagem
   ultimaDirecao: 'recebida' | 'enviada';
   naoLida: boolean; // ultima mensagem recebida e mais recente que a leitura do usuario atual
+  disparoRespondeu: boolean; // so relevante quando categoria === 'disparo': lead ja respondeu a campanha?
 }
 
 export function useConversas() {
@@ -63,7 +64,7 @@ export function useConversas() {
     // entre as fontes.
     const [unificadosRes, disparoRes, campanhasRes, leiturasRes] = await Promise.all([
       supabase.from('leads_unificados' as any).select('origem_tabela, origem_id, origem, nome, telefone, temperatura, criado_em'),
-      supabase.from('disparo_leads').select('nome, phone, temperatura, campanha_id'),
+      supabase.from('disparo_leads').select('nome, phone, temperatura, campanha_id, respondeu_em'),
       supabase.from('disparo_campanhas').select('id, nome'),
       user ? supabase.from('chat_leituras' as any).select('telefone, lida_em').eq('user_id', user.id) : Promise.resolve({ data: [] as any[] }),
     ]);
@@ -96,6 +97,9 @@ export function useConversas() {
     const lista: Conversa[] = [];
     for (const tel of telefones) {
       const ultima = ultimaPorTelefone.get(tel)!;
+      // Numero pessoal (ex: "ig") nao e canal de atendimento -- a conversa toda
+      // some do Chat quando a mensagem mais recente veio/foi por essa instancia.
+      if (instanciaOcultaNoChat(ultima.evolution_instance)) continue;
       const s = sufixo(tel);
       const u = porSufixoUnificado.get(s);
       const d = porSufixoDisparo.get(s);
@@ -105,6 +109,7 @@ export function useConversas() {
       let grupoNome: string;
       let temperatura: 'quente' | 'morno' | 'frio';
       let alunoId: string | null = null;
+      let disparoRespondeu = false;
 
       if (u) {
         nome = u.nome || maskPhone(tel);
@@ -128,6 +133,7 @@ export function useConversas() {
         temperatura = d.temperatura;
         categoria = 'disparo';
         grupoNome = campanhaNome.get(d.campanha_id) ?? '(campanha removida)';
+        disparoRespondeu = !!d.respondeu_em;
       } else {
         // Telefone sem match em lancamento_leads/npa_evento_leads/alunos/disparo_leads --
         // ex: lead que clicou num anuncio "click-to-WhatsApp" e mandou a mensagem
@@ -151,6 +157,7 @@ export function useConversas() {
         ultimaInstancia: ultima.evolution_instance,
         ultimaDirecao: ultima.direcao,
         naoLida,
+        disparoRespondeu,
       });
     }
 

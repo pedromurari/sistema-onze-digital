@@ -13,16 +13,8 @@ import { validateWebhookUrl, WebhookUrlValidationError } from '@/lib/webhook';
 import { supabase } from '@/integrations/supabase/client';
 import { Webhook, BookOpen, Globe, Plus, Trash2, Send, Smartphone, RefreshCw, Loader2, CheckCircle2, XCircle, QrCode, FileText, Copy, ExternalLink, ChevronRight, MessageSquare, Zap, Wallet } from 'lucide-react';
 import { EvolutionTaskPanel } from './EvolutionTaskPanel';
-
-interface EvolutionInstance {
-  id: string;
-  instance_name: string;
-  api_url: string;
-  api_key: string;
-  ativo: boolean;
-}
-
-type ConnState = 'open' | 'close' | 'connecting' | 'loading' | 'unknown';
+import { ConnStateBadge } from './ConnStateBadge';
+import { fetchConnectionState, type EvolutionInstance, type ConnState } from '@/lib/evolution-status';
 
 function useEvolutionInstances() {
   const [instances, setInstances] = useState<EvolutionInstance[]>([]);
@@ -98,24 +90,6 @@ function useCanaisCobranca() {
   return { canais, add, toggle, remove };
 }
 
-async function fetchConnectionState(inst: EvolutionInstance): Promise<ConnState> {
-  try {
-    const res = await fetch(`${inst.api_url}/instance/connectionState/${inst.instance_name}`, {
-      headers: { apikey: inst.api_key },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return 'unknown';
-    const json = await res.json() as Record<string, unknown>;
-    const state = String(json?.instance?.state ?? json?.state ?? json?.connectionStatus ?? 'unknown').toLowerCase();
-    if (state.includes('open')) return 'open';
-    if (state.includes('connect')) return 'connecting';
-    if (state.includes('close') || state.includes('logout')) return 'close';
-    return 'unknown';
-  } catch {
-    return 'unknown';
-  }
-}
-
 async function fetchQrCode(inst: EvolutionInstance): Promise<string | null> {
   try {
     // Try connect endpoint first (returns QR)
@@ -129,14 +103,6 @@ async function fetchQrCode(inst: EvolutionInstance): Promise<string | null> {
   } catch {
     return null;
   }
-}
-
-function ConnStateBadge({ state }: { state: ConnState }) {
-  if (state === 'loading') return <Badge variant="outline" className="gap-1"><Loader2 className="h-3 w-3 animate-spin" />Verificando</Badge>;
-  if (state === 'open') return <Badge className="gap-1 bg-green-100 text-green-800 border-green-200"><CheckCircle2 className="h-3 w-3" />Conectado</Badge>;
-  if (state === 'connecting') return <Badge variant="outline" className="gap-1 text-yellow-700 border-yellow-300 bg-yellow-50"><Loader2 className="h-3 w-3 animate-spin" />Conectando</Badge>;
-  if (state === 'close') return <Badge variant="outline" className="gap-1 text-red-700 border-red-300 bg-red-50"><XCircle className="h-3 w-3" />Desconectado</Badge>;
-  return <Badge variant="outline" className="text-muted-foreground">Desconhecido</Badge>;
 }
 
 const EVO_RESPOSTA_URL = `https://usqiyekfmwwnvkmkdlej.supabase.co/functions/v1/evo-resposta`;

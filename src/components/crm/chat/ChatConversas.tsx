@@ -12,9 +12,11 @@ import { isPagamentoInadimplente } from '@/lib/financial-utils';
 import { FichaAlunoResumo } from '../finance/FichaAlunoResumo';
 import { useConversas, type Categoria } from '@/hooks/useConversas';
 import { useThread } from '@/hooks/useThread';
+import { useEvolutionStatus } from '@/hooks/useEvolutionStatus';
+import { ConnStateBadge } from '../ConnStateBadge';
 import {
   normalizePhone, maskPhone, fmtHora, fmtDiaSeparador, fmtRelativo,
-  TEMP_CFG, TIPO_ICON, TIPO_LABEL,
+  TEMP_CFG, TIPO_ICON, TIPO_LABEL, instanciaOcultaNoChat,
 } from '@/lib/chat-utils';
 import type { Conversa } from '@/hooks/useConversas';
 
@@ -49,6 +51,12 @@ interface AlunoCarteira {
   inadimplente: boolean;
   valorEmAtraso: number;
   diasAtrasoMax: number;
+}
+
+interface AlunoCarteiraComConversa extends AlunoCarteira {
+  ultimaMensagem: string | null;
+  ultimaEm: string | null;
+  ultimaInstancia: string | null;
 }
 
 const CATEGORIA_CFG: Record<Categoria, { label: string; icon: React.ElementType }> = {
@@ -94,6 +102,28 @@ function ConversaItem({ c, ativo, onClick }: { c: Conversa; ativo: boolean; onCl
   );
 }
 
+function StatusBarWhatsApp({ filtroInstancia, onToggle }: { filtroInstancia: string | null; onToggle: (nome: string) => void }) {
+  const { instances: todasInstancias, states, loading } = useEvolutionStatus();
+  const instances = useMemo(
+    () => todasInstancias.filter(i => !instanciaOcultaNoChat(i.instance_name)),
+    [todasInstancias],
+  );
+  if (!loading && instances.length === 0) return null;
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 border-b bg-gray-50/50 overflow-x-auto flex-none">
+      {instances.map(inst => (
+        <button key={inst.id} onClick={() => onToggle(inst.instance_name)}
+          title={filtroInstancia === inst.instance_name ? 'Clique para remover o filtro' : `Ver só conversas de ${inst.instance_name}`}
+          className={cn('flex items-center gap-1.5 px-2 py-1 rounded-md border text-xs flex-none transition-colors',
+            filtroInstancia === inst.instance_name ? 'bg-primary/10 border-primary/40' : 'bg-white hover:bg-gray-50')}>
+          <span className="font-medium">{inst.instance_name}</span>
+          <ConnStateBadge state={states[inst.id] ?? 'loading'} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function ChatConversas({ onNavigateToAluno }: { onNavigateToAluno?: (alunoId: string) => void }) {
   const [modo, setModo] = useState<Modo>('todos');
   const [categoriasAbertas, setCategoriasAbertas] = useState<Set<Categoria>>(new Set());
@@ -104,6 +134,7 @@ export function ChatConversas({ onNavigateToAluno }: { onNavigateToAluno?: (alun
   const { thread, loading: loadingThread } = useThread(selecionado?.telefone ?? null);
   const [fichaAlunoId, setFichaAlunoId] = useState<string | null>(null);
   const [filtroCarteira, setFiltroCarteira] = useState<'todos' | 'em_dia' | 'inadimplentes'>('todos');
+  const [filtroInstancia, setFiltroInstancia] = useState<string | null>(null);
   const fimDaThreadRef = useRef<HTMLDivElement>(null);
 
   // ── Carteira de alunos (Cobrança) ──────────────────────────────────────────
@@ -175,23 +206,62 @@ export function ChatConversas({ onNavigateToAluno }: { onNavigateToAluno?: (alun
     setModo({ categoria, grupo });
   }
 
+  function toggleFiltroInstancia(nome: string) {
+    setFiltroInstancia(prev => prev === nome ? null : nome);
+  }
+
   // ── Listas filtradas ──────────────────────────────────────────────────────
   const q = search.trim().toLowerCase();
 
   const conversasVisiveis = useMemo(() => {
     if (modo === 'cobranca' || modo === 'grupos') return [];
     let list = conversas;
+    // Disparo frio (nunca respondeu) so aparece dentro do proprio grupo da campanha, nao em "Todos".
+    if (modo === 'todos') list = list.filter(c => c.categoria !== 'disparo' || c.disparoRespondeu);
     if (typeof modo === 'object') list = list.filter(c => c.categoria === modo.categoria && c.grupoNome === modo.grupo);
+    if (filtroInstancia) list = list.filter(c => c.ultimaInstancia === filtroInstancia);
     return list.filter(c => !q || c.nome.toLowerCase().includes(q) || c.telefone.includes(q));
-  }, [conversas, modo, q]);
+  }, [conversas, modo, q, filtroInstancia]);
 
-  const carteiraVisivel = useMemo(() => {
+  const todosCount = useMemo(
+    () => conversas.filter(c => c.categoria !== 'disparo' || c.disparoRespondeu).length,
+    [conversas],
+  );
+
+  // Conversa mais recente de cada telefone (qualquer instancia, ja normalizado
+  // do mesmo jeito que AlunoCarteira.telefone) -- usada pra trazer a conversa
+  // real (preview + hora) pra dentro da carteira de Cobranca, em vez de deixar
+  // ela como só uma lista de contatos sem contexto de atendimento.
+  const conversaPorTelefone = useMemo(() => {
+    const m = new Map<string, Conversa>();
+    for (const c of conversas) m.set(c.telefone, c);
+    return m;
+  }, [conversas]);
+
+  const carteiraVisivel = useMemo((): AlunoCarteiraComConversa[] => {
     if (modo !== 'cobranca') return [];
     return carteira
       .filter(a => filtroCarteira === 'todos'
         || (filtroCarteira === 'inadimplentes' ? a.inadimplente : !a.inadimplente))
-      .filter(a => !q || a.nome.toLowerCase().includes(q) || (a.telefone ?? '').includes(q));
-  }, [carteira, modo, filtroCarteira, q]);
+      .filter(a => !q || a.nome.toLowerCase().includes(q) || (a.telefone ?? '').includes(q))
+      .map(a => {
+        const conversa = a.telefone ? conversaPorTelefone.get(a.telefone) : undefined;
+        return {
+          ...a,
+          ultimaMensagem: conversa?.ultimaMensagem ?? null,
+          ultimaEm: conversa?.ultimaEm ?? null,
+          ultimaInstancia: conversa?.ultimaInstancia ?? null,
+        };
+      })
+      .sort((a, b) => {
+        // Quem tem conversa recente sobe pro topo (mais recente primeiro);
+        // sem nenhuma mensagem ainda, cai pro criterio antigo de urgencia de cobranca.
+        if (a.ultimaEm && b.ultimaEm) return b.ultimaEm.localeCompare(a.ultimaEm);
+        if (a.ultimaEm) return -1;
+        if (b.ultimaEm) return 1;
+        return (Number(b.inadimplente) - Number(a.inadimplente)) || (b.diasAtrasoMax - a.diasAtrasoMax) || a.nome.localeCompare(b.nome);
+      });
+  }, [carteira, modo, filtroCarteira, q, conversaPorTelefone]);
 
   const gruposPorCategoria = useMemo(() => {
     const map = new Map<Categoria, Map<string, number>>();
@@ -207,7 +277,9 @@ export function ChatConversas({ onNavigateToAluno }: { onNavigateToAluno?: (alun
   const mostrandoLista = modo === 'todos' || typeof modo === 'object';
 
   return (
-    <div className="flex-1 flex overflow-hidden border rounded-xl bg-white">
+    <div className="flex-1 flex flex-col overflow-hidden border rounded-xl bg-white">
+      <StatusBarWhatsApp filtroInstancia={filtroInstancia} onToggle={toggleFiltroInstancia} />
+      <div className="flex-1 flex overflow-hidden">
       {/* ── Lista lateral ── */}
       <div className="w-[320px] flex-none border-r flex flex-col">
         <div className="p-3 border-b space-y-2">
@@ -220,7 +292,7 @@ export function ChatConversas({ onNavigateToAluno }: { onNavigateToAluno?: (alun
             <button onClick={() => setModo('todos')}
               className={cn('flex items-center justify-center gap-1 px-1 py-1.5 rounded-md text-xs font-medium transition-all',
                 modo === 'todos' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground')}>
-              Todos <span className="opacity-60 text-[10px]">({conversas.length})</span>
+              Todos <span className="opacity-60 text-[10px]">({todosCount})</span>
             </button>
             <button onClick={() => setModo('cobranca')}
               className={cn('flex items-center justify-center gap-1 px-1 py-1.5 rounded-md text-xs font-medium transition-all',
@@ -279,7 +351,18 @@ export function ChatConversas({ onNavigateToAluno }: { onNavigateToAluno?: (alun
                       : a.inadimplente ? 'Inadimplente' : 'Em dia'}
                   </span>
                 </div>
-                <p className="text-xs text-muted-foreground truncate">{a.turmaNome ?? 'Sem turma'}</p>
+                <p className="text-[10px] text-muted-foreground truncate flex items-center gap-1">
+                  <span className="truncate">{a.turmaNome ?? 'Sem turma'}</span>
+                  {a.ultimaInstancia && (
+                    <span className="inline-flex items-center gap-0.5 px-1 rounded bg-gray-100 text-gray-500 flex-none">
+                      <Radio className="h-2.5 w-2.5" /> {a.ultimaInstancia}
+                    </span>
+                  )}
+                  {a.ultimaEm && <span className="flex-none">· {fmtRelativo(a.ultimaEm)}</span>}
+                </p>
+                <p className={cn('text-xs truncate mt-0.5', a.ultimaMensagem ? 'text-muted-foreground' : 'text-muted-foreground/60 italic')}>
+                  {a.ultimaMensagem ?? 'Sem conversa ainda'}
+                </p>
                 {a.inadimplente && (
                   <p className="text-[10px] text-red-600 mt-0.5">
                     {fmtBRL(a.valorEmAtraso)} em atraso · {a.diasAtrasoMax}d
@@ -401,6 +484,7 @@ export function ChatConversas({ onNavigateToAluno }: { onNavigateToAluno?: (alun
             </div>
           </>
         )}
+      </div>
       </div>
 
       {fichaAlunoId && (
