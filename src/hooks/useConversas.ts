@@ -9,7 +9,7 @@ import { normalizePhone, sufixo, maskPhone, TIPO_LABEL } from '@/lib/chat-utils'
 // entre a aba completa (ChatConversas.tsx) e o widget flutuante (ChatWidget.tsx)
 // pra nao duplicar essa logica de identidade em dois lugares.
 
-export type Categoria = 'lancamento' | 'npa' | 'turma' | 'disparo' | 'numerologo';
+export type Categoria = 'lancamento' | 'npa' | 'turma' | 'disparo' | 'numerologo' | 'direto';
 
 export interface Conversa {
   telefone: string;
@@ -129,8 +129,16 @@ export function useConversas() {
         categoria = 'disparo';
         grupoNome = campanhaNome.get(d.campanha_id) ?? '(campanha removida)';
       } else {
-        // Telefone sem match em lugar nenhum: nunca foi lead nem aluno.
-        continue;
+        // Telefone sem match em lancamento_leads/npa_evento_leads/alunos/disparo_leads --
+        // ex: lead que clicou num anuncio "click-to-WhatsApp" e mandou a mensagem
+        // automatica antes de qualquer cadastro nosso existir pra esse numero. Antes
+        // isso era descartado (continue) e a mensagem nunca aparecia no Chat, mesmo
+        // gravada em whatsapp_mensagens -- agora entra como categoria avulsa "direto"
+        // pra nao sumir.
+        nome = maskPhone(tel);
+        temperatura = 'quente';
+        categoria = 'direto';
+        grupoNome = 'Contato direto (sem cadastro)';
       }
 
       const lidaEm = lidaEmPorTelefone.get(tel);

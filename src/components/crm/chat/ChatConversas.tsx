@@ -57,8 +57,9 @@ const CATEGORIA_CFG: Record<Categoria, { label: string; icon: React.ElementType 
   turma:      { label: 'Turmas',                             icon: GraduationCap },
   disparo:    { label: 'Disparos',                            icon: Radio },
   numerologo: { label: 'Numerólogo',                          icon: Sparkles },
+  direto:     { label: 'Contato direto (sem cadastro)',       icon: MessageSquare },
 };
-const CATEGORIA_ORDEM: Categoria[] = ['lancamento', 'npa', 'turma', 'disparo', 'numerologo'];
+const CATEGORIA_ORDEM: Categoria[] = ['direto', 'lancamento', 'npa', 'turma', 'disparo', 'numerologo'];
 
 function fmtBRL(v: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
