@@ -26,3 +26,8 @@ verify_jwt = false
 # confirmadas. A autenticação usa x-cron-key dentro da própria função.
 [functions.equipe-11ds-memoria-sync]
 verify_jwt = false
+
+# Function interna: só evo-resposta chama, server-to-server. A autenticação
+# valida o service role key no próprio código (ver comentário no index.ts).
+[functions.cobranca-ia-responder]
+verify_jwt = false

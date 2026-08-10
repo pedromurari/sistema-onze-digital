@@ -167,6 +167,7 @@ async function registrarMensagemEnviada(
   phone: string,
   conteudo: string,
   instanceName: string,
+  evolutionMessageId: string | null,
 ): Promise<void> {
   try {
     const { error } = await db.from("whatsapp_mensagens").insert({
@@ -176,6 +177,7 @@ async function registrarMensagemEnviada(
       tipo: "text",
       origem: "cobranca",
       evolution_instance: instanceName,
+      evolution_message_id: evolutionMessageId,
     });
     if (error) console.error("registrarMensagemEnviada:", error.message);
   } catch (e: any) {
@@ -205,7 +207,10 @@ async function sendViaEvolution(
         signal: AbortSignal.timeout(30_000),
       });
       if (res.ok) {
-        await registrarMensagemEnviada(db, phone, message, cfg.instance_name);
+        let json: any = {};
+        try { json = await res.json(); } catch { /* resposta sem corpo json */ }
+        const messageId = json?.key?.id ?? json?.data?.key?.id ?? null;
+        await registrarMensagemEnviada(db, phone, message, cfg.instance_name, messageId);
         return { ok: true };
       }
       const body = await res.text();

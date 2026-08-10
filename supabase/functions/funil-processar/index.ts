@@ -36,6 +36,39 @@ async function estaOptOut(supabase: ReturnType<typeof createClient>, numberOrJid
   return Boolean(data);
 }
 
+// Historico de conversa (tabela whatsapp_mensagens) -- alimenta a aba Chat.
+// Mesmo padrao do disparo-runner/boas-vindas-enviar/enviar-cobranca: so grava
+// envio individual (grupo fica de fora -- evo-resposta descarta grupo no
+// inbound, gravar o outbound criaria uma "conversa" que nunca recebe resposta).
+// Best-effort: a mensagem ja foi entregue quando isso roda, erro aqui so loga.
+async function registrarMensagemEnviada(
+  supabase: ReturnType<typeof createClient>,
+  numberOuJid: string,
+  conteudo: string,
+  tipo: string,
+  instanceName: string,
+  origem: 'funil' | 'boas_vindas',
+  evolutionMessageId: string | null,
+): Promise<void> {
+  try {
+    if (isGroupJidOrGroupNumber(numberOuJid)) return;
+    const telefone = toOptOutKey(numberOuJid);
+    if (!telefone) return;
+    const { error } = await supabase.from('whatsapp_mensagens').insert({
+      telefone,
+      direcao: 'enviada',
+      conteudo,
+      tipo: tipo || 'text',
+      origem,
+      evolution_instance: instanceName || null,
+      evolution_message_id: evolutionMessageId,
+    });
+    if (error) console.error('registrarMensagemEnviada:', error.message);
+  } catch (e: unknown) {
+    console.error('registrarMensagemEnviada falhou:', (e as Error).message);
+  }
+}
+
 function hourOf(iso: string): number {
   try { return new Date(iso).getHours(); } catch { return 12; }
 }
@@ -84,6 +117,10 @@ async function sendEvolution(endpoint: string, body: unknown, apikey: string) {
   const text = await res.text();
   if (!res.ok) throw new Error(`Evolution ${res.status}: ${text}`);
   try { return JSON.parse(text); } catch { return { raw: text }; }
+}
+
+function extractMessageId(evolutionResponse: any): string | null {
+  return evolutionResponse?.key?.id ?? evolutionResponse?.data?.key?.id ?? null;
 }
 
 // Erro "ambíguo": não sabemos se a Evolution API chegou a entregar a mensagem
@@ -149,6 +186,108 @@ async function scopeInstancesByTask<T extends { id: string }>(
   const byId = new Map(allInstances.map(i => [i.id, i]));
   const scoped = ids.map(id => byId.get(id)).filter(Boolean) as T[];
   return scoped.length ? scoped : allInstances;
+}
+
+// ── Áudio: conserto de MP4 não-streamable (mesmo fix de boas-vindas-enviar/
+// disparo-runner -- ver comentário lá para o motivo do bug da Evolution API) ──
+
+const MP4_CONTAINERS = new Set(['moov', 'trak', 'mdia', 'minf', 'stbl', 'edts', 'udta']);
+
+type Mp4Box = { type: string; start: number; end: number; payload: number };
+
+function readBoxes(v: DataView, b: Uint8Array, start: number, end: number): Mp4Box[] {
+  const out: Mp4Box[] = [];
+  let off = start;
+  while (off + 8 <= end) {
+    let size = v.getUint32(off);
+    const type = String.fromCharCode(b[off + 4], b[off + 5], b[off + 6], b[off + 7]);
+    let payload = off + 8;
+    if (size === 1) {
+      size = v.getUint32(off + 8) * 2 ** 32 + v.getUint32(off + 12);
+      payload = off + 16;
+    } else if (size === 0) {
+      size = end - off;
+    }
+    if (size < 8 || off + size > end) return out;
+    out.push({ type, start: off, end: off + size, payload });
+    off += size;
+  }
+  return out;
+}
+
+function shiftChunkOffsets(v: DataView, b: Uint8Array, start: number, end: number, delta: number): number {
+  let moved = 0;
+  for (const box of readBoxes(v, b, start, end)) {
+    if (box.type === 'stco') {
+      const count = v.getUint32(box.payload + 4);
+      for (let i = 0; i < count; i++) {
+        const p = box.payload + 8 + i * 4;
+        if (p + 4 > box.end) break;
+        v.setUint32(p, v.getUint32(p) + delta);
+        moved++;
+      }
+    } else if (box.type === 'co64') {
+      const count = v.getUint32(box.payload + 4);
+      for (let i = 0; i < count; i++) {
+        const p = box.payload + 8 + i * 8;
+        if (p + 8 > box.end) break;
+        const val = v.getUint32(p) * 2 ** 32 + v.getUint32(p + 4) + delta;
+        v.setUint32(p, Math.floor(val / 2 ** 32));
+        v.setUint32(p + 4, val % 2 ** 32);
+        moved++;
+      }
+    } else if (MP4_CONTAINERS.has(box.type)) {
+      moved += shiftChunkOffsets(v, b, box.payload, box.end, delta);
+    }
+  }
+  return moved;
+}
+
+function faststartMp4(input: Uint8Array): Uint8Array | null {
+  const v = new DataView(input.buffer, input.byteOffset, input.byteLength);
+  const top = readBoxes(v, input, 0, input.length);
+  const moov = top.find(x => x.type === 'moov');
+  const mdat = top.find(x => x.type === 'mdat');
+  if (!moov || !mdat) return null;
+  if (moov.start < mdat.start) return null;
+
+  const moovBytes = input.slice(moov.start, moov.end);
+  const mv = new DataView(moovBytes.buffer, moovBytes.byteOffset, moovBytes.byteLength);
+  if (!shiftChunkOffsets(mv, moovBytes, 8, moovBytes.length, moovBytes.length)) return null;
+
+  const out = new Uint8Array(input.length);
+  let pos = 0;
+  const ftyp = top.find(x => x.type === 'ftyp');
+  if (ftyp) { out.set(input.subarray(ftyp.start, ftyp.end), pos); pos += ftyp.end - ftyp.start; }
+  out.set(moovBytes, pos); pos += moovBytes.length;
+  for (const box of top) {
+    if (box.type === 'ftyp' || box.type === 'moov') continue;
+    out.set(input.subarray(box.start, box.end), pos); pos += box.end - box.start;
+  }
+  return pos === input.length ? out : null;
+}
+
+function toBase64(bytes: Uint8Array): string {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 8192) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
+  }
+  return btoa(bin);
+}
+
+async function prepareAudioPayload(mediaUrl: string): Promise<string> {
+  try {
+    const res = await fetch(mediaUrl, { signal: AbortSignal.timeout(30_000) });
+    if (!res.ok) return mediaUrl;
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const fixed = faststartMp4(bytes);
+    if (!fixed) return mediaUrl;
+    console.log(`funil-processar: audio remuxado pra faststart (${bytes.length} bytes)`);
+    return toBase64(fixed);
+  } catch (e: unknown) {
+    console.warn('funil-processar: falha ao preparar audio, usando a URL crua:', (e as Error).message);
+    return mediaUrl;
+  }
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -396,7 +535,7 @@ serve(async (req) => {
         const nomesFunis = [...porFunil.keys()];
         const { data: bvConfigs } = await supabase
           .from('boas_vindas_config')
-          .select('funnel_name, delay_min_s, delay_max_s, daily_limit, safe_hour_start, safe_hour_end, max_errors_seq, enviados_hoje, dia_contagem, erros_seq, pausado_por_erro')
+          .select('funnel_name, delay_min_s, delay_max_s, daily_limit, safe_hour_start, safe_hour_end, max_errors_seq, enviados_hoje, dia_contagem, erros_seq, pausado_por_erro, wpp_message_type, wpp_media_url')
           .in('funnel_name', nomesFunis);
         const cfgPorFunil = new Map((bvConfigs ?? []).map((c: any) => [c.funnel_name, c]));
 
@@ -421,8 +560,10 @@ serve(async (req) => {
           if (scoped.length) scopedBV = scoped;
         }
         const connectedBV = await getConnectedInstanceIds(scopedBV);
+        // A instância "ig" nunca pode disparar boas-vindas -- excluída antes de
+        // qualquer outra seleção (evolution_task_config, prioridade, etc).
         const instancesBV = scopedBV
-          .filter(i => connectedBV.has(i.id))
+          .filter(i => connectedBV.has(i.id) && i.instance_name.toLowerCase() !== 'ig')
           .map(i => {
             const rawBase = i.api_url.replace(/\/$/, '');
             return { base: /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`, instance: i.instance_name, apikey: i.api_key };
@@ -442,6 +583,12 @@ serve(async (req) => {
           let enviadosHoje = cfgBV.dia_contagem === sp.dateStr ? cfgBV.enviados_hoje : 0;
           let errosSeq = cfgBV.erros_seq ?? 0;
 
+          // Baixa e conserta o áudio uma vez por funil (não por lead) -- o
+          // media_url é o mesmo pra todo mundo desse funil.
+          const audioPayload = cfgBV.wpp_message_type === 'audio' && cfgBV.wpp_media_url
+            ? await prepareAudioPayload(cfgBV.wpp_media_url)
+            : null;
+
           for (const bv of itens ?? []) {
             if (enviadosHoje >= cfgBV.daily_limit) break;
             if (errosSeq >= cfgBV.max_errors_seq) break;
@@ -454,16 +601,43 @@ serve(async (req) => {
               continue;
             }
 
+            // Rodízio real: a instância da vez muda a cada envio (mesmo padrão
+            // do disparo-runner), as demais entram como fallback se ela falhar.
+            const rotateIdx = enviadosHoje % instancesBV.length;
+            const orderedInstancesBV = [...instancesBV.slice(rotateIdx), ...instancesBV.slice(0, rotateIdx)];
+
             try {
               let lastBvErr: Error | null = null;
-              for (const { base, instance, apikey } of instancesBV) {
+              let usedInstanceBV = '';
+              let sentMessageIdBV: string | null = null;
+              for (const { base, instance, apikey } of orderedInstancesBV) {
                 try {
-                  await sendEvolution(`${base}/message/sendText/${instance}`, {
-                    number: bv.whatsapp,
-                    text:   bv.mensagem,
-                    delay:  1200,
-                  }, apikey);
+                  let evoRes: any;
+                  if (cfgBV.wpp_message_type === 'audio' && audioPayload) {
+                    evoRes = await sendEvolution(`${base}/message/sendWhatsAppAudio/${instance}`, {
+                      number:   bv.whatsapp,
+                      audio:    audioPayload,
+                      encoding: true,
+                      delay:    1200,
+                    }, apikey);
+                  } else if (cfgBV.wpp_message_type && cfgBV.wpp_message_type !== 'text' && cfgBV.wpp_media_url) {
+                    evoRes = await sendEvolution(`${base}/message/sendMedia/${instance}`, {
+                      number:    bv.whatsapp,
+                      mediatype: cfgBV.wpp_message_type,
+                      media:     cfgBV.wpp_media_url,
+                      caption:   bv.mensagem || undefined,
+                      delay:     1200,
+                    }, apikey);
+                  } else {
+                    evoRes = await sendEvolution(`${base}/message/sendText/${instance}`, {
+                      number: bv.whatsapp,
+                      text:   bv.mensagem,
+                      delay:  1200,
+                    }, apikey);
+                  }
                   lastBvErr = null;
+                  usedInstanceBV = instance;
+                  sentMessageIdBV = extractMessageId(evoRes);
                   break;
                 } catch (e) {
                   lastBvErr = e as Error;
@@ -476,6 +650,14 @@ serve(async (req) => {
                 .from('boas_vindas_agendados')
                 .update({ status: 'enviado', enviado_em: new Date().toISOString() })
                 .eq('id', bv.id);
+              // Áudio não aceita legenda (bv.mensagem só é enviado de verdade
+              // pro WhatsApp nos ramos texto/mídia-com-legenda acima).
+              await registrarMensagemEnviada(
+                supabase, bv.whatsapp,
+                cfgBV.wpp_message_type === 'audio' ? '' : (bv.mensagem ?? ''),
+                cfgBV.wpp_message_type || 'text',
+                usedInstanceBV, 'boas_vindas', sentMessageIdBV,
+              );
 
               enviadosHoje++;
               errosSeq = 0;
@@ -639,7 +821,7 @@ async function processMessage(
         // duas mensagens separadas -- fica mais premium e evita a prévia de
         // link competindo com a imagem de capa.
         const text = applyVars(p.message_text as string, vars);
-        await sendEvolution(`${base}/message/sendMedia/${instance}`, {
+        const evoRes = await sendEvolution(`${base}/message/sendMedia/${instance}`, {
           number,
           mediatype: 'image',
           media: headerUrl,
@@ -647,14 +829,16 @@ async function processMessage(
           delay: 1200,
           mentionsEveryOne: (p.mention_everyone as boolean) ?? false,
         }, apikey);
+        await registrarMensagemEnviada(supabase, number, text, 'image', instance, 'funil', extractMessageId(evoRes));
         headerCombinedWithText = true;
       } else {
-        await sendEvolution(`${base}/message/sendMedia/${instance}`, {
+        const evoRes = await sendEvolution(`${base}/message/sendMedia/${instance}`, {
           number,
           mediatype: 'image',
           media: headerUrl,
           delay: 1200,
         }, apikey);
+        await registrarMensagemEnviada(supabase, number, '', 'image', instance, 'funil', extractMessageId(evoRes));
         await new Promise(r => setTimeout(r, 2000));
       }
     }
@@ -669,37 +853,42 @@ async function processMessage(
     case 'audio':
     case 'document': {
       const mediaUrl = applyVars(p.media_url as string, vars);
-      await sendEvolution(`${base}/message/sendMedia/${instance}`, {
+      const caption  = applyVars(p.message_text as string, vars);
+      const evoRes = await sendEvolution(`${base}/message/sendMedia/${instance}`, {
         number,
         mediatype: msgType,
         media: mediaUrl,
-        caption: applyVars(p.message_text as string, vars) || undefined,
+        caption: caption || undefined,
         delay: 1200,
         mentionsEveryOne: (p.mention_everyone as boolean) ?? false,
       }, apikey);
+      await registrarMensagemEnviada(supabase, number, caption, msgType, instance, 'funil', extractMessageId(evoRes));
       break;
     }
 
     case 'poll': {
-      await sendEvolution(`${base}/message/sendPoll/${instance}`, {
+      const pollName = (p.poll_name as string) || 'Enquete';
+      const evoRes = await sendEvolution(`${base}/message/sendPoll/${instance}`, {
         number,
-        name: (p.poll_name as string) || 'Enquete',
+        name: pollName,
         selectableCount: (p.poll_selectable_count as number) ?? 1,
         values: (p.poll_options as string[]) ?? [],
         delay: 1200,
       }, apikey);
+      await registrarMensagemEnviada(supabase, number, pollName, 'poll', instance, 'funil', extractMessageId(evoRes));
       break;
     }
 
     default: { // text
       const text = applyVars(p.message_text as string, vars);
-      await sendEvolution(`${base}/message/sendText/${instance}`, {
+      const evoRes = await sendEvolution(`${base}/message/sendText/${instance}`, {
         number,
         text,
         linkPreview: (p.link_preview as boolean) ?? false,
         mentionsEveryOne: (p.mention_everyone as boolean) ?? false,
         delay: 1200,
       }, apikey);
+      await registrarMensagemEnviada(supabase, number, text, 'text', instance, 'funil', extractMessageId(evoRes));
       break;
     }
   }

@@ -26,7 +26,7 @@ A infraestrutura de notificação **já existe e funciona**, mas está subutiliz
 Duas funções SQL novas substituem os inserts manuais espalhados pelo código:
 
 - `notificar(p_user_id uuid, p_tipo text, p_titulo text, p_descricao text, p_link text)` — insere 1 notificação pra 1 destinatário. `Pipeline.tsx` passa a usar essa função buscando o `user_id` real do Rodrygo (corrige o bug do handoff) em vez de inserir direto na tabela com o id errado.
-- `notificar_admins(p_tipo text, p_titulo text, p_descricao text, p_link text)` — busca `profiles.id` onde `role = 'admin'` (confirmado: é a coluna e o valor literal já usados hoje pra distinguir admin/editor/viewer) e chama `notificar` pra cada um. É essa que os dois eventos novos (cobrança e resposta) usam. Hoje existe 1 admin só (o próprio usuário) — a função já fica pronta pra quando houver mais.
+- `notificar_admins(p_tipo text, p_titulo text, p_descricao text, p_link text)` — busca `user_id` em `user_roles WHERE role = 'admin'` e chama `notificar` pra cada um. **Importante**: o banco tem dois sistemas de papel que divergem — `profiles.role` (só marca Igor como admin) e `user_roles`/`has_role()` (usado de verdade nas políticas RLS de todo o resto do sistema; marca Igor, Pedro Murari, Rodrygo e Camila Murari como admin). `notificar_admins` usa `user_roles`, por ser a fonte que o sistema já trata como autoritativa. Hoje isso significa 4 destinatários, não 1.
 
 Ambas `SECURITY DEFINER` (rodam com privilégio pra inserir notificação pra outro usuário, já que RLS de `notifications` só permite ver/atualizar a própria linha) mas com `search_path` fixo, seguindo o padrão de segurança já usado nas outras funções `SECURITY DEFINER` do projeto.
 

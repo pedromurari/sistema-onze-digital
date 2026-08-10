@@ -151,6 +151,7 @@ async function registrarMensagemEnviada(
   conteudo: string,
   tipo: string,
   instanceName: string,
+  evolutionMessageId: string | null,
 ): Promise<void> {
   try {
     if (numberOuJid.includes('@g.us')) return;
@@ -164,6 +165,7 @@ async function registrarMensagemEnviada(
       tipo: tipo || 'text',
       origem: 'boas_vindas',
       evolution_instance: instanceName || null,
+      evolution_message_id: evolutionMessageId,
     });
     if (error) console.error('registrarMensagemEnviada:', error.message);
   } catch (e: unknown) {
@@ -298,6 +300,7 @@ serve(async (req) => {
 
         let lastErr: Error | null = null;
         let sentInstance = '';
+        let sentMessageId: string | null = null;
         for (const inst of activeInstances) {
           const rawBase = (inst.api_url as string).replace(/\/$/, '');
           const base    = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
@@ -326,6 +329,9 @@ serve(async (req) => {
             });
             const txt = await res.text();
             if (!res.ok) throw new Error(`Evolution ${res.status}: ${txt.slice(0, 200)}`);
+            let json: any = {};
+            try { json = JSON.parse(txt); } catch { /* resposta sem corpo json */ }
+            sentMessageId = json?.key?.id ?? json?.data?.key?.id ?? null;
             lastErr = null;
             sentInstance = instance;
             break;
@@ -336,7 +342,7 @@ serve(async (req) => {
 
         if (lastErr) throw lastErr;
         wppStatus = 'sent';
-        await registrarMensagemEnviada(supabase, number, mensagem, msgType, sentInstance);
+        await registrarMensagemEnviada(supabase, number, mensagem, msgType, sentInstance, sentMessageId);
 
       } catch (e: unknown) {
         wppStatus = 'error';

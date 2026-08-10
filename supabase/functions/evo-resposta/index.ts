@@ -86,6 +86,46 @@ async function registrarMensagemRecebida(
   }
 }
 
+// Historico de conversa pro lado "enviada" quando a mensagem saiu do numero
+// conectado (fromMe=true). Duas origens possiveis pro mesmo evento:
+// 1) Echo de um envio que uma das 4 funcoes (disparo-runner/boas-vindas-enviar/
+//    enviar-cobranca/funil-processar) ja gravou direto -- essas preenchem
+//    evolution_message_id, entao a gente so pula se already existe.
+// 2) Mensagem mandada NA MAO pelo WhatsApp Web/app do numero conectado --
+//    nenhuma das 4 funcoes roda pra esse caso, sem isso aqui nunca aparecia
+//    no Chat.
+async function registrarMensagemManualSeNova(
+  supabase: ReturnType<typeof createClient>,
+  telefone: string,
+  conteudo: string,
+  tipo: string,
+  instance: string,
+  messageId: string | null,
+): Promise<void> {
+  try {
+    if (messageId) {
+      const { data: existente } = await supabase
+        .from('whatsapp_mensagens')
+        .select('id')
+        .eq('evolution_message_id', messageId)
+        .maybeSingle();
+      if (existente) return;
+    }
+    const { error } = await supabase.from('whatsapp_mensagens').insert({
+      telefone,
+      direcao: 'enviada',
+      conteudo,
+      tipo,
+      origem: 'manual',
+      evolution_instance: instance || null,
+      evolution_message_id: messageId,
+    });
+    if (error) console.error('registrarMensagemManualSeNova:', error.message);
+  } catch (e: unknown) {
+    console.error('registrarMensagemManualSeNova falhou:', (e as Error).message);
+  }
+}
+
 type EvoInstance = { id: string; api_url: string; api_key: string; instance_name: string };
 
 async function isInstanceConnected(inst: EvoInstance): Promise<boolean> {
@@ -341,8 +381,7 @@ serve(async (req) => {
       return await handlePollVote(supabase, instance, remoteJid, key, message.pollUpdateMessage as Record<string, unknown>, body);
     }
 
-    // Ignora mensagens enviadas por nós ou mensagens de grupo
-    if (fromMe)                       return ok({ ok: true, skipped: true, reason: 'fromMe=true' });
+    // Ignora mensagens de grupo
     if (remoteJid.includes('@g.us'))  return ok({ ok: true, skipped: true, reason: 'group message' });
     if (!remoteJid)                   return ok({ ok: true, skipped: true, reason: 'no remoteJid' });
 
@@ -351,6 +390,19 @@ serve(async (req) => {
     const s8       = phone.slice(-8);
 
     const { text: mensagem, tipo: mensagemTipo } = extractText(message);
+
+    // Mensagem que SAIU do numero conectado: pode ser o echo de um envio que
+    // uma das 4 funcoes de envio ja gravou (dedupe por evolution_message_id
+    // dentro de registrarMensagemManualSeNova), ou pode ter sido mandada na
+    // mao pelo WhatsApp Web/app -- essa nunca passa por nenhuma funcao nossa,
+    // e sem isso aqui nunca aparecia no Chat. O resto do processamento abaixo
+    // (opt-out, matching por tabela, IA de cobranca, notificacao) e' so pra
+    // resposta de verdade, nao se aplica a mensagem que a gente mandou.
+    if (fromMe) {
+      const messageId = String(key.id ?? '') || null;
+      await registrarMensagemManualSeNova(supabase, phone, mensagem, mensagemTipo, instance, messageId);
+      return ok({ ok: true, skipped: true, reason: 'fromMe=true: gravado se manual, resto do processamento pulado' });
+    }
 
     // Historico de conversa (aba Chat) -- gravado ANTES de qualquer match por
     // tabela, e independente de casar com alguma. Um numero desconhecido hoje

@@ -30,3 +30,13 @@ dist-ssr
 
 .vercel
 .env*
+
+# Config local do Claude Code -- settings.local.json guarda permissoes com
+# API keys/tokens em texto puro, nunca deve ir pro historico do git.
+.claude/settings.local.json
+
+# Scratch da ferramenta de brainstorm visual (superpowers)
+.superpowers/
+
+# Cache local do Supabase CLI
+supabase/.temp/

@@ -284,7 +284,7 @@ serve(async (req) => {
       const nextSendAt = new Date(now.getTime() + delayS * 1000).toISOString();
 
       if (sendOk) {
-        await registrarMensagemEnviada(supabase, phone, message, camp.message_type, sentInstanceId, orderedInstances);
+        await registrarMensagemEnviada(supabase, phone, message, camp.message_type, sentInstanceId, orderedInstances, sentMessageId);
         await supabase.from('disparo_leads')
           .update({ status: 'enviado', sent_at: sentAt, error_msg: null, instance_id: sentInstanceId, evolution_message_id: sentMessageId })
           .eq('id', lead.id);
@@ -471,6 +471,7 @@ async function registrarMensagemEnviada(
   messageType: string | null | undefined,
   instanceId: string,
   instancias: { id: string; instance_name: string }[],
+  evolutionMessageId: string | null,
 ): Promise<void> {
   try {
     if (phoneComDdi.includes('@g.us')) return;
@@ -482,6 +483,7 @@ async function registrarMensagemEnviada(
       tipo: messageType || 'text',
       origem: 'disparo',
       evolution_instance: instanceName,
+      evolution_message_id: evolutionMessageId,
     });
     if (error) console.error('registrarMensagemEnviada:', error.message);
   } catch (e: unknown) {

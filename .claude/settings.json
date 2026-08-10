@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "n8n": {
+      "type": "http",
+      "url": "https://idm-n8n.nzj83i.easypanel.host/mcp-server/http",
+      "headers": {
+        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0ZDMzZmYwMy0zMDNhLTRlNzctODlmZS01ZmQ1MTQ5OWM5ZjYiLCJpc3MiOiJuOG4iLCJhdWQiOiJtY3Atc2VydmVyLWFwaSIsImp0aSI6IjQ1ODAzNzFiLTY2NjMtNDBiOC05NjkyLTRkZTM4MjljNTYyMiIsImlhdCI6MTc4MjUxMTI4NX0.odwX0VfgZh9AVQTosPv9GuCpKB11W1dETX1LYAdbpQY"
+      }
+    }
+  }
+}

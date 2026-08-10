@@ -401,7 +401,7 @@ for (let offset = -warmupDays; offset <= -1; offset++) {
 
   const noiteHora = offset === -1 ? HORA_LIVE : '20:00';
   msgs.push(textMsg(FUNNEL_NAME, day, setTime(dayDate, noiteHora), G1, noiteTxt,
-    `Dia ${day} — Noite`, { link_preview: true }));
+    `Dia ${day} — Noite`, { link_preview: false, subtipo: `contagem_dia_${l}`, send_header_image: true }));
 }
 
 // ─── dias de aula ─────────────────────────────────────────────────────────────
@@ -414,7 +414,7 @@ for (let i = 1; i <= numAulas; i++) {
   // Manhã
   msgs.push(textMsg(FUNNEL_NAME, dayNum, setTime(aulaDateObj, '08:00'), G1,
     `${SLOGAN} dia! ☀️\n\n*HOJE é o dia.*\n\nHoje às ${aulaH(i)} começa a Aula ${i} - *${aulaTit(i)}*.\n\n${profDupla} vão ao vivo conduzir essa experiência.\n\nSepara o caderno. Avisa a família. Hoje você tem um compromisso com você mesmo.\n\n👉 ${aulaLink(i)}\n\nReage com um 🔥 se você vai estar lá HOJE!`,
-    `${aulaTit(i)} — Manhã`, { link_preview: true }));
+    `${aulaTit(i)} — Manhã`, { link_preview: false, subtipo: `aula_${i}`, send_header_image: true }));
 
   // Tarde enquete
   msgs.push(textMsg(FUNNEL_NAME, dayNum, setTime(aulaDateObj, '15:00'), G1,
@@ -430,22 +430,22 @@ for (let i = 1; i <= numAulas; i++) {
 
   // Contagens regressivas
   const countdowns = [
-    [-3, `⏰ *Faltam 3 HORAS pra Aula ${i} - ${aulaTit(i)}!*\n\nHoje às ${aulaH(i)}, ao vivo. Você não vai querer perder o início.\n\n👉 ${aulaLink(i)}\n\nReage com um ⏰!`, `${aulaTit(i)} — -3h`],
-    [-2, `⏰ *Faltam 2 HORAS!*\n\nJá separa o caderno, o fone e um lugar tranquilo. Essa aula pede atenção total.\n\n👉 ${aulaLink(i)}\n\nReage com um 📝!`, `${aulaTit(i)} — -2h`],
-    [-1, `⏰ *Falta 1 HORA pra começar!*\n\nDaqui a 60 minutos, ${profDupla} entram ao vivo.\n\n👉 ${aulaLink(i)}\n\nReage com um 🚀 se já está se preparando!`, `${aulaTit(i)} — -1h`],
+    [-3, `⏰ *Faltam 3 HORAS pra Aula ${i} - ${aulaTit(i)}!*\n\nHoje às ${aulaH(i)}, ao vivo. Você não vai querer perder o início.\n\n👉 ${aulaLink(i)}\n\nReage com um ⏰!`, `${aulaTit(i)} — -3h`, 'contagem_3h'],
+    [-2, `⏰ *Faltam 2 HORAS!*\n\nJá separa o caderno, o fone e um lugar tranquilo. Essa aula pede atenção total.\n\n👉 ${aulaLink(i)}\n\nReage com um 📝!`, `${aulaTit(i)} — -2h`, 'contagem_2h'],
+    [-1, `⏰ *Falta 1 HORA pra começar!*\n\nDaqui a 60 minutos, ${profDupla} entram ao vivo.\n\n👉 ${aulaLink(i)}\n\nReage com um 🚀 se já está se preparando!`, `${aulaTit(i)} — -1h`, 'contagem_1h'],
   ];
 
-  for (const [offset, txt, label] of countdowns) {
+  for (const [offset, txt, label, subtipo] of countdowns) {
     const t = new Date(aulaDateHora.getTime() + offset * 60 * 60 * 1000);
     msgs.push(textMsg(FUNNEL_NAME, dayNum, t, G1, txt, label,
-      { link_preview: true, mention_everyone: offset === -1 }));
+      { link_preview: false, mention_everyone: offset === -1, subtipo, send_header_image: true }));
   }
 
   // Ao vivo
   msgs.push(textMsg(FUNNEL_NAME, dayNum, aulaDateHora, G1,
     `🔴 *ESTAMOS AO VIVO!*\n\nAula ${i} - *${aulaTit(i)}* - começou AGORA!\n\nCorre pra não perder o início 👇\n\n👉 ${aulaLink(i)}\n\nReage com um ❤️ e entra AGORA!`,
     `${aulaTit(i)} — AO VIVO`,
-    { link_preview: true, mention_everyone: true }));
+    { link_preview: false, mention_everyone: true, subtipo: 'ao_vivo', send_header_image: true }));
 
   // Provocações
   const provocacoes = [
