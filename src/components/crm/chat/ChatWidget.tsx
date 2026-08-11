@@ -6,9 +6,14 @@ import { MessageCircle, Search, X, ChevronLeft, RefreshCw } from 'lucide-react';
 import { useConversas } from '@/hooks/useConversas';
 import { useThread } from '@/hooks/useThread';
 import {
-  maskPhone, fmtHora, fmtDiaSeparador, fmtRelativo,
+  normalizePhone, maskPhone, fmtHora, fmtDiaSeparador, fmtRelativo,
   TEMP_CFG, TIPO_ICON, TIPO_LABEL,
 } from '@/lib/chat-utils';
+
+/** Abre o ChatWidget direto na conversa de um telefone, de qualquer tela. */
+export function abrirChatWidget(telefone: string) {
+  window.dispatchEvent(new CustomEvent('crm:abrir-chat', { detail: { telefone } }));
+}
 
 /**
  * Bolha flutuante estilo Facebook Messenger -- acesso rápido ao Chat em
@@ -39,6 +44,17 @@ export function ChatWidget() {
   useEffect(() => {
     fimDaThreadRef.current?.scrollIntoView({ block: 'end' });
   }, [telefoneSelecionado, thread]);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const tel = normalizePhone((e as CustomEvent<{ telefone: string }>).detail?.telefone);
+      if (!tel) return;
+      setOpen(true);
+      setTelefoneSelecionado(tel);
+    };
+    window.addEventListener('crm:abrir-chat', handler);
+    return () => window.removeEventListener('crm:abrir-chat', handler);
+  }, []);
 
   function fechar() {
     setOpen(false);

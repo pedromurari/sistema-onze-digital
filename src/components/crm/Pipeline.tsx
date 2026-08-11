@@ -6,11 +6,40 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { dbRowToLead } from '@/contexts/LeadsContext';
-import { Mail, Clock, Edit, MessageCircle, ChevronDown, ChevronUp, ExternalLink, TrendingUp, Users, DollarSign, Target } from 'lucide-react';
+import { Clock, Edit, MessageCircle, MessagesSquare, ChevronDown, ChevronUp, ExternalLink, TrendingUp, Users, DollarSign, Target, Trash2, CalendarClock, Loader2 } from 'lucide-react';
+import { useThread } from '@/hooks/useThread';
+import { fmtHora, TIPO_LABEL } from '@/lib/chat-utils';
+import { abrirChatWidget } from './chat/ChatWidget';
+
+const CURSO_LEADS_DIRETOS = 'Formação em Psicanálise Clínica Integrativa';
+
+// Ticket medio estimado do lead direto. O curso fecha por 3 caminhos, com
+// valores de contrato diferentes: PIX a vista R$ 997,00 / cartao 12x R$ 109,39
+// (R$ 1.318,80) / boleto 1+14x R$ 109,90 (R$ 1.648,50). No estagio de lead
+// ainda nao se sabe qual sera, entao o pipeline usa a media ponderada pela
+// distribuicao real de matriculas (boleto 84%, a vista 10%, cartao 6%).
+// Nao desconta inadimplencia -- e valor de contrato, nao caixa realizado.
+const TICKET_MEDIO_ESTIMADO = 1563.8;
+
+const formatDateTime = (iso?: string) => {
+  if (!iso) return null;
+  return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+};
 
 interface PipelineProps { onEditLead: (lead: Lead) => void; }
 
@@ -25,15 +54,27 @@ function EngajamentoBadge({ value }: { value?: string }) {
 }
 
 function LeadChatBubbles({ lead }: { lead: Lead }) {
-  const messages: { type: 'lead' | 'ia'; text: string }[] = [];
-  if (lead.mensagemLead) messages.push({ type: 'lead', text: lead.mensagemLead });
-  if (lead.mensagemIa) messages.push({ type: 'ia', text: lead.mensagemIa });
-  if (messages.length === 0) return <p className="text-xs text-muted-foreground py-2">Nenhuma mensagem ainda</p>;
+  // Puxa a thread real e sincronizada do WhatsApp (mesmo dado do Chat/ChatWidget),
+  // em vez dos campos estaticos mensagemLead/mensagemIa que nunca eram atualizados.
+  const { thread, loading } = useThread(lead.telefone || null);
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground py-2">
+        <Loader2 className="h-3 w-3 animate-spin" /> Carregando conversa...
+      </div>
+    );
+  }
+  if (thread.length === 0) return <p className="text-xs text-muted-foreground py-2">Nenhuma mensagem ainda</p>;
+
   return (
     <div className="space-y-2 max-h-40 overflow-y-auto py-2">
-      {messages.map((msg, i) => (
-        <div key={i} className={`flex ${msg.type === 'ia' ? 'justify-end' : 'justify-start'}`}>
-          <div className={`rounded-lg px-3 py-1.5 max-w-[80%] text-xs ${msg.type === 'ia' ? 'bg-success/20 text-success-foreground' : 'bg-muted text-muted-foreground'}`}>{msg.text}</div>
+      {thread.map((msg) => (
+        <div key={msg.id} className={`flex ${msg.direcao === 'enviada' ? 'justify-end' : 'justify-start'}`}>
+          <div className={`rounded-lg px-3 py-1.5 max-w-[80%] text-xs ${msg.direcao === 'enviada' ? 'bg-success/20 text-success-foreground' : 'bg-muted text-muted-foreground'}`}>
+            <p>{msg.tipo !== 'text' ? `[${TIPO_LABEL[msg.tipo] ?? 'Mensagem'}]` : msg.conteudo}</p>
+            <p className="text-[10px] opacity-60 mt-0.5">{fmtHora(msg.created_at)}</p>
+          </div>
         </div>
       ))}
     </div>
@@ -47,7 +88,7 @@ function LeadExpandedInfo({ lead }: { lead: Lead }) {
       {lead.engajamento && <div className="flex items-center gap-1.5"><span className="font-medium text-foreground">Engajamento:</span><EngajamentoBadge value={lead.engajamento} /></div>}
       {lead.tempoInteresse && <div><span className="font-medium text-foreground">Tempo de interesse:</span> <span className="text-muted-foreground">{lead.tempoInteresse}</span></div>}
       {lead.comoConheceu && <div><span className="font-medium text-foreground">Como conheceu:</span> <span className="text-muted-foreground">{lead.comoConheceu}</span></div>}
-      {lead.cursoInteresse && <div><span className="font-medium text-foreground">Curso:</span> <span className="text-muted-foreground">{lead.cursoInteresse}</span></div>}
+      <div><span className="font-medium text-foreground">Curso:</span> <span className="text-muted-foreground">{CURSO_LEADS_DIRETOS}</span></div>
       {lead.ultimaMensagem && <div><span className="font-medium text-foreground">Última mensagem:</span> <span className="text-muted-foreground">{lead.ultimaMensagem}</span></div>}
       {lead.linkDePagamentoEnviado && (
         <div className="flex items-center gap-1">
@@ -120,6 +161,16 @@ export function Pipeline({ onEditLead }: PipelineProps) {
 
   const openWhatsApp = (phone: string) => window.open(`https://wa.me/55${phone.replace(/\D/g, '')}`, '_blank');
 
+  const handleDeleteLead = async (lead: Lead) => {
+    const { error } = await supabase.from('leads').delete().eq('id', lead.id);
+    if (error) {
+      toast({ variant: 'destructive', title: 'Não foi possível excluir o lead', description: error.message });
+      return;
+    }
+    setLeads((prev) => prev.filter((l) => l.id !== lead.id));
+    toast({ title: 'Lead excluído', description: `${lead.nome} foi removido dos Leads Diretos.` });
+  };
+
   const handleStageChange = async (lead: Lead, newStage: PipelineStage) => {
     if (newStage === 'handoff_rodrygo') {
       if (lead.status !== 'matricula') {
@@ -177,9 +228,9 @@ export function Pipeline({ onEditLead }: PipelineProps) {
       {/* Overview Section */}
       <div className="px-4 lg:px-6 pt-4 grid grid-cols-2 lg:grid-cols-4 gap-3 flex-shrink-0">
         {(() => {
-          const VALOR_UNITARIO = 109.90;
           const allLeads = PIPELINE_STAGES.flatMap(s => getLeadsByStage(s.key));
-          const totalValue = allLeads.length * VALOR_UNITARIO;
+          // Usa o valor real quando o lead ja tem um fechado; senao, o ticket medio estimado.
+          const totalValue = allLeads.reduce((soma, l) => soma + (l.valorInvestimento || TICKET_MEDIO_ESTIMADO), 0);
           const leadsEmMatricula = getLeadsByStage('matricula').length;
           const leadsEmNegociacao = getLeadsByStage('negociacao').length;
           const conversionRate = allLeads.length > 0 ? ((leadsEmMatricula / allLeads.length) * 100).toFixed(1) : 0;
@@ -255,7 +306,13 @@ export function Pipeline({ onEditLead }: PipelineProps) {
                       <div className="flex items-start justify-between mb-2 lg:mb-3">
                         <div className="flex-1 min-w-0">
                           <h3 className="font-semibold text-foreground text-sm lg:text-base truncate">{lead.nome}</h3>
-                          <p className="text-xs lg:text-sm text-muted-foreground truncate">{lead.cursoInteresse}</p>
+                          <p className="text-xs lg:text-sm text-muted-foreground truncate">{CURSO_LEADS_DIRETOS}</p>
+                          {formatDateTime((lead as any).criadoEm) && (
+                            <p className="flex items-center gap-1 text-[10px] lg:text-xs text-muted-foreground/80 mt-0.5">
+                              <CalendarClock className="h-3 w-3 flex-shrink-0" />
+                              {formatDateTime((lead as any).criadoEm)}
+                            </p>
+                          )}
                         </div>
                         <div className="flex items-center gap-1 flex-shrink-0 ml-2">
                           {hasProximaAcao && <Clock className="h-4 w-4 text-warning" />}
@@ -266,15 +323,16 @@ export function Pipeline({ onEditLead }: PipelineProps) {
                         </div>
                       </div>
                       <div className="mb-2 lg:mb-3 space-y-1">
-                        {lead.valorInvestimento && <p className="text-base lg:text-lg font-bold text-primary">{formatCurrency(lead.valorInvestimento)}</p>}
-                        <p className="text-sm font-semibold text-success">📋 R$ 109,90</p>
+                        {lead.valorInvestimento
+                          ? <p className="text-base lg:text-lg font-bold text-primary">{formatCurrency(lead.valorInvestimento)}</p>
+                          : <p className="text-xs text-muted-foreground">Ticket estimado {formatCurrency(TICKET_MEDIO_ESTIMADO)} <span className="opacity-70">(PIX / cartão / boleto)</span></p>}
                       </div>
                       <div className="flex gap-2 mb-2 lg:mb-3">
+                        <Button size="sm" variant="outline" className="flex-1 h-8 text-xs" onClick={(e) => { e.stopPropagation(); abrirChatWidget(lead.telefone); }}>
+                          <MessagesSquare className="h-3 w-3 mr-1 text-primary" />Chat
+                        </Button>
                         <Button size="sm" variant="outline" className="flex-1 h-8 text-xs" onClick={(e) => { e.stopPropagation(); openWhatsApp(lead.telefone); }}>
                           <MessageCircle className="h-3 w-3 mr-1 text-success" />WhatsApp
-                        </Button>
-                        <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={(e) => { e.stopPropagation(); if (lead.email) window.location.href = `mailto:${lead.email}`; }}>
-                          <Mail className="h-3 w-3" />
                         </Button>
                       </div>
                       <div className="flex flex-wrap gap-1.5 lg:gap-2 mb-2 lg:mb-3">
@@ -295,6 +353,30 @@ export function Pipeline({ onEditLead }: PipelineProps) {
                           </SelectContent>
                         </Select>
                         <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={(e) => { e.stopPropagation(); onEditLead(lead); }}><Edit className="h-4 w-4" /></Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={(e) => e.stopPropagation()}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent className="bg-card border-border" onClick={(e) => e.stopPropagation()}>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Excluir Lead</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Tem certeza que deseja excluir "{lead.nome}"? Esta ação não pode ser desfeita.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                              <AlertDialogAction
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                onClick={() => handleDeleteLead(lead)}
+                              >
+                                Excluir
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
                     </Card>
                   );
