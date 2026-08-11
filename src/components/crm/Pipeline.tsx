@@ -112,11 +112,22 @@ const PERIODO_OPCOES: { key: FiltroPeriodo; label: string }[] = [
   { key: 'todos', label: 'Tudo' },
 ];
 
+/** Meia-noite de hoje em America/Sao_Paulo (UTC-3 fixo, sem horario de verao desde 2019). */
+function inicioDoDiaSaoPaulo(): number {
+  const dataSp = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date()); // "YYYY-MM-DD" no fuso de SP
+  return new Date(`${dataSp}T03:00:00.000Z`).getTime();
+}
+
 function dentroDoPeriodo(criadoEm: string | undefined, periodo: FiltroPeriodo): boolean {
   if (periodo === 'todos' || !criadoEm) return true;
-  const dias = periodo === 'hoje' ? 1 : periodo === '7d' ? 7 : 30;
-  const limite = Date.now() - dias * 24 * 60 * 60 * 1000;
-  return new Date(criadoEm).getTime() >= limite;
+  const quando = new Date(criadoEm).getTime();
+  // "Hoje" e' dia civil (desde a meia-noite de SP), nao "ultimas 24h" --
+  // senao um lead das 23h de ontem aparece em "Hoje" ate a mesma hora hoje.
+  if (periodo === 'hoje') return quando >= inicioDoDiaSaoPaulo();
+  const dias = periodo === '7d' ? 7 : 30;
+  return quando >= Date.now() - dias * 24 * 60 * 60 * 1000;
 }
 
 export function Pipeline({ onEditLead }: PipelineProps) {
