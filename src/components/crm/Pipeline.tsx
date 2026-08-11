@@ -29,14 +29,15 @@ import { abrirChatWidget } from './chat/ChatWidget';
 
 const CURSO_LEADS_DIRETOS = 'Formação em Psicanálise Clínica Integrativa';
 
-// Ticket medio estimado do lead direto (LTV), ja liquido de taxa de gateway --
-// valores confirmados por Pedro: PIX a vista R$ 997,00 / cartao R$ 1.021,46 /
-// boleto 1+14x R$ 1.648,50. Boleto e o que mais fecha (~80-85% das vendas),
-// PIX+cartao combinados ficam em ~15-20%. Pesos usados: boleto 82% / a vista
-// 11% / cartao 7% (a vista > cartao dentro desse resto, seguindo a proporcao
-// historica real de matriculas). Nao desconta inadimplencia do boleto -- e
-// LTV de contrato, nao caixa efetivamente recebido.
-const TICKET_MEDIO_ESTIMADO = 0.82 * 1648.5 + 0.11 * 997 + 0.07 * 1021.46;
+// Ticket medio estimado do lead direto (LTV = valor de contrato assumido no
+// fechamento, NAO caixa recebido). Valores por forma de pagamento confirmados
+// por Pedro: PIX a vista R$ 997,00 / cartao R$ 1.021,46 / boleto 1+14x
+// R$ 1.648,50. Pesos = distribuicao real dos 121 alunos "direto/psicanalise"
+// (consultada no banco: boleto 84,3% / a vista 14,0% / cartao 1,7%). Unica
+// fonte de verdade da estimativa -- o gatilho set_valor_potencial() no banco
+// NAO grava mais um valor fixo pra origem='Direto' (gravava e ficava
+// dessincronizado toda vez que essa formula mudava aqui).
+const TICKET_MEDIO_ESTIMADO = 0.843 * 1648.5 + 0.140 * 997 + 0.017 * 1021.46;
 
 const formatDateTime = (iso?: string) => {
   if (!iso) return null;
@@ -156,6 +157,7 @@ export function Pipeline({ onEditLead }: PipelineProps) {
   const [handoffModal, setHandoffModal] = useState<{ lead: Lead; targetStage: PipelineStage } | null>(null);
   const [handoffObs, setHandoffObs] = useState('');
   const [handoffWarning, setHandoffWarning] = useState(false);
+  const [faturadoRealMes, setFaturadoRealMes] = useState<{ valor: number; parcelas: number } | null>(null);
 
   // Fetch leads directly from supabase
   useEffect(() => {
@@ -169,6 +171,34 @@ export function Pipeline({ onEditLead }: PipelineProps) {
     return () => {
       channel.unsubscribe();
     };
+  }, []);
+
+  // Faturado comercial real (caixa efetivamente recebido) -- diferente do LTV
+  // usado no resto da tela, que e' o valor de contrato assumido no fechamento,
+  // nao o que ja entrou de fato. Vem de alunos/pagamentos (tabelas financeiras
+  // reais), nao da estimativa por lead. Cobre TODO aluno "direto" ativo, nao so
+  // quem matriculou neste mes -- pagamento de parcela de aluno antigo tambem e'
+  // caixa deste mes.
+  useEffect(() => {
+    const fetchFaturadoReal = async () => {
+      const inicioMes = new Date(inicioDoMesSaoPaulo()).toISOString().slice(0, 10);
+      const { data, error } = await supabase
+        .from('pagamentos')
+        .select('valor, taxa_valor, aluno_id, status, data_pagamento, alunos!inner(origem_lead, produto)')
+        .eq('status', 'pago')
+        .eq('alunos.origem_lead', 'direto')
+        .eq('alunos.produto', 'psicanalise')
+        .gte('data_pagamento', inicioMes);
+
+      if (error) {
+        console.error('Erro ao carregar faturado real do mes:', error.message);
+        return;
+      }
+      const linhas = (data ?? []) as any[];
+      const valor = linhas.reduce((soma, p) => soma + (Number(p.valor) - Number(p.taxa_valor ?? 0)), 0);
+      setFaturadoRealMes({ valor, parcelas: linhas.length });
+    };
+    fetchFaturadoReal();
   }, []);
 
   const fetchLeads = async () => {
@@ -365,11 +395,11 @@ export function Pipeline({ onEditLead }: PipelineProps) {
               <Card className="overflow-hidden bg-gradient-to-br from-info/10 to-info/5 border-info/20 hover:border-info/40 transition-all duration-300">
                 <div className="p-3 lg:p-4 space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs lg:text-sm text-muted-foreground font-medium">Valor em Pipeline</span>
+                    <span className="text-xs lg:text-sm text-muted-foreground font-medium">Valor em Pipeline (LTV)</span>
                     <DollarSign className="h-4 w-4 text-info" />
                   </div>
                   <p className="text-2xl lg:text-3xl font-bold text-foreground">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(totalValue)}</p>
-                  <p className="text-xs text-muted-foreground">{leadsEmNegociacao} em negociação</p>
+                  <p className="text-xs text-muted-foreground">{leadsEmNegociacao} em negociação · estimado, não é caixa</p>
                 </div>
               </Card>
               <Card className="overflow-hidden bg-gradient-to-br from-warning/10 to-warning/5 border-warning/20 hover:border-warning/40 transition-all duration-300">
@@ -388,21 +418,30 @@ export function Pipeline({ onEditLead }: PipelineProps) {
                     <span className="text-xs lg:text-sm text-muted-foreground font-medium">Meta Comercial do Mês</span>
                     <Target className="h-4 w-4 text-emerald-600" />
                   </div>
-                  <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-1">
+                  <div className="flex flex-wrap items-end gap-x-8 gap-y-2">
                     <p className="text-2xl lg:text-3xl font-bold text-foreground">
                       {matriculasMes.length}
                       <span className="text-sm font-normal text-muted-foreground"> / {META_MATRICULAS_MES} matrículas</span>
                     </p>
-                    <div className="text-right">
-                      <p className="text-lg lg:text-xl font-semibold text-emerald-700">{formatCurrency(valorMatriculasMes)}</p>
-                      <p className="text-[10px] text-muted-foreground">faturamento do mês</p>
+                    <div>
+                      <p className="text-lg lg:text-xl font-semibold text-foreground/80">{formatCurrency(valorMatriculasMes)}</p>
+                      <p className="text-[10px] text-muted-foreground">LTV gerado no mês (estimado, valor de contrato)</p>
+                    </div>
+                    <div>
+                      <p className="text-lg lg:text-xl font-semibold text-emerald-700">
+                        {faturadoRealMes ? formatCurrency(faturadoRealMes.valor) : '...'}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        faturado comercial real (caixa) {faturadoRealMes ? `· ${faturadoRealMes.parcelas} parcelas pagas` : ''}
+                      </p>
                     </div>
                   </div>
                   <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
                     <div className="h-full bg-emerald-500 transition-all" style={{ width: `${progressoMeta}%` }} />
                   </div>
                   <p className="text-[10px] text-muted-foreground">
-                    {progressoMeta.toFixed(0)}% da meta · faltam {Math.max(0, META_MATRICULAS_MES - matriculasMes.length)} matrículas
+                    {progressoMeta.toFixed(0)}% da meta de matrículas · faltam {Math.max(0, META_MATRICULAS_MES - matriculasMes.length)}
+                    {' · '}LTV = valor total do contrato assumido no fechamento; faturado real = o que já entrou no caixa (inclui parcelas de alunos antigos)
                   </p>
                 </div>
               </Card>
