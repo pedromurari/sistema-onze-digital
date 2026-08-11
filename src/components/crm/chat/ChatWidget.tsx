@@ -39,7 +39,11 @@ export function ChatWidget() {
     return conversas.filter(c => !q || c.nome.toLowerCase().includes(q) || c.telefone.includes(q));
   }, [conversas, q]);
 
-  const selecionada = conversas.find(c => c.telefone === telefoneSelecionado) ?? null;
+  // Pode nao existir em `conversas` ainda (lead novo, primeira mensagem automatica
+  // nao saiu, ou useConversas() nao recarregou) -- mas quem chamou abrirChatWidget()
+  // quer ver a thread desse telefone mesmo assim, nao a lista.
+  const conversaConhecida = conversas.find(c => c.telefone === telefoneSelecionado) ?? null;
+  const nomeExibido = conversaConhecida?.nome ?? (telefoneSelecionado ? maskPhone(telefoneSelecionado) : '');
 
   useEffect(() => {
     fimDaThreadRef.current?.scrollIntoView({ block: 'end' });
@@ -70,7 +74,7 @@ export function ChatWidget() {
           'inset-x-3 top-16 bottom-20',
           'lg:inset-x-auto lg:top-auto lg:right-6 lg:bottom-24 lg:w-[340px] lg:h-[480px]',
         )}>
-          {!selecionada ? (
+          {!telefoneSelecionado ? (
             <>
               <div className="px-3 py-2.5 border-b flex items-center justify-between gap-2 flex-none bg-primary/5">
                 <p className="font-semibold text-sm">Chat</p>
@@ -121,9 +125,9 @@ export function ChatWidget() {
                   <ChevronLeft className="h-4 w-4" />
                 </button>
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-sm truncate">{selecionada.nome}</p>
+                  <p className="font-semibold text-sm truncate">{nomeExibido}</p>
                   <p className="text-[10px] text-muted-foreground truncate">
-                    {maskPhone(selecionada.telefone)}
+                    {maskPhone(telefoneSelecionado)}
                     {thread.length > 0 && thread[thread.length - 1].evolution_instance
                       ? ` · via ${thread[thread.length - 1].evolution_instance}` : ''}
                   </p>

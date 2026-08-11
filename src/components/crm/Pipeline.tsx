@@ -18,6 +18,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { dbRowToLead } from '@/contexts/LeadsContext';
@@ -101,9 +102,28 @@ function LeadExpandedInfo({ lead }: { lead: Lead }) {
   );
 }
 
+type FiltroPeriodo = 'hoje' | '7d' | '30d' | 'todos';
+
+const PERIODO_OPCOES: { key: FiltroPeriodo; label: string }[] = [
+  { key: 'hoje', label: 'Hoje' },
+  { key: '7d', label: '7 dias' },
+  { key: '30d', label: '30 dias' },
+  { key: 'todos', label: 'Tudo' },
+];
+
+function dentroDoPeriodo(criadoEm: string | undefined, periodo: FiltroPeriodo): boolean {
+  if (periodo === 'todos' || !criadoEm) return true;
+  const dias = periodo === 'hoje' ? 1 : periodo === '7d' ? 7 : 30;
+  const limite = Date.now() - dias * 24 * 60 * 60 * 1000;
+  return new Date(criadoEm).getTime() >= limite;
+}
+
 export function Pipeline({ onEditLead }: PipelineProps) {
-  const { user, getUserById } = useAuth();
+  const { user, users, getUserById } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [filtroPeriodo, setFiltroPeriodo] = useState<FiltroPeriodo>('todos');
+  const [filtroResponsavel, setFiltroResponsavel] = useState<string>('todos');
+  const [busca, setBusca] = useState('');
   const [expandedLeadId, setExpandedLeadId] = useState<string | null>(null);
   const [handoffModal, setHandoffModal] = useState<{ lead: Lead; targetStage: PipelineStage } | null>(null);
   const [handoffObs, setHandoffObs] = useState('');
@@ -150,8 +170,21 @@ export function Pipeline({ onEditLead }: PipelineProps) {
     }
   };
 
+  const buscaNormalizada = busca.trim().toLowerCase();
+
+  const leadsFiltrados = leads.filter((lead) => {
+    if (!dentroDoPeriodo((lead as any).criadoEm, filtroPeriodo)) return false;
+    if (filtroResponsavel === 'sem_responsavel' && (lead as any).responsavel_id) return false;
+    if (filtroResponsavel !== 'todos' && filtroResponsavel !== 'sem_responsavel' && (lead as any).responsavel_id !== filtroResponsavel) return false;
+    if (buscaNormalizada) {
+      const alvo = `${lead.nome ?? ''} ${lead.telefone ?? ''}`.toLowerCase();
+      if (!alvo.includes(buscaNormalizada)) return false;
+    }
+    return true;
+  });
+
   const getLeadsByStage = (stage: string) => {
-    return leads.filter((lead) => ((lead as any).status || lead.etapa) === stage);
+    return leadsFiltrados.filter((lead) => ((lead as any).status || lead.etapa) === stage);
   };
 
   const formatCurrency = (value?: number) => {
@@ -222,7 +255,40 @@ export function Pipeline({ onEditLead }: PipelineProps) {
   return (
     <div className="h-full flex flex-col animate-fade-in">
       <div className="flex items-center justify-between p-4 lg:p-6 pb-0 flex-shrink-0">
-        <h1 className="text-xl lg:text-2xl font-bold text-foreground">Leads Diretos</h1>
+        <h1 className="text-xl lg:text-2xl font-bold text-foreground">CRM Leads PSI</h1>
+      </div>
+
+      {/* Filtros */}
+      <div className="px-4 lg:px-6 pt-3 flex flex-col sm:flex-row gap-2 flex-shrink-0">
+        <div className="flex gap-1 bg-muted rounded-lg p-1 w-fit">
+          {PERIODO_OPCOES.map((opt) => (
+            <button
+              key={opt.key}
+              onClick={() => setFiltroPeriodo(opt.key)}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                filtroPeriodo === opt.key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <Select value={filtroResponsavel} onValueChange={setFiltroResponsavel}>
+          <SelectTrigger className="h-8 text-xs w-full sm:w-44 bg-card"><SelectValue /></SelectTrigger>
+          <SelectContent className="bg-card border-border z-[100]">
+            <SelectItem value="todos" className="text-xs">Todos os responsáveis</SelectItem>
+            <SelectItem value="sem_responsavel" className="text-xs">Sem responsável</SelectItem>
+            {users.filter(u => u.ativo).map((u) => (
+              <SelectItem key={u.id} value={u.id} className="text-xs">{u.nome}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Input
+          placeholder="Buscar por nome ou telefone…"
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          className="h-8 text-xs w-full sm:w-56 bg-card"
+        />
       </div>
 
       {/* Overview Section */}
