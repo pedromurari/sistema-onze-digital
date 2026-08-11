@@ -29,13 +29,14 @@ import { abrirChatWidget } from './chat/ChatWidget';
 
 const CURSO_LEADS_DIRETOS = 'Formação em Psicanálise Clínica Integrativa';
 
-// Ticket medio estimado do lead direto. O curso fecha por 3 caminhos, com
-// valores de contrato diferentes: PIX a vista R$ 997,00 / cartao 12x R$ 109,39
-// (R$ 1.318,80) / boleto 1+14x R$ 109,90 (R$ 1.648,50). No estagio de lead
-// ainda nao se sabe qual sera, entao o pipeline usa a media ponderada pela
-// distribuicao real de matriculas (boleto 84%, a vista 10%, cartao 6%).
-// Nao desconta inadimplencia -- e valor de contrato, nao caixa realizado.
-const TICKET_MEDIO_ESTIMADO = 1563.8;
+// Ticket medio estimado do lead direto (LTV), ja liquido de taxa de gateway --
+// valores confirmados por Pedro: PIX a vista R$ 997,00 / cartao R$ 1.021,46 /
+// boleto 1+14x R$ 1.648,50. Boleto e o que mais fecha (~80-85% das vendas),
+// PIX+cartao combinados ficam em ~15-20%. Pesos usados: boleto 82% / a vista
+// 11% / cartao 7% (a vista > cartao dentro desse resto, seguindo a proporcao
+// historica real de matriculas). Nao desconta inadimplencia do boleto -- e
+// LTV de contrato, nao caixa efetivamente recebido.
+const TICKET_MEDIO_ESTIMADO = 0.82 * 1648.5 + 0.11 * 997 + 0.07 * 1021.46;
 
 const formatDateTime = (iso?: string) => {
   if (!iso) return null;
