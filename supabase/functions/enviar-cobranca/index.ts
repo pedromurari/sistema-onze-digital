@@ -452,6 +452,11 @@ async function marcarCobradoManual(db: any, body: any, userId: string | null, co
 // esteve parada. pre_vencimento/vencimento continuam por dia exato (evento de data
 // futura conhecida, sem acúmulo possível).
 function resolveTemplateParaItem(item: any, templates: any[], cfg: any, hoje: string): any | null {
+  // Toggle "Automático" desligado (alunos.cobranca_ativa=false) -- get_alunos_para_cobranca
+  // não filtra mais isso (o aluno precisa continuar visível na Fila, só "apagado"), então
+  // quem garante que ele não recebe cobrança automática de verdade é aqui.
+  if (item.cobranca_ativa === false) return null;
+
   // Promessa de pagamento (pagamentos.data_prevista_pagamento, coletada pela IA de
   // cobrança ou digitada manualmente na Fila) tem prioridade sobre a fase normal por
   // dias de atraso: pausa a cobrança automática até a data prometida chegar, e no dia

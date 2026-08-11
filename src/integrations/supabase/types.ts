@@ -8151,6 +8151,7 @@ export type Database = {
         Returns: {
           aluno_id: string
           aluno_nome: string
+          cobranca_ativa: boolean
           cobranca_ia_ativa: boolean
           data_prevista_pagamento: string
           data_vencimento: string

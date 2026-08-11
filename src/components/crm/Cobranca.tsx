@@ -164,6 +164,7 @@ interface FilaItem {
   pagamento_status: string;
   data_prevista_pagamento: string | null;
   cobranca_ia_ativa: boolean;
+  cobranca_ativa: boolean;
 }
 
 // Um aluno com 2+ parcelas em aberto agora vira 1 card, não N linhas -- `parcelas` é
@@ -183,6 +184,7 @@ interface AlunoGrupo {
   totalDevido: number;
   isInadimplente: boolean;
   cobrancaIaAtiva: boolean;
+  cobrancaAtiva: boolean;
 }
 
 // Último contato de cobrança já feito com o aluno (independente da parcela) -- alimenta o
@@ -358,7 +360,7 @@ function AlunoFilaCard({
 }) {
   const severidade = severidadeGrupo(grupo.critica);
   return (
-    <Card className={`transition-colors ${SEVERIDADE_BORDA[severidade]}`}>
+    <Card className={`transition-colors ${SEVERIDADE_BORDA[severidade]} ${grupo.cobrancaAtiva ? '' : 'opacity-50'}`}>
       <CardContent className="py-4 px-4">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
           <div className="flex items-start gap-3">
@@ -393,9 +395,9 @@ function AlunoFilaCard({
               {grupo.parcelas.length > 1 ? `${grupo.parcelas.length} parcelas em aberto` : '1 parcela em aberto'}
             </p>
             <div className="flex items-center justify-end gap-3 mt-1.5">
-              <label className="flex items-center gap-1 text-[11px] text-muted-foreground cursor-pointer" title="Desligar tira o aluno da fila de cobrança automática (continua podendo cobrar manualmente)">
+              <label className="flex items-center gap-1 text-[11px] text-muted-foreground cursor-pointer" title="Desligar mantém o aluno visível na fila, só para de cobrar ele sozinho -- continua podendo cobrar manualmente">
                 Automático
-                <Switch checked={true} onCheckedChange={onToggleAutomacao} className="scale-75" />
+                <Switch checked={grupo.cobrancaAtiva} onCheckedChange={onToggleAutomacao} className="scale-75" />
               </label>
               <label className="flex items-center gap-1 text-[11px] text-muted-foreground cursor-pointer" title="Controla se a IA pode assumir a conversa quando esse aluno responder a uma cobrança">
                 IA
@@ -932,6 +934,7 @@ export function Cobranca() {
           isPagamentoInadimplente({ status: p.pagamento_status, data_vencimento: p.data_vencimento }, hojeSP)
         ),
         cobrancaIaAtiva: critica.cobranca_ia_ativa,
+        cobrancaAtiva: critica.cobranca_ativa,
       });
     }
     return grupos.sort((a, b) => b.critica.dias_offset - a.critica.dias_offset);
@@ -1215,13 +1218,15 @@ export function Cobranca() {
     toast.success(valor ? 'Previsão salva!' : 'Previsão removida.');
   };
 
-  // Toggle "Automático": alunos.cobranca_ativa, já é o filtro que get_alunos_para_cobranca
-  // usa -- desligar tira o aluno da fila no próximo carregamento (por isso o loadAll()).
+  // Toggle "Automático": alunos.cobranca_ativa. O aluno continua visível na Fila
+  // desligado (só "apagado") -- quem garante que ele não recebe cobrança automática
+  // de verdade é resolveTemplateParaItem em enviar-cobranca/index.ts. Por isso só
+  // atualiza o estado local, sem recarregar (mesmo padrão de toggleIaAtiva).
   const toggleCobrancaAutomatica = async (alunoId: string, ativo: boolean) => {
     const { error } = await supabase.from('alunos').update({ cobranca_ativa: ativo }).eq('id', alunoId);
     if (error) { toast.error('Erro ao atualizar: ' + error.message); return; }
-    toast.success(ativo ? 'Cobrança automática ligada.' : 'Cobrança automática desligada — o aluno some da fila.');
-    await loadAll();
+    setFila(prev => prev.map(item => item.aluno_id === alunoId ? { ...item, cobranca_ativa: ativo } : item));
+    toast.success(ativo ? 'Cobrança automática ligada.' : 'Cobrança automática desligada — o time precisa cobrar esse aluno manualmente.');
   };
 
   // Toggle "IA": alunos.cobranca_ia_ativa, checado em evo-resposta antes de acionar
