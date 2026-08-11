@@ -120,6 +120,22 @@ function inicioDoDiaSaoPaulo(): number {
   return new Date(`${dataSp}T03:00:00.000Z`).getTime();
 }
 
+/** Dia 1 do mes corrente em America/Sao_Paulo, meia-noite. */
+function inicioDoMesSaoPaulo(): number {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit',
+  }).formatToParts(new Date());
+  const ano = partes.find(p => p.type === 'year')!.value;
+  const mes = partes.find(p => p.type === 'month')!.value;
+  return new Date(`${ano}-${mes}-01T03:00:00.000Z`).getTime();
+}
+
+// Meta comercial mensal combinada por Pedro: 40 matriculas/mes. Ajustar aqui
+// quando a meta mudar (nao ha uma tela de configuracao de metas pra este
+// funil ainda -- os demais funis do sistema tem meta por lancamento/evento,
+// mas Leads Diretos e continuo, sem essa estrutura).
+const META_MATRICULAS_MES = 40;
+
 function dentroDoPeriodo(criadoEm: string | undefined, periodo: FiltroPeriodo): boolean {
   if (periodo === 'todos' || !criadoEm) return true;
   const quando = new Date(criadoEm).getTime();
@@ -178,6 +194,7 @@ export function Pipeline({ onEditLead }: PipelineProps) {
         status: row.status || row.etapa || 'novo',
         responsavel_id: row.responsavel_id,
         prazo: row.prazo,
+        matriculadoEm: row.matriculado_em,
       })) as any);
     }
   };
@@ -313,6 +330,16 @@ export function Pipeline({ onEditLead }: PipelineProps) {
           const leadsEmNegociacao = getLeadsByStage('negociacao').length;
           const conversionRate = allLeads.length > 0 ? ((leadsEmMatricula / allLeads.length) * 100).toFixed(1) : 0;
 
+          // Meta comercial do mes -- usa `leads` (sem os filtros de periodo/responsavel/busca
+          // da tela), porque e' um KPI de calendario fixo, nao deve sumir se alguem filtrar "Hoje".
+          const inicioMes = inicioDoMesSaoPaulo();
+          const matriculasMes = leads.filter((l) => {
+            const m = (l as any).matriculadoEm;
+            return m && new Date(m).getTime() >= inicioMes;
+          });
+          const valorMatriculasMes = matriculasMes.reduce((soma, l) => soma + (l.valorInvestimento || TICKET_MEDIO_ESTIMADO), 0);
+          const progressoMeta = Math.min(100, (matriculasMes.length / META_MATRICULAS_MES) * 100);
+
           return (
             <>
               <Card className="overflow-hidden bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20 hover:border-primary/40 transition-all duration-300">
@@ -353,6 +380,30 @@ export function Pipeline({ onEditLead }: PipelineProps) {
                   </div>
                   <p className="text-2xl lg:text-3xl font-bold text-foreground">{allLeads.filter(l => l.dataProximaAcao && new Date(l.dataProximaAcao) <= new Date()).length}</p>
                   <p className="text-xs text-muted-foreground">Atrasadas ou hoje</p>
+                </div>
+              </Card>
+              <Card className="col-span-2 lg:col-span-4 overflow-hidden bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border-emerald-500/20">
+                <div className="p-3 lg:p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs lg:text-sm text-muted-foreground font-medium">Meta Comercial do Mês</span>
+                    <Target className="h-4 w-4 text-emerald-600" />
+                  </div>
+                  <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-1">
+                    <p className="text-2xl lg:text-3xl font-bold text-foreground">
+                      {matriculasMes.length}
+                      <span className="text-sm font-normal text-muted-foreground"> / {META_MATRICULAS_MES} matrículas</span>
+                    </p>
+                    <div className="text-right">
+                      <p className="text-lg lg:text-xl font-semibold text-emerald-700">{formatCurrency(valorMatriculasMes)}</p>
+                      <p className="text-[10px] text-muted-foreground">faturamento do mês</p>
+                    </div>
+                  </div>
+                  <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full bg-emerald-500 transition-all" style={{ width: `${progressoMeta}%` }} />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    {progressoMeta.toFixed(0)}% da meta · faltam {Math.max(0, META_MATRICULAS_MES - matriculasMes.length)} matrículas
+                  </p>
                 </div>
               </Card>
             </>

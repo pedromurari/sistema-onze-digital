@@ -3953,9 +3953,13 @@ export type Database = {
           email: string | null
           id: string
           lancamento_id: string | null
+          matriculado_em: string | null
           nome: string
           observacoes: string | null
           origem: string | null
+          primeiro_contato_agendado_em: string | null
+          primeiro_contato_enviado_em: string | null
+          primeiro_contato_erro: string | null
           produto: string | null
           responsavel_id: string | null
           status: string | null
@@ -3970,9 +3974,13 @@ export type Database = {
           email?: string | null
           id?: string
           lancamento_id?: string | null
+          matriculado_em?: string | null
           nome: string
           observacoes?: string | null
           origem?: string | null
+          primeiro_contato_agendado_em?: string | null
+          primeiro_contato_enviado_em?: string | null
+          primeiro_contato_erro?: string | null
           produto?: string | null
           responsavel_id?: string | null
           status?: string | null
@@ -3987,9 +3995,13 @@ export type Database = {
           email?: string | null
           id?: string
           lancamento_id?: string | null
+          matriculado_em?: string | null
           nome?: string
           observacoes?: string | null
           origem?: string | null
+          primeiro_contato_agendado_em?: string | null
+          primeiro_contato_enviado_em?: string | null
+          primeiro_contato_erro?: string | null
           produto?: string | null
           responsavel_id?: string | null
           status?: string | null
