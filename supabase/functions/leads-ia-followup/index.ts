@@ -57,7 +57,7 @@ function baseUrl(raw: string): string {
   return /^https?:\/\//i.test(clean) ? clean : `https://${clean}`;
 }
 
-async function sendViaEvolution(inst: EvoInstance, phone: string, mensagem: string): Promise<{ ok: boolean; error?: string }> {
+async function sendViaEvolution(inst: EvoInstance, phone: string, mensagem: string): Promise<{ ok: true; evolutionMessageId: string | null } | { ok: false; error: string }> {
   try {
     const res = await fetch(`${baseUrl(inst.api_url)}/message/sendText/${inst.instance_name}`, {
       method: "POST",
@@ -65,10 +65,33 @@ async function sendViaEvolution(inst: EvoInstance, phone: string, mensagem: stri
       body: JSON.stringify({ number: phone, text: mensagem, delay: 1200 }),
       signal: AbortSignal.timeout(20_000),
     });
-    if (res.ok) return { ok: true };
-    return { ok: false, error: `${res.status}: ${(await res.text()).slice(0, 200)}` };
+    const bodyText = await res.text();
+    if (!res.ok) return { ok: false, error: `${res.status}: ${bodyText.slice(0, 200)}` };
+    let parsed: Record<string, any> = {};
+    try { parsed = JSON.parse(bodyText); } catch { /* resposta sem corpo json */ }
+    return { ok: true, evolutionMessageId: parsed?.key?.id ?? parsed?.data?.key?.id ?? null };
   } catch (e: unknown) {
     return { ok: false, error: (e as Error).message };
+  }
+}
+
+// Mesmo motivo do leads-ia-responder: sem isso a aba Chat/mini-chat nunca
+// mostra as cutucadas de follow-up, só o lado do lead.
+async function registrarMensagemEnviada(
+  supabase: ReturnType<typeof createClient>,
+  telefone: string,
+  conteudo: string,
+  instance: string,
+  evolutionMessageId: string | null,
+): Promise<void> {
+  try {
+    const { error } = await supabase.from("whatsapp_mensagens").insert({
+      telefone, direcao: "enviada", conteudo, tipo: "text", origem: "leads_ia",
+      evolution_instance: instance, evolution_message_id: evolutionMessageId,
+    });
+    if (error) console.error("registrarMensagemEnviada:", error.message);
+  } catch (e: unknown) {
+    console.error("registrarMensagemEnviada falhou:", (e as Error).message);
   }
 }
 
@@ -212,6 +235,7 @@ serve(async (req) => {
           continue;
         }
         enviadoComSucesso = true;
+        await registrarMensagemEnviada(supabase, conversa.telefone, mensagem, conversa.evolution_instance, envio.evolutionMessageId);
       }
 
       if (enviadoComSucesso) {

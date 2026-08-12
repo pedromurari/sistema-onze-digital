@@ -101,7 +101,7 @@ async function estaOptOut(db: any, phone: string): Promise<boolean> {
 }
 
 // Nunca rotaciona entre instâncias -- responde sempre pela mesma que recebeu.
-async function sendViaEvolution(inst: EvoInstance, phone: string, message: string): Promise<{ ok: boolean; error?: string }> {
+async function sendViaEvolution(inst: EvoInstance, phone: string, message: string): Promise<{ ok: true; evolutionMessageId: string | null } | { ok: false; error: string }> {
   const baseUrl = inst.api_url.replace(/\/$/, "");
   const base = /^https?:\/\//i.test(baseUrl) ? baseUrl : `https://${baseUrl}`;
   const url = `${base}/message/sendText/${inst.instance_name}`;
@@ -112,9 +112,11 @@ async function sendViaEvolution(inst: EvoInstance, phone: string, message: strin
       body: JSON.stringify({ number: formatPhone(phone), text: message, delay: 1000 }),
       signal: AbortSignal.timeout(30_000),
     });
-    if (res.ok) return { ok: true };
-    const body = await res.text();
-    return { ok: false, error: `${res.status}: ${body.slice(0, 200)}` };
+    const bodyText = await res.text();
+    if (!res.ok) return { ok: false, error: `${res.status}: ${bodyText.slice(0, 200)}` };
+    let parsed: Record<string, any> = {};
+    try { parsed = JSON.parse(bodyText); } catch { /* resposta sem corpo json */ }
+    return { ok: true, evolutionMessageId: parsed?.key?.id ?? parsed?.data?.key?.id ?? null };
   } catch (e: unknown) {
     return { ok: false, error: (e as Error).message };
   }
@@ -127,7 +129,7 @@ async function sendViaEvolution(inst: EvoInstance, phone: string, message: strin
 // manda: imagem com a legenda explicando os pontos), não um texto fixo --
 // por isso não manda sendText separado quando tem mídia, só a mídia com
 // caption.
-async function sendMediaViaEvolution(inst: EvoInstance, phone: string, midia: Midia, caption: string): Promise<{ ok: boolean; error?: string }> {
+async function sendMediaViaEvolution(inst: EvoInstance, phone: string, midia: Midia, caption: string): Promise<{ ok: true; evolutionMessageId: string | null } | { ok: false; error: string }> {
   const info = MEDIA_INFO[midia];
   const baseUrl = inst.api_url.replace(/\/$/, "");
   const base = /^https?:\/\//i.test(baseUrl) ? baseUrl : `https://${baseUrl}`;
@@ -141,11 +143,37 @@ async function sendMediaViaEvolution(inst: EvoInstance, phone: string, midia: Mi
       }),
       signal: AbortSignal.timeout(30_000),
     });
-    if (res.ok) return { ok: true };
-    const body = await res.text();
-    return { ok: false, error: `${res.status}: ${body.slice(0, 200)}` };
+    const bodyText = await res.text();
+    if (!res.ok) return { ok: false, error: `${res.status}: ${bodyText.slice(0, 200)}` };
+    let parsed: Record<string, any> = {};
+    try { parsed = JSON.parse(bodyText); } catch { /* resposta sem corpo json */ }
+    return { ok: true, evolutionMessageId: parsed?.key?.id ?? parsed?.data?.key?.id ?? null };
   } catch (e: unknown) {
     return { ok: false, error: (e as Error).message };
+  }
+}
+
+// Registra a mensagem enviada na tabela geral de chat (whatsapp_mensagens) --
+// sem isso a aba Chat/mini-chat do CRM nunca mostra o lado da IA na conversa,
+// só o que o lead mandou (registrado à parte pelo evo-resposta). Guarda o
+// evolution_message_id pro echo fromMe que a Evolution manda de volta (via
+// evo-resposta) dedupar em vez de duplicar essa mesma mensagem.
+async function registrarMensagemEnviada(
+  supabase: ReturnType<typeof createClient>,
+  telefone: string,
+  conteudo: string,
+  tipo: string,
+  instance: string,
+  evolutionMessageId: string | null,
+): Promise<void> {
+  try {
+    const { error } = await supabase.from("whatsapp_mensagens").insert({
+      telefone, direcao: "enviada", conteudo, tipo, origem: "leads_ia",
+      evolution_instance: instance, evolution_message_id: evolutionMessageId,
+    });
+    if (error) console.error("registrarMensagemEnviada:", error.message);
+  } catch (e: unknown) {
+    console.error("registrarMensagemEnviada falhou:", (e as Error).message);
   }
 }
 
@@ -501,12 +529,16 @@ serve(async (req) => {
         if (envioMidia.ok) {
           midiaEnviadaComSucesso = true;
           await supabase.from("leads_ia_mensagens").insert({ conversa_id: conversa.id, papel: "agente", conteudo: `${resposta} [mídia: ${midiaSolicitada}]` });
+          await registrarMensagemEnviada(supabase, telefone, resposta, MEDIA_INFO[midiaSolicitada].tipo, evolution_instance, envioMidia.evolutionMessageId);
         } else {
           // Falha ao mandar mídia -- cai pra texto puro, pro lead não ficar
           // sem resposta nenhuma.
           console.error(`leads-ia-responder: falha ao enviar mídia "${midiaSolicitada}", caindo pra texto:`, envioMidia.error);
           const envio = await sendViaEvolution(instCfg as EvoInstance, telefone, resposta);
-          if (envio.ok) await supabase.from("leads_ia_mensagens").insert({ conversa_id: conversa.id, papel: "agente", conteudo: resposta });
+          if (envio.ok) {
+            await supabase.from("leads_ia_mensagens").insert({ conversa_id: conversa.id, papel: "agente", conteudo: resposta });
+            await registrarMensagemEnviada(supabase, telefone, resposta, "text", evolution_instance, envio.evolutionMessageId);
+          }
         }
       } else {
         const envio = await sendViaEvolution(instCfg as EvoInstance, telefone, resposta);
@@ -516,6 +548,7 @@ serve(async (req) => {
           return json({ ok: true, conversa_id: conversa.id, status: "aguardando_humano", handoff: true, motivo_handoff: "erro_ia" });
         }
         await supabase.from("leads_ia_mensagens").insert({ conversa_id: conversa.id, papel: "agente", conteudo: resposta });
+        await registrarMensagemEnviada(supabase, telefone, resposta, "text", evolution_instance, envio.evolutionMessageId);
       }
     }
     if (resposta) await supabase.from("leads").update({ mensagem_ia: resposta }).eq("id", lead_id);
