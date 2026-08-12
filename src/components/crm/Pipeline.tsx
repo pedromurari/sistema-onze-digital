@@ -29,6 +29,16 @@ import { abrirChatWidget } from './chat/ChatWidget';
 
 const CURSO_LEADS_DIRETOS = 'Formação em Psicanálise Clínica Integrativa';
 
+// O site grava "Campanha: X" como primeira linha das observacoes quando o
+// lead vem de uma pagina de oferta especifica (/condicao-especial,
+// /pague-em-30-dias) -- extrai pra mostrar um selo visivel no card, senao
+// a equipe so descobre a condicao prometida abrindo e lendo o texto todo.
+function extrairCampanha(observacoes?: string | null): string | null {
+  if (!observacoes) return null;
+  const linha = observacoes.split('\n').find((l) => l.startsWith('Campanha:'));
+  return linha ? linha.replace('Campanha:', '').trim() : null;
+}
+
 // Ticket medio estimado do lead direto (LTV = valor de contrato assumido no
 // fechamento, NAO caixa recebido). Valores por forma de pagamento confirmados
 // por Pedro: PIX a vista R$ 997,00 / cartao R$ 1.021,46 / boleto 1+14x
@@ -466,6 +476,7 @@ export function Pipeline({ onEditLead }: PipelineProps) {
                   const responsavel = getUserById((lead as any).responsavel_id);
                   const hasProximaAcao = (lead as any).prazo && new Date((lead as any).prazo) <= new Date();
                   const isExpanded = expandedLeadId === lead.id;
+                  const campanha = extrairCampanha(lead.observacoes);
                   return (
                     <Card
                       key={lead.id}
@@ -480,6 +491,11 @@ export function Pipeline({ onEditLead }: PipelineProps) {
                               <CalendarClock className="h-3 w-3 flex-shrink-0" />
                               {formatDateTime((lead as any).criadoEm)}
                             </p>
+                          )}
+                          {campanha && (
+                            <Badge className="mt-1 text-[10px] bg-purple-500/15 text-purple-700 border border-purple-500/30 hover:bg-purple-500/15 whitespace-normal text-left h-auto py-0.5">
+                              🎯 {campanha}
+                            </Badge>
                           )}
                         </div>
                         <div className="flex items-center gap-1 flex-shrink-0 ml-2">
