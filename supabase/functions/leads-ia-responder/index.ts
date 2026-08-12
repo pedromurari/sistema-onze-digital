@@ -33,6 +33,24 @@ const LIMITE_TURNOS = 16;
 // a 1a cutucada sempre que o lead responder e a conversa continuar ativa.
 const FOLLOWUP_JANELA_1_HORAS = 4;
 
+// Horário comercial (mesmo padrão do leads-ia-followup/enviar-cobranca): 09h-18h,
+// seg-sáb, fuso São Paulo. Usado só pra calibrar o TEXTO da mensagem de handoff (o SDR
+// continua respondendo a qualquer hora -- isso nunca bloqueia a resposta em si).
+const HORARIO_INICIO_HORA = 9;
+const HORARIO_FIM_HORA = 18;
+
+function dentroDoHorarioComercial(d: Date): boolean {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit", minute: "2-digit", hour12: false, weekday: "short",
+  }).formatToParts(d);
+  const get = (t: string) => parts.find(p => p.type === t)?.value ?? "";
+  const hour = Number(get("hour"));
+  const weekday = get("weekday");
+  if (weekday === "Sun") return false;
+  return hour >= HORARIO_INICIO_HORA && hour < HORARIO_FIM_HORA;
+}
+
 // Mídias reais que a IA pode mandar como ferramenta de venda (armazenadas em
 // supabase storage, bucket público 'leads-ia-midia'). Ver buildSystemPrompt
 // pra saber o momento certo de cada uma.
@@ -188,8 +206,11 @@ function buildOfertaTexto(oferta: Oferta | null): string {
   return `Sobre preço e bônus (dado real e atual, use estes números exatos, nunca outros, nunca arredonde): quem confirma a matrícula agora leva, além da formação completa, esses bônus reais: ${bonusTexto}${valorBonusTexto}. O investimento é R$ ${formatBRL(oferta.preco_avista)} à vista, ou ${oferta.cartao_parcelas}x de R$ ${formatBRL(oferta.cartao_valor_parcela)} no cartão, ou boleto com entrada de R$ ${formatBRL(oferta.boleto_entrada)} + ${oferta.boleto_parcelas}x de R$ ${formatBRL(oferta.boleto_valor_parcela)}. TÉCNICA DE ANCORAGEM (use sempre que for revelar preço pela primeira vez): apresente primeiro a formação completa + a lista de bônus com os valores de cada um, pra construir a percepção de valor -- só DEPOIS revele o investimento. Isso faz o preço parecer muito mais vantajoso do que só jogar o número seco. Feche sempre com uma pergunta que busca o compromisso (ex.: pergunte se ele quer que você já garanta essa condição com os bônus pra ele). IMPORTANTE: essa mensagem que revela preço/bônus e pergunta se ele quer avançar é ELA MESMA ainda um sinal de interesse, não um compromisso real -- handoff continua false nessa mensagem, mesmo com a pergunta de fechamento dentro dela. Você só marca handoff=true DEPOIS, quando a resposta seguinte do lead confirmar de fato ('sim', 'quero', 'bora', 'pode confirmar', etc.). Nunca revele o preço E marque handoff=true na mesma mensagem -- isso faria a conversa ser encaminhada pro humano antes do lead ter respondido sua pergunta de fechamento, e a resposta dele se perderia. NUNCA invente bônus, valores ou condições além dos listados aqui -- são exatamente esses e nenhum outro, e nunca prometa um bônus como "exclusivo pra você" além do que já é a condição especial padrão.`;
 }
 
-function buildSystemPrompt(conhecimentoAprendido: { pergunta_exemplo: string; resposta: string }[], midiasJaEnviadas: string[], oferta: Oferta | null): string {
+function buildSystemPrompt(conhecimentoAprendido: { pergunta_exemplo: string; resposta: string }[], midiasJaEnviadas: string[], oferta: Oferta | null, dentroDoHorario: boolean): string {
   const ofertaTexto = buildOfertaTexto(oferta);
+  const instrucaoHandoff = dentroDoHorario
+    ? "Toda vez que handoff=true (qualquer motivo), a 'resposta' precisa deixar claro que alguém do time vai continuar a conversa PELO MESMO NÚMERO de WhatsApp daqui a pouco -- nunca dê a entender que o contato vai mudar de canal."
+    : "Toda vez que handoff=true (qualquer motivo), estamos FORA do horário comercial agora -- a 'resposta' precisa deixar isso claro sem soar como desculpa: diga que o time vai entrar em contato PELO MESMO NÚMERO assim que abrir o horário comercial (nunca prometa um horário exato, já que você não sabe a agenda do time). Especificamente quando motivo_handoff for 'lead_qualificado' ou 'pedido_direto_avancar' (venda confirmada), reforce que a vaga/condição dela já está garantida e reservada com você -- é um gatilho real de compromisso, não precisa ela se preocupar em perder a condição só porque é fora do horário, o time só vai formalizar os próximos passos quando abrir. Pros outros motivos de handoff (dúvida, reclamação etc.), só avise que alguém confirma direitinho no próximo horário comercial, sem mencionar vaga reservada (isso não se aplica quando não é fechamento de venda).";
   const partes = [
     "Você é a SDR/closer de elite do Instituto DespertaMente, atendendo no WhatsApp leads que pediram informações sobre a Formação em Psicanálise Integrativa (IDM). Português do Brasil, tom humano e consultivo -- nunca robótico, nunca um script colado.",
     "Sua missão: você não é só uma etapa de qualificação -- você é a vendedora de verdade dessa conversa. Seu objetivo é FECHAR a venda, não só qualificar. Quando o lead trouxer uma objeção (preço, tempo, se vale a pena, se é sério, comparação com outro curso, medo de não dar conta), você tenta quebrar essa objeção você mesma, usando o conhecimento fixo, a ementa completa, o tripé, o PPC/certificado e o depoimento -- nunca faça handoff no primeiro sinal de hesitação.",
@@ -217,7 +238,7 @@ function buildSystemPrompt(conhecimentoAprendido: { pergunta_exemplo: string; re
     "Se o que o lead mandou NÃO for de fato uma resposta à sua pergunta (ex: mensagem encaminhada, corrente, versículo, figurinha, link sem relação com o curso, spam) -- não force uma interpretação de que isso respondeu sua pergunta, e não invente uma conexão com a motivação dele que não foi dita. Reconheça com leveza que recebeu algo diferente do esperado e repita a pergunta original de um jeito natural (handoff=false); só use fora_de_escopo se isso persistir depois de você já ter tentado retomar uma vez.",
     "Se o lead fizer várias perguntas na mesma mensagem, responda tudo que você souber com certeza usando o conhecimento fixo/aprendido/ementa. Se uma parte específica não estiver nesse conhecimento (ex: dia da semana e horário exato da turma, que varia e você não sabe), não ignore essa parte em silêncio -- diga explicitamente que vai confirmar esse detalhe com o time. Isso não precisa virar handoff=true sozinho; só vire duvida_sem_resposta se a pergunta inteira (não só um detalhe pontual) estiver fora do que você sabe.",
     "Se você não tiver certeza do que o lead quis dizer: confira no 'Histórico da conversa' se você (papel: agente) já fez alguma pergunta de esclarecimento antes. Se nunca perguntou: pergunte uma vez pra esclarecer (handoff=false). Se já perguntou uma vez antes e a resposta continua vaga/confusa: não pergunte de novo -- vá direto pra handoff=true, motivo_handoff='baixa_confianca'.",
-    "Toda vez que handoff=true (qualquer motivo), a 'resposta' precisa deixar claro que alguém do time vai continuar a conversa PELO MESMO NÚMERO de WhatsApp -- nunca dê a entender que o contato vai mudar de canal.",
+    instrucaoHandoff,
     "Campos 'engajamento' (frio|morno|quente), 'objetivo_principal' (a motivação/dor que o lead revelou, resumida em poucas palavras) e 'tempo_interesse' (o sinal de urgência/intenção que você percebeu) devem refletir o que você aprendeu na conversa até agora -- preencha mesmo quando handoff=false, sempre que já tiver alguma pista, deixando null só quando ainda não sabe nada sobre aquilo.",
     "Responda APENAS em JSON válido, sem markdown, no formato exato: {\"resposta\": string, \"enviar_midia\": \"tripe\"|\"ppc_certificado\"|\"certificado_completo\"|\"depoimento_video\"|null, \"engajamento\": \"frio\"|\"morno\"|\"quente\"|null, \"objetivo_principal\": string|null, \"tempo_interesse\": string|null, \"handoff\": boolean, \"motivo_handoff\": \"lead_qualificado\"|\"pedido_direto_avancar\"|\"duvida_sem_resposta\"|\"fora_de_escopo\"|\"reclamacao\"|\"baixa_confianca\"|null}.",
   ];
@@ -371,7 +392,7 @@ serve(async (req) => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          systemInstruction: { parts: [{ text: buildSystemPrompt(conhecimentoAprendido, midiasJaEnviadas, oferta) }] },
+          systemInstruction: { parts: [{ text: buildSystemPrompt(conhecimentoAprendido, midiasJaEnviadas, oferta, dentroDoHorarioComercial(new Date())) }] },
           contents: [
             {
               role: "user",

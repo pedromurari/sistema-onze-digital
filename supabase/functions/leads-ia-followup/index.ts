@@ -31,6 +31,25 @@ const MAX_FOLLOWUPS = JANELAS_HORAS.length;
 const LEMBRETE_HANDOFF_PARADO_HORAS = 2;
 const BATCH_SIZE = 5;
 
+// Horário comercial (mesmo padrão default do enviar-cobranca): 09h-18h, seg-sáb, fuso
+// São Paulo. Fora disso a function não manda nada -- só devolve "fora_do_horario", sem
+// mexer em followup_proximo_em/lembrete_time_enviado_em, então no próximo tick dentro do
+// horário tudo que já venceu é processado normalmente (nada se perde, só atrasa).
+const HORARIO_INICIO_HORA = 9;
+const HORARIO_FIM_HORA = 18;
+
+function dentroDoHorarioComercial(d: Date): boolean {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit", minute: "2-digit", hour12: false, weekday: "short",
+  }).formatToParts(d);
+  const get = (t: string) => parts.find(p => p.type === t)?.value ?? "";
+  const hour = Number(get("hour"));
+  const weekday = get("weekday");
+  if (weekday === "Sun") return false;
+  return hour >= HORARIO_INICIO_HORA && hour < HORARIO_FIM_HORA;
+}
+
 type EvoInstance = { api_url: string; api_key: string; instance_name: string };
 
 function baseUrl(raw: string): string {
@@ -120,6 +139,11 @@ serve(async (req) => {
   }
 
   const agora = new Date();
+
+  if (!dentroDoHorarioComercial(agora)) {
+    return ok({ ok: true, skipped: "fora_do_horario_comercial" });
+  }
+
   const resultadosFollowup: Record<string, unknown>[] = [];
   const resultadosLembrete: Record<string, unknown>[] = [];
 
