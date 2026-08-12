@@ -470,6 +470,32 @@ async function capturarSugestaoConhecimento(
   }
 }
 
+// Marca que um humano já assumiu o handoff (qualquer motivo, não só dúvida) --
+// cancela o lembrete de "handoff parado" do leads-ia-followup. Só marca a
+// primeira resposta manual depois do handoff, não sobrescreve em respostas seguintes.
+async function marcarHumanoAssumiuConversa(
+  supabase: ReturnType<typeof createClient>,
+  phone: string,
+): Promise<void> {
+  try {
+    const s8 = phone.slice(-8);
+    const { data: conversa } = await supabase
+      .from('leads_ia_conversas')
+      .select('id')
+      .eq('status', 'aguardando_humano')
+      .is('humano_assumiu_em', null)
+      .filter('telefone', 'ilike', `%${s8}`)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!conversa) return;
+    await supabase.from('leads_ia_conversas').update({ humano_assumiu_em: new Date().toISOString() }).eq('id', conversa.id);
+  } catch (e: unknown) {
+    console.error('marcarHumanoAssumiuConversa: falha:', (e as Error).message);
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
@@ -563,6 +589,7 @@ serve(async (req) => {
       // sabia responder, captura como sugestão de conhecimento pendente.
       if (mensagemTipo === 'text') {
         await capturarSugestaoConhecimento(supabase, phone, mensagem);
+        await marcarHumanoAssumiuConversa(supabase, phone);
       }
       return ok({ ok: true, skipped: true, reason: 'fromMe=true: gravado se manual, resto do processamento pulado' });
     }

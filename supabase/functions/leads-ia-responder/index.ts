@@ -29,6 +29,10 @@ type Engajamento = typeof ENGAJAMENTOS_VALIDOS[number];
 
 const LIMITE_TURNOS = 16;
 
+// Follow-up de silêncio (ver leads-ia-followup): mesma janela usada aqui pra agendar
+// a 1a cutucada sempre que o lead responder e a conversa continuar ativa.
+const FOLLOWUP_JANELA_1_HORAS = 4;
+
 // Mídias reais que a IA pode mandar como ferramenta de venda (armazenadas em
 // supabase storage, bucket público 'leads-ia-midia'). Ver buildSystemPrompt
 // pra saber o momento certo de cada uma.
@@ -199,7 +203,7 @@ function buildSystemPrompt(conhecimentoAprendido: { pergunta_exemplo: string; re
       ? "Conhecimento adicional aprendido com o time humano, use quando a pergunta do lead casar com alguma dessas: " +
         conhecimentoAprendido.map((c, i) => `(${i + 1}) se perguntarem algo como "${c.pergunta_exemplo}", responda com base em: "${c.resposta}"`).join("; ") + "."
       : "",
-    "Mídias reais disponíveis como ferramenta de venda (cada uma tem o momento certo -- nunca mande a mesma duas vezes na mesma conversa): 'tripe' é a imagem do Tripé Psicanalítico, mande quando explicar a estrutura da formação pela primeira vez -- e aproveite pra perguntar qual dos três pilares (teoria, análise pessoal ou supervisão) mais chamou a atenção do lead. 'ppc_certificado' é a imagem com o PPC (Projeto Pedagógico de Curso) e a parceria oficial com a Faculdade Anhanguera, mande quando o lead questionar se é sério, se tem respaldo institucional, ou se vale a pena. 'certificado_completo' é a imagem do certificado de verdade que o aluno recebe, mande quando o lead perguntar o que leva no final ou quiser ver como é o certificado. 'depoimento_video' é um vídeo real de uma ex-aluna contando a experiência dela, mande quando o lead estiver hesitante, com medo de não valer a pena ou de não dar conta -- é a ferramenta certa pra destravar essa hesitação. Preencha o campo 'enviar_midia' com o nome exato de qual mandar agora (ou null se nenhuma fizer sentido nesta mensagem)."
+    "Mídias reais disponíveis como ferramenta de venda (cada uma tem o momento certo -- nunca mande a mesma duas vezes na mesma conversa): 'tripe' é a imagem do Tripé Psicanalítico -- IMPORTANTE: a imagem em si é só a ilustração do banquinho de três pernas, ela NÃO tem o nome dos pilares escrito nela, então a legenda é a ÚNICA coisa que explica o que cada perna representa. Sempre que mandar 'tripe', a legenda é OBRIGADA a nomear e explicar rapidamente os três pilares (Teoria, Análise pessoal, Supervisão clínica) -- nunca mande a imagem falando só 'o tripé da formação' sem dizer quais são os três pilares, senão o lead vê uma imagem bonita e não entende nada. Mande quando explicar a estrutura da formação pela primeira vez, e aproveite pra perguntar qual dos três pilares mais chamou a atenção do lead. 'ppc_certificado' é a imagem com o PPC (Projeto Pedagógico de Curso) e a parceria oficial com a Faculdade Anhanguera, mande quando o lead questionar se é sério, se tem respaldo institucional, ou se vale a pena. 'certificado_completo' é a imagem do certificado de verdade que o aluno recebe, mande quando o lead perguntar o que leva no final ou quiser ver como é o certificado. 'depoimento_video' é um vídeo real de uma ex-aluna contando a experiência dela, mande quando o lead estiver hesitante, com medo de não valer a pena ou de não dar conta -- é a ferramenta certa pra destravar essa hesitação. Preencha o campo 'enviar_midia' com o nome exato de qual mandar agora (ou null se nenhuma fizer sentido nesta mensagem)."
       + (midiasJaEnviadas.length > 0 ? ` Mídias que você JÁ mandou nesta conversa e não deve repetir: ${midiasJaEnviadas.join(", ")}.` : ""),
     "REGRA CRÍTICA sobre a 'resposta' quando 'enviar_midia' não é null: ela vira a LEGENDA anexada à imagem/vídeo, não uma mensagem separada. Isso significa que é TERMINANTEMENTE PROIBIDO escrever qualquer frase que descreva o ato de mostrar a imagem -- nunca escreva 'aqui está', 'segue a imagem', 'olha a imagem', 'dá uma olhada em como ele fica' seguido de uma descrição do que tem na foto, nem colocar isso entre parênteses ou asteriscos como rubrica de teatro. A pessoa já está vendo a imagem ao ler sua legenda, então fale SOBRE o conteúdo dela diretamente, como quem já sabe que a imagem está ali. Exemplos de legenda CORRETA, só pra você entender o ESTILO (NUNCA copie essas frases literalmente, isso é proibido -- cada legenda tem que ser escrita do zero, conectada com o que o lead especificamente disse na conversa até aqui): pra 'tripe' -> algo como 'Esse é o nosso Tripé Psicanalítico 👇 Teoria, análise pessoal e supervisão clínica caminhando juntas, pra você sair não só entendendo a mente humana, mas pronta pra atuar de verdade. Qual desses três pilares mais te chamou atenção?'; pra 'certificado_completo' -> algo como 'Esse aqui é o certificado que você recebe ao final da formação 💙 Com o selo do PPC aprovado e a parceria com a Anhanguera, é o tipo de documento que você pendura com orgulho no consultório. Como você se imagina recebendo o seu?'; pra 'ppc_certificado' -> algo como 'Esse é o nosso PPC aprovado, com a parceria oficial da Faculdade Anhanguera 🎯 É essa estrutura que garante todo o respaldo legal da sua formação. Isso te deixa mais tranquilo em relação a essa parte?'; pra 'depoimento_video' -> algo como 'Deixa eu te mostrar isso 💙 Ela também tinha exatamente essa insegurança antes de começar. Depois de ver, me conta o que mais tocou você.'. Repare que NENHUM desses exemplos descreve o ato de enviar a imagem -- todos comentam o conteúdo dela como se você estivesse do lado da pessoa apontando pra foto. Mas de novo: são só referência de TOM, a legenda de verdade precisa mencionar o contexto específico dessa conversa (o que o lead contou sobre si, a objeção que ele acabou de trazer, etc.) -- se você mandar a mesma legenda genérica pra leads diferentes, você deixou de ser uma vendedora de elite e virou um robô com script decorado, exatamente o problema que você existe pra resolver.",
     ofertaTexto,
@@ -498,6 +502,13 @@ serve(async (req) => {
     const duvidaNaoRespondida = motivoConcluido === "duvida_sem_resposta" ? mensagem : null;
     const novasMidiasEnviadas = midiaEnviadaComSucesso ? [...midiasJaEnviadas, midiaSolicitada as string] : midiasJaEnviadas;
 
+    // Follow-up de silêncio: lead acabou de responder, então a leva de cutucadas
+    // anterior (se havia) não faz mais sentido -- reagenda do zero pra daqui a
+    // FOLLOWUP_JANELA_1_HORAS. Em handoff, quem cuida da conversa é humano, então
+    // zera o agendamento (leads-ia-followup cuida só do lembrete de demora nesse caso).
+    const agora = new Date();
+    const followupProximoEm = handoff ? null : new Date(agora.getTime() + FOLLOWUP_JANELA_1_HORAS * 3_600_000).toISOString();
+
     await supabase.from("leads_ia_conversas").update({
       status: novoStatus,
       engajamento: engajamento ?? conversa.engajamento,
@@ -508,7 +519,10 @@ serve(async (req) => {
       resumo_ia: resumoIa,
       turnos_ia: novosTurnos,
       midias_enviadas: novasMidiasEnviadas,
-      updated_at: new Date().toISOString(),
+      followup_proximo_em: followupProximoEm,
+      followups_enviados: 0,
+      ...(handoff ? { handoff_em: agora.toISOString(), humano_assumiu_em: null, lembrete_time_enviado_em: null } : {}),
+      updated_at: agora.toISOString(),
     }).eq("id", conversa.id);
 
     await supabase.from("leads").update({
