@@ -57,12 +57,23 @@ function baseUrl(raw: string): string {
   return /^https?:\/\//i.test(clean) ? clean : `https://${clean}`;
 }
 
+// Mesmo padrão de formatação de telefone usado em leads-ia-responder/cobranca-ia-responder
+// -- conversa.telefone é guardado sem DDI (11 dígitos), e a Evolution rejeita
+// "exists: false" se mandar sem o 55 na frente.
+function formatPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("55") && digits.length >= 12) return digits;
+  if (digits.length === 11) return "55" + digits;
+  if (digits.length === 10) return "55" + digits.slice(0, 2) + "9" + digits.slice(2);
+  return digits;
+}
+
 async function sendViaEvolution(inst: EvoInstance, phone: string, mensagem: string): Promise<{ ok: true; evolutionMessageId: string | null } | { ok: false; error: string }> {
   try {
     const res = await fetch(`${baseUrl(inst.api_url)}/message/sendText/${inst.instance_name}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", apikey: inst.api_key },
-      body: JSON.stringify({ number: phone, text: mensagem, delay: 1200 }),
+      body: JSON.stringify({ number: formatPhone(phone), text: mensagem, delay: 1200 }),
       signal: AbortSignal.timeout(20_000),
     });
     const bodyText = await res.text();
@@ -116,7 +127,7 @@ function buildFollowupPrompt(leadNome: string, historico: string, numeroTentativ
   return [
     "Você é a mesma SDR/closer de elite do Instituto DespertaMente que já estava conversando com este lead sobre a Formação em Psicanálise Integrativa (IDM) no WhatsApp -- agora ele parou de responder no meio da conversa e você está mandando uma cutucada de reengajamento. Português do Brasil, tom humano e consultivo, nunca robótico.",
     instrucaoDaTentativa(numeroTentativa),
-    "Estilo: mensagem curta (2-4 linhas), *asteriscos* pra negrito do WhatsApp quando fizer sentido, emoji com naturalidade, nunca um bloco de texto longo -- isso é uma cutucada, não uma nova apresentação do curso.",
+    "Estilo: mensagem curta (2-4 linhas), *asteriscos* em pelo menos uma palavra-chave, emoji no MÁXIMO 1-2 e sempre no FINAL de uma frase/parágrafo (nunca no meio cortando a leitura), nunca um bloco de texto longo -- isso é uma cutucada, não uma nova apresentação do curso.",
     "Termine com uma pergunta simples que seja fácil de responder (não force outra vez a pergunta de fechamento de venda).",
     "NUNCA invente que o lead disse algo que não está no histórico. NUNCA mencione preço/bônus que não estejam no histórico da conversa.",
     `Nome do lead (se conhecido): ${leadNome || "não informado"}`,

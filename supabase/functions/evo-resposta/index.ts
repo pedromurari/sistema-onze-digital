@@ -402,7 +402,30 @@ async function tentarCriarLeadDireto(
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (!conversaAberta) return null;
+      if (!conversaAberta) {
+        // Sem conversa ativa -- mas pode ser um lead Direto já em handoff
+        // (aguardando_humano), cujas respostas não batem em nenhuma das 4
+        // tabelas do matching genérico abaixo (não são lead de lançamento,
+        // disparo, boas-vindas nem cobrança). Sem isso ninguém seria avisado
+        // quando esse lead responder de novo enquanto espera o time.
+        const { data: conversaHandoff } = await supabase
+          .from('leads_ia_conversas')
+          .select('lead_nome')
+          .eq('status', 'aguardando_humano')
+          .filter('telefone', 'ilike', `%${s8}`)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (conversaHandoff && !(conversaHandoff.lead_nome ?? '').startsWith('TESTE')) {
+          await supabase.rpc('notificar_vendedores_ativos', {
+            p_tipo: 'lead_quente_ia',
+            p_titulo: `💬 ${conversaHandoff.lead_nome || 'Lead'} respondeu de novo`,
+            p_descricao: mensagem.slice(0, 200),
+            p_link: '/pipeline',
+          });
+        }
+        return null;
+      }
 
       const { data: leadRow } = await supabase
         .from('leads')
