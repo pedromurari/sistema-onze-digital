@@ -327,6 +327,149 @@ async function tentarAcionarIaCobranca(
   }
 }
 
+// ── Lead direto do anúncio IDM: aciona leads-ia-responder ───────────────────
+// Bloco isolado, roda ANTES do matching pelas 4 tabelas abaixo -- é um sinal
+// mais específico (texto exato do botão de WhatsApp Ads da Formação em
+// Psicanálise Integrativa) do que um simples telefone batendo numa planilha.
+// Reaproveita lead existente (origem='Direto') se o mesmo número já mandou
+// essa mensagem antes (ex.: reabriu o botão do anúncio de novo), senão cria.
+// Ver supabase/functions/leads-ia-responder.
+const GATILHOS_ANUNCIO_IDM = [
+  'olá! quero receber informações sobre a formação em psicanálise integrativa do idm.',
+];
+
+async function tentarCriarLeadDireto(
+  supabase: ReturnType<typeof createClient>,
+  phone: string,
+  mensagem: string,
+  mensagemTipo: string,
+  instance: string,
+  pushName: string,
+): Promise<{ ok: true; lead_id: string } | null> {
+  if (mensagemTipo !== 'text') return null;
+  const s8 = phone.slice(-8);
+  const normalizado = mensagem.trim().toLowerCase();
+  const ehGatilho = GATILHOS_ANUNCIO_IDM.includes(normalizado);
+
+  try {
+    let lead: { id: string; nome: string } | null = null;
+
+    if (ehGatilho) {
+      // Mensagem exata do anúncio -- reaproveita lead existente (origem='Direto')
+      // ou cria um novo.
+      const { data: existente } = await supabase
+        .from('leads')
+        .select('id, nome')
+        .eq('origem', 'Direto')
+        .filter('telefone', 'ilike', `%${s8}`)
+        .order('criado_em', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existente) {
+        lead = existente as { id: string; nome: string };
+      } else {
+        const { data: novo, error: insertErr } = await supabase
+          .from('leads')
+          .insert({
+            nome: pushName || `Lead WhatsApp ${s8}`,
+            telefone: phone,
+            whatsapp: phone,
+            origem: 'Direto',
+            produto: 'direto',
+            status: 'novo',
+            valor_potencial: 997,
+            ultima_atividade: new Date().toISOString(),
+          })
+          .select('id, nome')
+          .single();
+        if (insertErr) {
+          console.error('tentarCriarLeadDireto: falha ao criar lead:', insertErr.message);
+          return null;
+        }
+        lead = novo as { id: string; nome: string };
+      }
+    } else {
+      // Não é a mensagem-gatilho -- só continua se esse telefone já tiver uma
+      // conversa de SDR ABERTA (senão não é assunto nosso, cai no matching
+      // genérico abaixo). É isso que faz o SDR responder a segunda, terceira
+      // mensagem do lead, não só a primeira.
+      const { data: conversaAberta } = await supabase
+        .from('leads_ia_conversas')
+        .select('lead_id')
+        .eq('status', 'ativo')
+        .filter('telefone', 'ilike', `%${s8}`)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!conversaAberta) return null;
+
+      const { data: leadRow } = await supabase
+        .from('leads')
+        .select('id, nome')
+        .eq('id', conversaAberta.lead_id)
+        .maybeSingle();
+      lead = leadRow as { id: string; nome: string } | null;
+    }
+    if (!lead) return null;
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+    const res = await fetch(`${supabaseUrl}/functions/v1/leads-ia-responder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey },
+      body: JSON.stringify({ lead_id: lead.id, telefone: phone, mensagem, evolution_instance: instance }),
+    });
+    if (!res.ok) {
+      console.error(`leads-ia-responder respondeu ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    }
+    return { ok: true, lead_id: lead.id };
+  } catch (e: unknown) {
+    console.error('tentarCriarLeadDireto: falha:', (e as Error).message);
+    return null;
+  }
+}
+
+// ── Captura de resolução humana → sugestão de conhecimento ─────────────────
+// Quando o SDR de IA não sabe responder algo (leads_ia_conversas em
+// aguardando_humano/duvida_sem_resposta) e um humano manda uma mensagem MANUAL
+// (fromMe=true) pro mesmo telefone, guarda a pergunta + a resposta do humano
+// como sugestão pendente de aprovação (painel na Equipe Despertamente, ficha
+// do SDR). sugestao_capturada evita duplicar se o humano mandar várias
+// mensagens seguidas resolvendo a mesma dúvida.
+async function capturarSugestaoConhecimento(
+  supabase: ReturnType<typeof createClient>,
+  phone: string,
+  respostaHumano: string,
+): Promise<void> {
+  try {
+    const s8 = phone.slice(-8);
+    const { data: conversa } = await supabase
+      .from('leads_ia_conversas')
+      .select('id, lead_id, duvida_nao_respondida')
+      .eq('status', 'aguardando_humano')
+      .eq('motivo_handoff', 'duvida_sem_resposta')
+      .eq('sugestao_capturada', false)
+      .filter('telefone', 'ilike', `%${s8}`)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!conversa?.duvida_nao_respondida) return;
+
+    await supabase.from('leads_ia_conhecimento_sugestoes').insert({
+      conversa_id: conversa.id,
+      lead_id: conversa.lead_id,
+      pergunta: conversa.duvida_nao_respondida,
+      resposta_humano: respostaHumano,
+    });
+    await supabase.from('leads_ia_conversas').update({ sugestao_capturada: true }).eq('id', conversa.id);
+  } catch (e: unknown) {
+    console.error('capturarSugestaoConhecimento: falha:', (e as Error).message);
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
@@ -383,6 +526,11 @@ serve(async (req) => {
     const remoteJid = String(key.remoteJid ?? '');
     const fromMe    = Boolean(key.fromMe);
     const message   = (data.message ?? {}) as Record<string, unknown>;
+    // Nome de exibição do WhatsApp de quem mandou a mensagem -- campo padrão
+    // do webhook Baileys/Evolution, ainda não validado contra payload real
+    // neste arquivo (mesmo cuidado dos outros "shape não documentado" acima).
+    // Usado só como fallback pro nome do lead direto do anúncio IDM.
+    const pushName  = String(data.pushName ?? '').trim();
 
     // Voto de enquete: chega como message.upsert de grupo com pollUpdateMessage.
     // Precisa ser tratado ANTES do skip de "mensagem de grupo" abaixo, senão
@@ -411,6 +559,11 @@ serve(async (req) => {
     if (fromMe) {
       const messageId = String(key.id ?? '') || null;
       await registrarMensagemManualSeNova(supabase, phone, mensagem, mensagemTipo, instance, messageId);
+      // Se um humano respondeu manualmente uma dúvida que o SDR de IA não
+      // sabia responder, captura como sugestão de conhecimento pendente.
+      if (mensagemTipo === 'text') {
+        await capturarSugestaoConhecimento(supabase, phone, mensagem);
+      }
       return ok({ ok: true, skipped: true, reason: 'fromMe=true: gravado se manual, resto do processamento pulado' });
     }
 
@@ -421,6 +574,15 @@ serve(async (req) => {
 
     if (mensagemTipo === 'text' && detectarOptOut(mensagem)) {
       await registrarOptOut(supabase, phone, mensagem);
+    }
+
+    // Lead novo do anúncio IDM: sinal mais específico que o matching por
+    // tabela abaixo -- se casar, a IA de leads assume e a function encerra
+    // aqui (ela já cuida de notificar no handoff, sem cair no
+    // notificar_admins('lead_respondeu') genérico do fim do arquivo).
+    const leadDireto = await tentarCriarLeadDireto(supabase, phone, mensagem, mensagemTipo, instance, pushName);
+    if (leadDireto) {
+      return ok({ ok: true, leadDireto: true, lead_id: leadDireto.lead_id });
     }
 
     const now = new Date().toISOString();

@@ -3,11 +3,12 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Bot, Loader2, Download, Send, ArrowUpRight, AlertTriangle, RefreshCw, Repeat, X, MessageCircle, CheckCircle2, ExternalLink, CalendarDays, ListChecks, ShieldCheck, Clock3, Paperclip, SlidersHorizontal, Brain, ChevronDown } from 'lucide-react';
+import { Bot, Loader2, Download, Send, ArrowUpRight, AlertTriangle, RefreshCw, Repeat, X, MessageCircle, CheckCircle2, ExternalLink, CalendarDays, ListChecks, ShieldCheck, Clock3, Paperclip, SlidersHorizontal, Brain, ChevronDown, DollarSign, Gift, Plus, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -555,6 +556,277 @@ function HistoricoDecisoes({ agenteId }: { agenteId: string }) {
   );
 }
 
+// ── Sugestões de conhecimento (loop de aprendizado do SDR de leads) ─────────
+// Quando o SDR de IA não sabe responder algo, ele faz handoff e evo-resposta
+// captura a 1a resposta manual de um humano no mesmo WhatsApp como sugestão
+// pendente. Aqui um admin revisa (pode editar a redação) e aprova antes dela
+// virar conhecimento ativo que leads-ia-responder consulta. Só aparece na
+// ficha do agente slug='sdr-leads-idm'.
+
+type SugestaoConhecimento = { id: string; pergunta: string; resposta_humano: string; created_at: string };
+
+function SugestoesConhecimento() {
+  const { user } = useAuth();
+  const [itens, setItens] = useState<SugestaoConhecimento[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [edicoes, setEdicoes] = useState<Record<string, string>>({});
+  const [salvandoId, setSalvandoId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const { data, error } = await (supabase.from('leads_ia_conhecimento_sugestoes' as any) as any)
+      .select('id, pergunta, resposta_humano, created_at')
+      .eq('status', 'pendente')
+      .order('created_at', { ascending: false });
+    if (!error) setItens((data as any) || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    load();
+    const channel = supabase
+      .channel('leads-ia-conhecimento-sugestoes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads_ia_conhecimento_sugestoes' }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [load]);
+
+  const respostaAtual = (item: SugestaoConhecimento) => edicoes[item.id] ?? item.resposta_humano;
+
+  const aprovar = async (item: SugestaoConhecimento) => {
+    const resposta = respostaAtual(item).trim();
+    if (!resposta) { toast.error('A resposta não pode ficar vazia.'); return; }
+    setSalvandoId(item.id);
+    const { error: insertErr } = await (supabase.from('leads_ia_conhecimento' as any) as any).insert({
+      pergunta_exemplo: item.pergunta, resposta, origem_sugestao_id: item.id,
+    });
+    if (insertErr) { toast.error(`Erro ao aprovar: ${insertErr.message}`); setSalvandoId(null); return; }
+    await (supabase.from('leads_ia_conhecimento_sugestoes' as any) as any)
+      .update({ status: 'aprovado', revisado_por: user?.id ?? null, revisado_em: new Date().toISOString() })
+      .eq('id', item.id);
+    toast.success('Conhecimento aprovado -- o SDR já vai usar isso nas próximas conversas.');
+    setSalvandoId(null);
+    setItens(prev => prev.filter(i => i.id !== item.id));
+  };
+
+  const rejeitar = async (item: SugestaoConhecimento) => {
+    setSalvandoId(item.id);
+    await (supabase.from('leads_ia_conhecimento_sugestoes' as any) as any)
+      .update({ status: 'rejeitado', revisado_por: user?.id ?? null, revisado_em: new Date().toISOString() })
+      .eq('id', item.id);
+    setSalvandoId(null);
+    setItens(prev => prev.filter(i => i.id !== item.id));
+  };
+
+  if (loading) return <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>;
+  if (itens.length === 0) {
+    return <p className="text-xs text-muted-foreground py-2">Nenhuma sugestão pendente. Quando o SDR não souber responder algo e um humano resolver pelo WhatsApp, a sugestão aparece aqui.</p>;
+  }
+
+  return (
+    <div className="space-y-3">
+      {itens.map(item => (
+        <div key={item.id} className="rounded-xl border border-amber-200 bg-amber-50/40 p-3 space-y-2">
+          <div>
+            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Pergunta do lead</p>
+            <p className="text-sm text-foreground">{item.pergunta}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Como o time respondeu (edite se quiser antes de aprovar)</p>
+            <Textarea
+              value={respostaAtual(item)}
+              onChange={(event) => setEdicoes(prev => ({ ...prev, [item.id]: event.target.value }))}
+              className="mt-1 min-h-[64px] text-sm bg-white"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="ghost" disabled={salvandoId === item.id} onClick={() => rejeitar(item)}>Rejeitar</Button>
+            <Button size="sm" className="gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700" disabled={salvandoId === item.id} onClick={() => aprovar(item)}>
+              {salvandoId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+              Aprovar
+            </Button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Oferta ativa do SDR de leads (preço/parcelas/bônus) ──────────────────────
+// leads-ia-responder lê essa tabela a cada resposta pra montar o preço e o
+// stack de bônus que a IA apresenta -- nada fica hardcoded no prompt, então
+// quando a promoção mudar (ela muda com frequência) basta editar aqui, sem
+// precisar de deploy. Só aparece na ficha do agente slug='sdr-leads-idm'.
+
+type OfertaBonusItem = { nome: string; valor: string; limitado: string };
+type OfertaAtivaRow = {
+  id: string;
+  preco_avista: number;
+  cartao_parcelas: number;
+  cartao_valor_parcela: number;
+  boleto_entrada: number;
+  boleto_parcelas: number;
+  boleto_valor_parcela: number;
+  valor_total_bonus: number | null;
+  bonus: { nome: string; valor: number; limitado: string | null }[];
+};
+
+function OfertaAtivaEditor() {
+  const [row, setRow] = useState<OfertaAtivaRow | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [salvando, setSalvando] = useState(false);
+
+  const [precoAvista, setPrecoAvista] = useState('');
+  const [cartaoParcelas, setCartaoParcelas] = useState('');
+  const [cartaoValorParcela, setCartaoValorParcela] = useState('');
+  const [boletoEntrada, setBoletoEntrada] = useState('');
+  const [boletoParcelas, setBoletoParcelas] = useState('');
+  const [boletoValorParcela, setBoletoValorParcela] = useState('');
+  const [valorTotalBonus, setValorTotalBonus] = useState('');
+  const [bonusItens, setBonusItens] = useState<OfertaBonusItem[]>([]);
+
+  const carregarNoForm = (data: OfertaAtivaRow) => {
+    setPrecoAvista(String(data.preco_avista ?? ''));
+    setCartaoParcelas(String(data.cartao_parcelas ?? ''));
+    setCartaoValorParcela(String(data.cartao_valor_parcela ?? ''));
+    setBoletoEntrada(String(data.boleto_entrada ?? ''));
+    setBoletoParcelas(String(data.boleto_parcelas ?? ''));
+    setBoletoValorParcela(String(data.boleto_valor_parcela ?? ''));
+    setValorTotalBonus(data.valor_total_bonus != null ? String(data.valor_total_bonus) : '');
+    setBonusItens((data.bonus ?? []).map(b => ({ nome: b.nome, valor: String(b.valor), limitado: b.limitado ?? '' })));
+  };
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await (supabase.from('leads_ia_oferta_ativa' as any) as any)
+      .select('id, preco_avista, cartao_parcelas, cartao_valor_parcela, boleto_entrada, boleto_parcelas, boleto_valor_parcela, valor_total_bonus, bonus')
+      .eq('ativo', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!error && data) {
+      setRow(data as any);
+      carregarNoForm(data as any);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const addBonus = () => setBonusItens(prev => [...prev, { nome: '', valor: '', limitado: '' }]);
+  const removeBonus = (idx: number) => setBonusItens(prev => prev.filter((_, i) => i !== idx));
+  const updateBonus = (idx: number, patch: Partial<OfertaBonusItem>) =>
+    setBonusItens(prev => prev.map((b, i) => (i === idx ? { ...b, ...patch } : b)));
+
+  const salvar = async () => {
+    const numPrecoAvista = Number(precoAvista.replace(',', '.'));
+    const numCartaoParcelas = parseInt(cartaoParcelas, 10);
+    const numCartaoValorParcela = Number(cartaoValorParcela.replace(',', '.'));
+    const numBoletoEntrada = Number(boletoEntrada.replace(',', '.'));
+    const numBoletoParcelas = parseInt(boletoParcelas, 10);
+    const numBoletoValorParcela = Number(boletoValorParcela.replace(',', '.'));
+    if ([numPrecoAvista, numCartaoParcelas, numCartaoValorParcela, numBoletoEntrada, numBoletoParcelas, numBoletoValorParcela].some(n => Number.isNaN(n))) {
+      toast.error('Confira os valores de preço e parcelas -- tem algum campo numérico inválido.');
+      return;
+    }
+    const bonusValidos = bonusItens
+      .filter(b => b.nome.trim())
+      .map(b => ({ nome: b.nome.trim(), valor: Number(b.valor.replace(',', '.')) || 0, limitado: b.limitado.trim() || null }));
+
+    const payload = {
+      preco_avista: numPrecoAvista,
+      cartao_parcelas: numCartaoParcelas,
+      cartao_valor_parcela: numCartaoValorParcela,
+      boleto_entrada: numBoletoEntrada,
+      boleto_parcelas: numBoletoParcelas,
+      boleto_valor_parcela: numBoletoValorParcela,
+      valor_total_bonus: valorTotalBonus.trim() ? Number(valorTotalBonus.replace(',', '.')) : null,
+      bonus: bonusValidos,
+      updated_at: new Date().toISOString(),
+    };
+
+    setSalvando(true);
+    const { error } = row
+      ? await (supabase.from('leads_ia_oferta_ativa' as any) as any).update(payload).eq('id', row.id)
+      : await (supabase.from('leads_ia_oferta_ativa' as any) as any).insert({ ...payload, ativo: true });
+    setSalvando(false);
+    if (error) { toast.error(`Erro ao salvar oferta: ${error.message}`); return; }
+    toast.success('Oferta atualizada -- o SDR já usa esses valores na próxima resposta.');
+    load();
+  };
+
+  if (loading) return <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>;
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">
+        Preço, parcelas e bônus que o SDR de IA apresenta pro lead. Atualize aqui sempre que a promoção mudar -- não precisa de deploy, a próxima resposta da IA já usa os valores novos.
+      </p>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div>
+          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Preço à vista (R$)</label>
+          <Input value={precoAvista} onChange={e => setPrecoAvista(e.target.value)} placeholder="997,00" className="mt-1 h-8 text-sm" />
+        </div>
+        <div>
+          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Parcelas cartão</label>
+          <Input value={cartaoParcelas} onChange={e => setCartaoParcelas(e.target.value)} placeholder="12" className="mt-1 h-8 text-sm" />
+        </div>
+        <div>
+          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Valor da parcela (cartão)</label>
+          <Input value={cartaoValorParcela} onChange={e => setCartaoValorParcela(e.target.value)} placeholder="109,40" className="mt-1 h-8 text-sm" />
+        </div>
+        <div>
+          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Entrada boleto (R$)</label>
+          <Input value={boletoEntrada} onChange={e => setBoletoEntrada(e.target.value)} placeholder="110,00" className="mt-1 h-8 text-sm" />
+        </div>
+        <div>
+          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Parcelas boleto</label>
+          <Input value={boletoParcelas} onChange={e => setBoletoParcelas(e.target.value)} placeholder="14" className="mt-1 h-8 text-sm" />
+        </div>
+        <div>
+          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Valor da parcela (boleto)</label>
+          <Input value={boletoValorParcela} onChange={e => setBoletoValorParcela(e.target.value)} placeholder="110,00" className="mt-1 h-8 text-sm" />
+        </div>
+        <div>
+          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Valor total em bônus (R$, opcional)</label>
+          <Input value={valorTotalBonus} onChange={e => setValorTotalBonus(e.target.value)} placeholder="2247,00" className="mt-1 h-8 text-sm" />
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+            <Gift className="h-3.5 w-3.5 text-emerald-600" /> Bônus da matrícula
+          </label>
+          <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs" onClick={addBonus}>
+            <Plus className="h-3.5 w-3.5" /> Adicionar bônus
+          </Button>
+        </div>
+        <div className="space-y-2">
+          {bonusItens.length === 0 && <p className="text-xs text-muted-foreground">Nenhum bônus cadastrado.</p>}
+          {bonusItens.map((b, idx) => (
+            <div key={idx} className="flex items-center gap-2">
+              <Input value={b.nome} onChange={e => updateBonus(idx, { nome: e.target.value })} placeholder="Nome do bônus" className="h-8 flex-1 text-sm" />
+              <Input value={b.valor} onChange={e => updateBonus(idx, { valor: e.target.value })} placeholder="Valor R$" className="h-8 w-24 text-sm" />
+              <Input value={b.limitado} onChange={e => updateBonus(idx, { limitado: e.target.value })} placeholder="Limite (opcional)" className="h-8 w-40 text-sm" />
+              <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-red-500 hover:text-red-600" onClick={() => removeBonus(idx)}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex justify-end">
+        <Button size="sm" className="gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700" disabled={salvando} onClick={salvar}>
+          {salvando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DollarSign className="h-3.5 w-3.5" />}
+          Salvar oferta
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ── Detalhe da tarefa ────────────────────────────────────────────────────────
 
 function TarefaDetalhe({ tarefa, onNavigateToPosts, onNavigateToAluno }: { tarefa: Tarefa; onNavigateToPosts?: () => void; onNavigateToAluno?: (alunoId: string) => void }) {
@@ -1076,6 +1348,30 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
                 <HistoricoDecisoes agenteId={agente.id} />
               </div>
             </details>
+            {agente.slug === 'sdr-leads-idm' && (
+              <>
+                <details className="group rounded-xl border border-border bg-white" open>
+                  <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-xs font-semibold text-slate-700">
+                    <DollarSign className="h-3.5 w-3.5 text-emerald-600" />
+                    Oferta ativa (preço e bônus)
+                    <ChevronDown className="ml-auto h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+                  </summary>
+                  <div className="border-t border-border p-3">
+                    <OfertaAtivaEditor />
+                  </div>
+                </details>
+                <details className="group rounded-xl border border-border bg-white" open>
+                  <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-xs font-semibold text-slate-700">
+                    <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                    Sugestões de conhecimento pra aprovar
+                    <ChevronDown className="ml-auto h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+                  </summary>
+                  <div className="border-t border-border p-3">
+                    <SugestoesConhecimento />
+                  </div>
+                </details>
+              </>
+            )}
             <details className="group rounded-xl border border-border bg-white">
               <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-xs font-semibold text-slate-700">
                 <Clock3 className="h-3.5 w-3.5 text-slate-500" />
