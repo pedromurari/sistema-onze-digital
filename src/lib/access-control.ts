@@ -17,6 +17,7 @@ export interface AccessPermissions {
   canViewRodrygo: boolean;
   canViewTeam: boolean;
   canViewSettings: boolean;
+  canViewTimeComercial: boolean;
 }
 
 export type AppView =
@@ -25,7 +26,7 @@ export type AppView =
   | 'team' | 'settings' | 'cobranca' | 'funil_lancamento' | 'disparos_monitor' | 'chat_conversas'
   | 'operacoes_tarefas' | 'operacoes_calendario_geral' | 'operacoes_calendario_conteudo'
   | 'mapa_mental' | 'produtos' | 'franquia_psi' | 'posts' | 'parceiros' | 'equipe_11ds' | 'reels_idm'
-  | 'aquecimento_chips';
+  | 'aquecimento_chips' | 'time_comercial';
 
 export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
   canViewDashboard: true,
@@ -46,6 +47,7 @@ export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
   canViewRodrygo: true,
   canViewTeam: false,
   canViewSettings: false,
+  canViewTimeComercial: true,
 };
 
 export const DEFAULT_ADMIN_PERMISSIONS: AccessPermissions = {
@@ -53,6 +55,7 @@ export const DEFAULT_ADMIN_PERMISSIONS: AccessPermissions = {
   canViewCobranca: true,
   canViewTeam: true,
   canViewSettings: true,
+  canViewTimeComercial: true,
 };
 
 export function getDefaultPermissions(role?: string): AccessPermissions {
@@ -83,6 +86,7 @@ export function normalizePermissionsRow(row: any, role?: string): AccessPermissi
     canViewRodrygo: row.can_view_rodrygo ?? defaults.canViewRodrygo,
     canViewTeam: row.can_view_team ?? defaults.canViewTeam,
     canViewSettings: row.can_view_settings ?? defaults.canViewSettings,
+    canViewTimeComercial: row.can_view_time_comercial ?? defaults.canViewTimeComercial,
   };
 }
 
@@ -106,6 +110,7 @@ export function permissionsToRow(permissions: AccessPermissions) {
     can_view_rodrygo: permissions.canViewRodrygo,
     can_view_team: permissions.canViewTeam,
     can_view_settings: permissions.canViewSettings,
+    can_view_time_comercial: permissions.canViewTimeComercial,
   };
 }
 
@@ -138,6 +143,7 @@ export function canAccessView(view: string, permissions: AccessPermissions, isAd
   const permissionByView: Partial<Record<AppView, boolean>> = {
     dashboard: permissions.canViewDashboard,
     pipeline: permissions.canViewPipeline,
+    time_comercial: permissions.canViewTimeComercial,
     npa_overview: permissions.canViewNpa,
     financeiro: permissions.canViewFinanceiro,
     financeiro_cfo: permissions.canViewFinanceiroCfo,

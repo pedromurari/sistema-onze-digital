@@ -33,6 +33,7 @@ const Posts             = lazy(() => import('./Posts').then(m => ({ default: m.P
 const Parceiros         = lazy(() => import('./Parceiros').then(m => ({ default: m.Parceiros })));
 const Equipe11ds        = lazy(() => import('./Equipe11ds').then(m => ({ default: m.Equipe11ds })));
 const ReelsIDM           = lazy(() => import('./ReelsIDM').then(m => ({ default: m.ReelsIDM })));
+const TimeComercial      = lazy(() => import('./TimeComercial').then(m => ({ default: m.TimeComercial })));
 
 function ModuleLoader() {
   return (
@@ -228,6 +229,7 @@ export function CRMLayout() {
     switch (currentView) {
       case 'dashboard': return <Dashboard />;
       case 'pipeline': return <Pipeline onEditLead={handleEditLead} />;
+      case 'time_comercial': return <TimeComercial />;
       case 'npa_overview': return <NPAEventos />;
       case 'financeiro': return <Financeiro />;
       case 'financeiro_cfo': return <FinanceiroCFO />;
