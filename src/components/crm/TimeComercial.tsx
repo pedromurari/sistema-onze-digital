@@ -416,7 +416,7 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
   const [historico, setHistorico] = useState<{ lead: LeadComCanal; itens: any[] } | null>(null);
   const abrirHistorico = async (lead: LeadComCanal) => {
     const { data, error } = await (supabase as any).from('leads_historico_fase')
-      .select('fase_anterior, fase_nova, vendedor, criado_em')
+      .select('fase_anterior, fase_nova, vendedor, origem_mudanca, criado_em')
       .eq('lead_id', lead.id)
       .order('criado_em', { ascending: true });
     if (error) {
@@ -806,18 +806,26 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
               <p className="text-sm text-muted-foreground">Sem histórico registrado ainda.</p>
             )}
             {historico?.itens.map((item, idx) => {
+              const isAtribuicao = item.origem_mudanca === 'atribuicao';
+              const isDevolucao = item.origem_mudanca === 'devolucao';
               const stageInfo = (historico.lead.canal === 'SDD' ? SDD_STAGES : GENERIC_STAGES).find((s) => s.key === item.fase_nova);
+              const titulo = isAtribuicao
+                ? `Lead atribuído a ${item.vendedor}`
+                : isDevolucao
+                ? `Lead devolvido${item.vendedor ? ` por ${item.vendedor}` : ''}`
+                : (stageInfo?.label ?? item.fase_nova);
+              const corPonto = isAtribuicao ? 'bg-success' : isDevolucao ? 'bg-warning' : (stageInfo?.color ?? 'bg-muted-foreground');
               return (
                 <div key={idx} className="flex gap-3">
                   <div className="flex flex-col items-center flex-shrink-0">
-                    <div className={`w-2.5 h-2.5 rounded-full ${stageInfo?.color ?? 'bg-muted-foreground'}`} />
+                    <div className={`w-2.5 h-2.5 rounded-full ${corPonto}`} />
                     {idx < (historico?.itens.length ?? 0) - 1 && <div className="w-px flex-1 bg-border mt-1" />}
                   </div>
                   <div className="pb-3">
-                    <p className="text-sm font-medium text-foreground">{stageInfo?.label ?? item.fase_nova}</p>
+                    <p className="text-sm font-medium text-foreground">{titulo}</p>
                     <p className="text-xs text-muted-foreground">
                       {new Date(item.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      {item.vendedor && ` · ${item.vendedor}`}
+                      {!isAtribuicao && !isDevolucao && item.vendedor && ` · ${item.vendedor}`}
                     </p>
                   </div>
                 </div>
