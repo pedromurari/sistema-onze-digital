@@ -26,6 +26,16 @@ import {
 import { format, isSameMonth, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { isPagamentoInadimplente, calcTaxaTransacao, taxaDoPagamento, type TaxaDetalhe } from '@/lib/financial-utils';
+import {
+  type PaymentMethod,
+  todayDateInput,
+  normalizePaymentMethod,
+  paymentMethodTotal,
+  extractDueDay,
+  buildInstallments,
+  sincronizarParcelasAluno,
+  assignTurmaEAtualizarParcelas,
+} from '@/lib/parcelasAluno';
 
 interface Turma {
   id: string;
@@ -159,7 +169,6 @@ interface ParcelaLocal {
 
 type ProdutoTab = 'psicanalise' | 'numerologia';
 type SubView = 'alunos' | 'turmas' | 'responsaveis';
-type PaymentMethod = 'boleto' | 'cartao' | 'avista';
 type PaymentFilter = 'todos' | PaymentMethod;
 type DueFilter = 'todos' | 'vencidos' | 'hoje' | 'proximos_7' | 'proximos_30' | 'quitados';
 type DueDayFilter = 'todos' | `dia_${number}`;
@@ -170,11 +179,6 @@ const formatCurrency = (v: number) =>
 const safeDate = (s?: string) => {
   if (!s) return '';
   try { return format(parseISO(s), 'dd/MM/yyyy', { locale: ptBR }); } catch { return s; }
-};
-
-const todayDateInput = () => {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 };
 
 const toDateInput = (value?: string | null) => {
@@ -192,32 +196,11 @@ const parseDateOnly = (value?: string | null) => {
   return new Date(year, month - 1, day, 12, 0, 0);
 };
 
-const dateWithClampedDay = (year: number, month: number, day: number) => {
-  const lastDay = new Date(year, month + 1, 0).getDate();
-  return new Date(year, month, Math.min(day, lastDay), 12, 0, 0);
-};
-
-const normalizePaymentMethod = (value?: string | null): PaymentMethod => {
-  const normalized = (value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-  if (normalized === 'cartao') return 'cartao';
-  if (normalized === 'pix' || normalized === 'avista' || normalized === 'a_vista' || normalized === 'a vista') return 'avista';
-  return 'boleto';
-};
-
-const paymentMethodTotal = (method?: string | null) => {
-  const normalized = normalizePaymentMethod(method);
-  if (normalized === 'cartao') return 1;
-  if (normalized === 'avista') return 1;
-  return 15;
-};
-
 const readDueDay = (value?: string | number | null) => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   const match = String(value || '').match(/\d+/);
   return match ? Number(match[0]) : null;
 };
-
-const extractDueDay = (value?: string | number | null) => readDueDay(value) || 10;
 
 const extractDateDay = (value?: string | null) => {
   const date = parseDateOnly(value);
@@ -236,71 +219,6 @@ const getAlunoDueDay = (
 
   const parcelaBase = parcelas.find(p => p.numero_parcela > 1 && p.data_vencimento) || parcelas.find(p => p.data_vencimento);
   return extractDateDay(parcelaBase?.data_vencimento) || 10;
-};
-
-const buildInstallments = ({
-  alunoId,
-  turmaId,
-  produto,
-  valor,
-  method,
-  diaVencimento,
-  dataMatricula,
-  dataSegundaParcela,
-  existingPaidNumbers = new Set<number>(),
-  minTotal,
-  isIsento = false,
-}: {
-  alunoId: string;
-  turmaId: string;
-  produto: string;
-  valor: number;
-  method: PaymentMethod;
-  diaVencimento: number;
-  dataMatricula?: string | null;
-  dataSegundaParcela?: Date | null;
-  existingPaidNumbers?: Set<number>;
-  minTotal?: number;
-  isIsento?: boolean;
-}) => {
-  const matricula = parseDateOnly(dataMatricula) || new Date();
-  const targetTotal = (minTotal != null && minTotal > 0) ? minTotal : paymentMethodTotal(method);
-  const matriculaDate = formatLocalDate(matricula);
-
-  return Array.from({ length: targetTotal }, (_, index) => {
-    const numeroParcela = index + 1;
-    if (existingPaidNumbers.has(numeroParcela)) return null;
-
-    let dueDate: Date;
-    if (index === 0) {
-      dueDate = matricula;
-    } else if (dataSegundaParcela) {
-      // Âncora na 2ª parcela: parcela 2 = anchor, parcela 3 = anchor+1m, etc.
-      dueDate = dateWithClampedDay(
-        dataSegundaParcela.getFullYear(),
-        dataSegundaParcela.getMonth() + (index - 1),
-        dataSegundaParcela.getDate(),
-      );
-    } else {
-      dueDate = dateWithClampedDay(matricula.getFullYear(), matricula.getMonth() + index, diaVencimento);
-    }
-    const dueDateText = formatLocalDate(dueDate);
-    const mesReferencia = formatLocalDate(new Date(dueDate.getFullYear(), dueDate.getMonth(), 1, 12, 0, 0));
-    const paidByPlan = method === 'cartao' || method === 'avista' || (method === 'boleto' && index === 0);
-
-    return {
-      aluno_id: alunoId,
-      turma_id: turmaId,
-      produto,
-      valor: isIsento ? 0 : valor,
-      mes_referencia: mesReferencia,
-      data_vencimento: dueDateText,
-      numero_parcela: numeroParcela,
-      status: isIsento ? 'isento' : (paidByPlan ? 'pago' : 'pendente'),
-      data_pagamento: isIsento ? null : (paidByPlan ? matriculaDate : null),
-      observacoes: index === 0 ? 'Ato de matricula' : null,
-    };
-  }).filter(Boolean);
 };
 
 const statusColors: Record<string, string> = {
@@ -1376,99 +1294,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
       .eq('id', alunoId);
   };
 
-  const sincronizarParcelasAluno = async ({
-    alunoId,
-    turmaId,
-    produto,
-    method,
-    diaVencimento,
-    dataMatricula,
-    dataSegundaParcela,
-    valor,
-    customTotal,
-    isIsento = false,
-  }: {
-    alunoId: string;
-    turmaId: string;
-    produto: string;
-    method: PaymentMethod;
-    diaVencimento: number;
-    dataMatricula?: string | null;
-    dataSegundaParcela?: Date | null;
-    valor: number;
-    customTotal?: number;
-    isIsento?: boolean;
-  }) => {
-    // Busca direto do banco para garantir estado atual completo (evita duplicatas por estado React desatualizado)
-    const { data: dbPagamentos } = await supabase
-      .from('pagamentos')
-      .select('id, aluno_id, turma_id, produto, valor, mes_referencia, data_vencimento, data_pagamento, numero_parcela, status, created_at')
-      .eq('aluno_id', alunoId);
-    const existentes = (dbPagamentos ?? [])
-      .sort((a, b) => (a.numero_parcela || 0) - (b.numero_parcela || 0));
-
-    if (isIsento) {
-      if (existentes.length > 0) {
-        const { error } = await supabase.from('pagamentos').delete().in('id', existentes.map(p => p.id));
-        if (error) throw error;
-      }
-      const total = (customTotal && customTotal > 0) ? customTotal : paymentMethodTotal(method);
-      const rows = buildInstallments({ alunoId, turmaId, produto, valor: 0, method, diaVencimento, dataMatricula, dataSegundaParcela, minTotal: total, isIsento: true });
-      if (rows.length > 0) {
-        const { error } = await supabase.from('pagamentos').insert(rows as any[]);
-        if (error) throw error;
-      }
-      const { error } = await supabase.from('alunos').update({ mensalidades_pagas: 0, total_mensalidades: total }).eq('id', alunoId);
-      if (error) throw error;
-      return;
-    }
-
-    const pagas = existentes.filter(p => p.status === 'pago');
-    const numerosPagos = new Set(pagas.map(p => p.numero_parcela || 0).filter(Boolean));
-    const maiorParcelaPaga = Math.max(0, ...Array.from(numerosPagos));
-    const baseTotal = (customTotal && customTotal > 0) ? customTotal : paymentMethodTotal(method);
-    const total = Math.max(baseTotal, maiorParcelaPaga, pagas.length);
-    const abertas = existentes.filter(p => p.status !== 'pago');
-
-    if (abertas.length > 0) {
-      const { error } = await supabase.from('pagamentos').delete().in('id', abertas.map(p => p.id));
-      if (error) throw error;
-    }
-
-    if (pagas.length > 0) {
-      const { error } = await supabase
-        .from('pagamentos')
-        .update({ turma_id: turmaId, produto })
-        .eq('aluno_id', alunoId)
-        .eq('status', 'pago');
-      if (error) throw error;
-    }
-
-    const rows = buildInstallments({
-      alunoId,
-      turmaId,
-      produto,
-      valor,
-      method,
-      diaVencimento,
-      dataMatricula,
-      dataSegundaParcela,
-      existingPaidNumbers: numerosPagos,
-      minTotal: total,
-    });
-
-    if (rows.length > 0) {
-      const { error } = await supabase.from('pagamentos').insert(rows as any[]);
-      if (error) throw error;
-    }
-
-    const pagasNoPlano = rows.filter((row: any) => row.status === 'pago').length + pagas.length;
-    const { error } = await supabase
-      .from('alunos')
-      .update({ mensalidades_pagas: pagasNoPlano, total_mensalidades: total })
-      .eq('id', alunoId);
-    if (error) throw error;
-  };
+  // sincronizarParcelasAluno agora vive em src/lib/parcelasAluno.ts (compartilhado com TimeComercial.tsx)
 
   const createAluno = async (forceCreate = false) => {
     if (!newAlunoForm.nome.trim() || !newAlunoForm.turma_id) return;
@@ -2008,30 +1834,19 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
 
   const quickAssignTurma = async (alunoId: string, turmaId: string) => {
     setAssigningTurma(prev => ({ ...prev, [alunoId]: true }));
-    const { error } = await supabase.from('alunos').update({ turma_id: turmaId }).eq('id', alunoId);
-    if (error) {
+    try {
+      const aluno = alunos.find(a => a.id === alunoId);
+      if (aluno) {
+        // Atualiza turma_id + recalcula parcelas em um unico lugar (compartilhado com TimeComercial.tsx)
+        await assignTurmaEAtualizarParcelas(alunoId, turmaId, aluno);
+      } else {
+        const { error } = await supabase.from('alunos').update({ turma_id: turmaId }).eq('id', alunoId);
+        if (error) throw error;
+      }
+    } catch (error: any) {
       setAssigningTurma(prev => ({ ...prev, [alunoId]: false }));
       toast({ variant: 'destructive', title: 'Erro', description: error.message });
       return;
-    }
-    const aluno = alunos.find(a => a.id === alunoId);
-    if (aluno) {
-      const method = normalizePaymentMethod(aluno.forma_pagamento);
-      const diaVenc = extractDueDay(aluno.dia_vencimento || aluno.dia_vencimento_contrato);
-      const valorEfetivo = getValorEfetivo(turmaId, aluno.valor_mensalidade ?? null);
-      const isIsento = aluno.tipo_pagamento === 'bolsa' || aluno.tipo_pagamento === 'cortesia';
-      await sincronizarParcelasAluno({
-        alunoId,
-        turmaId,
-        produto: aluno.produto,
-        method,
-        diaVencimento: diaVenc,
-        dataMatricula: aluno.data_matricula || todayDateInput(),
-        dataSegundaParcela: null,
-        valor: valorEfetivo,
-        customTotal: aluno.total_mensalidades,
-        isIsento,
-      });
     }
     setAssigningTurma(prev => ({ ...prev, [alunoId]: false }));
     toast({ title: 'Turma atribuida!' });

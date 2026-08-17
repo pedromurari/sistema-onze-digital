@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Kanban, Settings, UserCog,
   Rocket, BarChart3, ChevronDown,
   ChevronLeft, ChevronRight, Plus, Brain, Scale, Menu,
-  GripVertical, Pencil, Check, MessageSquare, MessageCircle, TrendingUp, GitBranch, CalendarDays, ShoppingBag, Radio, Image, Handshake, Bot, Video, Flame,
+  GripVertical, Pencil, Check, MessageSquare, MessageCircle, TrendingUp, GitBranch, CalendarDays, ShoppingBag, Radio, Image, Handshake, Bot, Video, Flame, Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,6 +38,8 @@ const BASE_MENU: MenuItem[] = [
   { key: 'operacoes_calendario_geral', label: 'Calendário',          icon: CalendarDays },
   // CRM
   { key: 'pipeline',                   label: 'Leads Diretos',       icon: Kanban },
+  // CRM Time Comercial
+  { key: 'time_comercial',             label: 'Time Comercial',      icon: Users },
   // Vendas & Parcerias
   { key: 'produtos',                   label: 'Produtos',            icon: ShoppingBag, adminOnly: true },
   { key: 'parceiros',                  label: 'Parceiros',           icon: Handshake,   adminOnly: true },
@@ -103,6 +105,7 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
   const SECTION_BEFORE: Record<string, string> = {
     dashboard:          'Início',
     pipeline:           'CRM',
+    time_comercial:     'CRM Time Comercial',
     produtos:           'Vendas & Parcerias',
     posts:              'Conteúdo',
     lancamentos_legado: 'Eventos',
