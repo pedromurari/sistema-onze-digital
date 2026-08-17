@@ -17,7 +17,7 @@ import { assignTurmaEAtualizarParcelas } from '@/lib/parcelasAluno';
 import {
   MessageCircle, Target, Copy, ExternalLink, Users, TrendingUp, DollarSign, CalendarDays,
   Video, Rocket, Repeat, GraduationCap, Link2, Wallet, CreditCard, Crown, Kanban, ClipboardList,
-  Search, X, History, Filter, CornerDownRight, Eye, Zap, BookOpen, UserX, Layers,
+  Search, X, History, Filter, CornerDownRight, Eye, Zap, BookOpen, Layers,
 } from 'lucide-react';
 
 // -----------------------------------------------------------------------
@@ -143,7 +143,6 @@ const LEADS_RENDER_LIMIT = 150;
 
 interface Contagem { canal: string; status: string; campanha_id: string | null; vendedor: string | null; total: number; }
 interface MetricaTurma { lancamento_id: string; turma_nome: string | null; leads_total: number; chegou_grupo_oferta: number; matriculados: number; }
-interface SemVendedorAntigo { canal: string; total: number; }
 
 // Sentinela pra "campanha_id IS NULL" — o funil ao vivo da turma atual (ex: Turma
 // #44), sem estar preso a nenhuma campanha de reativação de base antiga. É o que
@@ -157,7 +156,6 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
   const [canalAtivo, setCanalAtivo] = useState<CanalAquisicao | 'todos'>('todos');
   const [campanhaAtiva, setCampanhaAtiva] = useState<string | 'todas'>('todas');
   const [metricasTurma, setMetricasTurma] = useState<MetricaTurma[]>([]);
-  const [semVendedorAntigo, setSemVendedorAntigo] = useState<SemVendedorAntigo[]>([]);
   const [busca, setBusca] = useState('');
   const [buscaDebounced, setBuscaDebounced] = useState('');
   const [turmasPorId, setTurmasPorId] = useState<Record<string, string>>({});
@@ -254,17 +252,11 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
   };
 
   // "Leads por turma" + taxa de conversão Grupo de Oferta → Matrícula (por turma SDD)
-  // e leads sem vendedor há mais de 48h — métricas extras pra ajudar admin a enxergar
-  // gargalo de atribuição e comparar o desempenho de cada turma.
+  // — métrica extra pra comparar o desempenho de cada turma.
   const fetchMetricasExtras = async () => {
-    const [{ data: turmas, error: e1 }, { data: semVendedor, error: e2 }] = await Promise.all([
-      (supabase as any).rpc('time_comercial_metricas_turma'),
-      (supabase as any).rpc('time_comercial_sem_vendedor_antigo', { dias: 2 }),
-    ]);
-    if (e1) console.error('Erro ao carregar métricas por turma:', e1);
-    if (e2) console.error('Erro ao carregar métrica de leads sem vendedor:', e2);
+    const { data: turmas, error } = await (supabase as any).rpc('time_comercial_metricas_turma');
+    if (error) console.error('Erro ao carregar métricas por turma:', error);
     if (turmas) setMetricasTurma(turmas as MetricaTurma[]);
-    if (semVendedor) setSemVendedorAntigo(semVendedor as SemVendedorAntigo[]);
   };
 
   useEffect(() => {
@@ -542,18 +534,6 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
           hint={leadsAtribuidos > 0 ? `${((leadsEmMatricula / leadsAtribuidos) * 100).toFixed(1)}% dos leads em gestão (com vendedor)` : 'Nenhum lead com vendedor ainda'}
           icon={TrendingUp}
         />
-        {canalAtivo !== RETORNO_CANAL && (
-          <StatTile
-            label="Sem vendedor há +48h"
-            value={canalAtivo === 'todos'
-              // Não soma o Retorno/Base aqui — é base antiga, esperado estar toda sem
-              // vendedor; incluir só afogaria o alerta que importa (leads novos parados).
-              ? semVendedorAntigo.filter((s) => s.canal !== RETORNO_CANAL).reduce((soma, s) => soma + Number(s.total), 0)
-              : (semVendedorAntigo.find((s) => s.canal === canalAtivo)?.total ?? 0)}
-            hint="Precisam ser atribuídos a alguém"
-            icon={UserX}
-          />
-        )}
       </div>
 
       {metricasTurma.length > 0 && canalAtivo === 'SDD' && (
