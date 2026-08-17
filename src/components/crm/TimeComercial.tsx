@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
 import { Lead, PipelineStage } from '@/types/crm';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -8,11 +7,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { dbRowToLead } from '@/contexts/LeadsContext';
 import { assignTurmaEAtualizarParcelas } from '@/lib/parcelasAluno';
-import { MessageCircle, Users, Target, TrendingUp, DollarSign, Copy, ExternalLink } from 'lucide-react';
+import {
+  MessageCircle, Target, Copy, ExternalLink, Users, TrendingUp, DollarSign, CalendarDays,
+  Video, Rocket, Repeat, GraduationCap, Link2, Wallet, CreditCard, Crown, Kanban, ClipboardList,
+  Search, X, History, Filter, CornerDownRight, Eye, Zap, BookOpen, UserX, Layers,
+} from 'lucide-react';
 
 // -----------------------------------------------------------------------
 // Funil — pool de leads independente de "Leads Diretos" (Pipeline.tsx).
@@ -23,13 +29,30 @@ import { MessageCircle, Users, Target, TrendingUp, DollarSign, Copy, ExternalLin
 // compartilham estrutura, so paleta.
 // -----------------------------------------------------------------------
 
-type TimeComercialStage = 'novo' | 'sdr' | 'closer' | 'matricula';
+type GenericStage = 'retorno' | 'novo' | 'sdr' | 'closer' | 'matricula';
+type SddStage = 'frio' | 'pre_aquecimento' | 'grupo_oferta' | 'primeiro_contato' | 'negociacao' | 'matricula';
+type TimeComercialStage = GenericStage | SddStage;
 
-// Etapas provisórias — o dono do negócio ainda vai renomear/reorganizar isso.
-const TIME_COMERCIAL_STAGES: { key: TimeComercialStage; label: string; color: string }[] = [
+// Etapas provisórias — ainda valem pra canais sem funil próprio definido.
+const GENERIC_STAGES: { key: TimeComercialStage; label: string; color: string }[] = [
   { key: 'novo', label: 'Novo', color: 'bg-pipeline-novo' },
   { key: 'sdr', label: 'SDR', color: 'bg-pipeline-sdr' },
   { key: 'closer', label: 'Closer', color: 'bg-pipeline-closer' },
+  { key: 'matricula', label: 'Matrícula', color: 'bg-pipeline-matricula' },
+];
+
+// "Retorno" substitui "Novo" como ponto de entrada — só pra campanhas marcadas como
+// tipo "retorno" (lead que já existia no sistema antes, não é contato inédito). Não
+// é uma etapa genérica fixa: só aparece na aba quando existe algum lead nela.
+const RETORNO_STAGE: { key: TimeComercialStage; label: string; color: string } = { key: 'retorno', label: 'Retorno', color: 'bg-pipeline-followup3' };
+
+// Funil próprio do canal SDD (Semana do Despertar) — definido pelo dono do negócio.
+const SDD_STAGES: { key: TimeComercialStage; label: string; color: string }[] = [
+  { key: 'frio', label: 'Frio', color: 'bg-pipeline-sdr' },
+  { key: 'pre_aquecimento', label: 'Pré-aquecimento', color: 'bg-pipeline-followup1' },
+  { key: 'grupo_oferta', label: 'Grupo de Oferta', color: 'bg-pipeline-aquecimento' },
+  { key: 'primeiro_contato', label: 'Primeiro contato', color: 'bg-pipeline-followup2' },
+  { key: 'negociacao', label: 'Negociação', color: 'bg-pipeline-closer' },
   { key: 'matricula', label: 'Matrícula', color: 'bg-pipeline-matricula' },
 ];
 
@@ -38,7 +61,15 @@ const TIME_COMERCIAL_STAGES: { key: TimeComercialStage; label: string; color: st
 const CANAIS_AQUISICAO = ['SDD', 'Direto', 'Webinário', 'Workshop', 'Retorno/Base', 'Orgânico'] as const;
 type CanalAquisicao = typeof CANAIS_AQUISICAO[number];
 
-type LeadComCanal = Lead & { canal?: string | null };
+// Canal dedicado às campanhas de retorno (base antiga) — todas moradas aqui, separadas
+// por campanha, em vez de ficarem misturadas dentro do canal de origem (SDD, Direto
+// etc.). A exclusão de "campanha de retorno" nos totais/pills dos OUTROS canais não
+// se aplica aqui: esse canal existe justamente pra mostrar essa base.
+const RETORNO_CANAL: CanalAquisicao = 'Retorno/Base';
+
+type LeadComCanal = Lead & { canal?: string | null; vendedor?: string | null; lancamentoId?: string | null; cidade?: string | null; campanhaId?: string | null };
+
+interface Campanha { id: string; canal: string; nome: string; condicoes: string | null; ativa: boolean; tipo: 'novo' | 'retorno'; }
 
 const formatCurrency = (value?: number) => {
   if (!value) return '-';
@@ -47,19 +78,139 @@ const formatCurrency = (value?: number) => {
 
 const openWhatsApp = (phone: string) => window.open(`https://wa.me/55${phone.replace(/\D/g, '')}`, '_blank');
 
+// Estilo "premium" reaproveitado nas tabelas de dados (Remuneração, Metas, Aquisição):
+// cabeçalho em degradê vinho e linhas zebradas num tom de vinho bem claro, em vez do
+// cabeçalho/zebra cinza padrão do componente Table.
+const PREMIUM_TABLE_HEADER_ROW = 'border-0 [&_th]:text-primary-foreground [&_th]:font-semibold [&_th]:first:rounded-tl-lg [&_th]:last:rounded-tr-lg bg-gradient-to-r from-primary to-primary/80';
+const premiumZebraRow = (idx: number) => (idx % 2 === 0 ? 'bg-card' : 'bg-primary/5');
+
+// Card de estatística reaproveitado em todas as abas (Funil, Operação, Metas, Aquisição,
+// Remuneração) — label em vinho, ícone lucide (mesma linguagem visual do resto do sistema,
+// em vez de emoji) em badge, leve brilho no canto pra não parecer bloco branco genérico.
+function StatTile({ label, value, hint, icon: Icon }: { label: string; value: React.ReactNode; hint?: string; icon?: React.ElementType }) {
+  return (
+    <Card className="p-3 lg:p-4 rounded-xl border-primary/15 shadow-[0_4px_14px_-4px_rgba(169,51,86,0.15)] relative overflow-hidden">
+      <div className="absolute -top-5 -right-5 w-20 h-20 rounded-full bg-primary/10 pointer-events-none" />
+      <div className="relative flex items-start justify-between gap-2">
+        <p className="text-[10px] font-bold uppercase tracking-wide text-primary">{label}</p>
+        {Icon && (
+          <div className="w-6 h-6 rounded-md bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0">
+            <Icon className="h-3.5 w-3.5" />
+          </div>
+        )}
+      </div>
+      <p className="text-xl lg:text-2xl font-bold text-foreground mt-1 relative">{value}</p>
+      {hint && <p className="text-xs text-muted-foreground mt-0.5 relative">{hint}</p>}
+    </Card>
+  );
+}
+
+// Barra + título usados pra separar visualmente os blocos de cada aba (ex: "Visão geral"
+// dos cards de estatística vs. a tabela principal logo abaixo).
+function SectionBar({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <div className="w-1 h-5 rounded-full bg-primary flex-shrink-0" />
+      <div>
+        <h2 className="text-sm font-bold text-foreground leading-tight">{title}</h2>
+        {subtitle && <p className="text-xs text-muted-foreground leading-tight mt-0.5">{subtitle}</p>}
+      </div>
+    </div>
+  );
+}
+
 interface VendorScopeProps { viewAsName: string | null; }
 
+function stageInfoFor(lead: LeadComCanal) {
+  if ((lead.etapa as string) === 'retorno') return RETORNO_STAGE;
+  const stages = lead.canal === 'SDD' ? SDD_STAGES : GENERIC_STAGES;
+  return stages.find((s) => s.key === lead.etapa) ?? stages[0];
+}
+
+// Coluna fixa antes de "Frio" — mostra TODOS os leads visíveis, sem filtrar por
+// etapa, cada um com o badge da própria fase. É o "não perde nenhum lead de vista"
+// pedido pelo dono do negócio: continua lá mesmo depois que o lead avança de fase.
+const LEADS_COLUMN_KEY = '__todos__';
+const LEADS_COLUMN = { key: LEADS_COLUMN_KEY, label: 'Leads', color: 'bg-slate-500' };
+
+// Teto de cards renderizados por vez — a base já passou de 11 mil leads (base fria
+// de lançamentos antigos importada), então buscar/renderizar tudo de uma vez
+// travaria o navegador. Números de contagem (badges, "Total de Leads") continuam
+// exatos mesmo além desse teto — vêm de time_comercial_contagens() (agregado no
+// banco), não da lista renderizada. O teto só limita quantos CARDS aparecem;
+// busca/campanha estreitam o que é buscado pra achar leads fora da 1ª leva.
+const LEADS_RENDER_LIMIT = 150;
+
+interface Contagem { canal: string; status: string; campanha_id: string | null; vendedor: string | null; total: number; }
+interface MetricaTurma { lancamento_id: string; turma_nome: string | null; leads_total: number; chegou_grupo_oferta: number; matriculados: number; }
+interface SemVendedorAntigo { canal: string; total: number; }
+
+// Sentinela pra "campanha_id IS NULL" — o funil ao vivo da turma atual (ex: Turma
+// #44), sem estar preso a nenhuma campanha de reativação de base antiga. É o que
+// o vendedor deve focar por padrão; "Todas as campanhas" e as campanhas de retorno
+// (Base Fria etc.) ficam disponíveis como opção, não como visão inicial.
+const CAMPANHA_PRINCIPAL = '__principal__';
+
 function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
-  const { users, getUserById } = useAuth();
   const [leads, setLeads] = useState<LeadComCanal[]>([]);
+  const [totalCarregavel, setTotalCarregavel] = useState(0);
   const [canalAtivo, setCanalAtivo] = useState<CanalAquisicao | 'todos'>('todos');
+  const [campanhaAtiva, setCampanhaAtiva] = useState<string | 'todas'>('todas');
+  const [metricasTurma, setMetricasTurma] = useState<MetricaTurma[]>([]);
+  const [semVendedorAntigo, setSemVendedorAntigo] = useState<SemVendedorAntigo[]>([]);
+  const [busca, setBusca] = useState('');
+  const [buscaDebounced, setBuscaDebounced] = useState('');
+  const [turmasPorId, setTurmasPorId] = useState<Record<string, string>>({});
+  const [campanhas, setCampanhas] = useState<Campanha[]>([]);
+  const [contagens, setContagens] = useState<Contagem[]>([]);
+  const [novaCampanhaOpen, setNovaCampanhaOpen] = useState(false);
+  const [novaCampanhaNome, setNovaCampanhaNome] = useState('');
+  const [novaCampanhaCondicoes, setNovaCampanhaCondicoes] = useState('');
+  const [novaCampanhaTipo, setNovaCampanhaTipo] = useState<'novo' | 'retorno'>('novo');
+  const [salvandoCampanha, setSalvandoCampanha] = useState(false);
+
+  // Campanha de retorno = base antiga reimportada (Base Fria, Grupo Oferta Não
+  // Matriculou, NPA Não Matriculou etc.) — conta pro "Total de Leads" só quando
+  // o vendedor abre essa campanha especificamente, não entra no total geral/canal
+  // pra não inflar o número com milhares de leads frios de anos atrás.
+  const campanhaIdsRetorno = campanhas.filter((c) => c.tipo === 'retorno').map((c) => c.id);
+  const isContagemRetorno = (c: Contagem) => c.campanha_id != null && campanhaIdsRetorno.includes(c.campanha_id);
+
+  // Debounce da busca — evita disparar uma query a cada tecla digitada.
+  useEffect(() => {
+    const t = setTimeout(() => setBuscaDebounced(busca.trim()), 300);
+    return () => clearTimeout(t);
+  }, [busca]);
 
   const fetchLeads = async () => {
-    const { data, error } = await supabase
+    let query = supabase
       .from('leads')
-      .select('*')
-      .eq('origem', 'Time Comercial')
-      .order('criado_em', { ascending: false });
+      .select('*', { count: 'exact' })
+      .eq('origem', 'Time Comercial');
+
+    if (canalAtivo !== 'todos') query = query.eq('canal', canalAtivo);
+    if (campanhaAtiva === CAMPANHA_PRINCIPAL) query = (query as any).is('campanha_id', null);
+    else if (campanhaAtiva !== 'todas') query = (query as any).eq('campanha_id', campanhaAtiva);
+    else if (canalAtivo !== RETORNO_CANAL) {
+      // "Todas as campanhas" exclui campanha de retorno (base antiga) — usa lista
+      // positiva (funil principal + campanhas de contato novo) em vez de "not in",
+      // que no Postgres descarta campanha_id NULL junto (lógica de 3 valores do SQL).
+      // Não se aplica dentro do próprio canal Retorno/Base — lá é 100% campanha de
+      // retorno por definição, excluir deixaria a lista vazia.
+      const campanhaIdsNaoRetorno = campanhas.filter((c) => c.tipo !== 'retorno').map((c) => c.id);
+      query = campanhaIdsNaoRetorno.length > 0
+        ? (query as any).or(`campanha_id.is.null,campanha_id.in.(${campanhaIdsNaoRetorno.join(',')})`)
+        : (query as any).is('campanha_id', null);
+    }
+    if (viewAsName) query = (query as any).or(`vendedor.is.null,vendedor.eq.${viewAsName}`);
+    if (buscaDebounced) {
+      const digitos = buscaDebounced.replace(/\D/g, '');
+      query = digitos.length >= 4
+        ? (query as any).or(`nome.ilike.%${buscaDebounced}%,telefone.ilike.%${digitos}%`)
+        : (query as any).ilike('nome', `%${buscaDebounced}%`);
+    }
+
+    const { data, error, count } = await query.order('criado_em', { ascending: false }).limit(LEADS_RENDER_LIMIT);
 
     if (error) {
       console.error('Erro ao carregar leads do Time Comercial:', error);
@@ -72,16 +223,65 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
     }
 
     if (data) {
-      setLeads(data.map((row: any) => ({ ...dbRowToLead(row), canal: row.canal })));
+      // interesse_produto é o produto/curso de interesse de verdade (ex: "Psicanálise");
+      // `produto` na tabela é categórico (direto/lancamento/npa/time_comercial), não serve
+      // pra exibir — sobrescreve o fallback de dbRowToLead que cairia nele por engano.
+      setLeads(data.map((row: any) => ({ ...dbRowToLead(row), canal: row.canal, vendedor: row.vendedor, cursoInteresse: row.interesse_produto || '', lancamentoId: row.lancamento_id, cidade: row.cidade, campanhaId: row.campanha_id })));
+      setTotalCarregavel(count ?? data.length);
     }
   };
 
+  // Contagens exatas (badges, "Total de Leads", decisão de mostrar coluna Retorno)
+  // vêm de uma função agregada no banco — não dá pra confiar em `leads.length`
+  // pra isso, já que `leads` é só a 1ª leva (ver LEADS_RENDER_LIMIT).
+  const fetchContagens = async () => {
+    const { data, error } = await (supabase as any).rpc('time_comercial_contagens');
+    if (error) {
+      console.error('Erro ao carregar contagens do Time Comercial:', error);
+      return;
+    }
+    if (data) setContagens(data as Contagem[]);
+  };
+
+  const contagemFiltrada = (pred: (c: Contagem) => boolean) =>
+    contagens
+      .filter((c) => pred(c) && (!viewAsName || !c.vendedor || c.vendedor === viewAsName))
+      .reduce((soma, c) => soma + Number(c.total), 0);
+
+  const fetchCampanhas = async () => {
+    const { data } = await (supabase as any).from('time_comercial_campanhas').select('*').order('criado_em', { ascending: false });
+    if (data) setCampanhas(data as Campanha[]);
+  };
+
+  // "Leads por turma" + taxa de conversão Grupo de Oferta → Matrícula (por turma SDD)
+  // e leads sem vendedor há mais de 48h — métricas extras pra ajudar admin a enxergar
+  // gargalo de atribuição e comparar o desempenho de cada turma.
+  const fetchMetricasExtras = async () => {
+    const [{ data: turmas, error: e1 }, { data: semVendedor, error: e2 }] = await Promise.all([
+      (supabase as any).rpc('time_comercial_metricas_turma'),
+      (supabase as any).rpc('time_comercial_sem_vendedor_antigo', { dias: 2 }),
+    ]);
+    if (e1) console.error('Erro ao carregar métricas por turma:', e1);
+    if (e2) console.error('Erro ao carregar métrica de leads sem vendedor:', e2);
+    if (turmas) setMetricasTurma(turmas as MetricaTurma[]);
+    if (semVendedor) setSemVendedorAntigo(semVendedor as SemVendedorAntigo[]);
+  };
+
   useEffect(() => {
-    fetchLeads();
+    fetchCampanhas();
+    fetchContagens();
+    fetchMetricasExtras();
+    // Nome da turma (ex: "Turma #44") pra exibir no card — buscado uma vez só,
+    // não muda com frequência.
+    supabase.from('lancamentos').select('id, nome').then(({ data }) => {
+      if (data) setTurmasPorId(Object.fromEntries(data.map((l: any) => [l.id, l.nome])));
+    });
     const channel = supabase
       .channel('time-comercial-leads')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'leads', filter: `origem=eq.Time Comercial` }, () => {
         fetchLeads();
+        fetchContagens();
+        fetchMetricasExtras();
       })
       .subscribe();
     return () => {
@@ -89,102 +289,374 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
     };
   }, []);
 
-  // Quando um vendedor especifico esta "logado" (viewAsName), so mostra os
-  // leads dele. Sem contas reais ainda, isso compara pelo nome do responsavel
-  // resolvido via getUserById — funciona assim que Helen/Miguel/Aline
-  // virarem usuarios reais com leads atribuidos.
-  const getLeadsByStage = (stage: TimeComercialStage) => leads.filter((lead) => {
-    if (lead.etapa !== stage) return false;
-    if (canalAtivo !== 'todos' && lead.canal !== canalAtivo) return false;
-    if (!viewAsName) return true;
-    return getUserById(lead.responsavelId)?.nome === viewAsName;
-  });
+  // Refaz a busca sempre que canal/campanha/busca (debounced) ou o vendedor
+  // simulado mudam — filtro acontece no banco, não em memória.
+  useEffect(() => {
+    fetchLeads();
+  }, [canalAtivo, campanhaAtiva, buscaDebounced, viewAsName, campanhas]);
 
-  const contagemPorCanal = (canal: CanalAquisicao) => leads.filter((l) => {
-    if (l.canal !== canal) return false;
-    if (!viewAsName) return true;
-    return getUserById(l.responsavelId)?.nome === viewAsName;
-  }).length;
+  const getLeadsByStage = (stage: TimeComercialStage) => leads.filter((lead) => lead.etapa === stage);
+
+  // "Novo" só faz sentido como aviso na visão "Todos os canais" — dentro de um canal
+  // específico o vendedor já sabe que está olhando pra base daquele canal; o alerta é
+  // pra quem está no panorama geral não perder um lead recém-chegado no meio da lista.
+  const isLeadRecente = (lead: LeadComCanal) => {
+    // Lead de campanha de retorno (base antiga reimportada) nunca é "novo", mesmo
+    // que tenha acabado de ser inserido no banco — criado_em aqui é a data da
+    // importação, não a data em que o lead surgiu de verdade.
+    if ((lead.etapa as string) === 'retorno') return false;
+    const criado = new Date(lead.criadoEm).getTime();
+    return !Number.isNaN(criado) && Date.now() - criado < 24 * 60 * 60 * 1000;
+  };
+
+  // Pill do canal não conta leads de campanha de retorno — só o que está "em jogo"
+  // agora (funil principal + campanhas de contato novo). A base antiga continua
+  // visível e contada normalmente dentro do seletor de campanha, só não infla esse número.
+  // Não se aplica ao próprio canal Retorno/Base, que é 100% campanha de retorno.
+  const contagemPorCanal = (canal: CanalAquisicao) => contagemFiltrada((c) => c.canal === canal && (canal === RETORNO_CANAL || !isContagemRetorno(c)));
+
+  const campanhasDoCanal = canalAtivo !== 'todos' ? campanhas.filter((c) => c.canal === canalAtivo && c.ativa) : [];
+  const contagemPorCampanha = (campanhaId: string) => contagemFiltrada((c) => c.canal === canalAtivo && c.campanha_id === campanhaId);
+  const contagemPrincipal = canalAtivo !== 'todos' ? contagemFiltrada((c) => c.canal === canalAtivo && c.campanha_id === null) : 0;
+  const canalTemPrincipal = (canal: CanalAquisicao) => contagemFiltrada((c) => c.canal === canal && c.campanha_id === null) > 0;
+  // Quando o canal não tem funil principal (ex: Direto, Workshop — só existem como
+  // campanha de retorno), abrir o canal já cai direto na única campanha existente em
+  // vez de ficar preso em "Todas as campanhas" excluindo retorno (o que mostraria 0).
+  const defaultCampanhaFor = (canal: CanalAquisicao) => {
+    if (canalTemPrincipal(canal)) return CAMPANHA_PRINCIPAL;
+    const campsDoCanal = campanhas.filter((c) => c.canal === canal && c.ativa);
+    return campsDoCanal.length === 1 ? campsDoCanal[0].id : 'todas';
+  };
+
+  // Respeita a campanha selecionada (inclusive o sentinela "funil principal") nos
+  // cálculos de estatística abaixo — sem isso os cards (Total de Leads etc.)
+  // continuavam somando o canal inteiro mesmo com uma campanha específica escolhida.
+  const campanhaPred = (c: Contagem) => {
+    // "Todas as campanhas" não inclui campanha de retorno (base antiga) — só quando
+    // o vendedor abre aquela campanha especificamente ela entra na conta (ver o
+    // 3º ramo abaixo, que bate certinho com o campanha_id escolhido). Exceto dentro
+    // do próprio canal Retorno/Base, onde isso é 100% do conteúdo por definição.
+    if (campanhaAtiva === 'todas') return canalAtivo === RETORNO_CANAL || !isContagemRetorno(c);
+    if (campanhaAtiva === CAMPANHA_PRINCIPAL) return c.campanha_id === null;
+    return c.campanha_id === campanhaAtiva;
+  };
+
+  // Lista consolidada — mesmo lead que já mudou de etapa continua aparecendo aqui,
+  // sempre no mesmo lugar, só troca o badge de fase. Não some do sistema ao avançar.
+  // Já vem filtrada do banco (canal/campanha/busca/visibilidade, ver fetchLeads).
+  const leadsVisiveis = leads;
+
+  const criarCampanha = async () => {
+    if (!novaCampanhaNome.trim() || canalAtivo === 'todos') return;
+    setSalvandoCampanha(true);
+    const { error } = await (supabase as any).from('time_comercial_campanhas').insert({
+      canal: canalAtivo,
+      nome: novaCampanhaNome.trim(),
+      condicoes: novaCampanhaCondicoes.trim() || null,
+      tipo: novaCampanhaTipo,
+    });
+    setSalvandoCampanha(false);
+    if (error) {
+      toast({ variant: 'destructive', title: 'Não foi possível criar a campanha', description: error.message });
+      return;
+    }
+    toast({ title: 'Campanha criada!' });
+    setNovaCampanhaNome('');
+    setNovaCampanhaCondicoes('');
+    setNovaCampanhaTipo('novo');
+    setNovaCampanhaOpen(false);
+    fetchCampanhas();
+  };
 
   const handleStageChange = async (lead: Lead, newStage: TimeComercialStage) => {
     try {
-      await supabase.from('leads').update({ etapa: newStage }).eq('id', lead.id);
+      await supabase.from('leads').update({ status: newStage }).eq('id', lead.id);
       fetchLeads();
+      fetchContagens();
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Não foi possível alterar a etapa', description: error?.message || 'Tente novamente.' });
     }
   };
 
-  const totalLeads = TIME_COMERCIAL_STAGES.reduce((soma, s) => soma + getLeadsByStage(s.key).length, 0);
-  const leadsEmMatricula = getLeadsByStage('matricula').length;
+  const claimLead = async (lead: Lead) => {
+    if (!viewAsName) return;
+    try {
+      await (supabase.from('leads') as any).update({ vendedor: viewAsName }).eq('id', lead.id);
+      fetchLeads();
+      fetchContagens();
+      toast({ title: 'Lead marcado como seu!' });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Não foi possível marcar o lead', description: error?.message || 'Tente novamente.' });
+    }
+  };
+
+  // Trajetória completa do lead (toda troca de fase, com data/hora e quem era o
+  // vendedor na hora) — gravada automaticamente por trigger no banco.
+  const [historico, setHistorico] = useState<{ lead: LeadComCanal; itens: any[] } | null>(null);
+  const abrirHistorico = async (lead: LeadComCanal) => {
+    const { data, error } = await (supabase as any).from('leads_historico_fase')
+      .select('fase_anterior, fase_nova, vendedor, criado_em')
+      .eq('lead_id', lead.id)
+      .order('criado_em', { ascending: true });
+    if (error) {
+      toast({ variant: 'destructive', title: 'Não foi possível carregar o histórico', description: error.message });
+      return;
+    }
+    setHistorico({ lead, itens: data ?? [] });
+  };
+
+  // SDD (Semana do Despertar) tem funil próprio; os demais canais usam as etapas
+  // genéricas até terem o funil deles definido. "Retorno" só aparece quando tem
+  // lead nela (campanha de reativação) — substitui "Novo" quando é só retorno
+  // (campanha 100% de reativação), ou aparece ao lado quando os dois se misturam
+  // (ex: "Todas as campanhas" dentro de um canal com campanha nova + de retorno).
+  let activeStages = canalAtivo === 'SDD' ? SDD_STAGES : GENERIC_STAGES;
+  {
+    // Etapa de entrada "genérica" que "Retorno" substitui/acompanha: "Frio" no
+    // funil SDD, "Novo" nos demais canais.
+    const entradaKey = canalAtivo === 'SDD' ? 'frio' : 'novo';
+    const temRetorno = contagemFiltrada((c) => c.canal === canalAtivo && c.status === 'retorno' && campanhaPred(c)) > 0;
+    const temEntrada = contagemFiltrada((c) => c.canal === canalAtivo && c.status === entradaKey && campanhaPred(c)) > 0;
+    if (temRetorno) {
+      activeStages = temEntrada
+        ? [RETORNO_STAGE, ...activeStages]
+        : [RETORNO_STAGE, ...activeStages.filter((s) => s.key !== entradaKey)];
+    }
+  }
+  const displayColumns = [LEADS_COLUMN, ...activeStages];
+  const totalLeadsPred = (c: Contagem) => (canalAtivo === 'todos' ? !isContagemRetorno(c) : c.canal === canalAtivo && campanhaPred(c));
+  const totalLeads = contagemFiltrada(totalLeadsPred);
+  const leadsEmMatricula = contagemFiltrada((c) => totalLeadsPred(c) && c.status === 'matricula');
+  // Denominador da % de matrícula: só os leads que já têm vendedor (foram "pegos" e
+  // estão em gestão ativa) — um lead ainda sem vendedor, seja novo ou de campanha de
+  // retorno, nunca teve chance real de converter, então não deve diluir a taxa.
+  const leadsAtribuidos = contagemFiltrada((c) => totalLeadsPred(c) && c.vendedor !== null);
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex gap-1.5 flex-wrap bg-muted rounded-lg p-1 w-fit">
-        <button
-          type="button"
-          onClick={() => setCanalAtivo('todos')}
-          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${canalAtivo === 'todos' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-        >
-          Todos os canais
-        </button>
-        {CANAIS_AQUISICAO.map((c) => (
+      <p className="text-sm text-muted-foreground">{viewAsName ? 'Seus leads em andamento, do primeiro contato até a matrícula.' : 'Todos os leads do Time Comercial, de todo mundo, em andamento.'}</p>
+
+      <div className="rounded-xl border border-border bg-muted/30 p-3">
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <Filter className="h-3 w-3 text-muted-foreground" />
+          <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">Canal de aquisição</p>
+        </div>
+        <div className="flex gap-2 flex-wrap">
           <button
-            key={c}
             type="button"
-            onClick={() => setCanalAtivo(c)}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${canalAtivo === c ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => { setCanalAtivo('todos'); setCampanhaAtiva('todas'); }}
+            className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${canalAtivo === 'todos' ? 'bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-sm' : 'bg-card border border-border text-muted-foreground hover:text-foreground'}`}
           >
-            {c} <span className="text-muted-foreground/70">({contagemPorCanal(c)})</span>
+            Todos os canais
           </button>
-        ))}
-      </div>
+          {CANAIS_AQUISICAO.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => { setCanalAtivo(c); setCampanhaAtiva(defaultCampanhaFor(c)); }}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${canalAtivo === c ? 'bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-sm' : 'bg-card border border-border text-muted-foreground hover:text-foreground'}`}
+            >
+              {c} <span className={canalAtivo === c ? 'text-primary-foreground/70' : 'text-muted-foreground/70'}>({contagemPorCanal(c)})</span>
+            </button>
+          ))}
+        </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-        <Card className="overflow-hidden bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
-          <div className="p-3 lg:p-4 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-xs lg:text-sm text-muted-foreground font-medium">Total de Leads</span>
-              <Users className="h-4 w-4 text-primary" />
-            </div>
-            <p className="text-2xl lg:text-3xl font-bold text-foreground">{totalLeads}</p>
-            <p className="text-xs text-muted-foreground">Em {TIME_COMERCIAL_STAGES.length} estágios</p>
-          </div>
-        </Card>
-        <Card className="overflow-hidden bg-gradient-to-br from-success/10 to-success/5 border-success/20">
-          <div className="p-3 lg:p-4 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-xs lg:text-sm text-muted-foreground font-medium">Em Matrícula</span>
-              <TrendingUp className="h-4 w-4 text-success" />
-            </div>
-            <p className="text-2xl lg:text-3xl font-bold text-foreground">{leadsEmMatricula}</p>
-            <p className="text-xs text-muted-foreground">
-              {totalLeads > 0 ? `${((leadsEmMatricula / totalLeads) * 100).toFixed(1)}% do total` : 'Nenhum lead ainda'}
-            </p>
-          </div>
-        </Card>
-      </div>
-
-      <div className="flex-1 flex gap-3 lg:gap-4 overflow-x-auto pb-4 snap-x snap-mandatory lg:snap-none min-h-0">
-        {TIME_COMERCIAL_STAGES.map((stage) => {
-          const stageLeads = getLeadsByStage(stage.key);
-          return (
-            <div key={stage.key} className="flex-shrink-0 w-[85vw] sm:w-72 lg:w-80 snap-center lg:snap-align-none">
-              <div className={`rounded-t-lg p-2.5 lg:p-3 ${stage.color}`}>
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-primary-foreground text-sm lg:text-base">{stage.label}</span>
-                  <Badge variant="secondary" className="bg-primary-foreground/20 text-primary-foreground border-0 text-xs">{stageLeads.length}</Badge>
-                </div>
+        {canalAtivo !== 'todos' && (campanhasDoCanal.length > 0 || !viewAsName) && (
+          <div className="flex items-start gap-2 mt-3 pt-3 border-t border-dashed border-border">
+            <CornerDownRight className="h-3.5 w-3.5 text-muted-foreground/50 mt-1.5 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground/70">Campanha dentro de "{canalAtivo}"</p>
+                {!viewAsName && (
+                  <button
+                    type="button"
+                    onClick={() => setNovaCampanhaOpen(true)}
+                    className="text-[10px] font-semibold text-success hover:underline flex-shrink-0"
+                  >
+                    + Nova campanha
+                  </button>
+                )}
               </div>
-              <div className="bg-muted/50 rounded-b-lg p-2 lg:p-3 space-y-2 lg:space-y-3 min-h-[50vh] lg:min-h-96 max-h-[calc(100vh-20rem)] overflow-y-auto">
+              {campanhasDoCanal.length > 0 ? (
+                <>
+                  <Select value={campanhaAtiva} onValueChange={setCampanhaAtiva}>
+                    <SelectTrigger className="h-8 text-xs bg-card w-full sm:w-72 border-success/30">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-card border-border z-[100]">
+                      {canalTemPrincipal(canalAtivo as CanalAquisicao) && (
+                        <SelectItem value={CAMPANHA_PRINCIPAL} className="text-xs font-semibold">
+                          ★ Turma atual — funil principal ({contagemPrincipal})
+                        </SelectItem>
+                      )}
+                      <SelectItem value="todas" className="text-xs">Todas as campanhas ({contagemFiltrada((c) => c.canal === canalAtivo && (canalAtivo === RETORNO_CANAL || !isContagemRetorno(c)))})</SelectItem>
+                      {campanhasDoCanal.map((camp) => (
+                        <SelectItem key={camp.id} value={camp.id} className="text-xs" title={camp.condicoes ?? undefined}>
+                          {camp.nome} ({contagemPorCampanha(camp.id)}) {camp.tipo === 'retorno' ? '· Retorno (base antiga)' : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {campanhaAtiva === CAMPANHA_PRINCIPAL && (
+                    <p className="text-[11px] text-muted-foreground mt-1.5">
+                      Funil principal — a turma que está rodando agora. É aqui que o vendedor deve focar; as campanhas de retorno (base antiga) ficam disponíveis como opção neste seletor, mas não são a visão padrão.
+                    </p>
+                  )}
+                  {campanhaAtiva === 'todas' && canalAtivo !== RETORNO_CANAL && campanhasDoCanal.some((c) => c.tipo === 'retorno') && (
+                    <p className="text-[11px] text-muted-foreground mt-1.5">
+                      Não inclui as campanhas de retorno (base antiga) — elas só entram na conta quando você abre uma delas especificamente no seletor acima.
+                    </p>
+                  )}
+                  {campanhaAtiva !== 'todas' && campanhaAtiva !== CAMPANHA_PRINCIPAL && (() => {
+                    const camp = campanhasDoCanal.find((c) => c.id === campanhaAtiva);
+                    if (!camp) return null;
+                    return (
+                      <p className="text-[11px] text-muted-foreground mt-1.5">
+                        {camp.tipo === 'retorno'
+                          ? 'Campanha de retorno — esses leads já estavam no sistema antes, por isso entram na etapa "Retorno" em vez de "Novo".'
+                          : 'Campanha de contato inédito — leads entram na etapa "Novo".'}
+                        {camp.condicoes && <> <span className="font-medium text-foreground">Condição:</span> {camp.condicoes}</>}
+                      </p>
+                    );
+                  })()}
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground">Nenhuma campanha criada ainda pra esse canal.</p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <SectionBar title="Visão geral" />
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+        <StatTile
+          label="Total de Leads"
+          value={totalLeads}
+          hint={`Em ${activeStages.length} estágios`}
+          icon={Users}
+        />
+        <StatTile
+          label="Em Matrícula"
+          value={leadsEmMatricula}
+          hint={leadsAtribuidos > 0 ? `${((leadsEmMatricula / leadsAtribuidos) * 100).toFixed(1)}% dos leads em gestão (com vendedor)` : 'Nenhum lead com vendedor ainda'}
+          icon={TrendingUp}
+        />
+        {canalAtivo !== RETORNO_CANAL && (
+          <StatTile
+            label="Sem vendedor há +48h"
+            value={canalAtivo === 'todos'
+              // Não soma o Retorno/Base aqui — é base antiga, esperado estar toda sem
+              // vendedor; incluir só afogaria o alerta que importa (leads novos parados).
+              ? semVendedorAntigo.filter((s) => s.canal !== RETORNO_CANAL).reduce((soma, s) => soma + Number(s.total), 0)
+              : (semVendedorAntigo.find((s) => s.canal === canalAtivo)?.total ?? 0)}
+            hint="Precisam ser atribuídos a alguém"
+            icon={UserX}
+          />
+        )}
+      </div>
+
+      {metricasTurma.length > 0 && canalAtivo === 'SDD' && (
+        <>
+          <SectionBar title="Leads por turma" subtitle="Quantos leads cada turma da Semana do Despertar recebeu, quantos chegaram no grupo de oferta e a taxa de conversão até a matrícula." />
+          <div className="rounded-xl border border-border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className={PREMIUM_TABLE_HEADER_ROW}>
+                  <TableHead>Turma</TableHead>
+                  <TableHead className="text-right">Leads</TableHead>
+                  <TableHead className="text-right">Chegou no grupo de oferta</TableHead>
+                  <TableHead className="text-right">Matriculados</TableHead>
+                  <TableHead className="text-right">Conversão</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {metricasTurma.map((m, idx) => (
+                  <TableRow key={m.lancamento_id} className={premiumZebraRow(idx)}>
+                    <TableCell className="font-medium flex items-center gap-1.5"><Layers className="h-3.5 w-3.5 text-primary" />{m.turma_nome ?? 'Sem nome'}</TableCell>
+                    <TableCell className="text-right">{m.leads_total}</TableCell>
+                    <TableCell className="text-right">{m.chegou_grupo_oferta}</TableCell>
+                    <TableCell className="text-right">{m.matriculados}</TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {m.chegou_grupo_oferta > 0 ? `${((m.matriculados / m.chegou_grupo_oferta) * 100).toFixed(1)}%` : '—'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      )}
+
+      <SectionBar title="Leads" subtitle="A coluna Leads (à esquerda, contorno tracejado) mostra todo mundo, de qualquer fase — as outras colunas mostram só quem está naquela fase." />
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+        <Input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar lead por nome ou telefone..."
+          className="pl-9 h-9 text-sm"
+        />
+        {busca && (
+          <button
+            type="button"
+            onClick={() => setBusca('')}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            title="Limpar busca"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      {totalCarregavel > leads.length && (
+        <p className="text-[11px] text-muted-foreground -mt-2">
+          Mostrando os {leads.length} mais recentes de {totalCarregavel.toLocaleString('pt-BR')} — use a busca ou uma campanha pra encontrar leads mais antigos.
+        </p>
+      )}
+      <div className="flex-1 flex gap-3 lg:gap-4 overflow-x-auto pb-4 snap-x snap-mandatory lg:snap-none min-h-0">
+        {displayColumns.map((stage) => {
+          const stageLeads = stage.key === LEADS_COLUMN_KEY ? leadsVisiveis : getLeadsByStage(stage.key as TimeComercialStage);
+          const isLeadsColumn = stage.key === LEADS_COLUMN_KEY;
+          return (
+            <div key={stage.key} className={`flex-shrink-0 w-[85vw] sm:w-72 lg:w-80 snap-center lg:snap-align-none ${isLeadsColumn ? 'rounded-lg border-2 border-dashed border-muted-foreground/30 p-1.5 -m-1.5 lg:mr-2' : ''}`}>
+              {isLeadsColumn ? (
+                <div className="rounded-t-md p-2.5 lg:p-3 bg-muted border-b-2 border-dashed border-muted-foreground/30">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-semibold text-foreground text-sm lg:text-base">{stage.label}</span>
+                      <p className="text-[10px] text-muted-foreground leading-tight">todas as fases juntas</p>
+                    </div>
+                    <Badge variant="secondary" className="text-xs">{stageLeads.length}</Badge>
+                  </div>
+                </div>
+              ) : (
+                <div className={`rounded-t-lg p-2.5 lg:p-3 ${stage.color}`}>
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-primary-foreground text-sm lg:text-base">{stage.label}</span>
+                    <Badge variant="secondary" className="bg-primary-foreground/20 text-primary-foreground border-0 text-xs">{stageLeads.length}</Badge>
+                  </div>
+                </div>
+              )}
+              <div className={`bg-muted/50 rounded-b-lg p-2 lg:p-3 space-y-2 lg:space-y-3 min-h-[50vh] lg:min-h-96 max-h-[calc(100vh-20rem)] overflow-y-auto ${isLeadsColumn ? 'rounded-t-none' : ''}`}>
                 {stageLeads.map((lead) => {
-                  const responsavel = getUserById(lead.responsavelId);
                   return (
                     <Card key={lead.id} className="p-3 lg:p-4 bg-card border-border hover:shadow-md transition-shadow">
                       <div className="mb-2">
                         <h3 className="font-semibold text-foreground text-sm lg:text-base truncate">{lead.nome}</h3>
-                        {lead.telefone && <p className="text-xs text-muted-foreground truncate">{lead.telefone}</p>}
-                        {lead.canal && <Badge variant="secondary" className="text-[10px] mt-1">{lead.canal}</Badge>}
+                        {lead.telefone && <p className="text-xs text-muted-foreground truncate">{lead.telefone}{lead.cidade ? ` · ${lead.cidade}` : ''}</p>}
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {canalAtivo === 'todos' && isLeadRecente(lead) && (
+                            <Badge className="text-[10px] bg-success text-success-foreground border-0">● Novo</Badge>
+                          )}
+                          {lead.canal && <Badge variant="secondary" className="text-[10px]">{lead.canal}</Badge>}
+                          {lead.cursoInteresse && <Badge variant="outline" className="text-[10px] border-primary/30 text-primary">{lead.cursoInteresse}</Badge>}
+                          {lead.lancamentoId && turmasPorId[lead.lancamentoId] && (
+                            <Badge variant="outline" className="text-[10px] border-warning/40 text-warning">{turmasPorId[lead.lancamentoId]}</Badge>
+                          )}
+                          {lead.campanhaId && campanhas.find((c) => c.id === lead.campanhaId) && (
+                            <Badge variant="outline" className="text-[10px] border-success/40 text-success">{campanhas.find((c) => c.id === lead.campanhaId)?.nome}</Badge>
+                          )}
+                        </div>
                       </div>
                       <div className="flex gap-2 mb-2 lg:mb-3">
                         <button
@@ -194,16 +666,43 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
                         >
                           <MessageCircle className="h-3 w-3 text-success" /> WhatsApp
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => abrirHistorico(lead)}
+                          title="Ver trajetória do lead"
+                          className="h-8 w-8 flex-shrink-0 inline-flex items-center justify-center rounded-md border border-border bg-card hover:bg-muted transition-colors"
+                        >
+                          <History className="h-3.5 w-3.5 text-muted-foreground" />
+                        </button>
                       </div>
-                      {responsavel && (
+                      <div className="mb-2 lg:mb-3">
+                        {lead.vendedor ? (
+                          <Badge
+                            className="text-xs text-white"
+                            style={{ backgroundColor: INITIAL_VENDORS.find((v) => v.name === lead.vendedor)?.cor }}
+                          >
+                            {lead.vendedor.split(' ')[0]}
+                          </Badge>
+                        ) : viewAsName ? (
+                          <Button size="sm" variant="outline" className="h-7 text-xs w-full" onClick={() => claimLead(lead)}>
+                            Pegar lead
+                          </Button>
+                        ) : (
+                          <Badge className="text-xs border-0 bg-warning/10 text-warning">Sem vendedor</Badge>
+                        )}
+                      </div>
+                      {stage.key === LEADS_COLUMN_KEY && (
                         <div className="mb-2 lg:mb-3">
-                          <Badge className="text-xs text-primary-foreground" style={{ backgroundColor: responsavel.cor }}>{responsavel.nome.split(' ')[0]}</Badge>
+                          <Badge className={`text-xs text-primary-foreground border-0 ${stageInfoFor(lead).color}`}>{stageInfoFor(lead).label}</Badge>
                         </div>
                       )}
                       <Select value={lead.etapa} onValueChange={(value) => handleStageChange(lead, value as TimeComercialStage)}>
                         <SelectTrigger className="w-full h-8 text-xs bg-card"><SelectValue /></SelectTrigger>
                         <SelectContent className="bg-card border-border z-[100]" position="popper" sideOffset={4}>
-                          {TIME_COMERCIAL_STAGES.map((s) => (
+                          {(() => {
+                            const base = lead.canal === 'SDD' ? SDD_STAGES : GENERIC_STAGES;
+                            return (lead.etapa as string) === 'retorno' ? [RETORNO_STAGE, ...base] : base;
+                          })().map((s) => (
                             <SelectItem key={s.key} value={s.key} className="text-xs cursor-pointer">
                               <div className="flex items-center gap-2"><div className={`w-2 h-2 rounded-full ${s.color}`} />{s.label}</div>
                             </SelectItem>
@@ -219,6 +718,87 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
           );
         })}
       </div>
+
+      <Dialog open={novaCampanhaOpen} onOpenChange={setNovaCampanhaOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base">Nova campanha — {canalAtivo}</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 py-1">
+            <div className="space-y-1.5">
+              <Label htmlFor="campanha-nome">Nome da campanha</Label>
+              <Input id="campanha-nome" value={novaCampanhaNome} onChange={(e) => setNovaCampanhaNome(e.target.value)} placeholder="Ex: Instagram Out/26" disabled={salvandoCampanha} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Tipo de lead nessa campanha</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNovaCampanhaTipo('novo')}
+                  disabled={salvandoCampanha}
+                  className={`text-left rounded-lg border p-2.5 transition-all ${novaCampanhaTipo === 'novo' ? 'border-primary bg-primary/10' : 'border-border bg-card hover:bg-muted/50'}`}
+                >
+                  <p className="text-xs font-semibold text-foreground">Novo</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Contato inédito — entra na etapa Novo.</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNovaCampanhaTipo('retorno')}
+                  disabled={salvandoCampanha}
+                  className={`text-left rounded-lg border p-2.5 transition-all ${novaCampanhaTipo === 'retorno' ? 'border-warning bg-warning/10' : 'border-border bg-card hover:bg-muted/50'}`}
+                >
+                  <p className="text-xs font-semibold text-foreground">Retorno</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Já estava no sistema — entra na etapa Retorno, não Novo.</p>
+                </button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="campanha-condicoes">Condição / oferta (opcional)</Label>
+              <Textarea id="campanha-condicoes" value={novaCampanhaCondicoes} onChange={(e) => setNovaCampanhaCondicoes(e.target.value)} placeholder="Ex: 20% off, parcela em 12x, bônus X..." disabled={salvandoCampanha} rows={3} />
+              <p className="text-xs text-muted-foreground">Vendedor vê isso ao passar o mouse no filtro da campanha.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNovaCampanhaOpen(false)} disabled={salvandoCampanha}>Cancelar</Button>
+            <Button onClick={criarCampanha} disabled={salvandoCampanha || !novaCampanhaNome.trim()}>
+              {salvandoCampanha ? 'Salvando...' : 'Criar campanha'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!historico} onOpenChange={(open) => !open && setHistorico(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <History size={16} /> Trajetória — {historico?.lead.nome}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 max-h-96 overflow-y-auto py-1">
+            {historico?.itens.length === 0 && (
+              <p className="text-sm text-muted-foreground">Sem histórico registrado ainda.</p>
+            )}
+            {historico?.itens.map((item, idx) => {
+              const stageInfo = (historico.lead.canal === 'SDD' ? SDD_STAGES : GENERIC_STAGES).find((s) => s.key === item.fase_nova);
+              return (
+                <div key={idx} className="flex gap-3">
+                  <div className="flex flex-col items-center flex-shrink-0">
+                    <div className={`w-2.5 h-2.5 rounded-full ${stageInfo?.color ?? 'bg-muted-foreground'}`} />
+                    {idx < (historico?.itens.length ?? 0) - 1 && <div className="w-px flex-1 bg-border mt-1" />}
+                  </div>
+                  <div className="pb-3">
+                    <p className="text-sm font-medium text-foreground">{stageInfo?.label ?? item.fase_nova}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(item.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      {item.vendedor && ` · ${item.vendedor}`}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -255,28 +835,19 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
 
     return (
       <div className="flex flex-col gap-5">
+        <p className="text-sm text-muted-foreground -mt-1">Sua meta do mês e como o seu faturamento cresce até dezembro.</p>
+        <SectionBar title="Sua meta" />
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Card className="p-4">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Sua Meta Base</p>
-            <p className="text-2xl font-bold text-foreground mt-1">30 <span className="text-sm font-normal text-muted-foreground">vendas/mês</span></p>
-            <p className="text-xs text-muted-foreground mt-1">{viewAsName}</p>
-          </Card>
-          <Card className="p-4">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Seu faturamento na Meta Base</p>
-            <p className="text-2xl font-bold text-foreground mt-1">~R$ 16.515<span className="text-sm font-normal text-muted-foreground">/mês</span></p>
-            <p className="text-xs text-muted-foreground mt-1">mix 30% à vista/cartão + 70% recorrente</p>
-          </Card>
-          <Card className="p-4">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Meses restantes em 2026</p>
-            <p className="text-2xl font-bold text-foreground mt-1">Set–Dez</p>
-            <p className="text-xs text-muted-foreground mt-1">4 meses de ramp-up</p>
-          </Card>
+          <StatTile label="Sua Meta Base" value={<>30 <span className="text-sm font-normal text-muted-foreground">vendas/mês</span></>} hint={viewAsName ?? undefined} icon={Target} />
+          <StatTile label="Seu faturamento na Meta Base" value={<>~R$ 16.515<span className="text-sm font-normal text-muted-foreground">/mês</span></>} hint="mix 30% à vista/cartão + 70% recorrente" icon={DollarSign} />
+          <StatTile label="Meses restantes em 2026" value="Set–Dez" hint="4 meses de ramp-up" icon={CalendarDays} />
         </div>
 
-        <Card className="p-4">
-          <Table>
+        <SectionBar title="Evolução mês a mês" />
+        <Card className="p-4 overflow-x-auto">
+          <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
             <TableHeader>
-              <TableRow>
+              <TableRow className={PREMIUM_TABLE_HEADER_ROW}>
                 <TableHead>Mês</TableHead>
                 <TableHead className="text-right">Suas vendas</TableHead>
                 <TableHead className="text-right">Seu faturamento estimado</TableHead>
@@ -284,11 +855,11 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {mesesIndividual.map((x) => {
+              {mesesIndividual.map((x, idx) => {
                 const faturamento = x.vendas * FAT_POR_VENDA_MIX;
                 const pct = (x.vendas / maxIndividual) * 100;
                 return (
-                  <TableRow key={x.mes}>
+                  <TableRow key={x.mes} className={premiumZebraRow(idx)}>
                     <TableCell>{x.mes}</TableCell>
                     <TableCell className="text-right">{x.vendas}</TableCell>
                     <TableCell className="text-right">{fmt(faturamento)}</TableCell>
@@ -301,11 +872,11 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
                 );
               })}
             </TableBody>
-            <TableFooter>
+            <TableFooter className="bg-primary/10">
               <TableRow>
-                <TableCell className="font-semibold">Total Set–Dez/2026</TableCell>
+                <TableCell className="font-semibold text-primary">Total Set–Dez/2026</TableCell>
                 <TableCell className="text-right font-semibold">{vendasTotalIndividual}</TableCell>
-                <TableCell className="text-right font-semibold">{fmt(faturamentoTotalIndividual)}</TableCell>
+                <TableCell className="text-right font-semibold text-primary">{fmt(faturamentoTotalIndividual)}</TableCell>
                 <TableCell></TableCell>
               </TableRow>
             </TableFooter>
@@ -320,28 +891,19 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
 
   return (
     <div className="flex flex-col gap-5">
+      <p className="text-sm text-muted-foreground -mt-1">Visão consolidada da equipe — quanto os 3 vendedores juntos precisam entregar.</p>
+      <SectionBar title="Meta da equipe" />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Card className="p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Meta Base da equipe</p>
-          <p className="text-2xl font-bold text-foreground mt-1">90 <span className="text-sm font-normal text-muted-foreground">vendas/mês</span></p>
-          <p className="text-xs text-muted-foreground mt-1">30 × 3 vendedores</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Faturamento na Meta Base</p>
-          <p className="text-2xl font-bold text-foreground mt-1">~R$ 49.545<span className="text-sm font-normal text-muted-foreground">/mês</span></p>
-          <p className="text-xs text-muted-foreground mt-1">mix 30% à vista/cartão + 70% recorrente</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Meses restantes em 2026</p>
-          <p className="text-2xl font-bold text-foreground mt-1">Set–Dez</p>
-          <p className="text-xs text-muted-foreground mt-1">4 meses de ramp-up com a equipe nova</p>
-        </Card>
+        <StatTile label="Meta Base da equipe" value={<>90 <span className="text-sm font-normal text-muted-foreground">vendas/mês</span></>} hint="30 × 3 vendedores" icon={Target} />
+        <StatTile label="Faturamento na Meta Base" value={<>~R$ 49.545<span className="text-sm font-normal text-muted-foreground">/mês</span></>} hint="mix 30% à vista/cartão + 70% recorrente" icon={DollarSign} />
+        <StatTile label="Meses restantes em 2026" value="Set–Dez" hint="4 meses de ramp-up com a equipe nova" icon={CalendarDays} />
       </div>
 
-      <Card className="p-4">
-        <Table>
+      <SectionBar title="Evolução mês a mês" />
+      <Card className="p-4 overflow-x-auto">
+        <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
           <TableHeader>
-            <TableRow>
+            <TableRow className={PREMIUM_TABLE_HEADER_ROW}>
               <TableHead>Mês</TableHead>
               <TableHead className="text-right">Vendas (equipe)</TableHead>
               <TableHead className="text-right">Faturamento estimado</TableHead>
@@ -349,11 +911,11 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {METAS_MESES.map((x) => {
+            {METAS_MESES.map((x, idx) => {
               const faturamento = x.vendas * FAT_POR_VENDA_MIX;
               const pct = (x.vendas / maxVendas) * 100;
               return (
-                <TableRow key={x.mes}>
+                <TableRow key={x.mes} className={premiumZebraRow(idx)}>
                   <TableCell>{x.mes}</TableCell>
                   <TableCell className="text-right">{x.vendas}</TableCell>
                   <TableCell className="text-right">{fmt(faturamento)}</TableCell>
@@ -366,11 +928,11 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
               );
             })}
           </TableBody>
-          <TableFooter>
+          <TableFooter className="bg-primary/10">
             <TableRow>
-              <TableCell className="font-semibold">Total Set–Dez/2026</TableCell>
+              <TableCell className="font-semibold text-primary">Total Set–Dez/2026</TableCell>
               <TableCell className="text-right font-semibold">{vendasTotal}</TableCell>
-              <TableCell className="text-right font-semibold">{fmt(faturamentoTotal)}</TableCell>
+              <TableCell className="text-right font-semibold text-primary">{fmt(faturamentoTotal)}</TableCell>
               <TableCell></TableCell>
             </TableRow>
           </TableFooter>
@@ -443,24 +1005,15 @@ const SDD_TURMAS = buildSddTurmas();
 function AquisicaoTab() {
   return (
     <div className="flex flex-col gap-5">
+      <p className="text-sm text-muted-foreground -mt-1">Como os leads chegam: a Semana do Despertar, o único canal de captação definido até agora.</p>
+      <SectionBar title="Visão geral" />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Card className="p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Formato</p>
-          <p className="text-2xl font-bold text-foreground mt-1">3 aulas</p>
-          <p className="text-xs text-muted-foreground mt-1">ao vivo, YouTube, Ter/Qua/Qui às 20h</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Próxima turma</p>
-          <p className="text-2xl font-bold text-foreground mt-1">#45</p>
-          <p className="text-xs text-muted-foreground mt-1">01–03/set/2026</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Cadência</p>
-          <p className="text-2xl font-bold text-foreground mt-1">Quinzenal</p>
-          <p className="text-xs text-muted-foreground mt-1">semana sim, semana não — até dez/2026</p>
-        </Card>
+        <StatTile label="Formato" value="3 aulas" hint="ao vivo, YouTube, Ter/Qua/Qui às 20h" icon={Video} />
+        <StatTile label="Próxima turma" value="#45" hint="01–03/set/2026" icon={Rocket} />
+        <StatTile label="Cadência" value="Quinzenal" hint="semana sim, semana não — até dez/2026" icon={Repeat} />
       </div>
 
+      <SectionBar title="Como funciona cada turma" />
       <Card className="p-4">
         <h3 className="text-sm font-semibold text-foreground mb-3">As 3 aulas</h3>
         <div className="flex flex-col gap-2">
@@ -496,11 +1049,12 @@ function AquisicaoTab() {
         </div>
       </Card>
 
-      <Card className="p-4">
+      <SectionBar title="Calendário de turmas" />
+      <Card className="p-4 overflow-x-auto">
         <h3 className="text-sm font-semibold text-foreground mb-3">Calendário 2026 — quinzenal (semana sim, semana não)</h3>
-        <Table>
+        <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
           <TableHeader>
-            <TableRow>
+            <TableRow className={PREMIUM_TABLE_HEADER_ROW}>
               <TableHead>Turma</TableHead>
               <TableHead>Aula 1 (ter)</TableHead>
               <TableHead>Aula 2 (qua) — pitch</TableHead>
@@ -509,12 +1063,12 @@ function AquisicaoTab() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {SDD_TURMAS.map((t) => {
+            {SDD_TURMAS.map((t, idx) => {
               const aula2 = addDays(t.aula1, 1);
               const aula3 = addDays(t.aula1, 2);
               const captacao = addDays(t.aula1, -18);
               return (
-                <TableRow key={t.n}>
+                <TableRow key={t.n} className={premiumZebraRow(idx)}>
                   <TableCell>
                     <Badge className={`text-xs border-0 ${t.real ? 'bg-primary/10 text-primary' : 'bg-warning/10 text-warning'}`}>
                       #{t.n} {t.real ? 'confirmada' : 'projetada'}
@@ -755,27 +1309,18 @@ function OperacaoTab({ viewAsName }: VendorScopeProps) {
 
   return (
     <div className="flex flex-col gap-5">
+      <p className="text-sm text-muted-foreground -mt-1">{viewAsName ? 'Seu link de matrícula e os alunos que você fechou, aguardando entrar numa turma.' : 'Links de matrícula por vendedor e alunos aguardando turma, de todo mundo.'}</p>
+      <SectionBar title="Turma atual" />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Card className="p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Próxima turma (formação)</p>
-          <p className="text-2xl font-bold text-foreground mt-1">02726</p>
-          <p className="text-xs text-muted-foreground mt-1">Turma #02726/OnzeDS · PSI</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Data de início</p>
-          <p className="text-2xl font-bold text-foreground mt-1">01/09/2026</p>
-          <p className="text-xs text-muted-foreground mt-1">ainda não refletido no cadastro do sistema</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Matrículas desta turma</p>
-          <p className="text-2xl font-bold text-foreground mt-1">Via links abaixo</p>
-          <p className="text-xs text-muted-foreground mt-1">é pra onde as fichas de matrícula apontam</p>
-        </Card>
+        <StatTile label="Próxima turma (formação)" value="02726" hint="Turma #02726/OnzeDS · PSI" icon={GraduationCap} />
+        <StatTile label="Data de início" value="01/09/2026" hint="ainda não refletido no cadastro do sistema" icon={CalendarDays} />
+        <StatTile label="Matrículas desta turma" value="Via links abaixo" hint="é pra onde as fichas de matrícula apontam" icon={Link2} />
       </div>
       <p className="text-xs text-muted-foreground">
         Essa é a turma de formação (a classe de verdade) — diferente da turma #45 da Semana do Despertar, que é só o lançamento/captação (ver aba Aquisição).
       </p>
 
+      <SectionBar title="Matrículas" />
       <Card className="p-4">
         <h3 className="text-sm font-semibold text-foreground mb-1">Ficha de Matrícula — por vendedor</h3>
         <p className="text-xs text-muted-foreground mb-3">
@@ -802,6 +1347,7 @@ function OperacaoTab({ viewAsName }: VendorScopeProps) {
         </p>
       </Card>
 
+      <SectionBar title="Calendário de turmas" />
       <Card className="p-4">
         <h3 className="text-sm font-semibold text-foreground mb-1">Calendário de início das turmas — Formação PSI</h3>
         <p className="text-xs text-muted-foreground mb-3">
@@ -852,15 +1398,19 @@ interface VendorRow {
   role: string;
   gerente: boolean;
   initials: string;
+  cor: string;
   meta: number;
   vistaCartao: number;
   boleto: number;
 }
 
+// Cores fixas por enquanto (Helen/Miguel/Aline ainda nao sao usuarios reais do sistema,
+// so tem `cor` os cadastrados em profiles/AppUser). Quando virarem contas de verdade,
+// trocar por AppUser.cor pra manter a mesma identidade visual usada no Pipeline.
 const INITIAL_VENDORS: VendorRow[] = [
-  { name: 'Helen Magna', role: 'Vendedora', gerente: false, initials: 'HM', meta: 30, vistaCartao: 9, boleto: 21 },
-  { name: 'Miguel Fogaça', role: 'Vendedor', gerente: false, initials: 'MF', meta: 30, vistaCartao: 15, boleto: 35 },
-  { name: 'Aline Horta', role: 'Vendedora/Gerente de Vendas', gerente: true, initials: 'AH', meta: 30, vistaCartao: 21, boleto: 49 },
+  { name: 'Helen Magna', role: 'Vendedora', gerente: false, initials: 'HM', cor: '#A93356', meta: 30, vistaCartao: 9, boleto: 21 },
+  { name: 'Miguel Fogaça', role: 'Vendedor', gerente: false, initials: 'MF', cor: '#4A90E2', meta: 30, vistaCartao: 15, boleto: 35 },
+  { name: 'Aline Horta', role: 'Vendedora/Gerente de Vendas', gerente: true, initials: 'AH', cor: '#28A745', meta: 30, vistaCartao: 21, boleto: 49 },
 ];
 
 function calcVendor(vistaCartao: number, boleto: number) {
@@ -915,27 +1465,19 @@ function RemuneracaoTab({ viewAsName }: VendorScopeProps) {
 
   return (
     <div className="flex flex-col gap-5">
+      <p className="text-sm text-muted-foreground -mt-1">{viewAsName ? 'Quanto você ganha por venda e como bater os níveis de bônus.' : 'Como funciona a comissão de cada vendedor e a calculadora de simulação.'}</p>
+      <SectionBar title="Como funciona a comissão" />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Card className="p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Ajuda de custo</p>
-          <p className="text-2xl font-bold text-foreground mt-1">R$ 1.500<span className="text-sm font-normal text-muted-foreground">/mês</span></p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">À vista / Cartão até 12x</p>
-          <p className="text-2xl font-bold text-foreground mt-1">R$ 147</p>
-          <p className="text-xs text-muted-foreground mt-1">10% de comissão (à vista R$1.500 ou cartão 12x, caixa R$1.470)</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Recorrente (cartão/boleto 15x R$150)</p>
-          <p className="text-2xl font-bold text-foreground mt-1">R$ 75</p>
-          <p className="text-xs text-muted-foreground mt-1">50% da 1ª parcela apenas</p>
-        </Card>
+        <StatTile label="Ajuda de custo" value={<>R$ 1.500<span className="text-sm font-normal text-muted-foreground">/mês</span></>} icon={Wallet} />
+        <StatTile label="À vista / Cartão até 12x" value="R$ 147" hint="10% de comissão (à vista R$1.500 ou cartão 12x, caixa R$1.470)" icon={CreditCard} />
+        <StatTile label="Recorrente (cartão/boleto 15x R$150)" value="R$ 75" hint="50% da 1ª parcela apenas" icon={Repeat} />
       </div>
 
+      <SectionBar title={viewAsName ? 'Sua comissão do mês' : 'Comissão do mês — edite com as vendas reais'} />
       <Card className="p-4 overflow-x-auto">
-        <Table>
+        <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
           <TableHeader>
-            <TableRow>
+            <TableRow className={PREMIUM_TABLE_HEADER_ROW}>
               <TableHead>Vendedor</TableHead>
               <TableHead className="text-right">Meta Base (vendas)</TableHead>
               <TableHead className="text-right">Vendas à vista/cartão</TableHead>
@@ -949,10 +1491,10 @@ function RemuneracaoTab({ viewAsName }: VendorScopeProps) {
           </TableHeader>
           <TableBody>
             {rows.map(({ v, calc }, idx) => (
-              <TableRow key={v.name}>
+              <TableRow key={v.name} className={premiumZebraRow(idx)}>
                 <TableCell>
                   <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-md bg-primary/10 text-primary flex items-center justify-center font-bold text-xs flex-shrink-0">{v.initials}</div>
+                    <div className="w-8 h-8 rounded-md flex items-center justify-center font-bold text-xs text-white flex-shrink-0" style={{ backgroundColor: v.cor }}>{v.initials}</div>
                     <div>
                       <div className="text-sm font-medium text-foreground">{v.name}</div>
                       <div className="text-xs text-muted-foreground">{v.role}</div>
@@ -972,14 +1514,14 @@ function RemuneracaoTab({ viewAsName }: VendorScopeProps) {
                 <TableCell className="text-right">{fmt(calc.faturamento)}</TableCell>
                 <TableCell className="text-right">{fmt(calc.comissao)}</TableCell>
                 <TableCell>{calc.bonus ? <span className="inline-flex items-center gap-1"><BonusPill bonus={calc.bonus} /> {fmt(calc.bonus)}</span> : <BonusPill bonus={calc.bonus} />}</TableCell>
-                <TableCell className="text-right font-semibold">{fmt(calc.receber)}</TableCell>
+                <TableCell className="text-right font-semibold text-primary">{fmt(calc.receber)}</TableCell>
               </TableRow>
             ))}
           </TableBody>
           {showTeamFooter && (
-            <TableFooter>
+            <TableFooter className="bg-primary/10">
               <TableRow>
-                <TableCell className="font-semibold">Soma dos 3 (não é meta de equipe)</TableCell>
+                <TableCell className="font-semibold text-primary">Soma dos 3 (não é meta de equipe)</TableCell>
                 <TableCell className="text-right font-semibold">{totals.meta}</TableCell>
                 <TableCell className="text-right font-semibold">{totals.vistaCartao}</TableCell>
                 <TableCell className="text-right font-semibold">{totals.boleto}</TableCell>
@@ -987,7 +1529,7 @@ function RemuneracaoTab({ viewAsName }: VendorScopeProps) {
                 <TableCell className="text-right font-semibold">{fmt(totals.fat)}</TableCell>
                 <TableCell className="text-right font-semibold">{fmt(totals.comissao)}</TableCell>
                 <TableCell className="font-semibold">{fmt(totals.bonus)}</TableCell>
-                <TableCell className="text-right font-semibold">{fmt(totals.receber)}</TableCell>
+                <TableCell className="text-right font-semibold text-primary">{fmt(totals.receber)}</TableCell>
               </TableRow>
             </TableFooter>
           )}
@@ -1011,6 +1553,7 @@ function RemuneracaoTab({ viewAsName }: VendorScopeProps) {
         </div>
       </Card>
 
+      <SectionBar title="Simulação por nível de meta" subtitle="Quanto dá pra ganhar em cada nível, mantendo o mix de 30% à vista/cartão + 70% recorrente." />
       {TIERS.map((tier) => {
         const calc = calcVendor(tier.vistaCartao, tier.boleto);
         return (
@@ -1021,9 +1564,9 @@ function RemuneracaoTab({ viewAsName }: VendorScopeProps) {
                 ? `quanto você ganha ao bater ${tier.vistaCartao + tier.boleto} vendas/mês`
                 : `quanto cada vendedor ganha, sozinho, ao bater ${tier.vistaCartao + tier.boleto} vendas/mês`}
             </h3>
-            <Table>
+            <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
               <TableHeader>
-                <TableRow>
+                <TableRow className={PREMIUM_TABLE_HEADER_ROW}>
                   <TableHead>Vendedor</TableHead>
                   <TableHead className="text-right">Vendas à vista/cartão</TableHead>
                   <TableHead className="text-right">Vendas recorrentes</TableHead>
@@ -1035,11 +1578,11 @@ function RemuneracaoTab({ viewAsName }: VendorScopeProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {scoped.map((v) => (
-                  <TableRow key={v.name}>
+                {scoped.map((v, idx) => (
+                  <TableRow key={v.name} className={premiumZebraRow(idx)}>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-md bg-primary/10 text-primary flex items-center justify-center font-bold text-xs flex-shrink-0">{v.initials}</div>
+                        <div className="w-8 h-8 rounded-md flex items-center justify-center font-bold text-xs text-white flex-shrink-0" style={{ backgroundColor: v.cor }}>{v.initials}</div>
                         <div>
                           <div className="text-sm font-medium text-foreground">{v.name}</div>
                           <div className="text-xs text-muted-foreground">{v.role}</div>
@@ -1052,7 +1595,7 @@ function RemuneracaoTab({ viewAsName }: VendorScopeProps) {
                     <TableCell className="text-right">{fmt(calc.faturamento)}</TableCell>
                     <TableCell className="text-right">{fmt(calc.comissao)}</TableCell>
                     <TableCell>{calc.bonus ? <span className="inline-flex items-center gap-1"><BonusPill bonus={calc.bonus} /> {fmt(calc.bonus)}</span> : <BonusPill bonus={calc.bonus} />}</TableCell>
-                    <TableCell className="text-right font-semibold">{fmt(calc.receber)}</TableCell>
+                    <TableCell className="text-right font-semibold text-primary">{fmt(calc.receber)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -1061,12 +1604,13 @@ function RemuneracaoTab({ viewAsName }: VendorScopeProps) {
         );
       })}
 
+      <SectionBar title="Referência rápida" />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <Card className="p-4">
+        <Card className="p-4 overflow-x-auto">
           <h3 className="text-sm font-semibold text-foreground mb-3">{viewAsName ? 'Seus 3 níveis de meta' : '3 níveis de meta — por vendedor'}</h3>
-          <Table>
+          <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
             <TableHeader>
-              <TableRow>
+              <TableRow className={PREMIUM_TABLE_HEADER_ROW}>
                 <TableHead>Nível</TableHead>
                 <TableHead className="text-right">Vendas/mês</TableHead>
                 <TableHead className="text-right">À vista/cartão (30%)</TableHead>
@@ -1076,7 +1620,7 @@ function RemuneracaoTab({ viewAsName }: VendorScopeProps) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow>
+              <TableRow className={premiumZebraRow(0)}>
                 <TableCell><Badge className="text-xs border-0 bg-primary/10 text-primary">Meta Base</Badge></TableCell>
                 <TableCell className="text-right">30</TableCell>
                 <TableCell className="text-right">9</TableCell>
@@ -1084,7 +1628,7 @@ function RemuneracaoTab({ viewAsName }: VendorScopeProps) {
                 <TableCell className="text-right">R$ 16.515</TableCell>
                 <TableCell className="text-right">sem bonificação</TableCell>
               </TableRow>
-              <TableRow>
+              <TableRow className={premiumZebraRow(1)}>
                 <TableCell><Badge className="text-xs border-0 bg-warning/10 text-warning">Meta Motivo</Badge></TableCell>
                 <TableCell className="text-right">50</TableCell>
                 <TableCell className="text-right">15</TableCell>
@@ -1092,7 +1636,7 @@ function RemuneracaoTab({ viewAsName }: VendorScopeProps) {
                 <TableCell className="text-right">R$ 27.525</TableCell>
                 <TableCell className="text-right">R$ 1.000</TableCell>
               </TableRow>
-              <TableRow>
+              <TableRow className={premiumZebraRow(2)}>
                 <TableCell><Badge className="text-xs border-0 bg-success/10 text-success">Meta Superação</Badge></TableCell>
                 <TableCell className="text-right">70</TableCell>
                 <TableCell className="text-right">21</TableCell>
@@ -1159,13 +1703,45 @@ function MetaEquipeTab() {
 // "Login" local (sem Supabase Auth ainda) pra simular cada vendedor(a) vendo
 // só o que é dela — pronto pra trocar por auth real quando Helen/Miguel/Aline
 // virarem usuarios de verdade no sistema.
-const VENDOR_SWITCH_OPTIONS = [
-  { value: 'todos', label: 'Todos (visão admin)' },
-  ...INITIAL_VENDORS.map((v) => ({
-    value: v.name,
-    label: v.gerente ? `${v.name} (gerente — vê todos)` : v.name,
-  })),
-];
+
+// Chips de avatar coloridos pra trocar "Ver como" — clique direto em vez de dropdown,
+// mesma cor de identificação usada nos avatares da tabela de Remuneração.
+function VendorSwitch({ viewAs, onChange }: { viewAs: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex items-center gap-2.5 overflow-x-auto px-1 py-2 -mx-1 -my-2">
+      <button
+        type="button"
+        onClick={() => onChange('todos')}
+        className="flex flex-col items-center gap-1 flex-shrink-0"
+        title="Todos (visão admin)"
+      >
+        <div
+          className="w-9 h-9 rounded-full flex items-center justify-center text-[9px] font-bold bg-muted text-muted-foreground transition-shadow"
+          style={viewAs === 'todos' ? { boxShadow: '0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--primary))' } : undefined}
+        >
+          Todos
+        </div>
+      </button>
+      {INITIAL_VENDORS.map((v) => (
+        <button
+          key={v.name}
+          type="button"
+          onClick={() => onChange(v.name)}
+          className="flex flex-col items-center gap-1 flex-shrink-0"
+          title={v.gerente ? `${v.name} (gerente — vê todos)` : v.name}
+        >
+          <div
+            className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white transition-shadow"
+            style={{ backgroundColor: v.cor, ...(viewAs === v.name ? { boxShadow: `0 0 0 2px hsl(var(--background)), 0 0 0 4px ${v.cor}` } : {}) }}
+          >
+            {v.initials}
+          </div>
+          <span className="text-[9px] text-muted-foreground max-w-[46px] truncate inline-flex items-center gap-0.5">{v.name.split(' ')[0]}{v.gerente && <Crown className="h-2.5 w-2.5 text-warning flex-shrink-0" />}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export function TimeComercial() {
   const [viewAs, setViewAs] = useState('todos');
@@ -1177,28 +1753,55 @@ export function TimeComercial() {
     <div className="h-full flex flex-col animate-fade-in p-4 lg:p-6 gap-4 overflow-y-auto">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-xl lg:text-2xl font-bold text-foreground">CRM Time Comercial</h1>
-        <Select value={viewAs} onValueChange={setViewAs}>
-          <SelectTrigger className="h-9 w-auto min-w-[220px] rounded-full bg-primary/10 border-primary/20 text-primary text-sm font-medium shadow-sm hover:bg-primary/15">
-            <Users className="h-3.5 w-3.5 mr-1.5" />
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="bg-card border-border z-[100]">
-            {VENDOR_SWITCH_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value} className="text-sm">{opt.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-col items-end gap-1">
+          <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+            <Eye className="h-2.5 w-2.5" /> Ver como
+          </p>
+          <VendorSwitch viewAs={viewAs} onChange={setViewAs} />
+        </div>
       </div>
 
       <Tabs defaultValue="funil" className="flex-1 flex flex-col min-h-0">
-        <TabsList>
-          <TabsTrigger value="funil">Funil</TabsTrigger>
-          <TabsTrigger value="operacao">Operação</TabsTrigger>
-          <TabsTrigger value="metas">Meta Pessoal</TabsTrigger>
-          <TabsTrigger value="meta_equipe">Meta de Equipe</TabsTrigger>
-          <TabsTrigger value="aquisicao">Aquisição</TabsTrigger>
-          <TabsTrigger value="remuneracao">Remuneração</TabsTrigger>
-        </TabsList>
+        <div className="rounded-xl border border-border bg-muted/30 p-3 mb-1">
+          <div>
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <Zap className="h-3 w-3 text-primary" />
+              <p className="text-[10px] font-bold uppercase tracking-wide text-primary">Meu trabalho</p>
+            </div>
+            <p className="text-[11px] text-muted-foreground mb-1.5">Trabalhar os leads e fechar matrícula.</p>
+            <TabsList className="h-auto bg-transparent p-0 gap-2 justify-start flex-wrap">
+              <TabsTrigger
+                value="funil"
+                className="rounded-lg px-4 py-2 text-sm font-semibold bg-primary/10 text-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-1.5"
+              >
+                <Kanban className="h-3.5 w-3.5" /> Funil
+              </TabsTrigger>
+              <TabsTrigger
+                value="operacao"
+                className="rounded-lg px-4 py-2 text-sm font-semibold bg-primary/10 text-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-1.5"
+              >
+                <ClipboardList className="h-3.5 w-3.5" /> Operação
+              </TabsTrigger>
+            </TabsList>
+          </div>
+
+          <div className="flex items-start gap-2 mt-3 pt-3 border-t border-dashed border-border">
+            <CornerDownRight className="h-3.5 w-3.5 text-muted-foreground/50 mt-0.5 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <BookOpen className="h-3 w-3 text-muted-foreground" />
+                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Metas e comissão</p>
+              </div>
+              <p className="text-[11px] text-muted-foreground mb-1.5">Metas, comissão e como funciona a captação.</p>
+              <TabsList className="h-auto bg-transparent p-0 gap-1.5 justify-start flex-wrap">
+                <TabsTrigger value="metas" className="rounded-lg px-3 py-1.5 text-xs font-medium bg-card border border-border text-muted-foreground data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-sm">Meta Pessoal</TabsTrigger>
+                <TabsTrigger value="meta_equipe" className="rounded-lg px-3 py-1.5 text-xs font-medium bg-card border border-border text-muted-foreground data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-sm">Meta de Equipe</TabsTrigger>
+                <TabsTrigger value="aquisicao" className="rounded-lg px-3 py-1.5 text-xs font-medium bg-card border border-border text-muted-foreground data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-sm">Aquisição</TabsTrigger>
+                <TabsTrigger value="remuneracao" className="rounded-lg px-3 py-1.5 text-xs font-medium bg-card border border-border text-muted-foreground data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-sm">Remuneração</TabsTrigger>
+              </TabsList>
+            </div>
+          </div>
+        </div>
         <TabsContent value="funil" className="flex-1 min-h-0">
           <FunilTimeComercial viewAsName={viewAsName} />
         </TabsContent>
