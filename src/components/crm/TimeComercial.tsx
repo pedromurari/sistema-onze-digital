@@ -17,7 +17,7 @@ import { assignTurmaEAtualizarParcelas } from '@/lib/parcelasAluno';
 import {
   MessageCircle, Target, Copy, ExternalLink, Users, TrendingUp, DollarSign, CalendarDays,
   Video, Rocket, Repeat, GraduationCap, Link2, Wallet, CreditCard, Crown, Kanban, ClipboardList,
-  Search, X, History, Filter, CornerDownRight, Eye, Zap, BookOpen, Layers,
+  Search, X, History, Filter, CornerDownRight, Eye, Zap, BookOpen, Layers, Trash2, RotateCcw,
 } from 'lucide-react';
 
 // -----------------------------------------------------------------------
@@ -382,6 +382,35 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
     }
   };
 
+  // Devolve o lead pra fila (vendedor = null) — pra quando alguém pegou o lead
+  // errado sem querer. Some da lista de quem devolveu (se estiver "vendo como"
+  // alguém) e volta a aparecer como "Sem vendedor" pros outros.
+  const unclaimLead = async (lead: Lead) => {
+    try {
+      await (supabase.from('leads') as any).update({ vendedor: null }).eq('id', lead.id);
+      fetchLeads();
+      fetchContagens();
+      toast({ title: 'Lead devolvido — sem vendedor de novo.' });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Não foi possível devolver o lead', description: error?.message || 'Tente novamente.' });
+    }
+  };
+
+  const [leadParaExcluir, setLeadParaExcluir] = useState<LeadComCanal | null>(null);
+  const excluirLead = async () => {
+    if (!leadParaExcluir) return;
+    try {
+      await supabase.from('leads').delete().eq('id', leadParaExcluir.id);
+      setLeadParaExcluir(null);
+      fetchLeads();
+      fetchContagens();
+      fetchMetricasExtras();
+      toast({ title: 'Lead excluído.' });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Não foi possível excluir o lead', description: error?.message || 'Tente novamente.' });
+    }
+  };
+
   // Trajetória completa do lead (toda troca de fase, com data/hora e quem era o
   // vendedor na hora) — gravada automaticamente por trigger no banco.
   const [historico, setHistorico] = useState<{ lead: LeadComCanal; itens: any[] } | null>(null);
@@ -654,15 +683,33 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
                         >
                           <History className="h-3.5 w-3.5 text-muted-foreground" />
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => setLeadParaExcluir(lead)}
+                          title="Excluir lead"
+                          className="h-8 w-8 flex-shrink-0 inline-flex items-center justify-center rounded-md border border-border bg-card hover:bg-destructive/10 hover:border-destructive/40 transition-colors"
+                        >
+                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                        </button>
                       </div>
                       <div className="mb-2 lg:mb-3">
                         {lead.vendedor ? (
-                          <Badge
-                            className="text-xs text-white"
-                            style={{ backgroundColor: INITIAL_VENDORS.find((v) => v.name === lead.vendedor)?.cor }}
-                          >
-                            {lead.vendedor.split(' ')[0]}
-                          </Badge>
+                          <div className="flex items-center gap-1.5">
+                            <Badge
+                              className="text-xs text-white"
+                              style={{ backgroundColor: INITIAL_VENDORS.find((v) => v.name === lead.vendedor)?.cor }}
+                            >
+                              {lead.vendedor.split(' ')[0]}
+                            </Badge>
+                            <button
+                              type="button"
+                              onClick={() => unclaimLead(lead)}
+                              title="Devolver lead (tirar vendedor, caso tenha pegado errado)"
+                              className="h-6 w-6 flex-shrink-0 inline-flex items-center justify-center rounded-md border border-border bg-card hover:bg-muted transition-colors"
+                            >
+                              <RotateCcw className="h-3 w-3 text-muted-foreground" />
+                            </button>
+                          </div>
                         ) : viewAsName ? (
                           <Button size="sm" variant="outline" className="h-7 text-xs w-full" onClick={() => claimLead(lead)}>
                             Pegar lead
@@ -777,6 +824,23 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
               );
             })}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!leadParaExcluir} onOpenChange={(open) => !open && setLeadParaExcluir(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base text-destructive">
+              <Trash2 size={16} /> Excluir lead
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Tem certeza que quer excluir <span className="font-semibold text-foreground">{leadParaExcluir?.nome}</span>? Essa ação não pode ser desfeita — o lead some do sistema, junto com o histórico dele.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setLeadParaExcluir(null)}>Cancelar</Button>
+            <Button variant="destructive" size="sm" onClick={excluirLead}>Excluir</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
