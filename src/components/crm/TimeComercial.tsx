@@ -1369,7 +1369,7 @@ function OperacaoTab({ viewAsName }: VendorScopeProps) {
         <StatTile label="Matrículas desta turma" value="Via links abaixo" hint="é pra onde as fichas de matrícula apontam" icon={Link2} />
       </div>
       <p className="text-xs text-muted-foreground">
-        Essa é a turma de formação (a classe de verdade) — diferente da turma #45 da Semana do Despertar, que é só o lançamento/captação (ver aba Aquisição).
+        Essa é a turma de formação (a classe de verdade) — diferente da turma #45 da Semana do Despertar, que é só o lançamento/captação (ver aba Aquisição aqui do lado).
       </p>
 
       <SectionBar title="Matrículas" />
@@ -1573,7 +1573,7 @@ function RemuneracaoTab({ viewAsName }: VendorScopeProps) {
           {showTeamFooter && (
             <TableFooter className="bg-primary/10">
               <TableRow>
-                <TableCell className="font-semibold text-primary">Soma dos 3 (não é meta de equipe)</TableCell>
+                <TableCell className="font-semibold text-primary">Soma dos 2 (não é meta de equipe)</TableCell>
                 <TableCell className="text-right font-semibold">{totals.meta}</TableCell>
                 <TableCell className="text-right font-semibold">{totals.vistaCartao}</TableCell>
                 <TableCell className="text-right font-semibold">{totals.boleto}</TableCell>
@@ -1595,7 +1595,7 @@ function RemuneracaoTab({ viewAsName }: VendorScopeProps) {
           <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2">
             {viewAsName
               ? 'Base, Motivo e Superação são metas individuais — essa é a sua.'
-              : 'Base, Motivo e Superação são metas individuais — cada vendedor bate a sua. A linha de baixo na tabela é só a soma dos 3, não uma meta de equipe: isso ainda não foi definido e entra depois, à parte.'}
+              : 'Base, Motivo e Superação são metas individuais — cada vendedor bate a sua. A linha de baixo na tabela é só a soma dos 2, não uma meta de equipe: isso ainda não foi definido e entra depois, à parte.'}
           </p>
           <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2">
             {viewAsName
@@ -1814,63 +1814,74 @@ export function TimeComercial() {
       </div>
 
       <Tabs defaultValue="funil" className="flex-1 flex flex-col min-h-0">
-        <div className="rounded-xl border border-border bg-muted/30 p-3 mb-1">
-          <div>
-            <div className="flex items-center gap-1.5 mb-0.5">
-              <Zap className="h-3 w-3 text-primary" />
-              <p className="text-[10px] font-bold uppercase tracking-wide text-primary">Meu trabalho</p>
+        <div className="rounded-xl border-2 border-primary/25 bg-gradient-to-br from-primary/[0.07] to-transparent p-4 mb-1 shadow-sm">
+          <div className="flex items-center gap-2.5 mb-2.5">
+            <div className="w-8 h-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0">
+              <Zap className="h-4 w-4" />
             </div>
-            <p className="text-[11px] text-muted-foreground mb-1.5">Trabalhar os leads e fechar matrícula.</p>
-            <TabsList className="h-auto bg-transparent p-0 gap-2 justify-start flex-wrap">
-              <TabsTrigger
-                value="funil"
-                className="rounded-lg px-4 py-2 text-sm font-semibold bg-primary/10 text-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-1.5"
-              >
-                <Kanban className="h-3.5 w-3.5" /> Funil
-              </TabsTrigger>
-              <TabsTrigger
-                value="operacao"
-                className="rounded-lg px-4 py-2 text-sm font-semibold bg-primary/10 text-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-1.5"
-              >
-                <ClipboardList className="h-3.5 w-3.5" /> Operação
-              </TabsTrigger>
-            </TabsList>
-          </div>
-
-          <div className="flex items-start gap-2 mt-3 pt-3 border-t border-dashed border-border">
-            <CornerDownRight className="h-3.5 w-3.5 text-muted-foreground/50 mt-0.5 flex-shrink-0" />
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5 mb-0.5">
-                <BookOpen className="h-3 w-3 text-muted-foreground" />
-                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Metas e comissão</p>
-              </div>
-              <p className="text-[11px] text-muted-foreground mb-1.5">Metas, comissão e como funciona a captação.</p>
-              <TabsList className="h-auto bg-transparent p-0 gap-1.5 justify-start flex-wrap">
-                <TabsTrigger value="metas" className="rounded-lg px-3 py-1.5 text-xs font-medium bg-card border border-border text-muted-foreground data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-sm">Meta Pessoal</TabsTrigger>
-                <TabsTrigger value="meta_equipe" className="rounded-lg px-3 py-1.5 text-xs font-medium bg-card border border-border text-muted-foreground data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-sm">Meta de Equipe</TabsTrigger>
-                <TabsTrigger value="aquisicao" className="rounded-lg px-3 py-1.5 text-xs font-medium bg-card border border-border text-muted-foreground data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-sm">Aquisição</TabsTrigger>
-                <TabsTrigger value="remuneracao" className="rounded-lg px-3 py-1.5 text-xs font-medium bg-card border border-border text-muted-foreground data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-sm">Remuneração</TabsTrigger>
-              </TabsList>
+            <div>
+              <p className="text-sm font-bold text-foreground leading-tight">Meu trabalho</p>
+              <p className="text-xs text-muted-foreground leading-tight mt-0.5">Comece por aqui: trabalhar os leads, fechar matrícula e acompanhar metas.</p>
             </div>
           </div>
+          <TabsList className="h-auto bg-transparent p-0 gap-2 justify-start flex-wrap">
+            <TabsTrigger
+              value="funil"
+              className="rounded-lg px-4 py-2 text-sm font-semibold bg-primary/10 text-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-1.5"
+            >
+              <Kanban className="h-3.5 w-3.5" /> Funil
+            </TabsTrigger>
+            <TabsTrigger
+              value="operacao"
+              className="rounded-lg px-4 py-2 text-sm font-semibold bg-primary/10 text-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-1.5"
+            >
+              <ClipboardList className="h-3.5 w-3.5" /> Operação
+            </TabsTrigger>
+            <TabsTrigger
+              value="metas_comissao"
+              className="rounded-lg px-4 py-2 text-sm font-semibold bg-primary/10 text-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-1.5"
+            >
+              <BookOpen className="h-3.5 w-3.5" /> Metas e Comissão
+            </TabsTrigger>
+          </TabsList>
         </div>
+
         <TabsContent value="funil" className="flex-1 min-h-0">
           <FunilTimeComercial viewAsName={viewAsName} />
         </TabsContent>
+
         <TabsContent value="operacao">
-          <OperacaoTab viewAsName={viewAsName} />
+          <Tabs defaultValue="op_turma" className="flex flex-col gap-4">
+            <TabsList className="h-auto bg-transparent p-0 gap-1.5 justify-start flex-wrap">
+              <TabsTrigger value="op_turma" className="rounded-lg px-3 py-1.5 text-xs font-medium bg-card border border-border text-muted-foreground data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-sm">Turma atual</TabsTrigger>
+              <TabsTrigger value="op_aquisicao" className="rounded-lg px-3 py-1.5 text-xs font-medium bg-card border border-border text-muted-foreground data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-sm">Aquisição</TabsTrigger>
+            </TabsList>
+            <TabsContent value="op_turma">
+              <OperacaoTab viewAsName={viewAsName} />
+            </TabsContent>
+            <TabsContent value="op_aquisicao">
+              <AquisicaoTab />
+            </TabsContent>
+          </Tabs>
         </TabsContent>
-        <TabsContent value="metas">
-          <MetasTab viewAsName={viewAsName} />
-        </TabsContent>
-        <TabsContent value="meta_equipe">
-          <MetaEquipeTab />
-        </TabsContent>
-        <TabsContent value="aquisicao">
-          <AquisicaoTab />
-        </TabsContent>
-        <TabsContent value="remuneracao">
-          <RemuneracaoTab viewAsName={viewAsName} />
+
+        <TabsContent value="metas_comissao">
+          <Tabs defaultValue="meta_pessoal" className="flex flex-col gap-4">
+            <TabsList className="h-auto bg-transparent p-0 gap-1.5 justify-start flex-wrap">
+              <TabsTrigger value="meta_pessoal" className="rounded-lg px-3 py-1.5 text-xs font-medium bg-card border border-border text-muted-foreground data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-sm">Meta Pessoal</TabsTrigger>
+              <TabsTrigger value="meta_equipe" className="rounded-lg px-3 py-1.5 text-xs font-medium bg-card border border-border text-muted-foreground data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-sm">Meta de Equipe</TabsTrigger>
+              <TabsTrigger value="remuneracao" className="rounded-lg px-3 py-1.5 text-xs font-medium bg-card border border-border text-muted-foreground data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-sm">Remuneração</TabsTrigger>
+            </TabsList>
+            <TabsContent value="meta_pessoal">
+              <MetasTab viewAsName={viewAsName} />
+            </TabsContent>
+            <TabsContent value="meta_equipe">
+              <MetaEquipeTab />
+            </TabsContent>
+            <TabsContent value="remuneracao">
+              <RemuneracaoTab viewAsName={viewAsName} />
+            </TabsContent>
+          </Tabs>
         </TabsContent>
       </Tabs>
     </div>
