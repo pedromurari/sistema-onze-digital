@@ -397,8 +397,8 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
     }
   };
 
-  // Contato (WhatsApp clicado ou ligação registrada manualmente) — vira
-  // evento na trajetória do lead e alimenta "Produtividade" em Dados.
+  // Contato via WhatsApp — log simples de um clique (abrir o chat já é o
+  // registro). Vira evento na trajetória do lead e alimenta "Produtividade".
   // Não bloqueia a ação principal (abrir WhatsApp) se o log falhar.
   const registrarContato = async (lead: Lead, tipo: 'contato_whatsapp' | 'contato_ligacao') => {
     if (!viewAsName) return;
@@ -406,6 +406,47 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
     // Não bloqueia a ação principal (abrir WhatsApp) se o log falhar — só perde
     // o registro de produtividade, mas fica no console pra debugar se acontecer.
     if (error) console.error('Erro ao registrar contato:', error);
+  };
+
+  // Ligação é registrada com mais detalhe que WhatsApp (não é só um clique):
+  // dia/hora da ligação (pode ser retroativo), se o lead atendeu e um resumo
+  // do que foi dito — só marcar "ligou" sem contexto não ajuda ninguém depois.
+  const toLocalDateTimeInputValue = (d: Date) => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  const [leadParaLigacao, setLeadParaLigacao] = useState<LeadComCanal | null>(null);
+  const [ligacaoDataHora, setLigacaoDataHora] = useState('');
+  const [ligacaoAtendeu, setLigacaoAtendeu] = useState<'sim' | 'nao'>('sim');
+  const [ligacaoResumo, setLigacaoResumo] = useState('');
+  const [salvandoLigacao, setSalvandoLigacao] = useState(false);
+
+  const abrirRegistrarLigacao = (lead: LeadComCanal) => {
+    if (!viewAsName) { toast({ title: 'Selecione um vendedor em "Ver como" pra registrar a ligação.' }); return; }
+    setLeadParaLigacao(lead);
+    setLigacaoDataHora(toLocalDateTimeInputValue(new Date()));
+    setLigacaoAtendeu('sim');
+    setLigacaoResumo('');
+  };
+
+  const salvarLigacao = async () => {
+    if (!leadParaLigacao || !viewAsName || !ligacaoDataHora) return;
+    setSalvandoLigacao(true);
+    const { error } = await (supabase as any).rpc('time_comercial_registrar_contato', {
+      p_lead_id: leadParaLigacao.id,
+      p_vendedor: viewAsName,
+      p_tipo: 'contato_ligacao',
+      p_criado_em: new Date(ligacaoDataHora).toISOString(),
+      p_atendeu: ligacaoAtendeu === 'sim',
+      p_resumo: ligacaoResumo,
+    });
+    setSalvandoLigacao(false);
+    if (error) {
+      toast({ variant: 'destructive', title: 'Não foi possível registrar a ligação', description: error.message });
+      return;
+    }
+    setLeadParaLigacao(null);
+    toast({ title: 'Ligação registrada!' });
   };
 
   const [leadParaExcluir, setLeadParaExcluir] = useState<LeadComCanal | null>(null);
@@ -428,7 +469,7 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
   const [historico, setHistorico] = useState<{ lead: LeadComCanal; itens: any[] } | null>(null);
   const abrirHistorico = async (lead: LeadComCanal) => {
     const { data, error } = await (supabase as any).from('leads_historico_fase')
-      .select('fase_anterior, fase_nova, vendedor, origem_mudanca, criado_em')
+      .select('fase_anterior, fase_nova, vendedor, origem_mudanca, criado_em, atendeu, resumo')
       .eq('lead_id', lead.id)
       .order('criado_em', { ascending: true });
     if (error) {
@@ -689,11 +730,7 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            if (!viewAsName) { toast({ title: 'Selecione um vendedor em "Ver como" pra registrar a ligação.' }); return; }
-                            registrarContato(lead, 'contato_ligacao');
-                            toast({ title: 'Ligação registrada!' });
-                          }}
+                          onClick={() => abrirRegistrarLigacao(lead)}
                           title="Registrar ligação feita pra esse lead"
                           className="h-8 w-8 flex-shrink-0 inline-flex items-center justify-center rounded-md border border-border bg-card hover:bg-muted transition-colors"
                         >
@@ -843,9 +880,9 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
                 : isWhatsapp
                 ? `WhatsApp aberto por ${item.vendedor}`
                 : isLigacao
-                ? `Ligação registrada por ${item.vendedor}`
+                ? `Ligação registrada por ${item.vendedor}${item.atendeu === true ? ' — atendeu' : item.atendeu === false ? ' — não atendeu' : ''}`
                 : (stageInfo?.label ?? item.fase_nova);
-              const corPonto = isAtribuicao ? 'bg-success' : isDevolucao ? 'bg-warning' : isContato ? 'bg-primary' : (stageInfo?.color ?? 'bg-muted-foreground');
+              const corPonto = isAtribuicao ? 'bg-success' : isDevolucao ? 'bg-warning' : isLigacao ? (item.atendeu === false ? 'bg-destructive' : 'bg-primary') : isContato ? 'bg-primary' : (stageInfo?.color ?? 'bg-muted-foreground');
               return (
                 <div key={idx} className="flex gap-3">
                   <div className="flex flex-col items-center flex-shrink-0">
@@ -858,6 +895,9 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
                       {new Date(item.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       {!isAtribuicao && !isDevolucao && !isContato && item.vendedor && ` · ${item.vendedor}`}
                     </p>
+                    {isLigacao && item.resumo && (
+                      <p className="text-xs text-foreground bg-muted rounded-md border border-dashed border-border px-2 py-1.5 mt-1 max-w-xs">{item.resumo}</p>
+                    )}
                   </div>
                 </div>
               );
@@ -879,6 +919,57 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setLeadParaExcluir(null)}>Cancelar</Button>
             <Button variant="destructive" size="sm" onClick={excluirLead}>Excluir</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!leadParaLigacao} onOpenChange={(open) => !open && setLeadParaLigacao(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Phone size={16} /> Registrar ligação — {leadParaLigacao?.nome}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <div>
+              <Label className="text-xs">Dia e hora da ligação</Label>
+              <Input type="datetime-local" value={ligacaoDataHora} onChange={(e) => setLigacaoDataHora(e.target.value)} className="h-9 text-sm mt-1" />
+            </div>
+            <div>
+              <Label className="text-xs">O lead atendeu?</Label>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                <button
+                  type="button"
+                  onClick={() => setLigacaoAtendeu('sim')}
+                  className={`text-sm font-medium rounded-lg border p-2 transition-all ${ligacaoAtendeu === 'sim' ? 'border-success bg-success/10 text-success' : 'border-border bg-card text-muted-foreground hover:bg-muted/50'}`}
+                >
+                  Sim, atendeu
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLigacaoAtendeu('nao')}
+                  className={`text-sm font-medium rounded-lg border p-2 transition-all ${ligacaoAtendeu === 'nao' ? 'border-destructive bg-destructive/10 text-destructive' : 'border-border bg-card text-muted-foreground hover:bg-muted/50'}`}
+                >
+                  Não atendeu
+                </button>
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs">Resumo do que foi dito</Label>
+              <Textarea
+                value={ligacaoResumo}
+                onChange={(e) => setLigacaoResumo(e.target.value)}
+                placeholder={ligacaoAtendeu === 'sim' ? 'Ex: falou sobre objeção de preço, disse que vai decidir até sexta...' : 'Ex: caixa postal, pediu pra ligar mais tarde...'}
+                className="text-sm mt-1"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setLeadParaLigacao(null)}>Cancelar</Button>
+            <Button size="sm" onClick={salvarLigacao} disabled={salvandoLigacao || !ligacaoDataHora}>
+              {salvandoLigacao ? 'Salvando...' : 'Salvar ligação'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1941,7 +2032,7 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
         <StatTile label="Taxa de conversão" value={`${conversaoPct.toFixed(1)}%`} hint={leadsEntraram > 0 ? `${vendasTotais} de ${leadsEntraram} leads` : 'Sem leads ainda'} icon={Percent} />
       </div>
 
-      <SectionBar title="Indicadores de eficiência" subtitle="Os mesmos números que time de vendas de elite acompanha: velocidade de venda e valor médio por venda." />
+      <SectionBar title="Indicadores de eficiência" subtitle="Velocidade de venda e valor médio por venda." />
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         <StatTile
           label="Ciclo de vendas médio"
