@@ -18,6 +18,7 @@ import {
   MessageCircle, Target, Copy, ExternalLink, Users, TrendingUp, DollarSign, CalendarDays,
   Video, Rocket, Repeat, GraduationCap, Link2, Wallet, CreditCard, Crown, Kanban, ClipboardList,
   Search, X, History, Filter, CornerDownRight, Eye, Zap, BookOpen, Layers, Trash2, RotateCcw,
+  Activity, Percent, BarChart3,
 } from 'lucide-react';
 
 // -----------------------------------------------------------------------
@@ -1733,6 +1734,156 @@ function RemuneracaoTab({ viewAsName }: VendorScopeProps) {
 }
 
 // -----------------------------------------------------------------------
+// Dados — números reais do time comercial, não simulação: faturamento
+// realizado por vendedor (via alunos.vendedor_id, preenchido quando o
+// vendedor reivindica a matrícula em "Alunos aguardando turma"), leads que
+// entraram vs vendas fechadas, produtividade (leads movimentados por dia,
+// via leads_historico_fase) e meta de reativação da base de retorno.
+// Fica antes de "Metas e Comissão" — é o "onde estamos" antes do "pra onde
+// vamos".
+// -----------------------------------------------------------------------
+
+interface AlunoVendedorStat { vendedor: string; vista_cartao: number; boleto: number; bolsa_cortesia: number; sem_forma: number; total: number; }
+interface MovimentacaoDia { vendedor: string; dia: string; eventos: number; }
+
+// Meta de reativação da base Retorno/Base (hoje ~11.680 leads) — ainda não
+// definida pelo dono do negócio. Quando ele passar o número, troca aqui.
+const META_RETORNO_BASE_MES: number | null = null;
+
+function DadosTab({ viewAsName }: VendorScopeProps) {
+  const [alunosPorVendedor, setAlunosPorVendedor] = useState<AlunoVendedorStat[]>([]);
+  const [movimentacao, setMovimentacao] = useState<MovimentacaoDia[]>([]);
+  const [contagens, setContagens] = useState<Contagem[]>([]);
+  const [campanhas, setCampanhas] = useState<Campanha[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const [{ data: alunos }, { data: mov }, { data: cont }, { data: camps }] = await Promise.all([
+        (supabase as any).rpc('time_comercial_alunos_vendedor'),
+        (supabase as any).rpc('time_comercial_movimentacao_dia', { dias: 7 }),
+        (supabase as any).rpc('time_comercial_contagens'),
+        (supabase as any).from('time_comercial_campanhas').select('*'),
+      ]);
+      if (alunos) setAlunosPorVendedor(alunos as AlunoVendedorStat[]);
+      if (mov) setMovimentacao(mov as MovimentacaoDia[]);
+      if (cont) setContagens(cont as Contagem[]);
+      if (camps) setCampanhas(camps as Campanha[]);
+      setLoading(false);
+    };
+    fetchData();
+  }, []);
+
+  const vendedoresVisiveis = viewAsName ? INITIAL_VENDORS.filter((v) => v.name === viewAsName) : INITIAL_VENDORS;
+  const alunosDe = (nome: string) => alunosPorVendedor.find((a) => a.vendedor === nome);
+
+  // Mesmo critério do Funil: campanha de retorno (base antiga) não conta como
+  // "leads que entraram" — senão o número vem inflado com milhares de leads
+  // frios de anos atrás, que não representam captação de verdade.
+  const campanhaIdsRetorno = campanhas.filter((c) => c.tipo === 'retorno').map((c) => c.id);
+  const leadsEntraram = contagens
+    .filter((c) => !(c.campanha_id && campanhaIdsRetorno.includes(c.campanha_id)))
+    .filter((c) => !viewAsName || !c.vendedor || c.vendedor === viewAsName)
+    .reduce((soma, c) => soma + Number(c.total), 0);
+
+  const vendasTotais = vendedoresVisiveis.reduce((soma, v) => soma + (alunosDe(v.name)?.total ?? 0), 0);
+  const conversaoPct = leadsEntraram > 0 ? (vendasTotais / leadsEntraram) * 100 : 0;
+
+  const hojeStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const movimentacaoDe = (nome: string) => {
+    const doVendedor = movimentacao.filter((m) => m.vendedor === nome);
+    const hoje = doVendedor.find((m) => m.dia === hojeStr)?.eventos ?? 0;
+    const total7dias = doVendedor.reduce((soma, m) => soma + Number(m.eventos), 0);
+    return { hoje, media7dias: Math.round((total7dias / 7) * 10) / 10 };
+  };
+
+  if (loading) {
+    return <p className="text-sm text-muted-foreground">Carregando dados...</p>;
+  }
+
+  return (
+    <div className="flex flex-col gap-5">
+      <p className="text-sm text-muted-foreground -mt-1">{viewAsName ? 'Seus números reais até agora — não é simulação.' : 'Números reais do time até agora — não é simulação. Onde estamos antes de olhar a meta.'}</p>
+
+      <SectionBar title="Faturamento realizado por vendedor" subtitle="Vem de alunos já matriculados de verdade (vendedor_id preenchido ao reivindicar em Operação), não de números digitados." />
+      <Card className="p-4 overflow-x-auto">
+        <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
+          <TableHeader>
+            <TableRow className={PREMIUM_TABLE_HEADER_ROW}>
+              <TableHead>Vendedor</TableHead>
+              <TableHead className="text-right">À vista/cartão</TableHead>
+              <TableHead className="text-right">Recorrente</TableHead>
+              <TableHead className="text-right">Bolsa/cortesia</TableHead>
+              <TableHead className="text-right">Sem forma de pgto.</TableHead>
+              <TableHead className="text-right">Faturamento</TableHead>
+              <TableHead className="text-right">Comissão</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {vendedoresVisiveis.map((v, idx) => {
+              const stat = alunosDe(v.name);
+              const calc = calcVendor(stat?.vista_cartao ?? 0, stat?.boleto ?? 0);
+              return (
+                <TableRow key={v.name} className={premiumZebraRow(idx)}>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-md flex items-center justify-center font-bold text-xs text-white flex-shrink-0" style={{ backgroundColor: v.cor }}>{v.initials}</div>
+                      <div className="text-sm font-medium text-foreground">{v.name}</div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">{stat?.vista_cartao ?? 0}</TableCell>
+                  <TableCell className="text-right">{stat?.boleto ?? 0}</TableCell>
+                  <TableCell className="text-right">{stat?.bolsa_cortesia ?? 0}</TableCell>
+                  <TableCell className="text-right">{stat?.sem_forma ?? 0}</TableCell>
+                  <TableCell className="text-right">{fmt(calc.faturamento)}</TableCell>
+                  <TableCell className="text-right font-semibold text-primary">{fmt(calc.comissao)}</TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+        <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 mt-3">
+          "Sem forma de pgto." são matrículas reivindicadas mas sem à-vista/cartão/boleto informado ainda na ficha — não entram no faturamento até isso ser preenchido. "Bolsa/cortesia" não geram comissão.
+        </p>
+      </Card>
+
+      <SectionBar title="Leads que entraram vs. vendas" subtitle="Não conta a base de retorno reimportada — só captação de verdade." />
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+        <StatTile label="Leads que entraram" value={leadsEntraram} icon={Users} />
+        <StatTile label="Vendas fechadas" value={vendasTotais} icon={GraduationCap} />
+        <StatTile label="Taxa de conversão" value={`${conversaoPct.toFixed(1)}%`} hint={leadsEntraram > 0 ? `${vendasTotais} de ${leadsEntraram} leads` : 'Sem leads ainda'} icon={Percent} />
+      </div>
+
+      <SectionBar title="Produtividade — leads movimentados por dia" subtitle="Conta toda troca de fase, atribuição e devolução de lead — mede atividade, não só resultado. Últimos 7 dias." />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {vendedoresVisiveis.map((v) => {
+          const mov = movimentacaoDe(v.name);
+          return (
+            <Card key={v.name} className="p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-md flex items-center justify-center font-bold text-xs text-white flex-shrink-0" style={{ backgroundColor: v.cor }}>{v.initials}</div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-foreground">{v.name}</p>
+                <p className="text-xs text-muted-foreground">Hoje: <span className="font-semibold text-foreground">{mov.hoje}</span> · Média 7 dias: <span className="font-semibold text-foreground">{mov.media7dias}</span>/dia</p>
+              </div>
+              <Activity className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            </Card>
+          );
+        })}
+      </div>
+
+      <SectionBar title="Meta de reativação — Retorno/Base" subtitle="Quantas matrículas por mês devem vir da base antiga (Base Fria, Grupo Oferta Não Matriculou etc.)." />
+      <Card className="p-4">
+        {META_RETORNO_BASE_MES === null ? (
+          <p className="text-sm text-muted-foreground">Meta ainda não definida — assim que o Igor passar o número, ela entra aqui e passa a comparar com as matrículas reais vindas do canal Retorno/Base.</p>
+        ) : (
+          <p className="text-sm text-foreground">Meta: <span className="font-semibold">{META_RETORNO_BASE_MES}</span> matrículas/mês vindas do Retorno/Base.</p>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------
 // Meta de Equipe — ainda não definida pelo dono do negócio. Aba reservada
 // pra quando ele trouxer os números (é diferente da soma das metas
 // individuais, que já existe na Remuneração).
@@ -1838,6 +1989,12 @@ export function TimeComercial() {
               <ClipboardList className="h-3.5 w-3.5" /> Operação
             </TabsTrigger>
             <TabsTrigger
+              value="dados"
+              className="rounded-lg px-4 py-2 text-sm font-semibold bg-primary/10 text-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-1.5"
+            >
+              <BarChart3 className="h-3.5 w-3.5" /> Dados
+            </TabsTrigger>
+            <TabsTrigger
               value="metas_comissao"
               className="rounded-lg px-4 py-2 text-sm font-semibold bg-primary/10 text-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-1.5"
             >
@@ -1848,6 +2005,10 @@ export function TimeComercial() {
 
         <TabsContent value="funil" className="flex-1 min-h-0">
           <FunilTimeComercial viewAsName={viewAsName} />
+        </TabsContent>
+
+        <TabsContent value="dados">
+          <DadosTab viewAsName={viewAsName} />
         </TabsContent>
 
         <TabsContent value="operacao">
