@@ -1186,14 +1186,14 @@ function AquisicaoTab() {
   return (
     <div className="flex flex-col gap-5">
       <p className="text-sm text-muted-foreground -mt-1">Como os leads chegam: a Semana do Despertar, o único canal de captação definido até agora.</p>
-      <SectionBar title="Visão geral" />
+      <SectionBar title="Visão geral" icon={Rocket} />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <StatTile label="Formato" value="3 aulas" hint="ao vivo, YouTube, Ter/Qua/Qui às 20h" icon={Video} />
         <StatTile label="Próxima turma" value="#45" hint="01–03/set/2026" icon={Rocket} />
         <StatTile label="Cadência" value="Quinzenal" hint="semana sim, semana não — até dez/2026" icon={Repeat} />
       </div>
 
-      <SectionBar title="Como funciona cada turma" />
+      <SectionBar title="Como funciona cada turma" icon={Video} />
       <Card className="p-4">
         <h3 className="text-sm font-semibold text-foreground mb-3">As 3 aulas</h3>
         <div className="flex flex-col gap-2">
@@ -1229,7 +1229,7 @@ function AquisicaoTab() {
         </div>
       </Card>
 
-      <SectionBar title="Calendário de turmas" />
+      <SectionBar title="Calendário de turmas" icon={CalendarDays} />
       <Card className="p-4 overflow-x-auto">
         <h3 className="text-sm font-semibold text-foreground mb-3">Calendário 2026 — quinzenal (semana sim, semana não)</h3>
         <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
@@ -1489,7 +1489,8 @@ function OperacaoTab({ viewAsName }: VendorScopeProps) {
   return (
     <div className="flex flex-col gap-5">
       <p className="text-sm text-muted-foreground -mt-1">{viewAsName ? 'Seu link de matrícula e os alunos que você fechou, aguardando entrar numa turma.' : 'Links de matrícula por vendedor e alunos aguardando turma, de todo mundo.'}</p>
-      <SectionBar title="Turma atual" />
+
+      <SectionBar title="Turma atual" icon={GraduationCap} />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <StatTile label="Próxima turma (formação)" value="02726" hint="Turma #02726/OnzeDS · PSI" icon={GraduationCap} />
         <StatTile label="Data de início" value="01/09/2026" hint="ainda não refletido no cadastro do sistema" icon={CalendarDays} />
@@ -1499,39 +1500,8 @@ function OperacaoTab({ viewAsName }: VendorScopeProps) {
         Essa é a turma de formação (a classe de verdade) — diferente da turma #45 da Semana do Despertar, que é só o lançamento/captação (ver aba Aquisição aqui do lado).
       </p>
 
-      <SectionBar title="Matrículas" />
+      <SectionBar title="Calendário de turmas" subtitle="Data de início de cada turma nova, sem precisar perguntar." icon={CalendarDays} />
       <Card className="p-4">
-        <h3 className="text-sm font-semibold text-foreground mb-1">Ficha de Matrícula — por vendedor</h3>
-        <p className="text-xs text-muted-foreground mb-3">
-          Link trackeado individual (gerado pelo Igor) — cada vendedor usa só o próprio, pra matrícula ficar atribuída certinho.
-        </p>
-        <div className="flex flex-col gap-2">
-          {matriculaLinks.map((l) => (
-            <LinkRow key={l.url} label={l.label} url={l.url} />
-          ))}
-        </div>
-        {!viewAsName && (
-          <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 mt-3">
-            Atribuição por ordem de chegada dos links (Helen → Miguel) — confirma com o Igor se é essa mesma ordem antes de divulgar.
-          </p>
-        )}
-      </Card>
-
-      <AlunosAguardandoTurmaCard viewAsName={viewAsName} />
-
-      <Card className="p-4">
-        <h3 className="text-sm font-semibold text-foreground mb-3">Outros links da turma</h3>
-        <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2">
-          Landing page da Semana do Despertar, link de pagamento/checkout, grupo de WhatsApp — ainda não informados. Entram aqui assim que chegarem.
-        </p>
-      </Card>
-
-      <SectionBar title="Calendário de turmas" />
-      <Card className="p-4">
-        <h3 className="text-sm font-semibold text-foreground mb-1">Calendário de início das turmas — Formação PSI</h3>
-        <p className="text-xs text-muted-foreground mb-3">
-          Pra vocês saberem a data de início de cada turma nova, sem precisar perguntar.
-        </p>
         <div className="flex flex-col divide-y divide-border">
           {TURMAS_FORMACAO.map((t) => (
             <div key={t.turma} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
@@ -1552,6 +1522,30 @@ function OperacaoTab({ viewAsName }: VendorScopeProps) {
           ))}
         </div>
       </Card>
+
+      <SectionBar title="Matrículas" subtitle="Fichas por vendedor e quem já fechou, aguardando turma." icon={Link2} />
+      <Card className="p-4">
+        <h3 className="text-sm font-semibold text-foreground mb-1">Ficha de Matrícula — por vendedor</h3>
+        <p className="text-xs text-muted-foreground mb-3">
+          Link trackeado individual (gerado pelo Igor) — cada vendedor usa só o próprio, pra matrícula ficar atribuída certinho.
+        </p>
+        <div className="flex flex-col gap-2">
+          {matriculaLinks.map((l) => (
+            <LinkRow key={l.url} label={l.label} url={l.url} />
+          ))}
+        </div>
+        {!viewAsName && (
+          <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 mt-3">
+            Atribuição por ordem de chegada dos links (Helen → Miguel) — confirma com o Igor se é essa mesma ordem antes de divulgar.
+          </p>
+        )}
+      </Card>
+
+      <AlunosAguardandoTurmaCard viewAsName={viewAsName} />
+
+      <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 -mt-2">
+        Outros links da turma (landing page da Semana do Despertar, pagamento/checkout, grupo de WhatsApp) ainda não informados — entram aqui assim que chegarem.
+      </p>
     </div>
   );
 }
