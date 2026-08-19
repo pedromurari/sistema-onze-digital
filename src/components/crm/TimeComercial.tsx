@@ -108,10 +108,15 @@ function StatTile({ label, value, hint, icon: Icon }: { label: string; value: Re
 
 // Barra + título usados pra separar visualmente os blocos de cada aba (ex: "Visão geral"
 // dos cards de estatística vs. a tabela principal logo abaixo).
-function SectionBar({ title, subtitle }: { title: string; subtitle?: string }) {
+function SectionBar({ title, subtitle, icon: Icon }: { title: string; subtitle?: string; icon?: React.ElementType }) {
   return (
     <div className="flex items-center gap-2.5">
       <div className="w-1 h-5 rounded-full bg-primary flex-shrink-0" />
+      {Icon && (
+        <div className="w-6 h-6 rounded-md bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
+          <Icon className="h-3.5 w-3.5" />
+        </div>
+      )}
       <div>
         <h2 className="text-sm font-bold text-foreground leading-tight">{title}</h2>
         {subtitle && <p className="text-xs text-muted-foreground leading-tight mt-0.5">{subtitle}</p>}
@@ -1901,11 +1906,48 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
   const [cicloVendas, setCicloVendas] = useState<CicloVendas | null>(null);
   const [vendasPorEpocaMes, setVendasPorEpocaMes] = useState<VendaEpocaMes[]>([]);
   const [atividade, setAtividade] = useState<AtividadeItem[]>([]);
+  const hojeIso = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const diasAtras = (n: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  };
+  // Período exato (não só "últimos N dias") — os botões Dia/Semana/Mês só
+  // preenchem os dois campos de data, que continuam editáveis pra escolher
+  // qualquer intervalo específico (ex: uma semana de um mês passado).
+  const [atividadeInicio, setAtividadeInicio] = useState(diasAtras(6));
+  const [atividadeFim, setAtividadeFim] = useState(hojeIso);
+  const [diasCarregados, setDiasCarregados] = useState(90);
   const [loading, setLoading] = useState(true);
+  const [loadingAtividade, setLoadingAtividade] = useState(false);
+
+  const fetchAtividade = async (dias: number) => {
+    setLoadingAtividade(true);
+    const { data: ativ } = await (supabase as any).rpc('time_comercial_atividade_vendedor', { p_dias: dias });
+    if (ativ) setAtividade(ativ as AtividadeItem[]);
+    setLoadingAtividade(false);
+  };
+
+  // Se o "De" escolhido for mais antigo que o já carregado, busca de novo
+  // com uma janela maior — sem isso o período exato ficaria limitado aos
+  // últimos 90 dias mesmo quando o vendedor escolhe uma data mais antiga.
+  useEffect(() => {
+    const diasNecessarios = Math.ceil((new Date(hojeIso).getTime() - new Date(atividadeInicio).getTime()) / 86400000) + 2;
+    if (diasNecessarios > diasCarregados) {
+      const novoTeto = Math.min(diasNecessarios, 730);
+      setDiasCarregados(novoTeto);
+      fetchAtividade(novoTeto);
+    }
+  }, [atividadeInicio]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const setPresetPeriodo = (tipo: 'dia' | 'semana' | 'mes') => {
+    setAtividadeFim(hojeIso);
+    setAtividadeInicio(tipo === 'dia' ? hojeIso : tipo === 'semana' ? diasAtras(6) : diasAtras(29));
+  };
 
   useEffect(() => {
     const fetchData = async () => {
-      const [{ data: alunos }, { data: mov }, { data: cont }, { data: camps }, { data: diaSemana }, { data: lMes }, { data: vMes }, { data: ciclo }, { data: epocaMes }, { data: ativ }] = await Promise.all([
+      const [{ data: alunos }, { data: mov }, { data: cont }, { data: camps }, { data: diaSemana }, { data: lMes }, { data: vMes }, { data: ciclo }, { data: epocaMes }] = await Promise.all([
         (supabase as any).rpc('time_comercial_alunos_vendedor'),
         (supabase as any).rpc('time_comercial_movimentacao_dia', { dias: 7 }),
         (supabase as any).rpc('time_comercial_contagens'),
@@ -1915,7 +1957,7 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
         (supabase as any).rpc('time_comercial_vendas_por_mes'),
         (supabase as any).rpc('time_comercial_ciclo_vendas'),
         (supabase as any).rpc('time_comercial_vendas_por_epoca_mes'),
-        (supabase as any).rpc('time_comercial_atividade_vendedor', { p_dias: 30 }),
+        fetchAtividade(diasCarregados),
       ]);
       if (alunos) setAlunosPorVendedor(alunos as AlunoVendedorStat[]);
       if (mov) setMovimentacao(mov as MovimentacaoDia[]);
@@ -1926,7 +1968,6 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
       if (vMes) setVendasPorMes(vMes as VendaMes[]);
       if (epocaMes) setVendasPorEpocaMes(epocaMes as VendaEpocaMes[]);
       if (ciclo) setCicloVendas((ciclo as CicloVendas[])[0] ?? null);
-      if (ativ) setAtividade(ativ as AtividadeItem[]);
       setLoading(false);
     };
     fetchData();
@@ -2011,10 +2052,27 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
     const d = new Date(isoDia + 'T00:00:00');
     return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', weekday: 'short' });
   };
+  // Período exato escolhido pelo vendedor (campos "De"/"Até") — os presets
+  // Dia/Semana/Mês só preenchem os campos, o filtro real usa as datas.
+  const atividadeNoPeriodoDe = (nome: string) =>
+    atividade.filter((a) => {
+      if (a.vendedor !== nome) return false;
+      const dia = new Date(a.criado_em).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+      return dia >= atividadeInicio && dia <= atividadeFim;
+    });
+
+  const resumoPeriodoDe = (nome: string) => {
+    const itens = atividadeNoPeriodoDe(nome);
+    return {
+      movimentacoes: itens.filter((i) => !['contato_whatsapp', 'contato_ligacao'].includes(i.origem_mudanca)).length,
+      mensagens: itens.filter((i) => i.origem_mudanca === 'contato_whatsapp').length,
+      ligacoes: itens.filter((i) => i.origem_mudanca === 'contato_ligacao').length,
+    };
+  };
+
   const atividadeAgrupadaDe = (nome: string) => {
-    const doVendedor = atividade.filter((a) => a.vendedor === nome);
     const porDia = new Map<string, AtividadeItem[]>();
-    for (const item of doVendedor) {
+    for (const item of atividadeNoPeriodoDe(nome)) {
       const dia = new Date(item.criado_em).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
       if (!porDia.has(dia)) porDia.set(dia, []);
       porDia.get(dia)!.push(item);
@@ -2030,7 +2088,14 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
     <div className="flex flex-col gap-5">
       <p className="text-sm text-muted-foreground -mt-1">{viewAsName ? 'Seus números reais até agora — não é simulação.' : 'Números reais do time até agora — não é simulação. Onde estamos antes de olhar a meta.'}</p>
 
-      <SectionBar title="Faturamento realizado por vendedor" subtitle="Vem de alunos já matriculados de verdade (vendedor_id preenchido ao reivindicar em Operação), não de números digitados." />
+      <SectionBar title="Visão geral" subtitle="Não conta a base de retorno reimportada — só captação de verdade." icon={Users} />
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+        <StatTile label="Leads que entraram" value={leadsEntraram} icon={Users} />
+        <StatTile label="Vendas fechadas" value={vendasTotais} icon={GraduationCap} />
+        <StatTile label="Taxa de conversão" value={`${conversaoPct.toFixed(1)}%`} hint={leadsEntraram > 0 ? `${vendasTotais} de ${leadsEntraram} leads` : 'Sem leads ainda'} icon={Percent} />
+      </div>
+
+      <SectionBar title="Faturamento realizado por vendedor" subtitle="Vem de alunos já matriculados de verdade (vendedor_id preenchido ao reivindicar em Operação), não de números digitados." icon={DollarSign} />
       <Card className="p-4 overflow-x-auto">
         <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
           <TableHeader>
@@ -2072,14 +2137,30 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
         </p>
       </Card>
 
-      <SectionBar title="Leads que entraram vs. vendas" subtitle="Não conta a base de retorno reimportada — só captação de verdade." />
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-        <StatTile label="Leads que entraram" value={leadsEntraram} icon={Users} />
-        <StatTile label="Vendas fechadas" value={vendasTotais} icon={GraduationCap} />
-        <StatTile label="Taxa de conversão" value={`${conversaoPct.toFixed(1)}%`} hint={leadsEntraram > 0 ? `${vendasTotais} de ${leadsEntraram} leads` : 'Sem leads ainda'} icon={Percent} />
-      </div>
+      {!viewAsName && (
+        <>
+          <SectionBar title="Ranking da equipe" subtitle="Vendas fechadas por vendedor — quem está na frente agora." icon={Trophy} />
+          <Card className="p-4">
+            <div className="flex flex-col divide-y divide-border">
+              {ranking.map(({ v, vendas }, idx) => {
+                const medalha = idx === 0 ? 'bg-warning/15 text-warning border-warning/30' : idx === 1 ? 'bg-muted text-muted-foreground border-border' : 'bg-transparent text-muted-foreground border-transparent';
+                return (
+                  <div key={v.name} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                    <div className={`w-7 h-7 rounded-full border flex items-center justify-center flex-shrink-0 ${medalha}`}>
+                      {idx === 0 && vendas > 0 ? <Trophy className="h-3.5 w-3.5" /> : <span className="text-xs font-bold">{idx + 1}º</span>}
+                    </div>
+                    <div className="w-8 h-8 rounded-md flex items-center justify-center font-bold text-xs text-white flex-shrink-0" style={{ backgroundColor: v.cor }}>{v.initials}</div>
+                    <p className="text-sm font-medium text-foreground flex-1">{v.name}</p>
+                    <Badge className="text-xs border-0 bg-primary/10 text-primary">{vendas} {vendas === 1 ? 'venda' : 'vendas'}</Badge>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        </>
+      )}
 
-      <SectionBar title="Indicadores de eficiência" subtitle="Velocidade de venda e valor médio por venda." />
+      <SectionBar title="Indicadores de eficiência" subtitle="Velocidade de venda e valor médio por venda." icon={Timer} />
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         <StatTile
           label="Ciclo de vendas médio"
@@ -2095,28 +2176,8 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
         />
       </div>
 
-      {!viewAsName && (
-        <>
-          <SectionBar title="Ranking da equipe" subtitle="Vendas fechadas por vendedor — quem está na frente agora." />
-          <Card className="p-4">
-            <div className="flex flex-col divide-y divide-border">
-              {ranking.map(({ v, vendas }, idx) => (
-                <div key={v.name} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
-                  <div className="w-6 text-center font-bold text-sm text-muted-foreground flex-shrink-0">
-                    {idx === 0 && vendas > 0 ? <Trophy className="h-4 w-4 text-warning inline" /> : `${idx + 1}º`}
-                  </div>
-                  <div className="w-8 h-8 rounded-md flex items-center justify-center font-bold text-xs text-white flex-shrink-0" style={{ backgroundColor: v.cor }}>{v.initials}</div>
-                  <p className="text-sm font-medium text-foreground flex-1">{v.name}</p>
-                  <Badge className="text-xs border-0 bg-primary/10 text-primary">{vendas} {vendas === 1 ? 'venda' : 'vendas'}</Badge>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </>
-      )}
-
-      <SectionBar title="Produtividade — atividade por dia" subtitle="Leads movimentados, mensagens de WhatsApp abertas e ligações registradas — mede esforço, não só resultado. Últimos 7 dias." />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <SectionBar title="Atividade do vendedor" subtitle="Ritmo do dia a dia e o histórico completo — nada é perdido, escolha o período exato pra revisar." icon={Activity} />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {vendedoresVisiveis.map((v) => {
           const movs = movimentacaoDe(v.name, 'movimentacao');
           const msgs = movimentacaoDe(v.name, 'contato_whatsapp');
@@ -2150,44 +2211,82 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
       </div>
       <p className="text-xs text-muted-foreground -mt-2">Mensagens contam quando o vendedor abre o WhatsApp do lead pela tela; ligações são registradas manualmente no botão de telefone do card do lead.</p>
 
-      <SectionBar title="O que cada vendedor fez" subtitle="Linha do tempo de hoje, ontem e dias anteriores — nada é perdido, fica tudo registrado (últimos 30 dias)." />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        {vendedoresVisiveis.map((v) => {
-          const grupos = atividadeAgrupadaDe(v.name);
-          return (
-            <Card key={v.name} className="p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 rounded-md flex items-center justify-center font-bold text-xs text-white flex-shrink-0" style={{ backgroundColor: v.cor }}>{v.initials}</div>
-                <p className="text-sm font-semibold text-foreground">{v.name}</p>
+      <Card className="p-4">
+        <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Histórico — o que cada um fez</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">Escolha o período exato pra revisar.</p>
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex gap-1.5">
+              {(['dia', 'semana', 'mes'] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPresetPeriodo(p)}
+                  className="rounded-lg px-3 py-1.5 text-xs font-medium bg-card border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all"
+                >
+                  {p === 'dia' ? 'Hoje' : p === 'semana' ? 'Últimos 7 dias' : 'Últimos 30 dias'}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-end gap-2">
+              <div>
+                <Label className="text-[10px] text-muted-foreground">De</Label>
+                <Input type="date" value={atividadeInicio} max={atividadeFim} onChange={(e) => setAtividadeInicio(e.target.value)} className="h-8 text-xs w-36" />
               </div>
-              {grupos.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Nenhuma atividade registrada ainda.</p>
-              ) : (
-                <div className="max-h-80 overflow-y-auto flex flex-col gap-3 pr-1">
-                  {grupos.map(([dia, itens]) => (
-                    <div key={dia}>
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-primary mb-1.5">{diaLabel(dia)} <span className="text-muted-foreground font-normal normal-case">· {itens.length} {itens.length === 1 ? 'ação' : 'ações'}</span></p>
-                      <div className="flex flex-col gap-1.5">
-                        {itens.map((item, idx) => (
-                          <div key={idx} className="text-xs border-l-2 border-border pl-2">
-                            <p className="text-foreground">
-                              <span className="text-muted-foreground">{new Date(item.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}</span>
-                              {' — '}{descreverAtividade(item)} <span className="text-muted-foreground">· {item.lead_nome}</span>
-                            </p>
-                            {item.resumo && <p className="text-muted-foreground bg-muted rounded px-1.5 py-1 mt-0.5">{item.resumo}</p>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+              <div>
+                <Label className="text-[10px] text-muted-foreground">Até</Label>
+                <Input type="date" value={atividadeFim} min={atividadeInicio} max={hojeIso} onChange={(e) => setAtividadeFim(e.target.value)} className="h-8 text-xs w-36" />
+              </div>
+              {loadingAtividade && <span className="text-xs text-muted-foreground pb-1.5">Carregando...</span>}
+            </div>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          {vendedoresVisiveis.map((v) => {
+            const grupos = atividadeAgrupadaDe(v.name);
+            const resumo = resumoPeriodoDe(v.name);
+            return (
+              <div key={v.name} className="rounded-lg border border-border p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-7 h-7 rounded-md flex items-center justify-center font-bold text-[11px] text-white flex-shrink-0" style={{ backgroundColor: v.cor }}>{v.initials}</div>
+                  <p className="text-sm font-semibold text-foreground">{v.name}</p>
                 </div>
-              )}
-            </Card>
-          );
-        })}
-      </div>
+                <div className="flex gap-2 mb-3">
+                  <Badge className="text-[11px] border-0 bg-muted text-muted-foreground">{resumo.movimentacoes} leads movimentados</Badge>
+                  <Badge className="text-[11px] border-0 bg-success/10 text-success">{resumo.mensagens} msgs</Badge>
+                  <Badge className="text-[11px] border-0 bg-primary/10 text-primary">{resumo.ligacoes} ligações</Badge>
+                </div>
+                {grupos.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nenhuma atividade registrada nesse período.</p>
+                ) : (
+                  <div className="max-h-80 overflow-y-auto flex flex-col gap-3 pr-1">
+                    {grupos.map(([dia, itens]) => (
+                      <div key={dia}>
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-primary mb-1.5">{diaLabel(dia)} <span className="text-muted-foreground font-normal normal-case">· {itens.length} {itens.length === 1 ? 'ação' : 'ações'}</span></p>
+                        <div className="flex flex-col gap-1.5">
+                          {itens.map((item, idx) => (
+                            <div key={idx} className="text-xs border-l-2 border-border pl-2">
+                              <p className="text-foreground">
+                                <span className="text-muted-foreground">{new Date(item.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}</span>
+                                {' — '}{descreverAtividade(item)} <span className="text-muted-foreground">· {item.lead_nome}</span>
+                              </p>
+                              {item.resumo && <p className="text-muted-foreground bg-muted rounded px-1.5 py-1 mt-0.5">{item.resumo}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </Card>
 
-      <SectionBar title="Quando os leads mais compram" subtitle="Matrículas reais por dia da semana e por época do mês — ajuda a saber quando concentrar esforço de fechamento." />
+      <SectionBar title="Quando os leads mais compram" subtitle="Matrículas reais por dia da semana e por época do mês — ajuda a saber quando concentrar esforço de fechamento." icon={CalendarDays} />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <Card className="p-4">
           <h3 className="text-sm font-semibold text-foreground mb-3">Por dia da semana</h3>
@@ -2235,7 +2334,7 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
         </Card>
       </div>
 
-      <SectionBar title="Evolução mensal" subtitle="Fica registrado sozinho conforme os meses passam — cada lead e venda tem data real, então o histórico se acumula automaticamente." />
+      <SectionBar title="Evolução mensal" subtitle="Fica registrado sozinho conforme os meses passam — cada lead e venda tem data real, então o histórico se acumula automaticamente." icon={TrendingUp} />
       <Card className="p-4 overflow-x-auto">
         {mesesOrdenados.length === 0 ? (
           <p className="text-sm text-muted-foreground">Ainda sem histórico — o primeiro mês fecha aqui assim que passar.</p>
@@ -2269,7 +2368,7 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
         )}
       </Card>
 
-      <SectionBar title="Meta de reativação — Retorno/Base" subtitle="Quantas matrículas por mês devem vir da base antiga (Base Fria, Grupo Oferta Não Matriculou etc.)." />
+      <SectionBar title="Meta de reativação — Retorno/Base" subtitle="Quantas matrículas por mês devem vir da base antiga (Base Fria, Grupo Oferta Não Matriculou etc.)." icon={Repeat} />
       <Card className="p-4">
         {META_RETORNO_BASE_MES === null ? (
           <p className="text-sm text-muted-foreground">Meta ainda não definida — assim que o Igor passar o número, ela entra aqui e passa a comparar com as matrículas reais vindas do canal Retorno/Base.</p>
