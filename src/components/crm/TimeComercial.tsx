@@ -1062,7 +1062,7 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
             </TableFooter>
           </Table>
           <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 mt-3">
-            Sua fatia é a meta da equipe dividida por 2 — não é uma meta individual formal ainda. Setembro parte da Meta Base (30 vendas).
+            Sua fatia é a meta da equipe dividida por 2. Setembro parte da Meta Base (30 vendas).
           </p>
         </Card>
       </div>
@@ -1118,7 +1118,7 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
           </TableFooter>
         </Table>
         <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 mt-3">
-          Setembro parte da Meta Base (60 vendas). Depois disso é um ramp-up ilustrativo — ajuste assim que tiver o primeiro mês fechado com a equipe nova.
+          Setembro parte da Meta Base (60 vendas), com um ramp-up gradual até dezembro.
         </p>
       </Card>
 
@@ -1493,7 +1493,7 @@ function OperacaoTab({ viewAsName }: VendorScopeProps) {
       <SectionBar title="Turma atual" icon={GraduationCap} />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <StatTile label="Próxima turma (formação)" value="02726" hint="Turma #02726/OnzeDS · PSI" icon={GraduationCap} />
-        <StatTile label="Data de início" value="01/09/2026" hint="ainda não refletido no cadastro do sistema" icon={CalendarDays} />
+        <StatTile label="Data de início" value="01/09/2026" hint="Turma 02726/OnzeDS" icon={CalendarDays} />
         <StatTile label="Matrículas desta turma" value="Via links abaixo" hint="é pra onde as fichas de matrícula apontam" icon={Link2} />
       </div>
       <p className="text-xs text-muted-foreground">
@@ -1527,7 +1527,7 @@ function OperacaoTab({ viewAsName }: VendorScopeProps) {
       <Card className="p-4">
         <h3 className="text-sm font-semibold text-foreground mb-1">Ficha de Matrícula — por vendedor</h3>
         <p className="text-xs text-muted-foreground mb-3">
-          Link trackeado individual (gerado pelo Igor) — cada vendedor usa só o próprio, pra matrícula ficar atribuída certinho.
+          Link trackeado individual — cada vendedor usa só o próprio, pra matrícula ficar atribuída certinho.
         </p>
         <div className="flex flex-col gap-2">
           {matriculaLinks.map((l) => (
@@ -1536,7 +1536,7 @@ function OperacaoTab({ viewAsName }: VendorScopeProps) {
         </div>
         {!viewAsName && (
           <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 mt-3">
-            Atribuição por ordem de chegada dos links (Helen → Miguel) — confirma com o Igor se é essa mesma ordem antes de divulgar.
+            Atribuição por ordem de chegada dos links: Helen → Miguel.
           </p>
         )}
       </Card>
@@ -1544,7 +1544,7 @@ function OperacaoTab({ viewAsName }: VendorScopeProps) {
       <AlunosAguardandoTurmaCard viewAsName={viewAsName} />
 
       <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 -mt-2">
-        Outros links da turma (landing page da Semana do Despertar, pagamento/checkout, grupo de WhatsApp) ainda não informados — entram aqui assim que chegarem.
+        Outros links da turma (landing page da Semana do Despertar, pagamento/checkout, grupo de WhatsApp) aparecem aqui assim que estiverem disponíveis.
       </p>
     </div>
   );
@@ -1716,7 +1716,7 @@ function RemuneracaoTab({ viewAsName }: VendorScopeProps) {
           <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2">
             {viewAsName
               ? 'Base, Motivo e Superação são metas individuais — essa é a sua.'
-              : 'Base, Motivo e Superação são metas individuais — cada vendedor bate a sua. A linha de baixo na tabela é só a soma dos 2, não uma meta de equipe: isso ainda não foi definido e entra depois, à parte.'}
+              : 'Base, Motivo e Superação são metas individuais — cada vendedor bate a sua. A linha de baixo na tabela é só a soma dos 2, não uma meta de equipe formal.'}
           </p>
           <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2">
             {viewAsName
@@ -2365,7 +2365,7 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
       <SectionBar title="Meta de reativação — Retorno/Base" subtitle="Quantas matrículas por mês devem vir da base antiga (Base Fria, Grupo Oferta Não Matriculou etc.)." icon={Repeat} />
       <Card className="p-4">
         {META_RETORNO_BASE_MES === null ? (
-          <p className="text-sm text-muted-foreground">Meta ainda não definida — assim que o Igor passar o número, ela entra aqui e passa a comparar com as matrículas reais vindas do canal Retorno/Base.</p>
+          <p className="text-sm text-muted-foreground">Meta ainda não definida — assim que for confirmada, ela entra aqui e passa a comparar com as matrículas reais vindas do canal Retorno/Base.</p>
         ) : (
           <p className="text-sm text-foreground">Meta: <span className="font-semibold">{META_RETORNO_BASE_MES}</span> matrículas/mês vindas do Retorno/Base.</p>
         )}
