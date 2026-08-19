@@ -18,7 +18,7 @@ import {
   MessageCircle, Target, Copy, ExternalLink, Users, TrendingUp, DollarSign, CalendarDays,
   Video, Rocket, Repeat, GraduationCap, Link2, Wallet, CreditCard, Crown, Kanban, ClipboardList,
   Search, X, History, Filter, CornerDownRight, Eye, Zap, BookOpen, Layers, Trash2, RotateCcw,
-  Activity, Percent, BarChart3,
+  Activity, Percent, BarChart3, Phone, Trophy, Timer,
 } from 'lucide-react';
 
 // -----------------------------------------------------------------------
@@ -397,6 +397,17 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
     }
   };
 
+  // Contato (WhatsApp clicado ou ligação registrada manualmente) — vira
+  // evento na trajetória do lead e alimenta "Produtividade" em Dados.
+  // Não bloqueia a ação principal (abrir WhatsApp) se o log falhar.
+  const registrarContato = async (lead: Lead, tipo: 'contato_whatsapp' | 'contato_ligacao') => {
+    if (!viewAsName) return;
+    const { error } = await (supabase as any).rpc('time_comercial_registrar_contato', { p_lead_id: lead.id, p_vendedor: viewAsName, p_tipo: tipo });
+    // Não bloqueia a ação principal (abrir WhatsApp) se o log falhar — só perde
+    // o registro de produtividade, mas fica no console pra debugar se acontecer.
+    if (error) console.error('Erro ao registrar contato:', error);
+  };
+
   const [leadParaExcluir, setLeadParaExcluir] = useState<LeadComCanal | null>(null);
   const excluirLead = async () => {
     if (!leadParaExcluir) return;
@@ -671,10 +682,22 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
                       <div className="flex gap-2 mb-2 lg:mb-3">
                         <button
                           type="button"
-                          onClick={() => openWhatsApp(lead.telefone)}
+                          onClick={() => { openWhatsApp(lead.telefone); registrarContato(lead, 'contato_whatsapp'); }}
                           className="flex-1 h-8 text-xs inline-flex items-center justify-center gap-1 rounded-md border border-border bg-card hover:bg-muted transition-colors"
                         >
                           <MessageCircle className="h-3 w-3 text-success" /> WhatsApp
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!viewAsName) { toast({ title: 'Selecione um vendedor em "Ver como" pra registrar a ligação.' }); return; }
+                            registrarContato(lead, 'contato_ligacao');
+                            toast({ title: 'Ligação registrada!' });
+                          }}
+                          title="Registrar ligação feita pra esse lead"
+                          className="h-8 w-8 flex-shrink-0 inline-flex items-center justify-center rounded-md border border-border bg-card hover:bg-muted transition-colors"
+                        >
+                          <Phone className="h-3.5 w-3.5 text-muted-foreground" />
                         </button>
                         <button
                           type="button"
@@ -809,13 +832,20 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
             {historico?.itens.map((item, idx) => {
               const isAtribuicao = item.origem_mudanca === 'atribuicao';
               const isDevolucao = item.origem_mudanca === 'devolucao';
+              const isWhatsapp = item.origem_mudanca === 'contato_whatsapp';
+              const isLigacao = item.origem_mudanca === 'contato_ligacao';
+              const isContato = isWhatsapp || isLigacao;
               const stageInfo = (historico.lead.canal === 'SDD' ? SDD_STAGES : GENERIC_STAGES).find((s) => s.key === item.fase_nova);
               const titulo = isAtribuicao
                 ? `Lead atribuído a ${item.vendedor}`
                 : isDevolucao
                 ? `Lead devolvido${item.vendedor ? ` por ${item.vendedor}` : ''}`
+                : isWhatsapp
+                ? `WhatsApp aberto por ${item.vendedor}`
+                : isLigacao
+                ? `Ligação registrada por ${item.vendedor}`
                 : (stageInfo?.label ?? item.fase_nova);
-              const corPonto = isAtribuicao ? 'bg-success' : isDevolucao ? 'bg-warning' : (stageInfo?.color ?? 'bg-muted-foreground');
+              const corPonto = isAtribuicao ? 'bg-success' : isDevolucao ? 'bg-warning' : isContato ? 'bg-primary' : (stageInfo?.color ?? 'bg-muted-foreground');
               return (
                 <div key={idx} className="flex gap-3">
                   <div className="flex flex-col items-center flex-shrink-0">
@@ -826,7 +856,7 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
                     <p className="text-sm font-medium text-foreground">{titulo}</p>
                     <p className="text-xs text-muted-foreground">
                       {new Date(item.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      {!isAtribuicao && !isDevolucao && item.vendedor && ` · ${item.vendedor}`}
+                      {!isAtribuicao && !isDevolucao && !isContato && item.vendedor && ` · ${item.vendedor}`}
                     </p>
                   </div>
                 </div>
@@ -1744,31 +1774,54 @@ function RemuneracaoTab({ viewAsName }: VendorScopeProps) {
 // -----------------------------------------------------------------------
 
 interface AlunoVendedorStat { vendedor: string; vista_cartao: number; boleto: number; bolsa_cortesia: number; sem_forma: number; total: number; }
-interface MovimentacaoDia { vendedor: string; dia: string; eventos: number; }
+interface MovimentacaoDia { vendedor: string; dia: string; tipo: 'movimentacao' | 'contato_whatsapp' | 'contato_ligacao'; eventos: number; }
+interface VendaDiaSemana { dia_semana: number; vendas: number; }
+interface LeadsMes { mes: string; total: number; }
+interface VendaMes { mes: string; vendedor: string; vista_cartao: number; boleto: number; total: number; }
+interface CicloVendas { dias_medio: number | null; vendas_consideradas: number; }
+interface VendaEpocaMes { dia_do_mes: number; vendas: number; }
 
 // Meta de reativação da base Retorno/Base (hoje ~11.680 leads) — ainda não
 // definida pelo dono do negócio. Quando ele passar o número, troca aqui.
 const META_RETORNO_BASE_MES: number | null = null;
+
+const DIAS_SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+const MESES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
 function DadosTab({ viewAsName }: VendorScopeProps) {
   const [alunosPorVendedor, setAlunosPorVendedor] = useState<AlunoVendedorStat[]>([]);
   const [movimentacao, setMovimentacao] = useState<MovimentacaoDia[]>([]);
   const [contagens, setContagens] = useState<Contagem[]>([]);
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
+  const [vendasPorDia, setVendasPorDia] = useState<VendaDiaSemana[]>([]);
+  const [leadsPorMes, setLeadsPorMes] = useState<LeadsMes[]>([]);
+  const [vendasPorMes, setVendasPorMes] = useState<VendaMes[]>([]);
+  const [cicloVendas, setCicloVendas] = useState<CicloVendas | null>(null);
+  const [vendasPorEpocaMes, setVendasPorEpocaMes] = useState<VendaEpocaMes[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
-      const [{ data: alunos }, { data: mov }, { data: cont }, { data: camps }] = await Promise.all([
+      const [{ data: alunos }, { data: mov }, { data: cont }, { data: camps }, { data: diaSemana }, { data: lMes }, { data: vMes }, { data: ciclo }, { data: epocaMes }] = await Promise.all([
         (supabase as any).rpc('time_comercial_alunos_vendedor'),
         (supabase as any).rpc('time_comercial_movimentacao_dia', { dias: 7 }),
         (supabase as any).rpc('time_comercial_contagens'),
         (supabase as any).from('time_comercial_campanhas').select('*'),
+        (supabase as any).rpc('time_comercial_vendas_por_dia_semana'),
+        (supabase as any).rpc('time_comercial_leads_por_mes'),
+        (supabase as any).rpc('time_comercial_vendas_por_mes'),
+        (supabase as any).rpc('time_comercial_ciclo_vendas'),
+        (supabase as any).rpc('time_comercial_vendas_por_epoca_mes'),
       ]);
       if (alunos) setAlunosPorVendedor(alunos as AlunoVendedorStat[]);
       if (mov) setMovimentacao(mov as MovimentacaoDia[]);
       if (cont) setContagens(cont as Contagem[]);
       if (camps) setCampanhas(camps as Campanha[]);
+      if (diaSemana) setVendasPorDia(diaSemana as VendaDiaSemana[]);
+      if (lMes) setLeadsPorMes(lMes as LeadsMes[]);
+      if (vMes) setVendasPorMes(vMes as VendaMes[]);
+      if (epocaMes) setVendasPorEpocaMes(epocaMes as VendaEpocaMes[]);
+      if (ciclo) setCicloVendas((ciclo as CicloVendas[])[0] ?? null);
       setLoading(false);
     };
     fetchData();
@@ -1789,12 +1842,46 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
   const vendasTotais = vendedoresVisiveis.reduce((soma, v) => soma + (alunosDe(v.name)?.total ?? 0), 0);
   const conversaoPct = leadsEntraram > 0 ? (vendasTotais / leadsEntraram) * 100 : 0;
 
+  // Ticket médio — faturamento total / venda com valor real (exclui bolsa,
+  // cortesia e as ainda sem forma de pagamento cadastrada).
+  const faturamentoTotal = vendedoresVisiveis.reduce((soma, v) => soma + calcVendor(alunosDe(v.name)?.vista_cartao ?? 0, alunosDe(v.name)?.boleto ?? 0).faturamento, 0);
+  const vendasComValor = vendedoresVisiveis.reduce((soma, v) => soma + (alunosDe(v.name)?.vista_cartao ?? 0) + (alunosDe(v.name)?.boleto ?? 0), 0);
+  const ticketMedio = vendasComValor > 0 ? faturamentoTotal / vendasComValor : 0;
+
   const hojeStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-  const movimentacaoDe = (nome: string) => {
-    const doVendedor = movimentacao.filter((m) => m.vendedor === nome);
+  const movimentacaoDe = (nome: string, tipo: MovimentacaoDia['tipo']) => {
+    const doVendedor = movimentacao.filter((m) => m.vendedor === nome && m.tipo === tipo);
     const hoje = doVendedor.find((m) => m.dia === hojeStr)?.eventos ?? 0;
     const total7dias = doVendedor.reduce((soma, m) => soma + Number(m.eventos), 0);
     return { hoje, media7dias: Math.round((total7dias / 7) * 10) / 10 };
+  };
+
+  // Ranking simples por vendas fechadas — métrica clássica de leaderboard de
+  // time de vendas, só faz sentido na visão de admin (com todo mundo junto).
+  const ranking = [...INITIAL_VENDORS]
+    .map((v) => ({ v, vendas: alunosDe(v.name)?.total ?? 0 }))
+    .sort((a, b) => b.vendas - a.vendas);
+
+  const vendasPorDiaMap = new Map(vendasPorDia.map((d) => [d.dia_semana, d.vendas]));
+  const maxVendasDia = Math.max(1, ...vendasPorDia.map((d) => d.vendas));
+
+  // Época do mês (início/meio/fim) — visão mais grossa que dia exato, mais
+  // fácil de virar rotina ("reforça contato na 1ª semana do mês").
+  const EPOCAS_MES = [
+    { label: 'Início (1–10)', min: 1, max: 10 },
+    { label: 'Meio (11–20)', min: 11, max: 20 },
+    { label: 'Fim (21–31)', min: 21, max: 31 },
+  ];
+  const vendasPorEpoca = EPOCAS_MES.map((ep) => ({
+    ...ep,
+    vendas: vendasPorEpocaMes.filter((d) => d.dia_do_mes >= ep.min && d.dia_do_mes <= ep.max).reduce((soma, d) => soma + Number(d.vendas), 0),
+  }));
+  const maxVendasEpoca = Math.max(1, ...vendasPorEpoca.map((e) => e.vendas));
+
+  const mesesOrdenados = [...new Set([...leadsPorMes.map((l) => l.mes), ...vendasPorMes.map((v) => v.mes)])].sort().reverse();
+  const fmtMes = (mes: string) => {
+    const d = new Date(mes + 'T00:00:00');
+    return `${MESES_ABREV[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`;
   };
 
   if (loading) {
@@ -1854,22 +1941,158 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
         <StatTile label="Taxa de conversão" value={`${conversaoPct.toFixed(1)}%`} hint={leadsEntraram > 0 ? `${vendasTotais} de ${leadsEntraram} leads` : 'Sem leads ainda'} icon={Percent} />
       </div>
 
-      <SectionBar title="Produtividade — leads movimentados por dia" subtitle="Conta toda troca de fase, atribuição e devolução de lead — mede atividade, não só resultado. Últimos 7 dias." />
+      <SectionBar title="Indicadores de eficiência" subtitle="Os mesmos números que time de vendas de elite acompanha: velocidade de venda e valor médio por venda." />
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+        <StatTile
+          label="Ciclo de vendas médio"
+          value={cicloVendas?.dias_medio != null ? `${cicloVendas.dias_medio}` : '—'}
+          hint={cicloVendas && cicloVendas.vendas_consideradas > 0 ? `dias, de ${cicloVendas.vendas_consideradas} venda(s) pelo funil` : 'Nenhuma venda passou pelo funil (Kanban) ainda'}
+          icon={Timer}
+        />
+        <StatTile
+          label="Ticket médio"
+          value={vendasComValor > 0 ? fmt(ticketMedio) : '—'}
+          hint={vendasComValor > 0 ? `de ${vendasComValor} venda(s) com forma de pagamento` : 'Sem vendas com valor cadastrado ainda'}
+          icon={DollarSign}
+        />
+      </div>
+
+      {!viewAsName && (
+        <>
+          <SectionBar title="Ranking da equipe" subtitle="Vendas fechadas por vendedor — quem está na frente agora." />
+          <Card className="p-4">
+            <div className="flex flex-col divide-y divide-border">
+              {ranking.map(({ v, vendas }, idx) => (
+                <div key={v.name} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                  <div className="w-6 text-center font-bold text-sm text-muted-foreground flex-shrink-0">
+                    {idx === 0 && vendas > 0 ? <Trophy className="h-4 w-4 text-warning inline" /> : `${idx + 1}º`}
+                  </div>
+                  <div className="w-8 h-8 rounded-md flex items-center justify-center font-bold text-xs text-white flex-shrink-0" style={{ backgroundColor: v.cor }}>{v.initials}</div>
+                  <p className="text-sm font-medium text-foreground flex-1">{v.name}</p>
+                  <Badge className="text-xs border-0 bg-primary/10 text-primary">{vendas} {vendas === 1 ? 'venda' : 'vendas'}</Badge>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </>
+      )}
+
+      <SectionBar title="Produtividade — atividade por dia" subtitle="Leads movimentados, mensagens de WhatsApp abertas e ligações registradas — mede esforço, não só resultado. Últimos 7 dias." />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {vendedoresVisiveis.map((v) => {
-          const mov = movimentacaoDe(v.name);
+          const movs = movimentacaoDe(v.name, 'movimentacao');
+          const msgs = movimentacaoDe(v.name, 'contato_whatsapp');
+          const ligacoes = movimentacaoDe(v.name, 'contato_ligacao');
           return (
-            <Card key={v.name} className="p-4 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-md flex items-center justify-center font-bold text-xs text-white flex-shrink-0" style={{ backgroundColor: v.cor }}>{v.initials}</div>
-              <div className="flex-1 min-w-0">
+            <Card key={v.name} className="p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 rounded-md flex items-center justify-center font-bold text-xs text-white flex-shrink-0" style={{ backgroundColor: v.cor }}>{v.initials}</div>
                 <p className="text-sm font-semibold text-foreground">{v.name}</p>
-                <p className="text-xs text-muted-foreground">Hoje: <span className="font-semibold text-foreground">{mov.hoje}</span> · Média 7 dias: <span className="font-semibold text-foreground">{mov.media7dias}</span>/dia</p>
               </div>
-              <Activity className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-md bg-muted/50 p-2">
+                  <Activity className="h-3.5 w-3.5 text-muted-foreground mx-auto mb-1" />
+                  <p className="text-sm font-bold text-foreground">{movs.hoje}</p>
+                  <p className="text-[10px] text-muted-foreground">leads hoje · {movs.media7dias}/dia méd.</p>
+                </div>
+                <div className="rounded-md bg-muted/50 p-2">
+                  <MessageCircle className="h-3.5 w-3.5 text-success mx-auto mb-1" />
+                  <p className="text-sm font-bold text-foreground">{msgs.hoje}</p>
+                  <p className="text-[10px] text-muted-foreground">msgs hoje · {msgs.media7dias}/dia méd.</p>
+                </div>
+                <div className="rounded-md bg-muted/50 p-2">
+                  <Phone className="h-3.5 w-3.5 text-primary mx-auto mb-1" />
+                  <p className="text-sm font-bold text-foreground">{ligacoes.hoje}</p>
+                  <p className="text-[10px] text-muted-foreground">ligações hoje · {ligacoes.media7dias}/dia méd.</p>
+                </div>
+              </div>
             </Card>
           );
         })}
       </div>
+      <p className="text-xs text-muted-foreground -mt-2">Mensagens contam quando o vendedor abre o WhatsApp do lead pela tela; ligações são registradas manualmente no botão de telefone do card do lead.</p>
+
+      <SectionBar title="Quando os leads mais compram" subtitle="Matrículas reais por dia da semana e por época do mês — ajuda a saber quando concentrar esforço de fechamento." />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <Card className="p-4">
+          <h3 className="text-sm font-semibold text-foreground mb-3">Por dia da semana</h3>
+          {vendasPorDia.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Ainda não há matrículas suficientes pra mostrar um padrão — esse gráfico vai ficando mais confiável conforme o mês avança.</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {DIAS_SEMANA.map((nome, idx) => {
+                const vendas = vendasPorDiaMap.get(idx) ?? 0;
+                const pct = (vendas / maxVendasDia) * 100;
+                return (
+                  <div key={nome} className="grid grid-cols-[80px_1fr_30px] items-center gap-2">
+                    <span className="text-xs text-muted-foreground">{nome}</span>
+                    <div className="w-full h-2.5 rounded-full bg-muted overflow-hidden">
+                      <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="text-xs font-semibold text-foreground text-right">{vendas}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+
+        <Card className="p-4">
+          <h3 className="text-sm font-semibold text-foreground mb-3">Por época do mês</h3>
+          {vendasPorEpocaMes.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Ainda não há matrículas suficientes pra mostrar um padrão.</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {vendasPorEpoca.map((ep) => {
+                const pct = (ep.vendas / maxVendasEpoca) * 100;
+                return (
+                  <div key={ep.label} className="grid grid-cols-[110px_1fr_30px] items-center gap-2">
+                    <span className="text-xs text-muted-foreground">{ep.label}</span>
+                    <div className="w-full h-2.5 rounded-full bg-muted overflow-hidden">
+                      <div className="h-full rounded-full bg-warning" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="text-xs font-semibold text-foreground text-right">{ep.vendas}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+      </div>
+
+      <SectionBar title="Evolução mensal" subtitle="Fica registrado sozinho conforme os meses passam — cada lead e venda tem data real, então o histórico se acumula automaticamente." />
+      <Card className="p-4 overflow-x-auto">
+        {mesesOrdenados.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Ainda sem histórico — o primeiro mês fecha aqui assim que passar.</p>
+        ) : (
+          <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
+            <TableHeader>
+              <TableRow className={PREMIUM_TABLE_HEADER_ROW}>
+                <TableHead>Mês</TableHead>
+                <TableHead className="text-right">Leads que entraram</TableHead>
+                <TableHead className="text-right">Vendas fechadas</TableHead>
+                <TableHead className="text-right">Faturamento</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {mesesOrdenados.map((mes, idx) => {
+                const leadsDoMes = leadsPorMes.find((l) => l.mes === mes)?.total ?? 0;
+                const vendasDoMes = vendasPorMes.filter((v) => v.mes === mes && (!viewAsName || v.vendedor === viewAsName));
+                const totalVendasMes = vendasDoMes.reduce((soma, v) => soma + Number(v.total), 0);
+                const faturamentoMes = vendasDoMes.reduce((soma, v) => soma + calcVendor(Number(v.vista_cartao), Number(v.boleto)).faturamento, 0);
+                return (
+                  <TableRow key={mes} className={premiumZebraRow(idx)}>
+                    <TableCell className="font-medium">{fmtMes(mes)}</TableCell>
+                    <TableCell className="text-right">{leadsDoMes}</TableCell>
+                    <TableCell className="text-right">{totalVendasMes}</TableCell>
+                    <TableCell className="text-right">{fmt(faturamentoMes)}</TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </Card>
 
       <SectionBar title="Meta de reativação — Retorno/Base" subtitle="Quantas matrículas por mês devem vir da base antiga (Base Fria, Grupo Oferta Não Matriculou etc.)." />
       <Card className="p-4">
