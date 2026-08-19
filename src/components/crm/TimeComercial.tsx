@@ -856,9 +856,10 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
 }
 
 // -----------------------------------------------------------------------
-// Metas 2026 — equipe nova (Helen, Miguel, Aline). Sem historico do sistema,
+// Metas 2026 — equipe nova (Helen, Miguel). Sem historico do sistema,
 // so a equipe comercial de agora em diante. Numeros e formula portados do
-// protótipo (painel-despertamente.html) calibrado com o dono do negocio.
+// protótipo (painel-despertamente.html) calibrado com o dono do negocio,
+// recalibrados pra 2 vendedores após a saída da Aline.
 // -----------------------------------------------------------------------
 
 const fmt = (n: number) => 'R$ ' + Math.round(n).toLocaleString('pt-BR');
@@ -866,10 +867,10 @@ const fmt = (n: number) => 'R$ ' + Math.round(n).toLocaleString('pt-BR');
 const FAT_POR_VENDA_MIX = 0.3 * 1485 + 0.7 * 150; // 550,5 — mesmo mix da calculadora de remuneração
 
 const METAS_MESES: { mes: string; vendas: number }[] = [
-  { mes: 'Set/26', vendas: 90 },  // Meta Base da equipe completa
-  { mes: 'Out/26', vendas: 100 },
-  { mes: 'Nov/26', vendas: 115 },
-  { mes: 'Dez/26', vendas: 130 },
+  { mes: 'Set/26', vendas: 60 },  // Meta Base da equipe completa (30 × 2 vendedores)
+  { mes: 'Out/26', vendas: 66 },
+  { mes: 'Nov/26', vendas: 76 },
+  { mes: 'Dez/26', vendas: 86 },
 ];
 
 function MetasTab({ viewAsName }: VendorScopeProps) {
@@ -877,10 +878,10 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
   const vendasTotal = METAS_MESES.reduce((s, x) => s + x.vendas, 0);
   const faturamentoTotal = METAS_MESES.reduce((s, x) => s + x.vendas * FAT_POR_VENDA_MIX, 0);
 
-  // Vendedor(a) comum ve so a fatia dela do plano (meta dividida por 3);
-  // "Todos"/gerente continuam vendo a meta agregada da equipe.
+  // Vendedor(a) comum ve so a fatia dela do plano (meta dividida por 2);
+  // "Todos" continua vendo a meta agregada da equipe.
   if (viewAsName) {
-    const mesesIndividual = METAS_MESES.map((x) => ({ mes: x.mes, vendas: Math.round(x.vendas / 3) }));
+    const mesesIndividual = METAS_MESES.map((x) => ({ mes: x.mes, vendas: Math.round(x.vendas / 2) }));
     const maxIndividual = Math.max(...mesesIndividual.map((x) => x.vendas));
     const vendasTotalIndividual = mesesIndividual.reduce((s, x) => s + x.vendas, 0);
     const faturamentoTotalIndividual = mesesIndividual.reduce((s, x) => s + x.vendas * FAT_POR_VENDA_MIX, 0);
@@ -934,7 +935,7 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
             </TableFooter>
           </Table>
           <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 mt-3">
-            Sua fatia é a meta da equipe dividida por 3 — não é uma meta individual formal ainda. Setembro parte da Meta Base (30 vendas).
+            Sua fatia é a meta da equipe dividida por 2 — não é uma meta individual formal ainda. Setembro parte da Meta Base (30 vendas).
           </p>
         </Card>
       </div>
@@ -943,11 +944,11 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
 
   return (
     <div className="flex flex-col gap-5">
-      <p className="text-sm text-muted-foreground -mt-1">Visão consolidada da equipe — quanto os 3 vendedores juntos precisam entregar.</p>
+      <p className="text-sm text-muted-foreground -mt-1">Visão consolidada da equipe — quanto os 2 vendedores juntos precisam entregar.</p>
       <SectionBar title="Meta da equipe" />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <StatTile label="Meta Base da equipe" value={<>90 <span className="text-sm font-normal text-muted-foreground">vendas/mês</span></>} hint="30 × 3 vendedores" icon={Target} />
-        <StatTile label="Faturamento na Meta Base" value={<>~R$ 49.545<span className="text-sm font-normal text-muted-foreground">/mês</span></>} hint="mix 30% à vista/cartão + 70% recorrente" icon={DollarSign} />
+        <StatTile label="Meta Base da equipe" value={<>60 <span className="text-sm font-normal text-muted-foreground">vendas/mês</span></>} hint="30 × 2 vendedores" icon={Target} />
+        <StatTile label="Faturamento na Meta Base" value={<>~R$ 33.030<span className="text-sm font-normal text-muted-foreground">/mês</span></>} hint="mix 30% à vista/cartão + 70% recorrente" icon={DollarSign} />
         <StatTile label="Meses restantes em 2026" value="Set–Dez" hint="4 meses de ramp-up com a equipe nova" icon={CalendarDays} />
       </div>
 
@@ -990,7 +991,7 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
           </TableFooter>
         </Table>
         <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 mt-3">
-          Setembro parte da Meta Base (90 vendas). Depois disso é um ramp-up ilustrativo — ajuste assim que tiver o primeiro mês fechado com a equipe nova.
+          Setembro parte da Meta Base (60 vendas). Depois disso é um ramp-up ilustrativo — ajuste assim que tiver o primeiro mês fechado com a equipe nova.
         </p>
       </Card>
 
@@ -1146,7 +1147,7 @@ function AquisicaoTab() {
 // -----------------------------------------------------------------------
 // Operação — infos práticas do dia a dia da próxima turma: datas e os links
 // de matrícula individuais (um por vendedor, gerados pelo Igor) pra trackear
-// quem matriculou quem. Atribuição Helen/Miguel/Aline é a ordem em que os
+// quem matriculou quem. Atribuição Helen/Miguel é a ordem em que os
 // links chegaram — confirmar se é essa mesma ordem.
 // -----------------------------------------------------------------------
 
@@ -1163,7 +1164,6 @@ const TURMAS_FORMACAO: TurmaFormacao[] = [
 const LINKS_MATRICULA: OperacaoLink[] = [
   { label: 'Ficha de Matrícula — Helen Magna', url: 'https://www.idmpsi.com.br/matricula.html?v=6be52633', vendedor: 'Helen Magna' },
   { label: 'Ficha de Matrícula — Miguel Fogaça', url: 'https://www.idmpsi.com.br/matricula.html?v=d95ebfdc', vendedor: 'Miguel Fogaça' },
-  { label: 'Ficha de Matrícula — Aline Horta', url: 'https://www.idmpsi.com.br/matricula.html?v=1b8a0e29', vendedor: 'Aline Horta' },
 ];
 
 function copyLink(url: string) {
@@ -1385,7 +1385,7 @@ function OperacaoTab({ viewAsName }: VendorScopeProps) {
         </div>
         {!viewAsName && (
           <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 mt-3">
-            Atribuição por ordem de chegada dos links (Helen → Miguel → Aline) — confirma com o Igor se é essa mesma ordem antes de divulgar.
+            Atribuição por ordem de chegada dos links (Helen → Miguel) — confirma com o Igor se é essa mesma ordem antes de divulgar.
           </p>
         )}
       </Card>
@@ -1456,13 +1456,13 @@ interface VendorRow {
   boleto: number;
 }
 
-// Cores fixas por enquanto (Helen/Miguel/Aline ainda nao sao usuarios reais do sistema,
+// Cores fixas por enquanto (Helen/Miguel ainda nao sao usuarios reais do sistema,
 // so tem `cor` os cadastrados em profiles/AppUser). Quando virarem contas de verdade,
 // trocar por AppUser.cor pra manter a mesma identidade visual usada no Pipeline.
+// Sem gerente no time por enquanto — quem acompanha a equipe inteira é o Admin.
 const INITIAL_VENDORS: VendorRow[] = [
   { name: 'Helen Magna', role: 'Vendedora', gerente: false, initials: 'HM', cor: '#A93356', meta: 30, vistaCartao: 9, boleto: 21 },
   { name: 'Miguel Fogaça', role: 'Vendedor', gerente: false, initials: 'MF', cor: '#4A90E2', meta: 30, vistaCartao: 15, boleto: 35 },
-  { name: 'Aline Horta', role: 'Vendedora/Gerente de Vendas', gerente: true, initials: 'AH', cor: '#28A745', meta: 30, vistaCartao: 21, boleto: 49 },
 ];
 
 function calcVendor(vistaCartao: number, boleto: number) {
@@ -1493,7 +1493,7 @@ function RemuneracaoTab({ viewAsName }: VendorScopeProps) {
     setVendors((prev) => prev.map((v, i) => (i === idx ? { ...v, [field]: Math.max(0, value || 0) } : v)));
   };
 
-  // Gerente (Aline) sempre ve todo mundo; vendedor(a) comum ve so a propria linha.
+  // Sem gerente no time por enquanto — todo mundo vendedor(a) comum ve so a propria linha.
   const activeVendor = vendors.find((v) => v.name === viewAsName);
   const scoped = viewAsName && activeVendor && !activeVendor.gerente
     ? vendors.filter((v) => v.name === viewAsName)
@@ -1753,7 +1753,7 @@ function MetaEquipeTab() {
 // -----------------------------------------------------------------------
 
 // "Login" local (sem Supabase Auth ainda) pra simular cada vendedor(a) vendo
-// só o que é dela — pronto pra trocar por auth real quando Helen/Miguel/Aline
+// só o que é dela — pronto pra trocar por auth real quando Helen/Miguel
 // virarem usuarios de verdade no sistema.
 
 // Chips de avatar coloridos pra trocar "Ver como" — clique direto em vez de dropdown,
