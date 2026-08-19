@@ -1871,6 +1871,17 @@ interface LeadsMes { mes: string; total: number; }
 interface VendaMes { mes: string; vendedor: string; vista_cartao: number; boleto: number; total: number; }
 interface CicloVendas { dias_medio: number | null; vendas_consideradas: number; }
 interface VendaEpocaMes { dia_do_mes: number; vendas: number; }
+interface AtividadeItem {
+  vendedor: string;
+  lead_id: string;
+  lead_nome: string;
+  fase_anterior: string | null;
+  fase_nova: string | null;
+  origem_mudanca: string;
+  atendeu: boolean | null;
+  resumo: string | null;
+  criado_em: string;
+}
 
 // Meta de reativação da base Retorno/Base (hoje ~11.680 leads) — ainda não
 // definida pelo dono do negócio. Quando ele passar o número, troca aqui.
@@ -1889,11 +1900,12 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
   const [vendasPorMes, setVendasPorMes] = useState<VendaMes[]>([]);
   const [cicloVendas, setCicloVendas] = useState<CicloVendas | null>(null);
   const [vendasPorEpocaMes, setVendasPorEpocaMes] = useState<VendaEpocaMes[]>([]);
+  const [atividade, setAtividade] = useState<AtividadeItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
-      const [{ data: alunos }, { data: mov }, { data: cont }, { data: camps }, { data: diaSemana }, { data: lMes }, { data: vMes }, { data: ciclo }, { data: epocaMes }] = await Promise.all([
+      const [{ data: alunos }, { data: mov }, { data: cont }, { data: camps }, { data: diaSemana }, { data: lMes }, { data: vMes }, { data: ciclo }, { data: epocaMes }, { data: ativ }] = await Promise.all([
         (supabase as any).rpc('time_comercial_alunos_vendedor'),
         (supabase as any).rpc('time_comercial_movimentacao_dia', { dias: 7 }),
         (supabase as any).rpc('time_comercial_contagens'),
@@ -1903,6 +1915,7 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
         (supabase as any).rpc('time_comercial_vendas_por_mes'),
         (supabase as any).rpc('time_comercial_ciclo_vendas'),
         (supabase as any).rpc('time_comercial_vendas_por_epoca_mes'),
+        (supabase as any).rpc('time_comercial_atividade_vendedor', { p_dias: 30 }),
       ]);
       if (alunos) setAlunosPorVendedor(alunos as AlunoVendedorStat[]);
       if (mov) setMovimentacao(mov as MovimentacaoDia[]);
@@ -1913,6 +1926,7 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
       if (vMes) setVendasPorMes(vMes as VendaMes[]);
       if (epocaMes) setVendasPorEpocaMes(epocaMes as VendaEpocaMes[]);
       if (ciclo) setCicloVendas((ciclo as CicloVendas[])[0] ?? null);
+      if (ativ) setAtividade(ativ as AtividadeItem[]);
       setLoading(false);
     };
     fetchData();
@@ -1973,6 +1987,39 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
   const fmtMes = (mes: string) => {
     const d = new Date(mes + 'T00:00:00');
     return `${MESES_ABREV[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`;
+  };
+
+  // Linha do tempo "o que eu fiz hoje/ontem/etc" — fica tudo gravado (não
+  // reseta), agrupado por dia pra dar pra revisar rapidinho a atividade
+  // recente de cada vendedor.
+  const STAGE_LABELS: Record<string, string> = Object.fromEntries([...GENERIC_STAGES, ...SDD_STAGES].map((s) => [s.key, s.label]));
+  const descreverAtividade = (item: AtividadeItem) => {
+    switch (item.origem_mudanca) {
+      case 'criacao': return `Lead entrou (${STAGE_LABELS[item.fase_nova ?? ''] ?? item.fase_nova})`;
+      case 'atribuicao': return 'Pegou o lead';
+      case 'devolucao': return 'Devolveu o lead';
+      case 'contato_whatsapp': return 'Abriu WhatsApp';
+      case 'contato_ligacao': return `Ligou${item.atendeu === true ? ' — atendeu' : item.atendeu === false ? ' — não atendeu' : ''}`;
+      default: return `Mudou para ${STAGE_LABELS[item.fase_nova ?? ''] ?? item.fase_nova}`;
+    }
+  };
+  const diaLabel = (isoDia: string) => {
+    if (isoDia === hojeStr) return 'Hoje';
+    const ontem = new Date();
+    ontem.setDate(ontem.getDate() - 1);
+    if (isoDia === ontem.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })) return 'Ontem';
+    const d = new Date(isoDia + 'T00:00:00');
+    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', weekday: 'short' });
+  };
+  const atividadeAgrupadaDe = (nome: string) => {
+    const doVendedor = atividade.filter((a) => a.vendedor === nome);
+    const porDia = new Map<string, AtividadeItem[]>();
+    for (const item of doVendedor) {
+      const dia = new Date(item.criado_em).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+      if (!porDia.has(dia)) porDia.set(dia, []);
+      porDia.get(dia)!.push(item);
+    }
+    return [...porDia.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1));
   };
 
   if (loading) {
@@ -2102,6 +2149,43 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
         })}
       </div>
       <p className="text-xs text-muted-foreground -mt-2">Mensagens contam quando o vendedor abre o WhatsApp do lead pela tela; ligações são registradas manualmente no botão de telefone do card do lead.</p>
+
+      <SectionBar title="O que cada vendedor fez" subtitle="Linha do tempo de hoje, ontem e dias anteriores — nada é perdido, fica tudo registrado (últimos 30 dias)." />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {vendedoresVisiveis.map((v) => {
+          const grupos = atividadeAgrupadaDe(v.name);
+          return (
+            <Card key={v.name} className="p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 rounded-md flex items-center justify-center font-bold text-xs text-white flex-shrink-0" style={{ backgroundColor: v.cor }}>{v.initials}</div>
+                <p className="text-sm font-semibold text-foreground">{v.name}</p>
+              </div>
+              {grupos.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhuma atividade registrada ainda.</p>
+              ) : (
+                <div className="max-h-80 overflow-y-auto flex flex-col gap-3 pr-1">
+                  {grupos.map(([dia, itens]) => (
+                    <div key={dia}>
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-primary mb-1.5">{diaLabel(dia)} <span className="text-muted-foreground font-normal normal-case">· {itens.length} {itens.length === 1 ? 'ação' : 'ações'}</span></p>
+                      <div className="flex flex-col gap-1.5">
+                        {itens.map((item, idx) => (
+                          <div key={idx} className="text-xs border-l-2 border-border pl-2">
+                            <p className="text-foreground">
+                              <span className="text-muted-foreground">{new Date(item.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}</span>
+                              {' — '}{descreverAtividade(item)} <span className="text-muted-foreground">· {item.lead_nome}</span>
+                            </p>
+                            {item.resumo && <p className="text-muted-foreground bg-muted rounded px-1.5 py-1 mt-0.5">{item.resumo}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          );
+        })}
+      </div>
 
       <SectionBar title="Quando os leads mais compram" subtitle="Matrículas reais por dia da semana e por época do mês — ajuda a saber quando concentrar esforço de fechamento." />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
