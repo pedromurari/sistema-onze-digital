@@ -424,22 +424,26 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
   const [ligacaoDataHora, setLigacaoDataHora] = useState('');
   const [ligacaoAtendeu, setLigacaoAtendeu] = useState<'sim' | 'nao'>('sim');
   const [ligacaoResumo, setLigacaoResumo] = useState('');
+  // Admin (viewAsName nulo, "Todos") não tem vendedor pré-selecionado — precisa
+  // escolher quem fez a ligação dentro do próprio dialog, em vez do botão
+  // simplesmente não fazer nada quando ninguém está selecionado em "Ver como".
+  const [ligacaoVendedor, setLigacaoVendedor] = useState('');
   const [salvandoLigacao, setSalvandoLigacao] = useState(false);
 
   const abrirRegistrarLigacao = (lead: LeadComCanal) => {
-    if (!viewAsName) { toast({ title: 'Selecione um vendedor em "Ver como" pra registrar a ligação.' }); return; }
     setLeadParaLigacao(lead);
     setLigacaoDataHora(toLocalDateTimeInputValue(new Date()));
     setLigacaoAtendeu('sim');
     setLigacaoResumo('');
+    setLigacaoVendedor(viewAsName ?? '');
   };
 
   const salvarLigacao = async () => {
-    if (!leadParaLigacao || !viewAsName || !ligacaoDataHora) return;
+    if (!leadParaLigacao || !ligacaoVendedor || !ligacaoDataHora) return;
     setSalvandoLigacao(true);
     const { error } = await (supabase as any).rpc('time_comercial_registrar_contato', {
       p_lead_id: leadParaLigacao.id,
-      p_vendedor: viewAsName,
+      p_vendedor: ligacaoVendedor,
       p_tipo: 'contato_ligacao',
       p_criado_em: new Date(ligacaoDataHora).toISOString(),
       p_atendeu: ligacaoAtendeu === 'sim',
@@ -936,6 +940,19 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
             </DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3">
+            {!viewAsName && (
+              <div>
+                <Label className="text-xs">Quem ligou?</Label>
+                <Select value={ligacaoVendedor} onValueChange={setLigacaoVendedor}>
+                  <SelectTrigger className="h-9 text-sm mt-1"><SelectValue placeholder="Selecione o vendedor" /></SelectTrigger>
+                  <SelectContent className="bg-card border-border z-[100]">
+                    {INITIAL_VENDORS.map((v) => (
+                      <SelectItem key={v.name} value={v.name} className="text-sm">{v.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div>
               <Label className="text-xs">Dia e hora da ligação</Label>
               <Input type="datetime-local" value={ligacaoDataHora} onChange={(e) => setLigacaoDataHora(e.target.value)} className="h-9 text-sm mt-1" />
@@ -972,7 +989,7 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
           </div>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setLeadParaLigacao(null)}>Cancelar</Button>
-            <Button size="sm" onClick={salvarLigacao} disabled={salvandoLigacao || !ligacaoDataHora}>
+            <Button size="sm" onClick={salvarLigacao} disabled={salvandoLigacao || !ligacaoDataHora || !ligacaoVendedor}>
               {salvandoLigacao ? 'Salvando...' : 'Salvar ligação'}
             </Button>
           </DialogFooter>
