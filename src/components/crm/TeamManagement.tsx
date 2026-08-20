@@ -46,6 +46,8 @@ const MODULE_PERMISSIONS: Array<{ key: keyof AccessPermissions; label: string; e
   { key: 'canViewOperacoes',   label: 'Operações',      emoji: '🗓️' },
   { key: 'canViewMapaMental',  label: 'Mapa mental',    emoji: '🧠' },
   { key: 'canViewRodrygo',     label: 'Tarefas Rodrygo',emoji: '✅' },
+  { key: 'canViewTimeComercial', label: 'Time Comercial', emoji: '📞' },
+  { key: 'canViewFranquiaPsi', label: 'IDM PSI Franquias', emoji: '🏫' },
   { key: 'canViewTeam',        label: 'Equipe',         emoji: '👥' },
   { key: 'canViewSettings',    label: 'Configurações',  emoji: '⚙️' },
 ];

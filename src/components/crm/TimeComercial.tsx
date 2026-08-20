@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import { Lead, PipelineStage } from '@/types/crm';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -1175,38 +1176,51 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
 const addDays = (d: Date, n: number) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
 const fmtData = (d: Date) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
 
-const TURMA_45_AULA1 = new Date(2026, 8, 1); // 01/set/2026
+const TURMA_44_AULA1 = new Date(2026, 8, 1); // 01/set/2026 — âncora do calendário quinzenal
 const FIM_DO_ANO = new Date(2026, 11, 19); // corta antes da semana de Natal
 
 const SDD_CICLO = [
-  { fase: 'Captação', quando: `${fmtData(addDays(TURMA_45_AULA1, -18))} – ${fmtData(addDays(TURMA_45_AULA1, -8))}`, desc: 'Landing page no ar, inscrições abertas, anúncios/orgânico rodando para captar leads.' },
-  { fase: 'Aquecimento', quando: `${fmtData(addDays(TURMA_45_AULA1, -7))} – ${fmtData(addDays(TURMA_45_AULA1, -1))}`, desc: 'Lembretes para quem já se inscreveu, contagem regressiva, sem captação de leads novos.' },
-  { fase: 'Semana ao vivo', quando: `${fmtData(TURMA_45_AULA1)} – ${fmtData(addDays(TURMA_45_AULA1, 2))}`, desc: 'Aula 1 (ter) → Aula 2 (qua, pitch + carrinho abre) → Aula 3 (qui, carrinho fecha).' },
-  { fase: 'Pós-lançamento', quando: `${fmtData(addDays(TURMA_45_AULA1, 3))} – ${fmtData(addDays(TURMA_45_AULA1, 6))}`, desc: 'Remarketing/contato com leads que assistiram mas não compraram.' },
+  { fase: 'Captação', quando: `${fmtData(addDays(TURMA_44_AULA1, -18))} – ${fmtData(addDays(TURMA_44_AULA1, -8))}`, desc: 'Landing page no ar, inscrições abertas, anúncios/orgânico rodando para captar leads.' },
+  { fase: 'Aquecimento', quando: `${fmtData(addDays(TURMA_44_AULA1, -7))} – ${fmtData(addDays(TURMA_44_AULA1, -1))}`, desc: 'Lembretes para quem já se inscreveu, contagem regressiva, sem captação de leads novos.' },
+  { fase: 'Semana ao vivo', quando: `${fmtData(TURMA_44_AULA1)} – ${fmtData(addDays(TURMA_44_AULA1, 2))}`, desc: 'Aula 1 (ter) → Aula 2 (qua, pitch + carrinho abre) → Aula 3 (qui, carrinho fecha).' },
+  { fase: 'Pós-lançamento', quando: `${fmtData(addDays(TURMA_44_AULA1, 3))} – ${fmtData(addDays(TURMA_44_AULA1, 6))}`, desc: 'Remarketing/contato com leads que assistiram mas não compraram.' },
 ];
 
+// #44 a #47 têm data confirmada com o Pedro (01/09, 15/09, 29/09, 13/10 — todas
+// batendo com o ritmo quinzenal). Da #48 em diante é projeção automática no
+// mesmo ritmo, até dez/2026.
+const SDD_TURMAS_CONFIRMADAS = 4;
+
 function buildSddTurmas() {
-  const turmas: { n: number; aula1: Date; real: boolean }[] = [{ n: 45, aula1: TURMA_45_AULA1, real: true }];
-  let n = 46;
-  let next = addDays(TURMA_45_AULA1, 14);
-  while (next <= FIM_DO_ANO) {
-    turmas.push({ n, aula1: next, real: false });
+  const turmas: { n: number; aula1: Date; real: boolean }[] = [];
+  let n = 44;
+  let aula1 = TURMA_44_AULA1;
+  while (aula1 <= FIM_DO_ANO) {
+    turmas.push({ n, aula1, real: n < 44 + SDD_TURMAS_CONFIRMADAS });
     n++;
-    next = addDays(next, 14);
+    aula1 = addDays(aula1, 14);
   }
   return turmas;
 }
 
 const SDD_TURMAS = buildSddTurmas();
 
+// Foco na próxima que ainda não aconteceu — evita que o card fique preso numa
+// turma antiga conforme os dias passam.
+function proximaSddTurma() {
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  return SDD_TURMAS.find((t) => addDays(t.aula1, 2) >= hoje) ?? SDD_TURMAS[SDD_TURMAS.length - 1];
+}
+
 function AquisicaoTab() {
+  const proxima = proximaSddTurma();
   return (
     <div className="flex flex-col gap-5">
       <p className="text-sm text-muted-foreground -mt-1">Como os leads chegam: a Semana do Despertar, o único canal de captação definido até agora.</p>
       <SectionBar title="Visão geral" icon={Rocket} />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <StatTile label="Formato" value="3 aulas" hint="ao vivo, YouTube, Ter/Qua/Qui às 20h" icon={Video} />
-        <StatTile label="Próxima turma" value="#45" hint="01–03/set/2026" icon={Rocket} />
+        <StatTile label="Próxima turma" value={`#${proxima.n}`} hint={`${fmtData(proxima.aula1)} – ${fmtData(addDays(proxima.aula1, 2))}`} icon={Rocket} />
         <StatTile label="Cadência" value="Quinzenal" hint="semana sim, semana não — até dez/2026" icon={Repeat} />
       </div>
 
@@ -1281,7 +1295,7 @@ function AquisicaoTab() {
           </TableBody>
         </Table>
         <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 mt-3">
-          #45 (01–03/set) é a próxima confirmada. A partir dela, o calendário segue à risca o ritmo quinzenal (semana sim, semana não) até a última turma de 2026.
+          #{proxima.n} ({fmtData(proxima.aula1)}–{fmtData(addDays(proxima.aula1, 2))}) é a próxima. #44 a #{44 + SDD_TURMAS_CONFIRMADAS - 1} têm data confirmada com o Pedro — dali em diante o calendário é projeção no mesmo ritmo quinzenal até a última turma de 2026.
         </p>
       </Card>
     </div>
@@ -1297,13 +1311,27 @@ function AquisicaoTab() {
 
 interface OperacaoLink { label: string; url: string; vendedor: string; }
 
-interface TurmaFormacao { turma: string; dataLabel: string; mesAbrev: string; dia: number | null; confirmada: boolean; }
+interface TurmaFormacao { turma: string; data: Date; dataLabel: string; mesAbrev: string; dia: number | null; confirmada: boolean; }
 
 // Datas reais confirmadas com o Pedro; turmas sem data no cadastro do
 // sistema (turmas table) entram aqui como "a definir" até serem fechadas.
 const TURMAS_FORMACAO: TurmaFormacao[] = [
-  { turma: '02726/OnzeDS', dataLabel: '01/09/2026', mesAbrev: 'Set', dia: 1, confirmada: true },
+  { turma: '02726/OnzeDS', data: new Date(2026, 8, 15), dataLabel: '15/09/2026', mesAbrev: 'Set', dia: 15, confirmada: true },
+  { turma: '02826/OnzeDS', data: new Date(2026, 8, 30), dataLabel: '30/09/2026', mesAbrev: 'Set', dia: 30, confirmada: true },
+  { turma: '02926/OnzeDS', data: new Date(2026, 9, 15), dataLabel: '15/10/2026', mesAbrev: 'Out', dia: 15, confirmada: true },
+  { turma: '03026/OnzeDS', data: new Date(2026, 9, 29), dataLabel: '29/10/2026', mesAbrev: 'Out', dia: 29, confirmada: true },
+  { turma: '03126/OnzeDS', data: new Date(2026, 10, 16), dataLabel: '16/11/2026', mesAbrev: 'Nov', dia: 16, confirmada: true },
+  { turma: '03226/OnzeDS', data: new Date(2026, 10, 30), dataLabel: '30/11/2026', mesAbrev: 'Nov', dia: 30, confirmada: true },
+  { turma: '03326/OnzeDS', data: new Date(2026, 11, 14), dataLabel: '14/12/2026', mesAbrev: 'Dez', dia: 14, confirmada: true },
 ];
+
+// Foco na próxima turma de formação que ainda não começou — o calendário completo
+// fica disponível pra quem quiser olhar mais à frente, mas o destaque não se perde
+// nele conforme as datas passam.
+function proximaTurmaFormacao() {
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  return TURMAS_FORMACAO.find((t) => t.data >= hoje) ?? TURMAS_FORMACAO[TURMAS_FORMACAO.length - 1];
+}
 
 const LINKS_MATRICULA: OperacaoLink[] = [
   { label: 'Ficha de Matrícula — Helen Magna', url: 'https://www.idmpsi.com.br/matricula.html?v=6be52633', vendedor: 'Helen Magna' },
@@ -1365,6 +1393,11 @@ interface TurmaOption {
   nome: string;
 }
 
+// Vendedores (Helen, Miguel) começaram a atuar no Time Comercial nessa data — matrículas
+// sem turma de antes disso são resíduo de outro fluxo/período, não faz sentido entrar
+// na fila de "aguardando turma" que eles reivindicam.
+const ALUNOS_AGUARDANDO_TURMA_DESDE = '2026-08-20';
+
 function AlunosAguardandoTurmaCard({ viewAsName }: VendorScopeProps) {
   const [alunosSemTurma, setAlunosSemTurma] = useState<AlunoAguardandoTurma[]>([]);
   const [turmasOptions, setTurmasOptions] = useState<TurmaOption[]>([]);
@@ -1379,6 +1412,7 @@ function AlunosAguardandoTurmaCard({ viewAsName }: VendorScopeProps) {
         .select('id, nome, whatsapp, produto, forma_pagamento, valor_mensalidade, dia_vencimento, dia_vencimento_contrato, tipo_pagamento, total_mensalidades, data_matricula, vendedor_id')
         .is('turma_id', null)
         .eq('produto', 'psicanalise')
+        .gte('data_matricula', ALUNOS_AGUARDANDO_TURMA_DESDE)
         .order('data_matricula', { ascending: false }),
       supabase
         .from('turmas')
@@ -1502,6 +1536,8 @@ function AlunosAguardandoTurmaCard({ viewAsName }: VendorScopeProps) {
 
 function OperacaoTab({ viewAsName }: VendorScopeProps) {
   const matriculaLinks = viewAsName ? LINKS_MATRICULA.filter((l) => l.vendedor === viewAsName) : LINKS_MATRICULA;
+  const proximaFormacao = proximaTurmaFormacao();
+  const proximaSdd = proximaSddTurma();
 
   return (
     <div className="flex flex-col gap-5">
@@ -1509,12 +1545,12 @@ function OperacaoTab({ viewAsName }: VendorScopeProps) {
 
       <SectionBar title="Turma atual" icon={GraduationCap} />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <StatTile label="Próxima turma (formação)" value="02726" hint="Turma #02726/OnzeDS · PSI" icon={GraduationCap} />
-        <StatTile label="Data de início" value="01/09/2026" hint="Turma 02726/OnzeDS" icon={CalendarDays} />
+        <StatTile label="Próxima turma (formação)" value={proximaFormacao.turma.split('/')[0]} hint={`Turma #${proximaFormacao.turma} · PSI`} icon={GraduationCap} />
+        <StatTile label="Data de início" value={proximaFormacao.dataLabel} hint={`Turma ${proximaFormacao.turma}`} icon={CalendarDays} />
         <StatTile label="Matrículas desta turma" value="Via links abaixo" hint="é pra onde as fichas de matrícula apontam" icon={Link2} />
       </div>
       <p className="text-xs text-muted-foreground">
-        Essa é a turma de formação (a classe de verdade) — diferente da turma #45 da Semana do Despertar, que é só o lançamento/captação (ver aba Aquisição aqui do lado).
+        Essa é a turma de formação (a classe de verdade) — diferente da turma #{proximaSdd.n} da Semana do Despertar, que é só o lançamento/captação (ver aba Aquisição aqui do lado).
       </p>
 
       <SectionBar title="Calendário de turmas" subtitle="Data de início de cada turma nova, sem precisar perguntar." icon={CalendarDays} />
@@ -2455,8 +2491,16 @@ function VendorSwitch({ viewAs, onChange }: { viewAs: string; onChange: (v: stri
 }
 
 export function TimeComercial() {
-  const [viewAs, setViewAs] = useState('todos');
-  const activeVendor = INITIAL_VENDORS.find((v) => v.name === viewAs);
+  const { user } = useAuth();
+  // Vendedor(a) logado(a) de verdade: trava a própria visão, sem opção de trocar
+  // pra ver os leads/dados de outra pessoa do time. Admin/gerente continuam com
+  // o switcher "Ver como" pra alternar entre todos.
+  const lockedVendor = user?.tipo === 'vendedor'
+    ? INITIAL_VENDORS.find((v) => v.name === user.nome && !v.gerente)
+    : undefined;
+
+  const [viewAs, setViewAs] = useState(lockedVendor ? lockedVendor.name : 'todos');
+  const activeVendor = lockedVendor ?? INITIAL_VENDORS.find((v) => v.name === viewAs);
   // null = sem filtro (admin ou gerente); string = so os dados desse vendedor.
   const viewAsName = activeVendor && !activeVendor.gerente ? activeVendor.name : null;
 
@@ -2464,12 +2508,14 @@ export function TimeComercial() {
     <div className="h-full flex flex-col animate-fade-in p-4 lg:p-6 gap-4 overflow-y-auto">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-xl lg:text-2xl font-bold text-foreground">CRM Time Comercial</h1>
-        <div className="flex flex-col items-end gap-1">
-          <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
-            <Eye className="h-2.5 w-2.5" /> Ver como
-          </p>
-          <VendorSwitch viewAs={viewAs} onChange={setViewAs} />
-        </div>
+        {!lockedVendor && (
+          <div className="flex flex-col items-end gap-1">
+            <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+              <Eye className="h-2.5 w-2.5" /> Ver como
+            </p>
+            <VendorSwitch viewAs={viewAs} onChange={setViewAs} />
+          </div>
+        )}
       </div>
 
       <Tabs defaultValue="funil" className="flex-1 flex flex-col min-h-0">

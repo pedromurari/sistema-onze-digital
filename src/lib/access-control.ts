@@ -18,6 +18,7 @@ export interface AccessPermissions {
   canViewTeam: boolean;
   canViewSettings: boolean;
   canViewTimeComercial: boolean;
+  canViewFranquiaPsi: boolean;
 }
 
 export type AppView =
@@ -48,6 +49,7 @@ export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
   canViewTeam: false,
   canViewSettings: false,
   canViewTimeComercial: true,
+  canViewFranquiaPsi: true,
 };
 
 export const DEFAULT_ADMIN_PERMISSIONS: AccessPermissions = {
@@ -87,6 +89,7 @@ export function normalizePermissionsRow(row: any, role?: string): AccessPermissi
     canViewTeam: row.can_view_team ?? defaults.canViewTeam,
     canViewSettings: row.can_view_settings ?? defaults.canViewSettings,
     canViewTimeComercial: row.can_view_time_comercial ?? defaults.canViewTimeComercial,
+    canViewFranquiaPsi: row.can_view_franquia_psi ?? defaults.canViewFranquiaPsi,
   };
 }
 
@@ -111,6 +114,7 @@ export function permissionsToRow(permissions: AccessPermissions) {
     can_view_team: permissions.canViewTeam,
     can_view_settings: permissions.canViewSettings,
     can_view_time_comercial: permissions.canViewTimeComercial,
+    can_view_franquia_psi: permissions.canViewFranquiaPsi,
   };
 }
 
@@ -163,7 +167,7 @@ export function canAccessView(view: string, permissions: AccessPermissions, isAd
     posts: false, // admin-only — isAdmin check at top of function already handles it
     parceiros: false, // admin-only — isAdmin check at top of function already handles it
     equipe_11ds: false, // admin-only — isAdmin check at top of function already handles it
-    franquia_psi: true,
+    franquia_psi: permissions.canViewFranquiaPsi,
     aquecimento_chips: false, // admin-only — isAdmin check at top of function already handles it
   };
 
@@ -173,6 +177,7 @@ export function canAccessView(view: string, permissions: AccessPermissions, isAd
 export function firstAllowedView(permissions: AccessPermissions, isAdmin: boolean, allowedLaunchIds: string[]) {
   if (isAdmin || permissions.canViewDashboard) return 'dashboard' as AppView;
   if (permissions.canViewPipeline) return 'pipeline';
+  if (permissions.canViewTimeComercial) return 'time_comercial';
   if (permissions.canViewLancamentos && allowedLaunchIds.length > 0) return `lancamentos_${allowedLaunchIds[0]}` as AppView;
   if (permissions.canViewNpa) return 'npa_overview';
   if (permissions.canViewFinanceiro) return 'financeiro';
