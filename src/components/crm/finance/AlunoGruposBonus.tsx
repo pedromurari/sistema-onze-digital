@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/components/ui/use-toast';
 import { Settings } from 'lucide-react';
 import { BonusConfigModal } from './BonusConfigModal';
@@ -14,10 +15,24 @@ interface BonusTipo {
   ordem: number;
 }
 
+interface BonusTurma {
+  id: string;
+  bonus_id: string;
+  nome: string;
+  ativo: boolean;
+  ordem: number;
+}
+
 interface BonusEvento {
   bonus_id: string;
+  bonus_turma_id: string | null;
   acao: 'adicionado' | 'removido';
   created_at: string;
+}
+
+interface TurmaOption {
+  id: string;
+  nome: string;
 }
 
 function fmtDataHora(iso: string) {
@@ -27,11 +42,19 @@ function fmtDataHora(iso: string) {
 }
 
 export function AlunoGruposBonus({ aluno, onGrupoTurmaChange }: {
-  aluno: { id: string; grupo_turma_confirmado_em: string | null };
-  onGrupoTurmaChange: (confirmadoEm: string | null) => void;
+  aluno: {
+    id: string;
+    produto: string;
+    turma_id: string | null;
+    grupo_turma_confirmado_em: string | null;
+    grupo_turma_id: string | null;
+  };
+  onGrupoTurmaChange: (dados: { confirmadoEm: string | null; grupoTurmaId: string | null }) => void;
 }) {
   const { user } = useAuth();
   const [bonusTipos, setBonusTipos] = useState<BonusTipo[]>([]);
+  const [bonusTurmas, setBonusTurmas] = useState<BonusTurma[]>([]);
+  const [turmas, setTurmas] = useState<TurmaOption[]>([]);
   const [eventos, setEventos] = useState<BonusEvento[]>([]);
   const [loading, setLoading] = useState(true);
   const [salvandoGrupo, setSalvandoGrupo] = useState(false);
@@ -40,49 +63,75 @@ export function AlunoGruposBonus({ aluno, onGrupoTurmaChange }: {
 
   const carregar = useCallback(async () => {
     setLoading(true);
-    const [{ data: tipos }, { data: evts }] = await Promise.all([
+    const [{ data: tipos }, { data: edicoes }, { data: evts }, { data: turmasData }] = await Promise.all([
       supabase.from('bonus_tipos').select('id, nome, ativo, ordem').order('ordem', { ascending: true }),
-      supabase.from('aluno_bonus_eventos').select('bonus_id, acao, created_at').eq('aluno_id', aluno.id).order('created_at', { ascending: true }),
+      supabase.from('bonus_turmas').select('id, bonus_id, nome, ativo, ordem').order('ordem', { ascending: true }),
+      supabase.from('aluno_bonus_eventos').select('bonus_id, bonus_turma_id, acao, created_at').eq('aluno_id', aluno.id).order('created_at', { ascending: true }),
+      supabase.from('turmas').select('id, nome, produto, tipo').order('nome', { ascending: false }),
     ]);
     setBonusTipos((tipos as BonusTipo[]) || []);
+    setBonusTurmas((edicoes as BonusTurma[]) || []);
     setEventos((evts as BonusEvento[]) || []);
+    setTurmas(((turmasData as (TurmaOption & { produto: string | null; tipo: string })[]) || [])
+      .filter(t => t.produto === aluno.produto || t.tipo === aluno.produto)
+      .map(t => ({ id: t.id, nome: t.nome })));
     setLoading(false);
-  }, [aluno.id]);
+  }, [aluno.id, aluno.produto]);
 
   useEffect(() => { if (aluno.id) carregar(); }, [aluno.id, carregar]);
 
-  // status atual de cada bônus = ação do evento mais recente daquele par (eventos vêm em ordem crescente)
-  const statusPorBonus = new Map<string, { acao: 'adicionado' | 'removido'; created_at: string }>();
-  for (const e of eventos) statusPorBonus.set(e.bonus_id, { acao: e.acao, created_at: e.created_at });
+  // status atual de cada bônus = evento mais recente daquele par (eventos vêm em ordem crescente)
+  const statusPorBonus = new Map<string, { acao: 'adicionado' | 'removido'; bonus_turma_id: string | null; created_at: string }>();
+  for (const e of eventos) statusPorBonus.set(e.bonus_id, { acao: e.acao, bonus_turma_id: e.bonus_turma_id, created_at: e.created_at });
 
   const bonusVisiveis = bonusTipos.filter(b => b.ativo || statusPorBonus.has(b.id));
 
-  const toggleGrupoTurma = async (checked: boolean) => {
+  // Turma do grupo da formação: enquanto ninguém escolheu outra, é a turma da
+  // matrícula — aluno remanejado é a exceção, não a regra.
+  const grupoTurmaSelecionada = aluno.grupo_turma_id ?? aluno.turma_id ?? '';
+
+  const salvarGrupoTurma = async (confirmadoEm: string | null, grupoTurmaId: string | null) => {
     setSalvandoGrupo(true);
-    const confirmadoEm = checked ? new Date().toISOString() : null;
     const { error } = await supabase
       .from('alunos')
       .update({
         grupo_turma_confirmado_em: confirmadoEm,
-        grupo_turma_confirmado_por: checked ? user?.id ?? null : null,
+        grupo_turma_confirmado_por: confirmadoEm ? user?.id ?? null : null,
+        grupo_turma_id: grupoTurmaId,
       })
       .eq('id', aluno.id);
     setSalvandoGrupo(false);
     if (error) { toast({ variant: 'destructive', title: 'Erro', description: error.message }); return; }
-    onGrupoTurmaChange(confirmadoEm);
+    onGrupoTurmaChange({ confirmadoEm, grupoTurmaId });
   };
 
-  const toggleBonus = async (bonusId: string, checked: boolean) => {
+  const toggleGrupoTurma = (checked: boolean) => {
+    if (!checked) return salvarGrupoTurma(null, null);
+    return salvarGrupoTurma(new Date().toISOString(), grupoTurmaSelecionada || null);
+  };
+
+  const trocarGrupoTurma = (turmaId: string) =>
+    salvarGrupoTurma(aluno.grupo_turma_confirmado_em ?? new Date().toISOString(), turmaId);
+
+  // Único jeito de mexer no bônus: gravar evento novo. A tabela é append-only, então
+  // trocar a turma também é um "adicionado" — o último evento é o que vale.
+  const gravarEventoBonus = async (bonusId: string, acao: 'adicionado' | 'removido', bonusTurmaId: string | null) => {
     setTogglingBonusId(bonusId);
     const { error } = await supabase.from('aluno_bonus_eventos').insert({
       aluno_id: aluno.id,
       bonus_id: bonusId,
-      acao: checked ? 'adicionado' : 'removido',
+      bonus_turma_id: bonusTurmaId,
+      acao,
       criado_por: user?.id ?? null,
     });
     setTogglingBonusId(null);
     if (error) { toast({ variant: 'destructive', title: 'Erro', description: error.message }); return; }
     carregar();
+  };
+
+  const toggleBonus = (bonusId: string, checked: boolean) => {
+    const turmaAtual = statusPorBonus.get(bonusId)?.bonus_turma_id ?? null;
+    return gravarEventoBonus(bonusId, checked ? 'adicionado' : 'removido', checked ? turmaAtual : null);
   };
 
   return (
@@ -94,7 +143,7 @@ export function AlunoGruposBonus({ aluno, onGrupoTurmaChange }: {
         </Button>
       </div>
 
-      <div className="flex items-center gap-2 mb-2">
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
         <Checkbox
           checked={!!aluno.grupo_turma_confirmado_em}
           disabled={salvandoGrupo}
@@ -108,6 +157,14 @@ export function AlunoGruposBonus({ aluno, onGrupoTurmaChange }: {
             </span>
           )}
         </div>
+        {aluno.grupo_turma_confirmado_em && (
+          <Select value={grupoTurmaSelecionada} disabled={salvandoGrupo} onValueChange={trocarGrupoTurma}>
+            <SelectTrigger className="h-7 text-xs w-[190px]"><SelectValue placeholder="Turma do grupo" /></SelectTrigger>
+            <SelectContent>
+              {turmas.map(t => <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {loading ? (
@@ -119,8 +176,9 @@ export function AlunoGruposBonus({ aluno, onGrupoTurmaChange }: {
           {bonusVisiveis.map(b => {
             const status = statusPorBonus.get(b.id);
             const checked = status?.acao === 'adicionado';
+            const edicoes = bonusTurmas.filter(t => t.bonus_id === b.id && (t.ativo || t.id === status?.bonus_turma_id));
             return (
-              <div key={b.id} className="flex items-center gap-2">
+              <div key={b.id} className="flex items-center gap-2 flex-wrap">
                 <Checkbox
                   checked={checked}
                   disabled={togglingBonusId === b.id || !b.ativo}
@@ -135,6 +193,20 @@ export function AlunoGruposBonus({ aluno, onGrupoTurmaChange }: {
                     </span>
                   )}
                 </div>
+                {checked && (edicoes.length > 0 ? (
+                  <Select
+                    value={status?.bonus_turma_id ?? ''}
+                    disabled={togglingBonusId === b.id}
+                    onValueChange={v => gravarEventoBonus(b.id, 'adicionado', v)}
+                  >
+                    <SelectTrigger className="h-7 text-xs w-[170px]"><SelectValue placeholder="Turma do bônus" /></SelectTrigger>
+                    <SelectContent>
+                      {edicoes.map(t => <SelectItem key={t.id} value={t.id}>{t.nome}{!t.ativo ? ' (inativa)' : ''}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <span className="text-[11px] text-muted-foreground">sem turmas — cadastre em "Gerenciar bônus"</span>
+                ))}
               </div>
             );
           })}

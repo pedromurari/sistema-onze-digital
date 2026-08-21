@@ -19,6 +19,7 @@ export type Database = {
           acao: string
           aluno_id: string
           bonus_id: string
+          bonus_turma_id: string | null
           created_at: string
           criado_por: string | null
           id: string
@@ -27,6 +28,7 @@ export type Database = {
           acao: string
           aluno_id: string
           bonus_id: string
+          bonus_turma_id?: string | null
           created_at?: string
           criado_por?: string | null
           id?: string
@@ -35,6 +37,7 @@ export type Database = {
           acao?: string
           aluno_id?: string
           bonus_id?: string
+          bonus_turma_id?: string | null
           created_at?: string
           criado_por?: string | null
           id?: string
@@ -160,6 +163,7 @@ export type Database = {
           forms_respondido_em: string | null
           grupo_turma_confirmado_em: string | null
           grupo_turma_confirmado_por: string | null
+          grupo_turma_id: string | null
           id: string
           lancamento_id: string | null
           lead_quente_contatado_em: string | null
@@ -216,6 +220,7 @@ export type Database = {
           forms_respondido_em?: string | null
           grupo_turma_confirmado_em?: string | null
           grupo_turma_confirmado_por?: string | null
+          grupo_turma_id?: string | null
           id?: string
           lancamento_id?: string | null
           lead_quente_contatado_em?: string | null
@@ -272,6 +277,7 @@ export type Database = {
           forms_respondido_em?: string | null
           grupo_turma_confirmado_em?: string | null
           grupo_turma_confirmado_por?: string | null
+          grupo_turma_id?: string | null
           id?: string
           lancamento_id?: string | null
           lead_quente_contatado_em?: string | null
@@ -1049,6 +1055,41 @@ export type Database = {
           ordem?: number
         }
         Relationships: []
+      }
+      bonus_turmas: {
+        Row: {
+          ativo: boolean
+          bonus_id: string
+          created_at: string
+          id: string
+          nome: string
+          ordem: number
+        }
+        Insert: {
+          ativo?: boolean
+          bonus_id: string
+          created_at?: string
+          id?: string
+          nome: string
+          ordem?: number
+        }
+        Update: {
+          ativo?: boolean
+          bonus_id?: string
+          created_at?: string
+          id?: string
+          nome?: string
+          ordem?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bonus_turmas_bonus_id_fkey"
+            columns: ["bonus_id"]
+            isOneToOne: false
+            referencedRelation: "bonus_tipos"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       canais_cobranca: {
         Row: {

@@ -1344,6 +1344,68 @@ function copyLink(url: string) {
     .catch(() => toast({ variant: 'destructive', title: 'Não foi possível copiar', description: 'Copie manualmente o link.' }));
 }
 
+// Código de 5 dígitos que identifica a turma ("Turma #02726/OnzeDS" → "02726").
+// É o que o nome do grupo no WhatsApp e o cadastro da turma têm em comum — o
+// resto do nome varia ("/OnzeDS", "- PSICANÁLISE iDM").
+function codigoDaTurma(nome: string): string | null {
+  return nome.match(/\d{5}/)?.[0] ?? null;
+}
+
+// Link do grupo de WhatsApp de cada turma de formação, indexado pelo código.
+// A fonte é a mesma que o disparo de boas-vindas usa (turma_disparo_config.link_grupo,
+// editável no Financeiro → turma → Disparo): o vendedor vê exatamente o convite que o
+// aluno recebe, e trocar o link num lugar só já vale pros dois.
+function useLinksGrupoFormacao() {
+  const [links, setLinks] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      const { data: turmas } = await supabase.from('turmas').select('id, nome');
+      if (!turmas?.length) { if (!cancelado) setLoading(false); return; }
+
+      const { data: configs } = await supabase
+        .from('turma_disparo_config')
+        .select('turma_id, link_grupo')
+        .in('turma_id', turmas.map((t) => t.id));
+
+      const linkPorTurmaId = new Map((configs ?? []).map((c) => [c.turma_id, c.link_grupo]));
+      const porCodigo: Record<string, string> = {};
+      for (const t of turmas) {
+        const link = linkPorTurmaId.get(t.id);
+        const codigo = codigoDaTurma(t.nome);
+        if (!link || !codigo) continue;
+        // Duas turmas podem repetir o código com sufixo diferente (ex: 02526/OnzeDS
+        // e 02526/Keila). O calendário daqui é o das turmas /OnzeDS — na dúvida, é
+        // ela que vale, venha em que ordem vier.
+        if (porCodigo[codigo] && !/onzeds/i.test(t.nome)) continue;
+        porCodigo[codigo] = link;
+      }
+
+      if (!cancelado) { setLinks(porCodigo); setLoading(false); }
+    })();
+    return () => { cancelado = true; };
+  }, []);
+
+  return { links, loading };
+}
+
+// Botõezinhos de copiar/abrir o grupo, na própria linha do calendário de turmas.
+function GrupoTurmaAcoes({ url }: { url?: string }) {
+  if (!url) return <span className="text-[11px] text-muted-foreground">sem grupo</span>;
+  return (
+    <div className="flex items-center gap-1">
+      <button type="button" onClick={() => copyLink(url)} className="h-8 w-8 inline-flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors" title="Copiar link do grupo">
+        <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+      </button>
+      <a href={url} target="_blank" rel="noopener noreferrer" className="h-8 w-8 inline-flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors" title="Abrir grupo no WhatsApp">
+        <MessageCircle className="h-3.5 w-3.5 text-muted-foreground" />
+      </a>
+    </div>
+  );
+}
+
 function LinkRow({ label, url }: { label: string; url: string }) {
   return (
     <div className="flex items-center justify-between gap-3 border border-border rounded-md px-3 py-2.5">
@@ -1538,6 +1600,8 @@ function OperacaoTab({ viewAsName }: VendorScopeProps) {
   const matriculaLinks = viewAsName ? LINKS_MATRICULA.filter((l) => l.vendedor === viewAsName) : LINKS_MATRICULA;
   const proximaFormacao = proximaTurmaFormacao();
   const proximaSdd = proximaSddTurma();
+  const { links: linksGrupo, loading: loadingGrupos } = useLinksGrupoFormacao();
+  const linkGrupoProxima = linksGrupo[codigoDaTurma(proximaFormacao.turma) ?? ''];
 
   return (
     <div className="flex flex-col gap-5">
@@ -1553,7 +1617,23 @@ function OperacaoTab({ viewAsName }: VendorScopeProps) {
         Essa é a turma de formação (a classe de verdade) — diferente da turma #{proximaSdd.n} da Semana do Despertar, que é só o lançamento/captação (ver aba Aquisição aqui do lado).
       </p>
 
-      <SectionBar title="Calendário de turmas" subtitle="Data de início de cada turma nova, sem precisar perguntar." icon={CalendarDays} />
+      <SectionBar title="Grupo da turma" subtitle="Convite do grupo de WhatsApp onde o aluno matriculado entra." icon={MessageCircle} />
+      <Card className="p-4">
+        {loadingGrupos ? (
+          <p className="text-xs text-muted-foreground">Carregando...</p>
+        ) : linkGrupoProxima ? (
+          <LinkRow label={`Grupo da Turma ${proximaFormacao.turma}`} url={linkGrupoProxima} />
+        ) : (
+          <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2">
+            A turma {proximaFormacao.turma} ainda não tem grupo cadastrado. O link entra no Financeiro → turma → Disparo, no campo "Link do grupo WhatsApp".
+          </p>
+        )}
+        <p className="text-xs text-muted-foreground mt-3">
+          É o mesmo convite que vai no disparo de boas-vindas — manda depois da ficha de matrícula preenchida. Os grupos das turmas seguintes ficam no calendário abaixo, conforme forem criados.
+        </p>
+      </Card>
+
+      <SectionBar title="Calendário de turmas" subtitle="Data de início e grupo de WhatsApp de cada turma nova, sem precisar perguntar." icon={CalendarDays} />
       <Card className="p-4">
         <div className="flex flex-col divide-y divide-border">
           {TURMAS_FORMACAO.map((t) => (
@@ -1568,9 +1648,12 @@ function OperacaoTab({ viewAsName }: VendorScopeProps) {
                   <p className="text-xs text-muted-foreground">{t.dataLabel}</p>
                 </div>
               </div>
-              <Badge className={`text-xs border-0 ${t.confirmada ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}`}>
-                {t.confirmada ? 'confirmada' : 'a definir'}
-              </Badge>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Badge className={`text-xs border-0 ${t.confirmada ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}`}>
+                  {t.confirmada ? 'confirmada' : 'a definir'}
+                </Badge>
+                {!loadingGrupos && <GrupoTurmaAcoes url={linksGrupo[codigoDaTurma(t.turma) ?? '']} />}
+              </div>
             </div>
           ))}
         </div>
@@ -1597,7 +1680,7 @@ function OperacaoTab({ viewAsName }: VendorScopeProps) {
       <AlunosAguardandoTurmaCard viewAsName={viewAsName} />
 
       <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 -mt-2">
-        Outros links da turma (landing page da Semana do Despertar, pagamento/checkout, grupo de WhatsApp) aparecem aqui assim que estiverem disponíveis.
+        Outros links da turma (landing page da Semana do Despertar, pagamento/checkout) aparecem aqui assim que estiverem disponíveis.
       </p>
     </div>
   );

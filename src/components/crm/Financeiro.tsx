@@ -117,6 +117,7 @@ interface Aluno {
   forma_pagamento?: string;
   observacoes?: string;
   grupo_turma_confirmado_em?: string | null;
+  grupo_turma_id?: string | null;
   forms_respondido?: boolean;
   forms_respondido_em?: string;
   contrato_enviado?: boolean;
@@ -912,8 +913,8 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
     }
   }, [initialAlunoId, loading, alunos]);
 
-  const ALUNOS_SELECT_FULL = 'id, turma_id, produto, nome, whatsapp, email, cpf, rg, sexo, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, tipo_pagamento, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, lancamento_id, valor_mensalidade, forma_pagamento, observacoes, grupo_turma_confirmado_em, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, contrato_baixado, contrato_arquivo_url, contrato_arquivo_nome, asaas_integrado, asaas_link, voomp_integrado, voomp_link, contrato_token, token_acesso, link_grupo_whatsapp, created_at';
-  const ALUNOS_SELECT_BASE = 'id, turma_id, produto, nome, whatsapp, email, cpf, rg, sexo, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, tipo_pagamento, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, valor_mensalidade, forma_pagamento, observacoes, grupo_turma_confirmado_em, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, created_at';
+  const ALUNOS_SELECT_FULL = 'id, turma_id, produto, nome, whatsapp, email, cpf, rg, sexo, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, tipo_pagamento, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, lancamento_id, valor_mensalidade, forma_pagamento, observacoes, grupo_turma_confirmado_em, grupo_turma_id, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, contrato_baixado, contrato_arquivo_url, contrato_arquivo_nome, asaas_integrado, asaas_link, voomp_integrado, voomp_link, contrato_token, token_acesso, link_grupo_whatsapp, created_at';
+  const ALUNOS_SELECT_BASE = 'id, turma_id, produto, nome, whatsapp, email, cpf, rg, sexo, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, tipo_pagamento, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, valor_mensalidade, forma_pagamento, observacoes, grupo_turma_confirmado_em, grupo_turma_id, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, created_at';
 
   const loadData = async () => {
     setLoading(true);
@@ -1459,6 +1460,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
       data_segunda_parcela: toDateInput(parcela2?.data_vencimento),
       observacoes: a.observacoes || '',
       grupo_turma_confirmado_em: a.grupo_turma_confirmado_em ?? null,
+      grupo_turma_id: a.grupo_turma_id ?? null,
     });
     setLatestObsTexto('');
     setShowAlunoDetail(true);
@@ -3375,10 +3377,16 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                 {alunoDetail && (
                   <div>
                     <AlunoGruposBonus
-                      aluno={{ id: alunoDetail.id, grupo_turma_confirmado_em: editAlunoForm.grupo_turma_confirmado_em ?? null }}
-                      onGrupoTurmaChange={confirmadoEm => {
-                        setEditAlunoForm(f => ({ ...f, grupo_turma_confirmado_em: confirmadoEm }));
-                        setAlunos(prev => prev.map(a => a.id === alunoDetail.id ? { ...a, grupo_turma_confirmado_em: confirmadoEm } : a));
+                      aluno={{
+                        id: alunoDetail.id,
+                        produto: alunoDetail.produto,
+                        turma_id: editAlunoForm.turma_id ?? alunoDetail.turma_id ?? null,
+                        grupo_turma_confirmado_em: editAlunoForm.grupo_turma_confirmado_em ?? null,
+                        grupo_turma_id: editAlunoForm.grupo_turma_id ?? null,
+                      }}
+                      onGrupoTurmaChange={({ confirmadoEm, grupoTurmaId }) => {
+                        setEditAlunoForm(f => ({ ...f, grupo_turma_confirmado_em: confirmadoEm, grupo_turma_id: grupoTurmaId }));
+                        setAlunos(prev => prev.map(a => a.id === alunoDetail.id ? { ...a, grupo_turma_confirmado_em: confirmadoEm, grupo_turma_id: grupoTurmaId } : a));
                       }}
                     />
                   </div>
