@@ -15,6 +15,7 @@ import { toast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { dbRowToLead } from '@/contexts/LeadsContext';
 import { assignTurmaEAtualizarParcelas } from '@/lib/parcelasAluno';
+import { ChatTimeComercial } from './chat/ChatTimeComercial';
 import {
   MessageCircle, Target, Copy, ExternalLink, Users, TrendingUp, DollarSign, CalendarDays,
   Video, Rocket, Repeat, GraduationCap, Link2, Wallet, CreditCard, Crown, Kanban, ClipboardList,
@@ -2637,11 +2638,35 @@ export function TimeComercial() {
             >
               <BookOpen className="h-3.5 w-3.5" /> Metas e Comissão
             </TabsTrigger>
+
+            {/* Barra separadora: o que vem depois nao e' rotina do vendedor, e'
+                consulta de historico -- quem mais usa e' o admin. Fica no mesmo
+                bloco, mas do outro lado da divisao e em tom neutro. */}
+            <div className="w-px self-stretch bg-primary/20 mx-1.5" aria-hidden="true" />
+
+            <TabsTrigger
+              value="chat"
+              className="rounded-lg px-4 py-2 text-sm font-medium bg-muted border border-border text-muted-foreground hover:text-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-sm gap-1.5"
+            >
+              <MessageCircle className="h-3.5 w-3.5" /> Chat
+            </TabsTrigger>
           </TabsList>
         </div>
 
         <TabsContent value="funil" className="flex-1 min-h-0">
           <FunilTimeComercial viewAsName={viewAsName} />
+        </TabsContent>
+
+        <TabsContent value="chat" className="flex flex-col gap-3">
+          <p className="text-sm text-muted-foreground">
+            {viewAsName
+              ? 'Histórico das conversas que passaram pelo seu WhatsApp, com o nome do lead. Só leitura.'
+              : 'Histórico das conversas dos WhatsApps do time, com o nome do lead. Cada vendedor enxerga só o próprio número.'}
+          </p>
+          <ChatTimeComercial
+            viewAsName={viewAsName}
+            vendedores={INITIAL_VENDORS.filter((v) => !v.gerente).map((v) => v.name)}
+          />
         </TabsContent>
 
         <TabsContent value="dados">

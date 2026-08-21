@@ -11,6 +11,26 @@ import { normalizePhone, sufixo, maskPhone, TIPO_LABEL, instanciaOcultaNoChat } 
 
 export type Categoria = 'lancamento' | 'npa' | 'turma' | 'disparo' | 'numerologo' | 'direto';
 
+// O PostgREST corta qualquer select em 1000 linhas. leads_unificados tem ~13k e
+// disparo_leads ~4k, entao buscar a tabela inteira pra resolver nome trazia so um
+// pedaco -- e a maioria das conversas aparecia como telefone mascarado. Aqui a
+// busca e' pelo avesso: parte dos telefones que estao na lista e pede so esses,
+// em lotes, casando pelo sufixo de 8 digitos (o formato gravado varia entre as
+// fontes, entao `like` no fim do numero e' o que casa).
+const LOTE_SUFIXOS = 60;
+
+async function buscarPorSufixo<T>(
+  tabela: string, colunas: string, colunaTelefone: string, sufixos: string[],
+): Promise<T[]> {
+  const achados: T[] = [];
+  for (let i = 0; i < sufixos.length; i += LOTE_SUFIXOS) {
+    const filtro = sufixos.slice(i, i + LOTE_SUFIXOS).map(s => `${colunaTelefone}.like.*${s}`).join(',');
+    const { data } = await supabase.from(tabela as any).select(colunas).or(filtro);
+    if (data) achados.push(...(data as T[]));
+  }
+  return achados;
+}
+
 export interface Conversa {
   telefone: string;
   nome: string;
@@ -26,21 +46,43 @@ export interface Conversa {
   disparoRespondeu: boolean; // so relevante quando categoria === 'disparo': lead ja respondeu a campanha?
 }
 
-export function useConversas() {
+/**
+ * `instancias` restringe a lista aos numeros informados (nomes de instancia da
+ * Evolution). Sem ele, comportamento de sempre: todas as conversas, menos as
+ * das instancias pessoais escondidas. Com ele, o filtro e' explicito e vale
+ * mais que a lista de ocultas -- quem pede um numero especifico quer aquele
+ * numero. Usado pelo Chat do Time Comercial, onde o vendedor so pode ver o que
+ * passou pelo WhatsApp dele.
+ */
+export function useConversas(instancias?: string | string[], desde?: string) {
   const { user } = useAuth();
   const [conversas, setConversas] = useState<Conversa[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Chave estavel pro useCallback: array novo a cada render nao pode reiniciar a busca.
+  const filtroChave = Array.isArray(instancias) ? [...instancias].sort().join(',') : instancias ?? '';
+  const temFiltro = instancias !== undefined;
+
   const carregarConversas = useCallback(async () => {
     setLoading(true);
+    const instanciasFiltro = temFiltro ? filtroChave.split(',').filter(Boolean) : null;
+
+    // Filtro pedido, mas nenhum numero atras dele (ex: vendedor sem instancia
+    // cadastrada): nao ha o que mostrar -- e buscar sem filtro vazaria as
+    // conversas de todo mundo.
+    if (instanciasFiltro && instanciasFiltro.length === 0) { setConversas([]); setLoading(false); return; }
 
     // Ultimas mensagens; agrupa por telefone no cliente (a lista lateral e um
     // "quem falou por ultimo", nao precisa varrer o historico inteiro).
-    const { data: msgs, error } = await supabase
+    let query = supabase
       .from('whatsapp_mensagens' as any)
       .select('telefone, conteudo, tipo, created_at, evolution_instance, direcao')
       .order('created_at', { ascending: false })
       .limit(2000);
+    if (instanciasFiltro) query = query.in('evolution_instance', instanciasFiltro);
+    if (desde) query = query.gte('created_at', desde);
+
+    const { data: msgs, error } = await query;
 
     if (error) { setLoading(false); return; }
 
@@ -62,9 +104,11 @@ export function useConversas() {
     // usa o nome da campanha de disparo como grupo nesse caso. Casamento por
     // sufixo de 8 digitos, igual ao evo-resposta -- o formato gravado varia
     // entre as fontes.
-    const [unificadosRes, disparoRes, campanhasRes, leiturasRes] = await Promise.all([
-      supabase.from('leads_unificados' as any).select('origem_tabela, origem_id, origem, nome, telefone, temperatura, criado_em'),
-      supabase.from('disparo_leads').select('nome, phone, temperatura, campanha_id, respondeu_em'),
+    const sufixos = [...new Set(telefones.map(sufixo).filter(Boolean))];
+
+    const [unificados, disparos, campanhasRes, leiturasRes] = await Promise.all([
+      buscarPorSufixo<any>('leads_unificados', 'origem_tabela, origem_id, origem, nome, telefone, temperatura, criado_em', 'telefone', sufixos),
+      buscarPorSufixo<any>('disparo_leads', 'nome, phone, temperatura, campanha_id, respondeu_em', 'phone', sufixos),
       supabase.from('disparo_campanhas').select('id, nome'),
       user ? supabase.from('chat_leituras' as any).select('telefone, lida_em').eq('user_id', user.id) : Promise.resolve({ data: [] as any[] }),
     ]);
@@ -76,7 +120,7 @@ export function useConversas() {
     for (const l of (leiturasRes.data ?? []) as any[]) lidaEmPorTelefone.set(l.telefone, l.lida_em);
 
     const porSufixoUnificado = new Map<string, any>();
-    for (const r of (unificadosRes.data ?? []) as any[]) {
+    for (const r of unificados) {
       const s = sufixo(normalizePhone(r.telefone));
       if (!s) continue;
       const atual = porSufixoUnificado.get(s);
@@ -89,7 +133,7 @@ export function useConversas() {
     }
 
     const porSufixoDisparo = new Map<string, any>();
-    for (const r of (disparoRes.data ?? []) as any[]) {
+    for (const r of disparos) {
       const s = sufixo(normalizePhone(r.phone));
       if (s && !porSufixoDisparo.has(s)) porSufixoDisparo.set(s, r);
     }
@@ -99,7 +143,8 @@ export function useConversas() {
       const ultima = ultimaPorTelefone.get(tel)!;
       // Numero pessoal (ex: "ig") nao e canal de atendimento -- a conversa toda
       // some do Chat quando a mensagem mais recente veio/foi por essa instancia.
-      if (instanciaOcultaNoChat(ultima.evolution_instance)) continue;
+      // Nao vale quando o chamador pediu instancias especificas.
+      if (!instanciasFiltro && instanciaOcultaNoChat(ultima.evolution_instance)) continue;
       const s = sufixo(tel);
       const u = porSufixoUnificado.get(s);
       const d = porSufixoDisparo.get(s);
@@ -164,7 +209,7 @@ export function useConversas() {
     lista.sort((a, b) => b.ultimaEm.localeCompare(a.ultimaEm));
     setConversas(lista);
     setLoading(false);
-  }, [user]);
+  }, [user, temFiltro, filtroChave, desde]);
 
   useEffect(() => { carregarConversas(); }, [carregarConversas]);
 

@@ -32,21 +32,38 @@ async function marcarComoLida(userId: string, telefone: string): Promise<void> {
   }
 }
 
-export function useThread(telefone: string | null) {
+/**
+ * `instancias` limita o historico aos numeros informados. Sem ele, a thread
+ * traz a conversa inteira daquele telefone, com qualquer numero nosso (o
+ * comportamento do Chat completo). Com ele, so o que passou pelos numeros
+ * pedidos -- e' o que o Chat do Time Comercial usa pro vendedor nao ler a
+ * conversa que outro numero teve com o mesmo lead.
+ */
+export function useThread(telefone: string | null, instancias?: string | string[], desde?: string) {
   const { user } = useAuth();
   const [thread, setThread] = useState<MensagemRow[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const filtroChave = Array.isArray(instancias) ? [...instancias].sort().join(',') : instancias ?? '';
+  const temFiltro = instancias !== undefined;
+
   const carregarThread = useCallback(async (tel: string) => {
     setLoading(true);
-    const { data } = await supabase
+    const lista = temFiltro ? filtroChave.split(',').filter(Boolean) : null;
+    if (lista && lista.length === 0) { setThread([]); setLoading(false); return; }
+
+    let query = supabase
       .from('whatsapp_mensagens' as any)
       .select('id, telefone, direcao, conteudo, tipo, origem, created_at, evolution_instance')
       .eq('telefone', tel)
       .order('created_at', { ascending: true });
+    if (lista) query = query.in('evolution_instance', lista);
+    if (desde) query = query.gte('created_at', desde);
+
+    const { data } = await query;
     setThread((data ?? []) as any as MensagemRow[]);
     setLoading(false);
-  }, []);
+  }, [temFiltro, filtroChave, desde]);
 
   useEffect(() => {
     if (!telefone) { setThread([]); return; }

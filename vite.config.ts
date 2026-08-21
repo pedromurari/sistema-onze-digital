@@ -16,7 +16,10 @@ export default defineConfig(({ mode }) => ({
         "style-src 'self' 'unsafe-inline'; " +
         "img-src 'self' data: blob: https:; " +
         "font-src 'self' data:; " +
-        "connect-src 'self' https://*.supabase.co wss://*.supabase.co; " +
+        // A Evolution API e' chamada direto do browser (QR code, estado de conexao,
+        // lista de grupos). Sem o host aqui, essas telas so funcionam em producao
+        // — onde nao ha CSP — e quebram silenciosamente no dev.
+        "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://idm-evolution-api.nzj83i.easypanel.host; " +
         "frame-ancestors 'none'; " +
         "base-uri 'self'; " +
         "form-action 'self';",
