@@ -1,0 +1,111 @@
+name: CI
+
+# Roda a cada push e em todo PR para main. O objetivo é que ninguém precise lembrar de
+# rodar os testes: se a rede de proteção só funciona quando alguém lembra, ela não é rede.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+# Um push novo cancela a execução anterior do mesmo branch — evita fila de builds velhos.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    name: Testes, tipos e build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # IMPORTANTE: nenhum segredo é exposto aqui de propósito.
+    #
+    # Este projeto envia WhatsApp e e-mail a partir de gatilho de banco. Um job de CI com
+    # credencial do Supabase poderia, num teste mal escrito, disparar mensagem para lead
+    # de verdade. Os testes são todos de função pura e não precisam de banco — então o CI
+    # também não precisa de chave nenhuma. Se algum dia um teste exigir credencial, isso é
+    # sinal de que ele não deveria estar nesta suíte.
+    env:
+      CI: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Testes
+        # Inclui a guarda `sem-envio`, que quebra o build se algum teste puder disparar
+        # mensagem para lead.
+        run: npm test
+
+      - name: Tipos (não pode aumentar)
+        # Dívida herdada: 91 erros. A régua é não crescer, e o teto cai conforme a
+        # refatoração avança. Ver scripts/typecheck-baseline.mjs.
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+  rls:
+    name: RLS em banco limpo
+    runs-on: ubuntu-latest
+    # Só em PR para main: sobe um Supabase inteiro e leva alguns minutos. Rodar isso a
+    # cada push de branch de trabalho atrasaria o ciclo sem ganho — a suíte de função
+    # pura, essa sim, roda sempre.
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 25
+
+    # Também sem segredos. O banco é local ao runner, criado do zero a partir do baseline,
+    # e o seed desliga os gatilhos de envio antes de qualquer INSERT.
+    env:
+      CI: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Subir o Supabase local
+        # O runner do GitHub já tem Docker. `db reset` aplica o baseline e os seeds:
+        # primeiro a matriz de permissão, depois os dados de teste.
+        run: supabase start
+
+      - name: Testes de RLS
+        # Prova o que a suíte de função pura não alcança: que vendedor não lê pagamento,
+        # que investidor fica preso na turma dele, que parceiro não vê nada, e que ninguém
+        # se auto-promove. Validado quebrando uma policy de propósito — os três perfis
+        # afetados apareceram no relatório.
+        run: |
+          CONTAINER=$(docker ps --filter "name=supabase_db" --format "{{.Names}}" | head -1)
+          docker exec -i "$CONTAINER" psql -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f - < supabase/tests/rls.sql
+
+      - name: Inventário de RLS
+        # Falha se alguma tabela entrou sem passar pela matriz de permissão e sem estar na
+        # lista de exceções aprovadas. Foi assim que `leads_historico_fase` apareceu:
+        # ninguém errou, simplesmente esqueceram dela.
+        run: |
+          CONTAINER=$(docker ps --filter "name=supabase_db" --format "{{.Names}}" | head -1)
+          LINHAS=$(docker exec -i "$CONTAINER" psql -U postgres -d postgres -tA \
+            -f - < scripts/auditoria-rls.sql | grep -c . || true)
+          if [ "$LINHAS" -gt 0 ]; then
+            echo "✗ $LINHAS tabela(s) fora da matriz de permissão:"
+            docker exec -i "$CONTAINER" psql -U postgres -d postgres \
+              -f - < scripts/auditoria-rls.sql
+            exit 1
+          fi
+          echo "✓ Toda tabela passa pela matriz ou está nas exceções aprovadas."

@@ -40,3 +40,18 @@ dist-ssr
 
 # Cache local do Supabase CLI
 supabase/.temp/
+.tmp-migrations-sync/
+
+# Saída gerada da carga única de mensagens do funil da Turma #38 (286 arquivos).
+# O gerador é scripts/gen-sql-38.mjs e o resultado já está em funnel_messages no banco
+# (67 mensagens, 65 enviadas). Ficam no disco, fora do repositório.
+scripts/batch*.sql
+scripts/all_batches.txt
+scripts/b[0-9].json
+scripts/funil38.sql
+
+# Exportações de campanha: contêm nome e telefone de lead. Nunca vão para o repositório.
+.campanha-*.csv
+
+# Estado local do CLI do Supabase.
+supabase/.branches/
