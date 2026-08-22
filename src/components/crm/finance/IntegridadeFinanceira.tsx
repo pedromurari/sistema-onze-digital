@@ -3,8 +3,100 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ShieldAlert, ShieldCheck, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { toast } from 'sonner';
 import { SectionBar, PREMIUM_TABLE_HEADER_ROW, premiumZebraRow } from '@/components/crm/ui/premium';
-import { useIntegridadeFinanceira, type GravidadeIntegridade } from '@/lib/db';
+import {
+  useIntegridadeFinanceira, useTurmas,
+  useDefinirTurmaDoAluno, useDefinirFormaDePagamento, useMarcarParcelasComoIsentas,
+  type GravidadeIntegridade, type PontoDeIntegridade,
+} from '@/lib/db';
+
+/**
+ * A correção de cada linha, feita no lugar.
+ *
+ * Só três dos sete problemas têm conserto óbvio o bastante para virar controle. Os outros
+ * pedem julgamento (conferir se a parcela já foi paga por fora, por exemplo) e continuam
+ * sendo diagnóstico — botão que finge resolver é pior do que nenhum botão.
+ */
+function AcaoDaLinha({ ponto }: { ponto: PontoDeIntegridade }) {
+  const { data: turmas = [] } = useTurmas();
+  const definirTurma = useDefinirTurmaDoAluno();
+  const definirForma = useDefinirFormaDePagamento();
+  const marcarIsentas = useMarcarParcelasComoIsentas();
+
+  if (ponto.problema === 'aluno sem turma') {
+    return (
+      <Select
+        disabled={definirTurma.isPending}
+        onValueChange={(turmaId) =>
+          definirTurma.mutate(
+            { alunoId: ponto.referencia, turmaId },
+            {
+              onSuccess: () => toast.success(`${ponto.entidade} entrou na turma`),
+              onError: (e) => toast.error(`Não deu: ${(e as Error).message}`),
+            },
+          )
+        }
+      >
+        <SelectTrigger className="h-8 text-xs w-44"><SelectValue placeholder="Definir turma" /></SelectTrigger>
+        <SelectContent>
+          {turmas.map(t => <SelectItem key={t.id} value={t.id} className="text-xs">{t.nome}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    );
+  }
+
+  if (ponto.problema === 'devendo e sem forma de pagamento') {
+    return (
+      <Select
+        disabled={definirForma.isPending}
+        onValueChange={(forma) =>
+          definirForma.mutate(
+            { alunoId: ponto.referencia, forma },
+            {
+              onSuccess: () => toast.success(
+                forma === 'boleto'
+                  ? `${ponto.entidade} passa a entrar na fila de cobrança`
+                  : `Forma de ${ponto.entidade} definida`,
+              ),
+              onError: (e) => toast.error(`Não deu: ${(e as Error).message}`),
+            },
+          )
+        }
+      >
+        <SelectTrigger className="h-8 text-xs w-44"><SelectValue placeholder="Definir forma" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="boleto" className="text-xs">Boleto — entra na cobrança</SelectItem>
+          <SelectItem value="cartao" className="text-xs">Cartão</SelectItem>
+          <SelectItem value="avista" className="text-xs">À vista</SelectItem>
+        </SelectContent>
+      </Select>
+    );
+  }
+
+  if (ponto.problema === 'pago com valor zero') {
+    return (
+      <Button
+        size="sm" variant="outline" className="h-8 text-xs"
+        disabled={marcarIsentas.isPending}
+        onClick={() =>
+          marcarIsentas.mutate(
+            { alunoId: ponto.referencia },
+            {
+              onSuccess: () => toast.success(`Parcelas de ${ponto.entidade} marcadas como isentas`),
+              onError: (e) => toast.error(`Não deu: ${(e as Error).message}`),
+            },
+          )
+        }
+      >
+        Marcar como isento
+      </Button>
+    );
+  }
+
+  return <span className="text-xs text-muted-foreground">confira na tela</span>;
+}
 
 /**
  * O que o financeiro está calculando errado sem avisar.
@@ -104,6 +196,7 @@ export function IntegridadeFinanceira() {
                   <TableHead>Quem</TableHead>
                   <TableHead>O que está errado</TableHead>
                   <TableHead className="text-right w-32">Em jogo</TableHead>
+                  <TableHead className="w-48">Resolver</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -122,6 +215,7 @@ export function IntegridadeFinanceira() {
                     <TableCell className="text-right text-sm tabular-nums">
                       {Number(p.valor_em_risco) > 0 ? brl(Number(p.valor_em_risco)) : '—'}
                     </TableCell>
+                    <TableCell><AcaoDaLinha ponto={p} /></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -129,9 +223,9 @@ export function IntegridadeFinanceira() {
           </div>
 
           <p className="text-[11px] text-muted-foreground leading-snug">
-            Cada linha é uma decisão de quem conhece o negócio — o sistema não corrige
-            sozinho. Turma faltando, forma de pagamento em branco e split não cadastrado
-            precisam ser preenchidos no cadastro do aluno ou da turma.
+            Turma, forma de pagamento e bolsa dá para resolver aqui mesmo — a lista some
+            sozinha conforme cada uma é preenchida. O resto pede conferência humana: uma
+            parcela vencida no cartão pode ter sido paga por fora e só faltar dar baixa.
           </p>
         </div>
       )}

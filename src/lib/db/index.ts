@@ -46,5 +46,8 @@ export {
 } from './pessoas';
 export type { Pessoa, VinculoPessoa, EventoPessoa, PapelPessoa, TipoEventoPessoa } from './pessoas';
 
-export { useIntegridadeFinanceira } from './integridade';
+export {
+  useIntegridadeFinanceira,
+  useDefinirTurmaDoAluno, useDefinirFormaDePagamento, useMarcarParcelasComoIsentas,
+} from './integridade';
 export type { PontoDeIntegridade, GravidadeIntegridade } from './integridade';

@@ -17,6 +17,7 @@ import { dbRowToLead } from '@/contexts/LeadsContext';
 import { assignTurmaEAtualizarParcelas } from '@/lib/parcelasAluno';
 import { ChatTimeComercial } from './chat/ChatTimeComercial';
 import { PREMIUM_TABLE_HEADER_ROW, premiumZebraRow, StatTile, SectionBar } from '@/components/crm/ui/premium';
+import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
 import {
   MessageCircle, Target, Copy, ExternalLink, Users, TrendingUp, DollarSign, CalendarDays,
   Video, Rocket, Repeat, GraduationCap, Link2, Wallet, CreditCard, Crown, Kanban, ClipboardList,
@@ -673,7 +674,9 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
                   return (
                     <Card key={lead.id} className="p-3 lg:p-4 bg-card border-border hover:shadow-md transition-shadow">
                       <div className="mb-2">
-                        <h3 className="font-semibold text-foreground text-sm lg:text-base truncate">{lead.nome}</h3>
+                        <h3 className="font-semibold text-foreground text-sm lg:text-base truncate">
+                          <NomePessoa nome={lead.nome} pessoaId={lead.pessoaId} telefone={lead.telefone} />
+                        </h3>
                         {lead.telefone && <p className="text-xs text-muted-foreground truncate">{lead.telefone}{lead.cidade ? ` · ${lead.cidade}` : ''}</p>}
                         <div className="flex flex-wrap gap-1 mt-1">
                           {canalAtivo === 'todos' && isLeadRecente(lead) && (

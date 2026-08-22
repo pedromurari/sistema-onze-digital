@@ -30,6 +30,8 @@ const LeadsContext = createContext<LeadsContextType | undefined>(undefined);
 export function dbRowToLead(row: any): Lead {
   return {
     id: row.id,
+    // O `select('*')` sempre trouxe esta coluna; faltava o mapeamento levá-la adiante.
+    pessoaId: row.pessoa_id ?? null,
     nome: row.nome,
     email: row.email || '',
     telefone: row.telefone || row.whatsapp || '',

@@ -21,6 +21,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
+import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
 import { supabase } from '@/integrations/supabase/client';
 import { dbRowToLead } from '@/contexts/LeadsContext';
 import { Clock, Edit, MessageCircle, MessagesSquare, ChevronDown, ChevronUp, ExternalLink, Trash2, CalendarClock, Loader2, Plus, X, RefreshCw, Info, Handshake, Package, Users, Percent, Wallet, AlertTriangle, Target, Pencil } from 'lucide-react';
@@ -1221,7 +1222,9 @@ export function Pipeline({ onEditLead }: PipelineProps) {
                             {leadIniciais}
                           </div>
                           <div className="min-w-0">
-                            <h3 className="font-semibold text-foreground text-sm truncate leading-tight">{lead.nome}</h3>
+                            <h3 className="font-semibold text-foreground text-sm truncate leading-tight">
+                              <NomePessoa nome={lead.nome} pessoaId={lead.pessoaId} telefone={lead.telefone} />
+                            </h3>
                             <p className="text-xs text-muted-foreground/80 leading-tight mt-0.5">
                               {formatDateTime((lead as any).criadoEm) ?? '—'}
                             </p>

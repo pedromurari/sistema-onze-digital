@@ -25,6 +25,11 @@ export type NPAPipelineStage =
 
 export interface Lead {
   id: string;
+  /**
+   * Vínculo com a pessoa canônica. Preenchido em 100% dos leads desde a sprint 3 — é o
+   * que permite abrir a jornada completa de alguém a partir de qualquer tela.
+   */
+  pessoaId?: string | null;
   nome: string;
   email: string;
   telefone: string;

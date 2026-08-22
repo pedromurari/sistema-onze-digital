@@ -1,6 +1,7 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { chaves } from './keys';
+import { useInvalidarDados } from './realtime';
 
 /**
  * Pontos do financeiro que o sistema aceita calado e calcula errado.
@@ -48,5 +49,72 @@ export function useIntegridadeFinanceira() {
           a.entidade.localeCompare(b.entidade, 'pt-BR'),
       );
     },
+  });
+}
+
+/**
+ * As correções que o painel aplica no lugar.
+ *
+ * Antes o painel só listava e você tinha que ir consertar em outra tela — o que na prática
+ * significa que a lista fica lá parada. Só três dos sete problemas têm conserto óbvio o
+ * bastante para virar botão; os outros pedem julgamento e continuam sendo só diagnóstico.
+ *
+ * Conferido antes de expor: nenhum gatilho de UPDATE em `alunos` ou `pagamentos` dispara
+ * mensagem. Só os de INSERT geram parcela e vínculo de pessoa.
+ */
+
+/** Turma faltando no aluno — é o que o tira da cobrança e do rateio por investidor. */
+export function useDefinirTurmaDoAluno() {
+  const invalidar = useInvalidarDados();
+  return useMutation({
+    mutationFn: async ({ alunoId, turmaId }: { alunoId: string; turmaId: string }) => {
+      const { error } = await supabase
+        .from('alunos')
+        .update({ turma_id: turmaId })
+        .eq('id', alunoId);
+      if (error) throw error;
+    },
+    onSuccess: () => { invalidar('alunos'); },
+  });
+}
+
+/**
+ * Forma de pagamento em branco — `get_alunos_para_cobranca` exige `boleto`, então quem
+ * está sem forma nunca entra na fila, mesmo com a cobrança aparecendo ligada na ficha.
+ *
+ * Definir `boleto` em quem tem parcela vencida faz a pessoa ENTRAR na fila de cobrança.
+ * A tela avisa isso antes de aplicar — não é efeito colateral escondido.
+ */
+export function useDefinirFormaDePagamento() {
+  const invalidar = useInvalidarDados();
+  return useMutation({
+    mutationFn: async ({ alunoId, forma }: { alunoId: string; forma: string }) => {
+      const { error } = await supabase
+        .from('alunos')
+        .update({ forma_pagamento: forma })
+        .eq('id', alunoId);
+      if (error) throw error;
+    },
+    onSuccess: () => { invalidar('alunos'); },
+  });
+}
+
+/**
+ * Parcela de bolsista registrada como `pago` de R$ 0 em vez de `isento`. Não muda dinheiro
+ * — os dois são zero — mas infla a contagem de pagamentos e distorce média por parcela.
+ */
+export function useMarcarParcelasComoIsentas() {
+  const invalidar = useInvalidarDados();
+  return useMutation({
+    mutationFn: async ({ alunoId }: { alunoId: string }) => {
+      const { error } = await supabase
+        .from('pagamentos')
+        .update({ status: 'isento' })
+        .eq('aluno_id', alunoId)
+        .eq('status', 'pago')
+        .lte('valor', 0);
+      if (error) throw error;
+    },
+    onSuccess: () => { invalidar('pagamentos'); },
   });
 }
