@@ -32,6 +32,10 @@ import {
 import { TaxasPagamentoConfig } from './finance/TaxasPagamentoConfig';
 import { RepasseTurmasConfig } from './finance/RepasseTurmasConfig';
 import { CfoParametrosConfig } from './finance/CfoParametrosConfig';
+import {
+  useAlunos, usePagamentos, useTurmas, useResponsaveis, useTurmaResponsaveis,
+  useInvalidarDados,
+} from '@/lib/db';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -55,9 +59,6 @@ interface Pagamento {
   valor: number | null; status: string | null;
   data_pagamento: string | null; data_vencimento: string | null;
   mes_referencia: string;
-}
-interface TurmaResponsavel {
-  id: string; turma_id: string; user_id: string; nome_ref: string; percentual: number;
 }
 interface Metas {
   mrr: number; coleta_mes: number; inadimplencia_max: number; receita_hoje: number;
@@ -231,12 +232,27 @@ function Row({ label, value, sub, bold }: { label: string; value: string; sub?: 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export function FinanceiroCFO() {
-  const [turmas, setTurmas]           = useState<Turma[]>([]);
-  const [alunos, setAlunos]           = useState<Aluno[]>([]);
-  const [pagamentos, setPagamentos]   = useState<Pagamento[]>([]);
-  const [responsaveis, setResponsaveis] = useState<TurmaResponsavel[]>([]);
-  const [responsaveisList, setResponsaveisList] = useState<Responsavel[]>([]); // tabela responsaveis (donos)
-  const [loading, setLoading]         = useState(true);
+  // Camada única: o Dashboard e o Balanço liam as mesmas turmas com outros conjuntos de
+  // colunas — e o Balanço, sem `responsavel_id`, não conseguia ponderar por sócio igual.
+  const { data: turmas = [] } = useTurmas();
+  // Mesmas chaves de cache que Dashboard e Financeiro usam. A Analise CFO existia
+  // justamente pra dar o numero "de verdade", e era a que mais divergia: o comentario que
+  // estava no load registrava que a contagem dela vinha menor que a das outras duas.
+  const COLUNAS_PAG_CFO =
+    'id, aluno_id, turma_id, valor, status, data_pagamento, data_vencimento, mes_referencia';
+  const COLUNAS_ALUNO_CFO =
+    'id, nome, turma_id, status, data_matricula, dia_vencimento, valor_mensalidade, mensalidades_pagas, total_mensalidades';
+
+  const { data: alunosQuery, isLoading: carregandoAlunos } = useAlunos<Aluno>(COLUNAS_ALUNO_CFO);
+  const { data: pagamentosQuery, isLoading: carregandoPagamentos } =
+    usePagamentos<Pagamento>(COLUNAS_PAG_CFO);
+  const alunos     = alunosQuery ?? [];
+  const pagamentos = pagamentosQuery ?? [];
+  const { data: responsaveis = [] }     = useTurmaResponsaveis();   // split % por turma
+  const { data: responsaveisList = [] } = useResponsaveis();        // os donos
+  const invalidar = useInvalidarDados();
+  const [carregandoResto, setLoading] = useState(true);
+  const loading = carregandoResto || carregandoAlunos || carregandoPagamentos;
   const [periodo, setPeriodo]         = useState<Periodo>('mes');
   const [ownerFilter, setOwnerFilter] = useState<string>(''); // '' = todos
   const [metas, setMetas]             = useState<Metas>(loadMetas);
@@ -266,35 +282,15 @@ export function FinanceiroCFO() {
       try {
         const dataCorte = subDays(new Date(), 90).toISOString().slice(0, 10);
         const mesCorteItens = mesStr(11); // últimos 12 meses de custos p/ DRE/burn rate
-        // Busca todos os pagamentos em lotes de 1000 (mesmo padrão de Financeiro.tsx
-        // e Dashboard.tsx) -- sem .limit()/.range() o servidor cortava em ~1000
-        // linhas, escondendo boa parte da inadimplência real (contagem vinha
-        // menor que a de Financeiro/Dashboard mesmo já usando a regra canônica).
-        const fetchAllPagamentos = async () => {
-          const PAGE = 1000;
-          const all: any[] = [];
-          for (let from = 0; ; from += PAGE) {
-            const { data } = await supabase
-              .from('pagamentos')
-              .select('id, aluno_id, turma_id, valor, status, data_pagamento, data_vencimento, mes_referencia')
-              .order('created_at', { ascending: false })
-              .range(from, from + PAGE - 1);
-            if (!data?.length) break;
-            all.push(...data);
-            if (data.length < PAGE) break;
-          }
-          return all;
-        };
+        // A paginacao de pagamentos vive em src/lib/db agora. O comentario que estava
+        // aqui registrava o sintoma que originou esta sprint: "a contagem vinha menor que
+        // a de Financeiro/Dashboard mesmo ja usando a regra canonica" — as telas divergiam
+        // apesar da formula compartilhada, porque a ENTRADA era diferente. O mesmo laco
+        // acabou copiado em tres telas; agora e um so.
         const [
-          { data: t }, { data: a }, p, { data: r }, { data: rl },
           { data: prod }, { data: taxas }, { data: recFonte },
           { data: bc }, { data: bi },
         ] = await Promise.all([
-          supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades, responsavel_id'),
-          supabase.from('alunos').select('id, nome, turma_id, status, data_matricula, dia_vencimento, valor_mensalidade, mensalidades_pagas, total_mensalidades'),
-          fetchAllPagamentos(),
-          supabase.from('turma_responsaveis').select('id, turma_id, user_id, nome_ref, percentual'),
-          supabase.from('responsaveis').select('id, nome, email, ativo'),
           // Produtos configuráveis (não mais hardcoded)
           supabase.from('produtos').select('id, nome, slug, cor, ativo, ordem').eq('ativo', true).order('ordem'),
           // Taxas por produto + método de pagamento
@@ -310,11 +306,6 @@ export function FinanceiroCFO() {
             .select('id, descricao, valor, tipo, categoria, produto, mes_referencia, recorrente')
             .gte('mes_referencia', mesCorteItens),
         ]);
-        setTurmas(t || []);
-        setAlunos(a || []);
-        setPagamentos(p || []);
-        setResponsaveis(r || []);
-        setResponsaveisList(rl || []);
         setProdutos((prod || []) as Produto[]);
         setTaxasDetalhe((taxas || []) as TaxaDetalhe[]);
         setParametrosCfo({ ...PARAMETROS_CFO_DEFAULT, ...(((bc as any)?.parametros_cfo) || {}) });
@@ -329,10 +320,11 @@ export function FinanceiroCFO() {
     load();
   }, []);
 
-  const reloadTurmaResponsaveis = useCallback(async () => {
-    const { data: r } = await supabase.from('turma_responsaveis').select('id, turma_id, user_id, nome_ref, percentual');
-    setResponsaveis(r || []);
-  }, []);
+  // Recarregava só esta tela. O split muda o repasse de todo pagamento da turma, então
+  // Balanço e Dashboard precisam recalcular junto.
+  const reloadTurmaResponsaveis = useCallback(() => {
+    invalidar('responsaveis');
+  }, [invalidar]);
 
   // ── Base sets ────────────────────────────────────────────────────────────
 
@@ -500,9 +492,12 @@ export function FinanceiroCFO() {
         continue;
       }
       // Fallback: turma_responsaveis (split ownership)
-      const turmaResps = responsaveis.filter(r => r.turma_id === turma.id && r.nome_ref);
-      for (const resp of turmaResps) {
+      for (const resp of responsaveis) {
+        if (resp.turma_id !== turma.id) continue;
         const nome = resp.nome_ref;
+        // Linha de split sem nome nao atribui a ninguem — sem isto ela sumiria calada,
+        // que e a familia de bug que ja custou R$ 1.093,90 nesta base.
+        if (!nome) continue;
         if (!map[nome]) map[nome] = { nome, mrr: 0, recebido: 0, txColeta: 0 };
         map[nome].mrr      += mrrRaw * (resp.percentual / 100);
         map[nome].recebido += recRaw * (resp.percentual / 100);

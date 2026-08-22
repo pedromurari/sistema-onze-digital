@@ -14,6 +14,10 @@ import {
 import { isPast, format, differenceInDays, isToday, isTomorrow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
+  useAlunos, usePagamentos, useTurmas, useResponsaveis, useTurmaResponsaveis,
+  COLUNAS_PAGAMENTO_RESUMO,
+} from '@/lib/db';
+import {
   isAlunoAtivo, calcMRR, calcInadimplencia, makeGetOwnerShare,
   filtrarPagamentosPorPeriodo, getPeriodRange,
   type TurmaResponsavelRow, type ResponsavelRow,
@@ -173,25 +177,35 @@ function FunnelBar({ label, count, total, isLast = false, accent = '#6366f1' }: 
 
 export function Dashboard() {
   const { user, users } = useAuth();
-  const [alunos, setAlunos]           = useState<Aluno[]>([]);
-  const [pagamentos, setPagamentos]   = useState<Pagamento[]>([]);
+  // Alunos e pagamentos vem do React Query (src/lib/db), nao mais de useState local.
+  // Ganho concreto: o Financeiro carrega exatamente as mesmas chaves, entao abrir as duas
+  // telas na mesma sessao reaproveita o cache em vez de baixar os 2.462 pagamentos duas
+  // vezes — e o canal central de realtime invalida as duas de uma so vez.
+  const { data: alunosQuery, isLoading: carregandoAlunos } = useAlunos<Aluno>();
+  const { data: pagamentosQuery, isLoading: carregandoPagamentos } =
+    usePagamentos<Pagamento>(COLUNAS_PAGAMENTO_RESUMO);
+  const alunos     = alunosQuery ?? [];
+  const pagamentos = pagamentosQuery ?? [];
   const [tasks, setTasks]             = useState<Task[]>([]);
-  const [turmas, setTurmas]           = useState<Turma[]>([]);
-  const [turmaResponsaveis, setTurmaResponsaveis] = useState<TurmaResponsavelRow[]>([]);
+  // Turmas e split saem da camada única — o Balanço e o CFO liam as mesmas tabelas com
+  // outros conjuntos de colunas, e editar o split lá não chegava aqui.
+  const { data: turmas = [] }            = useTurmas();
+  const { data: turmaResponsaveis = [] } = useTurmaResponsaveis();
   const [lancamentos, setLancamentos] = useState<any[]>([]);
   const [lancLeads, setLancLeads]     = useState<any[]>([]);    // deduped per lancamento
   const [allLancLeads, setAllLancLeads] = useState<any[]>([]);  // all, for cross-lancamento dedup
   const [npaEventos, setNpaEventos]   = useState<any[]>([]);
   const [npaLeads, setNpaLeads]       = useState<any[]>([]);
   const [eventosCalendario, setEventosCalendario] = useState<{id: string; titulo: string; data_inicio: string; data_fim?: string | null; cor: string}[]>([]);
-  const [responsaveisList, setResponsaveisList] = useState<Responsavel[]>([]);
+  const { data: responsaveisList = [] } = useResponsaveis();
   const [selLancId, setSelLancId]     = useState('');
   const [selNpaId, setSelNpaId]       = useState('');
   // Default 'Todos' (vazio) — antes vinha filtrado silenciosamente por 'Onze
   // Digital', fazendo o Dashboard mostrar só uma fatia dos inadimplentes/MRR
   // reais em vez do total (divergindo de Financeiro/CFO, que não filtram).
   const [ownerFilter, setOwnerFilter] = useState<string>('');
-  const [loading, setLoading]         = useState(true);
+  const [carregandoResto, setLoading] = useState(true);
+  const loading = carregandoResto || carregandoAlunos || carregandoPagamentos;
   const isAdmin = user?.tipo === 'admin';
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -202,46 +216,20 @@ export function Dashboard() {
       if (showLoading) setLoading(true);
 
       const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-      // Busca todos os pagamentos em lotes de 1000 (mesmo padrão de Financeiro.tsx)
-      // -- o servidor limita cada resposta a 1000 linhas independente do .limit()
-      // pedido; sem paginar, MRR/receita/inadimplência ficavam truncados nos
-      // ~1000 pagamentos mais recentes, escondendo boa parte dos inadimplentes.
-      const fetchAllPagamentos = async () => {
-        const PAGE = 1000;
-        const all: any[] = [];
-        for (let from = 0; ; from += PAGE) {
-          const { data } = await supabase
-            .from('pagamentos')
-            .select('id, aluno_id, turma_id, valor, mes_referencia, status, data_pagamento, data_vencimento, created_at')
-            .order('created_at', { ascending: false })
-            .range(from, from + PAGE - 1);
-          if (!data?.length) break;
-          all.push(...data);
-          if (data.length < PAGE) break;
-        }
-        return { data: all };
-      };
-      const [alunosRes, pagRes, tasksRes, turmasRes, lancRes, npaEvtRes, evtCalRes, respRes, turmaRespRes] = await Promise.all([
-        supabase.from('alunos').select('id, nome, produto, status, turma_id, data_inicio, data_matricula, created_at, valor_mensalidade, mensalidades_pagas, total_mensalidades').limit(500),
-        fetchAllPagamentos(),
+      // Alunos e pagamentos saem daqui: quem cuida deles agora e o React Query, la em cima.
+      // Alunos, pagamentos, turmas, sócios e split saem daqui: quem cuida deles agora é a
+      // camada única em src/lib/db, lá em cima com React Query.
+      const [tasksRes, lancRes, npaEvtRes, evtCalRes] = await Promise.all([
         supabase.from('tarefas').select('id, titulo, status, prioridade, responsavel_id, responsaveis, prazo, categoria, pagina, created_at').order('prazo').limit(50),
-        supabase.from('turmas').select('id, nome, produto, valor_mensalidade, total_mensalidades, data_inicio, data_fim, responsavel_id'),
         supabase.from('lancamentos').select('id, nome, ativo, created_at, data_live').order('created_at', { ascending: false }).limit(20),
         supabase.from('npa_eventos').select('id, nome, ativo, data_evento').order('created_at', { ascending: false }).limit(20),
         // Inclui eventos futuros E eventos em andamento (data_fim >= hoje, mesmo que data_inicio < hoje)
         supabase.from('eventos_calendario').select('id, titulo, data_inicio, data_fim, cor')
           .or(`data_inicio.gte.${hoje.toISOString()},data_fim.gte.${hoje.toISOString()}`)
           .order('data_inicio').limit(30),
-        supabase.from('responsaveis').select('id, nome'),
-        supabase.from('turma_responsaveis').select('id, turma_id, user_id, nome_ref, percentual'),
       ]);
 
-      if (alunosRes.data) setAlunos(alunosRes.data as Aluno[]);
-      if (pagRes.data) setPagamentos(pagRes.data as Pagamento[]);
       if (tasksRes.data) setTasks(tasksRes.data as Task[]);
-      if (turmasRes.data) setTurmas(turmasRes.data as Turma[]);
-      if (respRes.data) setResponsaveisList(respRes.data as Responsavel[]);
-      if (turmaRespRes.data) setTurmaResponsaveis(turmaRespRes.data as TurmaResponsavelRow[]);
       if (evtCalRes.data) setEventosCalendario(evtCalRes.data as any);
 
       const lancList = lancRes.data || [];
@@ -261,9 +249,9 @@ export function Dashboard() {
       debounceRef.current = setTimeout(() => load(false), 2000);
     };
 
+    // `alunos` e `pagamentos` saem daqui: o canal central do CRMLayout invalida as
+    // queries dos dois. Este canal cuida so do que ainda e estado local desta tela.
     const ch = supabase.channel('dashboard-v2')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'alunos' }, reload)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'pagamentos' }, reload)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lancamento_leads' }, reload)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'npa_evento_leads' }, reload)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tarefas' }, reload)

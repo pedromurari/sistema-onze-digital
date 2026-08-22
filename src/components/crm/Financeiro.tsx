@@ -14,6 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/ui/use-toast';
 import { AlunoObservacoes } from './finance/AlunoObservacoes';
+import { IntegridadeFinanceira } from './finance/IntegridadeFinanceira';
 import { AlunoGruposBonus } from './finance/AlunoGruposBonus';
 import { PrevisaoPagamentoPopover } from './finance/PrevisaoPagamentoPopover';
 import {
@@ -26,6 +27,10 @@ import {
 import { format, isSameMonth, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { isPagamentoInadimplente, calcTaxaTransacao, taxaDoPagamento, type TaxaDetalhe } from '@/lib/financial-utils';
+import {
+  useAlunos, usePagamentos, useTurmas, useResponsaveis, useInvalidarDados,
+  COLUNAS_ALUNO_COMPLETO, COLUNAS_PAGAMENTO_COMPLETO,
+} from '@/lib/db';
 import {
   type PaymentMethod,
   todayDateInput,
@@ -254,19 +259,21 @@ const deriveAlunoStatus = (dataMatricula: string | null | undefined, previousSta
   return previousStatus || 'ativo';
 };
 
-// Recalcula o status de cada aluno com base na data de matricula ao carregar a lista,
-// e persiste em segundo plano qualquer transicao (ex: pre_matricula -> ativo assim que a data chega).
-const applyAutoStatus = <T extends Pick<Aluno, 'id' | 'status' | 'data_matricula'>>(rows: T[]): T[] => {
-  const toFix: { id: string; status: Aluno['status'] }[] = [];
-  const corrected = rows.map(row => {
+// Recalcula o status de cada aluno pela data de matricula (ex: pre_matricula -> ativo
+// assim que a data chega).
+//
+// Antes isto era uma funcao so, `applyAutoStatus`, que parecia uma transformacao pura mas
+// gravava no banco por dentro. Isso impedia que a lista de alunos virasse um `useMemo`
+// sobre o React Query — em modo estrito o React roda o render duas vezes, e a gravacao
+// escondida sairia duplicada. Agora o calculo e puro e quem persiste e um efeito.
+const calcularStatusCorrigido = <T extends Pick<Aluno, 'id' | 'status' | 'data_matricula'>>(rows: T[]) => {
+  const aCorrigir: { id: string; status: Aluno['status'] }[] = [];
+  const linhas = rows.map(row => {
     const nextStatus = deriveAlunoStatus(row.data_matricula, row.status);
-    if (nextStatus !== row.status) toFix.push({ id: row.id, status: nextStatus });
+    if (nextStatus !== row.status) aCorrigir.push({ id: row.id, status: nextStatus });
     return nextStatus !== row.status ? { ...row, status: nextStatus } : row;
   });
-  if (toFix.length) {
-    Promise.all(toFix.map(f => supabase.from('alunos').update({ status: f.status }).eq('id', f.id))).catch(() => {});
-  }
-  return corrected;
+  return { linhas, aCorrigir };
 };
 
 const paymentLabels: Record<PaymentMethod, string> = {
@@ -833,12 +840,34 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
   const permissions = user?.permissions ?? null;
   const [activeTab, setActiveTab] = useState<ProdutoTab>('psicanalise');
   const [subView, setSubView] = useState<SubView>('alunos');
-  const [turmas, setTurmas] = useState<Turma[]>([]);
-  const [alunos, setAlunos] = useState<Aluno[]>([]);
+  // Camada única. Esta tela CRIA e EDITA turmas — antes as outras quatro telas
+  // financeiras só descobriam a turma nova no próximo F5.
+  const { data: turmas = [] } = useTurmas();
+  // Alunos e pagamentos vem do React Query: as MESMAS chaves que o Dashboard usa, entao
+  // as duas telas compartilham cache e o canal central de realtime invalida as duas juntas.
+  const { data: alunosQuery, isLoading: carregandoAlunos } = useAlunos<Aluno>(COLUNAS_ALUNO_COMPLETO);
+  const { data: pagamentosQuery, isLoading: carregandoPagamentos } =
+    usePagamentos<Pagamento>(COLUNAS_PAGAMENTO_COMPLETO);
+  const invalidarDados = useInvalidarDados();
+
+  const { linhas: alunos, aCorrigir: statusACorrigir } = useMemo(
+    () => calcularStatusCorrigido(alunosQuery ?? []),
+    [alunosQuery],
+  );
+  const pagamentos = pagamentosQuery ?? [];
+
+  // Persiste as transicoes de status calculadas acima. Fica num efeito, e nao no memo,
+  // pra nao gravar duas vezes no modo estrito do React.
+  useEffect(() => {
+    if (!statusACorrigir.length) return;
+    Promise.all(
+      statusACorrigir.map(f => supabase.from('alunos').update({ status: f.status }).eq('id', f.id)),
+    ).catch(() => {});
+  }, [statusACorrigir]);
   const [obsPendentesPorAluno, setObsPendentesPorAluno] = useState<Record<string, string>>({});
-  const [pagamentos, setPagamentos] = useState<Pagamento[]>([]);
   const [selectedTurmaId, setSelectedTurmaId] = useState('todas');
-  const [loading, setLoading] = useState(true);
+  const [carregandoResto, setLoading] = useState(true);
+  const loading = carregandoResto || carregandoAlunos || carregandoPagamentos;
   const [periodo, setPeriodo] = useState('this_month');
 
   // Modais
@@ -888,7 +917,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [bulkMarking, setBulkMarking] = useState(false);
   const [duplicataWarning, setDuplicataWarning] = useState<Aluno | null>(null);
-  const [responsaveis, setResponsaveis] = useState<Responsavel[]>([]);
+  const { data: responsaveis = [] } = useResponsaveis();
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([]);
   const [newResponsavelNome, setNewResponsavelNome] = useState('');
   const [savingResponsavel, setSavingResponsavel] = useState(false);
@@ -919,36 +948,17 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
   const loadData = async () => {
     setLoading(true);
     try {
-      const [turmasRes, alunosRes] = await Promise.all([
-        supabase.from('turmas').select('id, nome, produto, tipo, data_inicio, data_fim, valor_mensalidade, total_mensalidades, responsavel_id, created_at').order('created_at', { ascending: false }),
-        supabase.from('alunos').select(ALUNOS_SELECT_FULL).order('created_at', { ascending: false }),
-      ]);
-      if (turmasRes.data) setTurmas(turmasRes.data);
-      if (alunosRes.data) {
-        setAlunos(applyAutoStatus(alunosRes.data));
-      } else if (alunosRes.error) {
-        // Fallback: novas colunas ainda nao existem (migration pendente)
-        const { data: fallback } = await supabase.from('alunos').select(ALUNOS_SELECT_BASE).order('created_at', { ascending: false });
-        if (fallback) setAlunos(applyAutoStatus(fallback));
-      }
-      // Busca todos os pagamentos em lotes de 1000 para contornar limite do servidor
-      const PAGE = 1000;
-      const allPags: any[] = [];
-      for (let from = 0; ; from += PAGE) {
-        const { data } = await supabase
-          .from('pagamentos')
-          .select('id, aluno_id, turma_id, produto, valor, mes_referencia, data_vencimento, data_pagamento, numero_parcela, status, canal_cobranca, taxa_valor, data_prevista_pagamento, created_at')
-          .order('created_at', { ascending: false })
-          .order('id', { ascending: false })
-          .range(from, from + PAGE - 1);
-        if (!data?.length) break;
-        allPags.push(...data);
-        if (data.length < PAGE) break;
-      }
-      setPagamentos(allPags);
-      // Responsaveis e opcional (tabela pode nao existir ainda)
-      const respRes = await supabase.from('responsaveis').select('id, nome, created_at').order('nome');
-      if (respRes.data) setResponsaveis(respRes.data);
+      // Alunos e pagamentos nao sao mais buscados aqui: quem cuida deles e o React Query.
+      // `loadData()` e chamado em 16 lugares depois de gravar, entao invalidar aqui faz
+      // TODAS essas 16 chamadas passarem a avisar o resto do sistema — o Dashboard aberto
+      // noutra aba recarrega junto, sem nenhuma delas precisar saber disso.
+      invalidarDados('alunos');
+      invalidarDados('pagamentos');
+      // Turma e responsavel tambem saem daqui — criar uma turma nova precisa aparecer no
+      // Dashboard, no CFO e no Balanco, nao so nesta tela.
+      invalidarDados('turmas');
+      invalidarDados('responsaveis');
+
       const lancRes = await supabase.from('lancamentos').select('id, nome, status, data_live, ativo').order('created_at', { ascending: false });
       if (lancRes.data) setLancamentos(lancRes.data);
       const { data: obsPendentes } = await supabase
@@ -1816,7 +1826,9 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
     const url = urlData.publicUrl;
     await supabase.from('alunos').update({ contrato_arquivo_url: url, contrato_arquivo_nome: file.name }).eq('id', alunoDetail.id);
     setEditAlunoForm(f => ({ ...f, contrato_arquivo_url: url, contrato_arquivo_nome: file.name }));
-    setAlunos(prev => prev.map(a => a.id === alunoDetail.id ? { ...a, contrato_arquivo_url: url, contrato_arquivo_nome: file.name } : a));
+    // Invalida em vez de remendar o array local: assim o Dashboard e qualquer outra tela
+    // aberta tambem enxergam o contrato anexado.
+    invalidarDados('alunos');
     setUploadingContrato(false);
     toast({ title: 'Contrato anexado!' });
   };
@@ -1830,7 +1842,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
     }
     await supabase.from('alunos').update({ contrato_arquivo_url: null, contrato_arquivo_nome: null }).eq('id', alunoDetail.id);
     setEditAlunoForm(f => ({ ...f, contrato_arquivo_url: '', contrato_arquivo_nome: '' }));
-    setAlunos(prev => prev.map(a => a.id === alunoDetail.id ? { ...a, contrato_arquivo_url: undefined, contrato_arquivo_nome: undefined } : a));
+    invalidarDados('alunos');
     toast({ title: 'Arquivo removido.' });
   };
 
@@ -2844,6 +2856,8 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 lg:p-6">
+        {/* Fica invisivel quando nao ha nada a conferir. */}
+        <IntegridadeFinanceira />
         {visibleTabs.length > 1 && (
           <div className="mb-4">
             <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as ProdutoTab); setSubView('alunos'); setSelectedTurmaId('todas'); }}>
@@ -3386,7 +3400,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                       }}
                       onGrupoTurmaChange={({ confirmadoEm, grupoTurmaId }) => {
                         setEditAlunoForm(f => ({ ...f, grupo_turma_confirmado_em: confirmadoEm, grupo_turma_id: grupoTurmaId }));
-                        setAlunos(prev => prev.map(a => a.id === alunoDetail.id ? { ...a, grupo_turma_confirmado_em: confirmadoEm, grupo_turma_id: grupoTurmaId } : a));
+                        invalidarDados('alunos');
                       }}
                     />
                   </div>

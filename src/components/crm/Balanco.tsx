@@ -17,6 +17,7 @@ import {
   type TaxaDetalhe, type PeriodoTipo, type ResponsavelRow, type TurmaResponsavelRow,
   type RepasseCalculado, type Produto, type PagamentoParaRepasse,
 } from '@/lib/financial-utils';
+import { useTurmas, useResponsaveis, useTurmaResponsaveis, useInvalidarDados } from '@/lib/db';
 import { useAuth } from '@/contexts/AuthContext';
 import { TaxasPagamentoConfig } from './finance/TaxasPagamentoConfig';
 import { RepasseTurmasConfig } from './finance/RepasseTurmasConfig';
@@ -147,9 +148,13 @@ export function Balanco() {
   const [loadingDiario, setLoadingDiario]   = useState(false);
   const [receitasHoje, setReceitasHoje]     = useState<ReceitaHoje[]>([]);
   const [alunosHoje, setAlunosHoje]         = useState<AlunoNovo[]>([]);
-  const [turmasInfo, setTurmasInfo]         = useState<TurmaInfo[]>([]);
-  const [turmasResp, setTurmasResp]         = useState<TurmaResponsavelRow[]>([]);
-  const [responsaveisList, setResponsaveisList] = useState<ResponsavelRow[]>([]);
+  // Turmas, split e sócios vêm da camada única: o Dashboard, o CFO e esta tela liam as
+  // três por conta própria, com conjuntos de colunas diferentes. Agora é uma consulta só,
+  // e editar o split aqui recalcula as outras telas junto.
+  const { data: turmasInfo = [] }       = useTurmas();
+  const { data: responsaveisList = [] } = useResponsaveis();
+  const { data: turmasResp = [] }       = useTurmaResponsaveis();
+  const invalidar = useInvalidarDados();
   const [taxasRates, setTaxasRates]         = useState<TaxaDetalhe[]>([]);
   const [produtos, setProdutos]             = useState<Produto[]>([]);
   const [canaisCobranca, setCanaisCobranca] = useState<CanalCobranca[]>([]);
@@ -174,17 +179,11 @@ export function Balanco() {
 
   useEffect(() => {
     const loadReferencias = async () => {
-      const [turRes, respRes, respListRes, taxRes, prodRes, canaisRes] = await Promise.all([
-        supabase.from('turmas').select('id, nome, produto, valor_mensalidade'),
-        supabase.from('turma_responsaveis').select('id, turma_id, user_id, nome_ref, percentual'),
-        supabase.from('responsaveis').select('id, nome, email, ativo'),
+      const [taxRes, prodRes, canaisRes] = await Promise.all([
         supabase.from('payment_method_rates').select('*').eq('ativo', true),
         supabase.from('produtos').select('id, nome, slug, cor, ativo, ordem').eq('ativo', true).order('ordem'),
         supabase.from('canais_cobranca').select('id, nome, ativo').eq('ativo', true).order('nome'),
       ]);
-      setTurmasInfo((turRes.data || []) as TurmaInfo[]);
-      setTurmasResp((respRes.data || []) as TurmaResponsavelRow[]);
-      setResponsaveisList((respListRes.data || []) as ResponsavelRow[]);
       setTaxasRates((taxRes.data || []) as TaxaDetalhe[]);
       setProdutos((prodRes.data || []) as Produto[]);
       setCanaisCobranca((canaisRes.data || []) as CanalCobranca[]);
@@ -192,10 +191,11 @@ export function Balanco() {
     loadReferencias();
   }, []);
 
-  const reloadTurmaResponsaveis = useCallback(async () => {
-    const { data } = await supabase.from('turma_responsaveis').select('id, turma_id, user_id, nome_ref, percentual');
-    setTurmasResp((data || []) as TurmaResponsavelRow[]);
-  }, []);
+  // Antes recarregava só esta tela. O split muda o repasse de todo pagamento da turma,
+  // então quem precisa recalcular é o CFO e o Dashboard também.
+  const reloadTurmaResponsaveis = useCallback(() => {
+    invalidar('responsaveis');
+  }, [invalidar]);
 
   // ─── Load: Fechamento do período selecionado ─────────────────────────────
 
@@ -261,6 +261,7 @@ export function Balanco() {
     setSavingAluno(null);
     if (error) { toast.error('Erro ao salvar matrícula.'); return; }
 
+    invalidar('alunos');
     setConfirmados(prev => new Set([...prev, alunoId]));
     setAlunosHoje(prev => prev.map(a => a.id === alunoId
       ? { ...a, forma_pagamento: draft.forma, valor_mensalidade: !isNaN(valor) ? valor : a.valor_mensalidade }
@@ -298,6 +299,7 @@ export function Balanco() {
     const { error } = await supabase.from('pagamentos').update({ canal_cobranca: canal || null }).eq('id', pagamentoId);
     setSavingCanal(null);
     if (error) { toast.error('Erro ao salvar canal.'); return; }
+    invalidar('pagamentos');
     setReceitasHoje(prev => prev.map(r => r.id === pagamentoId ? { ...r, canal_cobranca: canal || null } : r));
   }
 
@@ -313,6 +315,8 @@ export function Balanco() {
     const { error } = await supabase.from('pagamentos').update({ numero_parcela: novoNumero }).eq('id', pagamentoId);
     setSavingTipo(null);
     if (error) { toast.error('Erro ao salvar tipo.'); return; }
+    // numero_parcela decide comercial x recorrencia — muda o repasse do pagamento inteiro.
+    invalidar('pagamentos');
     setReceitasHoje(prev => prev.map(r => r.id === pagamentoId ? { ...r, numero_parcela: novoNumero } : r));
   }
 
@@ -327,6 +331,7 @@ export function Balanco() {
       .eq('id', pagamentoId);
     setSavingConferencia(null);
     if (error) { toast.error('Erro ao confirmar pagamento.'); return; }
+    invalidar('pagamentos');
     setReceitasHoje(prev => prev.map(r => r.id === pagamentoId ? { ...r, conferido_em: agora, conferido_por: currentUser?.nome || null, taxa_valor: taxa } : r));
   }
 

@@ -8,6 +8,7 @@ import { LeadModal } from './LeadModal';
 import { ChatWidget } from './chat/ChatWidget';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, Lock } from 'lucide-react';
+import { useRealtimeInvalidation } from '@/lib/db';
 
 // Code splitting: cada módulo carrega só quando o usuário navega até ele
 const Dashboard        = lazy(() => import('./Dashboard').then(m => ({ default: m.Dashboard })));
@@ -24,6 +25,7 @@ const Cobranca         = lazy(() => import('./Cobranca').then(m => ({ default: m
 const FunilLancamento  = lazy(() => import('./FunilLancamento').then(m => ({ default: m.FunilLancamento })));
 const DisparosMonitor  = lazy(() => import('./DisparosMonitor').then(m => ({ default: m.DisparosMonitor })));
 const AquecimentoChips = lazy(() => import('./AquecimentoChips').then(m => ({ default: m.AquecimentoChips })));
+const Pessoas = lazy(() => import('./Pessoas').then(m => ({ default: m.Pessoas })));
 const LancamentoKanban = lazy(() => import('./LancamentoKanban').then(m => ({ default: m.LancamentoKanban })));
 const NPAKanban        = lazy(() => import('./NPAKanban'));
 const AulaSecretaKanban = lazy(() => import('./AulaSecretaKanban').then(m => ({ default: m.AulaSecretaKanban })));
@@ -63,7 +65,15 @@ function RestrictedView() {
 
 export function CRMLayout() {
   const { user } = useAuth();
+
+  // Um canal de realtime para o sistema inteiro: traduz mudanca no banco em invalidacao
+  // de cache. Antes cada tela abria o seu, e o do Dashboard escutava tres tabelas que nem
+  // estavam publicadas no realtime — nunca disparou.
+  useRealtimeInvalidation();
+
   const permissions = user?.permissions ?? getDefaultPermissions(user?.tipo);
+  // A matriz do banco e a autoridade; `permissions` e so a projecao dela (sprint 1.2).
+  const matrix = user?.permissionMatrix;
   const isAdmin = user?.tipo === 'admin';
   const [currentView, setCurrentView] = useState<View>(() => {
     try { return (localStorage.getItem('crm_last_view') as View) || 'dashboard'; }
@@ -86,7 +96,7 @@ export function CRMLayout() {
   }, [currentView]);
 
   useEffect(() => {
-    if (!canAccessView(currentView, permissions, Boolean(isAdmin))) {
+    if (!canAccessView(currentView, permissions, Boolean(isAdmin), matrix)) {
       setCurrentView(firstAllowedView(permissions, Boolean(isAdmin), permissions.allowedLancamentoIds));
     }
   }, [currentView, permissions, isAdmin]);
@@ -158,7 +168,7 @@ export function CRMLayout() {
   }, [currentView]);
 
   const renderView = () => {
-    if (!canAccessView(currentView, permissions, Boolean(isAdmin))) {
+    if (!canAccessView(currentView, permissions, Boolean(isAdmin), matrix)) {
       return <RestrictedView />;
     }
 
@@ -229,6 +239,7 @@ export function CRMLayout() {
     switch (currentView) {
       case 'dashboard': return <Dashboard />;
       case 'pipeline': return <Pipeline onEditLead={handleEditLead} />;
+      case 'pessoas':  return <Pessoas />;
       case 'time_comercial': return <TimeComercial />;
       case 'npa_overview': return <NPAEventos />;
       case 'financeiro': return <Financeiro />;

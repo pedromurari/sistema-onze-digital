@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { EvolutionTaskPanel } from './EvolutionTaskPanel';
 import { PrevisaoPagamentoPopover } from './finance/PrevisaoPagamentoPopover';
+import { useAlunos, usePagamentos, useTurmas, useInvalidarDados } from '@/lib/db';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -636,7 +637,30 @@ export function Cobranca() {
   // FinanceiroCFO) — independente da fila de disparo, que só cobre boleto +
   // turma com cobrança ativa + telefone cadastrado. O KPI do topo precisa
   // refletir o total real do negócio, não só quem é elegível pra automação.
-  const [inadimplenciaGlobal, setInadimplenciaGlobal] = useState({ count: 0, valorTotal: 0 });
+  // Inadimplencia global sai das MESMAS chaves de cache que Dashboard, Financeiro e CFO
+  // usam — antes esta tela tinha o quarto exemplar do laco de paginacao, e o dela era o
+  // unico sem `.order()`: paginar sem ordenacao estavel pode repetir e pular linhas.
+  const { data: pagInadQuery }    = usePagamentos<{ aluno_id: string; valor: number; status: string; data_vencimento: string }>(
+    'aluno_id, valor, status, data_vencimento',
+  );
+  const { data: alunosInadQuery } = useAlunos<{ id: string; status: string | null; tipo_pagamento: string | null }>(
+    'id, status, tipo_pagamento',
+  );
+
+  const inadimplenciaGlobal = useMemo(() => {
+    const pags     = pagInadQuery ?? [];
+    const alunosEl = alunosInadQuery ?? [];
+    if (!pags.length || !alunosEl.length) return { count: 0, valorTotal: 0 };
+
+    const alunoElegivelIds = new Set(
+      alunosEl
+        .filter(a => a.status !== 'cancelado' && a.status !== 'concluido'
+          && a.tipo_pagamento !== 'bolsa' && a.tipo_pagamento !== 'cortesia')
+        .map(a => a.id),
+    );
+    const resumo = calcInadimplencia(pags.filter(p => alunoElegivelIds.has(p.aluno_id)) as never);
+    return { count: resumo.count, valorTotal: resumo.valorTotal };
+  }, [pagInadQuery, alunosInadQuery]);
   // Chaves "pagamento_id:template_id" já enviadas com sucesso -- usado pra tirar da fila
   // quem já foi cobrado na janela/fase atual (mesma regra do backend, ver
   // proximoEnvioElegivel em enviar-cobranca), em vez de reaparecer todo dia até bater
@@ -684,8 +708,10 @@ export function Cobranca() {
   const [carregandoTranscriptIds, setCarregandoTranscriptIds] = useState<Set<string>>(new Set());
   const [resolvendoConversaIds, setResolvendoConversaIds] = useState<Set<string>>(new Set());
 
-  // Turmas administradas
-  const [turmas, setTurmas] = useState<Turma[]>([]);
+  // Turmas administradas. A lista vem da camada única — criar turma no Financeiro
+  // precisa aparecer aqui, senão ela nunca entra na cobrança.
+  const { data: turmas = [] } = useTurmas();
+  const invalidar = useInvalidarDados();
   const [turmasAtivas, setTurmasAtivas] = useState<Set<string>>(new Set());
 
   // Card da Bia (Operações -- domínio financeiro)
@@ -700,20 +726,18 @@ export function Cobranca() {
   // ── Load data ─────────────────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [cfgRes, tplRes, logRes, turmasRes, turmasAtivasRes, biaRes, conversasIaRes] = await Promise.all([
-      supabase.from('cobranca_config'  as any).select('*').eq('id', 'default').single(),
-      supabase.from('cobranca_templates' as any).select('*').order('ordem'),
-      supabase.from('cobranca_logs' as any).select('*').order('created_at', { ascending: false }).limit(200),
-      supabase.from('turmas').select('id, nome').order('nome'),
-      supabase.from('cobranca_turmas_ativas' as any).select('turma_id'),
-      supabase.from('equipe_11ds_agentes' as any).select('id').eq('slug', 'bia-comunicacao').maybeSingle(),
-      supabase.from('cobranca_ia_conversas' as any).select('*').order('ultima_mensagem_em', { ascending: false, nullsFirst: false }),
+    const [cfgRes, tplRes, logRes, turmasAtivasRes, biaRes, conversasIaRes] = await Promise.all([
+      supabase.from('cobranca_config').select('*').eq('id', 'default').single(),
+      supabase.from('cobranca_templates').select('*').order('ordem'),
+      supabase.from('cobranca_logs').select('*').order('created_at', { ascending: false }).limit(200),
+      supabase.from('cobranca_turmas_ativas').select('turma_id'),
+      supabase.from('equipe_11ds_agentes').select('id').eq('slug', 'bia-comunicacao').maybeSingle(),
+      supabase.from('cobranca_ia_conversas').select('*').order('ultima_mensagem_em', { ascending: false, nullsFirst: false }),
     ]);
 
     if (cfgRes.data) setCobrancaCfg(cfgRes.data as CobrancaConfig);
     if (tplRes.data) setTemplates(tplRes.data as Template[]);
     if (logRes.data) setLogs(logRes.data as CobrancaLog[]);
-    if (turmasRes.data) setTurmas(turmasRes.data as Turma[]);
     if (conversasIaRes.data) setConversasIA(conversasIaRes.data as unknown as CobrancaIaConversa[]);
     if (turmasAtivasRes.data) setTurmasAtivas(new Set((turmasAtivasRes.data as any[]).map(r => r.turma_id)));
 
@@ -721,7 +745,7 @@ export function Cobranca() {
     setBiaAgenteId(biaId);
     if (biaId) {
       const { data: tarefaBia } = await supabase
-        .from('equipe_11ds_tarefas' as any)
+        .from('equipe_11ds_tarefas')
         .select('resposta_texto')
         .eq('agente_id', biaId)
         .eq('status', 'concluido')
@@ -737,44 +761,10 @@ export function Cobranca() {
 
     // Inadimplência canônica (todos os métodos de pagamento, todas as turmas) —
     // mesma fonte e regra do Dashboard/Financeiro, pra o KPI do topo bater.
-    // Busca pagamentos em lotes de 1000 (mesmo padrão de Financeiro.tsx) -- o
-    // servidor corta cada resposta em ~1000 linhas independente do que se pede,
-    // e são 2400+ pagamentos no total; sem paginar, a contagem vinha bem menor
-    // que a real.
-    const fetchAllPagamentosInad = async () => {
-      const PAGE = 1000;
-      const all: any[] = [];
-      for (let from = 0; ; from += PAGE) {
-        const { data } = await supabase
-          .from('pagamentos')
-          .select('aluno_id, valor, status, data_vencimento')
-          .range(from, from + PAGE - 1);
-        if (!data?.length) break;
-        all.push(...data);
-        if (data.length < PAGE) break;
-      }
-      return all;
-    };
-    const [pagInad, { data: alunosInad }] = await Promise.all([
-      fetchAllPagamentosInad(),
-      supabase.from('alunos').select('id, status, tipo_pagamento'),
-    ]);
-    if (pagInad && alunosInad) {
-      const alunoElegivelIds = new Set(
-        (alunosInad as any[])
-          .filter(a => a.status !== 'cancelado' && a.status !== 'concluido'
-            && a.tipo_pagamento !== 'bolsa' && a.tipo_pagamento !== 'cortesia')
-          .map(a => a.id)
-      );
-      const elegiveis = (pagInad as any[]).filter(p => alunoElegivelIds.has(p.aluno_id));
-      const resumo = calcInadimplencia(elegiveis);
-      setInadimplenciaGlobal({ count: resumo.count, valorTotal: resumo.valorTotal });
-    }
-
     const pagamentoIds = filaData.map(f => f.pagamento_id);
     if (pagamentoIds.length) {
       const { data: enviosData } = await supabase
-        .from('cobranca_logs' as any)
+        .from('cobranca_logs')
         .select('pagamento_id, template_id')
         .eq('status', 'enviado')
         .not('template_id', 'is', null)
@@ -794,10 +784,10 @@ export function Cobranca() {
   const toggleTurmaAtiva = async (turmaId: string) => {
     const ativa = turmasAtivas.has(turmaId);
     if (ativa) {
-      await supabase.from('cobranca_turmas_ativas' as any).delete().eq('turma_id', turmaId);
+      await supabase.from('cobranca_turmas_ativas').delete().eq('turma_id', turmaId);
       setTurmasAtivas(prev => { const next = new Set(prev); next.delete(turmaId); return next; });
     } else {
-      await supabase.from('cobranca_turmas_ativas' as any).insert({ turma_id: turmaId });
+      await supabase.from('cobranca_turmas_ativas').insert({ turma_id: turmaId });
       setTurmasAtivas(prev => new Set([...prev, turmaId]));
     }
     await loadAll();
@@ -820,7 +810,7 @@ export function Cobranca() {
     if (!biaAgenteId) { toast.error('Agente Bia não encontrada'); return; }
     setBiaAtualizando(true);
     const { data: tarefa, error: tarefaErr } = await supabase
-      .from('equipe_11ds_tarefas' as any)
+      .from('equipe_11ds_tarefas')
       .insert({ agente_id: biaAgenteId, tipo: 'avulso', ordem_texto: 'Atualização de cobrança sob demanda' })
       .select('id')
       .single();
@@ -1214,6 +1204,7 @@ export function Cobranca() {
     const valor = data || null;
     const { error } = await supabase.from('pagamentos').update({ data_prevista_pagamento: valor }).eq('id', pagamentoId);
     if (error) { toast.error('Erro ao salvar previsão: ' + error.message); return; }
+    invalidar('pagamentos');
     setFila(prev => prev.map(item => item.pagamento_id === pagamentoId ? { ...item, data_prevista_pagamento: valor } : item));
     toast.success(valor ? 'Previsão salva!' : 'Previsão removida.');
   };
@@ -1225,6 +1216,7 @@ export function Cobranca() {
   const toggleCobrancaAutomatica = async (alunoId: string, ativo: boolean) => {
     const { error } = await supabase.from('alunos').update({ cobranca_ativa: ativo }).eq('id', alunoId);
     if (error) { toast.error('Erro ao atualizar: ' + error.message); return; }
+    invalidar('alunos');
     setFila(prev => prev.map(item => item.aluno_id === alunoId ? { ...item, cobranca_ativa: ativo } : item));
     toast.success(ativo ? 'Cobrança automática ligada.' : 'Cobrança automática desligada — o time precisa cobrar esse aluno manualmente.');
   };
@@ -1235,6 +1227,7 @@ export function Cobranca() {
   const toggleIaAtiva = async (alunoId: string, ativo: boolean) => {
     const { error } = await supabase.from('alunos').update({ cobranca_ia_ativa: ativo }).eq('id', alunoId);
     if (error) { toast.error('Erro ao atualizar: ' + error.message); return; }
+    invalidar('alunos');
     setFila(prev => prev.map(item => item.aluno_id === alunoId ? { ...item, cobranca_ia_ativa: ativo } : item));
     toast.success(ativo ? 'IA pode responder esse aluno.' : 'IA não vai mais responder esse aluno.');
   };
@@ -1277,7 +1270,7 @@ export function Cobranca() {
   const loadTranscriptIa = async (conversaId: string) => {
     setCarregandoTranscriptIds(p => new Set([...p, conversaId]));
     const { data, error } = await supabase
-      .from('cobranca_ia_mensagens' as any)
+      .from('cobranca_ia_mensagens')
       .select('*')
       .eq('conversa_id', conversaId)
       .order('created_at', { ascending: true });
@@ -1289,7 +1282,7 @@ export function Cobranca() {
   const marcarConversaIaResolvida = async (conversaId: string) => {
     setResolvendoConversaIds(p => new Set([...p, conversaId]));
     const { error } = await supabase
-      .from('cobranca_ia_conversas' as any)
+      .from('cobranca_ia_conversas')
       .update({ status: 'encerrado', resolvido_por: user?.id ?? null, resolvido_em: new Date().toISOString() })
       .eq('id', conversaId);
     if (error) toast.error('Erro ao resolver: ' + error.message);
