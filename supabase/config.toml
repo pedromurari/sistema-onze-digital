@@ -1,6 +1,16 @@
 project_id = "usqiyekfmwwnvkmkdlej"
 
+
+# A matriz de permissao roda ANTES do resto: sem `app_recursos` e `role_permissoes`
+# populadas, `tem_permissao()` nega tudo e o banco local nasce inutilizavel.
+[db.seed]
+enabled = true
+sql_paths = ['./seeds/01_matriz_permissao.sql', './seed.sql']
+
 [functions.webhook-leads]
+verify_jwt = false
+
+[functions.webhook-leads-time-comercial]
 verify_jwt = false
 
 [functions.setup-admin]
