@@ -9,15 +9,19 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import {
   DollarSign, Users, Target, TrendingUp, MousePointerClick, Eye,
-  Search, Plus, UserCheck, Phone, Mail, MapPin, Clock, Pencil,
-  Loader2, Trash2, MessageSquare, ChevronRight,
+  Search, Plus, Phone, MapPin, Pencil,
+  Loader2, Trash2, MessageSquare, ChevronRight, Kanban, ClipboardList,
+  BarChart3, Zap, MessageCircle, History,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { PREMIUM_TABLE_HEADER_ROW, premiumZebraRow, StatTile, SectionBar } from '@/components/crm/ui/premium';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -51,16 +55,27 @@ interface Campanha {
 interface Vendedor {
   id: string;
   nome: string;
+  semConta?: boolean;
 }
+
+// Vendedores de Franquias — só esses dois, não a tabela `responsaveis` (compartilhada
+// com Financeiro/Operações e cheia de gente que não vende franquia). Rodrygo já tem
+// conta real na plataforma (id de auth.users, necessário porque franquia_leads.vendedor_id
+// tem FK pra auth.users). Marcos ainda não tem conta — fica listado mas desabilitado pra
+// atribuição até criar a conta dele, pra não deixar escolher e falhar silenciosamente.
+const FRANQUIA_VENDEDORES: Vendedor[] = [
+  { id: 'cac2f265-196c-4a40-98e4-55d661ddd648', nome: 'Rodrygo' },
+  { id: 'marcos-sem-conta', nome: 'Marcos', semConta: true },
+];
 
 type Fase = FranquiaLead['fase'];
 
-const FASES: { key: Fase; label: string; color: string; bg: string }[] = [
-  { key: 'novo',             label: 'Novo',              color: 'text-blue-700',   bg: 'bg-blue-50 border-blue-200' },
-  { key: 'contatado',        label: 'Contatado',         color: 'text-amber-700',  bg: 'bg-amber-50 border-amber-200' },
-  { key: 'reuniao_agendada', label: 'Reunião Agendada',  color: 'text-purple-700', bg: 'bg-purple-50 border-purple-200' },
-  { key: 'fechado',          label: 'Fechado',           color: 'text-green-700',  bg: 'bg-green-50 border-green-200' },
-  { key: 'perdido',          label: 'Perdido',           color: 'text-red-700',    bg: 'bg-red-50 border-red-200' },
+const FASES: { key: Fase; label: string; color: string; bg: string; solid: string }[] = [
+  { key: 'novo',             label: 'Novo',              color: 'text-blue-700',   bg: 'bg-blue-50 border-blue-200',   solid: 'bg-blue-600' },
+  { key: 'contatado',        label: 'Contatado',         color: 'text-amber-700',  bg: 'bg-amber-50 border-amber-200', solid: 'bg-amber-600' },
+  { key: 'reuniao_agendada', label: 'Reunião Agendada',  color: 'text-purple-700', bg: 'bg-purple-50 border-purple-200', solid: 'bg-purple-600' },
+  { key: 'fechado',          label: 'Fechado',           color: 'text-green-700',  bg: 'bg-green-50 border-green-200', solid: 'bg-green-600' },
+  { key: 'perdido',          label: 'Perdido',           color: 'text-red-700',    bg: 'bg-red-50 border-red-200',     solid: 'bg-red-600' },
 ];
 
 const FASE_MAP = Object.fromEntries(FASES.map(f => [f.key, f]));
@@ -83,6 +98,100 @@ function timeAgo(date: string) {
   return `${days}d`;
 }
 
+const openWhatsApp = (phone: string) => window.open(`https://wa.me/55${phone.replace(/\D/g, '')}`, '_blank');
+const openCall = (phone: string) => window.open(`tel:${phone.replace(/\D/g, '')}`, '_self');
+
+// Vendedores de Franquias vêm da tabela `responsaveis` (dinâmica, sem campo de cor).
+// Pra dar a mesma identidade visual por pessoa que o Time Comercial tem com cor fixa
+// cadastrada no código, gera uma cor determinística a partir do id — mesmo id sempre
+// cai na mesma cor da paleta, sem precisar de migração de banco.
+const VENDOR_PALETTE = ['#A93356', '#4A90E2', '#2E9E6C', '#C9762C', '#7B5FBF', '#1D8A99', '#B8455E', '#5A7D3A'];
+function vendorColor(id: string) {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  return VENDOR_PALETTE[hash % VENDOR_PALETTE.length];
+}
+function vendorInitials(nome: string) {
+  const parts = nome.trim().split(/\s+/);
+  return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase();
+}
+
+function VendorAvatar({ nome, size = 'sm' }: { nome: string; size?: 'sm' | 'md' }) {
+  const dim = size === 'md' ? 'w-8 h-8 text-xs' : 'w-6 h-6 text-[10px]';
+  return (
+    <div
+      className={`${dim} rounded-md flex items-center justify-center font-bold text-white flex-shrink-0`}
+      style={{ backgroundColor: vendorColor(nome) }}
+    >
+      {vendorInitials(nome)}
+    </div>
+  );
+}
+
+// ─── Padrão visual reaproveitado do CRM Time Comercial ─────────────────────
+// (StatTile, SectionBar, tabela premium) — ver
+// docs/superpowers/specs/2026-08-20-franquias-redesign-design.md
+
+
+
+// Chips de avatar coloridos pra filtrar por vendedor — clique direto em vez de dropdown,
+// mesma cor de identificação usada na tabela e no kanban.
+function VendorFilterChips({ vendedores, value, onChange, semAtribuicaoCount }: {
+  vendedores: Vendedor[];
+  value: string;
+  onChange: (v: string) => void;
+  semAtribuicaoCount: number;
+}) {
+  return (
+    <div className="flex items-center gap-2.5 overflow-x-auto px-1 py-1 -mx-1">
+      <button
+        type="button"
+        onClick={() => onChange('todos')}
+        className="flex flex-col items-center gap-1 flex-shrink-0"
+        title="Todos os vendedores"
+      >
+        <div
+          className="w-8 h-8 rounded-full flex items-center justify-center text-[9px] font-bold bg-muted text-muted-foreground transition-shadow"
+          style={value === 'todos' ? { boxShadow: '0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--primary))' } : undefined}
+        >
+          Todos
+        </div>
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('sem_vendedor')}
+        className="flex flex-col items-center gap-1 flex-shrink-0"
+        title="Sem atribuição"
+      >
+        <div
+          className="w-8 h-8 rounded-full flex items-center justify-center text-[9px] font-bold bg-amber-100 text-amber-700 transition-shadow"
+          style={value === 'sem_vendedor' ? { boxShadow: '0 0 0 2px hsl(var(--background)), 0 0 0 4px #d97706' } : undefined}
+        >
+          {semAtribuicaoCount}
+        </div>
+        <span className="text-[9px] text-muted-foreground">S/ vend.</span>
+      </button>
+      {vendedores.map(v => (
+        <button
+          key={v.id}
+          type="button"
+          onClick={() => onChange(v.id)}
+          className="flex flex-col items-center gap-1 flex-shrink-0"
+          title={v.nome}
+        >
+          <div
+            className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white transition-shadow"
+            style={{ backgroundColor: vendorColor(v.id), ...(value === v.id ? { boxShadow: `0 0 0 2px hsl(var(--background)), 0 0 0 4px ${vendorColor(v.id)}` } : {}) }}
+          >
+            {vendorInitials(v.nome)}
+          </div>
+          <span className="text-[9px] text-muted-foreground max-w-[46px] truncate">{v.nome.split(' ')[0]}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export function IDMPsiFranquias() {
@@ -91,7 +200,7 @@ export function IDMPsiFranquias() {
 
   const [leads, setLeads] = useState<FranquiaLead[]>([]);
   const [campanha, setCampanha] = useState<Campanha[]>([]);
-  const [vendedores, setVendedores] = useState<Vendedor[]>([]);
+  const vendedores = FRANQUIA_VENDEDORES;
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterVendedor, setFilterVendedor] = useState<string>('todos');
@@ -99,20 +208,19 @@ export function IDMPsiFranquias() {
   const [addLeadOpen, setAddLeadOpen] = useState(false);
   const [editCampanhaOpen, setEditCampanhaOpen] = useState(false);
   const [editCampanhaData, setEditCampanhaData] = useState<Partial<Campanha>>({});
+  const [showAllLeadsTable, setShowAllLeadsTable] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Load data ───────────────────────────────────────────────────────────
 
   const loadData = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true);
-    const [leadsRes, campRes, vendRes] = await Promise.all([
+    const [leadsRes, campRes] = await Promise.all([
       supabase.from('franquia_leads').select('*').order('created_at', { ascending: false }),
       supabase.from('franquia_campanha').select('*').order('data', { ascending: false }),
-      supabase.from('responsaveis').select('id, nome'),
     ]);
     if (leadsRes.data) setLeads(leadsRes.data as FranquiaLead[]);
     if (campRes.data) setCampanha(campRes.data as Campanha[]);
-    if (vendRes.data) setVendedores(vendRes.data as Vendedor[]);
     if (showLoading) setLoading(false);
   }, []);
 
@@ -170,7 +278,7 @@ export function IDMPsiFranquias() {
   const leadsByFase = useMemo(() => {
     const map: Record<Fase, FranquiaLead[]> = { novo: [], contatado: [], reuniao_agendada: [], fechado: [], perdido: [] };
     for (const l of filteredLeads) {
-      if (l.vendedor_id) map[l.fase]?.push(l);
+      map[l.fase]?.push(l);
     }
     return map;
   }, [filteredLeads]);
@@ -180,6 +288,10 @@ export function IDMPsiFranquias() {
   // ── Actions ─────────────────────────────────────────────────────────────
 
   const pegarLead = async (leadId: string, vendedorId: string) => {
+    if (FRANQUIA_VENDEDORES.find(v => v.id === vendedorId)?.semConta) {
+      toast.error('Marcos ainda não tem conta na plataforma — não dá pra atribuir ainda.');
+      return;
+    }
     const vid = vendedorId || null;
     const { error } = await supabase.from('franquia_leads').update({ vendedor_id: vid }).eq('id', leadId);
     if (error) { toast.error('Erro ao atribuir lead'); return; }
@@ -256,11 +368,11 @@ export function IDMPsiFranquias() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
+    <div className="p-4 lg:p-6 space-y-4 max-w-[1600px] mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">IDM PSI Franquias</h1>
+          <h1 className="text-xl lg:text-2xl font-bold text-foreground">IDM PSI Franquias</h1>
           <p className="text-sm text-muted-foreground">Gestão de leads e campanha de franquias</p>
         </div>
         <div className="flex gap-2">
@@ -273,229 +385,247 @@ export function IDMPsiFranquias() {
         </div>
       </div>
 
-      {/* ── Métricas da Campanha ─────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <MetricCard icon={DollarSign} label="Gasto Total" value={`R$ ${fmt(totaisCampanha.gasto)}`} accent="red" />
-        <MetricCard icon={Eye} label="Impressões" value={fmtInt(totaisCampanha.impressoes)} accent="blue" />
-        <MetricCard icon={MousePointerClick} label="Cliques" value={fmtInt(totaisCampanha.cliques)} accent="amber" />
-        <MetricCard icon={Users} label="Leads" value={fmtInt(totaisCampanha.leads)} accent="green" />
-        <MetricCard icon={Target} label="CPL" value={`R$ ${fmt(cplTotal)}`} accent="purple" />
-        <MetricCard icon={TrendingUp} label="CTR" value={`${ctrTotal.toFixed(2)}%`} accent="emerald" />
-      </div>
-
-      {/* Histórico campanha (mini tabela) */}
-      {campanha.length > 0 && (
-        <Card className="border border-border overflow-hidden">
-          <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
-            <p className="text-sm font-semibold text-foreground">Histórico de Campanha</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/20">
-                  <th className="px-4 py-2 text-left font-medium text-muted-foreground">Data</th>
-                  <th className="px-4 py-2 text-right font-medium text-muted-foreground">Gasto</th>
-                  <th className="px-4 py-2 text-right font-medium text-muted-foreground">Impressões</th>
-                  <th className="px-4 py-2 text-right font-medium text-muted-foreground">Cliques</th>
-                  <th className="px-4 py-2 text-right font-medium text-muted-foreground">Leads</th>
-                  <th className="px-4 py-2 text-right font-medium text-muted-foreground">CPL</th>
-                  <th className="px-4 py-2 text-right font-medium text-muted-foreground">CTR</th>
-                  <th className="px-4 py-2 w-10"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {campanha.slice(0, 10).map(c => (
-                  <tr key={c.id} className="border-b border-border/50 hover:bg-muted/10">
-                    <td className="px-4 py-2">{new Date(c.data + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
-                    <td className="px-4 py-2 text-right">R$ {fmt(Number(c.gasto))}</td>
-                    <td className="px-4 py-2 text-right">{fmtInt(c.impressoes)}</td>
-                    <td className="px-4 py-2 text-right">{fmtInt(c.cliques)}</td>
-                    <td className="px-4 py-2 text-right">{c.leads_count}</td>
-                    <td className="px-4 py-2 text-right">R$ {fmt(Number(c.cpl))}</td>
-                    <td className="px-4 py-2 text-right">{Number(c.ctr).toFixed(2)}%</td>
-                    <td className="px-4 py-2">
-                      <button onClick={() => { setEditCampanhaData(c); setEditCampanhaOpen(true); }} className="p-1 rounded hover:bg-muted">
-                        <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
-
-      {/* ── Filtros ──────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap gap-3 items-center">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Buscar lead..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="pl-9 border-border"
-          />
-        </div>
-        <Select value={filterVendedor} onValueChange={setFilterVendedor}>
-          <SelectTrigger className="w-[180px] border-border">
-            <SelectValue placeholder="Vendedor" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todos</SelectItem>
-            <SelectItem value="sem_vendedor">Sem atribuição</SelectItem>
-            {vendedores.map(v => (
-              <SelectItem key={v.id} value={v.id}>{v.nome}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <div className="flex gap-2 ml-auto text-sm text-muted-foreground">
-          <Badge variant="outline" className="gap-1"><Users className="h-3 w-3" />{leads.length} total</Badge>
-          <Badge variant="outline" className="gap-1 border-amber-200 text-amber-700">{leadsNaoAtribuidos.length} sem vendedor</Badge>
-          <Badge variant="outline" className="gap-1 border-green-200 text-green-700">{leadsAtribuidos.length} atribuídos</Badge>
-        </div>
-      </div>
-
-      {/* ── Tabela de Leads ─────────────────────────────────────────────── */}
-      <Card className="border border-border overflow-hidden">
-        <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
-          <p className="text-sm font-semibold text-foreground">Todos os Leads</p>
-          <Badge variant="outline">{filteredLeads.length} leads</Badge>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/20">
-                <th className="px-4 py-2 text-left font-medium text-muted-foreground">Nome</th>
-                <th className="px-4 py-2 text-left font-medium text-muted-foreground">WhatsApp</th>
-                <th className="px-4 py-2 text-left font-medium text-muted-foreground">Email</th>
-                <th className="px-4 py-2 text-left font-medium text-muted-foreground">Cidade/UF</th>
-                <th className="px-4 py-2 text-left font-medium text-muted-foreground">Fase</th>
-                <th className="px-4 py-2 text-left font-medium text-muted-foreground">Vendedor</th>
-                <th className="px-4 py-2 text-left font-medium text-muted-foreground">Entrada</th>
-                <th className="px-4 py-2 w-10"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredLeads.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">Nenhum lead encontrado</td></tr>
-              ) : filteredLeads.map(lead => {
-                const faseInfo = FASE_MAP[lead.fase];
-                return (
-                  <tr key={lead.id} className="border-b border-border/50 hover:bg-muted/10 cursor-pointer" onClick={() => setEditLead(lead)}>
-                    <td className="px-4 py-2.5 font-medium text-foreground">{lead.nome}</td>
-                    <td className="px-4 py-2.5 text-muted-foreground">{lead.whatsapp || '—'}</td>
-                    <td className="px-4 py-2.5 text-muted-foreground">{lead.email || '—'}</td>
-                    <td className="px-4 py-2.5 text-muted-foreground">{lead.cidade ? `${lead.cidade}${lead.estado ? `/${lead.estado}` : ''}` : '—'}</td>
-                    <td className="px-4 py-2.5">
-                      <Select value={lead.fase} onValueChange={(v) => { mudarFase(lead.id, v as Fase); }}>
-                        <SelectTrigger className={`h-7 text-xs w-[140px] border ${faseInfo?.bg || ''} ${faseInfo?.color || ''}`} onClick={e => e.stopPropagation()}>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {FASES.map(f => <SelectItem key={f.key} value={f.key}>{f.label}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <Select value={lead.vendedor_id || 'nenhum'} onValueChange={(v) => { pegarLead(lead.id, v === 'nenhum' ? '' : v); }}>
-                        <SelectTrigger className="h-7 text-xs w-[130px] border-border" onClick={e => e.stopPropagation()}>
-                          <SelectValue placeholder="Atribuir..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="nenhum">Sem vendedor</SelectItem>
-                          {vendedores.map(v => <SelectItem key={v.id} value={v.id}>{v.nome}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </td>
-                    <td className="px-4 py-2.5 text-xs text-muted-foreground">{new Date(lead.created_at).toLocaleDateString('pt-BR')}</td>
-                    <td className="px-4 py-2.5">
-                      <button onClick={(e) => { e.stopPropagation(); setEditLead(lead); }} className="p-1 rounded hover:bg-muted">
-                        <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      {/* ── Pool de Leads Não Atribuídos ─────────────────────────────────── */}
-      {leadsNaoAtribuidos.length > 0 && (
-        <Card className="border-2 border-amber-200 bg-amber-50/30 overflow-hidden">
-          <div className="px-4 py-3 border-b border-amber-200 bg-amber-50 flex items-center gap-2">
-            <Users className="h-4 w-4 text-amber-600" />
-            <p className="text-sm font-semibold text-amber-800">Leads Sem Atribuição</p>
-            <Badge className="ml-auto bg-amber-100 text-amber-700 border-amber-300">{leadsNaoAtribuidos.length}</Badge>
-          </div>
-          <div className="divide-y divide-amber-100">
-            {leadsNaoAtribuidos.map(lead => (
-              <div key={lead.id} className="px-4 py-3 flex items-center gap-4 hover:bg-amber-50/50 transition-colors">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium text-foreground truncate">{lead.nome}</p>
-                    <span className="text-xs text-muted-foreground">{timeAgo(lead.created_at)}</span>
-                  </div>
-                  <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
-                    {lead.whatsapp && <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{lead.whatsapp}</span>}
-                    {lead.email && <span className="flex items-center gap-1"><Mail className="h-3 w-3" />{lead.email}</span>}
-                    {lead.cidade && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{lead.cidade}{lead.estado ? `/${lead.estado}` : ''}</span>}
-                  </div>
-                </div>
-                <Select onValueChange={(vendedorId) => pegarLead(lead.id, vendedorId)}>
-                  <SelectTrigger className="w-[150px] border-amber-300 bg-white text-sm h-8">
-                    <SelectValue placeholder="Atribuir a..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {vendedores.map(v => (
-                      <SelectItem key={v.id} value={v.id}>{v.nome}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <button onClick={() => setEditLead(lead)} className="p-1.5 rounded hover:bg-amber-100">
-                  <Pencil className="h-3.5 w-3.5 text-amber-600" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-
-      {/* ── Kanban por Fase ──────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        {FASES.map(fase => {
-          const faseLeads = leadsByFase[fase.key];
-          return (
-            <div key={fase.key} className={`rounded-xl border ${fase.bg} min-h-[200px] flex flex-col`}>
-              <div className="px-3 py-2.5 border-b border-inherit flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className={`text-sm font-semibold ${fase.color}`}>{fase.label}</span>
-                </div>
-                <Badge variant="outline" className={`text-xs ${fase.color} border-current/20`}>{faseLeads.length}</Badge>
-              </div>
-              <div className="flex-1 p-2 space-y-2 overflow-y-auto max-h-[500px]">
-                {faseLeads.map(lead => (
-                  <LeadCard
-                    key={lead.id}
-                    lead={lead}
-                    vendedorNome={lead.vendedor_id ? vendedorMap[lead.vendedor_id] : undefined}
-                    onEdit={() => setEditLead(lead)}
-                    onChangeFase={mudarFase}
-                    fases={FASES}
-                  />
-                ))}
-                {faseLeads.length === 0 && (
-                  <div className="flex items-center justify-center h-20 text-xs text-muted-foreground/50">
-                    Nenhum lead
-                  </div>
-                )}
-              </div>
+      <Tabs defaultValue="funil" className="flex flex-col gap-4">
+        <div className="rounded-xl border-2 border-primary/25 bg-gradient-to-br from-primary/[0.07] to-transparent p-4 mb-1 shadow-sm">
+          <div className="flex items-center gap-2.5 mb-2.5">
+            <div className="w-8 h-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0">
+              <Zap className="h-4 w-4" />
             </div>
-          );
-        })}
-      </div>
+            <div>
+              <p className="text-sm font-bold text-foreground leading-tight">Meu trabalho</p>
+              <p className="text-xs text-muted-foreground leading-tight mt-0.5">Trabalhar os leads de franquia, ver quem tá sem atribuição e acompanhar a campanha.</p>
+            </div>
+          </div>
+          <TabsList className="h-auto bg-transparent p-0 gap-2 justify-start flex-wrap">
+            <TabsTrigger
+              value="funil"
+              className="rounded-lg px-4 py-2 text-sm font-semibold bg-primary/10 text-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-1.5"
+            >
+              <Kanban className="h-3.5 w-3.5" /> Funil e Leads
+            </TabsTrigger>
+            <TabsTrigger
+              value="campanha"
+              className="rounded-lg px-4 py-2 text-sm font-semibold bg-primary/10 text-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-1.5"
+            >
+              <BarChart3 className="h-3.5 w-3.5" /> Campanha
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
+        {/* ── Funil e Leads (busca, filtro, kanban, pool sem atribuição, tabela) ── */}
+        <TabsContent value="funil" className="flex flex-col gap-4">
+          <div className="flex flex-wrap gap-3 items-center">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar lead..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="pl-9 border-border"
+              />
+            </div>
+          </div>
+
+          {/* Filtro por vendedor + contadores, tudo numa linha compacta */}
+          <div className="flex flex-wrap items-center gap-3">
+            <VendorFilterChips
+              vendedores={vendedores}
+              value={filterVendedor}
+              onChange={setFilterVendedor}
+              semAtribuicaoCount={leadsNaoAtribuidos.length}
+            />
+            <div className="flex gap-2 ml-auto text-sm text-muted-foreground">
+              <Badge variant="outline" className="gap-1"><Users className="h-3 w-3" />{leads.length} total</Badge>
+              <Badge variant="outline" className="gap-1 border-green-200 text-green-700">{leadsAtribuidos.length} atribuídos</Badge>
+            </div>
+          </div>
+
+          {/* Kanban por fase — leads sem vendedor aparecem aqui também, atribuídos direto no card */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+            {FASES.map(fase => {
+              const faseLeads = leadsByFase[fase.key];
+              return (
+                <div key={fase.key} className="rounded-lg border border-border overflow-hidden flex flex-col">
+                  <div className={`px-3 py-2 flex items-center justify-between ${fase.solid}`}>
+                    <span className="text-xs font-semibold text-white">{fase.label}</span>
+                    <Badge className="text-xs bg-white/20 text-white border-0 hover:bg-white/20">{faseLeads.length}</Badge>
+                  </div>
+                  <div className="flex-1 p-2 space-y-2 overflow-y-auto max-h-[320px] min-h-[64px] bg-muted/30">
+                    {faseLeads.map(lead => (
+                      <LeadCard
+                        key={lead.id}
+                        lead={lead}
+                        vendedorNome={lead.vendedor_id ? vendedorMap[lead.vendedor_id] : undefined}
+                        vendedores={vendedores}
+                        onEdit={() => setEditLead(lead)}
+                        onChangeFase={mudarFase}
+                        onAssign={(vendedorId) => pegarLead(lead.id, vendedorId)}
+                        fases={FASES}
+                      />
+                    ))}
+                    {faseLeads.length === 0 && (
+                      <div className="flex items-center justify-center h-12 text-xs text-muted-foreground/50">
+                        Nenhum lead
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Tabela completa — recolhida por padrão, o kanban já cobre o dia a dia */}
+          <Card className="p-0 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowAllLeadsTable(v => !v)}
+              className="w-full px-4 py-3 flex items-center gap-2.5 hover:bg-muted/40 transition-colors"
+            >
+              <div className="w-1 h-5 rounded-full bg-primary flex-shrink-0" />
+              <ClipboardList className="h-3.5 w-3.5 text-primary flex-shrink-0" />
+              <span className="text-sm font-bold text-foreground">Todos os Leads</span>
+              <Badge variant="outline" className="text-xs">{filteredLeads.length}</Badge>
+              <ChevronRight className={`h-4 w-4 text-muted-foreground ml-auto transition-transform ${showAllLeadsTable ? 'rotate-90' : ''}`} />
+            </button>
+            {showAllLeadsTable && (
+              <div className="overflow-x-auto border-t border-border">
+                <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-2.5 [&_th]:px-2.5 sm:[&_th]:px-4">
+                  <TableHeader>
+                    <TableRow className={PREMIUM_TABLE_HEADER_ROW}>
+                      <TableHead>Nome</TableHead>
+                      <TableHead>WhatsApp</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Cidade/UF</TableHead>
+                      <TableHead>Fase</TableHead>
+                      <TableHead>Vendedor</TableHead>
+                      <TableHead>Entrada</TableHead>
+                      <TableHead className="w-10"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredLeads.length === 0 ? (
+                      <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Nenhum lead encontrado</TableCell></TableRow>
+                    ) : filteredLeads.map((lead, idx) => {
+                      const faseInfo = FASE_MAP[lead.fase];
+                      return (
+                        <TableRow key={lead.id} className={`${premiumZebraRow(idx)} cursor-pointer`} onClick={() => setEditLead(lead)}>
+                          <TableCell className="font-medium text-foreground">{lead.nome}</TableCell>
+                          <TableCell className="text-muted-foreground">{lead.whatsapp || '—'}</TableCell>
+                          <TableCell className="text-muted-foreground">{lead.email || '—'}</TableCell>
+                          <TableCell className="text-muted-foreground">{lead.cidade ? `${lead.cidade}${lead.estado ? `/${lead.estado}` : ''}` : '—'}</TableCell>
+                          <TableCell>
+                            <Select value={lead.fase} onValueChange={(v) => { mudarFase(lead.id, v as Fase); }}>
+                              <SelectTrigger className={`h-7 text-xs w-[140px] border ${faseInfo?.bg || ''} ${faseInfo?.color || ''}`} onClick={e => e.stopPropagation()}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {FASES.map(f => <SelectItem key={f.key} value={f.key}>{f.label}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5">
+                              {lead.vendedor_id && <VendorAvatar nome={vendedorMap[lead.vendedor_id] || ''} />}
+                              <Select value={lead.vendedor_id || 'nenhum'} onValueChange={(v) => { pegarLead(lead.id, v === 'nenhum' ? '' : v); }}>
+                                <SelectTrigger className="h-7 text-xs w-[110px] border-border" onClick={e => e.stopPropagation()}>
+                                  <SelectValue placeholder="Atribuir..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="nenhum">Sem vendedor</SelectItem>
+                                  {vendedores.map(v => <SelectItem key={v.id} value={v.id} disabled={v.semConta}>{v.nome}{v.semConta ? ' (sem conta ainda)' : ''}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{new Date(lead.created_at).toLocaleDateString('pt-BR')}</TableCell>
+                          <TableCell>
+                            <button onClick={(e) => { e.stopPropagation(); setEditLead(lead); }} className="p-1 rounded hover:bg-muted">
+                              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                            </button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </Card>
+        </TabsContent>
+
+        {/* ── Campanha (métricas + histórico) ──────────────────────────────── */}
+        <TabsContent value="campanha" className="flex flex-col gap-4">
+          <SectionBar title="Métricas da campanha" icon={BarChart3} />
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <StatTile icon={DollarSign} label="Gasto Total" value={`R$ ${fmt(totaisCampanha.gasto)}`} />
+            <StatTile icon={Eye} label="Impressões" value={fmtInt(totaisCampanha.impressoes)} />
+            <StatTile icon={MousePointerClick} label="Cliques" value={fmtInt(totaisCampanha.cliques)} />
+            <StatTile icon={Users} label="Leads" value={fmtInt(totaisCampanha.leads)} />
+            <StatTile icon={Target} label="CPL" value={`R$ ${fmt(cplTotal)}`} />
+            <StatTile icon={TrendingUp} label="CTR" value={`${ctrTotal.toFixed(2)}%`} />
+          </div>
+
+          <SectionBar title="Histórico de Campanha" subtitle="Campanhas de anúncio lançadas, mais recente primeiro" />
+          {campanha.length === 0 ? (
+            <Card className="border-dashed border-2 border-border/60 p-8 flex flex-col items-center justify-center text-center gap-1.5">
+              <TrendingUp className="h-5 w-5 text-muted-foreground/50" />
+              <p className="text-sm font-medium text-foreground">Nenhuma campanha lançada ainda</p>
+              <p className="text-xs text-muted-foreground max-w-xs">Clique em "Métricas" no topo da página pra registrar o gasto e os resultados de uma campanha — elas aparecem aqui embaixo.</p>
+            </Card>
+          ) : (
+            <>
+              <Card className="p-0 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-2.5 [&_th]:px-2.5 sm:[&_th]:px-4">
+                    <TableHeader>
+                      <TableRow className={PREMIUM_TABLE_HEADER_ROW}>
+                        <TableHead>Data</TableHead>
+                        <TableHead className="text-right">Gasto</TableHead>
+                        <TableHead className="text-right">Impressões</TableHead>
+                        <TableHead className="text-right">Cliques</TableHead>
+                        <TableHead className="text-right">Leads</TableHead>
+                        <TableHead className="text-right">CPL</TableHead>
+                        <TableHead className="text-right">CTR</TableHead>
+                        <TableHead className="w-10"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {campanha.slice(0, 10).map((c, idx) => (
+                        <TableRow key={c.id} className={premiumZebraRow(idx)}>
+                          <TableCell>{new Date(c.data + 'T12:00:00').toLocaleDateString('pt-BR')}</TableCell>
+                          <TableCell className="text-right">R$ {fmt(Number(c.gasto))}</TableCell>
+                          <TableCell className="text-right">{fmtInt(c.impressoes)}</TableCell>
+                          <TableCell className="text-right">{fmtInt(c.cliques)}</TableCell>
+                          <TableCell className="text-right">{c.leads_count}</TableCell>
+                          <TableCell className="text-right">R$ {fmt(Number(c.cpl))}</TableCell>
+                          <TableCell className="text-right">{Number(c.ctr).toFixed(2)}%</TableCell>
+                          <TableCell>
+                            <button onClick={() => { setEditCampanhaData(c); setEditCampanhaOpen(true); }} className="p-1 rounded hover:bg-muted">
+                              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                            </button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                    <TableFooter className="bg-primary/10">
+                      <TableRow>
+                        <TableCell className="font-semibold text-primary">Total</TableCell>
+                        <TableCell className="text-right font-semibold text-primary">R$ {fmt(totaisCampanha.gasto)}</TableCell>
+                        <TableCell className="text-right font-semibold text-primary">{fmtInt(totaisCampanha.impressoes)}</TableCell>
+                        <TableCell className="text-right font-semibold text-primary">{fmtInt(totaisCampanha.cliques)}</TableCell>
+                        <TableCell className="text-right font-semibold text-primary">{fmtInt(totaisCampanha.leads)}</TableCell>
+                        <TableCell className="text-right font-semibold text-primary">R$ {fmt(cplTotal)}</TableCell>
+                        <TableCell className="text-right font-semibold text-primary">{ctrTotal.toFixed(2)}%</TableCell>
+                        <TableCell></TableCell>
+                      </TableRow>
+                    </TableFooter>
+                  </Table>
+                </div>
+              </Card>
+            </>
+          )}
+        </TabsContent>
+      </Tabs>
 
       {/* ── Modal Editar/Criar Lead ──────────────────────────────────────── */}
       <LeadModal
@@ -549,73 +679,81 @@ export function IDMPsiFranquias() {
   );
 }
 
-// ─── Metric Card ────────────────────────────────────────────────────────────
-
-const ACCENT_COLORS: Record<string, { icon: string; border: string; bg: string }> = {
-  red:     { icon: 'text-red-500',    border: 'border-red-100',    bg: 'bg-red-50' },
-  blue:    { icon: 'text-blue-500',   border: 'border-blue-100',   bg: 'bg-blue-50' },
-  amber:   { icon: 'text-amber-500',  border: 'border-amber-100',  bg: 'bg-amber-50' },
-  green:   { icon: 'text-green-500',  border: 'border-green-100',  bg: 'bg-green-50' },
-  purple:  { icon: 'text-purple-500', border: 'border-purple-100', bg: 'bg-purple-50' },
-  emerald: { icon: 'text-emerald-500',border: 'border-emerald-100',bg: 'bg-emerald-50' },
-};
-
-function MetricCard({ icon: Icon, label, value, accent }: { icon: React.ElementType; label: string; value: string; accent: string }) {
-  const c = ACCENT_COLORS[accent] || ACCENT_COLORS.blue;
-  return (
-    <Card className={`border ${c.border} p-4 flex flex-col gap-2`}>
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
-        <div className={`w-8 h-8 rounded-lg ${c.bg} flex items-center justify-center`}>
-          <Icon className={`h-4 w-4 ${c.icon}`} />
-        </div>
-      </div>
-      <p className="text-xl font-bold text-foreground">{value}</p>
-    </Card>
-  );
-}
-
 // ─── Lead Card (Kanban) ─────────────────────────────────────────────────────
 
-function LeadCard({ lead, vendedorNome, onEdit, onChangeFase, fases }: {
+function LeadCard({ lead, vendedorNome, vendedores, onEdit, onChangeFase, onAssign, fases }: {
   lead: FranquiaLead;
   vendedorNome?: string;
+  vendedores: Vendedor[];
   onEdit: () => void;
   onChangeFase: (id: string, fase: Fase) => void;
+  onAssign: (vendedorId: string) => void;
   fases: typeof FASES;
 }) {
   return (
     <div
-      className="bg-white rounded-lg border border-border/60 p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer group"
+      className="bg-card rounded-lg border border-border p-3 hover:border-primary/30 transition-colors cursor-pointer group"
       onClick={onEdit}
     >
       <div className="flex items-start justify-between gap-2">
-        <p className="font-medium text-sm text-foreground truncate">{lead.nome}</p>
+        <p className="font-semibold text-sm text-foreground truncate">{lead.nome}</p>
         <span className="text-[10px] text-muted-foreground whitespace-nowrap">{timeAgo(lead.created_at)}</span>
       </div>
-      <div className="mt-1.5 space-y-1 text-xs text-muted-foreground">
-        {lead.whatsapp && (
-          <div className="flex items-center gap-1.5">
-            <Phone className="h-3 w-3" /><span>{lead.whatsapp}</span>
-          </div>
-        )}
-        {lead.cidade && (
-          <div className="flex items-center gap-1.5">
-            <MapPin className="h-3 w-3" /><span>{lead.cidade}{lead.estado ? `/${lead.estado}` : ''}</span>
-          </div>
-        )}
-        {lead.observacoes && (
-          <div className="flex items-center gap-1.5 text-muted-foreground/70">
-            <MessageSquare className="h-3 w-3" /><span className="truncate">{lead.observacoes}</span>
-          </div>
-        )}
-      </div>
-      {vendedorNome && (
-        <div className="mt-2 flex items-center gap-1.5">
-          <UserCheck className="h-3 w-3 text-primary" />
-          <span className="text-xs font-medium text-primary">{vendedorNome}</span>
+      {lead.cidade && (
+        <p className="text-xs text-muted-foreground mt-0.5">{lead.cidade}{lead.estado ? `/${lead.estado}` : ''}</p>
+      )}
+      {lead.observacoes && (
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground/70 mt-1">
+          <MessageSquare className="h-3 w-3 flex-shrink-0" /><span className="truncate">{lead.observacoes}</span>
         </div>
       )}
+
+      {lead.whatsapp && (
+        <div className="flex gap-1.5 mt-2.5" onClick={e => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={() => openWhatsApp(lead.whatsapp!)}
+            className="flex-1 h-7 text-xs inline-flex items-center justify-center gap-1 rounded-md border border-border bg-card hover:bg-muted transition-colors"
+          >
+            <MessageCircle className="h-3 w-3 text-success" /> WhatsApp
+          </button>
+          <button
+            type="button"
+            onClick={() => openCall(lead.whatsapp!)}
+            title="Ligar pra esse lead"
+            className="h-7 w-7 flex-shrink-0 inline-flex items-center justify-center rounded-md border border-border bg-card hover:bg-muted transition-colors"
+          >
+            <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+          </button>
+          <button
+            type="button"
+            onClick={onEdit}
+            title="Ver histórico e detalhes do lead"
+            className="h-7 w-7 flex-shrink-0 inline-flex items-center justify-center rounded-md border border-border bg-card hover:bg-muted transition-colors"
+          >
+            <History className="h-3.5 w-3.5 text-muted-foreground" />
+          </button>
+        </div>
+      )}
+
+      {vendedorNome ? (
+        <div className="mt-2 flex items-center gap-1.5">
+          <VendorAvatar nome={vendedorNome} />
+          <span className="text-xs font-medium text-primary">{vendedorNome}</span>
+        </div>
+      ) : (
+        <div className="mt-2" onClick={e => e.stopPropagation()}>
+          <Select value="" onValueChange={onAssign}>
+            <SelectTrigger className="h-7 text-xs border-dashed border-amber-300 text-amber-700 bg-amber-50/50">
+              <SelectValue placeholder="Atribuir vendedor..." />
+            </SelectTrigger>
+            <SelectContent>
+              {vendedores.map(v => <SelectItem key={v.id} value={v.id} disabled={v.semConta}>{v.nome}{v.semConta ? ' (sem conta ainda)' : ''}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       <div className="mt-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
         {fases.filter(f => f.key !== lead.fase && f.key !== 'perdido').map(f => (
           <button
@@ -696,7 +834,7 @@ function LeadModal({ open, lead, vendedores, onClose, onSave, onDelete }: {
                 <SelectTrigger className="border-border"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="nenhum">Sem atribuição</SelectItem>
-                  {vendedores.map(v => <SelectItem key={v.id} value={v.id}>{v.nome}</SelectItem>)}
+                  {vendedores.map(v => <SelectItem key={v.id} value={v.id} disabled={v.semConta}>{v.nome}{v.semConta ? ' (sem conta ainda)' : ''}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

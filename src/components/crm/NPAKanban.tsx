@@ -146,7 +146,11 @@ async function sendWppDirect(numero: string, mensagem: string): Promise<boolean>
     headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
     body: JSON.stringify({ numero, mensagem, typing_delay_ms: 2000 }),
   });
-  return res.ok;
+  // wpp-enviar sempre responde HTTP 200 (mesmo em erro da Evolution) e sinaliza
+  // sucesso/falha real no corpo -- checar só res.ok marcava envios falhos como enviados.
+  if (!res.ok) return false;
+  const data = await res.json().catch(() => null);
+  return data?.ok === true;
 }
 
 async function sendBoasVindasLead(

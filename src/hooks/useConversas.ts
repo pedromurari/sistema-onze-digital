@@ -78,7 +78,11 @@ export function useConversas(instancias?: string | string[], desde?: string) {
       .from('whatsapp_mensagens' as any)
       .select('telefone, conteudo, tipo, created_at, evolution_instance, direcao')
       .order('created_at', { ascending: false })
-      .limit(2000);
+      // 1.000 e o teto real do PostgREST: pedir 2.000 aqui devolvia 1.000 do mesmo jeito,
+      // so que dando a impressao de cobrir o dobro. A lista lateral e um "quem falou por
+      // ultimo" e nao precisa do historico inteiro, entao o teto serve — mas o numero
+      // escrito passa a ser o numero recebido.
+      .limit(1000);
     if (instanciasFiltro) query = query.in('evolution_instance', instanciasFiltro);
     if (desde) query = query.gte('created_at', desde);
 

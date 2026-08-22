@@ -172,7 +172,13 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
       } else if (cursosData && cursosData.length > 0) {
         setCursos(cursosData.map(c => ({ id: c.id, nome: c.nome, valorPadrao: c.valor_padrao || undefined })));
       } else {
-        await Promise.all(CURSOS_PADRAO.map(nome => supabase.from('cursos').insert({ nome })));
+        // Semeadura de emergencia. O caso normal e a tabela ja vir populada pela
+        // migration 20260821154000 — se cair aqui e falhar, o erro precisa aparecer:
+        // antes ele era engolido e o app repetia o INSERT a cada carga, para sempre
+        // (eram 2.489 POSTs 403 por dia so em `cursos`).
+        const seeds = await Promise.all(CURSOS_PADRAO.map(nome => supabase.from('cursos').insert({ nome })));
+        const seedErro = seeds.find(r => r.error)?.error;
+        if (seedErro) console.error('Falha ao semear cursos (seletor ficara vazio):', seedErro);
         const { data: newCursosData } = await supabase.from('cursos').select('*').order('nome');
         if (newCursosData) {
           setCursos(newCursosData.map(c => ({ id: c.id, nome: c.nome, valorPadrao: c.valor_padrao || undefined })));
@@ -185,7 +191,10 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
       } else if (fontesData && fontesData.length > 0) {
         setFontes(fontesData.map(f => ({ id: f.id, nome: f.nome })));
       } else {
-        await Promise.all(FONTES_PADRAO.map(nome => supabase.from('fontes').insert({ nome })));
+        // Mesmo caso de `cursos` acima — ver migration 20260821154000.
+        const seeds = await Promise.all(FONTES_PADRAO.map(nome => supabase.from('fontes').insert({ nome })));
+        const seedErro = seeds.find(r => r.error)?.error;
+        if (seedErro) console.error('Falha ao semear fontes (seletor ficara vazio):', seedErro);
         const { data: newFontesData } = await supabase.from('fontes').select('*').order('nome');
         if (newFontesData) {
           setFontes(newFontesData.map(f => ({ id: f.id, nome: f.nome })));

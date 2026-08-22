@@ -15,6 +15,7 @@ import {
 import { Plus, Search, AlertCircle, Users, Target, CheckCircle, DollarSign, Loader2, Power } from 'lucide-react';
 import { format } from 'date-fns';
 import { isPagamentoRealizado } from '@/lib/financial-utils';
+import { fetchAll } from '@/lib/db';
 
 type LaunchStatus = 'planejamento' | 'em_andamento' | 'finalizado';
 type LaunchPhase = 'planilha' | 'grupo_lancamento' | 'grupo_oferta' | 'follow_up_01' | 'follow_up_02' | 'follow_up_03' | 'matricula';
@@ -95,13 +96,17 @@ export function Lancamentos() {
     if (!currentLaunchId) return;
     
     const load = async () => {
-      const { data } = await supabase
+      // Pagina sempre: o maior lancamento tem 2.223 leads e o PostgREST corta em 1.000,
+      // entao esta tela vinha mostrando pouco mais da metade sem avisar ninguem.
+      const data = await fetchAll<LaunchLead>((de, ate) => supabase
         .from('lancamento_leads')
         .select('*')
         .eq('lancamento_id', currentLaunchId)
-        .order('created_at', { ascending: false });
-      
-      if (data) setLaunchLeads(data as LaunchLead[]);
+        .order('created_at', { ascending: false })
+        .order('id')
+        .range(de, ate) as never);
+
+      setLaunchLeads(data);
     };
     load();
 
@@ -173,11 +178,14 @@ export function Lancamentos() {
 
     if (!error) {
       setNewLeadForm({ nome: '', whatsapp: '', email: '' });
-      const { data } = await supabase
+      const data = await fetchAll<LaunchLead>((de, ate) => supabase
         .from('lancamento_leads')
         .select('*')
-        .eq('lancamento_id', currentLaunchId);
-      if (data) setLaunchLeads(data as LaunchLead[]);
+        .eq('lancamento_id', currentLaunchId)
+        .order('created_at', { ascending: false })
+        .order('id')
+        .range(de, ate) as never);
+      setLaunchLeads(data);
     }
     setIsAddingLead(false);
   };

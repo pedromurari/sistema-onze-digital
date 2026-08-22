@@ -16,6 +16,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { dbRowToLead } from '@/contexts/LeadsContext';
 import { assignTurmaEAtualizarParcelas } from '@/lib/parcelasAluno';
 import { ChatTimeComercial } from './chat/ChatTimeComercial';
+import { PREMIUM_TABLE_HEADER_ROW, premiumZebraRow, StatTile, SectionBar } from '@/components/crm/ui/premium';
 import {
   MessageCircle, Target, Copy, ExternalLink, Users, TrendingUp, DollarSign, CalendarDays,
   Video, Rocket, Repeat, GraduationCap, Link2, Wallet, CreditCard, Crown, Kanban, ClipboardList,
@@ -82,50 +83,7 @@ const formatCurrency = (value?: number) => {
 const openWhatsApp = (phone: string) => window.open(`https://wa.me/55${phone.replace(/\D/g, '')}`, '_blank');
 
 // Estilo "premium" reaproveitado nas tabelas de dados (Remuneração, Metas, Aquisição):
-// cabeçalho em degradê vinho e linhas zebradas num tom de vinho bem claro, em vez do
-// cabeçalho/zebra cinza padrão do componente Table.
-const PREMIUM_TABLE_HEADER_ROW = 'border-0 [&_th]:text-primary-foreground [&_th]:font-semibold [&_th]:first:rounded-tl-lg [&_th]:last:rounded-tr-lg bg-gradient-to-r from-primary to-primary/80';
-const premiumZebraRow = (idx: number) => (idx % 2 === 0 ? 'bg-card' : 'bg-primary/5');
 
-// Card de estatística reaproveitado em todas as abas (Funil, Operação, Metas, Aquisição,
-// Remuneração) — label em vinho, ícone lucide (mesma linguagem visual do resto do sistema,
-// em vez de emoji) em badge, leve brilho no canto pra não parecer bloco branco genérico.
-function StatTile({ label, value, hint, icon: Icon }: { label: string; value: React.ReactNode; hint?: string; icon?: React.ElementType }) {
-  return (
-    <Card className="p-3 lg:p-4 rounded-xl border-primary/15 shadow-[0_4px_14px_-4px_rgba(169,51,86,0.15)] relative overflow-hidden">
-      <div className="absolute -top-5 -right-5 w-20 h-20 rounded-full bg-primary/10 pointer-events-none" />
-      <div className="relative flex items-start justify-between gap-2">
-        <p className="text-[10px] font-bold uppercase tracking-wide text-primary">{label}</p>
-        {Icon && (
-          <div className="w-6 h-6 rounded-md bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0">
-            <Icon className="h-3.5 w-3.5" />
-          </div>
-        )}
-      </div>
-      <p className="text-xl lg:text-2xl font-bold text-foreground mt-1 relative">{value}</p>
-      {hint && <p className="text-xs text-muted-foreground mt-0.5 relative">{hint}</p>}
-    </Card>
-  );
-}
-
-// Barra + título usados pra separar visualmente os blocos de cada aba (ex: "Visão geral"
-// dos cards de estatística vs. a tabela principal logo abaixo).
-function SectionBar({ title, subtitle, icon: Icon }: { title: string; subtitle?: string; icon?: React.ElementType }) {
-  return (
-    <div className="flex items-center gap-2.5">
-      <div className="w-1 h-5 rounded-full bg-primary flex-shrink-0" />
-      {Icon && (
-        <div className="w-6 h-6 rounded-md bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
-          <Icon className="h-3.5 w-3.5" />
-        </div>
-      )}
-      <div>
-        <h2 className="text-sm font-bold text-foreground leading-tight">{title}</h2>
-        {subtitle && <p className="text-xs text-muted-foreground leading-tight mt-0.5">{subtitle}</p>}
-      </div>
-    </div>
-  );
-}
 
 interface VendorScopeProps { viewAsName: string | null; }
 
@@ -661,7 +619,7 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
         </>
       )}
 
-      <SectionBar title="Leads" subtitle="A coluna Leads (à esquerda, contorno tracejado) mostra todo mundo, de qualquer fase — as outras colunas mostram só quem está naquela fase." />
+      <SectionBar title="Leads" subtitle="A primeira coluna reúne todos os leads; as demais mostram apenas quem está naquela fase." />
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
         <Input
@@ -2219,14 +2177,14 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
     <div className="flex flex-col gap-5">
       <p className="text-sm text-muted-foreground -mt-1">{viewAsName ? 'Seus números reais até agora — não é simulação.' : 'Números reais do time até agora — não é simulação. Onde estamos antes de olhar a meta.'}</p>
 
-      <SectionBar title="Visão geral" subtitle="Não conta a base de retorno reimportada — só captação de verdade." icon={Users} />
+      <SectionBar title="Visão geral" subtitle="Apenas leads captados no período. A base de retorno reimportada fica de fora." icon={Users} />
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         <StatTile label="Leads que entraram" value={leadsEntraram} icon={Users} />
         <StatTile label="Vendas fechadas" value={vendasTotais} icon={GraduationCap} />
         <StatTile label="Taxa de conversão" value={`${conversaoPct.toFixed(1)}%`} hint={leadsEntraram > 0 ? `${vendasTotais} de ${leadsEntraram} leads` : 'Sem leads ainda'} icon={Percent} />
       </div>
 
-      <SectionBar title="Faturamento realizado por vendedor" subtitle="Vem de alunos já matriculados de verdade (vendedor_id preenchido ao reivindicar em Operação), não de números digitados." icon={DollarSign} />
+      <SectionBar title="Faturamento realizado por vendedor" subtitle="Baseado em matrículas efetivadas, creditadas ao vendedor que reivindicou o aluno." icon={DollarSign} />
       <Card className="p-4 overflow-x-auto">
         <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
           <TableHeader>
@@ -2307,7 +2265,7 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
         />
       </div>
 
-      <SectionBar title="Atividade do vendedor" subtitle="Ritmo do dia a dia e o histórico completo — nada é perdido, escolha o período exato pra revisar." icon={Activity} />
+      <SectionBar title="Atividade do vendedor" subtitle="Ritmo diário e histórico completo. Escolha o período que quiser revisar." icon={Activity} />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {vendedoresVisiveis.map((v) => {
           const movs = movimentacaoDe(v.name, 'movimentacao');
@@ -2465,7 +2423,7 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
         </Card>
       </div>
 
-      <SectionBar title="Evolução mensal" subtitle="Fica registrado sozinho conforme os meses passam — cada lead e venda tem data real, então o histórico se acumula automaticamente." icon={TrendingUp} />
+      <SectionBar title="Evolução mensal" subtitle="Como cada mês se comportou, da captação à matrícula." icon={TrendingUp} />
       <Card className="p-4 overflow-x-auto">
         {mesesOrdenados.length === 0 ? (
           <p className="text-sm text-muted-foreground">Ainda sem histórico — o primeiro mês fecha aqui assim que passar.</p>

@@ -28,6 +28,7 @@ import {
 import { buildCapturaHTML } from '@/lib/captura-template';
 import type { CapturaTemplateData } from '@/lib/captura-template';
 import { isPagamentoRealizado } from '@/lib/financial-utils';
+import { fetchAll } from '@/lib/db';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1436,25 +1437,17 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
 
   const vinicius = users.find(u => u.nome?.toLowerCase().includes('vinicius'));
 
-  // ── Fetch all leads with pagination (Supabase max-rows is 1000) ────────────
-  const fetchAllLeads = async (lancId: string) => {
-    const PAGE = 1000;
-    let all: any[] = [];
-    let from = 0;
-    while (true) {
-      const { data, error } = await supabase
-        .from('lancamento_leads')
-        .select('*')
-        .eq('lancamento_id', lancId)
-        .order('created_at', { ascending: false })
-        .range(from, from + PAGE - 1);
-      if (error || !data || data.length === 0) break;
-      all = all.concat(data);
-      if (data.length < PAGE) break;
-      from += PAGE;
-    }
-    return all;
-  };
+  // Ultimo exemplar do laco de paginacao que estava copiado em cinco telas. Agora e o
+  // `fetchAll` de src/lib/db — que, diferente deste, propaga erro em vez de engolir com
+  // `if (error) break` e devolver a lista pela metade.
+  const fetchAllLeads = (lancId: string) =>
+    fetchAll<LaunchLead>((de, ate) => supabase
+      .from('lancamento_leads')
+      .select('*')
+      .eq('lancamento_id', lancId)
+      .order('created_at', { ascending: false })
+      .order('id')
+      .range(de, ate) as never);
 
   const normalizeLeadsToCurrentColunas = useCallback(
     async (loadedLeads: LaunchLead[]) => {

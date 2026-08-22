@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -656,6 +657,47 @@ function SugestoesConhecimento() {
 // stack de bônus que a IA apresenta -- nada fica hardcoded no prompt, então
 // quando a promoção mudar (ela muda com frequência) basta editar aqui, sem
 // precisar de deploy. Só aparece na ficha do agente slug='sdr-leads-idm'.
+
+// Flag de ativo/inativo do SDR de IA (leads_ia_config, singleton) -- desligado
+// vira early-return em evo-resposta (não cria lead Direto/aciona o SDR) e em
+// leads-ia-followup (não processa cutucada nem lembrete). Código intacto,
+// só para de agir -- religa a qualquer momento voltando a marcar ativo.
+function SdrAtivoToggle() {
+  const [ativo, setAtivo] = useState<boolean | null>(null);
+  const [salvando, setSalvando] = useState(false);
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from('leads_ia_config' as any).select('ativo').eq('id', 'default').maybeSingle();
+    setAtivo(((data as any)?.ativo) ?? true);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function toggle(v: boolean) {
+    setSalvando(true);
+    const { error } = await supabase.from('leads_ia_config' as any).update({ ativo: v } as any).eq('id', 'default');
+    setSalvando(false);
+    if (error) { toast.error('Erro ao salvar: ' + error.message); return; }
+    setAtivo(v);
+    toast.success(v ? 'SDR de IA reativado' : 'SDR de IA desativado -- atendimento passa a ser 100% manual');
+  }
+
+  if (ativo === null) return null;
+
+  return (
+    <div className={cn('flex items-center justify-between rounded-xl border p-3', ativo ? 'border-emerald-200 bg-emerald-50' : 'border-border bg-white')}>
+      <div>
+        <p className="text-sm font-medium">{ativo ? 'SDR de IA ativo' : 'SDR de IA desativado'}</p>
+        <p className="text-xs text-muted-foreground">
+          {ativo
+            ? 'Responde leads novos do anúncio automaticamente.'
+            : 'Não responde mais nenhum lead -- atendimento é 100% humano (vendedores).'}
+        </p>
+      </div>
+      <Switch checked={ativo} disabled={salvando} onCheckedChange={toggle} />
+    </div>
+  );
+}
 
 type OfertaBonusItem = { nome: string; valor: string; limitado: string };
 type OfertaAtivaRow = {
@@ -1350,6 +1392,7 @@ function AgentePanel({ agente, onClose, onNavigateToPosts, onNavigateToAluno }: 
             </details>
             {agente.slug === 'sdr-leads-idm' && (
               <>
+                <SdrAtivoToggle />
                 <details className="group rounded-xl border border-border bg-white" open>
                   <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-xs font-semibold text-slate-700">
                     <DollarSign className="h-3.5 w-3.5 text-emerald-600" />
