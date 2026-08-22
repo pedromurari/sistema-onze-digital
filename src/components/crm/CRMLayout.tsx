@@ -9,6 +9,7 @@ import { ChatWidget } from './chat/ChatWidget';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, Lock } from 'lucide-react';
 import { useRealtimeInvalidation } from '@/lib/db';
+import { FichaPessoaProvider } from './pessoa/FichaPessoaProvider';
 
 // Code splitting: cada módulo carrega só quando o usuário navega até ele
 const Dashboard        = lazy(() => import('./Dashboard').then(m => ({ default: m.Dashboard })));
@@ -279,7 +280,11 @@ export function CRMLayout() {
     }
   };
 
+  // A ficha da pessoa fica montada aqui, uma vez, para qualquer tela poder abrir pelo
+  // hook `useFichaPessoa()`. Antes ela existia e so a tela Pessoas conseguia abrir — na
+  // pratica o pulo entre modulos que ela deveria acabar continuava acontecendo.
   return (
+    <FichaPessoaProvider>
     <div className="min-h-screen bg-white">
       <Header onOpenMobileMenu={() => setMobileMenuOpen(true)} />
       <div className="flex h-[calc(100vh-4rem)]">
@@ -297,5 +302,6 @@ export function CRMLayout() {
       <LeadModal isOpen={isLeadModalOpen} onClose={() => setIsLeadModalOpen(false)} editingLead={editingLead} />
       {(permissions.canViewCobranca || isAdmin) && <ChatWidget />}
     </div>
+    </FichaPessoaProvider>
   );
 }

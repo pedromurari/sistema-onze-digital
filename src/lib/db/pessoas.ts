@@ -79,6 +79,55 @@ export function usePessoas(busca: string) {
 }
 
 /** Onde essa pessoa aparece: lead, aluno, convidado de evento... */
+/**
+ * Uma pessoa pelo id. Existe para a ficha poder ser aberta de qualquer tela: o Pipeline, o
+ * Time Comercial e o Financeiro têm `pessoa_id` no registro que estão mostrando, mas não
+ * têm o cadastro da pessoa em mãos.
+ */
+export function usePessoaPorId(pessoaId: string | null | undefined) {
+  return useQuery({
+    queryKey: [...chaves.pessoas.raiz, 'porId', pessoaId ?? ''],
+    enabled: Boolean(pessoaId),
+    queryFn: async (): Promise<Pessoa | null> => {
+      const { data, error } = await supabase
+        .from('pessoas')
+        .select('id, nome, telefone, email, cpf, criado_em')
+        .eq('id', pessoaId!)
+        .maybeSingle();
+      if (error) throw error;
+      return (data ?? null) as Pessoa | null;
+    },
+  });
+}
+
+/**
+ * Uma pessoa pelo telefone, para as telas que só têm o número — o Chat, por exemplo,
+ * conversa por número e não guarda `pessoa_id`.
+ *
+ * A normalização é a MESMA do banco (`normalizar_telefone`), chamada por RPC em vez de
+ * reimplementada aqui: duas regras de telefone divergindo é como 12.121 pessoas viraram
+ * 29.171 cadastros.
+ */
+export function usePessoaPorTelefone(telefone: string | null | undefined) {
+  return useQuery({
+    queryKey: [...chaves.pessoas.raiz, 'porTelefone', telefone ?? ''],
+    enabled: Boolean(telefone),
+    queryFn: async (): Promise<Pessoa | null> => {
+      const { data: normalizado } = await supabase
+        .rpc('normalizar_telefone', { p_valor: telefone! });
+      if (!normalizado) return null;
+
+      const { data, error } = await supabase
+        .from('pessoas')
+        .select('id, nome, telefone, email, cpf, criado_em')
+        .eq('telefone', normalizado as string)
+        .maybeSingle();
+      if (error) throw error;
+      return (data ?? null) as Pessoa | null;
+    },
+  });
+}
+
 export function useVinculosDaPessoa(pessoaId: string | undefined) {
   return useQuery({
     queryKey: chaves.pessoas.vinculos(pessoaId ?? ''),

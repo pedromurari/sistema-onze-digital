@@ -32,6 +32,7 @@ import {
 import { EvolutionTaskPanel } from './EvolutionTaskPanel';
 import { PrevisaoPagamentoPopover } from './finance/PrevisaoPagamentoPopover';
 import { useAlunos, usePagamentos, useTurmas, useInvalidarDados } from '@/lib/db';
+import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -369,7 +370,9 @@ function AlunoFilaCard({
               {grupo.aluno_nome[0]}
             </div>
             <div>
-              <p className="font-semibold text-sm">{grupo.aluno_nome}</p>
+              <p className="font-semibold text-sm">
+                <NomePessoa nome={grupo.aluno_nome} telefone={grupo.telefone} />
+              </p>
               <p className="text-xs text-muted-foreground font-mono">{grupo.telefone}</p>
               <div className="flex flex-wrap items-center gap-1.5 mt-2">
                 <SituacaoBadge critica={grupo.critica} isInadimplente={grupo.isInadimplente} />

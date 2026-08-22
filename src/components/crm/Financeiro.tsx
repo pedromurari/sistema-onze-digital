@@ -27,6 +27,7 @@ import {
 import { format, isSameMonth, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { isPagamentoInadimplente, calcTaxaTransacao, taxaDoPagamento, type TaxaDetalhe } from '@/lib/financial-utils';
+import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
 import {
   useAlunos, usePagamentos, useTurmas, useResponsaveis, useInvalidarDados,
   COLUNAS_ALUNO_COMPLETO, COLUNAS_PAGAMENTO_COMPLETO,
@@ -2479,7 +2480,9 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                                 <td className="py-2.5 px-3 font-medium">
                                   <div className="flex items-center gap-1.5">
                                     <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${urgDot.cls}`} title={urgDot.tip} />
-                                    <span className={`font-medium ${aluno.status === 'cancelado' ? 'text-muted-foreground line-through' : 'text-foreground'}`}>{aluno.nome}</span>
+                                    <span className={`font-medium ${aluno.status === 'cancelado' ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
+                                      <NomePessoa nome={aluno.nome} pessoaId={(aluno as { pessoa_id?: string | null }).pessoa_id} />
+                                    </span>
                                   </div>
                                   {obsPendentesPorAluno[aluno.id] && (
                                     <p className="text-[11px] text-muted-foreground font-normal mt-0.5 leading-tight max-w-[180px] truncate" title={obsPendentesPorAluno[aluno.id]}>

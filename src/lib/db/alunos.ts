@@ -13,12 +13,15 @@ import { chaves } from './keys';
  * sempre falhava e a tela sempre caía no fallback — duas requisições por carga, uma delas
  * condenada. (As mesmas colunas fantasma quebravam o portal do aluno em /membros.)
  */
+// `pessoa_id` entra nos dois conjuntos: e o que permite abrir a ficha da pessoa a partir
+// de qualquer tela que mostre um aluno. A coluna esta preenchida em 98,5% dos alunos desde
+// a sprint 3 e nenhuma tela a pedia — a identidade unificada existia e nao era usada.
 export const COLUNAS_ALUNO_RESUMO =
-  'id, nome, produto, status, turma_id, data_inicio, data_matricula, created_at, ' +
+  'id, pessoa_id, nome, produto, status, turma_id, data_inicio, data_matricula, created_at, ' +
   'valor_mensalidade, mensalidades_pagas, total_mensalidades';
 
 export const COLUNAS_ALUNO_COMPLETO =
-  'id, turma_id, produto, nome, whatsapp, email, cpf, rg, sexo, data_nascimento, endereco, ' +
+  'id, pessoa_id, turma_id, produto, nome, whatsapp, email, cpf, rg, sexo, data_nascimento, endereco, ' +
   'cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, tipo_pagamento, ' +
   'mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, ' +
   'lancamento_id, valor_mensalidade, forma_pagamento, observacoes, grupo_turma_confirmado_em, ' +

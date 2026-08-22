@@ -6,7 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Search, Users, Sparkles } from 'lucide-react';
 import { usePessoas, type Pessoa } from '@/lib/db';
 import { SectionBar, AvatarPessoa } from '@/components/crm/ui/premium';
-import { FichaPessoa } from '@/components/crm/pessoa/FichaPessoa';
+import { useFichaPessoa } from '@/components/crm/pessoa/FichaPessoaProvider';
 
 /**
  * Busca de pessoas — a porta de entrada da identidade unificada.
@@ -28,7 +28,9 @@ function formatarTelefone(tel: string | null) {
 
 export function Pessoas() {
   const [busca, setBusca] = useState('');
-  const [selecionada, setSelecionada] = useState<Pessoa | null>(null);
+  // A ficha vive no provider do CRM, para abrir de qualquer tela. Esta tela deixou de
+  // guardar a pessoa selecionada — só pede a abertura, igual às outras.
+  const { abrirFichaPorId } = useFichaPessoa();
 
   const { data: pessoas, isLoading, isFetched } = usePessoas(busca);
   const termoCurto = busca.trim().length > 0 && busca.trim().length < 3;
@@ -88,7 +90,7 @@ export function Pessoas() {
           return (
             <Card
               key={p.id}
-              onClick={() => setSelecionada(p)}
+              onClick={() => abrirFichaPorId(p.id)}
               className="p-3 flex items-center gap-3 cursor-pointer hover:border-primary/40 transition-colors"
             >
               <AvatarPessoa nome={nome} id={p.id} size="md" />
@@ -104,11 +106,6 @@ export function Pessoas() {
         })}
       </div>
 
-      <FichaPessoa
-        pessoa={selecionada}
-        aberta={selecionada !== null}
-        onFechar={() => setSelecionada(null)}
-      />
     </div>
   );
 }

@@ -41,7 +41,8 @@ export type { ResponsavelRow, TurmaResponsavelRow } from './responsaveis';
 export { useRealtimeInvalidation, useInvalidarDados } from './realtime';
 
 export {
-  usePessoas, useVinculosDaPessoa, useTimelineDaPessoa,
+  usePessoas, usePessoaPorId, usePessoaPorTelefone,
+  useVinculosDaPessoa, useTimelineDaPessoa,
 } from './pessoas';
 export type { Pessoa, VinculoPessoa, EventoPessoa, PapelPessoa, TipoEventoPessoa } from './pessoas';
 
