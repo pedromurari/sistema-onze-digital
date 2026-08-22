@@ -492,12 +492,23 @@ export interface TurmaResponsavelRow { id: string; turma_id: string; user_id: st
 
 // ─── getOwnerShare compartilhado ───────────────────────────────────────────────
 //
-// FONTE: turmas.responsavel_id (prioritário, 1-para-1) + turma_responsaveis
-//        (fallback proporcional, split % entre investidores da turma)
-// Isto decide "quanto dessa turma pertence ao responsável filtrado" para fins de
-// VISIBILIDADE/filtro de tela (ex: dono de turma vendo só o que é seu) — é uma
-// pergunta diferente de calcRepasses (que decide o repasse de receita a
-// investidores como regra de negócio); não devem ser unificadas.
+// FONTE: turma_responsaveis (prioritário — é onde mora o % de fato) e
+//        turmas.responsavel_id (fallback binário, quando não há split cadastrado)
+//
+// Isto decide "quanto dessa turma pertence ao responsável filtrado" ao ponderar
+// MRR e alunos por sócio. É pergunta diferente de calcRepasses, que reparte cada
+// pagamento individual (e sabe distinguir a 1ª parcela); as duas não devem ser
+// unificadas. Mas as duas precisam concordar no percentual, e não concordavam.
+//
+// ── A INVERSÃO DE PRECEDÊNCIA (corrigida em 22/08/2026) ──────────────────────
+// Antes, `responsavel_id` vinha primeiro e devolvia 1 (100%) quando batia com o
+// filtro. Nas turmas de investidor isso contradizia a regra do negócio — o
+// investidor fica com 50% e o instituto com 50% — e contradizia a própria tela,
+// que escreve "Valores ponderados pela % na tabela turma_responsaveis". Filtrar
+// o CFO por "Keila" mostrava o dobro do que é dela.
+//
+// Agora o split manda, porque é ele que carrega o percentual real. O
+// `responsavel_id` só entra quando não existe split — turma 100% de alguém.
 export interface TurmaOwnerRow { id: string; responsavel_id?: string | null; }
 export function makeGetOwnerShare(
   ownerFilter: string,
@@ -507,15 +518,25 @@ export function makeGetOwnerShare(
 ): (turmaId: string | null | undefined) => number {
   return (turmaId: string | null | undefined) => {
     if (!ownerFilter || !turmaId) return 1;
+
+    // 1º: o split, que é onde o percentual real está escrito.
+    const turmaResps = turmaResponsaveis.filter(r => r.turma_id === turmaId && r.nome_ref);
+    if (turmaResps.length) {
+      const ownerPct = turmaResps
+        .filter(r => r.nome_ref === ownerFilter)
+        .reduce((s, r) => s + r.percentual, 0);
+      return ownerPct / 100;
+    }
+
+    // 2º: sem split cadastrado, cai no dono binário da turma.
     const turma = turmas.find(t => t.id === turmaId);
     if (turma?.responsavel_id) {
       const resp = responsaveisList.find(r => r.id === turma.responsavel_id);
       if (resp) return resp.nome === ownerFilter ? 1 : 0;
     }
-    const turmaResps = turmaResponsaveis.filter(r => r.turma_id === turmaId && r.nome_ref);
-    if (!turmaResps.length) return 0;
-    const ownerPct = turmaResps.filter(r => r.nome_ref === ownerFilter).reduce((s, r) => s + r.percentual, 0);
-    return ownerPct / 100;
+
+    // Turma sem dono e sem split não pertence a ninguém em particular.
+    return 0;
   };
 }
 
