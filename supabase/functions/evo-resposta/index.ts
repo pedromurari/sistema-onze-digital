@@ -1,6 +1,9 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+// Supabase edge runtime expõe EdgeRuntime pra background tasks
+declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
+
 // CORS aberto — Evolution API chama de servidor externo
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -327,6 +330,90 @@ async function tentarAcionarIaCobranca(
   }
 }
 
+// ── NPA order bump: captura dados do convidado (2º ingresso) ────────────────
+// vega-webhook marca aguardando_dados_convidado=true e pede "nome, whatsapp"
+// numa mensagem só quando a compra inclui o order bump "+1 Ingresso ... PARA
+// SEU CONVIDADO". Aqui a gente reconhece um telefone na resposta (10-11
+// dígitos, com ou sem DDI/separadores) e trata o resto do texto como nome.
+async function enviarTextoSimples(
+  supabase: ReturnType<typeof createClient>,
+  instanceName: string,
+  number: string,
+  text: string,
+): Promise<void> {
+  try {
+    const { data: evo } = await supabase
+      .from('evolution_config')
+      .select('api_url, api_key, instance_name')
+      .eq('instance_name', instanceName)
+      .eq('ativo', true)
+      .maybeSingle();
+    if (!evo) return;
+    const rawBase = (evo.api_url as string).replace(/\/$/, '');
+    const base = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
+    await fetch(`${base}/message/sendText/${encodeURIComponent(evo.instance_name as string)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: evo.api_key as string },
+      body: JSON.stringify({ number, text, delay: 1200 }),
+    });
+  } catch (e: unknown) {
+    console.error('enviarTextoSimples: falha:', (e as Error).message);
+  }
+}
+
+async function tentarCapturarDadosConvidado(
+  supabase: ReturnType<typeof createClient>,
+  phone: string,
+  s8: string,
+  mensagem: string,
+  mensagemTipo: string,
+  instance: string,
+): Promise<{ ok: true } | null> {
+  if (mensagemTipo !== 'text') return null;
+  try {
+    const { data: lead } = await supabase
+      .from('npa_evento_leads')
+      .select('id')
+      .eq('aguardando_dados_convidado', true)
+      .filter('whatsapp', 'ilike', `%${s8}`)
+      .order('bv_enviado_em', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!lead) return null;
+
+    const numero = `${phone}@whatsapp.net`;
+    const phoneMatch = mensagem.match(/(\d[\d\s().-]{8,14}\d)/);
+    const telefoneConvidado = phoneMatch ? phoneMatch[0].replace(/\D/g, '') : '';
+
+    if (!telefoneConvidado || telefoneConvidado.length < 10) {
+      await enviarTextoSimples(supabase, instance, numero,
+        'Não consegui identificar o WhatsApp do seu convidado nessa mensagem 🙏\n\nPode mandar de novo assim: *Nome completo, WhatsApp com DDD*\nEx.: João Silva, 11987654321');
+      return { ok: true };
+    }
+
+    const nomeConvidado = mensagem
+      .replace(phoneMatch![0], '')
+      .replace(/[,\-–]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim() || 'Convidado';
+
+    await supabase.from('npa_evento_leads').update({
+      convidado_nome: nomeConvidado,
+      convidado_whatsapp: telefoneConvidado,
+      aguardando_dados_convidado: false,
+    }).eq('id', lead.id);
+
+    await enviarTextoSimples(supabase, instance, numero,
+      `Perfeito! Ingresso extra confirmado para *${nomeConvidado}* ✅\n\nQualquer dúvida, é só chamar!`);
+
+    console.log(`tentarCapturarDadosConvidado: lead=${lead.id} convidado="${nomeConvidado}"`);
+    return { ok: true };
+  } catch (e: unknown) {
+    console.error('tentarCapturarDadosConvidado: falha:', (e as Error).message);
+    return null;
+  }
+}
+
 // ── Lead direto do anúncio IDM: aciona leads-ia-responder ───────────────────
 // Bloco isolado, roda ANTES do matching pelas 4 tabelas abaixo -- é um sinal
 // mais específico (texto exato do botão de WhatsApp Ads da Formação em
@@ -347,6 +434,17 @@ async function tentarCriarLeadDireto(
   pushName: string,
 ): Promise<{ ok: true; lead_id: string } | null> {
   if (mensagemTipo !== 'text') return null;
+
+  // SDR de IA desativado por flag (decisão do usuário: atendimento passou a
+  // ser 100% humano via vendedores, ver lead_aquecimento_*) -- não cria lead
+  // Direto nem aciona leads-ia-responder. Código intacto pra religar depois.
+  const { data: sdrCfg } = await supabase
+    .from('leads_ia_config')
+    .select('ativo')
+    .eq('id', 'default')
+    .maybeSingle();
+  if (sdrCfg && sdrCfg.ativo === false) return null;
+
   const s8 = phone.slice(-8);
   const normalizado = mensagem.trim().toLowerCase();
   const ehGatilho = GATILHOS_ANUNCIO_IDM.includes(normalizado);
@@ -403,6 +501,22 @@ async function tentarCriarLeadDireto(
         .limit(1)
         .maybeSingle();
       if (!conversaAberta) {
+        // Sem conversa ativa em leads_ia_conversas -- mas pode ser a 2a/3a
+        // mensagem rápida de um lead cuja 1a mensagem ainda está no buffer de
+        // debounce (leads_ia_conversas só é criada quando o debounce dispara
+        // o leads-ia-responder, alguns segundos depois). Sem este check, uma
+        // mensagem rápida em sequência (ex.: "Din" + "Sim" 3s depois) cairia
+        // no matching genérico abaixo e seria ignorada em vez de entrar no buffer.
+        const { data: bufferPendente } = await supabase
+          .from('leads_ia_debounce')
+          .select('lead_id')
+          .filter('telefone', 'ilike', `%${s8}`)
+          .maybeSingle();
+        if (bufferPendente) {
+          lead = { id: bufferPendente.lead_id, nome: '' };
+        }
+      }
+      if (!conversaAberta && !lead) {
         // Sem conversa ativa -- mas pode ser um lead Direto já em handoff
         // (aguardando_humano), cujas respostas não batem em nenhuma das 4
         // tabelas do matching genérico abaixo (não são lead de lançamento,
@@ -427,31 +541,105 @@ async function tentarCriarLeadDireto(
         return null;
       }
 
-      const { data: leadRow } = await supabase
-        .from('leads')
-        .select('id, nome')
-        .eq('id', conversaAberta.lead_id)
-        .maybeSingle();
-      lead = leadRow as { id: string; nome: string } | null;
+      if (conversaAberta) {
+        const { data: leadRow } = await supabase
+          .from('leads')
+          .select('id, nome')
+          .eq('id', conversaAberta.lead_id)
+          .maybeSingle();
+        lead = leadRow as { id: string; nome: string } | null;
+      }
     }
     if (!lead) return null;
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-
-    const res = await fetch(`${supabaseUrl}/functions/v1/leads-ia-responder`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey },
-      body: JSON.stringify({ lead_id: lead.id, telefone: phone, mensagem, evolution_instance: instance }),
-    });
-    if (!res.ok) {
-      console.error(`leads-ia-responder respondeu ${res.status}: ${(await res.text()).slice(0, 300)}`);
-    }
+    await acionarLeadsIaComDebounce(supabase, lead.id, phone, mensagem, instance);
     return { ok: true, lead_id: lead.id };
   } catch (e: unknown) {
     console.error('tentarCriarLeadDireto: falha:', (e as Error).message);
     return null;
   }
+}
+
+// ── Debounce de mensagens rápidas em sequência ──────────────────────────────
+// Um lead que manda 2-3 mensagens em poucos segundos (ex.: "Din" seguido de
+// "Sim" 3s depois) fazia o webhook disparar leads-ia-responder duas vezes em
+// paralelo -- cada chamada gerava e mandava uma resposta sem saber da outra,
+// resultando em respostas sobrepostas/perdidas no WhatsApp da lead. Em vez de
+// chamar leads-ia-responder na hora, empilha a mensagem num buffer por telefone
+// e espera DEBOUNCE_MS em background (EdgeRuntime.waitUntil, não trava o ack
+// do webhook pra Evolution API); só quem ainda é a mensagem mais recente
+// depois da espera (marcador bate) processa o buffer inteiro de uma vez.
+const DEBOUNCE_MS = 6000;
+
+async function acionarLeadsIaComDebounce(
+  supabase: ReturnType<typeof createClient>,
+  leadId: string,
+  phone: string,
+  mensagem: string,
+  instance: string,
+): Promise<void> {
+  const { data: bufferAtual } = await supabase
+    .from('leads_ia_debounce')
+    .select('mensagens, em_processamento')
+    .eq('telefone', phone)
+    .maybeSingle();
+  // Se o buffer atual já está sendo processado (chamada em andamento pro
+  // leads-ia-responder), essa mensagem nova NÃO entra na leva que já foi
+  // capturada -- começa um buffer novo, que debounça por conta própria. Sem
+  // isso, uma mensagem chegando durante o processamento (Gemini + envio, que
+  // pode levar alguns segundos) ficaria perdida no vácuo entre o buffer ser
+  // limpo e a conversa ainda não existir em leads_ia_conversas.
+  const mensagensAcumuladas = bufferAtual && !bufferAtual.em_processamento && Array.isArray(bufferAtual.mensagens)
+    ? bufferAtual.mensagens : [];
+  const marcador = crypto.randomUUID();
+
+  const { error: upsertErr } = await supabase.from('leads_ia_debounce').upsert({
+    telefone: phone,
+    lead_id: leadId,
+    evolution_instance: instance,
+    mensagens: [...mensagensAcumuladas, mensagem],
+    marcador,
+    em_processamento: false,
+    atualizado_em: new Date().toISOString(),
+  }, { onConflict: 'telefone' });
+  if (upsertErr) {
+    console.error('acionarLeadsIaComDebounce: falha ao gravar buffer:', upsertErr.message);
+    return;
+  }
+
+  const task = (async () => {
+    await new Promise((r) => setTimeout(r, DEBOUNCE_MS));
+    const { data: bufferFinal } = await supabase
+      .from('leads_ia_debounce')
+      .select('marcador, mensagens')
+      .eq('telefone', phone)
+      .maybeSingle();
+    // Chegou mensagem mais nova durante a espera -- quem processa é a próxima chamada.
+    if (!bufferFinal || bufferFinal.marcador !== marcador) return;
+
+    // Marca como "em processamento" (SEM apagar ainda) -- mensagem que chegar
+    // enquanto o leads-ia-responder ainda está rodando começa buffer próprio
+    // em vez de se misturar com o que já foi capturado pra esta leva.
+    await supabase.from('leads_ia_debounce').update({ em_processamento: true }).eq('telefone', phone).eq('marcador', marcador);
+    const mensagemFinal = (bufferFinal.mensagens as string[]).join('\n');
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const res = await fetch(`${supabaseUrl}/functions/v1/leads-ia-responder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey },
+      body: JSON.stringify({ lead_id: leadId, telefone: phone, mensagem: mensagemFinal, evolution_instance: instance }),
+    });
+    if (!res.ok) {
+      console.error(`leads-ia-responder respondeu ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    }
+    // Só apaga o buffer se ninguém mexeu nele nesse meio-tempo (marcador ainda
+    // é o mesmo) -- se uma mensagem nova chegou durante o processamento, ela
+    // já virou um buffer próprio (marcador novo) e não pode ser apagada aqui.
+    await supabase.from('leads_ia_debounce').delete().eq('telefone', phone).eq('marcador', marcador);
+  })();
+
+  try { EdgeRuntime.waitUntil(task); } catch { await task; }
 }
 
 // ── Captura de resolução humana → sugestão de conhecimento ─────────────────
@@ -516,6 +704,74 @@ async function marcarHumanoAssumiuConversa(
     await supabase.from('leads_ia_conversas').update({ humano_assumiu_em: new Date().toISOString() }).eq('id', conversa.id);
   } catch (e: unknown) {
     console.error('marcarHumanoAssumiuConversa: falha:', (e as Error).message);
+  }
+}
+
+// ── Aquecimento de leads: engajamento numa das 4 fases ────────────────────
+// Sinal mais específico que o matching genérico abaixo: se o telefone que
+// respondeu bate com um lead 'aguardando_engajamento' NA MESMA instância que
+// mandou a fase (evolution_config_id_envio), marca respondeu_fase_em e
+// avança fase (ou entra em aguardando_isca com delay, se já era a fase 4).
+// Precisa ser a mesma instância -- é o único jeito de saber que essa resposta
+// é sobre a fase que a gente mandou, não uma resposta solta em outro número.
+async function tentarMatchAquecimentoLead(
+  supabase: ReturnType<typeof createClient>,
+  phone: string,
+  mensagemTipo: string,
+  instance: string,
+): Promise<boolean> {
+  if (!instance) return false;
+  const s8 = phone.slice(-8);
+
+  try {
+    const { data: evo } = await supabase
+      .from('evolution_config')
+      .select('id')
+      .eq('instance_name', instance)
+      .maybeSingle();
+    if (!evo) return false;
+
+    const { data: lead } = await supabase
+      .from('lead_aquecimento_leads')
+      .select('id, fase_atual')
+      .eq('status', 'aguardando_engajamento')
+      .eq('evolution_config_id_envio', evo.id)
+      .filter('phone', 'ilike', `%${s8}`)
+      .order('fase_enviada_em', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!lead) return false;
+
+    const now = new Date().toISOString();
+
+    if (lead.fase_atual >= 4) {
+      const { data: cfg } = await supabase
+        .from('lead_aquecimento_config')
+        .select('isca_delay_min_min, isca_delay_max_min')
+        .eq('id', 'default')
+        .maybeSingle();
+      const min = cfg?.isca_delay_min_min ?? 5;
+      const max = cfg?.isca_delay_max_min ?? 30;
+      const delayMin = min + Math.random() * Math.max(0, max - min);
+      const isca_agendada_para = new Date(Date.now() + delayMin * 60_000).toISOString();
+
+      await supabase.from('lead_aquecimento_leads').update({
+        respondeu_fase_em: now,
+        status: 'aguardando_isca',
+        isca_agendada_para,
+      }).eq('id', lead.id);
+    } else {
+      await supabase.from('lead_aquecimento_leads').update({
+        respondeu_fase_em: now,
+        fase_atual: lead.fase_atual + 1,
+        status: 'aguardando_envio_fase',
+      }).eq('id', lead.id);
+    }
+
+    return true;
+  } catch (e: unknown) {
+    console.error('tentarMatchAquecimentoLead falhou:', (e as Error).message);
+    return false;
   }
 }
 
@@ -624,6 +880,21 @@ serve(async (req) => {
 
     if (mensagemTipo === 'text' && detectarOptOut(mensagem)) {
       await registrarOptOut(supabase, phone, mensagem);
+    }
+
+    // NPA order bump: lead está esperando nome+whatsapp do convidado (2º
+    // ingresso) -- sinal mais específico que o matching genérico abaixo, encerra
+    // aqui se casar (já manda a confirmação/pedido de reenvio pro comprador).
+    const convidadoCapturado = await tentarCapturarDadosConvidado(supabase, phone, s8, mensagem, mensagemTipo, instance);
+    if (convidadoCapturado) {
+      return ok({ ok: true, convidadoCapturado: true });
+    }
+
+    // Aquecimento de leads: resposta a uma das 4 fases -- sinal mais
+    // específico que o matching genérico, encerra aqui se casar.
+    const aquecimentoCasou = await tentarMatchAquecimentoLead(supabase, phone, mensagemTipo, instance);
+    if (aquecimentoCasou) {
+      return ok({ ok: true, aquecimentoLead: true });
     }
 
     // Lead novo do anúncio IDM: sinal mais específico que o matching por
@@ -793,13 +1064,25 @@ serve(async (req) => {
 });
 
 // ── ACK (messages.update): casa com aquecimento_jobs.evolution_message_id ────
-// Status Baileys/Evolution: 0=erro, 1=pendente, 2=servidor, 3=entregue, 4=lido, 5=tocado
-function ackStatusFromNumero(status: number | undefined): 'entregue' | 'lido' | 'falhou' | null {
-  if (status === undefined || status === null) return null;
-  if (status <= 0) return 'falhou';
-  if (status >= 4) return 'lido';
-  if (status === 3) return 'entregue';
-  return null; // pendente/servidor ainda não é sinal suficiente
+// Confirmado via captura real de payload (aquecimento_ack_debug, 2026-08-17):
+// a Evolution manda `status` como STRING ("DELIVERY_ACK"), não como número
+// Baileys cru -- mantém o numérico como fallback pra outras versões/eventos
+// que ainda mandem 0-5.
+function ackStatusFromRaw(status: unknown): 'entregue' | 'lido' | 'falhou' | null {
+  if (typeof status === 'number') {
+    if (status <= 0) return 'falhou';
+    if (status >= 4) return 'lido';
+    if (status === 3) return 'entregue';
+    return null; // pendente/servidor ainda não é sinal suficiente
+  }
+  if (typeof status === 'string') {
+    const s = status.toUpperCase();
+    if (s === 'ERROR') return 'falhou';
+    if (s === 'DELIVERY_ACK') return 'entregue';
+    if (s === 'READ' || s === 'PLAYED') return 'lido';
+    return null; // PENDING/SERVER_ACK ainda não é sinal suficiente
+  }
+  return null;
 }
 
 async function handleMessagesUpdate(
@@ -835,8 +1118,7 @@ async function handleMessagesUpdate(
     if (!messageId) continue;
 
     const statusRaw = (upd.update as Record<string, unknown>)?.status ?? upd.status;
-    const statusNum = typeof statusRaw === 'number' ? statusRaw : Number(statusRaw);
-    const ackStatus = ackStatusFromNumero(Number.isFinite(statusNum) ? statusNum : undefined);
+    const ackStatus = ackStatusFromRaw(statusRaw);
     if (!ackStatus) continue;
 
     const now = new Date().toISOString();

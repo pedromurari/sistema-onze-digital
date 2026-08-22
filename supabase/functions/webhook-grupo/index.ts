@@ -46,6 +46,69 @@ async function findColunaId(
   return null;
 }
 
+// Leads que entram no grupo de Oferta de uma turma "SDD" (convenção de nome
+// "Turma #NN", ex: Turma #44) também caem no funil Time Comercial (tabela
+// `leads`, origem='Time Comercial') — pedido do dono do negócio: o vendedor
+// precisa ver esse lead pra negociar, não só o funil de lançamento genérico.
+// Só avança de fase (nunca regride) e só cria o lead se ele ainda não existir
+// lá (casado por telefone).
+const SDD_TURMA_REGEX = /^turma\s*#\s*\d+$/i;
+const TIME_COMERCIAL_STAGE_ORDER = ['frio', 'pre_aquecimento', 'grupo_oferta', 'primeiro_contato', 'negociacao', 'matricula'];
+
+async function mirrarParaTimeComercial(
+  supabase: ReturnType<typeof createClient>,
+  lancamentoId: string,
+  lancamentoNome: string,
+  phoneRaw: string,
+) {
+  if (!SDD_TURMA_REGEX.test(lancamentoNome.trim())) return;
+
+  const phone = normalizePhone(phoneRaw);
+  const s8 = phone.slice(-8);
+
+  const { data: existentes } = await supabase
+    .from('leads')
+    .select('id, status, telefone, lancamento_id')
+    .eq('origem', 'Time Comercial')
+    .eq('canal', 'SDD')
+    .filter('telefone', 'ilike', `%${s8}`)
+    .limit(1);
+
+  const existente = existentes?.[0] as { id: string; status: string | null; lancamento_id: string | null } | undefined;
+
+  if (existente) {
+    const idxAtual = TIME_COMERCIAL_STAGE_ORDER.indexOf(existente.status ?? 'frio');
+    const idxNovo = TIME_COMERCIAL_STAGE_ORDER.indexOf('grupo_oferta');
+    const updates: Record<string, unknown> = {};
+    if (idxNovo > idxAtual) updates.status = 'grupo_oferta';
+    if (!existente.lancamento_id) updates.lancamento_id = lancamentoId;
+    if (Object.keys(updates).length > 0) {
+      await supabase.from('leads').update(updates).eq('id', existente.id);
+      console.log(`time_comercial: lead ${existente.id} atualizado`, JSON.stringify(updates));
+    }
+    return;
+  }
+
+  const { error: insertError } = await supabase.from('leads').insert({
+    nome: `Lead do grupo (${phone})`,
+    telefone: phone,
+    whatsapp: phone,
+    origem: 'Time Comercial',
+    canal: 'SDD',
+    status: 'grupo_oferta',
+    produto: 'time_comercial',
+    interesse_produto: 'Psicanálise',
+    lancamento_id: lancamentoId,
+    observacoes: `Criado automaticamente ao entrar no grupo de oferta de "${lancamentoNome}" — sem nome capturado ainda, confirmar no primeiro contato.`,
+  });
+
+  if (insertError) {
+    console.error('time_comercial insert error:', JSON.stringify(insertError));
+  } else {
+    console.log(`time_comercial: novo lead criado direto em grupo_oferta, telefone=${phone}`);
+  }
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 serve(async (req) => {
@@ -120,8 +183,8 @@ serve(async (req) => {
     // Two separate .eq() queries to avoid PostgREST .or() escaping issues with
     // JID values that contain '@' and '.' (e.g. "120363428224959911@g.us").
     const [{ data: byLanc, error: e1 }, { data: byOferta, error: e2 }] = await Promise.all([
-      supabase.from('lancamentos').select('id, grupo_lancamento_jid, grupo_oferta_jid').eq('grupo_lancamento_jid', groupJid).limit(5),
-      supabase.from('lancamentos').select('id, grupo_lancamento_jid, grupo_oferta_jid').eq('grupo_oferta_jid', groupJid).limit(5),
+      supabase.from('lancamentos').select('id, nome, grupo_lancamento_jid, grupo_oferta_jid').eq('grupo_lancamento_jid', groupJid).limit(5),
+      supabase.from('lancamentos').select('id, nome, grupo_lancamento_jid, grupo_oferta_jid').eq('grupo_oferta_jid', groupJid).limit(5),
     ]);
 
     const lancError = e1 ?? e2;
@@ -153,6 +216,10 @@ serve(async (req) => {
 
       for (const participant of participants) {
         const s8 = suffix8(participant);
+
+        if (tipo === 'oferta') {
+          await mirrarParaTimeComercial(supabase, lancamento.id as string, (lancamento.nome as string) ?? '', participant);
+        }
 
         const { data: matchedLeads } = await supabase
           .from('lancamento_leads')

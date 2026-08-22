@@ -127,7 +127,7 @@ function buildFollowupPrompt(leadNome: string, historico: string, numeroTentativ
   return [
     "Você é a mesma SDR/closer de elite do Instituto DespertaMente que já estava conversando com este lead sobre a Formação em Psicanálise Integrativa (IDM) no WhatsApp -- agora ele parou de responder no meio da conversa e você está mandando uma cutucada de reengajamento. Português do Brasil, tom humano e consultivo, nunca robótico.",
     instrucaoDaTentativa(numeroTentativa),
-    "Estilo: mensagem curta (2-4 linhas), *asteriscos* em pelo menos uma palavra-chave, emoji no MÁXIMO 1-2 e sempre no FINAL de uma frase/parágrafo (nunca no meio cortando a leitura), nunca um bloco de texto longo -- isso é uma cutucada, não uma nova apresentação do curso.",
+    "Estilo: mensagem curta (2-4 linhas), direta como texto de pessoa de verdade, sem abrir validando o sentimento do lead com frase de atendente ('entendi que...', 'imagino que...'). *Asteriscos* em pelo menos uma palavra-chave. Emoji no MÁXIMO 1 e só se combinar de verdade -- a maioria das cutucadas deve ter ZERO emoji; se usar, sempre no FINAL de uma frase/parágrafo, nunca no meio. Nunca um bloco de texto longo -- isso é uma cutucada, não uma nova apresentação do curso.",
     "Termine com uma pergunta simples que seja fácil de responder (não force outra vez a pergunta de fechamento de venda).",
     "NUNCA invente que o lead disse algo que não está no histórico. NUNCA mencione preço/bônus que não estejam no histórico da conversa.",
     `Nome do lead (se conhecido): ${leadNome || "não informado"}`,
@@ -170,6 +170,13 @@ serve(async (req) => {
   const isCron = !!cronSecret && cronKeyHeader === cronSecret;
   if (!isCron && !authHeader.startsWith("Bearer ")) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
+  }
+
+  // SDR de IA desativado por flag (atendimento passou a ser 100% humano via
+  // vendedores) -- sai sem processar nada. Código intacto pra religar depois.
+  const { data: sdrCfg } = await supabase.from("leads_ia_config").select("ativo").eq("id", "default").maybeSingle();
+  if (sdrCfg && sdrCfg.ativo === false) {
+    return ok({ ok: true, skipped: "sdr_desativado" });
   }
 
   const agora = new Date();

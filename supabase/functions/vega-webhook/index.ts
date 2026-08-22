@@ -147,8 +147,22 @@ async function processVegaWebhook(
   const phoneRaw     = String(body?.customer?.phone ?? body?.phone ?? '');
   const nome         = String(body?.customer?.name  ?? body?.name  ?? '');
   const email        = String(body?.customer?.email ?? body?.email ?? '') || null;
-  const produtoTitle = String((body?.plans as any)?.[0]?.products?.[0]?.title ?? body?.produto ?? '');
   const pixCode      = String(body?.pix_code ?? '');
+
+  // O order bump ("+1 Ingresso ... PARA SEU CONVIDADO ...") vem como um produto
+  // a mais dentro da mesma compra -- coleta todos os títulos pra separar o
+  // ingresso principal (usado pra achar o NPA) do bump (usado só como sinal de
+  // "comprou 2 ingressos").
+  const plans: any[] = Array.isArray(body?.plans) ? (body!.plans as any[]) : [];
+  const produtosCompra: string[] = plans
+    .flatMap((p: any) => (Array.isArray(p?.products) ? p.products : []))
+    .map((pr: any) => String(pr?.title ?? '').trim())
+    .filter(Boolean);
+  const ORDER_BUMP_RE = /PARA SEU CONVIDADO/i;
+  const temOrderBump  = produtosCompra.some(t => ORDER_BUMP_RE.test(t));
+  const produtoTitle  = produtosCompra.find(t => !ORDER_BUMP_RE.test(t))
+    ?? produtosCompra[0]
+    ?? String(body?.produto ?? '');
 
   if (!produtoTitle) {
     console.warn('vega-webhook: produto não identificado');
@@ -245,6 +259,8 @@ async function processVegaWebhook(
     evento_nome: npa.nome,
     data_evento: dateLabel(npa.data_evento),
     link_grupo:  linkGrupo,
+    link_grupo_manha: variaveis['link_grupo_manha'] || variaveis['link_grupo_1'] || '',
+    link_grupo_tarde: variaveis['link_grupo_tarde'] || variaveis['link_grupo_2'] || '',
     turma:       turma === 'manha' ? 'Manhã' : 'Tarde',
   };
 
@@ -293,14 +309,26 @@ async function processVegaWebhook(
     const bemVindoMsg = bemVindoTpl ||
       `🌟 Bem-vindo(a) ao {{evento_nome}}!\nSua inscrição está confirmada! 🙌\n\n📅 Data do evento: {{data_evento}} — Turma {{turma}}\n\nNas próximas mensagens você receberá:\n\n✔ Link para entrar no Grupo VIP dos alunos\n✔ Informações essenciais sobre o evento\n✔ Conteúdos bônus surpresa 🎁\n\nFique atento às mensagens para não perder nada.\nQualquer dúvida, estamos por aqui!`;
 
-    await sendWpp(evoBase, evo.instance_name, evo.api_key, number, fmt(bemVindoMsg, msgVars));
+    const bemVindoMsgFmt = fmt(bemVindoMsg, msgVars);
+    await sendWpp(evoBase, evo.instance_name, evo.api_key, number, bemVindoMsgFmt);
     await sleep(3000);
 
-    // Só envia mensagem separada de grupo se o template configurado não incluir o link
-    if (linkGrupo && !bemVindoTpl) {
+    // Só envia mensagem separada de grupo se a mensagem já enviada não incluiu o link
+    // (evita depender só de "existe template?" -- um template com variável errada
+    // ou não preenchida também precisa cair nesse fallback)
+    if (linkGrupo && !bemVindoMsgFmt.includes(linkGrupo)) {
       const grupoMsg =
         `🚨 IMPORTANTE — ENTRE NO GRUPO VIP!\nTodas as orientações do evento, avisos e bônus serão enviados exclusivamente pelo grupo dos alunos.\n\n👉 Entre agora:\n{{link_grupo}}\n\nNo grupo você vai receber:\n🔹 Avisos importantes do dia\n🔹 Materiais complementares\n🔹 Bônus surpresa que só os alunos vão ter acesso 👀\n\nEntrou? Me avise aqui para confirmar!`;
       await sendWpp(evoBase, evo.instance_name, evo.api_key, number, fmt(grupoMsg, msgVars));
+    }
+
+    // Order bump "PARA SEU CONVIDADO": comprou 2 ingressos -- pede os dados do
+    // segundo participante ali mesmo no WhatsApp. A resposta é capturada pelo
+    // evo-resposta (aguardando_dados_convidado = true fica marcado no lead).
+    if (temOrderBump) {
+      await sleep(2000);
+      await sendWpp(evoBase, evo.instance_name, evo.api_key, number,
+        `🎟️ Vi aqui que você garantiu +1 ingresso pra levar um convidado! Show!\n\nPra eu liberar o ingresso dele(a) também, me manda *nome completo e WhatsApp (com DDD) do seu convidado* numa única mensagem.\n\nEx.: João Silva, 11987654321`);
     }
 
     const agora = new Date().toISOString();
@@ -313,6 +341,8 @@ async function processVegaWebhook(
           bv_enviado: true, bv_enviado_em: agora,
           no_grupo: false, presente_evento: false, esteve_no_evento: false,
           closer: false, follow_up_01: false, follow_up_02: false, follow_up_03: false, matriculado: false,
+          ingressos_comprados: temOrderBump ? 2 : 1,
+          aguardando_dados_convidado: temOrderBump,
           ...(email ? { email } : {}),
         })
         .eq('id', leadId);
@@ -322,6 +352,8 @@ async function processVegaWebhook(
         whatsapp: phone, email: email ?? null,
         turma, fase: 'ingresso_pago', ingresso_pago: true,
         bv_enviado: true, bv_enviado_em: agora,
+        ingressos_comprados: temOrderBump ? 2 : 1,
+        aguardando_dados_convidado: temOrderBump,
       });
     }
   }

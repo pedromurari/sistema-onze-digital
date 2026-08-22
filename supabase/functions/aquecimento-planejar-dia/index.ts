@@ -22,6 +22,7 @@ type RampaEstagio = { dia_inicio: number; dia_fim: number | null; min: number; m
 type Chip = { id: string; evolution_config_id: string; numero_whatsapp: string; ativo: boolean; data_inicio: string; status: string; dia_contagem: string };
 type Grupo = { id: string; membros: string[]; ativo: boolean };
 type Mensagem = { id: string; texto: string; tipo: string; ativo: boolean };
+type Roteiro = { textos: string[] };
 
 function randInt(min: number, max: number): number {
   return Math.round(min + Math.random() * (max - min));
@@ -61,8 +62,6 @@ serve(async (req) => {
 
     const anchorUTC = new Date(`${todayBRDateStr}T03:00:00.000Z`); // meia-noite BR
 
-    const msgsPorSessaoMin = cfg.msgs_por_sessao_min ?? 3;
-    const msgsPorSessaoMax = cfg.msgs_por_sessao_max ?? 8;
     const intervaloMinS    = cfg.delay_min_s ?? 20;
     const intervaloMaxS    = cfg.delay_max_s ?? 90;
     const safeStartSec     = cfg.safe_hour_start * 3600;
@@ -86,8 +85,22 @@ serve(async (req) => {
 
     const { data: mensagensRaw } = await supabase.from('aquecimento_mensagens').select('id, texto, tipo, ativo').eq('ativo', true);
     const mensagens = (mensagensRaw ?? []) as Mensagem[];
-    const msgsDm    = mensagens.filter(m => m.tipo === 'dm' || m.tipo === 'ambos');
     const msgsGrupo = mensagens.filter(m => m.tipo === 'grupo' || m.tipo === 'ambos');
+
+    // Roteiros de DM: diálogos reais em sequência (ver aquecimento_roteiros_dm),
+    // em vez de frases soltas escolhidas ao acaso -- isso é o que fazia a troca
+    // parecer aleatória (ex.: "Bom dia!" respondido com "Boa noite!").
+    const { data: roteirosRaw } = await supabase
+      .from('aquecimento_roteiros_dm')
+      .select('id, aquecimento_roteiro_mensagens(ordem, texto)')
+      .eq('ativo', true);
+    const roteirosDm: Roteiro[] = ((roteirosRaw ?? []) as { aquecimento_roteiro_mensagens: { ordem: number; texto: string }[] }[])
+      .map(r => ({
+        textos: [...(r.aquecimento_roteiro_mensagens ?? [])]
+          .sort((a, b) => a.ordem - b.ordem)
+          .map(m => m.texto),
+      }))
+      .filter(r => r.textos.length > 0);
 
     // ── Controle de sobreposição por chip ──────────────────────────────────
     const busy = new Map<string, Array<[number, number]>>();
@@ -114,8 +127,9 @@ serve(async (req) => {
     let sessions = 0;
 
     function agendarDm(chipA: Chip, chipB: Chip) {
-      if (!msgsDm.length) return;
-      const k = randInt(msgsPorSessaoMin, msgsPorSessaoMax);
+      if (!roteirosDm.length) return;
+      const roteiro = roteirosDm[Math.floor(Math.random() * roteirosDm.length)];
+      const k = roteiro.textos.length;
       const gaps: number[] = [];
       for (let m = 0; m < k - 1; m++) gaps.push(randInt(intervaloMinS, intervaloMaxS));
       const duracao = gaps.reduce((a, b) => a + b, 0);
@@ -124,10 +138,9 @@ serve(async (req) => {
       const sessaoId = crypto.randomUUID();
       let sender = chipA, receiver = chipB;
       for (let m = 0; m < k; m++) {
-        const msg = msgsDm[Math.floor(Math.random() * msgsDm.length)];
         jobs.push({
           tipo: 'dm', chip_origem_id: sender.id, chip_destino_id: receiver.id,
-          mensagem_texto: msg.texto, sessao_id: sessaoId,
+          mensagem_texto: roteiro.textos[m], sessao_id: sessaoId,
           scheduled_at: new Date(anchorUTC.getTime() + cursor * 1000).toISOString(),
         });
         [sender, receiver] = [receiver, sender];

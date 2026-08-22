@@ -20,7 +20,7 @@ function ok(data: unknown) {
 }
 
 function baseUrl(rawApiUrl: string): string {
-  const raw = rawApiUrl.replace(/\/$/, '');
+  const raw = rawApiUrl.trim().replace(/\/$/, '');
   return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
 }
 
