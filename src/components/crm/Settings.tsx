@@ -14,7 +14,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { Webhook, BookOpen, Globe, Plus, Trash2, Send, Smartphone, RefreshCw, Loader2, CheckCircle2, XCircle, QrCode, FileText, Copy, ExternalLink, ChevronRight, MessageSquare, Zap, Wallet } from 'lucide-react';
 import { EvolutionTaskPanel } from './EvolutionTaskPanel';
 import { ConnStateBadge } from './ConnStateBadge';
-import { fetchConnectionState, type EvolutionInstance, type ConnState } from '@/lib/evolution-status';
+import { fetchConnectionState, configurarWebhookRespostas, fetchQrCode, type EvolutionInstance, type ConnState } from '@/lib/evolution-status';
+import { COLUNAS_EVOLUTION_VISIVEIS } from '@/lib/evolution';
 
 function useEvolutionInstances() {
   const [instances, setInstances] = useState<EvolutionInstance[]>([]);
@@ -23,7 +24,11 @@ function useEvolutionInstances() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase.from('evolution_config').select('*').order('instance_name');
+    // Nao usar select('*'): a leitura de `api_key` foi revogada no banco e o '*' quebraria.
+    const { data, error } = await supabase
+      .from('evolution_config')
+      .select(COLUNAS_EVOLUTION_VISIVEIS)
+      .order('instance_name');
     if (!error && data) setInstances(data as EvolutionInstance[]);
     setLoading(false);
   }, []);
@@ -90,20 +95,8 @@ function useCanaisCobranca() {
   return { canais, add, toggle, remove };
 }
 
-async function fetchQrCode(inst: EvolutionInstance): Promise<string | null> {
-  try {
-    // Try connect endpoint first (returns QR)
-    const res = await fetch(`${inst.api_url}/instance/connect/${inst.instance_name}`, {
-      headers: { apikey: inst.api_key },
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) return null;
-    const json = await res.json() as Record<string, unknown>;
-    return String(json?.base64 ?? json?.qrcode?.base64 ?? json?.code ?? '') || null;
-  } catch {
-    return null;
-  }
-}
+// O QR vem pelo proxy: a chave da Evolution nao sai mais do servidor.
+// (Esta funcao era uma copia local da que vive em lib/evolution-status.)
 
 const EVO_RESPOSTA_URL = `https://usqiyekfmwwnvkmkdlej.supabase.co/functions/v1/evo-resposta`;
 
@@ -116,38 +109,9 @@ function WebhookRespostasCard({ instances }: { instances: EvolutionInstance[] })
   async function configurarInstancia(inst: EvolutionInstance) {
     setStates(prev => ({ ...prev, [inst.id]: 'loading' }));
 
-    const baseUrl = inst.api_url.replace(/\/$/, '');
-    const headers = { apikey: inst.api_key, 'Content-Type': 'application/json' };
-    const payload = {
-      enabled: true,
-      url: EVO_RESPOSTA_URL,
-      webhookByEvents: false,
-      events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE'],
-    };
-
-    // Tenta v2 (PUT /webhook/{instance}) primeiro, depois v1 (POST /webhook/set/{instance})
-    let ok = false;
-    try {
-      const r = await fetch(`${baseUrl}/webhook/${inst.instance_name}`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(10_000),
-      });
-      ok = r.ok;
-    } catch { /* ignora, tenta v1 */ }
-
-    if (!ok) {
-      try {
-        const r = await fetch(`${baseUrl}/webhook/set/${inst.instance_name}`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ webhook: payload }),
-          signal: AbortSignal.timeout(10_000),
-        });
-        ok = r.ok;
-      } catch { /* falhou nos dois */ }
-    }
+    // Passa pelo proxy: a chave da Evolution nao sai do servidor. A tentativa v2 -> v1
+    // vive em `configurarWebhookRespostas`, uma copia so.
+    const ok = await configurarWebhookRespostas(inst);
 
     const next: ConfigState = ok ? 'ok' : 'error';
     setStates(prev => ({ ...prev, [inst.id]: next }));

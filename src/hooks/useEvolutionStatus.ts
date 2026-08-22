@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { fetchConnectionState, type ConnState, type EvolutionInstance } from '@/lib/evolution-status';
+import { COLUNAS_EVOLUTION_VISIVEIS } from '@/lib/evolution';
 
 const POLL_MS = 30_000;
 
@@ -17,7 +18,12 @@ export function useEvolutionStatus() {
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase.from('evolution_config').select('*').order('instance_name');
+    // Nao usar select('*'): a leitura de `api_key` foi revogada e o '*' derrubaria a
+    // consulta inteira — o Chat ficaria sem instancia nenhuma na lista.
+    const { data, error } = await supabase
+      .from('evolution_config')
+      .select(COLUNAS_EVOLUTION_VISIVEIS)
+      .order('instance_name');
     const list = !error && data ? (data as EvolutionInstance[]) : [];
     setInstances(list);
     setLoading(false);

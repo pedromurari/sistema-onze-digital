@@ -2774,21 +2774,29 @@ function QuickEmailCard() {
 
 // ── Email Config Panel ─────────────────────────────────────────────────────────
 
+/**
+ * A chave do provedor de email e SO DE ESCRITA.
+ *
+ * `api_key` nao vem do banco — o privilegio de leitura dessa coluna foi revogado para
+ * `authenticated`, entao nem esta tela nem o painel de rede do navegador enxergam a chave
+ * salva. `chave_salva` diz apenas SE existe uma, para a tela nao parecer vazia.
+ * Digitar algo no campo substitui a chave; deixar em branco mantem a que esta la.
+ */
 interface EmailCfg {
   id?: string;
   ativo: boolean;
   provider: 'resend' | 'sendgrid' | 'brevo';
-  api_key: string;
   from_name: string;
   from_email: string;
+  chave_salva?: boolean;
 }
 
 const EMPTY_EMAIL_CFG: EmailCfg = {
   ativo: true,
   provider: 'resend',
-  api_key: '',
   from_name: '',
   from_email: '',
+  chave_salva: false,
 };
 
 function EmailConfigPanel() {
@@ -2797,23 +2805,33 @@ function EmailConfigPanel() {
   const [saving,    setSaving]    = useState(false);
   const [testing,   setTesting]   = useState(false);
   const [testTo,    setTestTo]    = useState('');
+  // Fica fora de `cfg` de proposito: é o que o usuario DIGITOU agora, nunca o que esta salvo.
+  const [chaveNova, setChaveNova] = useState('');
 
   useEffect(() => {
-    supabase.from('email_config').select('*').eq('ativo', true)
-      .order('created_at', { ascending: false }).limit(1).maybeSingle()
-      .then(({ data }) => {
-        if (data) setCfg(data as EmailCfg);
-        setLoading(false);
-      });
+    // `select('*')` traria a chave e hoje nem passa: a coluna e negada no banco.
+    supabase.rpc('email_config_resumo').then(({ data }) => {
+      const linha = Array.isArray(data) ? data[0] : null;
+      if (linha) setCfg(linha as EmailCfg);
+      setLoading(false);
+    });
   }, []);
 
   async function saveCfg() {
     setSaving(true);
+    const { chave_salva, ...campos } = cfg;
+    // Campo em branco = manter a chave que ja esta no banco. Sem isso, salvar so o
+    // remetente apagaria a chave, porque a tela nunca teve o valor dela para reenviar.
+    const payload = chaveNova.trim()
+      ? { ...campos, api_key: chaveNova.trim() }
+      : campos;
+
     const { error } = await supabase
       .from('email_config')
-      .upsert({ ...cfg }, { onConflict: 'id' });
+      .upsert(payload, { onConflict: 'id' });
     setSaving(false);
     if (error) { toast.error(`Erro: ${error.message}`); return; }
+    if (chaveNova.trim()) { setChaveNova(''); setCfg(c => ({ ...c, chave_salva: true })); }
     toast.success('Configuração de email salva!');
   }
 
@@ -2889,9 +2907,11 @@ function EmailConfigPanel() {
             </label>
             <Input
               type="password"
-              value={cfg.api_key}
-              onChange={e => setCfg(c => ({ ...c, api_key: e.target.value }))}
-              placeholder="re_xxxxxxxxxxxx / SG.xxxx / xkeysib-xxxx"
+              value={chaveNova}
+              onChange={e => setChaveNova(e.target.value)}
+              placeholder={cfg.chave_salva
+                ? 'Chave salva — digite outra para substituir'
+                : 're_xxxxxxxxxxxx / SG.xxxx / xkeysib-xxxx'}
               className="font-mono text-sm"
             />
             <p className="text-[10px] text-muted-foreground mt-0.5">
@@ -2943,7 +2963,7 @@ function EmailConfigPanel() {
                 onChange={e => setTestTo(e.target.value)}
                 className="text-sm flex-1"
               />
-              <Button variant="outline" onClick={sendTest} disabled={testing || !cfg.api_key} className="gap-2 flex-shrink-0">
+              <Button variant="outline" onClick={sendTest} disabled={testing || (!cfg.chave_salva && !chaveNova.trim())} className="gap-2 flex-shrink-0">
                 {testing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 Testar
               </Button>

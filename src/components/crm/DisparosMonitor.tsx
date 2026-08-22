@@ -4,6 +4,7 @@ import { LancamentoWizard } from '@/components/crm/LancamentoWizard';
 import { EvolutionTaskPanel } from './EvolutionTaskPanel';
 import { LeadsQuadros, type LeadsFiltro } from './leads/LeadsQuadros';
 import { ChatConversas } from './chat/ChatConversas';
+import { AquecimentoLeads } from './AquecimentoLeads';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
@@ -21,6 +22,8 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { fetchAll } from '@/lib/db';
+import { chamarEvolution } from '@/lib/evolution';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -85,7 +88,7 @@ interface DisparoLead {
 
 type ViewMode   = 'table' | 'kanban';
 type DateFilter = 'proximos' | 'hoje' | 'semana' | 'todos';
-type MainTab    = 'funil' | 'campanhas' | 'boasvindas' | 'leads' | 'chat';
+type MainTab    = 'funil' | 'campanhas' | 'boasvindas' | 'leads' | 'chat' | 'aquecimento_leads';
 
 interface BoasVindasConfig {
   id: string;
@@ -290,6 +293,13 @@ export function DisparosMonitor({ onCreateFunnel, onNavigateToAluno, initialMain
               <Users className="h-3.5 w-3.5" /> Leads
             </button>
             <button
+              onClick={() => setMainTab('aquecimento_leads')}
+              className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all',
+                mainTab === 'aquecimento_leads' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}
+            >
+              <Flame className="h-3.5 w-3.5" /> Aquecimento de Leads
+            </button>
+            <button
               onClick={() => setMainTab('chat')}
               className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all',
                 mainTab === 'chat' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}
@@ -304,6 +314,7 @@ export function DisparosMonitor({ onCreateFunnel, onNavigateToAluno, initialMain
       {mainTab === 'funil' && <FunilTab onCreateFunnel={onCreateFunnel} />}
       {mainTab === 'boasvindas' && <BoasVindasTab />}
       {mainTab === 'leads' && <LeadsTab />}
+      {mainTab === 'aquecimento_leads' && <AquecimentoLeads />}
       {mainTab === 'chat' && (
         <div className="flex-1 flex flex-col overflow-hidden p-6">
           <ChatConversas onNavigateToAluno={onNavigateToAluno} />
@@ -406,9 +417,14 @@ function LeadsTab() {
   // Fases e produtos disponíveis dependem da origem selecionada (vocabulário difere por fonte)
   useEffect(() => {
     (async () => {
-      let q = supabase.from('leads_unificados' as any).select('fase, produto');
-      if (origemFiltro.size) q = q.in('origem_tabela', [...origemFiltro]);
-      const { data } = await q.limit(5000);
+      // `.limit(5000)` nao funcionava: o PostgREST corta em 1.000 e devolve calado.
+      // Com 13.670 leads unificados, as opcoes de fase e produto deste filtro eram
+      // montadas a partir de 7% da base — faltava opcao na tela e ninguem sabia.
+      const data = await fetchAll<{ fase: string | null; produto: string | null }>((de, ate) => {
+        let q = supabase.from('leads_unificados' as any).select('fase, produto');
+        if (origemFiltro.size) q = q.in('origem_tabela', [...origemFiltro]);
+        return q.order('origem_id').range(de, ate) as never;
+      });
       const fases = new Set((data ?? []).map((r: any) => r.fase).filter(Boolean));
       const produtos = new Set((data ?? []).map((r: any) => r.produto).filter(Boolean));
       setFasesDisponiveis([...fases].sort());
@@ -419,9 +435,14 @@ function LeadsTab() {
   // DDDs disponíveis (com cidade/estado) — respeita origem selecionada
   useEffect(() => {
     (async () => {
-      let q = supabase.from('leads_unificados' as any).select('ddd, cidade, estado').not('ddd', 'is', null);
-      if (origemFiltro.size) q = q.in('origem_tabela', [...origemFiltro]);
-      const { data } = await q.limit(5000);
+      // Mesmo `.limit(5000)` que nao funciona do filtro de fases logo acima: a lista de
+      // DDDs pra segmentar campanha saia de 1.000 dos 13.670 leads. Regiao inteira podia
+      // simplesmente nao aparecer como opcao.
+      const data = await fetchAll<{ ddd: number; cidade: string; estado: string }>((de, ate) => {
+        let q = supabase.from('leads_unificados' as any).select('ddd, cidade, estado').not('ddd', 'is', null);
+        if (origemFiltro.size) q = q.in('origem_tabela', [...origemFiltro]);
+        return q.order('origem_id').range(de, ate) as never;
+      });
       const map = new Map<number, { ddd: number; cidade: string; estado: string }>();
       for (const r of (data ?? []) as any[]) if (!map.has(r.ddd)) map.set(r.ddd, r);
       setDddsDisponiveis([...map.values()].sort((a, b) => a.ddd - b.ddd));
@@ -884,7 +905,7 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
   const [saving, setSaving]                     = useState(false);
 
   // Grupos WPP
-  const [evoInstances, setEvoInstances] = useState<{ id: string; api_url: string; api_key: string; instance_name: string }[]>([]);
+  const [evoInstances, setEvoInstances] = useState<{ id: string; api_url: string; instance_name: string }[]>([]);
   const [selectedEvoId, setSelectedEvoId] = useState('');
   const [wppGroups, setWppGroups]       = useState<WppGroup[]>([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
@@ -894,7 +915,7 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
     Promise.all([
       supabase.from('lancamentos').select('id, nome').order('created_at', { ascending: false }),
       supabase.from('turmas').select('id, nome').order('nome'),
-      supabase.from('evolution_config').select('id, api_url, api_key, instance_name').eq('ativo', true).order('prioridade'),
+      supabase.from('evolution_config').select('id, api_url, instance_name').eq('ativo', true).order('prioridade'),
     ]).then(([l, t, e]) => {
       setLancamentos((l.data ?? []) as { id: string; nome: string }[]);
       setTurmas((t.data ?? []) as { id: string; nome: string }[]);
@@ -915,12 +936,10 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
     setLoadingGroups(true);
     setWppGroups([]);
     try {
-      const base = inst.api_url.replace(/\/$/, '').replace(/^(?!https?:\/\/)/i, 'https://');
-      const res = await fetch(`${base}/group/fetchAllGroups/${inst.instance_name}?getParticipants=false`, {
-        headers: { apikey: inst.api_key },
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
+      // Pelo proxy: a chave da Evolution nao sai mais do servidor.
+      const r = await chamarEvolution<unknown>('listar_grupos', inst.id);
+      if (!r.ok) throw new Error(r.erro ?? `Evolution respondeu ${r.status}`);
+      const data = r.dados;
       const groups: WppGroup[] = (Array.isArray(data) ? data : []).map((g: { id: string; subject: string; size?: number }) => ({
         id: g.id, subject: g.subject ?? g.id, size: g.size ?? 0, selected: false,
       }));
@@ -950,17 +969,17 @@ function NovaCampanhaModal({ onClose, onCreated }: { onClose: () => void; onCrea
     const inst = evoInstances.find(e => e.id === selectedEvoId);
     if (!inst) return;
     setLoadingPartic(true);
-    const base = inst.api_url.replace(/\/$/, '').replace(/^(?!https?:\/\/)/i, 'https://');
     const allLeads: LeadPreview[] = [];
     const seen = new Set<string>();
     for (const grp of selected) {
       try {
-        const res = await fetch(`${base}/group/participants/${inst.instance_name}?groupJid=${encodeURIComponent(grp.id)}`, {
-          headers: { apikey: inst.api_key },
-        });
-        if (!res.ok) continue;
-        const data = await res.json();
-        const participants: { id: string; pushName?: string }[] = Array.isArray(data) ? data : (data?.participants ?? []);
+        const r = await chamarEvolution<{ participants?: { id: string; pushName?: string }[] } | { id: string; pushName?: string }[]>(
+          'participantes_grupo', inst.id, { params: { grupo: grp.id } },
+        );
+        if (!r.ok) continue;
+        const data = r.dados as { participants?: { id: string; pushName?: string }[] } | { id: string; pushName?: string }[];
+        const participants: { id: string; pushName?: string }[] =
+          Array.isArray(data) ? data : (data?.participants ?? []);
         for (const p of participants) {
           const phone = (p.id ?? '').replace('@s.whatsapp.net', '').replace(/\D/g, '');
           if (!phone || seen.has(phone)) continue;
@@ -2421,9 +2440,16 @@ function BoasVindasTab() {
 
   const load = useCallback(async () => {
     const seteDiasAtras = new Date(Date.now() - 7 * 86400000).toISOString();
-    const [{ data: cfgs }, { data: logs }] = await Promise.all([
+    const [{ data: cfgs }, logs] = await Promise.all([
       supabase.from('boas_vindas_config').select('*').order('funnel_name', { ascending: false }),
-      supabase.from('boas_vindas_logs').select('funnel_name, wpp_status, email_status, respondeu_em').gte('sent_at', seteDiasAtras),
+      // 4.594 logs no total: sem paginar, as estatisticas de boas-vindas saiam de 1.000.
+      fetchAll<{ funnel_name: string; wpp_status: string; email_status: string; respondeu_em: string | null }>(
+        (de, ate) => supabase.from('boas_vindas_logs')
+          .select('funnel_name, wpp_status, email_status, respondeu_em')
+          .gte('sent_at', seteDiasAtras)
+          .order('sent_at', { ascending: false })
+          .order('id')
+          .range(de, ate) as never),
     ]);
     setConfigs((cfgs ?? []) as BoasVindasConfig[]);
     const map = new Map<string, BVStats>();
@@ -2877,11 +2903,23 @@ function BoasVindasDetalheView({ funnelName, onBack }: { funnelName: string; onB
   const load = useCallback(async () => {
     setLoading(true);
 
-    const { data: logsData } = await supabase
+    type BVLog = {
+      whatsapp: string | null;
+      wpp_status: BVLeadRow['wpp_status'];
+      email_status: BVLeadRow['email_status'];
+      wpp_error: string | null;
+      email_error: string | null;
+      sent_at: string | null;
+      respondeu_em: string | null;
+      ultima_resposta: string | null;
+    };
+    const logsData = await fetchAll<BVLog>((de, ate) => supabase
       .from('boas_vindas_logs')
       .select('whatsapp, wpp_status, email_status, wpp_error, email_error, sent_at, respondeu_em, ultima_resposta')
       .eq('funnel_name', funnelName)
-      .order('sent_at', { ascending: false });
+      .order('sent_at', { ascending: false })
+      .order('id')
+      .range(de, ate) as never);
 
     // Mapa por sufixo de telefone -> log mais recente (a lista já vem ordenada
     // por sent_at desc, então o primeiro achado pra cada sufixo é o mais novo).

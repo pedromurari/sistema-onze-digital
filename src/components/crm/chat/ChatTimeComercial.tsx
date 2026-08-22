@@ -61,7 +61,9 @@ function useNumerosDosVendedores() {
   const carregar = useCallback(async () => {
     const { data } = await supabase
       .from('lead_aquecimento_vendedores' as any)
-      .select('usuario_id, evolution_config:evolution_config_id(id, instance_name, api_url, api_key, ativo)');
+      // `api_key` sai do select: a leitura dessa coluna foi revogada e o envio passa
+      // pela edge function `evo-proxy`.
+      .select('usuario_id, evolution_config:evolution_config_id(id, instance_name, api_url, ativo)');
 
     const lista: VendedorNumero[] = [];
     for (const row of ((data ?? []) as any[])) {
@@ -232,7 +234,7 @@ function ConfigEvolutionAdmin({ vendedores, numeros, onMudou }: {
   const doTime = vendedores.map(nome => ({ nome, conta: users.find(u => u.nome === nome) }));
 
   useEffect(() => {
-    supabase.from('evolution_config').select('id, instance_name, api_url, api_key, ativo').order('instance_name')
+    supabase.from('evolution_config').select('id, instance_name, api_url, ativo').order('instance_name')
       .then(({ data }) => setInstancias((data ?? []) as EvolutionInstance[]));
   }, []);
 

@@ -56,22 +56,42 @@ serve(async (req) => {
       // apply mode
       foto_url?:      string;
       grupo_jid?:     string;
-      api_url?:       string;
-      api_key?:       string;
-      instance_name?: string;
+      // A chave da Evolution NAO vem do cliente: recebemos o id da instancia e
+      // buscamos a chave aqui, com service_role. Antes o navegador precisava ler
+      // `evolution_config.api_key` para montar esta chamada — e hoje o banco nem
+      // deixa mais: a leitura daquela coluna foi revogada para `authenticated`.
+      //
+      // Nao existe campo `api_key` neste contrato de proposito. Aceitar uma chave
+      // vinda de fora reabriria o buraco que acabamos de fechar.
+      instancia_id?:  string;
     };
 
     const mode = body.mode ?? 'generate';
 
     // ── Modo APPLY: aplica foto existente no grupo ─────────────────────────────
     if (mode === 'apply') {
-      const { foto_url, grupo_jid, api_url, api_key, instance_name } = body;
-      if (!foto_url || !grupo_jid || !api_url || !api_key || !instance_name) {
-        return new Response(JSON.stringify({ error: 'Campos obrigatórios: foto_url, grupo_jid, api_url, api_key, instance_name' }), {
+      const { foto_url, grupo_jid, instancia_id } = body;
+
+      if (!foto_url || !grupo_jid || !instancia_id) {
+        return new Response(JSON.stringify({ error: 'Faltou foto_url, grupo_jid ou instancia_id.' }), {
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      await applyToGroup(api_url, api_key, instance_name, grupo_jid, foto_url);
+
+      // A chave e lida aqui, com service_role, e nao sai daqui.
+      const { data: inst } = await supabase
+        .from('evolution_config')
+        .select('api_url, api_key, instance_name')
+        .eq('id', instancia_id)
+        .maybeSingle();
+
+      if (!inst) {
+        return new Response(JSON.stringify({ error: 'Instância não encontrada.' }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      await applyToGroup(inst.api_url, inst.api_key, inst.instance_name, grupo_jid, foto_url);
       return new Response(JSON.stringify({ ok: true }), {
         status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

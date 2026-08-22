@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import { chamarEvolution } from '@/lib/evolution';
 import {
   Plus, Trash2, ChevronLeft, ChevronRight, Check, Loader2,
   AlertTriangle, Calendar, Users, MessageSquare, Zap, Eye, Settings,
@@ -30,7 +31,9 @@ interface Turma {
   valor_mensalidade: number | null; dia_vencimento: number | null; total_mensalidades: number | null;
 }
 interface Responsavel { id: string; nome: string; }
-interface EvoInstance { instance_name: string; api_url: string; api_key: string; }
+// Sem `api_key`: a chave nao sai mais do servidor. Chamadas a Evolution passam pela
+// edge function `evo-proxy`, que confere a permissao e injeta a chave.
+interface EvoInstance { id: string; instance_name: string; api_url: string; }
 
 interface LancamentoWizardProps {
   open: boolean;
@@ -525,18 +528,13 @@ function Step3({ config, setConfig, evoInstances, existingId }: {
     if (!evo) { toast.error('Nenhuma instância Evolution ativa'); return; }
     setFetchingGroups(p => ({ ...p, [cardIdx]: true }));
     try {
-      const rawBase = evo.api_url.replace(/\/$/, '');
-      const base = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
-      const url = `${base}/group/fetchAllGroups/${evo.instance_name}?getParticipants=false`;
-      const res = await fetch(url, { headers: { apikey: evo.api_key } });
-
-      if (!res.ok) {
-        const errText = await res.text().catch(() => '');
-        toast.error(`API retornou ${res.status}: ${errText.slice(0, 120)}`);
+      const r = await chamarEvolution<unknown>('listar_grupos', evo.id);
+      if (!r.ok) {
+        toast.error(r.erro ?? `Evolution retornou ${r.status}`);
         return;
       }
 
-      const rawText = await res.text();
+      const rawText = JSON.stringify(r.dados ?? null);
       let data: unknown;
       try { data = JSON.parse(rawText); } catch { toast.error('Resposta inválida da API'); return; }
 
@@ -603,13 +601,11 @@ function Step3({ config, setConfig, evoInstances, existingId }: {
       : evoInstances[0];
     if (!evo) return;
     try {
-      const rawBase = evo.api_url.replace(/\/$/, '');
-      const base = /^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`;
-      const res = await fetch(`${base}/group/inviteCode/${evo.instance_name}?groupJid=${encodeURIComponent(jid)}`, {
-        headers: { apikey: evo.api_key },
-      });
-      if (!res.ok) return;
-      const data = await res.json();
+      const r = await chamarEvolution<{ inviteCode?: string; code?: string; invite_code?: string }>(
+        'link_convite', evo.id, { params: { grupo: jid } },
+      );
+      if (!r.ok) return;
+      const data = r.dados as { inviteCode?: string; code?: string; invite_code?: string };
       const code = data?.inviteCode || data?.code || data?.invite_code;
       if (code) {
         updateGrupo(cardIdx, 'link', `https://chat.whatsapp.com/${code}`);
@@ -977,9 +973,8 @@ function Step3({ config, setConfig, evoInstances, existingId }: {
                                 tipo: config.tipo,
                                 foto_url: fotoGeradaUrl[i],
                                 grupo_jid: grupo.jid,
-                                api_url: evo.api_url,
-                                api_key: evo.api_key,
-                                instance_name: evo.instance_name,
+                                // Manda o id: quem busca a chave e a propria edge function.
+                                instancia_id: evo.id,
                               }),
                             });
                             const data = await res.json();
@@ -1706,7 +1701,7 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
     Promise.all([
       supabase.from('turmas').select('id, nome, produto, valor_mensalidade, dia_vencimento, total_mensalidades').order('nome'),
       supabase.from('responsaveis').select('id, nome').order('nome'),
-      supabase.from('evolution_config').select('instance_name, api_url, api_key').eq('ativo', true).order('prioridade'),
+      supabase.from('evolution_config').select('id, instance_name, api_url').eq('ativo', true).order('prioridade'),
     ]).then(([t, r, e]) => {
       setTurmas((t.data as Turma[]) || []);
       setResponsaveis((r.data as Responsavel[]) || []);
