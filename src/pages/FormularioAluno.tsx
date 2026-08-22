@@ -131,11 +131,10 @@ export default function FormularioAluno() {
   useEffect(() => {
     if (!token) { setLoading(false); setNotFound(true); return; }
     (async () => {
-      const { data, error } = await supabase
-        .from('alunos')
-        .select('id, nome, whatsapp, email, produto, status, autentique_link_assinatura, forms_respondido')
-        .eq('contrato_token', token)
-        .maybeSingle();
+      // Leitura por RPC SECURITY DEFINER — ver migration 20260821150000.
+      const { data: linhas, error } = await (supabase as any)
+        .rpc('portal_contrato_por_token', { p_token: token });
+      const data = linhas?.[0] ?? null;
 
       if (error || !data) { setLoading(false); setNotFound(true); return; }
 

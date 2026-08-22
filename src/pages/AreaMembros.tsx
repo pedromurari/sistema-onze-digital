@@ -98,17 +98,12 @@ export default function AreaMembros() {
 
     const load = async () => {
       // Busca aluno pelo token + JOIN com turmas
-      const { data, error } = await supabase
-        .from('alunos')
-        .select(`
-          id, nome, email, whatsapp, status, produto,
-          data_inicio, data_fim, dia_vencimento,
-          contrato_assinado, autentique_link_assinatura,
-          link_grupo_whatsapp,
-          turmas ( nome )
-        `)
-        .eq('token_acesso', token)
-        .single();
+      // Portal publico: o token e a propria credencial. A leitura passa pela RPC
+      // `portal_aluno_por_token` (SECURITY DEFINER) porque a tabela `alunos` deixou
+      // de ser legivel com a chave anonima — ver migration 20260821150000.
+      const { data: linhas, error } = await (supabase as any)
+        .rpc('portal_aluno_por_token', { p_token: token });
+      const data = linhas?.[0] ?? null;
 
       if (error || !data) {
         setErro('Link não encontrado ou expirado. Fale com a escola para receber um novo link.');
@@ -129,16 +124,14 @@ export default function AreaMembros() {
         contrato_assinado:          (data as any).contrato_assinado,
         autentique_link_assinatura: (data as any).autentique_link_assinatura,
         link_grupo_whatsapp:        (data as any).link_grupo_whatsapp,
-        turma_nome:                 (data as any).turmas?.nome || null,
+        turma_nome:                 (data as any).turma_nome || null,
       });
 
-      // Busca últimos 6 pagamentos
-      const { data: pags } = await supabase
-        .from('pagamentos')
-        .select('id, data_vencimento, valor, status')
-        .eq('aluno_id', data.id)
-        .order('data_vencimento', { ascending: false })
-        .limit(6);
+      // Últimos 6 pagamentos, tambem pelo token. Antes isto lia `pagamentos`
+      // direto com a chave anonima e voltava sempre vazio (nunca houve policy
+      // anon nessa tabela) — a RPC corrige o bug alem de fechar o acesso.
+      const { data: pags } = await (supabase as any)
+        .rpc('portal_pagamentos_por_token', { p_token: token });
 
       if (pags) setPagamentos(pags as Pagamento[]);
       setLoading(false);

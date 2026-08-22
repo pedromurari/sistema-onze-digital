@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Kanban, Settings, UserCog,
   Rocket, BarChart3, ChevronDown,
   ChevronLeft, ChevronRight, Plus, Brain, Scale, Menu,
-  GripVertical, Pencil, Check, MessageSquare, MessageCircle, TrendingUp, GitBranch, CalendarDays, ShoppingBag, Radio, Image, Handshake, Bot, Video, Flame, Users,
+  GripVertical, Pencil, Check, MessageSquare, MessageCircle, TrendingUp, GitBranch, CalendarDays, ShoppingBag, Radio, Image, Handshake, Bot, Video, Flame, Users, Contact,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,6 +38,7 @@ const BASE_MENU: MenuItem[] = [
   { key: 'operacoes_calendario_geral', label: 'Calendário',          icon: CalendarDays },
   // CRM
   { key: 'pipeline',                   label: 'Leads Diretos',       icon: Kanban },
+  { key: 'pessoas',                    label: 'Pessoas',             icon: Contact },
   // CRM Time Comercial
   { key: 'time_comercial',             label: 'Time Comercial',      icon: Users },
   // Vendas & Parcerias
@@ -101,6 +102,8 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
   const { user } = useAuth();
   const isAdmin = user?.tipo === 'admin';
   const permissions = user?.permissions ?? getDefaultPermissions(user?.tipo);
+  // A matriz do banco e a autoridade; `permissions` e so a projecao dela (sprint 1.2).
+  const matrix = user?.permissionMatrix;
 
   const SECTION_BEFORE: Record<string, string> = {
     dashboard:          'Início',
@@ -265,7 +268,7 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
 
   const renderMobileMenuItems = () => MENU.map((item) => {
     if ('adminOnly' in item && item.adminOnly && !isAdmin) return null;
-    if ('key' in item && !canAccessView(item.key, permissions, Boolean(isAdmin))) return null;
+    if ('key' in item && !canAccessView(item.key, permissions, Boolean(isAdmin), matrix)) return null;
 
     if ('group' in item) {
       let renderedChildren = item.children;
@@ -400,7 +403,7 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
 
         {MENU.map((item, idx) => {
           if ('adminOnly' in item && item.adminOnly && !isAdmin) return null;
-          if ('key' in item && !canAccessView(item.key, permissions, Boolean(isAdmin))) return null;
+          if ('key' in item && !canAccessView(item.key, permissions, Boolean(isAdmin), matrix)) return null;
 
           const itemId = getItemId(item);
           const isDragOver = dragOverId === itemId;
@@ -610,6 +613,8 @@ export function MobileNav({ currentView, onViewChange, onOpenMore }: MobileNavPr
   const { user } = useAuth();
   const isAdmin = user?.tipo === 'admin';
   const permissions = user?.permissions ?? getDefaultPermissions(user?.tipo);
+  // A matriz do banco e a autoridade; `permissions` e so a projecao dela (sprint 1.2).
+  const matrix = user?.permissionMatrix;
 
   // Atalhos rápidos — o restante das páginas fica disponível no menu "Mais" (todas as categorias do sidebar).
   const quickItems: { key: View; label: string; icon: React.ElementType }[] = [
@@ -619,7 +624,7 @@ export function MobileNav({ currentView, onViewChange, onOpenMore }: MobileNavPr
     { key: 'operacoes_calendario_geral', label: 'Calendário', icon: CalendarDays },
   ];
 
-  const visibleItems = quickItems.filter(item => canAccessView(item.key, permissions, Boolean(isAdmin)));
+  const visibleItems = quickItems.filter(item => canAccessView(item.key, permissions, Boolean(isAdmin), matrix));
 
   return (
     <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border z-50 safe-area-pb">

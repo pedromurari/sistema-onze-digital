@@ -266,11 +266,13 @@ export function TeamManagement() {
                         <SelectTrigger className="bg-card"><SelectValue /></SelectTrigger>
                         <SelectContent className="bg-card border-border z-50">
                           <SelectItem value="vendedor">{getRoleLabel('vendedor', nomenclaturas)}</SelectItem>
+                          <SelectItem value="gestor">Gestor(a)</SelectItem>
+                          <SelectItem value="investidor">Investidor(a)</SelectItem>
                           <SelectItem value="admin">Administrador</SelectItem>
                           <SelectItem value="parceiro">Parceiro(a)</SelectItem>
                         </SelectContent>
                       </Select>
-                      <p className="text-xs text-muted-foreground">Define o conjunto de permissões padrão e o comportamento de login (ex: Parceiro cai direto no Portal da Parceira).</p>
+                      <p className="text-xs text-muted-foreground">Define o conjunto de permissões padrão e o comportamento de login. Gestor(a) opera o negócio inteiro mas não mexe em Configurações, Equipe, Produtos nem Parceiros. Investidor(a) vê o Financeiro apenas das turmas liberadas abaixo. Parceiro(a) não entra no CRM — cai direto no Portal da Parceira.</p>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="cargo">Cargo / título exibido</Label>

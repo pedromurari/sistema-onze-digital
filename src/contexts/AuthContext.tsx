@@ -1,9 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
-import { AccessPermissions, getDefaultPermissions, normalizePermissionsRow, permissionsToRow } from '@/lib/access-control';
+import {
+  AccessPermissions, PermissionMatrix, PermissionRow,
+  getDefaultPermissions, normalizePermissionsRow, permissionsToRow,
+  matrixFromRows, permissionsFromMatrix, permissionsToToggles,
+} from '@/lib/access-control';
 
-export type UserRole = 'admin' | 'vendedor' | 'professora' | 'parceiro';
+export type UserRole = 'admin' | 'gestor' | 'vendedor' | 'professora' | 'parceiro' | 'investidor';
 
 export interface Profile {
   id: string;
@@ -28,6 +32,8 @@ export interface AppUser {
   ativo: boolean;
   criadoEm: string;
   permissions: AccessPermissions;
+  /** Matriz crua vinda do banco (sprint 1.2). Ausente so se a RPC falhar. */
+  permissionMatrix?: PermissionMatrix;
 }
 
 interface AuthContextType {
@@ -82,10 +88,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         { data: profile,       error: profileError     },
         { data: roleData,      error: roleError        },
         { data: permissionsRow, error: permissionsError },
+        { data: matrizRows,    error: matrizError      },
       ] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', authUser.id).maybeSingle(),
         supabase.from('user_roles').select('role').eq('user_id', authUser.id).maybeSingle(),
         (supabase as any).from('user_access_permissions').select('*').eq('user_id', authUser.id).maybeSingle(),
+        // Fonte da verdade a partir da sprint 1.2. A linha de `user_access_permissions`
+        // acima segue sendo lida so pelas duas listas de escopo por registro
+        // (allowed_lancamento_ids / allowed_financeiro_turma_ids), que a matriz ainda
+        // nao cobre — isso e da sprint 1.3.
+        (supabase as any).rpc('minhas_permissoes'),
       ]);
 
       if (profileError) { console.error('Error fetching profile:', profileError); return null; }
@@ -93,6 +105,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!profile.ativo) { await supabase.auth.signOut(); return null; }
       if (roleError) console.error('Error fetching role:', roleError);
       if (permissionsError && permissionsError.code !== '42P01') console.error('Error fetching permissions:', permissionsError);
+      if (matrizError) console.error('Error fetching permission matrix:', matrizError);
+
+      // Se a matriz nao vier (RPC ausente ou erro), cai no modelo antigo em vez de
+      // trancar a pessoa pra fora — mas o erro acima fica visivel no console.
+      const matriz    = matrixFromRows(matrizRows as PermissionRow[] | null);
+      const temMatriz = Object.keys(matriz).length > 0;
 
       return {
         id:          profile.id,
@@ -104,7 +122,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         cargo:       profile.cargo ?? null,
         ativo:       profile.ativo,
         criadoEm:    profile.created_at,
-        permissions: normalizePermissionsRow(permissionsRow, roleData?.role),
+        permissionMatrix: temMatriz ? matriz : undefined,
+        permissions: temMatriz
+          ? permissionsFromMatrix(matriz, roleData?.role, {
+              allowedLancamentoIds:      permissionsRow?.allowed_lancamento_ids ?? undefined,
+              allowedFinanceiroTurmaIds: permissionsRow?.allowed_financeiro_turma_ids ?? undefined,
+            })
+          : normalizePermissionsRow(permissionsRow, roleData?.role),
       };
     } catch (error) {
       console.error('Error in getCurrentUser:', error);
@@ -123,19 +147,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         { data: profiles, error: profilesError },
         { data: roles,    error: rolesError    },
         { data: permRows, error: permErr       },
+        { data: matrizRows, error: matrizErr    },
       ] = await Promise.all([
         supabase.from('profiles').select('*'),
         supabase.from('user_roles').select('*'),
         (supabase as any).from('user_access_permissions').select('*'),
+        // So admin recebe linhas; para os demais volta vazio e cada pessoa cai no
+        // padrao do proprio papel — que e o que a tela de equipe precisa mesmo.
+        (supabase as any).rpc('permissoes_efetivas'),
       ]);
 
       if (profilesError) { console.error('Error fetching profiles:', profilesError); return; }
       if (rolesError)    { console.error('Error fetching roles:', rolesError); return; }
       if (permErr && permErr.code !== '42P01') console.error('Error fetching permissions:', permErr);
+      if (matrizErr) console.error('Error fetching permission matrix:', matrizErr);
+
+      const matrizPorUsuario = new Map<string, PermissionRow[]>();
+      for (const linha of (matrizRows || []) as (PermissionRow & { user_id: string })[]) {
+        const lista = matrizPorUsuario.get(linha.user_id);
+        if (lista) lista.push(linha); else matrizPorUsuario.set(linha.user_id, [linha]);
+      }
 
       const appUsers: AppUser[] = (profiles || []).map((profile: Profile) => {
         const userRole = (roles    || []).find((r: { user_id: string; role: UserRole }) => r.user_id === profile.id);
         const permRow  = (permRows || []).find((p: { user_id: string }) => p.user_id === profile.id);
+        const matriz    = matrixFromRows(matrizPorUsuario.get(profile.id));
+        const temMatriz = Object.keys(matriz).length > 0;
         return {
           id:          profile.id,
           nome:        profile.nome,
@@ -146,7 +183,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           cargo:       profile.cargo ?? null,
           ativo:       profile.ativo,
           criadoEm:    profile.created_at,
-          permissions: normalizePermissionsRow(permRow, userRole?.role),
+          permissionMatrix: temMatriz ? matriz : undefined,
+          permissions: temMatriz
+            ? permissionsFromMatrix(matriz, userRole?.role, {
+                allowedLancamentoIds:      permRow?.allowed_lancamento_ids ?? undefined,
+                allowedFinanceiroTurmaIds: permRow?.allowed_financeiro_turma_ids ?? undefined,
+              })
+            : normalizePermissionsRow(permRow, userRole?.role),
         };
       });
 
@@ -259,13 +302,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: functionErrorMessage || `Erro ao criar usuario. Status ${createResponse.status}.` };
       }
 
-      const defaultPermissions = getDefaultPermissions(userRole);
+      // Nao grava mais as 20 colunas: quem entra ja herda o padrao do proprio papel
+      // via `role_permissoes` (sprint 1.2). A linha aqui existe so pelas duas listas de
+      // escopo por registro, que a matriz ainda nao cobre — sprint 1.3.
       const { error: permissionsError } = await (supabase as any)
         .from('user_access_permissions')
-        .upsert({ user_id: createdUserId, ...permissionsToRow(defaultPermissions) }, { onConflict: 'user_id' });
+        .upsert({
+          user_id:                      createdUserId,
+          allowed_lancamento_ids:       [],
+          allowed_financeiro_turma_ids: [],
+        }, { onConflict: 'user_id' });
 
       if (permissionsError && permissionsError.code !== '42P01') {
-        console.error('Permissions creation error:', permissionsError);
+        console.error('Scope row creation error:', permissionsError);
         return { success: false, error: 'Erro ao definir permissões do usuário.' };
       }
 
@@ -273,7 +322,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       return {
         success: true,
-        user: { id: createdUserId, nome: userData.nome, email, tipo: userRole, cor: userData.cor, ativo: true, criadoEm: new Date().toISOString(), permissions: defaultPermissions },
+        user: { id: createdUserId, nome: userData.nome, email, tipo: userRole, cor: userData.cor, ativo: true, criadoEm: new Date().toISOString(), permissions: getDefaultPermissions(userRole) },
       };
     } catch (error) {
       console.error('AddUser exception:', error);
@@ -314,11 +363,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updateUserPermissions = async (id: string, permissions: AccessPermissions): Promise<{ success: boolean; error?: string }> => {
     try {
+      // Cada toggle vira uma chamada de `definir_permissao`, que grava override so
+      // quando a escolha diverge do padrao do papel — a tabela de excecao fica limpa,
+      // e mudar o padrao de um papel passa a valer pra quem nunca foi customizado.
+      const resultados = await Promise.all(
+        permissionsToToggles(permissions).map(t =>
+          (supabase as any).rpc('definir_permissao', {
+            p_user_id:   id,
+            p_recurso:   t.recurso,
+            p_acao:      t.acao,
+            p_permitido: t.permitido,
+          })),
+      );
+      const falha = resultados.find((r: { error?: { message: string } }) => r.error)?.error;
+      if (falha) { console.error('Permissions update error:', falha); return { success: false, error: falha.message }; }
+
+      // Escopo por registro ainda mora na tabela antiga ate a sprint 1.3.
       const { error } = await (supabase as any)
         .from('user_access_permissions')
-        .upsert({ user_id: id, ...permissionsToRow(permissions) }, { onConflict: 'user_id' });
+        .upsert({
+          user_id:                      id,
+          allowed_lancamento_ids:       permissions.allowedLancamentoIds,
+          allowed_financeiro_turma_ids: permissions.allowedFinanceiroTurmaIds,
+        }, { onConflict: 'user_id' });
 
-      if (error) { console.error('Permissions update error:', error); return { success: false, error: error.message }; }
+      if (error) { console.error('Scope update error:', error); return { success: false, error: error.message }; }
 
       const updatedUsers = users.map(u => u.id === id ? { ...u, permissions } : u);
       setUsers(updatedUsers);

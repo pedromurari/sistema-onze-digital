@@ -14,6 +14,8 @@ export function saveNomenclaturas(n: Record<string, string>) {
 export function getRoleLabel(tipo: UserRole | string, nomen: Record<string, string>): string {
   if (nomen[tipo]) return nomen[tipo];
   if (tipo === 'admin') return 'Administrador';
+  if (tipo === 'gestor') return 'Gestor(a)';
+  if (tipo === 'investidor') return 'Investidor(a)';
   if (tipo === 'professora') return 'Professora';
   if (tipo === 'parceiro') return 'Parceiro(a)';
   return 'Vendedor';

@@ -54,11 +54,11 @@ export default function ContratoPublico() {
   useEffect(() => {
     if (!token) { setLoading(false); setNotFound(true); return; }
     (async () => {
-      const { data, error } = await supabase
-        .from('alunos')
-        .select('id, nome, whatsapp, email, cpf, data_nascimento, endereco, cep, cidade_estado, forms_respondido, contrato_enviado, autentique_link_assinatura')
-        .eq('contrato_token', token)
-        .maybeSingle();
+      // Leitura por RPC SECURITY DEFINER — `alunos` nao e mais legivel com a
+      // chave anonima (migration 20260821150000). O token continua sendo a credencial.
+      const { data: linhas, error } = await (supabase as any)
+        .rpc('portal_contrato_por_token', { p_token: token });
+      const data = linhas?.[0] ?? null;
 
       if (error || !data) { setLoading(false); setNotFound(true); return; }
 

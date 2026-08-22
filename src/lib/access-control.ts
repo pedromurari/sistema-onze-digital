@@ -21,13 +21,111 @@ export interface AccessPermissions {
   canViewFranquiaPsi: boolean;
 }
 
+// --- Matriz de acesso vinda do banco ---------------------------------------
+// A partir da sprint 1.2 quem manda e a matriz `app_recursos x role_permissoes x
+// user_permissao_override`, lida pelas RPC `minhas_permissoes()` / `permissoes_efetivas()`.
+// `AccessPermissions` continua existindo como projecao dela, pra nao reescrever os
+// consumidores de uma vez -- mas nao e mais a fonte da verdade.
+
+export type PermissionAction = 'ver' | 'editar' | 'excluir' | 'ver_todos';
+
+export type PermissionMatrix = Record<string, Partial<Record<PermissionAction, boolean>>>;
+
+export interface PermissionRow {
+  recurso: string;
+  acao: string;
+  permitido: boolean;
+}
+
+export function matrixFromRows(rows: PermissionRow[] | null | undefined): PermissionMatrix {
+  const matrix: PermissionMatrix = {};
+  for (const row of rows ?? []) {
+    (matrix[row.recurso] ??= {})[row.acao as PermissionAction] = row.permitido;
+  }
+  return matrix;
+}
+
+const podeVer = (matrix: PermissionMatrix, recurso: string, fallback: boolean) =>
+  matrix[recurso]?.ver ?? fallback;
+
+/**
+ * Projeta a matriz no formato antigo. As duas listas de escopo por registro
+ * (allowed*Ids) nao vivem na matriz -- continuam em `user_access_permissions` ate a
+ * sprint 1.3 tratar escopo por dono -- entao vem por fora.
+ */
+export function permissionsFromMatrix(
+  matrix: PermissionMatrix,
+  role?: string,
+  escopo?: { allowedLancamentoIds?: string[]; allowedFinanceiroTurmaIds?: string[] },
+): AccessPermissions {
+  const d = getDefaultPermissions(role);
+  return {
+    canViewDashboard:            podeVer(matrix, 'dashboard',      d.canViewDashboard),
+    canViewPipeline:             podeVer(matrix, 'pipeline',       d.canViewPipeline),
+    canViewLancamentos:          podeVer(matrix, 'lancamentos',    d.canViewLancamentos),
+    canViewAllLancamentos:       matrix['lancamentos']?.ver_todos ?? d.canViewAllLancamentos,
+    allowedLancamentoIds:        escopo?.allowedLancamentoIds     ?? d.allowedLancamentoIds,
+    canViewNpa:                  podeVer(matrix, 'npa',            d.canViewNpa),
+    canViewAulaSecreta:          podeVer(matrix, 'aula_secreta',   d.canViewAulaSecreta),
+    canViewFinanceiro:           podeVer(matrix, 'financeiro',     d.canViewFinanceiro),
+    canViewFinanceiroCfo:        podeVer(matrix, 'financeiro_cfo', d.canViewFinanceiroCfo),
+    canViewAllFinanceiroTurmas:  matrix['financeiro']?.ver_todos  ?? d.canViewAllFinanceiroTurmas,
+    allowedFinanceiroTurmaIds:   escopo?.allowedFinanceiroTurmaIds ?? d.allowedFinanceiroTurmaIds,
+    canViewBalanco:              podeVer(matrix, 'balanco',        d.canViewBalanco),
+    canViewCobranca:             podeVer(matrix, 'cobranca',       d.canViewCobranca),
+    canViewOperacoes:            podeVer(matrix, 'operacoes',      d.canViewOperacoes),
+    canViewMapaMental:           podeVer(matrix, 'mapa_mental',    d.canViewMapaMental),
+    canViewRodrygo:              podeVer(matrix, 'rodrygo',        d.canViewRodrygo),
+    canViewTeam:                 podeVer(matrix, 'team',           d.canViewTeam),
+    canViewSettings:             podeVer(matrix, 'settings',       d.canViewSettings),
+    canViewTimeComercial:        podeVer(matrix, 'time_comercial', d.canViewTimeComercial),
+    canViewFranquiaPsi:          podeVer(matrix, 'franquia_psi',   d.canViewFranquiaPsi),
+  };
+}
+
+/** Converte o formato antigo em chamadas de `definir_permissao` (recurso, acao, valor). */
+export function permissionsToToggles(permissions: AccessPermissions): PermissionRow[] {
+  return [
+    { recurso: 'dashboard',        acao: 'ver',       permitido: permissions.canViewDashboard },
+    { recurso: 'pipeline',         acao: 'ver',       permitido: permissions.canViewPipeline },
+    { recurso: 'lancamentos',      acao: 'ver',       permitido: permissions.canViewLancamentos },
+    { recurso: 'lancamentos',      acao: 'ver_todos', permitido: permissions.canViewAllLancamentos },
+    { recurso: 'npa',              acao: 'ver',       permitido: permissions.canViewNpa },
+    { recurso: 'aula_secreta',     acao: 'ver',       permitido: permissions.canViewAulaSecreta },
+    { recurso: 'financeiro',       acao: 'ver',       permitido: permissions.canViewFinanceiro },
+    { recurso: 'financeiro',       acao: 'ver_todos', permitido: permissions.canViewAllFinanceiroTurmas },
+    { recurso: 'financeiro_cfo',   acao: 'ver',       permitido: permissions.canViewFinanceiroCfo },
+    { recurso: 'balanco',          acao: 'ver',       permitido: permissions.canViewBalanco },
+    { recurso: 'cobranca',         acao: 'ver',       permitido: permissions.canViewCobranca },
+    // as tres telas abaixo seguem a permissao de Cobranca, como em canAccessView
+    { recurso: 'funil_lancamento', acao: 'ver',       permitido: permissions.canViewCobranca },
+    { recurso: 'disparos_monitor', acao: 'ver',       permitido: permissions.canViewCobranca },
+    { recurso: 'chat_conversas',   acao: 'ver',       permitido: permissions.canViewCobranca },
+    { recurso: 'operacoes',        acao: 'ver',       permitido: permissions.canViewOperacoes },
+    { recurso: 'mapa_mental',      acao: 'ver',       permitido: permissions.canViewMapaMental },
+    { recurso: 'rodrygo',          acao: 'ver',       permitido: permissions.canViewRodrygo },
+    { recurso: 'team',             acao: 'ver',       permitido: permissions.canViewTeam },
+    { recurso: 'settings',         acao: 'ver',       permitido: permissions.canViewSettings },
+    { recurso: 'time_comercial',   acao: 'ver',       permitido: permissions.canViewTimeComercial },
+    { recurso: 'franquia_psi',     acao: 'ver',       permitido: permissions.canViewFranquiaPsi },
+  ];
+}
+
+/** Uma tela pode ser varias views (Operacoes tem tres). Aqui elas viram um recurso so. */
+const RECURSO_POR_VIEW: Record<string, string> = {
+  npa_overview:                  'npa',
+  operacoes_tarefas:             'operacoes',
+  operacoes_calendario_geral:    'operacoes',
+  operacoes_calendario_conteudo: 'operacoes',
+};
+
 export type AppView =
   | 'dashboard' | 'pipeline' | 'npa_overview' | 'financeiro' | 'financeiro_cfo' | 'balanco' | 'rodrygo'
   | 'lancamentos_30' | 'lancamentos_31' | 'lancamentos_32'
   | 'team' | 'settings' | 'cobranca' | 'funil_lancamento' | 'disparos_monitor' | 'chat_conversas'
   | 'operacoes_tarefas' | 'operacoes_calendario_geral' | 'operacoes_calendario_conteudo'
   | 'mapa_mental' | 'produtos' | 'franquia_psi' | 'posts' | 'parceiros' | 'equipe_11ds' | 'reels_idm'
-  | 'aquecimento_chips' | 'time_comercial';
+  | 'aquecimento_chips' | 'time_comercial' | 'pessoas';
 
 export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
   canViewDashboard: true,
@@ -132,7 +230,12 @@ export function canAccessFinanceiroTurma(permissions: AccessPermissions, turmaId
   );
 }
 
-export function canAccessView(view: string, permissions: AccessPermissions, isAdmin: boolean) {
+export function canAccessView(
+  view: string,
+  permissions: AccessPermissions,
+  isAdmin: boolean,
+  matrix?: PermissionMatrix,
+) {
   if (isAdmin) return true;
 
   if (view.startsWith('lancamentos_')) {
@@ -143,6 +246,14 @@ export function canAccessView(view: string, permissions: AccessPermissions, isAd
   if (view.startsWith('npa_')) return permissions.canViewNpa;
   if (view.startsWith('aula_secreta_')) return permissions.canViewAulaSecreta;
   if (view.startsWith('financeiro_aluno_')) return permissions.canViewFinanceiro;
+
+  // Com a matriz carregada, o banco decide -- inclusive para as telas que antes eram
+  // `false` fixo no mapa abaixo (produtos, posts, parceiros, equipe_11ds, ...), que agora
+  // sao recursos de verdade e podem ser liberadas para um papel sem virar admin.
+  if (matrix) {
+    const recurso = RECURSO_POR_VIEW[view] ?? view;
+    return matrix[recurso]?.ver ?? false;
+  }
 
   const permissionByView: Partial<Record<AppView, boolean>> = {
     dashboard: permissions.canViewDashboard,
@@ -181,5 +292,6 @@ export function firstAllowedView(permissions: AccessPermissions, isAdmin: boolea
   if (permissions.canViewLancamentos && allowedLaunchIds.length > 0) return `lancamentos_${allowedLaunchIds[0]}` as AppView;
   if (permissions.canViewNpa) return 'npa_overview';
   if (permissions.canViewFinanceiro) return 'financeiro';
+  if (permissions.canViewFranquiaPsi) return 'franquia_psi';
   return 'dashboard';
 }
