@@ -78,10 +78,15 @@ export function ChatWidget() {
     <>
       {open && (
         <div className={cn(
-          'fixed z-[60] bg-white border rounded-xl shadow-2xl flex flex-col overflow-hidden',
+          'fixed z-[60] bg-white border rounded-xl shadow-2xl flex-col overflow-hidden',
           'inset-x-3 top-16 bottom-20 transition-[right] duration-200',
           'lg:inset-x-auto lg:top-auto lg:bottom-24 lg:w-[340px] lg:h-[480px]',
           fichaAberta ? 'lg:right-[39rem]' : 'lg:right-6',
+          // No celular a ficha ocupa a tela inteira — não há "lado" para o chat ir. Some
+          // enquanto ela está aberta (sem perder a conversa: é só CSS, o estado continua)
+          // e volta sozinho quando a ficha fecha. No desktop sempre visível — lá o desvio
+          // acima já resolve.
+          fichaAberta ? 'hidden lg:flex' : 'flex',
         )}>
           {!telefoneSelecionado ? (
             <>
@@ -200,7 +205,10 @@ export function ChatWidget() {
           'fixed z-[60] right-4 bottom-20 lg:bottom-6 transition-[right] duration-200',
           fichaAberta ? 'lg:right-[39rem]' : 'lg:right-6',
           'h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg',
-          'flex items-center justify-center hover:opacity-90 transition-opacity',
+          'items-center justify-center hover:opacity-90 transition-opacity',
+          // Mesma lógica do painel: no celular a bolha some com a ficha aberta (a ficha
+          // cobre a tela inteira, não haveria onde tocar) e volta ao fechar.
+          fichaAberta ? 'hidden lg:flex' : 'flex',
         )}
       >
         {open ? <X className="h-6 w-6" /> : <MessageCircle className="h-6 w-6" />}
