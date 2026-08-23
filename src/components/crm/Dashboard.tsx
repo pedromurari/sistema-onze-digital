@@ -9,7 +9,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
@@ -38,7 +37,7 @@ import { StatTile, SectionBar } from '@/components/crm/ui/premium';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Aluno {
-  id: string; nome: string; produto: 'psicanalise' | 'numerologia';
+  id: string; nome: string; produto: string;
   status: 'ativo' | 'inadimplente' | 'cancelado' | 'concluido' | 'pre_matricula';
   turma_id?: string; data_inicio: string; created_at: string; data_matricula?: string | null;
   valor_mensalidade?: number; mensalidades_pagas?: number; total_mensalidades?: number;
@@ -54,7 +53,7 @@ interface Task {
   categoria: string; pagina: string; created_at: string;
 }
 interface Turma {
-  id: string; nome: string; produto: 'psicanalise' | 'numerologia';
+  id: string; nome: string; produto: string;
   valor_mensalidade?: number; total_mensalidades?: number;
   data_inicio?: string; data_fim?: string; tipo?: string;
   responsavel_id?: string | null; vagas?: number | null;
@@ -98,6 +97,15 @@ const OWNER_LABELS: Record<string, string> = {
   'Rodrygo': 'Instituto Despertamente',
   'Keila': 'Investidores',
 };
+
+// Produtos da Saúde Financeira — lista, não union type: quando PNL passar a ter turma ou
+// aluno de verdade (hoje o banco só tem psicanalise/numerologia), o bloco aparece sozinho
+// aqui, sem precisar tocar em nenhuma outra linha deste arquivo.
+const PRODUTOS_SAUDE: { slug: string; label: string }[] = [
+  { slug: 'psicanalise', label: 'Psicanálise' },
+  { slug: 'numerologia', label: 'Numerologia' },
+  { slug: 'pnl',         label: 'PNL' },
+];
 
 // Deduplicates rows by a key function, keeping the highest-rank row
 function dedupByKey<T>(
@@ -526,15 +534,21 @@ export function Dashboard() {
       .slice(0, 6);
   }, [pagamentosInadimplentesElegiveis]);
 
+  // Turma "NPS" é um registro de teste, não uma turma de verdade — fora de toda leitura
+  // deste arquivo (ocupação, próxima turma por produto etc.), não só de onde apareceu.
+  const turmasReais = useMemo(
+    () => turmas.filter(t => t.nome?.trim().toUpperCase() !== 'NPS'),
+    [turmas]
+  );
+
   // ── Ocupação de turmas ─────────────────────────────────────────────────────
 
   const turmasComVagas = useMemo(() => {
     // 2 semanas após o início a turma já fechou matrícula na prática — fica de fora pra
     // não poluir a seção com turma que não recebe mais aluno novo.
     const limiteAntigo = new Date(); limiteAntigo.setDate(limiteAntigo.getDate() - 14);
-    return turmas
+    return turmasReais
       .filter(t => t.vagas != null && (t.vagas as number) > 0)
-      .filter(t => t.nome?.trim().toUpperCase() !== 'NPS') // turma de teste, não é turma de verdade
       .filter(t => !t.data_inicio || new Date(t.data_inicio) >= limiteAntigo)
       .map(t => {
         const matriculados = alunosAtivos.filter(a => a.turma_id === t.id).length;
@@ -543,7 +557,7 @@ export function Dashboard() {
         return { ...t, matriculados, vagas, pct, restantes: Math.max(vagas - matriculados, 0) };
       })
       .sort((a, b) => b.pct - a.pct);
-  }, [turmas, alunosAtivos]);
+  }, [turmasReais, alunosAtivos]);
 
   // ── Vendedores reais (Helen/Miguel) ───────────────────────────────────────
   // Fonte única em src/lib/vendedores.ts — antes o Dashboard nem olhava pra isso e
@@ -715,14 +729,20 @@ export function Dashboard() {
 
   // ── Financial health by product ───────────────────────────────────────────
 
-  const getSaude = (produto: 'psicanalise' | 'numerologia') => {
+  const getSaude = (produto: string) => {
     const ativos = alunosAtivos.filter(a => a.produto === produto);
     const ids = new Set(ativos.map(a => a.id));
     const recebido = filtrarPagamentosPorPeriodo(pagamentos, mesRange.start, mesRange.end)
       .filter(p => ids.has(p.aluno_id)).reduce((s, p) => s + (p.valor || 0), 0);
     const inadimp = ativos.filter(a => alunoInadimplentesIds.has(a.id)).length;
     const txInad = ativos.length > 0 ? Math.round((inadimp / ativos.length) * 100) : 0;
-    const proxTurma = turmas.filter(t => t.produto === produto).sort((a, b) => new Date(a.data_inicio || '').getTime() - new Date(b.data_inicio || '').getTime())[0];
+    // "Próxima turma" é a que ainda vai começar — turma com data no passado é histórico,
+    // não next-up. Faltava esse filtro: a busca pegava a turma mais antiga de todas, não a
+    // mais próxima de acontecer (chegou a mostrar uma turma de 2025 como "próxima").
+    const hojeISO = new Date().toISOString().slice(0, 10);
+    const proxTurma = turmasReais
+      .filter(t => t.produto === produto && t.data_inicio && t.data_inicio >= hojeISO)
+      .sort((a, b) => new Date(a.data_inicio!).getTime() - new Date(b.data_inicio!).getTime())[0];
     const mrr = ativos.reduce((sum, a) => {
       const t = turmas.find(tr => tr.id === a.turma_id);
       return sum + (a.valor_mensalidade ?? t?.valor_mensalidade ?? 0);
@@ -1370,72 +1390,71 @@ export function Dashboard() {
 
       {/* ── Saúde financeira por produto ────────────────────────────────────── */}
       <div className="space-y-3">
-        <SectionBar title="Saúde Financeira" subtitle="Ativos, MRR e inadimplência — separado por produto." icon={BarChart3} />
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <Card>
-            <CardContent className="pt-4">
-              <Tabs defaultValue="psicanalise">
-                <TabsList className="grid w-full grid-cols-2 mb-4">
-                  <TabsTrigger value="psicanalise">Psicanálise</TabsTrigger>
-                  <TabsTrigger value="numerologia">Numerologia</TabsTrigger>
-                </TabsList>
-                {(['psicanalise', 'numerologia'] as const).map(prod => {
-                  const s = getSaude(prod);
-                  return (
-                    <TabsContent key={prod} value={prod} className="space-y-3 mt-0">
-                      <div className="grid grid-cols-3 gap-3">
-                        <div className="text-center p-3 rounded-xl bg-blue-50 border border-blue-100">
-                          <p className="text-2xl font-bold text-blue-700">{s.ativos}</p>
-                          <p className="text-xs text-blue-600 mt-0.5">Ativos</p>
-                        </div>
-                        <div className="text-center p-3 rounded-xl bg-emerald-50 border border-emerald-100">
-                          <p className="text-sm font-bold text-emerald-700 leading-tight mt-1">{fmtK(s.mrr)}</p>
-                          <p className="text-xs text-emerald-600 mt-0.5">MRR</p>
-                        </div>
-                        <div className={`text-center p-3 rounded-xl border ${s.inadimp > 0 ? 'bg-red-50 border-red-100' : 'bg-muted border-border'}`}>
-                          <p className={`text-2xl font-bold ${s.inadimp > 0 ? 'text-red-700' : 'text-muted-foreground'}`}>{s.inadimp}</p>
-                          <p className={`text-xs mt-0.5 ${s.inadimp > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>Inadimp.</p>
-                        </div>
+        <SectionBar title="Saúde Financeira" subtitle="Ativos, MRR e inadimplência — um bloco por produto, lado a lado." icon={BarChart3} />
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+          {PRODUTOS_SAUDE.map(({ slug, label }) => {
+            const s = getSaude(slug);
+            // PNL ainda não tem turma nem aluno cadastrado — o bloco nasce pronto no
+            // código, mas só aparece na tela quando existir aluno de verdade nesse
+            // produto, pra não mostrar um card zerado por enquanto.
+            if (s.ativos === 0 && slug === 'pnl') return null;
+            return (
+              <Card key={slug}>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-semibold">{label}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 pt-0">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="text-center p-3 rounded-xl bg-blue-50 border border-blue-100">
+                      <p className="text-2xl font-bold text-blue-700">{s.ativos}</p>
+                      <p className="text-xs text-blue-600 mt-0.5">Ativos</p>
+                    </div>
+                    <div className="text-center p-3 rounded-xl bg-emerald-50 border border-emerald-100">
+                      <p className="text-sm font-bold text-emerald-700 leading-tight mt-1">{fmtK(s.mrr)}</p>
+                      <p className="text-xs text-emerald-600 mt-0.5">MRR</p>
+                    </div>
+                    <div className={`text-center p-3 rounded-xl border ${s.inadimp > 0 ? 'bg-red-50 border-red-100' : 'bg-muted border-border'}`}>
+                      <p className={`text-2xl font-bold ${s.inadimp > 0 ? 'text-red-700' : 'text-muted-foreground'}`}>{s.inadimp}</p>
+                      <p className={`text-xs mt-0.5 ${s.inadimp > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>Inadimp.</p>
+                    </div>
+                  </div>
+                  {s.ativos > 0 && (
+                    <div>
+                      <div className="flex justify-between mb-1.5">
+                        <span className="text-xs text-muted-foreground">Coleta {mesAtual}</span>
+                        <span className={`text-xs font-semibold ${s.mrr > 0 && (s.recebido / s.mrr) >= 0.8 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                          {fmtK(s.recebido)} / {fmtK(s.mrr)}
+                        </span>
                       </div>
-                      {s.ativos > 0 && (
-                        <div>
-                          <div className="flex justify-between mb-1.5">
-                            <span className="text-xs text-muted-foreground">Coleta {mesAtual}</span>
-                            <span className={`text-xs font-semibold ${s.mrr > 0 && (s.recebido / s.mrr) >= 0.8 ? 'text-emerald-600' : 'text-amber-600'}`}>
-                              {fmtK(s.recebido)} / {fmtK(s.mrr)}
-                            </span>
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${Math.min(s.mrr > 0 ? (s.recebido / s.mrr) * 100 : 0, 100)}%` }} />
+                      </div>
+                      {s.txInad > 0 && (
+                        <div className="mt-2">
+                          <div className="flex justify-between mb-1">
+                            <span className="text-xs text-muted-foreground">Inadimplência</span>
+                            <span className={`text-xs font-semibold ${s.txInad > 10 ? 'text-red-600' : 'text-amber-600'}`}>{s.txInad}%</span>
                           </div>
-                          <div className="h-2 bg-muted rounded-full overflow-hidden">
-                            <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${Math.min(s.mrr > 0 ? (s.recebido / s.mrr) * 100 : 0, 100)}%` }} />
-                          </div>
-                          {s.txInad > 0 && (
-                            <div className="mt-2">
-                              <div className="flex justify-between mb-1">
-                                <span className="text-xs text-muted-foreground">Inadimplência</span>
-                                <span className={`text-xs font-semibold ${s.txInad > 10 ? 'text-red-600' : 'text-amber-600'}`}>{s.txInad}%</span>
-                              </div>
-                              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                                <div className={`h-full rounded-full ${s.txInad > 10 ? 'bg-red-500' : 'bg-amber-500'}`} style={{ width: `${Math.min(s.txInad, 100)}%` }} />
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      {s.proxTurma && (
-                        <div className="flex items-center gap-3 p-3 rounded-xl bg-purple-50 border border-purple-100">
-                          <GraduationCap size={14} className="text-purple-600 shrink-0" />
-                          <div className="min-w-0">
-                            <p className="text-xs font-semibold text-purple-700 truncate">{s.proxTurma.nome}</p>
-                            <p className="text-xs text-purple-500">{s.proxTurma.data_inicio ? format(new Date(s.proxTurma.data_inicio), 'dd/MM/yyyy') : 'A definir'}</p>
+                          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${s.txInad > 10 ? 'bg-red-500' : 'bg-amber-500'}`} style={{ width: `${Math.min(s.txInad, 100)}%` }} />
                           </div>
                         </div>
                       )}
-                    </TabsContent>
-                  );
-                })}
-              </Tabs>
-            </CardContent>
-          </Card>
+                    </div>
+                  )}
+                  {s.proxTurma && (
+                    <div className="flex items-center gap-3 p-3 rounded-xl bg-purple-50 border border-purple-100">
+                      <GraduationCap size={14} className="text-purple-600 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-purple-700 truncate">{s.proxTurma.nome}</p>
+                        <p className="text-xs text-purple-500">{s.proxTurma.data_inicio ? format(new Date(s.proxTurma.data_inicio), 'dd/MM/yyyy') : 'A definir'}</p>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       </div>
 
