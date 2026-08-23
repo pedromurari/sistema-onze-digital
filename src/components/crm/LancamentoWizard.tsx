@@ -7,11 +7,12 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { ensureDefaultLancamentoKanbanColumns } from '@/components/crm/kanban/useKanbanColunas';
 import {
-  WizardConfig, TemplateMensagem, AulaConfig, GrupoConfig,
+  WizardConfig, TemplateMensagem, AulaConfig, GrupoConfig, FunilTemplateConteudo,
   generateLancamentoMessages, buildFunnelVariaveis,
   defaultBoasVindasWpp, defaultBoasVindasEmail,
   defaultBoasVindasNpaManha, defaultBoasVindasNpaTarde, defaultPixTemplate,
 } from '@/lib/lancamento-templates';
+import { FunilTemplatesModal } from '@/components/crm/FunilTemplatesModal';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -122,6 +123,23 @@ function Step1({ config, setConfig, responsaveis }: {
   responsaveis: Responsavel[];
 }) {
   const set = (k: keyof WizardConfig, v: unknown) => setConfig(c => ({ ...c, [k]: v }));
+
+  // Templates de aquecimento do tipo escolhido — vazio = usa o texto padrão embutido
+  // no gerador (lancamento-templates.ts), sem exigir template nenhum cadastrado.
+  const [templates, setTemplates] = useState<{ id: string; nome: string }[]>([]);
+  const [gerenciarTemplatesAberto, setGerenciarTemplatesAberto] = useState(false);
+
+  const carregarTemplates = useCallback(async () => {
+    const { data } = await supabase.from('funil_templates' as any)
+      .select('id, nome')
+      .eq('tipo', config.tipo)
+      .eq('ativo', true)
+      .order('nome', { ascending: true });
+    setTemplates((data ?? []) as any);
+  }, [config.tipo]);
+
+  useEffect(() => { carregarTemplates(); }, [carregarTemplates]);
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -169,6 +187,36 @@ function Step1({ config, setConfig, responsaveis }: {
             ))}
           </div>
         </div>
+        <div className="sm:col-span-2 space-y-1">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-medium text-muted-foreground">Template de aquecimento</label>
+            <button
+              type="button"
+              onClick={() => setGerenciarTemplatesAberto(true)}
+              className="text-[11px] text-primary hover:underline"
+            >
+              Gerenciar templates
+            </button>
+          </div>
+          <select
+            value={config.templateId ?? ''}
+            onChange={e => set('templateId', e.target.value || undefined)}
+            className="w-full px-3 py-2 rounded-md border border-border text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="">Padrão (texto embutido no sistema)</option>
+            {templates.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+          </select>
+          <p className="text-[10px] text-muted-foreground">Define os textos do aquecimento (antes do evento) — o resto das mensagens continua igual.</p>
+        </div>
+
+        {gerenciarTemplatesAberto && (
+          <FunilTemplatesModal
+            tipo={config.tipo}
+            onClose={() => setGerenciarTemplatesAberto(false)}
+            onTemplatesChanged={carregarTemplates}
+          />
+        )}
+
         <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground">Responsável</label>
           <select
@@ -1825,7 +1873,7 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
   }, [open, existingId, existingTipo]);
 
   // Regenerate messages when reaching step 6
-  const goToStep = useCallback((s: number) => {
+  const goToStep = useCallback(async (s: number) => {
     if (s === 5 || s === 6) {
       // Preenche boas-vindas padrão se vazio
       setConfig(c => {
@@ -1848,7 +1896,14 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
         }
         return c;
       });
-      setMessages(generateLancamentoMessages(config));
+
+      let templateConteudo: FunilTemplateConteudo | null = null;
+      if (config.templateId) {
+        const { data } = await supabase.from('funil_templates' as any)
+          .select('conteudo').eq('id', config.templateId).maybeSingle();
+        templateConteudo = (data as any)?.conteudo ?? null;
+      }
+      setMessages(generateLancamentoMessages(config, templateConteudo));
     }
     setStep(s);
   }, [config]);

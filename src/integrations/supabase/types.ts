@@ -3516,6 +3516,36 @@ export type Database = {
           },
         ]
       }
+      funil_templates: {
+        Row: {
+          ativo: boolean
+          conteudo: Json
+          created_at: string
+          id: string
+          nome: string
+          tipo: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          conteudo?: Json
+          created_at?: string
+          id?: string
+          nome: string
+          tipo: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          conteudo?: Json
+          created_at?: string
+          id?: string
+          nome?: string
+          tipo?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       funnel_configs: {
         Row: {
           created_at: string

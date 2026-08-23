@@ -32,6 +32,7 @@ export interface WizardConfig {
   // Etapa 1
   nome: string;
   tipo: 'lancamento' | 'npa';
+  templateId?: string; // funil_templates.id — vazio/undefined = usa o texto padrão embutido
   data_live: string;
   hora_live: string;
   meta_leads: number;
@@ -67,6 +68,36 @@ export interface WizardConfig {
   bv_email_assunto: string;
   bv_email_corpo: string;
   bv_delay_minutos: number;
+}
+
+export interface FunilTemplateEnquete { intro: string; nome: string; opcoes: string[]; }
+
+/**
+ * Conteúdo de um template de aquecimento (tabela `funil_templates`) — só as
+ * SOBRESCRITAS. Campo vazio/ausente cai no texto padrão embutido no gerador
+ * abaixo; não precisa preencher tudo pra ter um template válido.
+ *
+ * Escopo é só a fase de AQUECIMENTO (antes do evento) — mensagens de dia de
+ * aula, contagem regressiva e oferta continuam fixas, por pedido do dono
+ * ("templates de mensagens que usamos pra aquecer o grupo").
+ */
+export interface FunilTemplateConteudo {
+  // Lançamento (dias 1-9)
+  manhas?: Partial<Record<number, string>>;
+  enquetes?: Partial<Record<number, FunilTemplateEnquete>>; // chaves 2,3,5,6,8,9
+  audio_texto?: string;         // dias 1,4,7 (tarde)
+  noite_texto?: string;         // dias que não são véspera
+  noite_vespera_texto?: string; // dia -1 (véspera da aula 1)
+
+  // NPA (dias 1-10)
+  temas_manha?: Partial<Record<number, string>>;
+  temas_noite?: Partial<Record<number, string>>;
+  // enquetes do NPA reaproveita o mesmo campo `enquetes` acima (chaves 1,3,5,7,9)
+}
+
+/** Substituição simples de {{chave}} — chave sem valor no dicionário fica como está. */
+export function aplicarVariaveis(texto: string, vars: Record<string, string>): string {
+  return texto.replace(/\{\{(\w+)\}\}/g, (match, key) => (key in vars ? vars[key] : match));
 }
 
 export interface TemplateMensagem {
@@ -163,7 +194,7 @@ function pollMsg(
 
 // ─── Gerador principal ────────────────────────────────────────────────────────
 
-export function generateLancamentoMessages(config: WizardConfig): TemplateMensagem[] {
+export function generateLancamentoMessages(config: WizardConfig, template?: FunilTemplateConteudo | null): TemplateMensagem[] {
   if (!config.data_live) return [];
 
   const fn  = config.nome;
@@ -210,6 +241,26 @@ export function generateLancamentoMessages(config: WizardConfig): TemplateMensag
     const linksBlock = () => Array.from({ length: numAulas }, (_, i) =>
       `🔗 Aula ${i + 1}: ${aulaLink(i + 1)}`
     ).join('\n');
+
+    // Variáveis pra quem escreve um template de aquecimento customizado — os textos
+    // padrão abaixo continuam com o texto literal (não usam {{}}); isso é só pra
+    // quem sobrescrever no editor de templates poder referenciar dado dinâmico.
+    const varsBase: Record<string, string> = {
+      slogan,
+      class_hora: classHora,
+      aula_link_1: aulaLink(1),
+      aula_titulo_1: aulaTit(1),
+      aula_data_1: aulaData(1),
+      dates_block: datesBlock(),
+      links_block: linksBlock(),
+      num_aulas: String(numAulas),
+      nome_lancamento: config.nome,
+      professor_do_texto: hasProfessor ? ` do Prof. ${profAnchor}` : '',
+      com_professor_linha: hasProfessor ? `\nCom ${profDupla}.` : '',
+      professor_conduz_linha: hasProfessor
+        ? (profConv ? `${profAnchor} conduz essa jornada com participação de ${profConv}.\n\n` : `${profAnchor} conduz essa jornada.\n\n`)
+        : '',
+    };
 
     // ── 9 dias de aquecimento ─────────────────────────────────────────────────
     const warmupDays = 9;
@@ -474,18 +525,27 @@ Reage com 🙌 se você vai estar ao vivo amanhã!`,
       const l       = Math.abs(offset);
       const day     = warmupDays + offset + 1;   // 1..9
       const dayDate = addDays(firstClassDate, offset);
+      const varsDia = { ...varsBase, dias_restantes: String(l) };
 
-      // Manhã — reflexão única de psicanálise por dia
-      msgs.push(textMsg(fn, day, setTime(dayDate, '08:00'), g1, manhasMsgs[day],
+      // Manhã — reflexão única de psicanálise por dia (ou a sobrescrita do template)
+      const manhaOverride = template?.manhas?.[day];
+      const manhaTexto = manhaOverride ? aplicarVariaveis(manhaOverride, varsDia) : manhasMsgs[day];
+      msgs.push(textMsg(fn, day, setTime(dayDate, '08:00'), g1, manhaTexto,
         `Dia ${day} — Manhã`, { link_preview: true }));
 
       // Tarde: a cada 3 dias sugere áudio (dias 1,4,7 do warmup), outros dias enquete única
       if (l % 3 === 0) {
-        const audioTxt = `${slogan} tarde! ☀️\n\n🎙️ *Áudio sugerido${hasProfessor ? ` do Prof. ${profAnchor}` : ''}:*\n\n"${slogan}, pessoal! Estamos chegando muito perto da nossa primeira aula. Quero te encontrar ao vivo no dia ${aulaData(1)}, às ${classHora}, para abrir essa jornada com profundidade e direção."\n\n👉 ${aulaLink(1)}\n\nReage com um ❤️ depois de ouvir!`;
+        const audioOverride = template?.audio_texto;
+        const audioTxt = audioOverride
+          ? aplicarVariaveis(audioOverride, varsDia)
+          : `${slogan} tarde! ☀️\n\n🎙️ *Áudio sugerido${hasProfessor ? ` do Prof. ${profAnchor}` : ''}:*\n\n"${slogan}, pessoal! Estamos chegando muito perto da nossa primeira aula. Quero te encontrar ao vivo no dia ${aulaData(1)}, às ${classHora}, para abrir essa jornada com profundidade e direção."\n\n👉 ${aulaLink(1)}\n\nReage com um ❤️ depois de ouvir!`;
         msgs.push(textMsg(fn, day, setTime(dayDate, '15:00'), g1, audioTxt,
           `Dia ${day} — Tarde (Áudio)`, { subtipo: 'audio' }));
       } else {
-        const eq = enquetesDias[day];
+        const eqOverride = template?.enquetes?.[day];
+        const eq = eqOverride
+          ? { intro: aplicarVariaveis(eqOverride.intro, varsDia), nome: eqOverride.nome, opcoes: eqOverride.opcoes }
+          : enquetesDias[day];
         msgs.push(textMsg(fn, day, setTime(dayDate, '15:00'), g1, eq.intro,
           `Dia ${day} — Enquete (intro)`));
         msgs.push(pollMsg(fn, day,
@@ -495,7 +555,10 @@ Reage com 🙌 se você vai estar ao vivo amanhã!`,
       }
 
       // Noite
-      const noiteTxt = offset === -1
+      const noiteOverride = offset === -1 ? template?.noite_vespera_texto : template?.noite_texto;
+      const noiteTxt = noiteOverride
+        ? aplicarVariaveis(noiteOverride, varsDia)
+        : offset === -1
         ? `${slogan} noite! 🌙\n\n*AMANHÃ, ${classHora}. Ao vivo.*\n\nAula 1 - *${aulaTit(1)}*.\n\nSe você ativar só um lembrete agora, que seja esse:\n\n👉 ${aulaLink(1)}\n\nE já aproveita pra ativar os lembretes das próximas aulas:\n${linksBlock()}\n\nReage com um 🚀 - amanhã a gente se encontra!`
         : `${slogan} noite! 🌙\n\nFaltam *${l} dias* pra ${config.nome}.\n\n${numAulas} aulas ao vivo que podem mudar a forma como você se enxerga.\n\n👉 Já ativa os lembretes e deixa o like:\n\n${linksBlock()}\n\nReage com um 🔥 se você já está ansioso pra começar!`;
 
@@ -607,6 +670,17 @@ Reage com 🙌 se você vai estar ao vivo amanhã!`,
     const nomeEvento   = config.nome || '{{evento_nome}}';
     const temGrupo2    = g2 !== g1;
 
+    const varsBase: Record<string, string> = {
+      slogan,
+      nome_evento: nomeEvento,
+      npa_local: npaLocal,
+      manha_hora_ini: manhaHoraIni,
+      manha_hora_fim: manhaHoraFim,
+      tarde_hora_ini: tardeHoraIni,
+      tarde_hora_fim: tardeHoraFim,
+      aula_data_1: aulaData(1),
+    };
+
     // Envia o mesmo texto pros 2 grupos (grupo 2 sempre STAGGER_MS depois do grupo 1)
     function pushEscalonado(day: number, at: Date, text: string, labelBase: string, opts: Partial<TemplateMensagem> = {}) {
       msgs.push(textMsg(fn, day, at, g1, text, `${labelBase} (Grupo 1)`, opts));
@@ -710,7 +784,9 @@ Reage com 🙌 se você vai estar ao vivo amanhã!`,
       const day     = i + 1;
       const dayDate = addDays(warmupStart, i);
 
-      pushEscalonado(day, setTime(dayDate, '08:00'), temasManha[i], `Dia ${day} — Manhã`);
+      const manhaOverride = template?.temas_manha?.[day];
+      const manhaTexto = manhaOverride ? aplicarVariaveis(manhaOverride, varsBase) : temasManha[i];
+      pushEscalonado(day, setTime(dayDate, '08:00'), manhaTexto, `Dia ${day} — Manhã`);
 
       // Dia 8 (faltam 3) — enquete de confirmação de presença, além do teaser da manhã
       if (day === warmupDays - 2) {
@@ -719,12 +795,17 @@ Reage com 🙌 se você vai estar ao vivo amanhã!`,
           `Você confirma sua presença em ${nomeEvento} (${aulaData(1)})?`,
           ['Sim, confirmado! 🙌', 'Ainda não sei', 'Não vou conseguir ir'],
           `Dia ${day} — Enquete Presença`);
-      } else if (enquetesDias[day]) {
-        const e = enquetesDias[day];
-        pushEnquete(day, setTime(dayDate, '11:00'), e.intro, e.nome, e.opcoes, `Dia ${day} — Enquete`);
+      } else {
+        const eqOverride = template?.enquetes?.[day];
+        const e = eqOverride
+          ? { intro: aplicarVariaveis(eqOverride.intro, varsBase), nome: eqOverride.nome, opcoes: eqOverride.opcoes }
+          : enquetesDias[day];
+        if (e) pushEnquete(day, setTime(dayDate, '11:00'), e.intro, e.nome, e.opcoes, `Dia ${day} — Enquete`);
       }
 
-      pushEscalonado(day, setTime(dayDate, '20:00'), temasNoite[i], `Dia ${day} — Noite`);
+      const noiteOverride = template?.temas_noite?.[day];
+      const noiteTexto = noiteOverride ? aplicarVariaveis(noiteOverride, varsBase) : temasNoite[i];
+      pushEscalonado(day, setTime(dayDate, '20:00'), noiteTexto, `Dia ${day} — Noite`);
     }
 
     // ── Dia do evento — 2 sessões (manhã e tarde), cada grupo com seus horários ──
