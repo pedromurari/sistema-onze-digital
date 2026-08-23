@@ -366,7 +366,9 @@ function ConversaItem({ nome, telefone, previa, quando, naoLida, ativo, onClick 
   );
 }
 
-function Thread({ telefone, instancias }: { telefone: string; instancias: string[] }) {
+function Thread({ telefone, instancias, vendedorPorInstancia }: {
+  telefone: string; instancias: string[]; vendedorPorInstancia?: Record<string, string>;
+}) {
   const { thread, loading } = useThread(telefone, instancias, HISTORICO_DESDE);
   const fimRef = useRef<HTMLDivElement>(null);
 
@@ -374,6 +376,13 @@ function Thread({ telefone, instancias }: { telefone: string; instancias: string
 
   if (loading) return <p className="text-xs text-muted-foreground p-4">Carregando conversa...</p>;
   if (!thread.length) return <p className="text-xs text-muted-foreground p-4">Nenhuma mensagem com esse número ainda.</p>;
+
+  // Visão "Todos" combina o WhatsApp de mais de um vendedor no mesmo filtro — se o
+  // mesmo lead falou com os dois, as duas conversas caem juntas aqui, uma por
+  // telefone só. Sem identificar quem é quem, vira uma única conversa confusa,
+  // como se fosse uma pessoa só de cada lado. Rotula por vendedor sempre que há
+  // mais de uma instância no escopo, pra separar visualmente as duas conversas.
+  const multiplasInstancias = instancias.length > 1;
 
   let diaAnterior = '';
   return (
@@ -384,6 +393,7 @@ function Thread({ telefone, instancias }: { telefone: string; instancias: string
         diaAnterior = dia;
         const enviada = m.direcao === 'enviada';
         const Icone = TIPO_ICON[m.tipo];
+        const vendedorNome = multiplasInstancias ? vendedorPorInstancia?.[m.evolution_instance ?? ''] : null;
         return (
           <div key={m.id}>
             {mostraDia && (
@@ -391,7 +401,12 @@ function Thread({ telefone, instancias }: { telefone: string; instancias: string
                 <span className="text-[10px] text-muted-foreground bg-muted rounded-full px-2.5 py-0.5">{dia}</span>
               </div>
             )}
-            <div className={cn('flex', enviada ? 'justify-end' : 'justify-start')}>
+            <div className={cn('flex flex-col', enviada ? 'items-end' : 'items-start')}>
+              {vendedorNome && (
+                <span className={cn('text-[10px] font-semibold mb-0.5 px-0.5', enviada ? 'text-primary' : 'text-muted-foreground')}>
+                  {enviada ? vendedorNome : `${vendedorNome} recebeu`}
+                </span>
+              )}
               <div className={cn(
                 'max-w-[75%] rounded-lg px-3 py-2',
                 enviada ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground',
@@ -417,7 +432,9 @@ function Thread({ telefone, instancias }: { telefone: string; instancias: string
   );
 }
 
-function CaixaDeEntrada({ instancias, escopoPessoal }: { instancias: string[]; escopoPessoal: boolean }) {
+function CaixaDeEntrada({ instancias, escopoPessoal, vendedorPorInstancia }: {
+  instancias: string[]; escopoPessoal: boolean; vendedorPorInstancia?: Record<string, string>;
+}) {
   const { conversas, loading } = useConversas(instancias, HISTORICO_DESDE);
   const [busca, setBusca] = useState('');
   const [ativo, setAtivo] = useState<string | null>(null);
@@ -496,7 +513,7 @@ function CaixaDeEntrada({ instancias, escopoPessoal }: { instancias: string[]; e
                 <FollowupToggleLead telefone={conversaAtiva.telefone} />
               </div>
               <div className="flex-1 overflow-y-auto">
-                <Thread telefone={conversaAtiva.telefone} instancias={instancias} />
+                <Thread telefone={conversaAtiva.telefone} instancias={instancias} vendedorPorInstancia={vendedorPorInstancia} />
               </div>
               <p className="text-[10px] text-muted-foreground px-3 py-2 border-t border-border">
                 Somente leitura — responder continua sendo pelo WhatsApp.
@@ -520,6 +537,17 @@ export function ChatTimeComercial({ viewAsName, vendedores }: { viewAsName: stri
     if (!numeros) return null;
     return viewAsName ? numeros.filter(n => n.nome === viewAsName) : numeros;
   }, [numeros, viewAsName]);
+
+  // Primeiro nome de cada vendedor(a) por instância — usado só quando a Caixa de
+  // Entrada combina mais de um número (visão "Todos"), pra separar na tela duas
+  // conversas do mesmo lead que hoje se misturam por caírem no mesmo telefone.
+  // Precisa vir antes do "if numeros === null" abaixo — hook não pode ser
+  // condicional, senão a contagem de hooks muda entre a primeira renderização
+  // (carregando) e as seguintes.
+  const vendedorPorInstancia = useMemo(
+    () => Object.fromEntries((numeros ?? []).map(n => [n.inst.instance_name, n.nome.split(' ')[0]])),
+    [numeros]
+  );
 
   if (numeros === null) return <p className="text-sm text-muted-foreground">Carregando...</p>;
 
@@ -557,7 +585,7 @@ export function ChatTimeComercial({ viewAsName, vendedores }: { viewAsName: stri
       {meuVendedorId && <FollowupConfig vendedorId={meuVendedorId} />}
 
       {instancias.length > 0 && (
-        <CaixaDeEntrada instancias={instancias} escopoPessoal={!!viewAsName} />
+        <CaixaDeEntrada instancias={instancias} escopoPessoal={!!viewAsName} vendedorPorInstancia={vendedorPorInstancia} />
       )}
     </div>
   );
