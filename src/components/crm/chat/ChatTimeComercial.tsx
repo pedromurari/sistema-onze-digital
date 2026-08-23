@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { useConversas } from '@/hooks/useConversas';
 import { useThread } from '@/hooks/useThread';
+import { FollowupConfig } from './FollowupConfig';
+import { FollowupToggleLead } from './FollowupToggleLead';
 import { ConnStateBadge } from '../ConnStateBadge';
 import {
   fetchConnectionState, fetchQrCode, configurarWebhookRespostas,
@@ -485,12 +487,13 @@ function CaixaDeEntrada({ instancias, escopoPessoal }: { instancias: string[]; e
                 >
                   <ChevronLeft className="h-3.5 w-3.5 text-muted-foreground" />
                 </button>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-foreground truncate">{conversaAtiva.nome}</p>
                   <p className="text-[11px] text-muted-foreground truncate">
                     {maskPhone(conversaAtiva.telefone)} · {conversaAtiva.grupoNome}
                   </p>
                 </div>
+                <FollowupToggleLead telefone={conversaAtiva.telefone} />
               </div>
               <div className="flex-1 overflow-y-auto">
                 <Thread telefone={conversaAtiva.telefone} instancias={instancias} />
@@ -522,6 +525,9 @@ export function ChatTimeComercial({ viewAsName, vendedores }: { viewAsName: stri
 
   const instancias = (doEscopo ?? []).map(n => n.inst.instance_name);
   const meuNumero = viewAsName ? (doEscopo?.[0]?.inst ?? null) : null;
+  // Follow-up é config de UM vendedor — só faz sentido na perspectiva dele (própria
+  // ou "ver como" do admin), não na visão agregada de todos.
+  const meuVendedorId = viewAsName ? doEscopo?.[0]?.usuarioId ?? null : null;
 
   return (
     <div className="flex flex-col gap-3">
@@ -547,6 +553,8 @@ export function ChatTimeComercial({ viewAsName, vendedores }: { viewAsName: stri
       ) : null}
 
       {isAdmin && <ConfigEvolutionAdmin vendedores={vendedores} numeros={numeros} onMudou={recarregar} />}
+
+      {meuVendedorId && <FollowupConfig vendedorId={meuVendedorId} />}
 
       {instancias.length > 0 && (
         <CaixaDeEntrada instancias={instancias} escopoPessoal={!!viewAsName} />

@@ -3307,6 +3307,105 @@ export type Database = {
         }
         Relationships: []
       }
+      followup_passos: {
+        Row: {
+          created_at: string
+          id: string
+          intervalo_horas: number
+          media_url: string | null
+          ordem: number
+          sequencia_id: string
+          texto: string | null
+          tipo_midia: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          intervalo_horas: number
+          media_url?: string | null
+          ordem: number
+          sequencia_id: string
+          texto?: string | null
+          tipo_midia: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          intervalo_horas?: number
+          media_url?: string | null
+          ordem?: number
+          sequencia_id?: string
+          texto?: string | null
+          tipo_midia?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "followup_passos_sequencia_id_fkey"
+            columns: ["sequencia_id"]
+            isOneToOne: false
+            referencedRelation: "followup_sequencias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      followup_sequencias: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          id: string
+          lancamento_id: string | null
+          nome: string
+          npa_evento_id: string | null
+          produto: string | null
+          updated_at: string
+          vendedor_id: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          lancamento_id?: string | null
+          nome?: string
+          npa_evento_id?: string | null
+          produto?: string | null
+          updated_at?: string
+          vendedor_id: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          lancamento_id?: string | null
+          nome?: string
+          npa_evento_id?: string | null
+          produto?: string | null
+          updated_at?: string
+          vendedor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "followup_sequencias_lancamento_id_fkey"
+            columns: ["lancamento_id"]
+            isOneToOne: false
+            referencedRelation: "lancamentos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "followup_sequencias_npa_evento_id_fkey"
+            columns: ["npa_evento_id"]
+            isOneToOne: false
+            referencedRelation: "npa_eventos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "followup_sequencias_npa_evento_id_fkey"
+            columns: ["npa_evento_id"]
+            isOneToOne: false
+            referencedRelation: "npa_kanban"
+            referencedColumns: ["npa_evento_id"]
+          },
+        ]
+      }
       fontes: {
         Row: {
           created_at: string | null
@@ -4473,6 +4572,10 @@ export type Database = {
           criado_em: string | null
           email: string | null
           engajamento: string | null
+          followup_passo_atual: number
+          followup_pausado: boolean
+          followup_sequencia_id: string | null
+          followup_ultimo_envio: string | null
           id: string
           interesse_produto: string | null
           lancamento_id: string | null
@@ -4505,6 +4608,10 @@ export type Database = {
           criado_em?: string | null
           email?: string | null
           engajamento?: string | null
+          followup_passo_atual?: number
+          followup_pausado?: boolean
+          followup_sequencia_id?: string | null
+          followup_ultimo_envio?: string | null
           id?: string
           interesse_produto?: string | null
           lancamento_id?: string | null
@@ -4537,6 +4644,10 @@ export type Database = {
           criado_em?: string | null
           email?: string | null
           engajamento?: string | null
+          followup_passo_atual?: number
+          followup_pausado?: boolean
+          followup_sequencia_id?: string | null
+          followup_ultimo_envio?: string | null
           id?: string
           interesse_produto?: string | null
           lancamento_id?: string | null
@@ -4568,6 +4679,13 @@ export type Database = {
             columns: ["campanha_id"]
             isOneToOne: false
             referencedRelation: "time_comercial_campanhas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_followup_sequencia_id_fkey"
+            columns: ["followup_sequencia_id"]
+            isOneToOne: false
+            referencedRelation: "followup_sequencias"
             referencedColumns: ["id"]
           },
           {
