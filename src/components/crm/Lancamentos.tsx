@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { ensureDefaultLancamentoKanbanColumns } from '@/components/crm/kanban/useKanbanColunas';
+import { SaudeLancamentos } from '@/components/crm/lancamento/SaudeLancamentos';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -303,6 +304,9 @@ export function Lancamentos() {
           </Badge>
         </div>
       </div>
+
+      {/* Fica invisível quando não há nada faltando nos lançamentos. */}
+      <SaudeLancamentos />
 
       {/* Launches Selector Header */}
       <div className="space-y-4">

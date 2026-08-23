@@ -9347,6 +9347,17 @@ export type Database = {
         Args: { p_lead_id: string; p_nova_fase: string }
         Returns: undefined
       }
+      capturar_lead: {
+        Args: {
+          p_cidade?: string
+          p_email?: string
+          p_nome: string
+          p_simular?: boolean
+          p_turma?: string
+          p_whatsapp: string
+        }
+        Returns: Json
+      }
       definir_permissao: {
         Args: {
           p_acao: string
@@ -9536,6 +9547,18 @@ export type Database = {
           p_telefone: string
         }
         Returns: string
+      }
+      saude_dos_lancamentos: {
+        Args: never
+        Returns: {
+          dias_ate_live: number
+          efeito: string
+          gravidade: string
+          lancamento: string
+          leads: number
+          problema: string
+          referencia: string
+        }[]
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }

@@ -118,3 +118,40 @@ export function useMarcarParcelasComoIsentas() {
     onSuccess: () => { invalidar('pagamentos'); },
   });
 }
+
+/**
+ * O que falta em cada lançamento ativo.
+ *
+ * Mesma família da integridade financeira, aplicada à operação de lançamento: aquecimento
+ * sem mensagem, live chegando sem inscrito, página capturando depois da live. Nasceu
+ * depois que as turmas #44 a #47 foram cadastradas com data e sem aquecimento, e a captura
+ * caiu de 813 leads por semana para 16 sem ninguém perceber.
+ *
+ * A função foi calibrada três vezes para não gritar à toa: lançamento terminado não
+ * aparece, só o que ainda causa dano.
+ */
+export interface PontoDoLancamento {
+  lancamento: string;
+  gravidade: GravidadeIntegridade;
+  problema: string;
+  efeito: string;
+  dias_ate_live: number | null;
+  leads: number;
+  referencia: string;
+}
+
+export function useSaudeDosLancamentos() {
+  return useQuery({
+    queryKey: [...chaves.integridade.raiz, 'lancamentos'],
+    queryFn: async (): Promise<PontoDoLancamento[]> => {
+      const { data, error } = await supabase.rpc('saude_dos_lancamentos');
+      if (error) throw error;
+      const linhas = (data ?? []) as unknown as PontoDoLancamento[];
+      // Mais urgente primeiro: quem tem live chegando antes de quem já passou.
+      return [...linhas].sort(
+        (a, b) => (a.dias_ate_live ?? 999) - (b.dias_ate_live ?? 999) ||
+                  a.lancamento.localeCompare(b.lancamento, 'pt-BR'),
+      );
+    },
+  });
+}

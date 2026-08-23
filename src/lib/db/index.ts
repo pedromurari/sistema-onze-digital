@@ -50,4 +50,5 @@ export {
   useIntegridadeFinanceira,
   useDefinirTurmaDoAluno, useDefinirFormaDePagamento, useMarcarParcelasComoIsentas,
 } from './integridade';
-export type { PontoDeIntegridade, GravidadeIntegridade } from './integridade';
+export { useSaudeDosLancamentos } from './integridade';
+export type { PontoDeIntegridade, PontoDoLancamento, GravidadeIntegridade } from './integridade';
