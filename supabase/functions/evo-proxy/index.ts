@@ -26,7 +26,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, content-type',
+  // O client-js do Supabase manda x-client-info e apikey em toda chamada — sem
+  // eles aqui, o preflight falha antes mesmo do código rodar e o front nunca
+  // sabe se a instância está conectada (aparece "Desconhecido" pra sempre).
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
 /**
