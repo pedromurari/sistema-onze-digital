@@ -101,7 +101,7 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
     time_comercial:     'CRM Time Comercial',
     parceiros:          'Vendas & Parcerias',
     posts:              'Conteúdo',
-    lancamentos_legado: 'Eventos',
+    lancamentos_legado: 'Canais de Aquisição',
     funil_lancamento:   'Funil & Automação',
     financeiro:         'Financeiro',
     mapa_mental:        'Gestão',
