@@ -5,11 +5,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import {
   TrendingUp, TrendingDown, DollarSign, Plus, Trash2,
   RefreshCw, CheckCircle2, AlertTriangle, Info,
   Receipt, UserCheck, ShoppingBag, ChevronLeft, ChevronRight,
-  Lock, Unlock, Download, Users,
+  Lock, Unlock, Download, Users, Settings,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -22,6 +23,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { TaxasPagamentoConfig } from './finance/TaxasPagamentoConfig';
 import { RepasseTurmasConfig } from './finance/RepasseTurmasConfig';
 import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
+import { StatTile, SecaoRecolhivel } from '@/components/crm/ui/premium';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -41,8 +43,18 @@ interface BalancoItem {
   produto: string;
   mes_referencia: string;
   recorrente: boolean;
+  dia_vencimento: number | null;
   retorno_realizado: number;
   created_at: string;
+}
+
+/** Quem paga uma despesa e em que percentual — mesma forma de TurmaResponsavelRow, para custo. */
+interface DespesaResponsavelRow {
+  id: string;
+  despesa_id: string;
+  responsavel_id: string | null;
+  nome_ref: string;
+  percentual: number;
 }
 
 // ─── Tipos: Fechamento por período ─────────────────────────────────────────────
@@ -167,9 +179,20 @@ export function Balanco() {
   // draft por aluno: forma_pagamento e valor editáveis
   const [matriculasDraft, setMatriculasDraft] = useState<Record<string, { forma: string; valor: string }>>({});
   const [savingAluno, setSavingAluno]       = useState<string | null>(null);
-  // form gasto rápido do período
-  const [gastoForm, setGastoForm]           = useState({ descricao: '', valor: '', categoria: 'custo_variavel' as Categoria });
+  // form gasto rápido do período. Antes só tinha descrição/categoria/valor — sem campo
+  // para dia de vencimento nem para quem paga, o dono acabava digitando isso dentro da
+  // própria descrição ("Chat GPT - Dia 14 - Onze/IDM"). `recorrente` e `diaVencimento`
+  // só valem quando o gasto é um custo fixo mensal; `split` é opcional, para quando mais
+  // de um responsável divide a conta.
+  const [gastoForm, setGastoForm] = useState({
+    descricao: '', valor: '', categoria: 'custo_variavel' as Categoria,
+    recorrente: false, diaVencimento: '',
+    split: [] as { responsavelId: string; percentual: string }[],
+  });
   const [savingGasto, setSavingGasto]       = useState(false);
+  // Quem paga cada despesa, por despesa_id — carregado à parte porque nem toda despesa
+  // tem split (a maioria é custo da empresa como um todo, sem dono).
+  const [despesaResponsaveis, setDespesaResponsaveis] = useState<Record<string, DespesaResponsavelRow[]>>({});
   const [savingCanal, setSavingCanal]       = useState<string | null>(null);
   const [savingTipo, setSavingTipo]         = useState<string | null>(null);
   const [savingConferencia, setSavingConferencia] = useState<string | null>(null);
@@ -248,6 +271,20 @@ export function Balanco() {
     if (view === 'fechamento') loadPeriodo();
   }, [view, loadPeriodo]);
 
+  // Split de responsável por despesa. À parte porque a maioria dos gastos não tem dono —
+  // buscar isso junto do balanco_itens sempre faria um JOIN vazio na maior parte do tempo.
+  useEffect(() => {
+    const ids = gastosHoje.map(g => g.id);
+    if (ids.length === 0) { setDespesaResponsaveis({}); return; }
+    supabase.from('despesa_responsaveis').select('*').in('despesa_id', ids).then(({ data }) => {
+      const porDespesa: Record<string, DespesaResponsavelRow[]> = {};
+      for (const linha of (data ?? []) as DespesaResponsavelRow[]) {
+        (porDespesa[linha.despesa_id] ??= []).push(linha);
+      }
+      setDespesaResponsaveis(porDespesa);
+    });
+  }, [gastosHoje]);
+
   // ─── Actions: Fechamento por período ──────────────────────────────────────
 
   async function handleConfirmarAluno(alunoId: string) {
@@ -277,6 +314,22 @@ export function Balanco() {
       toast.error('Preencha descrição e valor.');
       return;
     }
+
+    // O split é opcional — a maioria dos gastos é da empresa como um todo, sem dono. Só
+    // valida a soma quando o usuário de fato começou a preencher uma linha.
+    const linhasSplit = gastoForm.split.filter(l => l.responsavelId);
+    if (linhasSplit.length > 0) {
+      const somaPct = linhasSplit.reduce((s, l) => s + (parseFloat(l.percentual.replace(',', '.')) || 0), 0);
+      if (Math.round(somaPct) !== 100) {
+        toast.error(`A soma dos percentuais é ${somaPct.toFixed(0)}%, precisa fechar em 100%.`);
+        return;
+      }
+    }
+
+    const diaVenc = gastoForm.recorrente && gastoForm.diaVencimento
+      ? Math.min(28, Math.max(1, parseInt(gastoForm.diaVencimento, 10) || 0)) || null
+      : null;
+
     setSavingGasto(true);
     const { data, error } = await supabase.from('balanco_itens').insert({
       descricao: gastoForm.descricao.trim(),
@@ -285,13 +338,44 @@ export function Balanco() {
       categoria: gastoForm.categoria,
       produto: 'geral',
       mes_referencia: range.start.slice(0, 7),
-      recorrente: false,
+      recorrente: gastoForm.recorrente,
+      dia_vencimento: diaVenc,
       retorno_realizado: 0,
     }).select('*').single();
+
+    if (error || !data) {
+      setSavingGasto(false);
+      toast.error('Erro ao registrar gasto.');
+      return;
+    }
+
+    const novaDespesa = data as BalancoItem;
+    let splitGravado: DespesaResponsavelRow[] = [];
+
+    if (linhasSplit.length > 0) {
+      const paraInserir = linhasSplit.map(l => ({
+        despesa_id: novaDespesa.id,
+        responsavel_id: l.responsavelId,
+        nome_ref: responsaveisList.find(r => r.id === l.responsavelId)?.nome ?? '—',
+        percentual: parseFloat(l.percentual.replace(',', '.')) || 0,
+      }));
+      const { data: splitData, error: splitError } = await supabase
+        .from('despesa_responsaveis').insert(paraInserir).select('*');
+      if (splitError) {
+        // O gasto já foi gravado — perder só o split não pode travar o fluxo, mas o
+        // usuário precisa saber que aquela parte não entrou.
+        toast.error('Gasto salvo, mas não deu para gravar quem paga. Edite depois.');
+      } else {
+        splitGravado = (splitData ?? []) as DespesaResponsavelRow[];
+      }
+    }
+
     setSavingGasto(false);
-    if (error || !data) { toast.error('Erro ao registrar gasto.'); return; }
-    setGastosHoje(prev => [data as BalancoItem, ...prev]);
-    setGastoForm({ descricao: '', valor: '', categoria: 'custo_variavel' });
+    setGastosHoje(prev => [novaDespesa, ...prev]);
+    if (splitGravado.length > 0) {
+      setDespesaResponsaveis(prev => ({ ...prev, [novaDespesa.id]: splitGravado }));
+    }
+    setGastoForm({ descricao: '', valor: '', categoria: 'custo_variavel', recorrente: false, diaVencimento: '', split: [] });
     toast.success('Gasto registrado!');
   }
 
@@ -405,17 +489,23 @@ export function Balanco() {
   }
 
   async function handleDeleteGastoHoje(id: string) {
+    // `despesa_responsaveis.despesa_id` tem ON DELETE CASCADE — o banco já limpa o split
+    // sozinho; só falta tirar do estado local para a tela acompanhar.
     const { error } = await supabase.from('balanco_itens').delete().eq('id', id);
     if (error) { toast.error('Erro ao remover.'); return; }
     setGastosHoje(prev => prev.filter(g => g.id !== id));
+    setDespesaResponsaveis(prev => { const { [id]: _removida, ...resto } = prev; return resto; });
     toast.success('Removido!');
   }
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
-  const tabs: { id: View; label: string }[] = [
-    { id: 'fechamento', label: '🔒 Fechamento' },
-    { id: 'config',   label: '⚙ Config' },
+  // Os emojis 🔒/⚙ renderizavam de jeitos diferentes por sistema — em alguns virava um
+  // ícone colorido gigante fora de escala com o texto. Ícone lucide dentro de um selo é
+  // consistente em qualquer tela.
+  const tabs: { id: View; label: string; icon: typeof Lock }[] = [
+    { id: 'fechamento', label: 'Fechamento', icon: Lock },
+    { id: 'config',     label: 'Config',     icon: Settings },
   ];
 
   return (
@@ -433,9 +523,12 @@ export function Balanco() {
       <div className="flex gap-0 border-b border-border">
         {tabs.map(t => (
           <button key={t.id} onClick={() => setView(t.id)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${
               view === t.id ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}>
+            <span className="w-4 h-4 rounded-full bg-red-100 text-red-600 flex items-center justify-center flex-shrink-0">
+              <t.icon className="h-2.5 w-2.5" />
+            </span>
             {t.label}
           </button>
         ))}
@@ -599,7 +692,7 @@ export function Balanco() {
                         </Badge>
                       ) : !isFechado ? (
                         <Button
-                          size="sm" className="gap-1.5 bg-slate-800 hover:bg-slate-900 text-white"
+                          size="sm" className="gap-1.5"
                           disabled={savingFechamento}
                           onClick={() => handleFecharPeriodo({
                             bruto: brutoVivo, taxas: taxasVivo, liquido: liquidoVivo,
@@ -621,23 +714,28 @@ export function Balanco() {
                       </Button>
                     </div>
 
-                    {/* KPI do período */}
+                    {/* KPI do período. Mesmo StatTile do Financeiro e do Time Comercial — antes
+                        era um Card cru com cor livre por card (verde, vermelho, azul, roxo, e
+                        no outro braço laranja), cada tela inventando a propria paleta. */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       {(filtroAtivo ? [
-                        { icon: <Receipt className="h-4 w-4" />, label: 'Bruto (pagamentos c/ sua parte)', value: bruto, cls: 'text-emerald-600' },
-                        { icon: <Info className="h-4 w-4" />, label: 'Taxas', value: taxasTotal, cls: 'text-red-500', prefix: '−' },
-                        { icon: <DollarSign className="h-4 w-4" />, label: 'Líquido', value: liquido, cls: 'text-sky-600' },
-                        { icon: <Users className="h-4 w-4" />, label: 'Seu repasse', value: meuRepasseTotal, cls: 'text-violet-600' },
+                        { icone: Receipt, label: 'Bruto (pagamentos c/ sua parte)', value: bruto, tom: 'bom' as const },
+                        { icone: Info, label: 'Taxas', value: taxasTotal, tom: 'ruim' as const, prefix: '−' },
+                        { icone: DollarSign, label: 'Líquido', value: liquido, tom: 'padrao' as const },
+                        { icone: Users, label: 'Seu repasse', value: meuRepasseTotal, tom: 'padrao' as const },
                       ] : [
-                        { icon: <Receipt className="h-4 w-4" />, label: 'Bruto', value: bruto, cls: 'text-emerald-600' },
-                        { icon: <Info className="h-4 w-4" />, label: 'Taxas', value: taxasTotal, cls: 'text-red-500', prefix: '−' },
-                        { icon: <DollarSign className="h-4 w-4" />, label: 'Líquido', value: liquido, cls: 'text-sky-600' },
-                        { icon: <ShoppingBag className="h-4 w-4" />, label: 'Saídas', value: saidasTotal, cls: 'text-orange-600', prefix: '−' },
+                        { icone: Receipt, label: 'Bruto', value: bruto, tom: 'bom' as const },
+                        { icone: Info, label: 'Taxas', value: taxasTotal, tom: 'ruim' as const, prefix: '−' },
+                        { icone: DollarSign, label: 'Líquido', value: liquido, tom: 'padrao' as const },
+                        { icone: ShoppingBag, label: 'Saídas', value: saidasTotal, tom: 'atencao' as const, prefix: '−' },
                       ]).map(k => (
-                        <Card key={k.label} className="p-4 border-border/60 shadow-none">
-                          <div className="flex items-center gap-1.5 mb-1 text-muted-foreground">{k.icon}<span className="text-[10px] font-semibold uppercase tracking-wide">{k.label}</span></div>
-                          <p className={`text-xl font-bold tabular-nums ${k.cls}`}>{k.prefix || ''}R$ {fmt(k.value)}</p>
-                        </Card>
+                        <StatTile
+                          key={k.label}
+                          label={k.label}
+                          value={`${k.prefix || ''}R$ ${fmt(k.value)}`}
+                          icon={k.icone}
+                          tom={k.tom}
+                        />
                       ))}
                     </div>
 
@@ -676,9 +774,161 @@ export function Balanco() {
                       </Card>
                     )}
 
+                    {/* Saídas do período. Card próprio, como as outras seções — antes era um
+                        <div> solto entre o Saldo final e as Entradas, sem contorno que
+                        separasse uma coisa da outra. */}
+                    {!filtroAtivo && (
+                    <Card className="p-4 border-border/60 shadow-none space-y-3">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                        <TrendingDown className="h-3.5 w-3.5" /> Saídas do período
+                      </p>
+
+                      {/* Quick add. "Custo fixo recorrente" + dia de vencimento + quem paga
+                          existem porque, sem eles, essa informação ia parar dentro da
+                          descrição — foi o que aconteceu ("Chat GPT - Dia 14 - Onze/IDM"). */}
+                      <Card className="p-3 border-border/60 shadow-none space-y-2.5 bg-muted/10">
+                        <p className="text-xs font-medium">Registrar gasto nesse período</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                          <Input
+                            className="h-8 text-sm sm:col-span-2"
+                            placeholder="Descrição (ex: Almoço equipe)"
+                            value={gastoForm.descricao}
+                            onChange={e => setGastoForm(f => ({ ...f, descricao: e.target.value }))}
+                            onKeyDown={e => e.key === 'Enter' && handleAddGastoHoje()}
+                          />
+                          <Select value={gastoForm.categoria} onValueChange={v => setGastoForm(f => ({ ...f, categoria: v as Categoria }))}>
+                            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="custo_fixo">Custo Fixo</SelectItem>
+                              <SelectItem value="custo_variavel">Custo Variável</SelectItem>
+                              <SelectItem value="ads">Ads / Marketing</SelectItem>
+                              <SelectItem value="alocacao">Alocação</SelectItem>
+                              <SelectItem value="outro_saida">Outro</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <div className="flex gap-2">
+                            <Input
+                              type="number" step="0.01" className="h-8 text-sm flex-1"
+                              placeholder="R$ 0,00"
+                              value={gastoForm.valor}
+                              onChange={e => setGastoForm(f => ({ ...f, valor: e.target.value }))}
+                              onKeyDown={e => e.key === 'Enter' && handleAddGastoHoje()}
+                            />
+                            <Button size="sm" className="h-8 px-3" onClick={handleAddGastoHoje} disabled={savingGasto}>
+                              <Plus className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-border/40">
+                          <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                            <Switch
+                              checked={gastoForm.recorrente}
+                              onCheckedChange={v => setGastoForm(f => ({ ...f, recorrente: v, diaVencimento: v ? f.diaVencimento : '' }))}
+                            />
+                            Custo fixo recorrente
+                          </label>
+
+                          {gastoForm.recorrente && (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs text-muted-foreground">Vence dia</span>
+                              <Select value={gastoForm.diaVencimento} onValueChange={v => setGastoForm(f => ({ ...f, diaVencimento: v }))}>
+                                <SelectTrigger className="h-7 w-16 text-xs"><SelectValue placeholder="—" /></SelectTrigger>
+                                <SelectContent>
+                                  {Array.from({ length: 28 }, (_, i) => i + 1).map(dia => (
+                                    <SelectItem key={dia} value={String(dia)}>{dia}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => setGastoForm(f => ({ ...f, split: [...f.split, { responsavelId: '', percentual: '' }] }))}
+                            className="text-xs text-primary hover:underline"
+                          >
+                            + Quem paga
+                          </button>
+                        </div>
+
+                        {gastoForm.split.length > 0 && (
+                          <div className="space-y-1.5 pt-1">
+                            {gastoForm.split.map((linha, i) => (
+                              <div key={i} className="flex items-center gap-2">
+                                <Select
+                                  value={linha.responsavelId}
+                                  onValueChange={v => setGastoForm(f => ({ ...f, split: f.split.map((l, j) => j === i ? { ...l, responsavelId: v } : l) }))}
+                                >
+                                  <SelectTrigger className="h-7 text-xs flex-1"><SelectValue placeholder="Responsável" /></SelectTrigger>
+                                  <SelectContent>
+                                    {responsaveisList.map(r => <SelectItem key={r.id} value={r.id} className="text-xs">{r.nome}</SelectItem>)}
+                                  </SelectContent>
+                                </Select>
+                                <Input
+                                  type="number" className="h-7 w-16 text-xs" placeholder="%"
+                                  value={linha.percentual}
+                                  onChange={e => setGastoForm(f => ({ ...f, split: f.split.map((l, j) => j === i ? { ...l, percentual: e.target.value } : l) }))}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setGastoForm(f => ({ ...f, split: f.split.filter((_, j) => j !== i) }))}
+                                  className="text-muted-foreground hover:text-red-500"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </Card>
+
+                      {/* Lista */}
+                      {gastosHoje.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-3">Nenhuma saída registrada nesse período</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {gastosHoje.map(g => {
+                            const split = despesaResponsaveis[g.id] ?? [];
+                            return (
+                              <div key={g.id} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border/40 bg-white">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-sm truncate">{g.descricao}</span>
+                                    {g.dia_vencimento && (
+                                      <span className="text-[10px] bg-muted/60 px-1.5 py-0.5 rounded-full border border-border/50 text-muted-foreground shrink-0">
+                                        Dia {g.dia_vencimento}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                                    <span className="text-xs text-muted-foreground">{CAT_LABELS[g.categoria]}</span>
+                                    {split.map(r => (
+                                      <span key={r.id} className="text-[10px] bg-muted/50 px-1.5 py-0.5 rounded-full">
+                                        {r.nome_ref} <strong>{r.percentual}%</strong>
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                                <span className="text-sm font-semibold tabular-nums text-red-500 shrink-0">−R$ {fmt(g.valor)}</span>
+                                <button onClick={() => handleDeleteGastoHoje(g.id)} className="text-muted-foreground hover:text-red-500 transition-colors shrink-0">
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            );
+                          })}
+                          <div className="flex justify-end px-3 pt-1">
+                            <span className="text-sm font-bold text-red-500">Total saídas: −R$ {fmt(gastosHoje.reduce((s, g) => s + g.valor, 0))}</span>
+                          </div>
+                        </div>
+                      )}
+                    </Card>
+                    )}
+
+
                     {/* Entradas do período por produto */}
-                    <div>
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
                         <TrendingUp className="h-3.5 w-3.5" /> Entradas — {receitasView.length} pagamento{receitasView.length !== 1 ? 's' : ''}
                       </p>
 
@@ -717,6 +967,11 @@ export function Balanco() {
                           <p className="text-sm text-muted-foreground">Nenhum pagamento recebido nesse período</p>
                         </Card>
                       ) : (
+                      <SecaoRecolhivel
+                        titulo="Pagamentos individuais"
+                        resumo={`${receitasView.length} pagamento${receitasView.length !== 1 ? 's' : ''}`}
+                        icon={Receipt}
+                      >
                         <div className="space-y-3">
                           {Object.entries(porProduto).map(([slug, { label, itens }]) => {
                             const subtotal = itens.reduce((s, r) => s + r.valor, 0);
@@ -848,17 +1103,22 @@ export function Balanco() {
                             );
                           })}
                         </div>
+                      </SecaoRecolhivel>
                       )}
                     </div>
 
-                    {/* Matrículas do período */}
-                    <div>
-                      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                        <UserCheck className="h-3.5 w-3.5" /> Matrículas — {alunosView.length} nova{alunosView.length !== 1 ? 's' : ''}
-                        {pendenteCount > 0 && (
-                          <Badge className="ml-1 bg-amber-50 text-amber-700 border border-amber-200 text-[10px]">{pendenteCount} pendente{pendenteCount !== 1 ? 's' : ''}</Badge>
-                        )}
-                      </div>
+                    {/* Matrículas do período. Aberta por padrão quando ha pendencia — e o unico
+                        caso, junto com Entradas, em que o dono provavelmente precisa AGIR e
+                        nao so conferir; esconder isso atras de um clique custaria mais do que
+                        a rolagem que a secao recolhivel resolve. */}
+                    <SecaoRecolhivel
+                      titulo={`Matrículas — ${alunosView.length} nova${alunosView.length !== 1 ? 's' : ''}`}
+                      resumo={pendenteCount > 0
+                        ? <span className="text-amber-700 font-semibold">{pendenteCount} pendente{pendenteCount !== 1 ? 's' : ''}</span>
+                        : (alunosView.length > 0 ? 'tudo confirmado' : undefined)}
+                      icon={UserCheck}
+                      abertaPorPadrao={pendenteCount > 0}
+                    >
                       {alunosView.length === 0 ? (
                         <Card className="p-6 text-center border-border/50 shadow-none">
                           <p className="text-sm text-muted-foreground">Nenhum aluno cadastrado nesse período</p>
@@ -986,71 +1246,7 @@ export function Balanco() {
                           })}
                         </div>
                       )}
-                    </div>
-
-                    {/* Saídas do período (custo operacional é da empresa, não de um responsável) */}
-                    {!filtroAtivo && (
-                    <div>
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                        <TrendingDown className="h-3.5 w-3.5" /> Saídas do período
-                      </p>
-                      {/* Quick add */}
-                      <Card className="p-3 border-border/60 shadow-none mb-3">
-                        <p className="text-xs font-medium mb-2">Registrar gasto nesse período</p>
-                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                          <Input
-                            className="h-8 text-sm sm:col-span-2"
-                            placeholder="Descrição (ex: Almoço equipe)"
-                            value={gastoForm.descricao}
-                            onChange={e => setGastoForm(f => ({ ...f, descricao: e.target.value }))}
-                            onKeyDown={e => e.key === 'Enter' && handleAddGastoHoje()}
-                          />
-                          <Select value={gastoForm.categoria} onValueChange={v => setGastoForm(f => ({ ...f, categoria: v as Categoria }))}>
-                            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="custo_fixo">Custo Fixo</SelectItem>
-                              <SelectItem value="custo_variavel">Custo Variável</SelectItem>
-                              <SelectItem value="ads">Ads / Marketing</SelectItem>
-                              <SelectItem value="alocacao">Alocação</SelectItem>
-                              <SelectItem value="outro_saida">Outro</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <div className="flex gap-2">
-                            <Input
-                              type="number" step="0.01" className="h-8 text-sm flex-1"
-                              placeholder="R$ 0,00"
-                              value={gastoForm.valor}
-                              onChange={e => setGastoForm(f => ({ ...f, valor: e.target.value }))}
-                              onKeyDown={e => e.key === 'Enter' && handleAddGastoHoje()}
-                            />
-                            <Button size="sm" className="h-8 px-3" onClick={handleAddGastoHoje} disabled={savingGasto}>
-                              <Plus className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </div>
-                      </Card>
-                      {/* Lista */}
-                      {gastosHoje.length === 0 ? (
-                        <p className="text-sm text-muted-foreground text-center py-3">Nenhuma saída registrada nesse período</p>
-                      ) : (
-                        <div className="space-y-1.5">
-                          {gastosHoje.map(g => (
-                            <div key={g.id} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border/40 bg-white">
-                              <span className="flex-1 text-sm">{g.descricao}</span>
-                              <span className="text-xs text-muted-foreground">{CAT_LABELS[g.categoria]}</span>
-                              <span className="text-sm font-semibold tabular-nums text-red-500">−R$ {fmt(g.valor)}</span>
-                              <button onClick={() => handleDeleteGastoHoje(g.id)} className="text-muted-foreground hover:text-red-500 transition-colors ml-1">
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          ))}
-                          <div className="flex justify-end px-3 pt-1">
-                            <span className="text-sm font-bold text-red-500">Total saídas: −R$ {fmt(gastosHoje.reduce((s, g) => s + g.valor, 0))}</span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    )}
+                    </SecaoRecolhivel>
 
                   </>
                 );

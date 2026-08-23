@@ -951,6 +951,7 @@ export type Database = {
           categoria: string
           created_at: string | null
           descricao: string
+          dia_vencimento: number | null
           empresa: string
           id: string
           mes_referencia: string
@@ -964,6 +965,7 @@ export type Database = {
           categoria: string
           created_at?: string | null
           descricao: string
+          dia_vencimento?: number | null
           empresa?: string
           id?: string
           mes_referencia: string
@@ -977,6 +979,7 @@ export type Database = {
           categoria?: string
           created_at?: string | null
           descricao?: string
+          dia_vencimento?: number | null
           empresa?: string
           id?: string
           mes_referencia?: string
@@ -2029,6 +2032,48 @@ export type Database = {
           uf?: string
         }
         Relationships: []
+      }
+      despesa_responsaveis: {
+        Row: {
+          created_at: string
+          despesa_id: string
+          id: string
+          nome_ref: string
+          percentual: number
+          responsavel_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          despesa_id: string
+          id?: string
+          nome_ref: string
+          percentual?: number
+          responsavel_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          despesa_id?: string
+          id?: string
+          nome_ref?: string
+          percentual?: number
+          responsavel_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "despesa_responsaveis_despesa_id_fkey"
+            columns: ["despesa_id"]
+            isOneToOne: false
+            referencedRelation: "balanco_itens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "despesa_responsaveis_responsavel_id_fkey"
+            columns: ["responsavel_id"]
+            isOneToOne: false
+            referencedRelation: "responsaveis"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       disparo_campanhas: {
         Row: {

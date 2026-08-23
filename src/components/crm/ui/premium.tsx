@@ -206,3 +206,52 @@ export function FiltroChip({
     </button>
   );
 }
+
+/**
+ * Seção que abre e fecha, com cabeçalho clicável e resumo sempre visível — o mesmo padrão
+ * que `IntegridadeFinanceira` e `SaudeLancamentos` já implementavam cada um do seu jeito.
+ *
+ * Existe para conteúdo que é longo e denso quando aberto (uma lista de todo pagamento do
+ * período, por exemplo) mas cujo TOTAL cabe numa linha. Fechada por padrão quando isso é o
+ * caso: a tela mostra o que importa de cara — o número — sem obrigar a rolar por dezenas
+ * de itens para chegar na próxima seção.
+ */
+export function SecaoRecolhivel({
+  titulo, resumo, icon: Icon, badge, abertaPorPadrao = false, children,
+}: {
+  titulo: string;
+  resumo?: React.ReactNode;
+  icon?: React.ElementType;
+  badge?: React.ReactNode;
+  abertaPorPadrao?: boolean;
+  children: React.ReactNode;
+}) {
+  const [aberto, setAberto] = React.useState(abertaPorPadrao);
+  return (
+    <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setAberto(a => !a)}
+        aria-expanded={aberto}
+        className="w-full p-3 flex items-center justify-between gap-3 text-left hover:bg-muted/30 transition-colors"
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          {Icon && (
+            <div className="w-6 h-6 rounded-md bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
+              <Icon className="h-3.5 w-3.5" />
+            </div>
+          )}
+          <span className="text-sm font-semibold text-foreground truncate">{titulo}</span>
+          {badge}
+        </div>
+        <div className="flex items-center gap-2.5 flex-shrink-0">
+          {resumo && <span className="text-xs text-muted-foreground">{resumo}</span>}
+          <svg className={`h-4 w-4 text-muted-foreground transition-transform ${aberto ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+      </button>
+      {aberto && <div className="border-t border-border/60 p-3">{children}</div>}
+    </div>
+  );
+}
