@@ -2629,12 +2629,62 @@ function EditBoasVindasModal({ cfg, onClose, onSaved }: {
   const [pausadoPorErro, setPausadoPorErro] = useState(cfg.pausado_por_erro ?? false);
   const [saving, setSaving] = useState(false);
 
+  // Link do grupo (manhã/tarde) do NPA não mora em boas_vindas_config — fica solto dentro
+  // de funnel_configs.variaveis, escrito pelo wizard na criação do evento. Se quem criou o
+  // evento preencheu o JID do grupo mas esqueceu o link de convite, a mensagem de
+  // boas-vindas sai sem link e ninguém percebe até um aluno reclamar (foi exatamente o que
+  // aconteceu com o NPA #19 Santos, turma manhã). Editável aqui pra fechar esse ponto cego.
+  const [funnelConfigId, setFunnelConfigId] = useState<string | null>(null);
+  const [variaveis, setVariaveis] = useState<Record<string, string>>({});
+  const [linkGrupoManha, setLinkGrupoManha] = useState('');
+  const [linkGrupoTarde, setLinkGrupoTarde] = useState('');
+  const [carregandoLinks, setCarregandoLinks] = useState(tipo === 'idm');
+
+  useEffect(() => {
+    if (tipo !== 'idm') return;
+    (async () => {
+      const { data } = await supabase.from('funnel_configs').select('id, variaveis').eq('funnel_name', cfg.funnel_name).maybeSingle();
+      const vars = (data?.variaveis as Record<string, string> | null) ?? {};
+      setFunnelConfigId(data?.id ?? null);
+      setVariaveis(vars);
+      setLinkGrupoManha(vars.link_grupo_manha ?? vars.link_grupo_1 ?? '');
+      setLinkGrupoTarde(vars.link_grupo_tarde ?? vars.link_grupo_2 ?? '');
+      setCarregandoLinks(false);
+    })();
+  }, [tipo, cfg.funnel_name]);
+
+  const grupoManhaSemLink = tipo === 'idm' && !!(variaveis.grupo_manha || variaveis.grupo_1) && !linkGrupoManha.trim();
+  const grupoTardeSemLink = tipo === 'idm' && !!(variaveis.grupo_tarde || variaveis.grupo_2) && !linkGrupoTarde.trim();
+
   async function save() {
     if (wppMessageType !== 'text' && !wppMediaUrl.trim()) {
       toast.error('Informe a URL da mídia pro tipo de mensagem escolhido');
       return;
     }
+    if (tipo === 'idm') {
+      if ((variaveis.grupo_manha || variaveis.grupo_1) && !linkGrupoManha.trim()) {
+        toast.error('Falta o link de convite do grupo da manhã — sem ele a boas-vindas sai sem link.');
+        return;
+      }
+      if ((variaveis.grupo_tarde || variaveis.grupo_2) && !linkGrupoTarde.trim()) {
+        toast.error('Falta o link de convite do grupo da tarde — sem ele a boas-vindas sai sem link.');
+        return;
+      }
+    }
     setSaving(true);
+    if (tipo === 'idm') {
+      const novasVariaveis = {
+        ...variaveis,
+        link_grupo_manha: linkGrupoManha.trim(),
+        link_grupo_1: linkGrupoManha.trim(),
+        link_grupo_tarde: linkGrupoTarde.trim(),
+        link_grupo_2: linkGrupoTarde.trim(),
+      };
+      const { error: fcError } = funnelConfigId
+        ? await supabase.from('funnel_configs').update({ variaveis: novasVariaveis, updated_at: new Date().toISOString() }).eq('id', funnelConfigId)
+        : await supabase.from('funnel_configs').insert({ funnel_name: cfg.funnel_name, variaveis: novasVariaveis });
+      if (fcError) { setSaving(false); toast.error(`Erro ao salvar links do grupo: ${fcError.message}`); return; }
+    }
     const { data, error } = await supabase.from('boas_vindas_config').update({
       wpp_mensagem: wppMsg,
       wpp_mensagem_tarde: tipo === 'idm' ? (wppMsgTarde || null) : null,
@@ -2704,6 +2754,28 @@ function EditBoasVindasModal({ cfg, onClose, onSaved }: {
               </label>
               <Input value={wppMediaUrl} onChange={e => setWppMediaUrl(e.target.value)}
                 placeholder="https://exemplo.com/arquivo.jpg" className="h-9 text-sm font-mono" />
+            </div>
+          )}
+
+          {tipo === 'idm' && !carregandoLinks && (
+            <div className="p-3 rounded-lg border border-border bg-muted/10 space-y-3">
+              <p className="text-xs font-semibold text-foreground">Link de convite do grupo — é isso que vai no {'{{link_grupo_manha}}'}/{'{{link_grupo_tarde}}'} da mensagem</p>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                  Grupo manhã {(variaveis.grupo_manha || variaveis.grupo_1) && <span className="opacity-60 font-normal">— JID cadastrado: {variaveis.grupo_manha || variaveis.grupo_1}</span>}
+                </label>
+                <Input value={linkGrupoManha} onChange={e => setLinkGrupoManha(e.target.value)}
+                  placeholder="https://chat.whatsapp.com/…" className={cn('h-9 text-sm font-mono', grupoManhaSemLink && 'border-red-300 focus-visible:ring-red-300')} />
+                {grupoManhaSemLink && <p className="text-[11px] text-red-600 mt-1">Tem grupo cadastrado mas falta o link — a boas-vindas sai sem link pra quem entra de manhã.</p>}
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                  Grupo tarde {(variaveis.grupo_tarde || variaveis.grupo_2) && <span className="opacity-60 font-normal">— JID cadastrado: {variaveis.grupo_tarde || variaveis.grupo_2}</span>}
+                </label>
+                <Input value={linkGrupoTarde} onChange={e => setLinkGrupoTarde(e.target.value)}
+                  placeholder="https://chat.whatsapp.com/…" className={cn('h-9 text-sm font-mono', grupoTardeSemLink && 'border-red-300 focus-visible:ring-red-300')} />
+                {grupoTardeSemLink && <p className="text-[11px] text-red-600 mt-1">Tem grupo cadastrado mas falta o link — a boas-vindas sai sem link pra quem entra de tarde.</p>}
+              </div>
             </div>
           )}
 

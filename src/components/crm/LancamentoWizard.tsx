@@ -722,8 +722,9 @@ function Step3({ config, setConfig, evoInstances, existingId }: {
       {/* ── Cards de grupo (totalGrupos = qtd lançamento + 1 oferta) ── */}
       {Array.from({ length: totalGrupos }).map((_, i) => {
         const grupo    = config.grupos[i] ?? { nickname: '', jid: '', participantes: [] };
-        const hasLink  = !!(grupo.link && grupo.link.includes('chat.whatsapp.com/'));
-        const isCriado = !!grupo.jid || hasLink;  // link sozinho é suficiente
+        const hasLink   = !!(grupo.link && grupo.link.includes('chat.whatsapp.com/'));
+        const isCriado  = !!grupo.jid || hasLink;  // link sozinho é suficiente
+        const semLink   = !!grupo.jid && !hasLink; // criado mas falta o link de convite
         const isLoading = criando[i] ?? false;
         const erro     = erros[i] ?? '';
         const fotoFile = fotoFiles[i] ?? null;
@@ -736,7 +737,7 @@ function Step3({ config, setConfig, evoInstances, existingId }: {
           <div
             key={i}
             className={`rounded-2xl border p-4 space-y-4 transition-all ${
-              isCriado ? 'border-green-300 bg-green-50/60' : 'border-border bg-card'
+              semLink ? 'border-amber-300 bg-amber-50/50' : isCriado ? 'border-green-300 bg-green-50/60' : 'border-border bg-card'
             }`}
           >
             {/* Cabeçalho do card */}
@@ -752,7 +753,14 @@ function Step3({ config, setConfig, evoInstances, existingId }: {
                   <p className="text-[10px] text-muted-foreground">{varName}</p>
                 </div>
               </div>
-              {grupo.jid ? (
+              {grupo.jid && !hasLink ? (
+                // Grupo criado mas sem link de convite: a busca automática pode ter falhado
+                // (fetchInviteLink falha em silêncio) — sem avisar aqui, a boas-vindas some
+                // sem link e ninguém percebe até um aluno reclamar.
+                <span className="flex items-center gap-1 text-xs text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full font-medium">
+                  <AlertTriangle className="h-3 w-3" /> Sem link
+                </span>
+              ) : grupo.jid ? (
                 <span className="flex items-center gap-1 text-xs text-green-700 bg-green-100 border border-green-200 px-2 py-0.5 rounded-full font-medium">
                   <Check className="h-3 w-3" /> Criado
                 </span>
@@ -786,8 +794,13 @@ function Step3({ config, setConfig, evoInstances, existingId }: {
                 value={grupo.link ?? ''}
                 onChange={e => updateGrupo(i, 'link', e.target.value)}
                 placeholder="https://chat.whatsapp.com/..."
-                className="h-9 text-sm"
+                className={`h-9 text-sm ${semLink ? 'border-amber-300 focus-visible:ring-amber-300' : ''}`}
               />
+              {semLink && (
+                <p className="text-[11px] text-amber-700 flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3 shrink-0" /> Grupo criado mas sem link — a mensagem de boas-vindas sai sem link pra esse turno. Cole aqui ou tente buscar de novo.
+                </p>
+              )}
             </div>
 
             {/* Buscar / criar grupo — mostra se não tem JID ainda */}
