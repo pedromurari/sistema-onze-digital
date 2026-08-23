@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getDisplayRole } from '@/lib/role-labels';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -8,20 +7,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import {
-  Users, TrendingUp, DollarSign, AlertTriangle, BarChart3, Clock,
-  AlertCircle, Zap, TrendingDown, CheckCircle2, CalendarDays, Rocket, Target, ChevronDown,
+  Users, TrendingUp, DollarSign, AlertTriangle, BarChart3,
+  AlertCircle, Zap, CheckCircle2, CalendarDays, Rocket, Target, ChevronDown,
+  UserPlus, Receipt, Handshake, Video, ShoppingBag, GraduationCap,
 } from 'lucide-react';
-import { isPast, format, differenceInDays, isToday, isTomorrow } from 'date-fns';
+import { isPast, format, differenceInDays, isToday, isTomorrow, startOfWeek, startOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
   useAlunos, usePagamentos, useTurmas, useResponsaveis, useTurmaResponsaveis,
   COLUNAS_PAGAMENTO_RESUMO,
 } from '@/lib/db';
 import {
-  isAlunoAtivo, calcMRR, calcInadimplencia, makeGetOwnerShare,
+  isAlunoAtivo, isPagamentoInadimplente, calcMRR, calcInadimplencia, makeGetOwnerShare,
   filtrarPagamentosPorPeriodo, getPeriodRange,
-  type TurmaResponsavelRow, type ResponsavelRow,
 } from '@/lib/financial-utils';
+import { INITIAL_VENDORS } from '@/lib/vendedores';
+import { StatTile, SectionBar } from '@/components/crm/ui/premium';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,9 +46,14 @@ interface Turma {
   id: string; nome: string; produto: 'psicanalise' | 'numerologia';
   valor_mensalidade?: number; total_mensalidades?: number;
   data_inicio?: string; data_fim?: string; tipo?: string;
-  responsavel_id?: string | null;
+  responsavel_id?: string | null; vagas?: number | null;
 }
-interface Responsavel { id: string; nome: string; }
+interface ParceiroRow {
+  id: string; nome: string; ativo: boolean | null;
+  meta_videos_semanal: number | null; meta_videos_mensal: number | null;
+  meta_vendas_semanal: number | null; meta_vendas_mensal: number | null;
+}
+interface VendaMesVendedor { mes: string; vendedor: string; vista_cartao: number; boleto: number; total: number; }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -89,40 +95,6 @@ function dedupByKey<T>(
     if (!existing || rankFn(row) > rankFn(existing)) map.set(key, row);
   }
   return Array.from(map.values());
-}
-
-// ─── KPI Card ────────────────────────────────────────────────────────────────
-
-function KpiCard({
-  label, value, sub, icon: Icon, accent = 'blue',
-}: {
-  label: string; value: string | number; sub?: string;
-  icon: React.ElementType; accent?: 'blue' | 'green' | 'red' | 'purple' | 'amber';
-}) {
-  const c = {
-    blue:   { icon: 'text-blue-500',    bg: 'bg-blue-500/10' },
-    green:  { icon: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-    red:    { icon: 'text-red-500',     bg: 'bg-red-500/10' },
-    purple: { icon: 'text-purple-500',  bg: 'bg-purple-500/10' },
-    amber:  { icon: 'text-amber-500',   bg: 'bg-amber-500/10' },
-  }[accent];
-
-  return (
-    <Card className="border border-border/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.06)] transition-shadow bg-white">
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">{label}</p>
-            <p className="text-[28px] font-bold text-foreground mt-1.5 leading-none tabular-nums">{value}</p>
-            {sub && <p className="text-xs text-muted-foreground mt-2 leading-snug">{sub}</p>}
-          </div>
-          <div className={`w-10 h-10 rounded-xl ${c.bg} flex items-center justify-center flex-shrink-0`}>
-            <Icon size={18} className={c.icon} />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
 }
 
 // ─── CollapsibleSection ───────────────────────────────────────────────────────
@@ -173,10 +145,45 @@ function FunnelBar({ label, count, total, isLast = false, accent = '#6366f1' }: 
   );
 }
 
+// ─── Meta bar (parceiro: vídeo/venda × semana/mês) ────────────────────────────
+
+function MetaBarra({ rotulo, atual, meta }: { rotulo: string; atual: number; meta: number | null }) {
+  const pct = meta && meta > 0 ? Math.min(Math.round((atual / meta) * 100), 100) : null;
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] text-muted-foreground w-12 shrink-0">{rotulo}</span>
+      {meta ? (
+        <>
+          <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+            <div className={cn('h-full rounded-full', (pct ?? 0) >= 100 ? 'bg-emerald-500' : 'bg-primary')} style={{ width: `${pct}%` }} />
+          </div>
+          <span className="text-[10px] font-semibold tabular-nums w-12 text-right">{atual}/{meta}</span>
+        </>
+      ) : (
+        <span className="text-[10px] font-semibold tabular-nums text-muted-foreground">{atual} · sem meta</span>
+      )}
+    </div>
+  );
+}
+
+function MetaLinha({ icon: Icon, label, semana, metaSemana, mes, metaMes }: {
+  icon: React.ElementType; label: string; semana: number; metaSemana: number | null; mes: number; metaMes: number | null;
+}) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+        <Icon size={12} /> {label}
+      </p>
+      <MetaBarra rotulo="Semana" atual={semana} meta={metaSemana} />
+      <MetaBarra rotulo="Mês" atual={mes} meta={metaMes} />
+    </div>
+  );
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export function Dashboard() {
-  const { user, users } = useAuth();
+  const { user } = useAuth();
   // Alunos e pagamentos vem do React Query (src/lib/db), nao mais de useState local.
   // Ganho concreto: o Financeiro carrega exatamente as mesmas chaves, entao abrir as duas
   // telas na mesma sessao reaproveita o cache em vez de baixar os 2.462 pagamentos duas
@@ -204,6 +211,15 @@ export function Dashboard() {
   // Digital', fazendo o Dashboard mostrar só uma fatia dos inadimplentes/MRR
   // reais em vez do total (divergindo de Financeiro/CFO, que não filtram).
   const [ownerFilter, setOwnerFilter] = useState<string>('');
+  // Leads que entraram hoje, vencimentos/cobrança do dia, ocupação de turma e o
+  // desempenho real de vendedores(as)/parceiros — pedido do dono depois de ver o
+  // dashboard antigo: "funções que vamos usar de verdade".
+  const [leadsHoje, setLeadsHoje]         = useState<{ id: string; canal: string | null }[]>([]);
+  const [parceiros, setParceiros]         = useState<ParceiroRow[]>([]);
+  const [parceiroProdutos, setParceiroProdutos] = useState<{ id: string; parceiro_id: string }[]>([]);
+  const [parceiroVendas, setParceiroVendas]     = useState<{ produto_id: string; created_at: string }[]>([]);
+  const [parceiroVideos, setParceiroVideos]     = useState<{ parceiro_id: string; data_postagem: string }[]>([]);
+  const [vendasPorMesVendedor, setVendasPorMesVendedor] = useState<VendaMesVendedor[]>([]);
   const [carregandoResto, setLoading] = useState(true);
   const loading = carregandoResto || carregandoAlunos || carregandoPagamentos;
   const isAdmin = user?.tipo === 'admin';
@@ -216,27 +232,47 @@ export function Dashboard() {
       if (showLoading) setLoading(true);
 
       const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-      // Alunos e pagamentos saem daqui: quem cuida deles agora e o React Query, la em cima.
+      const inicioMes = startOfMonth(hoje);
+      const inicioSemana = startOfWeek(hoje, { weekStartsOn: 1 });
+      const inicioBusca = inicioSemana < inicioMes ? inicioSemana : inicioMes;
+
       // Alunos, pagamentos, turmas, sócios e split saem daqui: quem cuida deles agora é a
       // camada única em src/lib/db, lá em cima com React Query.
-      const [tasksRes, lancRes, npaEvtRes, evtCalRes] = await Promise.all([
+      const [
+        tasksRes, lancRes, npaEvtRes, evtCalRes, leadsHojeRes,
+        parceirosRes, parceiroProdutosRes, parceiroVendasRes, parceiroVideosRes, vendasMesRes,
+      ] = await Promise.all([
         supabase.from('tarefas').select('id, titulo, status, prioridade, responsavel_id, responsaveis, prazo, categoria, pagina, created_at').order('prazo').limit(50),
-        supabase.from('lancamentos').select('id, nome, ativo, created_at, data_live').order('created_at', { ascending: false }).limit(20),
+        supabase.from('lancamentos').select('id, nome, ativo, status, created_at, data_live').order('created_at', { ascending: false }).limit(20),
         supabase.from('npa_eventos').select('id, nome, ativo, data_evento').order('created_at', { ascending: false }).limit(20),
         // Inclui eventos futuros E eventos em andamento (data_fim >= hoje, mesmo que data_inicio < hoje)
         supabase.from('eventos_calendario').select('id, titulo, data_inicio, data_fim, cor')
           .or(`data_inicio.gte.${hoje.toISOString()},data_fim.gte.${hoje.toISOString()}`)
           .order('data_inicio').limit(30),
+        supabase.from('leads').select('id, canal').gte('criado_em', hoje.toISOString()).limit(500),
+        supabase.from('parceiros' as any).select('id, nome, ativo, meta_videos_semanal, meta_videos_mensal, meta_vendas_semanal, meta_vendas_mensal').eq('ativo', true),
+        supabase.from('parceiros_produtos' as any).select('id, parceiro_id'),
+        supabase.from('parceiros_vendas' as any).select('produto_id, created_at').eq('status', 'aprovado').gte('created_at', inicioBusca.toISOString()),
+        supabase.from('parceiro_videos' as any).select('parceiro_id, data_postagem').gte('data_postagem', inicioBusca.toISOString().slice(0, 10)),
+        (supabase as any).rpc('time_comercial_vendas_por_mes'),
       ]);
 
       if (tasksRes.data) setTasks(tasksRes.data as Task[]);
       if (evtCalRes.data) setEventosCalendario(evtCalRes.data as any);
+      if (leadsHojeRes.data) setLeadsHoje(leadsHojeRes.data as any);
+      if (parceirosRes.data) setParceiros(parceirosRes.data as any);
+      if (parceiroProdutosRes.data) setParceiroProdutos(parceiroProdutosRes.data as any);
+      if (parceiroVendasRes.data) setParceiroVendas(parceiroVendasRes.data as any);
+      if (parceiroVideosRes.data) setParceiroVideos(parceiroVideosRes.data as any);
+      if (vendasMesRes.data) setVendasPorMesVendedor(vendasMesRes.data as VendaMesVendedor[]);
 
       const lancList = lancRes.data || [];
       const npaList  = npaEvtRes.data || [];
       setLancamentos(lancList);
       setNpaEventos(npaList);
-      setSelLancId(prev => prev || lancList[0]?.id || '');
+      // Prioriza o lançamento com status 'em_andamento' — antes caía sempre no primeiro
+      // da lista (mais recente por created_at), que podia já estar encerrado.
+      setSelLancId(prev => prev || (lancList as any[]).find(l => l.status === 'em_andamento')?.id || lancList[0]?.id || '');
       setSelNpaId(prev => prev || npaList[0]?.id || '');
 
       if (showLoading) setLoading(false);
@@ -255,6 +291,9 @@ export function Dashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lancamento_leads' }, reload)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'npa_evento_leads' }, reload)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tarefas' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'parceiro_videos' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'parceiros_vendas' }, reload)
       .subscribe();
 
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); supabase.removeChannel(ch); };
@@ -329,6 +368,7 @@ export function Dashboard() {
   // Aluno ativo canônico: 'ativo' literal OU 'pre_matricula' cuja data_matricula
   // já chegou — derivado na leitura, não depende de nenhum job de correção.
   const alunosAtivos = useMemo(() => alunos.filter(a => isAlunoAtivo(a)), [alunos]);
+  const alunoPorId = useMemo(() => new Map(alunos.map(a => [a.id, a])), [alunos]);
 
   // getOwnerShare canônico (compartilhado com FinanceiroCFO/Balanco): binário via
   // turmas.responsavel_id quando existir, proporcional via turma_responsaveis senão.
@@ -402,34 +442,119 @@ export function Dashboard() {
     }, 0);
   }, [filteredAlunosAtivos, turmas, getOwnerShare]);
 
-  // ── Funil Lancamento ──────────────────────────────────────────────────────
+  // ── Ação de hoje: leads novos, vencimentos e atraso ───────────────────────
+
+  const vencimentosHojeList = useMemo(
+    () => pagamentos.filter(p => p.status === 'pendente' && p.data_vencimento === hojeStr),
+    [pagamentos, hojeStr]
+  );
+  const valorVenceHoje = useMemo(
+    () => vencimentosHojeList.reduce((s, p) => s + (p.valor || 0), 0),
+    [vencimentosHojeList]
+  );
+
+  // Mesma regra canônica de inadimplência (isPagamentoInadimplente) — só ordenada por
+  // quem está atrasado há mais tempo, pro dono saber quem cobrar primeiro.
+  const atrasadosOrdenados = useMemo(() => {
+    return pagamentosInadimplentesElegiveis
+      .filter(p => isPagamentoInadimplente(p))
+      .map(p => ({ ...p, dias: p.data_vencimento ? differenceInDays(new Date(), new Date(p.data_vencimento)) : 0 }))
+      .sort((a, b) => b.dias - a.dias)
+      .slice(0, 6);
+  }, [pagamentosInadimplentesElegiveis]);
+
+  // ── Ocupação de turmas ─────────────────────────────────────────────────────
+
+  const turmasComVagas = useMemo(() => {
+    return turmas
+      .filter(t => t.vagas != null && (t.vagas as number) > 0)
+      .map(t => {
+        const matriculados = alunosAtivos.filter(a => a.turma_id === t.id).length;
+        const vagas = t.vagas as number;
+        const pct = Math.min(Math.round((matriculados / vagas) * 100), 100);
+        return { ...t, matriculados, vagas, pct, restantes: Math.max(vagas - matriculados, 0) };
+      })
+      .sort((a, b) => b.pct - a.pct);
+  }, [turmas, alunosAtivos]);
+
+  // ── Vendedores reais (Helen/Miguel) ───────────────────────────────────────
+  // Fonte única em src/lib/vendedores.ts — antes o Dashboard nem olhava pra isso e
+  // mostrava "Performance do Time" com todo usuário ativo (inclusive quem não vende).
+
+  const vendasMesPorVendedor = useMemo(() => {
+    const map: Record<string, number> = {};
+    vendasPorMesVendedor.filter(v => v.mes === mesAtual).forEach(v => {
+      map[v.vendedor] = (map[v.vendedor] || 0) + Number(v.vista_cartao || 0) + Number(v.boleto || 0);
+    });
+    return map;
+  }, [vendasPorMesVendedor, mesAtual]);
+
+  // ── Parceiros: meta de vídeo e de venda, semanal e mensal ─────────────────
+
+  const inicioSemanaRef = useMemo(() => startOfWeek(new Date(), { weekStartsOn: 1 }), []);
+  const inicioMesRef    = useMemo(() => startOfMonth(new Date()), []);
+
+  const parceiroProdutoMap = useMemo(() => {
+    const map = new Map<string, string>(); // produto_id -> parceiro_id
+    parceiroProdutos.forEach(pp => map.set(pp.id, pp.parceiro_id));
+    return map;
+  }, [parceiroProdutos]);
+
+  const parceiroStats = useMemo(() => {
+    type Stat = { videosSemana: number; videosMes: number; vendasSemana: number; vendasMes: number };
+    const stats: Record<string, Stat> = {};
+    const ensure = (id: string): Stat => stats[id] ?? (stats[id] = { videosSemana: 0, videosMes: 0, vendasSemana: 0, vendasMes: 0 });
+
+    parceiroVideos.forEach(v => {
+      const d = new Date(v.data_postagem);
+      const s = ensure(v.parceiro_id);
+      if (d >= inicioMesRef) s.videosMes++;
+      if (d >= inicioSemanaRef) s.videosSemana++;
+    });
+    parceiroVendas.forEach(v => {
+      const parceiroId = parceiroProdutoMap.get(v.produto_id);
+      if (!parceiroId) return;
+      const d = new Date(v.created_at);
+      const s = ensure(parceiroId);
+      if (d >= inicioMesRef) s.vendasMes++;
+      if (d >= inicioSemanaRef) s.vendasSemana++;
+    });
+    return stats;
+  }, [parceiroVideos, parceiroVendas, parceiroProdutoMap, inicioMesRef, inicioSemanaRef]);
+
+  // ── Funil Lancamento (cumulativo — quem chegou a uma fase conta nela pra sempre,
+  //    mesmo depois de avançar. Antes contava só a fase atual, e o número de quem
+  //    "esteve no grupo" caía assim que a pessoa avançava — parecia que tinha sumido
+  //    gente, quando na verdade ela só tinha progredido no funil) ───────────────
 
   const funilLanc = useMemo(() => {
-    const ll = lancLeads; // already deduped
+    const rankOf = (l: any) => LANCAMENTO_STAGE_RANK[getLancamentoStage(l)] ?? 0;
+    const countAtLeast = (min: number) => lancLeads.filter(l => rankOf(l) >= min).length;
     return {
-      planilha:        ll.filter(l => getLancamentoStage(l) === 'planilha').length,
-      grupoLancamento: ll.filter(l => getLancamentoStage(l) === 'grupoLancamento').length,
-      grupoOferta:     ll.filter(l => getLancamentoStage(l) === 'grupoOferta').length,
-      followUp01:      ll.filter(l => getLancamentoStage(l) === 'followUp01').length,
-      followUp02:      ll.filter(l => getLancamentoStage(l) === 'followUp02').length,
-      followUp03:      ll.filter(l => getLancamentoStage(l) === 'followUp03').length,
-      matricula:       ll.filter(l => getLancamentoStage(l) === 'matricula').length,
+      planilha:        countAtLeast(LANCAMENTO_STAGE_RANK.planilha),
+      grupoLancamento: countAtLeast(LANCAMENTO_STAGE_RANK.grupoLancamento),
+      grupoOferta:     countAtLeast(LANCAMENTO_STAGE_RANK.grupoOferta),
+      followUp01:      countAtLeast(LANCAMENTO_STAGE_RANK.followUp01),
+      followUp02:      countAtLeast(LANCAMENTO_STAGE_RANK.followUp02),
+      followUp03:      countAtLeast(LANCAMENTO_STAGE_RANK.followUp03),
+      matricula:       countAtLeast(LANCAMENTO_STAGE_RANK.matricula),
     };
   }, [lancLeads]);
 
   const funilNpa = useMemo(() => {
-    const nl = npaLeads;
+    const rankOf = (l: any) => NPA_STAGE_RANK[l.fase] ?? (isTruthyFlag(l.matriculado) ? NPA_STAGE_RANK.matricula : 0);
+    const countAtLeast = (min: number) => npaLeads.filter(l => rankOf(l) >= min).length;
     return {
-      novo:        nl.filter(l => l.fase === 'novo').length,
-      ingressoPago:nl.filter(l => l.fase === 'ingresso_pago').length,
-      noGrupo:     nl.filter(l => l.fase === 'no_grupo').length,
-      confirmado:  nl.filter(l => l.fase === 'confirmado').length,
-      evento:      nl.filter(l => l.fase === 'evento').length,
-      closer:      nl.filter(l => l.fase === 'closer').length,
-      followUp01:  nl.filter(l => l.fase === 'follow_up_01').length,
-      followUp02:  nl.filter(l => l.fase === 'follow_up_02').length,
-      followUp03:  nl.filter(l => l.fase === 'follow_up_03').length,
-      matricula:   nl.filter(l => l.fase === 'matricula' || isTruthyFlag(l.matriculado)).length,
+      novo:        countAtLeast(NPA_STAGE_RANK.novo),
+      ingressoPago:countAtLeast(NPA_STAGE_RANK.ingresso_pago),
+      noGrupo:     countAtLeast(NPA_STAGE_RANK.no_grupo),
+      confirmado:  countAtLeast(NPA_STAGE_RANK.confirmado),
+      evento:      countAtLeast(NPA_STAGE_RANK.evento),
+      closer:      countAtLeast(NPA_STAGE_RANK.closer),
+      followUp01:  countAtLeast(NPA_STAGE_RANK.follow_up_01),
+      followUp02:  countAtLeast(NPA_STAGE_RANK.follow_up_02),
+      followUp03:  countAtLeast(NPA_STAGE_RANK.follow_up_03),
+      matricula:   countAtLeast(NPA_STAGE_RANK.matricula),
     };
   }, [npaLeads]);
 
@@ -444,17 +569,25 @@ export function Dashboard() {
     return seen.size;
   }, [allLancLeads]);
 
-  // ── Team stats ────────────────────────────────────────────────────────────
+  // Lançamentos ordenados: em andamento primeiro, depois ativos, depois encerrados —
+  // pedido do dono pra distinguir "lançamento em andamento" de "quando eu desligo".
+  const lancamentosOrdenados = useMemo(() => {
+    const rank = (l: any) => l.status === 'em_andamento' ? 0 : l.ativo ? 1 : 2;
+    return [...lancamentos].sort((a, b) => {
+      const d = rank(a) - rank(b);
+      if (d !== 0) return d;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  }, [lancamentos]);
 
-  const getColabStats = (uid: string) => {
-    const colabTasks = tasks.filter(t => t.responsavel_id === uid || t.responsaveis?.includes(uid));
-    return {
-      tarefasPendentes:   colabTasks.filter(t => t.status === 'a_fazer').length,
-      tarefasEmAndamento: colabTasks.filter(t => t.status === 'em_andamento').length,
-      proximaTarefa: colabTasks.filter(t => t.status !== 'concluido').sort((a, b) =>
-        new Date(a.prazo || '9999').getTime() - new Date(b.prazo || '9999').getTime())[0],
-    };
+  const situacaoLancamento = (l: any) => {
+    if (l.status === 'em_andamento') return ' · em andamento';
+    if (!l.ativo) return ' · desligado';
+    if (l.status === 'finalizado') return ' · encerrado';
+    return '';
   };
+
+  // ── Team stats ────────────────────────────────────────────────────────────
 
   const tarefasCriticas = tasks.filter(t => t.status !== 'concluido' && t.prazo && isPast(new Date(t.prazo))).slice(0, 4);
 
@@ -550,35 +683,104 @@ export function Dashboard() {
           ))}
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KpiCard
+          <StatTile
             label="MRR Projetado"
             value={fmtK(mrrEfetivo)}
-            sub={`${filteredAlunosAtivos.length} alunos ativos${ownerFilter ? ` · ${ownerFilter}` : ''}`}
+            hint={`${filteredAlunosAtivos.length} alunos ativos${ownerFilter ? ` · ${ownerFilter}` : ''}`}
             icon={DollarSign}
-            accent="green"
+            tom="bom"
           />
-          <KpiCard
+          <StatTile
             label={`Recebido ${new Date().toLocaleDateString('pt-BR', { month: 'short' })}`}
             value={fmtK(recebidoMes)}
-            sub={`Taxa de coleta: ${taxaColeta}%`}
+            hint={`Taxa de coleta: ${taxaColeta}%`}
             icon={TrendingUp}
-            accent={taxaColeta >= 80 ? 'green' : taxaColeta >= 50 ? 'amber' : 'red'}
+            tom={taxaColeta >= 80 ? 'bom' : taxaColeta >= 50 ? 'atencao' : 'ruim'}
           />
-          <KpiCard
+          <StatTile
             label="Inadimplência"
             value={inadimplentesCount > 0 ? fmt(valorInadimplente) : 'Zerada'}
-            sub={inadimplentesCount > 0 ? `${inadimplentesCount} alunos em atraso` : 'Sem atrasos'}
+            hint={inadimplentesCount > 0 ? `${inadimplentesCount} alunos em atraso` : 'Sem atrasos'}
             icon={inadimplentesCount > 0 ? AlertTriangle : CheckCircle2}
-            accent={inadimplentesCount === 0 ? 'green' : inadimplentesCount <= 5 ? 'amber' : 'red'}
+            tom={inadimplentesCount === 0 ? 'bom' : inadimplentesCount <= 5 ? 'atencao' : 'ruim'}
           />
-          <KpiCard
+          <StatTile
             label="Receita Restante"
             value={fmtK(receitaRestante)}
-            sub="Parcelas futuras a receber"
+            hint="Parcelas futuras a receber"
             icon={BarChart3}
-            accent="purple"
+            tom="padrao"
           />
         </div>
+      </div>
+
+      {/* ── Ação de hoje ──────────────────────────────────────────────────── */}
+      <div className="space-y-3">
+        <SectionBar title="Hoje" subtitle="O que precisa de atenção agora — não o mês inteiro." icon={Zap} />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <StatTile label="Leads novos" value={leadsHoje.length} hint="Entraram hoje" icon={UserPlus} tom="padrao" />
+          <StatTile
+            label="Vence hoje"
+            value={fmt(valorVenceHoje)}
+            hint={`${vencimentosHojeList.length} pagamento(s)`}
+            icon={Receipt}
+            tom={vencimentosHojeList.length > 0 ? 'atencao' : 'bom'}
+          />
+          <StatTile
+            label="Atraso mais antigo"
+            value={atrasadosOrdenados[0] ? `${atrasadosOrdenados[0].dias} dias` : '—'}
+            hint={atrasadosOrdenados[0] ? (alunoPorId.get(atrasadosOrdenados[0].aluno_id)?.nome ?? 'Aluno') : 'Nenhum atraso'}
+            icon={AlertTriangle}
+            tom={atrasadosOrdenados.length > 0 ? 'ruim' : 'bom'}
+          />
+          <StatTile
+            label="Tarefas atrasadas"
+            value={tarefasCriticas.length}
+            hint="Do time"
+            icon={AlertCircle}
+            tom={tarefasCriticas.length > 0 ? 'atencao' : 'bom'}
+          />
+        </div>
+
+        {(vencimentosHojeList.length > 0 || atrasadosOrdenados.length > 0) && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Receipt size={15} className="text-muted-foreground" /> Vence hoje
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1.5">
+                {vencimentosHojeList.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-3">Nada vencendo hoje</p>
+                ) : vencimentosHojeList.slice(0, 6).map(p => (
+                  <div key={p.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-amber-50 border border-amber-100">
+                    <span className="text-sm truncate">{alunoPorId.get(p.aluno_id)?.nome ?? 'Aluno'}</span>
+                    <span className="text-sm font-semibold text-amber-700 tabular-nums">{fmt(p.valor || 0)}</span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <AlertTriangle size={15} className="text-muted-foreground" /> Atrasados há mais tempo
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1.5">
+                {atrasadosOrdenados.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-3">Sem atrasos entre alunos ativos</p>
+                ) : atrasadosOrdenados.map(p => (
+                  <div key={p.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-red-50 border border-red-100">
+                    <span className="text-sm truncate">{alunoPorId.get(p.aluno_id)?.nome ?? 'Aluno'}</span>
+                    <span className="text-sm font-semibold text-red-700 tabular-nums">{p.dias} dias</span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
 
       {/* ── Próximas datas importantes ────────────────────────────────────── */}
@@ -631,6 +833,69 @@ export function Dashboard() {
         </CardContent>
       </Card>
 
+      {/* ── Vendedores reais & Parceiros ───────────────────────────────────── */}
+      <CollapsibleSection title="Vendedores & Parceiros" icon={Handshake}>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+          {/* Vendedores */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Users size={15} className="text-muted-foreground" /> Vendedores
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2.5">
+              {INITIAL_VENDORS.map(v => {
+                const vendasMes = vendasMesPorVendedor[v.name] ?? 0;
+                const pct = v.meta > 0 ? Math.min(Math.round((vendasMes / v.meta) * 100), 100) : 0;
+                return (
+                  <div key={v.name} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border bg-muted/20">
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0" style={{ backgroundColor: v.cor }}>
+                      {v.initials}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold truncate">{v.name}</p>
+                        <span className="text-xs font-semibold tabular-nums">{vendasMes}/{v.meta}</span>
+                      </div>
+                      <div className="h-1.5 bg-muted rounded-full overflow-hidden mt-1">
+                        <div className={cn('h-full rounded-full', pct >= 100 ? 'bg-emerald-500' : 'bg-primary')} style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              <p className="text-[11px] text-muted-foreground pt-1">Vendas fechadas no mês, contra a meta mensal de cada vendedor(a).</p>
+            </CardContent>
+          </Card>
+
+          {/* Parceiros */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Handshake size={15} className="text-muted-foreground" /> Parceiros — vídeos & vendas
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {parceiros.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">Nenhum parceiro ativo cadastrado</p>
+              ) : parceiros.map(p => {
+                const s = parceiroStats[p.id] ?? { videosSemana: 0, videosMes: 0, vendasSemana: 0, vendasMes: 0 };
+                return (
+                  <div key={p.id} className="p-3 rounded-xl border bg-muted/20">
+                    <p className="text-sm font-semibold mb-2 truncate">{p.nome}</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <MetaLinha icon={Video} label="Vídeos" semana={s.videosSemana} metaSemana={p.meta_videos_semanal} mes={s.videosMes} metaMes={p.meta_videos_mensal} />
+                      <MetaLinha icon={ShoppingBag} label="Vendas" semana={s.vendasSemana} metaSemana={p.meta_vendas_semanal} mes={s.vendasMes} metaMes={p.meta_vendas_mensal} />
+                    </div>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        </div>
+      </CollapsibleSection>
+
       {/* ── Funnels (collapsible) ─────────────────────────────────────────── */}
       <CollapsibleSection title="Funis de Vendas" icon={BarChart3}>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -642,13 +907,18 @@ export function Dashboard() {
                 <SelectTrigger className="h-8 text-sm font-semibold border-0 shadow-none px-0 focus:ring-0">
                   <SelectValue placeholder="Selecionar lançamento" />
                 </SelectTrigger>
-                <SelectContent>{lancamentos.map(l => <SelectItem key={l.id} value={l.id}>{l.nome}</SelectItem>)}</SelectContent>
+                <SelectContent>
+                  {lancamentosOrdenados.map(l => (
+                    <SelectItem key={l.id} value={l.id}>{l.nome}{situacaoLancamento(l)}</SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
                 <Badge variant="outline" className="text-xs">{lancTotal} leads únicos</Badge>
                 {lancConv > 0 && <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">{lancConv}% conversão</Badge>}
                 {totalMatriculasLanc > 0 && <Badge className="bg-primary/10 text-primary border-primary/20 text-xs">{totalMatriculasLanc} matrículas (todos)</Badge>}
               </div>
+              <p className="text-xs text-muted-foreground mt-1.5">Cada barra soma quem chegou até ali ou foi além — não zera quando a pessoa avança.</p>
             </CardHeader>
             <CardContent className="space-y-2.5">
               {[['Planilha','planilha'],['Grupo Lançamento','grupoLancamento'],['Grupo Oferta','grupoOferta'],['Follow-up 01','followUp01'],['Follow-up 02','followUp02'],['Follow-up 03','followUp03'],['Matrícula','matricula']].map(([label, key], i, arr) => (
@@ -670,6 +940,7 @@ export function Dashboard() {
                 <Badge variant="outline" className="text-xs">{npaTotal} leads únicos</Badge>
                 {npaConv > 0 && <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">{npaConv}% conversão</Badge>}
               </div>
+              <p className="text-xs text-muted-foreground mt-1.5">Cada barra soma quem chegou até ali ou foi além — não zera quando a pessoa avança.</p>
             </CardHeader>
             <CardContent className="space-y-2.5">
               {[['Novo','novo'],['Ingresso Pago','ingressoPago'],['No Grupo','noGrupo'],['Confirmado','confirmado'],['Evento','evento'],['Closer','closer'],['Follow-up 01','followUp01'],['Follow-up 02','followUp02'],['Follow-up 03','followUp03'],['Matrícula','matricula']].map(([label, key], i, arr) => (
@@ -680,69 +951,44 @@ export function Dashboard() {
         </div>
       </CollapsibleSection>
 
-      {/* ── Team + Financial (collapsible) ────────────────────────────────── */}
-      <CollapsibleSection title="Time & Financeiro" icon={Users}>
+      {/* ── Ocupação de turmas ──────────────────────────────────────────────── */}
+      <CollapsibleSection title="Ocupação de Turmas" icon={GraduationCap}>
+        <Card>
+          <CardContent className="pt-4">
+            {turmasComVagas.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">Nenhuma turma com número de vagas cadastrado ainda</p>
+            ) : (
+              <div className="space-y-2.5">
+                {turmasComVagas.map(t => (
+                  <div key={t.id} className="px-3 py-2.5 rounded-xl border bg-muted/20">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold truncate">{t.nome}</p>
+                      <span className={cn('text-xs font-semibold tabular-nums shrink-0',
+                        t.pct >= 90 ? 'text-red-600' : t.pct >= 70 ? 'text-amber-600' : 'text-emerald-600')}>
+                        {t.matriculados}/{t.vagas} ({t.pct}%)
+                      </span>
+                    </div>
+                    <div className="h-1.5 bg-muted rounded-full overflow-hidden mt-1.5">
+                      <div className={cn('h-full rounded-full', t.pct >= 90 ? 'bg-red-500' : t.pct >= 70 ? 'bg-amber-500' : 'bg-emerald-500')} style={{ width: `${t.pct}%` }} />
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {t.restantes > 0 ? `${t.restantes} vaga(s) restante(s)` : 'Lotada'}
+                      {t.data_inicio && ` · início ${format(new Date(t.data_inicio), 'dd/MM/yyyy')}`}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </CollapsibleSection>
+
+      {/* ── Saúde financeira por produto ────────────────────────────────────── */}
+      <div className="space-y-3">
+        <SectionBar title="Saúde Financeira" subtitle="Ativos, MRR e inadimplência — separado por produto." icon={BarChart3} />
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-
-          {/* Team */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Users size={15} className="text-muted-foreground" /> Performance do Time
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {users.filter(u => u.ativo).map(u => {
-                const stats = getColabStats(u.id);
-                return (
-                  <div key={u.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border bg-muted/20 hover:bg-muted/40 transition-colors">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0" style={{ backgroundColor: u.cor }}>
-                      {u.nome.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate">{u.nome}</p>
-                      <p className="text-xs text-muted-foreground">{getDisplayRole(u)}</p>
-                    </div>
-                    <div className="flex items-center gap-3 text-right shrink-0">
-                      <div><p className="text-sm font-bold text-amber-600">{stats.tarefasPendentes}</p><p className="text-xs text-muted-foreground">A fazer</p></div>
-                      <div><p className="text-sm font-bold text-orange-500">{stats.tarefasEmAndamento}</p><p className="text-xs text-muted-foreground">Andamento</p></div>
-                      {stats.proximaTarefa && (
-                        <div className="max-w-[90px] text-right">
-                          <p className="text-xs font-medium truncate">{stats.proximaTarefa.titulo}</p>
-                          <p className="text-xs text-muted-foreground">{stats.proximaTarefa.prazo ? format(new Date(stats.proximaTarefa.prazo), 'dd/MM') : '—'}</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-              {tarefasCriticas.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-red-100">
-                  <p className="text-xs font-semibold text-red-600 mb-2 uppercase tracking-wide flex items-center gap-1"><AlertCircle size={11}/> Tarefas atrasadas</p>
-                  <div className="space-y-1.5">
-                    {tarefasCriticas.map(t => (
-                      <div key={t.id} className="flex items-center justify-between px-3 py-2 bg-red-50 rounded-lg border border-red-100">
-                        <p className="text-sm truncate flex-1">{t.titulo}</p>
-                        <div className="flex items-center gap-2 ml-2 shrink-0">
-                          {t.prazo && <p className="text-xs text-red-500 font-medium">{format(new Date(t.prazo), 'dd/MM')}</p>}
-                          <Badge variant="destructive" className="text-xs px-1.5">{t.prioridade}</Badge>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Financial health */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <BarChart3 size={15} className="text-muted-foreground" /> Saúde Financeira
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+            <CardContent className="pt-4">
               <Tabs defaultValue="psicanalise">
                 <TabsList className="grid w-full grid-cols-2 mb-4">
                   <TabsTrigger value="psicanalise">Psicanálise</TabsTrigger>
@@ -792,7 +1038,7 @@ export function Dashboard() {
                       )}
                       {s.proxTurma && (
                         <div className="flex items-center gap-3 p-3 rounded-xl bg-purple-50 border border-purple-100">
-                          <Zap size={14} className="text-purple-600 shrink-0" />
+                          <GraduationCap size={14} className="text-purple-600 shrink-0" />
                           <div className="min-w-0">
                             <p className="text-xs font-semibold text-purple-700 truncate">{s.proxTurma.nome}</p>
                             <p className="text-xs text-purple-500">{s.proxTurma.data_inicio ? format(new Date(s.proxTurma.data_inicio), 'dd/MM/yyyy') : 'A definir'}</p>
@@ -806,7 +1052,7 @@ export function Dashboard() {
             </CardContent>
           </Card>
         </div>
-      </CollapsibleSection>
+      </div>
 
     </div>
   );

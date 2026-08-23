@@ -16,7 +16,7 @@ import { chaves } from './keys';
  */
 export const COLUNAS_TURMA =
   'id, nome, tipo, produto, valor_mensalidade, total_mensalidades, ' +
-  'dia_vencimento, data_inicio, data_fim, responsavel_id, created_at';
+  'dia_vencimento, data_inicio, data_fim, responsavel_id, vagas, created_at';
 
 /** O formato que as telas financeiras consomem. Superconjunto das interfaces locais. */
 export interface Turma {
@@ -30,6 +30,7 @@ export interface Turma {
   data_inicio?: string | null;
   data_fim?: string | null;
   responsavel_id?: string | null;
+  vagas?: number | null;
   created_at?: string | null;
 }
 

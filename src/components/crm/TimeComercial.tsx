@@ -19,6 +19,7 @@ import { ChatTimeComercial } from './chat/ChatTimeComercial';
 import { PREMIUM_TABLE_HEADER_ROW, premiumZebraRow, StatTile, SectionBar } from '@/components/crm/ui/premium';
 import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
 import { useInvalidarDados } from '@/lib/db';
+import { INITIAL_VENDORS, calcVendor, type VendorRow, BONUS_MOTIVO, BONUS_SUPERACAO } from '@/lib/vendedores';
 import {
   MessageCircle, Target, Copy, ExternalLink, Users, TrendingUp, DollarSign, CalendarDays,
   Video, Rocket, Repeat, GraduationCap, Link2, Wallet, CreditCard, Crown, Kanban, ClipboardList,
@@ -1662,45 +1663,6 @@ function OperacaoTab({ viewAsName }: VendorScopeProps) {
 // enquanto (numeros e formulas do protótipo) — decisao de produto: portar
 // primeiro, conectar ao Supabase depois.
 // -----------------------------------------------------------------------
-
-const COM_VISTA_CARTAO = 147;
-const COM_RECORRENTE = 75;
-const FAT_VISTA_CARTAO = 1485;
-const FAT_RECORRENTE = 150;
-const AJUDA_CUSTO = 1500;
-const META_MOTIVO_FAT = 25000;
-const BONUS_MOTIVO = 1000;
-const META_SUPERACAO_FAT = 35000;
-const BONUS_SUPERACAO = 2000;
-
-interface VendorRow {
-  name: string;
-  role: string;
-  gerente: boolean;
-  initials: string;
-  cor: string;
-  meta: number;
-  vistaCartao: number;
-  boleto: number;
-}
-
-// Cores fixas por enquanto (Helen/Miguel ainda nao sao usuarios reais do sistema,
-// so tem `cor` os cadastrados em profiles/AppUser). Quando virarem contas de verdade,
-// trocar por AppUser.cor pra manter a mesma identidade visual usada no Pipeline.
-// Sem gerente no time por enquanto — quem acompanha a equipe inteira é o Admin.
-const INITIAL_VENDORS: VendorRow[] = [
-  { name: 'Helen Magna', role: 'Vendedora', gerente: false, initials: 'HM', cor: '#A93356', meta: 30, vistaCartao: 9, boleto: 21 },
-  { name: 'Miguel Fogaça', role: 'Vendedor', gerente: false, initials: 'MF', cor: '#4A90E2', meta: 30, vistaCartao: 15, boleto: 35 },
-];
-
-function calcVendor(vistaCartao: number, boleto: number) {
-  const total = vistaCartao + boleto;
-  const faturamento = vistaCartao * FAT_VISTA_CARTAO + boleto * FAT_RECORRENTE;
-  const comissao = vistaCartao * COM_VISTA_CARTAO + boleto * COM_RECORRENTE;
-  const bonus = faturamento >= META_SUPERACAO_FAT ? BONUS_SUPERACAO : faturamento >= META_MOTIVO_FAT ? BONUS_MOTIVO : 0;
-  const receber = AJUDA_CUSTO + comissao + bonus;
-  return { total, faturamento, comissao, bonus, receber };
-}
 
 function BonusPill({ bonus }: { bonus: number }) {
   if (bonus >= BONUS_SUPERACAO) return <Badge className="text-xs border-0 bg-success/15 text-success">Superação</Badge>;

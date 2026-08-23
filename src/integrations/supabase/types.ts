@@ -5891,12 +5891,48 @@ export type Database = {
           },
         ]
       }
+      parceiro_videos: {
+        Row: {
+          created_at: string
+          data_postagem: string
+          id: string
+          link: string
+          parceiro_id: string
+        }
+        Insert: {
+          created_at?: string
+          data_postagem?: string
+          id?: string
+          link: string
+          parceiro_id: string
+        }
+        Update: {
+          created_at?: string
+          data_postagem?: string
+          id?: string
+          link?: string
+          parceiro_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "parceiro_videos_parceiro_id_fkey"
+            columns: ["parceiro_id"]
+            isOneToOne: false
+            referencedRelation: "parceiros"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       parceiros: {
         Row: {
           ativo: boolean | null
           created_at: string | null
           email: string | null
           id: string
+          meta_vendas_mensal: number | null
+          meta_vendas_semanal: number | null
+          meta_videos_mensal: number | null
+          meta_videos_semanal: number | null
           mp_access_token: string | null
           mp_connected_at: string | null
           mp_public_key: string | null
@@ -5915,6 +5951,10 @@ export type Database = {
           created_at?: string | null
           email?: string | null
           id?: string
+          meta_vendas_mensal?: number | null
+          meta_vendas_semanal?: number | null
+          meta_videos_mensal?: number | null
+          meta_videos_semanal?: number | null
           mp_access_token?: string | null
           mp_connected_at?: string | null
           mp_public_key?: string | null
@@ -5933,6 +5973,10 @@ export type Database = {
           created_at?: string | null
           email?: string | null
           id?: string
+          meta_vendas_mensal?: number | null
+          meta_vendas_semanal?: number | null
+          meta_videos_mensal?: number | null
+          meta_videos_semanal?: number | null
           mp_access_token?: string | null
           mp_connected_at?: string | null
           mp_public_key?: string | null
