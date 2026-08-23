@@ -15,7 +15,8 @@
     "typecheck:raw": "tsc --noEmit -p tsconfig.app.json",
     "test:rls": "node scripts/test-rls.mjs",
     "db:baseline": "node scripts/baseline-schema.mjs",
-    "db:sync-migrations": "python scripts/migrations-do-banco.py"
+    "db:sync-migrations": "python scripts/migrations-do-banco.py",
+    "inventario": "node scripts/inventario-telas.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
