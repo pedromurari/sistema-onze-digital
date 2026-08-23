@@ -133,14 +133,14 @@ function SequenciaCard({ seq, passos, lancamentos, onMudou }: {
   const [salvandoNome, setSalvandoNome] = useState(false);
 
   const salvarCampo = async (patch: Partial<FollowupSequencia>) => {
-    const { error } = await supabase.from('followup_sequencias' as any).update(patch).eq('id', seq.id);
+    const { error } = await supabase.from('followup_sequencias').update(patch).eq('id', seq.id);
     if (error) { toast.error(`Erro ao salvar: ${error.message}`); return; }
     onMudou();
   };
 
   const handleAddPasso = async () => {
     const proximaOrdem = (passos[passos.length - 1]?.ordem ?? 0) + 1;
-    const { error } = await supabase.from('followup_passos' as any).insert({
+    const { error } = await supabase.from('followup_passos').insert({
       sequencia_id: seq.id, ordem: proximaOrdem, intervalo_horas: 24, tipo_midia: 'texto', texto: '',
     });
     if (error) { toast.error(`Erro ao adicionar passo: ${error.message}`); return; }
@@ -148,20 +148,20 @@ function SequenciaCard({ seq, passos, lancamentos, onMudou }: {
   };
 
   const handleUpdatePasso = async (passo: FollowupPasso, patch: Partial<FollowupPasso>) => {
-    const { error } = await supabase.from('followup_passos' as any).update(patch).eq('id', passo.id);
+    const { error } = await supabase.from('followup_passos').update(patch).eq('id', passo.id);
     if (error) { toast.error(`Erro ao salvar passo: ${error.message}`); return; }
     onMudou();
   };
 
   const handleRemovePasso = async (passo: FollowupPasso) => {
-    const { error } = await supabase.from('followup_passos' as any).delete().eq('id', passo.id);
+    const { error } = await supabase.from('followup_passos').delete().eq('id', passo.id);
     if (error) { toast.error(`Erro ao remover passo: ${error.message}`); return; }
     onMudou();
   };
 
   const handleExcluirSequencia = async () => {
     if (!confirm(`Excluir a sequência "${seq.nome}"? Os passos dela somem junto.`)) return;
-    const { error } = await supabase.from('followup_sequencias' as any).delete().eq('id', seq.id);
+    const { error } = await supabase.from('followup_sequencias').delete().eq('id', seq.id);
     if (error) { toast.error(`Erro ao excluir: ${error.message}`); return; }
     onMudou();
   };
@@ -234,7 +234,7 @@ export function FollowupConfig({ vendedorId }: { vendedorId: string }) {
 
   const carregar = useCallback(async () => {
     const { data: seqs } = await supabase
-      .from('followup_sequencias' as any)
+      .from('followup_sequencias')
       .select('id, nome, produto, lancamento_id, ativo')
       .eq('vendedor_id', vendedorId)
       .order('created_at', { ascending: true });
@@ -243,7 +243,7 @@ export function FollowupConfig({ vendedorId }: { vendedorId: string }) {
 
     if (lista.length) {
       const { data: passos } = await supabase
-        .from('followup_passos' as any)
+        .from('followup_passos')
         .select('id, sequencia_id, ordem, intervalo_horas, tipo_midia, texto, media_url')
         .in('sequencia_id', lista.map(s => s.id))
         .order('ordem', { ascending: true });
@@ -268,7 +268,7 @@ export function FollowupConfig({ vendedorId }: { vendedorId: string }) {
 
   const handleCriarSequencia = async () => {
     setCriando(true);
-    const { error } = await supabase.from('followup_sequencias' as any).insert({
+    const { error } = await supabase.from('followup_sequencias').insert({
       vendedor_id: vendedorId, nome: 'Follow-up', ativo: false,
     });
     setCriando(false);
