@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { MessageCircle, Search, X, ChevronLeft, RefreshCw } from 'lucide-react';
 import { useConversas } from '@/hooks/useConversas';
 import { useThread } from '@/hooks/useThread';
+import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
 import {
   normalizePhone, maskPhone, fmtHora, fmtDiaSeparador, fmtRelativo,
   TEMP_CFG, TIPO_ICON, TIPO_LABEL,
@@ -106,7 +107,9 @@ export function ChatWidget() {
                         <p className="font-medium text-sm truncate flex items-center gap-1.5 min-w-0">
                           {mostraNaoLida && <span className="h-2 w-2 rounded-full bg-primary flex-none" />}
                           <temp.icon className={cn('h-3 w-3 flex-none', temp.className)} />
-                          <span className={cn('truncate', mostraNaoLida && 'font-semibold')}>{c.nome}</span>
+                          <span className={cn('truncate', mostraNaoLida && 'font-semibold')}>
+                            <NomePessoa nome={c.nome} telefone={c.telefone} />
+                          </span>
                         </p>
                         <span className="text-[10px] text-muted-foreground flex-none">{fmtRelativo(c.ultimaEm)}</span>
                       </div>

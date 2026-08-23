@@ -18,6 +18,7 @@ import { assignTurmaEAtualizarParcelas } from '@/lib/parcelasAluno';
 import { ChatTimeComercial } from './chat/ChatTimeComercial';
 import { PREMIUM_TABLE_HEADER_ROW, premiumZebraRow, StatTile, SectionBar } from '@/components/crm/ui/premium';
 import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
+import { useInvalidarDados } from '@/lib/db';
 import {
   MessageCircle, Target, Copy, ExternalLink, Users, TrendingUp, DollarSign, CalendarDays,
   Video, Rocket, Repeat, GraduationCap, Link2, Wallet, CreditCard, Crown, Kanban, ClipboardList,
@@ -1423,6 +1424,7 @@ interface TurmaOption {
 const ALUNOS_AGUARDANDO_TURMA_DESDE = '2026-08-20';
 
 function AlunosAguardandoTurmaCard({ viewAsName }: VendorScopeProps) {
+  const invalidarDados = useInvalidarDados();
   const [alunosSemTurma, setAlunosSemTurma] = useState<AlunoAguardandoTurma[]>([]);
   const [turmasOptions, setTurmasOptions] = useState<TurmaOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1469,6 +1471,9 @@ function AlunosAguardandoTurmaCard({ viewAsName }: VendorScopeProps) {
     setClaiming((prev) => ({ ...prev, [alunoId]: true }));
     const { error } = await (supabase.from('alunos') as any).update({ vendedor_id: viewAsName }).eq('id', alunoId);
     setClaiming((prev) => ({ ...prev, [alunoId]: false }));
+    // Assumir um aluno muda quem aparece como responsavel no Financeiro e no Dashboard.
+    // Sem avisar, as duas telas seguem mostrando o dono antigo ate alguem dar F5.
+    if (!error) invalidarDados('alunos');
     if (error) {
       toast({ variant: 'destructive', title: 'Erro ao marcar aluno', description: error.message });
       return;
@@ -1481,6 +1486,10 @@ function AlunosAguardandoTurmaCard({ viewAsName }: VendorScopeProps) {
     setAssigning((prev) => ({ ...prev, [aluno.id]: true }));
     try {
       await assignTurmaEAtualizarParcelas(aluno.id, turmaId, aluno);
+      // Atribuir turma refaz as PARCELAS do aluno, não só o vínculo. Sem avisar, o
+      // Financeiro segue mostrando as parcelas antigas e a Cobrança a fila velha.
+      // `alunos` já arrasta `pagamentos` pela invalidação cruzada.
+      invalidarDados('alunos');
       setAlunosSemTurma((prev) => prev.filter((a) => a.id !== aluno.id));
       toast({ title: 'Turma atribuída!' });
     } catch (error: any) {

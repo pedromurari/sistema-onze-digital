@@ -19,6 +19,7 @@ import {
   TEMP_CFG, TIPO_ICON, TIPO_LABEL, instanciaOcultaNoChat,
 } from '@/lib/chat-utils';
 import type { Conversa } from '@/hooks/useConversas';
+import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
 
 /**
  * Chat: historico de conversa de WhatsApp por lead/aluno, estilo caixa de
@@ -83,7 +84,9 @@ function ConversaItem({ c, ativo, onClick }: { c: Conversa; ativo: boolean; onCl
         <p className="font-medium text-sm truncate flex items-center gap-1.5 min-w-0">
           {mostraNaoLida && <span className="h-2 w-2 rounded-full bg-primary flex-none" />}
           <temp.icon className={cn('h-3 w-3 flex-none', temp.className)} />
-          <span className={cn('truncate', mostraNaoLida && 'font-semibold')}>{c.nome}</span>
+          <span className={cn('truncate', mostraNaoLida && 'font-semibold')}>
+            <NomePessoa nome={c.nome} telefone={c.telefone} />
+          </span>
         </p>
         <span className="text-[10px] text-muted-foreground flex-none">{fmtRelativo(c.ultimaEm)}</span>
       </div>

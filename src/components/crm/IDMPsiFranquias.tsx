@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { PREMIUM_TABLE_HEADER_ROW, premiumZebraRow, StatTile, SectionBar } from '@/components/crm/ui/premium';
+import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -509,7 +510,9 @@ export function IDMPsiFranquias() {
                       const faseInfo = FASE_MAP[lead.fase];
                       return (
                         <TableRow key={lead.id} className={`${premiumZebraRow(idx)} cursor-pointer`} onClick={() => setEditLead(lead)}>
-                          <TableCell className="font-medium text-foreground">{lead.nome}</TableCell>
+                          <TableCell className="font-medium text-foreground">
+                            <NomePessoa nome={lead.nome} telefone={lead.whatsapp} />
+                          </TableCell>
                           <TableCell className="text-muted-foreground">{lead.whatsapp || '—'}</TableCell>
                           <TableCell className="text-muted-foreground">{lead.email || '—'}</TableCell>
                           <TableCell className="text-muted-foreground">{lead.cidade ? `${lead.cidade}${lead.estado ? `/${lead.estado}` : ''}` : '—'}</TableCell>
@@ -696,7 +699,9 @@ function LeadCard({ lead, vendedorNome, vendedores, onEdit, onChangeFase, onAssi
       onClick={onEdit}
     >
       <div className="flex items-start justify-between gap-2">
-        <p className="font-semibold text-sm text-foreground truncate">{lead.nome}</p>
+        <p className="font-semibold text-sm text-foreground truncate">
+          <NomePessoa nome={lead.nome} telefone={lead.whatsapp} />
+        </p>
         <span className="text-[10px] text-muted-foreground whitespace-nowrap">{timeAgo(lead.created_at)}</span>
       </div>
       {lead.cidade && (

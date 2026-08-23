@@ -21,6 +21,7 @@ import { useTurmas, useResponsaveis, useTurmaResponsaveis, useInvalidarDados } f
 import { useAuth } from '@/contexts/AuthContext';
 import { TaxasPagamentoConfig } from './finance/TaxasPagamentoConfig';
 import { RepasseTurmasConfig } from './finance/RepasseTurmasConfig';
+import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -210,7 +211,7 @@ export function Balanco() {
           .lte('data_pagamento', range.end),
         // Novos alunos cadastrados no período
         supabase.from('alunos')
-          .select('id, nome, turma_id, status, forma_pagamento, valor_mensalidade, total_mensalidades, created_at')
+          .select('id, pessoa_id, nome, turma_id, status, forma_pagamento, valor_mensalidade, total_mensalidades, created_at')
           .gte('created_at', range.start + 'T00:00:00')
           .lt('created_at', range.end + 'T23:59:59'),
         // Lançamentos manuais de saída feitos no período
@@ -884,7 +885,9 @@ export function Balanco() {
                                         {jaConfirmado
                                           ? <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
                                           : <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />}
-                                        <span className="font-semibold text-sm">{aluno.nome}</span>
+                                        <span className="font-semibold text-sm">
+                                          <NomePessoa nome={aluno.nome} pessoaId={(aluno as { pessoa_id?: string | null }).pessoa_id} />
+                                        </span>
                                         {produto !== 'geral' && (
                                           <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold" style={{ background: PROD_COR[produto] + '20', color: PROD_COR[produto] }}>
                                             {produto === 'psicanalise' ? 'PSI' : produto.toUpperCase()}
