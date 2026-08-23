@@ -14,6 +14,10 @@ import {
 import { isPast, format, differenceInDays, isToday, isTomorrow, startOfWeek, startOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
+  LineChart, Line,
+} from 'recharts';
+import {
   useAlunos, usePagamentos, useTurmas, useResponsaveis, useTurmaResponsaveis,
   COLUNAS_PAGAMENTO_RESUMO,
 } from '@/lib/db';
@@ -396,6 +400,21 @@ export function Dashboard() {
 
   const taxaColeta = mrrEfetivo > 0 ? Math.round((recebidoMes / mrrEfetivo) * 100) : 0;
 
+  // Recebido dos últimos 6 meses — o card do topo só mostra a foto do mês atual, sem dizer
+  // se a coleta está subindo ou caindo. Mesma fonte (pagamentos + getOwnerShare) do card,
+  // só que repetida mês a mês.
+  const receitaMensalHistorico = useMemo(() => {
+    const meses: { mes: string; label: string; recebido: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const ref = new Date(); ref.setDate(1); ref.setMonth(ref.getMonth() - i);
+      const range = getPeriodRange('mes', ref);
+      const recebido = filtrarPagamentosPorPeriodo(pagamentos, range.start, range.end)
+        .reduce((s, p) => s + (p.valor || 0) * getOwnerShare(p.turma_id ?? null), 0);
+      meses.push({ mes: range.key, label: format(ref, 'MMM', { locale: ptBR }), recebido });
+    }
+    return meses;
+  }, [pagamentos, getOwnerShare]);
+
   const hojeStr = useMemo(() => {
     const d = new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0, 10);
   }, []);
@@ -488,6 +507,26 @@ export function Dashboard() {
     });
     return map;
   }, [vendasPorMesVendedor, mesAtual]);
+
+  // Últimos 6 meses por vendedor(a), pro sparkline — mesma RPC de vendasMesPorVendedor,
+  // só que sem filtrar pelo mês atual, pra mostrar se a venda está subindo ou caindo.
+  const vendasHistoricoPorVendedor = useMemo(() => {
+    const meses: string[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i);
+      meses.push(d.toISOString().slice(0, 7));
+    }
+    const porVendedor: Record<string, { mes: string; total: number }[]> = {};
+    INITIAL_VENDORS.forEach(v => {
+      porVendedor[v.name] = meses.map(mes => ({
+        mes,
+        total: vendasPorMesVendedor
+          .filter(x => x.mes === mes && x.vendedor === v.name)
+          .reduce((s, x) => s + Number(x.vista_cartao || 0) + Number(x.boleto || 0), 0),
+      }));
+    });
+    return porVendedor;
+  }, [vendasPorMesVendedor]);
 
   // ── Parceiros: meta de vídeo e de venda, semanal e mensal ─────────────────
 
@@ -714,6 +753,40 @@ export function Dashboard() {
         </div>
       </div>
 
+      {/* ── Receita mensal (últimos 6 meses) ────────────────────────────────── */}
+      <Card className="border border-border/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] bg-white">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <TrendingUp size={15} className="text-muted-foreground" /> Receita mensal
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">Recebido por mês contra o MRR atual — se a coleta está subindo ou caindo.</p>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={receitaMensalHistorico} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+              <YAxis
+                tick={{ fontSize: 11 }}
+                tickFormatter={(v: number) => v >= 1000 ? `R$${(v / 1000).toFixed(0)}k` : `R$${v}`}
+                width={48}
+                domain={[0, (dataMax: number) => Math.max(dataMax, mrrEfetivo) * 1.05]}
+              />
+              <Tooltip formatter={(value: unknown) => [fmt(value as number), 'Recebido']} />
+              <Bar dataKey="recebido" fill="#A93356" radius={[3, 3, 0, 0]} />
+              {mrrEfetivo > 0 && (
+                <ReferenceLine
+                  y={mrrEfetivo}
+                  stroke="#f59e0b"
+                  strokeDasharray="5 3"
+                  label={{ value: 'MRR atual', fill: '#f59e0b', fontSize: 10, position: 'insideTopRight' }}
+                />
+              )}
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
       {/* ── Ação de hoje ──────────────────────────────────────────────────── */}
       <div className="space-y-3">
         <SectionBar title="Hoje" subtitle="O que precisa de atenção agora — não o mês inteiro." icon={Zap} />
@@ -848,6 +921,7 @@ export function Dashboard() {
               {INITIAL_VENDORS.map(v => {
                 const vendasMes = vendasMesPorVendedor[v.name] ?? 0;
                 const pct = v.meta > 0 ? Math.min(Math.round((vendasMes / v.meta) * 100), 100) : 0;
+                const historico = vendasHistoricoPorVendedor[v.name] ?? [];
                 return (
                   <div key={v.name} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border bg-muted/20">
                     <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0" style={{ backgroundColor: v.cor }}>
@@ -861,6 +935,19 @@ export function Dashboard() {
                       <div className="h-1.5 bg-muted rounded-full overflow-hidden mt-1">
                         <div className={cn('h-full rounded-full', pct >= 100 ? 'bg-emerald-500' : 'bg-primary')} style={{ width: `${pct}%` }} />
                       </div>
+                    </div>
+                    {/* Sparkline: vendas dos últimos 6 meses — mostra se está subindo ou caindo, não só o número de hoje. */}
+                    <div className="w-16 h-8 shrink-0">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={historico} margin={{ top: 2, right: 2, left: 2, bottom: 2 }}>
+                          <Tooltip
+                            formatter={(value: unknown) => [`${value} venda(s)`, '']}
+                            labelFormatter={() => ''}
+                            contentStyle={{ fontSize: 11, padding: '4px 8px' }}
+                          />
+                          <Line type="monotone" dataKey="total" stroke={v.cor} strokeWidth={2} dot={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
                     </div>
                   </div>
                 );
