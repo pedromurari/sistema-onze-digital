@@ -4,7 +4,6 @@ export interface AccessPermissions {
   canViewAllLancamentos: boolean;
   allowedLancamentoIds: string[];
   canViewNpa: boolean;
-  canViewAulaSecreta: boolean;
   canViewFinanceiro: boolean;
   canViewFinanceiroCfo: boolean;
   canViewAllFinanceiroTurmas: boolean;
@@ -64,7 +63,6 @@ export function permissionsFromMatrix(
     canViewAllLancamentos:       matrix['lancamentos']?.ver_todos ?? d.canViewAllLancamentos,
     allowedLancamentoIds:        escopo?.allowedLancamentoIds     ?? d.allowedLancamentoIds,
     canViewNpa:                  podeVer(matrix, 'npa',            d.canViewNpa),
-    canViewAulaSecreta:          podeVer(matrix, 'aula_secreta',   d.canViewAulaSecreta),
     canViewFinanceiro:           podeVer(matrix, 'financeiro',     d.canViewFinanceiro),
     canViewFinanceiroCfo:        podeVer(matrix, 'financeiro_cfo', d.canViewFinanceiroCfo),
     canViewAllFinanceiroTurmas:  matrix['financeiro']?.ver_todos  ?? d.canViewAllFinanceiroTurmas,
@@ -88,7 +86,6 @@ export function permissionsToToggles(permissions: AccessPermissions): Permission
     { recurso: 'lancamentos',      acao: 'ver',       permitido: permissions.canViewLancamentos },
     { recurso: 'lancamentos',      acao: 'ver_todos', permitido: permissions.canViewAllLancamentos },
     { recurso: 'npa',              acao: 'ver',       permitido: permissions.canViewNpa },
-    { recurso: 'aula_secreta',     acao: 'ver',       permitido: permissions.canViewAulaSecreta },
     { recurso: 'financeiro',       acao: 'ver',       permitido: permissions.canViewFinanceiro },
     { recurso: 'financeiro',       acao: 'ver_todos', permitido: permissions.canViewAllFinanceiroTurmas },
     { recurso: 'financeiro_cfo',   acao: 'ver',       permitido: permissions.canViewFinanceiroCfo },
@@ -121,7 +118,7 @@ export type AppView =
   | 'lancamentos_30' | 'lancamentos_31' | 'lancamentos_32'
   | 'team' | 'settings' | 'cobranca' | 'funil_lancamento' | 'disparos_monitor' | 'chat_conversas'
   | 'operacoes_tarefas' | 'operacoes_calendario_geral' | 'operacoes_calendario_conteudo'
-  | 'mapa_mental' | 'produtos' | 'franquia_psi' | 'posts' | 'parceiros' | 'equipe_11ds'
+  | 'mapa_mental' | 'franquia_psi' | 'posts' | 'parceiros' | 'equipe_11ds'
   | 'aquecimento_chips' | 'time_comercial' | 'pessoas';
 
 export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
@@ -130,7 +127,6 @@ export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
   canViewAllLancamentos: true,
   allowedLancamentoIds: [],
   canViewNpa: true,
-  canViewAulaSecreta: true,
   canViewFinanceiro: true,
   canViewFinanceiroCfo: false,
   canViewAllFinanceiroTurmas: true,
@@ -169,7 +165,6 @@ export function normalizePermissionsRow(row: any, role?: string): AccessPermissi
     canViewAllLancamentos: row.can_view_all_lancamentos ?? defaults.canViewAllLancamentos,
     allowedLancamentoIds: Array.isArray(row.allowed_lancamento_ids) ? row.allowed_lancamento_ids.filter(Boolean) : defaults.allowedLancamentoIds,
     canViewNpa: row.can_view_npa ?? defaults.canViewNpa,
-    canViewAulaSecreta: row.can_view_aula_secreta ?? defaults.canViewAulaSecreta,
     canViewFinanceiro: row.can_view_financeiro ?? defaults.canViewFinanceiro,
     canViewFinanceiroCfo: row.can_view_financeiro_cfo ?? defaults.canViewFinanceiroCfo,
     canViewAllFinanceiroTurmas: row.can_view_all_financeiro_turmas ?? defaults.canViewAllFinanceiroTurmas,
@@ -193,7 +188,6 @@ export function permissionsToRow(permissions: AccessPermissions) {
     can_view_all_lancamentos: permissions.canViewAllLancamentos,
     allowed_lancamento_ids: permissions.allowedLancamentoIds,
     can_view_npa: permissions.canViewNpa,
-    can_view_aula_secreta: permissions.canViewAulaSecreta,
     can_view_financeiro: permissions.canViewFinanceiro,
     can_view_financeiro_cfo: permissions.canViewFinanceiroCfo,
     can_view_all_financeiro_turmas: permissions.canViewAllFinanceiroTurmas,
@@ -238,7 +232,6 @@ export function canAccessView(
   }
 
   if (view.startsWith('npa_')) return permissions.canViewNpa;
-  if (view.startsWith('aula_secreta_')) return permissions.canViewAulaSecreta;
   if (view.startsWith('financeiro_aluno_')) return permissions.canViewFinanceiro;
 
   // Com a matriz carregada, o banco decide -- inclusive para as telas que antes eram
@@ -267,7 +260,6 @@ export function canAccessView(
     operacoes_calendario_geral: permissions.canViewOperacoes,
     operacoes_calendario_conteudo: permissions.canViewOperacoes,
     mapa_mental: permissions.canViewMapaMental,
-    produtos: false, // admin-only — isAdmin check at top of function already handles it
     posts: false, // admin-only — isAdmin check at top of function already handles it
     parceiros: false, // admin-only — isAdmin check at top of function already handles it
     equipe_11ds: false, // admin-only — isAdmin check at top of function already handles it

@@ -9,13 +9,8 @@ import {
   LayoutDashboard, Kanban, Settings, UserCog,
   Rocket, BarChart3, ChevronDown,
   ChevronLeft, ChevronRight, Plus, Brain, Scale, Menu,
-  GripVertical, Pencil, Check, MessageSquare, MessageCircle, TrendingUp, GitBranch, CalendarDays, ShoppingBag, Radio, Image, Handshake, Bot, Video, Flame, Users, Contact,
+  GripVertical, Pencil, Check, MessageSquare, MessageCircle, TrendingUp, GitBranch, CalendarDays, Radio, Image, Handshake, Bot, Flame, Users, Contact,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
-} from '@/components/ui/dialog';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { LancamentoWizard } from '@/components/crm/LancamentoWizard';
 
@@ -41,7 +36,6 @@ const BASE_MENU: MenuItem[] = [
   // CRM Time Comercial
   { key: 'time_comercial',             label: 'Time Comercial',      icon: Users },
   // Vendas & Parcerias
-  { key: 'produtos',                   label: 'Produtos',            icon: ShoppingBag, adminOnly: true },
   { key: 'parceiros',                  label: 'Parceiros',           icon: Handshake,   adminOnly: true },
   { key: 'franquia_psi',              label: 'IDM PSI Franquias',    icon: TrendingUp },
   // Conteúdo
@@ -49,7 +43,6 @@ const BASE_MENU: MenuItem[] = [
   // Eventos
   { group: 'lancamentos_legado',       label: 'Semana do Despertar', icon: Rocket,       children: [] },
   { group: 'npa_dinamico',            label: 'IDM Pelo Brasil',       icon: BarChart3,    children: [] },
-  { group: 'aula_secreta',            label: 'Aula Secreta',         icon: Rocket,       children: [] },
   // Funil & Automação
   { key: 'funil_lancamento',          label: 'Funil de Lançamento',  icon: GitBranch },
   { key: 'disparos_monitor',          label: 'Central de Disparos',  icon: Radio },
@@ -105,9 +98,8 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
 
   const SECTION_BEFORE: Record<string, string> = {
     dashboard:          'Início',
-    pipeline:           'CRM',
     time_comercial:     'CRM Time Comercial',
-    produtos:           'Vendas & Parcerias',
+    parceiros:          'Vendas & Parcerias',
     posts:              'Conteúdo',
     lancamentos_legado: 'Eventos',
     funil_lancamento:   'Funil & Automação',
@@ -133,9 +125,6 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
   const [wizardExistingId, setWizardExistingId] = useState<string | undefined>();
   const [wizardExistingTipo, setWizardExistingTipo] = useState<'lancamento' | 'npa' | undefined>();
 
-  const [aulaSecretaEventos, setAulaSecretaEventos] = useState<{ id: string; nome: string }[]>([]);
-  const [newAulaSecretaName, setNewAulaSecretaName] = useState('');
-  const [isAulaSecretaDialogOpen, setIsAulaSecretaDialogOpen] = useState(false);
   const [vencimentosHoje, setVencimentosHoje] = useState(0);
 
   useEffect(() => {
@@ -180,24 +169,6 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
     };
     load();
     const ch = supabase.channel('npa-eventos-sidebar').on('postgres_changes', { event: '*', schema: 'public', table: 'npa_eventos' }, () => load()).subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, []);
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const { data, error } = await supabase.from('aula_secreta_eventos').select('id, nome').order('created_at', { ascending: false });
-        if (error) {
-          console.error('Erro ao carregar eventos Aula Secreta:', error);
-          return;
-        }
-        setAulaSecretaEventos(data || []);
-      } catch (error) {
-        console.error('Erro ao carregar eventos Aula Secreta:', error);
-      }
-    };
-    load();
-    const ch = supabase.channel('aula-secreta-sidebar').on('postgres_changes', { event: '*', schema: 'public', table: 'aula_secreta_eventos' }, () => load()).subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
 
@@ -272,11 +243,9 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
       let renderedChildren = item.children;
       if (item.group === 'lancamentos_legado') renderedChildren = accessibleLancamentos.map(l => ({ key: `lancamentos_${l.id}` as View, label: l.nome }));
       else if (item.group === 'npa_dinamico') renderedChildren = npaEventos.map(e => ({ key: `npa_${e.id}` as View, label: e.nome }));
-      else if (item.group === 'aula_secreta') renderedChildren = aulaSecretaEventos.map(e => ({ key: `aula_secreta_${e.id}` as View, label: e.nome }));
 
       if (item.group === 'lancamentos_legado' && !permissions.canViewLancamentos && !isAdmin) return null;
       if (item.group === 'npa_dinamico' && !permissions.canViewNpa && !isAdmin) return null;
-      if (item.group === 'aula_secreta' && !permissions.canViewAulaSecreta && !isAdmin) return null;
       if (renderedChildren.length === 0 && !isAdmin) return null;
 
       const isOpen = Boolean(expanded[item.group]);
@@ -345,26 +314,6 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
     );
   });
 
-  const handleAddAulaSecreta = async () => {
-    if (!newAulaSecretaName.trim()) return;
-    try {
-      const { data, error } = await supabase
-        .from('aula_secreta_eventos')
-        .insert({ nome: newAulaSecretaName, status: 'em_andamento', ativo: false, created_at: new Date().toISOString() })
-        .select('id')
-        .single();
-      if (error) { toast.error(`Erro ao criar Aula Secreta: ${error.message}`); return; }
-      if (data) {
-        toast.success(`Aula Secreta "${newAulaSecretaName}" criada!`);
-        setNewAulaSecretaName('');
-        setIsAulaSecretaDialogOpen(false);
-        onViewChange(`aula_secreta_${data.id}` as View);
-      }
-    } catch {
-      toast.error('Erro inesperado.');
-    }
-  };
-
   return (
     <>
     <aside
@@ -410,11 +359,9 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
             let renderedChildren = item.children;
             if (item.group === 'lancamentos_legado') renderedChildren = accessibleLancamentos.map(l => ({ key: `lancamentos_${l.id}` as View, label: l.nome }));
             else if (item.group === 'npa_dinamico') renderedChildren = npaEventos.map(e => ({ key: `npa_${e.id}` as View, label: e.nome }));
-            else if (item.group === 'aula_secreta') renderedChildren = aulaSecretaEventos.map(e => ({ key: `aula_secreta_${e.id}` as View, label: e.nome }));
 
             if (item.group === 'lancamentos_legado' && !permissions.canViewLancamentos && !isAdmin) return null;
             if (item.group === 'npa_dinamico' && !permissions.canViewNpa && !isAdmin) return null;
-            if (item.group === 'aula_secreta' && !permissions.canViewAulaSecreta && !isAdmin) return null;
             if (item.group === 'operacoes' && !permissions.canViewOperacoes && !isAdmin) return null;
             if (renderedChildren.length === 0 && item.group !== 'operacoes' && !isAdmin) return null;
 
@@ -457,7 +404,7 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
                   <div className="ml-0 mt-1 space-y-0.5 pl-3 border-l-2 border-primary/15">
                     {renderedChildren.map((child) => {
                       const isLancOrNpa = item.group === 'lancamentos_legado' || item.group === 'npa_dinamico';
-                      const childId = child.key.replace(/^(lancamentos|npa|aula_secreta)_/, '');
+                      const childId = child.key.replace(/^(lancamentos|npa)_/, '');
                       const childTipo = item.group === 'lancamentos_legado' ? 'lancamento' : 'npa';
                       return (
                         <div key={child.key} className="flex items-center group">
@@ -500,32 +447,6 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
                       >
                         <Plus className="h-4 w-4" /> Novo IDM
                       </button>
-                    )}
-
-                    {item.group === 'aula_secreta' && isAdmin && (
-                      <Dialog open={isAulaSecretaDialogOpen} onOpenChange={setIsAulaSecretaDialogOpen}>
-                        <DialogTrigger asChild>
-                          <button className="w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs text-primary hover:bg-primary/10 mt-1 font-600">
-                            <Plus className="h-4 w-4" /> Nova Aula Secreta
-                          </button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Criar nova Aula Secreta</DialogTitle>
-                            <DialogDescription>Digite o nome da nova Aula Secreta</DialogDescription>
-                          </DialogHeader>
-                          <div className="flex gap-2">
-                            <Input
-                              placeholder="Nome da Aula Secreta"
-                              value={newAulaSecretaName}
-                              onChange={(e) => setNewAulaSecretaName(e.target.value)}
-                              onKeyPress={(e) => e.key === 'Enter' && handleAddAulaSecreta()}
-                              className="border border-border focus:border-primary"
-                            />
-                            <Button onClick={handleAddAulaSecreta} className="bg-primary hover:bg-primary/90">Criar</Button>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
                     )}
                   </div>
                 )}

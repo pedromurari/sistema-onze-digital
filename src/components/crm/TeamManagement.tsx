@@ -37,7 +37,6 @@ const MODULE_PERMISSIONS: Array<{ key: keyof AccessPermissions; label: string; e
   { key: 'canViewDashboard',   label: 'Dashboard',      emoji: '📊' },
   { key: 'canViewLancamentos', label: 'Lançamentos',    emoji: '🚀' },
   { key: 'canViewNpa',         label: 'NPA',            emoji: '📅' },
-  { key: 'canViewAulaSecreta', label: 'Aula secreta',   emoji: '🔒' },
   { key: 'canViewFinanceiro',    label: 'Financeiro',     emoji: '💰' },
   { key: 'canViewFinanceiroCfo', label: 'Análise CFO',   emoji: '📉' },
   { key: 'canViewBalanco',       label: 'Balanço',        emoji: '📈' },
@@ -271,7 +270,7 @@ export function TeamManagement() {
                           <SelectItem value="parceiro">Parceiro(a)</SelectItem>
                         </SelectContent>
                       </Select>
-                      <p className="text-xs text-muted-foreground">Define o conjunto de permissões padrão e o comportamento de login. Gestor(a) opera o negócio inteiro mas não mexe em Configurações, Equipe, Produtos nem Parceiros. Investidor(a) vê o Financeiro apenas das turmas liberadas abaixo. Parceiro(a) não entra no CRM — cai direto no Portal da Parceira.</p>
+                      <p className="text-xs text-muted-foreground">Define o conjunto de permissões padrão e o comportamento de login. Gestor(a) opera o negócio inteiro mas não mexe em Configurações, Equipe nem Parceiros. Investidor(a) vê o Financeiro apenas das turmas liberadas abaixo. Parceiro(a) não entra no CRM — cai direto no Portal da Parceira.</p>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="cargo">Cargo / título exibido</Label>

@@ -28,8 +28,6 @@ const AquecimentoChips = lazy(() => import('./AquecimentoChips').then(m => ({ de
 const Pessoas = lazy(() => import('./Pessoas').then(m => ({ default: m.Pessoas })));
 const LancamentoKanban = lazy(() => import('./LancamentoKanban').then(m => ({ default: m.LancamentoKanban })));
 const NPAKanban        = lazy(() => import('./NPAKanban'));
-const AulaSecretaKanban = lazy(() => import('./AulaSecretaKanban').then(m => ({ default: m.AulaSecretaKanban })));
-const Produtos          = lazy(() => import('./Produtos').then(m => ({ default: m.Produtos })));
 const IDMPsiFranquias   = lazy(() => import('./IDMPsiFranquias').then(m => ({ default: m.IDMPsiFranquias })));
 const Posts             = lazy(() => import('./Posts').then(m => ({ default: m.Posts })));
 const Parceiros         = lazy(() => import('./Parceiros').then(m => ({ default: m.Parceiros })));
@@ -85,8 +83,6 @@ export function CRMLayout() {
   const [loadingLancamento, setLoadingLancamento] = useState(false);
   const [npaEventoId, setNpaEventoId] = useState<string | null>(null);
   const [loadingNpaEvento, setLoadingNpaEvento] = useState(false);
-  const [aulaSecretaId, setAulaSecretaId] = useState<string | null>(null);
-  const [loadingAulaSecreta, setLoadingAulaSecreta] = useState(false);
 
   const handleEditLead = (lead: Lead) => { setEditingLead(lead); setIsLeadModalOpen(true); };
 
@@ -144,28 +140,6 @@ export function CRMLayout() {
     loadNpaEventoId();
   }, [currentView]);
 
-  useEffect(() => {
-    const loadAulaSecretaId = async () => {
-      if (typeof currentView === 'string' && currentView.startsWith('aula_secreta_')) {
-        setLoadingAulaSecreta(true);
-        const possibleId = currentView.replace('aula_secreta_', '');
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-        if (uuidRegex.test(possibleId)) {
-          setAulaSecretaId(possibleId);
-        } else {
-          const { data } = await supabase
-            .from('aula_secreta_eventos')
-            .select('id')
-            .ilike('nome', `%${possibleId}%`)
-            .single();
-          if (data) setAulaSecretaId(data.id);
-        }
-        setLoadingAulaSecreta(false);
-      }
-    };
-    loadAulaSecretaId();
-  }, [currentView]);
-
   const renderView = () => {
     if (!canAccessView(currentView, permissions, Boolean(isAdmin), matrix)) {
       return <RestrictedView />;
@@ -211,26 +185,6 @@ export function CRMLayout() {
       return <NPAKanban npaEventoId={npaEventoId} />;
     }
 
-    if (typeof currentView === 'string' && currentView.startsWith('aula_secreta_')) {
-      if (loadingAulaSecreta) {
-        return (
-          <div className="flex items-center justify-center h-full">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
-        );
-      }
-      if (!aulaSecretaId) {
-        return (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <p className="text-muted-foreground">Aula Secreta não encontrada</p>
-            </div>
-          </div>
-        );
-      }
-      return <AulaSecretaKanban aulaSecretaId={aulaSecretaId} />;
-    }
-
     if (typeof currentView === 'string' && currentView.startsWith('financeiro_aluno_')) {
       return <Financeiro initialAlunoId={currentView.replace('financeiro_aluno_', '')} />;
     }
@@ -265,7 +219,6 @@ export function CRMLayout() {
       case 'operacoes_calendario_geral': return <Operacoes currentPage={currentView} />;
       case 'operacoes_calendario_conteudo': return <Operacoes currentPage={currentView} />;
       case 'mapa_mental': return <MapaMental />;
-      case 'produtos': return isAdmin ? <Produtos /> : <RestrictedView />;
       case 'posts': return isAdmin ? <Posts /> : <RestrictedView />;
       case 'parceiros': return isAdmin ? <Parceiros /> : <RestrictedView />;
       case 'equipe_11ds': return isAdmin
