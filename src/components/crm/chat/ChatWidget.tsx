@@ -6,6 +6,7 @@ import { MessageCircle, Search, X, ChevronLeft, RefreshCw } from 'lucide-react';
 import { useConversas } from '@/hooks/useConversas';
 import { useThread } from '@/hooks/useThread';
 import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
+import { useFichaPessoa } from '@/components/crm/pessoa/FichaPessoaProvider';
 import {
   normalizePhone, maskPhone, fmtHora, fmtDiaSeparador, fmtRelativo,
   TEMP_CFG, TIPO_ICON, TIPO_LABEL,
@@ -26,6 +27,12 @@ export function abrirChatWidget(telefone: string) {
  * ler aqui marca como lida lá também, e vice-versa.
  */
 export function ChatWidget() {
+  // A ficha da pessoa é um Sheet `z-50` ancorado à direita (36rem no desktop); o chat
+  // flutuante é `z-[60]` para ficar por cima de tudo o mais — mas por cima da ficha
+  // também, o que cobre ela em vez de conviver ao lado. Quando a ficha abre, o chat
+  // desloca a própria borda para a esquerda da largura do Sheet, em vez de encolher ou
+  // fechar sozinho.
+  const { fichaAberta } = useFichaPessoa();
   const [open, setOpen] = useState(false);
   const [busca, setBusca] = useState('');
   const [telefoneSelecionado, setTelefoneSelecionado] = useState<string | null>(null);
@@ -72,8 +79,9 @@ export function ChatWidget() {
       {open && (
         <div className={cn(
           'fixed z-[60] bg-white border rounded-xl shadow-2xl flex flex-col overflow-hidden',
-          'inset-x-3 top-16 bottom-20',
-          'lg:inset-x-auto lg:top-auto lg:right-6 lg:bottom-24 lg:w-[340px] lg:h-[480px]',
+          'inset-x-3 top-16 bottom-20 transition-[right] duration-200',
+          'lg:inset-x-auto lg:top-auto lg:bottom-24 lg:w-[340px] lg:h-[480px]',
+          fichaAberta ? 'lg:right-[39rem]' : 'lg:right-6',
         )}>
           {!telefoneSelecionado ? (
             <>
@@ -189,7 +197,8 @@ export function ChatWidget() {
       <button
         onClick={() => (open ? fechar() : setOpen(true))}
         className={cn(
-          'fixed z-[60] right-4 bottom-20 lg:right-6 lg:bottom-6',
+          'fixed z-[60] right-4 bottom-20 lg:bottom-6 transition-[right] duration-200',
+          fichaAberta ? 'lg:right-[39rem]' : 'lg:right-6',
           'h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg',
           'flex items-center justify-center hover:opacity-90 transition-opacity',
         )}

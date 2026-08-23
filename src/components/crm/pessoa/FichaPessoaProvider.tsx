@@ -28,6 +28,12 @@ interface FichaPessoaAPI {
   abrirFichaPorId: (pessoaId: string | null | undefined) => void;
   abrirFichaPorTelefone: (telefone: string | null | undefined) => void;
   fecharFicha: () => void;
+  /**
+   * Se a ficha está aberta. Existe para quem mais ocupa a borda direita da tela — hoje só
+   * o ChatWidget — poder sair do caminho em vez de ficar embaixo do Sheet: a ficha é
+   * `z-50` e o chat flutuante é `z-[60]`, então sem isso o chat sempre cobre a ficha.
+   */
+  fichaAberta: boolean;
 }
 
 const Contexto = createContext<FichaPessoaAPI | null>(null);
@@ -49,7 +55,8 @@ export function FichaPessoaProvider({ children }: { children: ReactNode }) {
       if (telefone) setAlvo({ tipo: 'telefone', valor: telefone });
     },
     fecharFicha: () => setAlvo(null),
-  }), []);
+    fichaAberta: alvo !== null,
+  }), [alvo]);
 
   const fechar = useCallback(() => setAlvo(null), []);
 
@@ -71,5 +78,6 @@ export function useFichaPessoa(): FichaPessoaAPI {
     abrirFichaPorId: () => {},
     abrirFichaPorTelefone: () => {},
     fecharFicha: () => {},
+    fichaAberta: false,
   };
 }
