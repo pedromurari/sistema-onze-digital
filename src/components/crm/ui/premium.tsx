@@ -158,3 +158,51 @@ export function AvatarPessoa({
     </div>
   );
 }
+
+/**
+ * Chip de filtro em pílula com degradê vinho quando ativo — o mesmo padrão que já existia
+ * duplicado dentro do Time Comercial (`canalAtivo === ...`). Vira peça única aqui pelo
+ * mesmo motivo do resto do arquivo: a próxima tela com filtro em pílula não deveria
+ * inventar um sexto estilo de botão.
+ *
+ * `contagem` mostra o número dentro do próprio chip, discreto, no lugar de embutir no
+ * label (`"Inadimplentes (62)"`) — texto variável dentro do texto é o tipo de coisa que
+ * faz uma fileira de filtro parecer maior e menos arrumada do que é.
+ */
+export function FiltroChip({
+  label, ativo, onClick, contagem, tom = 'padrao',
+}: {
+  label: string;
+  ativo: boolean;
+  onClick: () => void;
+  contagem?: number;
+  tom?: TomStat;
+}) {
+  const corContagem: Record<TomStat, string> = {
+    padrao:  'bg-primary/15 text-primary',
+    bom:     'bg-emerald-500/15 text-emerald-700',
+    atencao: 'bg-amber-500/15 text-amber-700',
+    ruim:    'bg-red-500/15 text-red-700',
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={ativo}
+      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+        ativo
+          ? 'bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-sm'
+          : 'bg-card border border-border text-muted-foreground hover:text-foreground hover:border-primary/30'
+      }`}
+    >
+      {label}
+      {typeof contagem === 'number' && (
+        <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none ${
+          ativo ? 'bg-white/20 text-white' : corContagem[tom]
+        }`}>
+          {contagem}
+        </span>
+      )}
+    </button>
+  );
+}

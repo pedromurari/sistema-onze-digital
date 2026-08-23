@@ -28,7 +28,7 @@ import { format, isSameMonth, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { isPagamentoInadimplente, calcTaxaTransacao, taxaDoPagamento, type TaxaDetalhe } from '@/lib/financial-utils';
 import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
-import { StatTile } from '@/components/crm/ui/premium';
+import { StatTile, FiltroChip } from '@/components/crm/ui/premium';
 import {
   useAlunos, usePagamentos, useTurmas, useResponsaveis, useInvalidarDados,
   COLUNAS_ALUNO_COMPLETO, COLUNAS_PAGAMENTO_COMPLETO,
@@ -912,7 +912,6 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('todos');
   const [dueDayFilter, setDueDayFilter] = useState<DueDayFilter>('todos');
   const [dueFilter, setDueFilter] = useState<DueFilter>('todos');
-  const [showFiltrosAvancados, setShowFiltrosAvancados] = useState(false);
   const [searchAluno, setSearchAluno] = useState('');
   const searchAlunoRef = useRef<HTMLInputElement>(null);
   const [assigningTurma, setAssigningTurma] = useState<Record<string, boolean>>({});
@@ -2026,106 +2025,75 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
             </Card>
           </div>
 
-          {/* Filtros */}
-          <div className="space-y-2">
-            {/* Periodo */}
+          {/* Filtros. Período e status são a navegação principal — poucos valores, usados o
+              tempo todo — e viraram FiltroChip, o mesmo chip em pílula do Time Comercial: uma
+              cor só quando ativo, em vez das cinco cores que cada status carregava antes (o
+              "Todos" preto, o ativo verde, o cancelado cinza — nenhuma delas dizia nada, só
+              competiam entre si). Pagamento, dia de vencimento e situação têm mais opções
+              (a de dia chegava a 7 botões numa fileira) e viram Select: refinamento pontual
+              não precisa do mesmo peso visual da navegação principal, nem de um acordeão
+              "Filtros ▼" escondendo o que já é usado toda hora. */}
+          <div className="space-y-2.5">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-medium text-muted-foreground w-14 shrink-0">Periodo:</span>
+              <span className="text-xs font-medium text-muted-foreground w-14 shrink-0">Período</span>
               {Object.entries(periodoLabel).map(([key, label]) => (
-                <button key={key} onClick={() => setPeriodo(key)}
-                  className={`px-3 py-1 rounded text-xs font-medium transition-colors ${periodo === key ? 'bg-primary text-white' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
-                  {label}
-                </button>
+                <FiltroChip key={key} label={label} ativo={periodo === key} onClick={() => setPeriodo(key)} />
               ))}
             </div>
 
-            {/* Status + botao filtros avancados */}
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-medium text-muted-foreground w-14 shrink-0">Status:</span>
-              {([
-                { key: 'todos', label: 'Todos', active: 'bg-gray-700 text-white' },
-                { key: 'pre_matricula', label: 'Pré-matrícula', active: 'bg-amber-600 text-white' },
-                { key: 'ativo', label: 'Ativos', active: 'bg-green-600 text-white' },
-                { key: 'inadimplente', label: `Inadimplentes (${inadimplentes.length})`, active: 'bg-red-600 text-white' },
-                { key: 'cancelado', label: 'Cancelados', active: 'bg-gray-500 text-white' },
-              ] as { key: typeof statusFilter; label: string; active: string }[]).map(({ key, label, active }) => (
-                <button key={key} onClick={() => setStatusFilter(key)}
-                  className={`px-3 py-1 rounded text-xs font-medium transition-colors ${statusFilter === key ? active : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
-                  {label}
-                </button>
-              ))}
-              <button
-                onClick={() => setShowFiltrosAvancados(f => !f)}
-                className={`ml-auto flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium border transition-colors ${
-                  paymentFilter !== 'todos' || dueDayFilter !== 'todos' || dueFilter !== 'todos'
-                    ? 'bg-primary/10 text-primary border-primary/30'
-                    : 'border-border text-muted-foreground hover:bg-muted/50'
-                }`}>
-                Filtros
-                {(paymentFilter !== 'todos' || dueDayFilter !== 'todos' || dueFilter !== 'todos') && (
-                  <span className="bg-primary text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold">
-                    {[paymentFilter !== 'todos', dueDayFilter !== 'todos', dueFilter !== 'todos'].filter(Boolean).length}
-                  </span>
-                )}
-                <span className="text-[10px]">{showFiltrosAvancados ? '▲' : '▼'}</span>
-              </button>
+              <span className="text-xs font-medium text-muted-foreground w-14 shrink-0">Status</span>
+              <FiltroChip label="Todos" ativo={statusFilter === 'todos'} onClick={() => setStatusFilter('todos')} />
+              <FiltroChip label="Pré-matrícula" ativo={statusFilter === 'pre_matricula'} onClick={() => setStatusFilter('pre_matricula')} />
+              <FiltroChip label="Ativos" ativo={statusFilter === 'ativo'} onClick={() => setStatusFilter('ativo')} />
+              <FiltroChip
+                label="Inadimplentes" contagem={inadimplentes.length} tom="ruim"
+                ativo={statusFilter === 'inadimplente'} onClick={() => setStatusFilter('inadimplente')}
+              />
+              <FiltroChip label="Cancelados" ativo={statusFilter === 'cancelado'} onClick={() => setStatusFilter('cancelado')} />
             </div>
 
-            {/* Filtros avancados */}
-            {showFiltrosAvancados && (
-              <div className="bg-muted/30 border border-border/60 rounded-lg p-3 space-y-2">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-medium text-muted-foreground w-20 shrink-0">Pagamento:</span>
-                  {([
-                    { key: 'todos', label: 'Todos' },
-                    { key: 'boleto', label: `Boleto (${paymentCounts.boleto})` },
-                    { key: 'cartao', label: `Cartao (${paymentCounts.cartao})` },
-                    { key: 'avista', label: `A vista (${paymentCounts.avista})` },
-                  ] as { key: PaymentFilter; label: string }[]).map(({ key, label }) => (
-                    <button key={key} onClick={() => { setPaymentFilter(key); if (key === 'cartao' || key === 'avista') setDueDayFilter('todos'); }}
-                      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${paymentFilter === key ? 'bg-primary text-white' : 'bg-white border border-border text-muted-foreground hover:bg-muted/40'}`}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-medium text-muted-foreground w-20 shrink-0">Dia venc.:</span>
-                  <button onClick={() => setDueDayFilter('todos')}
-                    className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${dueDayFilter === 'todos' ? 'bg-primary text-white' : 'bg-white border border-border text-muted-foreground hover:bg-muted/40'}`}>
-                    Todos
-                  </button>
+            <div className="flex items-center gap-2 flex-wrap pt-0.5">
+              <Select value={paymentFilter} onValueChange={(v: PaymentFilter) => { setPaymentFilter(v); if (v === 'cartao' || v === 'avista') setDueDayFilter('todos'); }}>
+                <SelectTrigger className="h-8 w-[168px] text-xs"><SelectValue placeholder="Pagamento" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Pagamento: todos</SelectItem>
+                  <SelectItem value="boleto">Boleto ({paymentCounts.boleto})</SelectItem>
+                  <SelectItem value="cartao">Cartão ({paymentCounts.cartao})</SelectItem>
+                  <SelectItem value="avista">À vista ({paymentCounts.avista})</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={dueDayFilter} onValueChange={(v: DueDayFilter) => { setDueDayFilter(v); setPaymentFilter('boleto'); }}>
+                <SelectTrigger className="h-8 w-[168px] text-xs"><SelectValue placeholder="Dia de vencimento" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Vencimento: todos</SelectItem>
                   {dueDayOptions.map(({ key, day, count }) => (
-                    <button key={key} onClick={() => { setDueDayFilter(key); setPaymentFilter('boleto'); }}
-                      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${dueDayFilter === key ? 'bg-primary text-white' : 'bg-white border border-border text-muted-foreground hover:bg-muted/40'}`}>
-                      Dia {day} ({count})
-                    </button>
+                    <SelectItem key={key} value={key}>Dia {day} ({count})</SelectItem>
                   ))}
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-medium text-muted-foreground w-20 shrink-0">Situacao:</span>
-                  {([
-                    { key: 'todos', label: 'Todos' },
-                    { key: 'vencidos', label: 'Vencidos' },
-                    { key: 'hoje', label: 'Hoje' },
-                    { key: 'proximos_7', label: '7 dias' },
-                    { key: 'proximos_30', label: '30 dias' },
-                    { key: 'quitados', label: 'Quitados' },
-                  ] as { key: DueFilter; label: string }[]).map(({ key, label }) => (
-                    <button key={key} onClick={() => setDueFilter(key)}
-                      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${dueFilter === key ? 'bg-primary text-white' : 'bg-white border border-border text-muted-foreground hover:bg-muted/40'}`}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                {(paymentFilter !== 'todos' || dueDayFilter !== 'todos' || dueFilter !== 'todos') && (
-                  <button
-                    onClick={() => { setPaymentFilter('todos'); setDueDayFilter('todos'); setDueFilter('todos'); }}
-                    className="text-xs text-red-600 hover:text-red-800 font-medium">
-                    Limpar filtros avancados
-                  </button>
-                )}
-              </div>
-            )}
+                </SelectContent>
+              </Select>
+
+              <Select value={dueFilter} onValueChange={(v: DueFilter) => setDueFilter(v)}>
+                <SelectTrigger className="h-8 w-[168px] text-xs"><SelectValue placeholder="Situação" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Situação: todas</SelectItem>
+                  <SelectItem value="vencidos">Vencidos</SelectItem>
+                  <SelectItem value="hoje">Hoje</SelectItem>
+                  <SelectItem value="proximos_7">Próx. 7 dias</SelectItem>
+                  <SelectItem value="proximos_30">Próx. 30 dias</SelectItem>
+                  <SelectItem value="quitados">Quitados</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {(paymentFilter !== 'todos' || dueDayFilter !== 'todos' || dueFilter !== 'todos') && (
+                <button
+                  onClick={() => { setPaymentFilter('todos'); setDueDayFilter('todos'); setDueFilter('todos'); }}
+                  className="text-xs text-muted-foreground hover:text-red-600 font-medium underline decoration-dotted underline-offset-2">
+                  Limpar
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Cards resumo — clique para ver o detalhamento */}
