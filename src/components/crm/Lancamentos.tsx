@@ -17,6 +17,7 @@ import { Plus, Search, AlertCircle, Users, Target, CheckCircle, DollarSign, Load
 import { format } from 'date-fns';
 import { isPagamentoRealizado } from '@/lib/financial-utils';
 import { fetchAll } from '@/lib/db';
+import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
 
 type LaunchStatus = 'planejamento' | 'em_andamento' | 'finalizado';
 type LaunchPhase = 'planilha' | 'grupo_lancamento' | 'grupo_oferta' | 'follow_up_01' | 'follow_up_02' | 'follow_up_03' | 'matricula';
@@ -547,7 +548,9 @@ export function Lancamentos() {
                       } cursor-pointer hover:shadow-md transition-all`}
                     >
                       <div className="flex items-start justify-between gap-2 mb-2">
-                        <span className="font-500 text-sm flex-1">{lead.nome}</span>
+                        <span className="font-500 text-sm flex-1">
+                          <NomePessoa nome={lead.nome} telefone={lead.whatsapp} />
+                        </span>
                         {lead.erro && (
                           <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
                         )}

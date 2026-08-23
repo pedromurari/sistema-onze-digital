@@ -67,10 +67,28 @@ const tipos = readFileSync(join(SRC, 'integrations/supabase/types.ts'), 'utf8');
 const existeNoBanco = (t) =>
   tipos.includes(`      ${t}: {`) || tipos.includes(`\n      ${t}: {`);
 
+// ── Sub-telas: abertas de dentro de outra, não pelo menu ─────────────────────
+// LancamentoKanban, NPAKanban e Lancamentos são onde o time mais trabalha e não têm
+// entrada no menu. Um mapa que só olha o menu fica cego justamente para as salas mais
+// movimentadas — foi o que aconteceu na primeira rodada deste script.
+const noMenu = new Set(telas.map(t => arquivoDaTela(t.chave)).filter(Boolean));
+const subTelas = [];
+(function varre(dir) {
+  for (const nome of readdirSync(dir)) {
+    const caminho = join(dir, nome);
+    if (statSync(caminho).isDirectory()) { varre(caminho); continue; }
+    if (!nome.endsWith('.tsx') || noMenu.has(caminho)) continue;
+    // Só o que tem porte de tela: componente pequeno é peça, não lugar.
+    const src = readFileSync(caminho, 'utf8');
+    if (src.split('\n').length < 400) continue;
+    subTelas.push({ chave: null, rotulo: nome.replace('.tsx', ''), arquivoDireto: caminho });
+  }
+})(join(SRC, 'components/crm'));
+
 const linhas = [];
 
-for (const tela of telas) {
-  const arquivo = arquivoDaTela(tela.chave);
+for (const tela of [...telas, ...subTelas]) {
+  const arquivo = tela.arquivoDireto ?? arquivoDaTela(tela.chave);
   if (!arquivo) {
     linhas.push({ ...tela, estado: 'sem componente no CRMLayout' });
     continue;
@@ -90,6 +108,7 @@ for (const tela of telas) {
 
   linhas.push({
     ...tela,
+    no_menu: tela.chave !== null,
     arquivo: arquivo.replace(RAIZ + '\\', '').replace(/\\/g, '/'),
     linhas_de_codigo: src.split('\n').length,
     tabelas: tabelas.length,
@@ -125,7 +144,7 @@ for (const l of linhas.sort((a, b) => (b.linhas_de_codigo ?? 0) - (a.linhas_de_c
   if (!l.arquivo) { console.log(`  ${l.rotulo.padEnd(24)}  (${l.estado})`); continue; }
   const alerta = l.tabelas_inexistentes.length ? ' ⚠' : '  ';
   console.log(
-    `  ${l.rotulo.padEnd(24)}${String(l.linhas_de_codigo).padStart(7)}` +
+    `  ${(l.no_menu ? '' : '· ') + l.rotulo}`.padEnd(26) + `${String(l.linhas_de_codigo).padStart(5)}` +
     `${String(l.tabelas).padStart(9)}${String(l.chamadas_diretas).padStart(9)}` +
     `${(l.usa_camada_de_dados ? 'sim' : '—').padStart(8)}` +
     `${(l.abre_ficha_da_pessoa ? 'sim' : '—').padStart(7)}${alerta}`,
@@ -146,7 +165,8 @@ if (compartilhadas.length) {
   }
 }
 
-console.log(`\n  ${linhas.length} entradas no menu, ${porArquivo.size} telas distintas`);
+const doMenu = linhas.filter(l => l.no_menu).length;
+console.log(`\n  ${porArquivo.size} telas — ${doMenu} no menu, ${linhas.length - doMenu} abertas de dentro (·)`);
 console.log(`  ${quebradas.length} consultam tabela que não existe`);
 console.log(`  ${semCamada.length} falam direto com o banco, sem a camada única`);
 console.log(`  ${grandes.length} passam de 1.500 linhas`);

@@ -29,6 +29,7 @@ import { buildCapturaHTML } from '@/lib/captura-template';
 import type { CapturaTemplateData } from '@/lib/captura-template';
 import { isPagamentoRealizado } from '@/lib/financial-utils';
 import { fetchAll } from '@/lib/db';
+import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1312,7 +1313,9 @@ function BoasVindasLancamentoPanel({
                 {restantes.map(lead => (
                   <div key={lead.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-white border border-blue-200 text-sm">
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-800 truncate">{lead.nome}</p>
+                      <p className="font-medium text-gray-800 truncate">
+                        <NomePessoa nome={lead.nome} telefone={lead.whatsapp} />
+                      </p>
                       <p className="text-xs text-gray-500">{lead.whatsapp}</p>
                     </div>
                     {agendadosIds.has(lead.id) && <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />}
@@ -2490,7 +2493,9 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
                   return (
                     <div key={lead.id} className={`p-3 rounded-lg border ${lead.matriculado ? 'bg-green-50 border-green-200' : 'bg-white border-border'} shadow-sm`}>
                       <div className="flex items-start justify-between gap-2 mb-1">
-                        <span className="font-medium text-sm flex-1">{lead.nome}</span>
+                        <span className="font-medium text-sm flex-1">
+                          <NomePessoa nome={lead.nome} telefone={lead.whatsapp} />
+                        </span>
                         <div className="flex items-center gap-1 flex-shrink-0">
                           <button onClick={() => handleOpenEditLead(lead)} className="text-muted-foreground hover:text-foreground"><Pencil className="h-3 w-3" /></button>
                           <button onClick={e => { e.stopPropagation(); setLeadToDelete(lead); }} className="text-muted-foreground hover:text-red-500"><Trash2 className="h-3 w-3" /></button>

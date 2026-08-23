@@ -18,6 +18,7 @@ import {
 import { toast } from 'sonner';
 import { useKanbanColunas } from './kanban/useKanbanColunas';
 import type { KanbanColuna } from './kanban/useKanbanColunas';
+import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
 import {
   KanbanColunaHeader, AddColunaButton,
   RenameColunaModal, ColunaSettingsModal, DeleteColunaModal,
@@ -255,7 +256,9 @@ const LeadCard = memo(({
   return (
     <div className={`p-3 rounded-xl border ${lead.erro ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200'} shadow-sm hover:shadow-md transition-all`}>
       <div className="flex items-start justify-between gap-2 mb-1">
-        <span className="font-semibold text-sm text-gray-800 leading-tight">{lead.nome}</span>
+        <span className="font-semibold text-sm text-gray-800 leading-tight">
+          <NomePessoa nome={lead.nome} telefone={lead.whatsapp} />
+        </span>
         <div className="flex items-center gap-1 flex-shrink-0">
           <button
             className="p-1 rounded-md text-gray-400 hover:text-green-500 hover:bg-green-50 transition-colors"
