@@ -3,13 +3,20 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import {
   Users, TrendingUp, DollarSign, AlertTriangle, BarChart3,
   AlertCircle, Zap, CheckCircle2, CalendarDays, Rocket, Target, ChevronDown,
   UserPlus, Receipt, Handshake, Video, ShoppingBag, GraduationCap,
+  Plus, Pencil, StickyNote, Trash2,
 } from 'lucide-react';
 import { isPast, format, differenceInDays, isToday, isTomorrow, startOfWeek, startOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -83,6 +90,13 @@ const LANCAMENTO_STAGE_RANK: Record<string, number> = {
 const NPA_STAGE_RANK: Record<string, number> = {
   novo: 0, ingresso_pago: 1, no_grupo: 2, confirmado: 3, evento: 4,
   closer: 5, follow_up_01: 6, follow_up_02: 7, follow_up_03: 8, matricula: 9,
+};
+
+// Rótulo de exibição do filtro de responsável — o valor comparado em makeGetOwnerShare
+// continua sendo o nome exato cadastrado (Rodrygo, Keila); só a etiqueta do chip muda.
+const OWNER_LABELS: Record<string, string> = {
+  'Rodrygo': 'Instituto Despertamente',
+  'Keila': 'Investidores',
 };
 
 // Deduplicates rows by a key function, keeping the highest-rank row
@@ -207,7 +221,7 @@ export function Dashboard() {
   const [allLancLeads, setAllLancLeads] = useState<any[]>([]);  // all, for cross-lancamento dedup
   const [npaEventos, setNpaEventos]   = useState<any[]>([]);
   const [npaLeads, setNpaLeads]       = useState<any[]>([]);
-  const [eventosCalendario, setEventosCalendario] = useState<{id: string; titulo: string; data_inicio: string; data_fim?: string | null; cor: string}[]>([]);
+  const [eventosCalendario, setEventosCalendario] = useState<{id: string; titulo: string; data_inicio: string; data_fim?: string | null; cor: string; descricao?: string | null}[]>([]);
   const { data: responsaveisList = [] } = useResponsaveis();
   const [selLancId, setSelLancId]     = useState('');
   const [selNpaId, setSelNpaId]       = useState('');
@@ -250,7 +264,7 @@ export function Dashboard() {
         supabase.from('lancamentos').select('id, nome, ativo, status, created_at, data_live').order('created_at', { ascending: false }).limit(20),
         supabase.from('npa_eventos').select('id, nome, ativo, data_evento').order('created_at', { ascending: false }).limit(20),
         // Inclui eventos futuros E eventos em andamento (data_fim >= hoje, mesmo que data_inicio < hoje)
-        supabase.from('eventos_calendario').select('id, titulo, data_inicio, data_fim, cor')
+        supabase.from('eventos_calendario').select('id, titulo, data_inicio, data_fim, cor, descricao')
           .or(`data_inicio.gte.${hoje.toISOString()},data_fim.gte.${hoje.toISOString()}`)
           .order('data_inicio').limit(30),
         supabase.from('leads').select('id, canal').gte('criado_em', hoje.toISOString()).limit(500),
@@ -415,6 +429,36 @@ export function Dashboard() {
     return meses;
   }, [pagamentos, getOwnerShare]);
 
+  // Matriculado de verdade = pagou a primeira parcela — preencher a ficha não é matrícula,
+  // é intenção. `data_matricula` marca a ficha, não o dinheiro; o campo confiável é a data
+  // do primeiro pagamento pago de cada aluno.
+  const primeiroPagamentoPorAluno = useMemo(() => {
+    const map = new Map<string, string>();
+    pagamentos.forEach(p => {
+      if (p.status !== 'pago' || !p.data_pagamento) return;
+      const atual = map.get(p.aluno_id);
+      if (!atual || p.data_pagamento < atual) map.set(p.aluno_id, p.data_pagamento);
+    });
+    return map;
+  }, [pagamentos]);
+
+  // Novas matrículas por mês, pela data do primeiro pagamento — ao lado da receita, mostra
+  // se o crescimento vem antes ou depois do dinheiro entrar de verdade.
+  const matriculasMensalHistorico = useMemo(() => {
+    const meses: { mes: string; label: string; matriculas: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const ref = new Date(); ref.setDate(1); ref.setMonth(ref.getMonth() - i);
+      const range = getPeriodRange('mes', ref);
+      const matriculas = alunos.filter(a => {
+        if (getOwnerShare(a.turma_id ?? null) <= 0) return false;
+        const data = primeiroPagamentoPorAluno.get(a.id);
+        return data && data >= range.start && data <= range.end;
+      }).length;
+      meses.push({ mes: range.key, label: format(ref, 'MMM', { locale: ptBR }), matriculas });
+    }
+    return meses;
+  }, [alunos, getOwnerShare, primeiroPagamentoPorAluno]);
+
   const hojeStr = useMemo(() => {
     const d = new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0, 10);
   }, []);
@@ -485,8 +529,13 @@ export function Dashboard() {
   // ── Ocupação de turmas ─────────────────────────────────────────────────────
 
   const turmasComVagas = useMemo(() => {
+    // 2 semanas após o início a turma já fechou matrícula na prática — fica de fora pra
+    // não poluir a seção com turma que não recebe mais aluno novo.
+    const limiteAntigo = new Date(); limiteAntigo.setDate(limiteAntigo.getDate() - 14);
     return turmas
       .filter(t => t.vagas != null && (t.vagas as number) > 0)
+      .filter(t => t.nome?.trim().toUpperCase() !== 'NPS') // turma de teste, não é turma de verdade
+      .filter(t => !t.data_inicio || new Date(t.data_inicio) >= limiteAntigo)
       .map(t => {
         const matriculados = alunosAtivos.filter(a => a.turma_id === t.id).length;
         const vagas = t.vagas as number;
@@ -634,7 +683,10 @@ export function Dashboard() {
 
   const proximosEventos = useMemo(() => {
     const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-    type ProxEvento = { id: string; titulo: string; data: Date; tipo: 'evento' | 'lancamento' | 'npa' | 'tarefa'; cor: string };
+    type ProxEvento = {
+      id: string; titulo: string; data: Date; tipo: 'evento' | 'lancamento' | 'npa' | 'tarefa'; cor: string;
+      descricao?: string | null; rawId?: string;
+    };
     const items: ProxEvento[] = [];
 
     eventosCalendario.forEach(e => {
@@ -644,7 +696,9 @@ export function Dashboard() {
       const dataExibir = dataInicio < hoje && e.data_fim && new Date(e.data_fim) >= hoje
         ? hoje
         : dataInicio;
-      items.push({ id: `evt-${e.id}`, titulo: e.titulo, data: dataExibir, tipo: 'evento', cor: e.cor });
+      // rawId aponta pro registro de verdade em eventos_calendario — é o único tipo aqui
+      // que o dono edita/anota direto (lançamento, NPA e tarefa vêm de outras telas).
+      items.push({ id: `evt-${e.id}`, titulo: e.titulo, data: dataExibir, tipo: 'evento', cor: e.cor, descricao: e.descricao, rawId: e.id });
     });
     lancamentos.filter(l => (l as any).data_live && new Date((l as any).data_live) >= hoje).forEach(l => {
       items.push({ id: `lanc-${l.id}`, titulo: l.nome, data: new Date((l as any).data_live), tipo: 'lancamento', cor: '#EA580C' });
@@ -676,6 +730,86 @@ export function Dashboard() {
     return { ativos: ativos.length, recebido, inadimp, txInad, proxTurma, mrr };
   };
 
+  // ── Próximas datas: adicionar e anotar direto do Dashboard ────────────────
+  // Mesma tabela e mesmo padrão de campos da tela Calendário (CalendarioGeralView) —
+  // só um atalho pra não precisar sair do Dashboard pra registrar um lembrete rápido.
+
+  const EVENTO_CORES = ['#A93356', '#EA580C', '#7C3AED', '#2E9E6C', '#4A90E2', '#ef4444'];
+
+  const [novoEventoOpen, setNovoEventoOpen] = useState(false);
+  const [novoEventoForm, setNovoEventoForm] = useState({ titulo: '', data: '', descricao: '', cor: EVENTO_CORES[0] });
+  const [salvandoNovoEvento, setSalvandoNovoEvento] = useState(false);
+
+  const [eventoEditando, setEventoEditando] = useState<{ id: string; titulo: string; data_inicio: string; descricao: string; cor: string } | null>(null);
+  const [salvandoEdicaoEvento, setSalvandoEdicaoEvento] = useState(false);
+  const [excluindoEvento, setExcluindoEvento] = useState(false);
+
+  const refetchEventosCalendario = async () => {
+    const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+    const { data } = await supabase.from('eventos_calendario').select('id, titulo, data_inicio, data_fim, cor, descricao')
+      .or(`data_inicio.gte.${hoje.toISOString()},data_fim.gte.${hoje.toISOString()}`)
+      .order('data_inicio').limit(30);
+    if (data) setEventosCalendario(data as any);
+  };
+
+  const handleCriarEvento = async () => {
+    if (!novoEventoForm.titulo.trim() || !novoEventoForm.data) {
+      toast.error('Preencha o título e a data.');
+      return;
+    }
+    setSalvandoNovoEvento(true);
+    const { error } = await supabase.from('eventos_calendario').insert({
+      titulo: novoEventoForm.titulo.trim(),
+      descricao: novoEventoForm.descricao.trim() || null,
+      data_inicio: new Date(novoEventoForm.data).toISOString(),
+      cor: novoEventoForm.cor,
+    });
+    setSalvandoNovoEvento(false);
+    if (error) { toast.error(`Erro ao criar: ${error.message}`); return; }
+    toast.success('Adicionado ao calendário.');
+    setNovoEventoOpen(false);
+    setNovoEventoForm({ titulo: '', data: '', descricao: '', cor: EVENTO_CORES[0] });
+    refetchEventosCalendario();
+  };
+
+  const abrirEdicaoEvento = (ev: { rawId?: string; titulo: string; data: Date; descricao?: string | null; cor: string }) => {
+    if (!ev.rawId) return;
+    setEventoEditando({
+      id: ev.rawId,
+      titulo: ev.titulo,
+      data_inicio: format(ev.data, "yyyy-MM-dd'T'HH:mm"),
+      descricao: ev.descricao || '',
+      cor: ev.cor,
+    });
+  };
+
+  const handleSalvarEdicaoEvento = async () => {
+    if (!eventoEditando || !eventoEditando.titulo.trim()) return;
+    setSalvandoEdicaoEvento(true);
+    const { error } = await supabase.from('eventos_calendario').update({
+      titulo: eventoEditando.titulo.trim(),
+      descricao: eventoEditando.descricao.trim() || null,
+      data_inicio: new Date(eventoEditando.data_inicio).toISOString(),
+      cor: eventoEditando.cor,
+    }).eq('id', eventoEditando.id);
+    setSalvandoEdicaoEvento(false);
+    if (error) { toast.error(`Erro ao salvar: ${error.message}`); return; }
+    toast.success('Atualizado.');
+    setEventoEditando(null);
+    refetchEventosCalendario();
+  };
+
+  const handleExcluirEvento = async () => {
+    if (!eventoEditando) return;
+    setExcluindoEvento(true);
+    const { error } = await supabase.from('eventos_calendario').delete().eq('id', eventoEditando.id);
+    setExcluindoEvento(false);
+    if (error) { toast.error(`Erro ao excluir: ${error.message}`); return; }
+    toast.success('Removido do calendário.');
+    setEventoEditando(null);
+    refetchEventosCalendario();
+  };
+
   const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
   const fmtK = (v: number) => v >= 1000 ? `R$ ${(v / 1000).toFixed(1)}k` : fmt(v);
 
@@ -705,19 +839,28 @@ export function Dashboard() {
 
       {/* ── KPIs financeiros reais ─────────────────────────────────────── */}
       <div className="space-y-3">
-        {/* Owner filter chips */}
+        {/* Owner filter chips — o valor é o nome exato cadastrado em turma_responsaveis/
+            responsaveis (é isso que makeGetOwnerShare casa); o rótulo é só como aparece
+            pro dono. Keila é rotulada "Investidores" porque hoje é a única, mas o filtro
+            continua sendo o nome dela — no dia que entrar outro investidor, o rótulo vira
+            plural de verdade sem trocar o valor que já é comparado no resto do código. */}
         <div className="flex items-center gap-2 flex-wrap">
-          {['Onze Digital', 'Rodrygo', 'Keila', ''].map(owner => (
+          {[
+            { value: 'Onze Digital', label: 'Onze Digital' },
+            { value: 'Rodrygo', label: 'Instituto Despertamente' },
+            { value: 'Keila', label: 'Investidores' },
+            { value: '', label: 'Todos' },
+          ].map(owner => (
             <button
-              key={owner || '__todos__'}
-              onClick={() => setOwnerFilter(owner)}
+              key={owner.value || '__todos__'}
+              onClick={() => setOwnerFilter(owner.value)}
               className={`px-3 py-1 rounded-lg text-xs font-medium transition-all border ${
-                ownerFilter === owner
+                ownerFilter === owner.value
                   ? 'bg-primary text-white border-primary shadow-sm'
                   : 'bg-white text-muted-foreground border-border/60 hover:border-primary/40'
               }`}
             >
-              {owner || 'Todos'}
+              {owner.label}
             </button>
           ))}
         </div>
@@ -725,7 +868,7 @@ export function Dashboard() {
           <StatTile
             label="MRR Projetado"
             value={fmtK(mrrEfetivo)}
-            hint={`${filteredAlunosAtivos.length} alunos ativos${ownerFilter ? ` · ${ownerFilter}` : ''}`}
+            hint={`${filteredAlunosAtivos.length} alunos ativos${ownerFilter ? ` · ${OWNER_LABELS[ownerFilter] ?? ownerFilter}` : ''}`}
             icon={DollarSign}
             tom="bom"
           />
@@ -753,39 +896,61 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* ── Receita mensal (últimos 6 meses) ────────────────────────────────── */}
-      <Card className="border border-border/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] bg-white">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <TrendingUp size={15} className="text-muted-foreground" /> Receita mensal
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">Recebido por mês contra o MRR atual — se a coleta está subindo ou caindo.</p>
-        </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={receitaMensalHistorico} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-              <YAxis
-                tick={{ fontSize: 11 }}
-                tickFormatter={(v: number) => v >= 1000 ? `R$${(v / 1000).toFixed(0)}k` : `R$${v}`}
-                width={48}
-                domain={[0, (dataMax: number) => Math.max(dataMax, mrrEfetivo) * 1.05]}
-              />
-              <Tooltip formatter={(value: unknown) => [fmt(value as number), 'Recebido']} />
-              <Bar dataKey="recebido" fill="#A93356" radius={[3, 3, 0, 0]} />
-              {mrrEfetivo > 0 && (
-                <ReferenceLine
-                  y={mrrEfetivo}
-                  stroke="#f59e0b"
-                  strokeDasharray="5 3"
-                  label={{ value: 'MRR atual', fill: '#f59e0b', fontSize: 10, position: 'insideTopRight' }}
+      {/* ── Receita mensal & Novas matrículas (últimos 6 meses) ─────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <Card className="border border-border/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] bg-white">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <TrendingUp size={15} className="text-muted-foreground" /> Receita mensal
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">Recebido por mês contra o MRR atual — se a coleta está subindo ou caindo.</p>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={receitaMensalHistorico} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                <YAxis
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(v: number) => v >= 1000 ? `R$${(v / 1000).toFixed(0)}k` : `R$${v}`}
+                  width={48}
+                  domain={[0, (dataMax: number) => Math.max(dataMax, mrrEfetivo) * 1.05]}
                 />
-              )}
-            </BarChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
+                <Tooltip formatter={(value: unknown) => [fmt(value as number), 'Recebido']} />
+                <Bar dataKey="recebido" fill="#A93356" radius={[3, 3, 0, 0]} />
+                {mrrEfetivo > 0 && (
+                  <ReferenceLine
+                    y={mrrEfetivo}
+                    stroke="#f59e0b"
+                    strokeDasharray="5 3"
+                    label={{ value: 'MRR atual', fill: '#f59e0b', fontSize: 10, position: 'insideTopRight' }}
+                  />
+                )}
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card className="border border-border/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] bg-white">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <GraduationCap size={15} className="text-muted-foreground" /> Novas matrículas
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">Quem pagou a 1ª parcela por mês — ficha preenchida não conta, só matrícula paga.</p>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={matriculasMensalHistorico} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} width={30} allowDecimals={false} />
+                <Tooltip formatter={(value: unknown) => [`${value} matrícula(s)`, '']} labelFormatter={(l: string) => l} />
+                <Bar dataKey="matriculas" fill="#2E9E6C" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* ── Ação de hoje ──────────────────────────────────────────────────── */}
       <div className="space-y-3">
@@ -859,9 +1024,19 @@ export function Dashboard() {
       {/* ── Próximas datas importantes ────────────────────────────────────── */}
       <Card className="border border-border/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] bg-white">
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <CalendarDays size={15} className="text-muted-foreground" /> Próximas datas importantes
-          </CardTitle>
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <CalendarDays size={15} className="text-muted-foreground" /> Próximas datas importantes
+            </CardTitle>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 text-xs"
+              onClick={() => { setNovoEventoForm({ titulo: '', data: '', descricao: '', cor: EVENTO_CORES[0] }); setNovoEventoOpen(true); }}
+            >
+              <Plus size={13} /> Adicionar
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {proximosEventos.length === 0 ? (
@@ -879,22 +1054,34 @@ export function Dashboard() {
                 const tipoLabel: Record<string, string> = {
                   evento: 'Evento', lancamento: 'Lançamento', npa: 'NPA', tarefa: 'Tarefa',
                 };
+                const editavel = ev.tipo === 'evento' && !!ev.rawId;
                 return (
                   <div
                     key={ev.id}
                     className={cn(
-                      'flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors',
-                      isHoje
-                        ? 'bg-amber-50/70 border-amber-200/70'
-                        : 'bg-white border border-border/40 hover:border-border',
+                      'group flex items-center gap-3 pl-2.5 pr-3 py-2.5 rounded-xl border transition-colors',
+                      isHoje ? 'bg-amber-50/70 border-amber-200/70' : 'bg-white border border-border/40 hover:border-border',
                     )}
                   >
-                    <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: ev.cor }} />
+                    <div className="w-1 self-stretch rounded-full shrink-0" style={{ backgroundColor: ev.cor }} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{ev.titulo}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-medium truncate">{ev.titulo}</p>
+                        {ev.descricao && <StickyNote size={11} className="text-muted-foreground shrink-0" />}
+                      </div>
                       <p className="text-xs text-muted-foreground capitalize">{tipoLabel[ev.tipo]}</p>
+                      {ev.descricao && <p className="text-xs text-muted-foreground/80 italic truncate mt-0.5">{ev.descricao}</p>}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      {editavel && (
+                        <button
+                          onClick={() => abrirEdicaoEvento(ev)}
+                          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted transition-opacity"
+                          title="Editar / anotar"
+                        >
+                          <Pencil size={13} className="text-muted-foreground" />
+                        </button>
+                      )}
                       <TipoIcon size={13} className="text-muted-foreground" />
                       <span className={`text-xs font-semibold tabular-nums ${isHoje ? 'text-amber-600' : 'text-muted-foreground'}`}>{diasStr}</span>
                     </div>
@@ -905,6 +1092,117 @@ export function Dashboard() {
           )}
         </CardContent>
       </Card>
+
+      {/* Novo evento/observação */}
+      <Dialog open={novoEventoOpen} onOpenChange={setNovoEventoOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nova data importante</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Título</Label>
+              <Input
+                value={novoEventoForm.titulo}
+                onChange={e => setNovoEventoForm(f => ({ ...f, titulo: e.target.value }))}
+                placeholder="Ex.: Reunião com o banco"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Data</Label>
+              <Input
+                type="datetime-local"
+                value={novoEventoForm.data}
+                onChange={e => setNovoEventoForm(f => ({ ...f, data: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Observação</Label>
+              <Textarea
+                rows={3}
+                value={novoEventoForm.descricao}
+                onChange={e => setNovoEventoForm(f => ({ ...f, descricao: e.target.value }))}
+                placeholder="Detalhes, contexto, o que não pode esquecer..."
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Cor</Label>
+              <div className="flex gap-2">
+                {EVENTO_CORES.map(c => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setNovoEventoForm(f => ({ ...f, cor: c }))}
+                    className={cn('w-6 h-6 rounded-full transition-transform', novoEventoForm.cor === c && 'ring-2 ring-offset-2 ring-foreground/40 scale-110')}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNovoEventoOpen(false)}>Cancelar</Button>
+            <Button onClick={handleCriarEvento} disabled={salvandoNovoEvento}>Adicionar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Editar / anotar evento existente */}
+      <Dialog open={!!eventoEditando} onOpenChange={o => { if (!o) setEventoEditando(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar data</DialogTitle>
+          </DialogHeader>
+          {eventoEditando && (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label>Título</Label>
+                <Input
+                  value={eventoEditando.titulo}
+                  onChange={e => setEventoEditando(v => v && ({ ...v, titulo: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Data</Label>
+                <Input
+                  type="datetime-local"
+                  value={eventoEditando.data_inicio}
+                  onChange={e => setEventoEditando(v => v && ({ ...v, data_inicio: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Observação</Label>
+                <Textarea
+                  rows={3}
+                  value={eventoEditando.descricao}
+                  onChange={e => setEventoEditando(v => v && ({ ...v, descricao: e.target.value }))}
+                  placeholder="Detalhes, contexto, o que não pode esquecer..."
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Cor</Label>
+                <div className="flex gap-2">
+                  {EVENTO_CORES.map(c => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setEventoEditando(v => v && ({ ...v, cor: c }))}
+                      className={cn('w-6 h-6 rounded-full transition-transform', eventoEditando.cor === c && 'ring-2 ring-offset-2 ring-foreground/40 scale-110')}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="flex items-center justify-between sm:justify-between">
+            <Button variant="ghost" className="text-destructive hover:text-destructive gap-1.5" onClick={handleExcluirEvento} disabled={excluindoEvento}>
+              <Trash2 size={14} /> Excluir
+            </Button>
+            <Button onClick={handleSalvarEdicaoEvento} disabled={salvandoEdicaoEvento}>Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Vendedores reais & Parceiros ───────────────────────────────────── */}
       <CollapsibleSection title="Vendedores & Parceiros" icon={Handshake}>
