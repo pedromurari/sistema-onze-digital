@@ -1,6 +1,5 @@
 export interface AccessPermissions {
   canViewDashboard: boolean;
-  canViewPipeline: boolean;
   canViewLancamentos: boolean;
   canViewAllLancamentos: boolean;
   allowedLancamentoIds: string[];
@@ -61,7 +60,6 @@ export function permissionsFromMatrix(
   const d = getDefaultPermissions(role);
   return {
     canViewDashboard:            podeVer(matrix, 'dashboard',      d.canViewDashboard),
-    canViewPipeline:             podeVer(matrix, 'pipeline',       d.canViewPipeline),
     canViewLancamentos:          podeVer(matrix, 'lancamentos',    d.canViewLancamentos),
     canViewAllLancamentos:       matrix['lancamentos']?.ver_todos ?? d.canViewAllLancamentos,
     allowedLancamentoIds:        escopo?.allowedLancamentoIds     ?? d.allowedLancamentoIds,
@@ -87,7 +85,6 @@ export function permissionsFromMatrix(
 export function permissionsToToggles(permissions: AccessPermissions): PermissionRow[] {
   return [
     { recurso: 'dashboard',        acao: 'ver',       permitido: permissions.canViewDashboard },
-    { recurso: 'pipeline',         acao: 'ver',       permitido: permissions.canViewPipeline },
     { recurso: 'lancamentos',      acao: 'ver',       permitido: permissions.canViewLancamentos },
     { recurso: 'lancamentos',      acao: 'ver_todos', permitido: permissions.canViewAllLancamentos },
     { recurso: 'npa',              acao: 'ver',       permitido: permissions.canViewNpa },
@@ -120,16 +117,15 @@ const RECURSO_POR_VIEW: Record<string, string> = {
 };
 
 export type AppView =
-  | 'dashboard' | 'pipeline' | 'npa_overview' | 'financeiro' | 'financeiro_cfo' | 'balanco' | 'rodrygo'
+  | 'dashboard' | 'npa_overview' | 'financeiro' | 'financeiro_cfo' | 'balanco' | 'rodrygo'
   | 'lancamentos_30' | 'lancamentos_31' | 'lancamentos_32'
   | 'team' | 'settings' | 'cobranca' | 'funil_lancamento' | 'disparos_monitor' | 'chat_conversas'
   | 'operacoes_tarefas' | 'operacoes_calendario_geral' | 'operacoes_calendario_conteudo'
-  | 'mapa_mental' | 'produtos' | 'franquia_psi' | 'posts' | 'parceiros' | 'equipe_11ds' | 'reels_idm'
+  | 'mapa_mental' | 'produtos' | 'franquia_psi' | 'posts' | 'parceiros' | 'equipe_11ds'
   | 'aquecimento_chips' | 'time_comercial' | 'pessoas';
 
 export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
   canViewDashboard: true,
-  canViewPipeline: true,
   canViewLancamentos: true,
   canViewAllLancamentos: true,
   allowedLancamentoIds: [],
@@ -169,7 +165,6 @@ export function normalizePermissionsRow(row: any, role?: string): AccessPermissi
 
   return {
     canViewDashboard: row.can_view_dashboard ?? defaults.canViewDashboard,
-    canViewPipeline: row.can_view_pipeline ?? defaults.canViewPipeline,
     canViewLancamentos: row.can_view_lancamentos ?? defaults.canViewLancamentos,
     canViewAllLancamentos: row.can_view_all_lancamentos ?? defaults.canViewAllLancamentos,
     allowedLancamentoIds: Array.isArray(row.allowed_lancamento_ids) ? row.allowed_lancamento_ids.filter(Boolean) : defaults.allowedLancamentoIds,
@@ -194,7 +189,6 @@ export function normalizePermissionsRow(row: any, role?: string): AccessPermissi
 export function permissionsToRow(permissions: AccessPermissions) {
   return {
     can_view_dashboard: permissions.canViewDashboard,
-    can_view_pipeline: permissions.canViewPipeline,
     can_view_lancamentos: permissions.canViewLancamentos,
     can_view_all_lancamentos: permissions.canViewAllLancamentos,
     allowed_lancamento_ids: permissions.allowedLancamentoIds,
@@ -257,7 +251,6 @@ export function canAccessView(
 
   const permissionByView: Partial<Record<AppView, boolean>> = {
     dashboard: permissions.canViewDashboard,
-    pipeline: permissions.canViewPipeline,
     time_comercial: permissions.canViewTimeComercial,
     npa_overview: permissions.canViewNpa,
     financeiro: permissions.canViewFinanceiro,
@@ -287,7 +280,6 @@ export function canAccessView(
 
 export function firstAllowedView(permissions: AccessPermissions, isAdmin: boolean, allowedLaunchIds: string[]) {
   if (isAdmin || permissions.canViewDashboard) return 'dashboard' as AppView;
-  if (permissions.canViewPipeline) return 'pipeline';
   if (permissions.canViewTimeComercial) return 'time_comercial';
   if (permissions.canViewLancamentos && allowedLaunchIds.length > 0) return `lancamentos_${allowedLaunchIds[0]}` as AppView;
   if (permissions.canViewNpa) return 'npa_overview';

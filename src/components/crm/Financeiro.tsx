@@ -20,7 +20,7 @@ import { PrevisaoPagamentoPopover } from './finance/PrevisaoPagamentoPopover';
 import {
   Plus, DollarSign, Users, AlertCircle, Eye, Trash2,
   TrendingUp, Target, Phone, Pencil, Building2, CheckCircle2,
-  Copy, Download, ExternalLink, Upload, FileText,
+  Copy, Download, ExternalLink, Upload, FileText, Search,
   Send, MessageSquare, Shield, ChevronDown, ChevronRight,
   Play, Square, CheckCircle, XCircle, Clock, RefreshCw, History, UserPlus,
 } from 'lucide-react';
@@ -28,6 +28,7 @@ import { format, isSameMonth, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { isPagamentoInadimplente, calcTaxaTransacao, taxaDoPagamento, type TaxaDetalhe } from '@/lib/financial-utils';
 import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
+import { StatTile } from '@/components/crm/ui/premium';
 import {
   useAlunos, usePagamentos, useTurmas, useResponsaveis, useInvalidarDados,
   COLUNAS_ALUNO_COMPLETO, COLUNAS_PAGAMENTO_COMPLETO,
@@ -1156,7 +1157,8 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
   const inadimplentes = useMemo(() => alunosBase.filter(a => inadimplenciaMap[a.id] || a.status === 'inadimplente'), [alunosBase, inadimplenciaMap]);
   const totalEmAtraso = useMemo(() => inadimplentes.reduce((s, a) => s + (inadimplenciaMap[a.id]?.valorEmAtraso || 0), 0), [inadimplentes, inadimplenciaMap]);
   const contratosPendentes = useMemo(() => filteredAlunos.filter(a => !a.contrato_assinado && (a.status === 'ativo' || a.status === 'pre_matricula')).length, [filteredAlunos]);
-  const alunosSemTurma = useMemo(() => alunos.filter(a => a.produto === activeTab && !a.turma_id), [alunos, activeTab]);
+  // O banner que usava isso foi removido: o painel de integridade, logo acima, já lista
+  // esses mesmos alunos e deixa atribuir a turma ali — o banner só sabia filtrar.
 
   // Agrupar alunos por turma
   const alunosVisiveis = useMemo(() => {
@@ -1994,21 +1996,35 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
 
       {subView === 'alunos' && (
         <>
-          {/* Banner alunos sem turma — apenas admin */}
-          {isAdmin && alunosSemTurma.length > 0 && (
-            <div className="flex items-center gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg">
-              <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <span className="text-sm font-medium text-amber-800">{alunosSemTurma.length} aluno{alunosSemTurma.length !== 1 ? 's' : ''} sem turma atribuida</span>
-                <span className="text-xs text-amber-600 ml-2 hidden sm:inline">Responderam o formulario mas ainda nao foram alocados.</span>
-              </div>
-              <button
-                onClick={() => { setStatusFilter('todos'); setPaymentFilter('todos'); setDueDayFilter('todos'); setDueFilter('todos'); setSelectedTurmaId('todas'); }}
-                className="text-xs text-amber-700 font-semibold hover:text-amber-900 whitespace-nowrap">
-                Ver na lista ↓
-              </button>
-            </div>
-          )}
+          {/* Turma + busca. Antes ficava DEPOIS dos cards e do detalhamento — filtrar por
+              nome ou turma exigia rolar a tela toda. Agora e o primeiro filtro, porque e o
+              mais usado: quem abre o Financeiro geralmente ja sabe QUEM procura. */}
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Select value={selectedTurmaId} onValueChange={setSelectedTurmaId}>
+              <SelectTrigger className="sm:w-64 shrink-0">
+                <SelectValue placeholder="Todas as turmas" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todas">Todas as turmas</SelectItem>
+                {filteredTurmas.map(t => (
+                  <SelectItem key={t.id} value={t.id}>{t.nome} ({alunos.filter(a => a.turma_id === t.id).length} alunos)</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Card className="p-2.5 flex-1 flex items-center gap-2">
+              <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+              <Input
+                ref={searchAlunoRef}
+                placeholder="Buscar por nome, WhatsApp ou email..."
+                value={searchAluno}
+                onChange={e => setSearchAluno(e.target.value)}
+                className="border-0 shadow-none p-0 h-auto text-sm focus-visible:ring-0 flex-1"
+              />
+              <Button variant="ghost" size="sm" onClick={exportarCSV} title="Exportar lista como CSV" className="shrink-0 h-7 px-2 text-muted-foreground hover:text-foreground">
+                <Download className="h-4 w-4 mr-1" /><span className="text-xs">CSV</span>
+              </Button>
+            </Card>
+          </div>
 
           {/* Filtros */}
           <div className="space-y-2">
@@ -2130,75 +2146,56 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
               <div className="space-y-3">
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
 
-                  {/* Recebido */}
-                  <Card
-                    className={`p-4 cursor-pointer hover:shadow-md transition-all ${expandedCard === 'recebido' ? 'ring-2 ring-green-400 shadow-md' : ''}`}
+                  {/* Cinco cores decorativas viraram tom semantico: verde e dinheiro que
+                      entrou, vermelho e dinheiro que nao entrou. O resto usa o vinho da casa.
+                      O card tambem e o filtro — clicar abre o detalhamento logo abaixo. */}
+                  <StatTile
+                    label={`Recebido — ${contexto}`}
+                    value={formatCurrency(receitaMes)}
+                    hint={`${pagsPeriodoRecebido.length} pagamento${pagsPeriodoRecebido.length !== 1 ? 's' : ''}`}
+                    icon={DollarSign}
+                    tom="bom"
                     onClick={() => toggle('recebido')}
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="p-1.5 bg-green-100 rounded-lg"><DollarSign className="h-3.5 w-3.5 text-green-600" /></div>
-                      {chevron('recebido')}
-                    </div>
-                    <p className="text-xs text-muted-foreground mb-0.5 truncate" title={`Recebido — ${contexto}`}>Recebido — {contexto}</p>
-                    <p className="text-xl font-bold text-green-600">{formatCurrency(receitaMes)}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{pagsPeriodoRecebido.length} pag.</p>
-                  </Card>
+                    ativo={expandedCard === 'recebido'}
+                  />
 
-                  {/* Previsto */}
-                  <Card
-                    className={`p-4 cursor-pointer hover:shadow-md transition-all ${expandedCard === 'previsto' ? 'ring-2 ring-blue-400 shadow-md' : ''}`}
+                  <StatTile
+                    label={`Previsto — ${contexto}`}
+                    value={formatCurrency(previstoMes)}
+                    hint={`${pagsPrevisto.length} pagamento${pagsPrevisto.length !== 1 ? 's' : ''}`}
+                    icon={Target}
                     onClick={() => toggle('previsto')}
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="p-1.5 bg-blue-100 rounded-lg"><Target className="h-3.5 w-3.5 text-blue-600" /></div>
-                      {chevron('previsto')}
-                    </div>
-                    <p className="text-xs text-muted-foreground mb-0.5 truncate" title={`Previsto — ${contexto}`}>Previsto — {contexto}</p>
-                    <p className="text-xl font-bold text-blue-600">{formatCurrency(previstoMes)}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{pagsPrevisto.length} pag.</p>
-                  </Card>
+                    ativo={expandedCard === 'previsto'}
+                  />
 
-                  {/* A Receber */}
-                  <Card
-                    className={`p-4 cursor-pointer hover:shadow-md transition-all ${expandedCard === 'aReceber' ? 'ring-2 ring-yellow-400 shadow-md' : ''}`}
+                  <StatTile
+                    label="A receber"
+                    value={formatCurrency(valorAReceber)}
+                    hint={`${parcelasEmAberto.length} parcela${parcelasEmAberto.length !== 1 ? 's' : ''} em aberto`}
+                    icon={TrendingUp}
                     onClick={() => toggle('aReceber')}
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="p-1.5 bg-yellow-100 rounded-lg"><TrendingUp className="h-3.5 w-3.5 text-yellow-600" /></div>
-                      {chevron('aReceber')}
-                    </div>
-                    <p className="text-xs text-muted-foreground mb-0.5">A Receber</p>
-                    <p className="text-xl font-bold text-yellow-700">{formatCurrency(valorAReceber)}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{parcelasEmAberto.length} parcela{parcelasEmAberto.length !== 1 ? 's' : ''}</p>
-                  </Card>
+                    ativo={expandedCard === 'aReceber'}
+                  />
 
-                  {/* Inadimplentes */}
-                  <Card
-                    className={`p-4 cursor-pointer hover:shadow-md transition-all border-red-100 ${expandedCard === 'inadimplentes' ? 'ring-2 ring-red-400 shadow-md' : ''}`}
+                  <StatTile
+                    label="Inadimplentes"
+                    value={inadimplentes.length}
+                    hint={totalEmAtraso > 0 ? `${formatCurrency(totalEmAtraso)} em atraso` : 'nada em atraso'}
+                    icon={AlertCircle}
+                    tom={inadimplentes.length > 0 ? 'ruim' : 'padrao'}
                     onClick={() => toggle('inadimplentes')}
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="p-1.5 bg-red-100 rounded-lg"><AlertCircle className="h-3.5 w-3.5 text-red-600" /></div>
-                      {chevron('inadimplentes')}
-                    </div>
-                    <p className="text-xs text-muted-foreground mb-0.5">Inadimplentes</p>
-                    <p className="text-xl font-bold text-red-600">{inadimplentes.length}</p>
-                    {totalEmAtraso > 0 && <p className="text-xs text-red-500 font-medium mt-0.5">{formatCurrency(totalEmAtraso)} em atraso</p>}
-                  </Card>
+                    ativo={expandedCard === 'inadimplentes'}
+                  />
 
-                  {/* Alunos Ativos */}
-                  <Card
-                    className={`p-4 cursor-pointer hover:shadow-md transition-all ${expandedCard === 'ativos' ? 'ring-2 ring-purple-400 shadow-md' : ''}`}
+                  <StatTile
+                    label="Alunos ativos"
+                    value={alunosAtivosLocal.length}
+                    hint={contratosPendentes > 0 ? `${contratosPendentes} sem contrato` : 'todos com contrato'}
+                    icon={Users}
+                    tom={contratosPendentes > 0 ? 'atencao' : 'padrao'}
                     onClick={() => toggle('ativos')}
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="p-1.5 bg-purple-100 rounded-lg"><Users className="h-3.5 w-3.5 text-purple-600" /></div>
-                      {chevron('ativos')}
-                    </div>
-                    <p className="text-xs text-muted-foreground mb-0.5">Alunos Ativos</p>
-                    <p className="text-xl font-bold text-purple-600">{alunosAtivosLocal.length}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{contratosPendentes > 0 ? `${contratosPendentes} sem contrato` : 'Todos c/ contrato'}</p>
-                  </Card>
+                    ativo={expandedCard === 'ativos'}
+                  />
                 </div>
 
                 {/* Painel de detalhamento */}
@@ -2340,37 +2337,6 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
             );
           })()}
 
-          {/* Filtro turma + busca */}
-          <div className="flex flex-col sm:flex-row gap-2">
-            <Card className="p-3 flex-1">
-              <div className="flex items-center gap-3">
-                <label className="text-sm font-medium whitespace-nowrap">Turma:</label>
-                <Select value={selectedTurmaId} onValueChange={setSelectedTurmaId}>
-                  <SelectTrigger className="max-w-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todas">Todas as turmas</SelectItem>
-                    {filteredTurmas.map(t => (
-                      <SelectItem key={t.id} value={t.id}>{t.nome} ({alunos.filter(a => a.turma_id === t.id).length} alunos)</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </Card>
-            <Card className="p-3 flex-1 flex items-center gap-2">
-              <Input
-                ref={searchAlunoRef}
-                placeholder="Buscar por nome, WhatsApp ou email..."
-                value={searchAluno}
-                onChange={e => setSearchAluno(e.target.value)}
-                className="border-0 shadow-none p-0 h-auto text-sm focus-visible:ring-0 flex-1"
-              />
-              <Button variant="ghost" size="sm" onClick={exportarCSV} title="Exportar lista como CSV" className="shrink-0 h-7 px-2 text-muted-foreground hover:text-foreground">
-                <Download className="h-4 w-4 mr-1" /><span className="text-xs">CSV</span>
-              </Button>
-            </Card>
-          </div>
 
           {/* Barra flutuante de acao em massa */}
           {selectedRows.size > 0 && (

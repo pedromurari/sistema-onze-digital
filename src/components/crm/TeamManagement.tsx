@@ -35,7 +35,6 @@ const COLORS = [
 
 const MODULE_PERMISSIONS: Array<{ key: keyof AccessPermissions; label: string; emoji: string }> = [
   { key: 'canViewDashboard',   label: 'Dashboard',      emoji: '📊' },
-  { key: 'canViewPipeline',    label: 'Leads diretos',  emoji: '🎯' },
   { key: 'canViewLancamentos', label: 'Lançamentos',    emoji: '🚀' },
   { key: 'canViewNpa',         label: 'NPA',            emoji: '📅' },
   { key: 'canViewAulaSecreta', label: 'Aula secreta',   emoji: '🔒' },

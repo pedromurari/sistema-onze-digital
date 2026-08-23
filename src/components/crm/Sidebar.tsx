@@ -37,7 +37,6 @@ const BASE_MENU: MenuItem[] = [
   { key: 'dashboard',                  label: 'Dashboard',           icon: LayoutDashboard },
   { key: 'operacoes_calendario_geral', label: 'Calendário',          icon: CalendarDays },
   // CRM
-  { key: 'pipeline',                   label: 'Leads Diretos',       icon: Kanban },
   { key: 'pessoas',                    label: 'Pessoas',             icon: Contact },
   // CRM Time Comercial
   { key: 'time_comercial',             label: 'Time Comercial',      icon: Users },
@@ -47,7 +46,6 @@ const BASE_MENU: MenuItem[] = [
   { key: 'franquia_psi',              label: 'IDM PSI Franquias',    icon: TrendingUp },
   // Conteúdo
   { key: 'posts',                      label: 'Post',                 icon: Image,       adminOnly: true },
-  { key: 'reels_idm',                  label: 'Reels IDM',           icon: Video,       adminOnly: true },
   // Eventos
   { group: 'lancamentos_legado',       label: 'Semana do Despertar', icon: Rocket,       children: [] },
   { group: 'npa_dinamico',            label: 'IDM Pelo Brasil',       icon: BarChart3,    children: [] },
@@ -619,7 +617,6 @@ export function MobileNav({ currentView, onViewChange, onOpenMore }: MobileNavPr
   // Atalhos rápidos — o restante das páginas fica disponível no menu "Mais" (todas as categorias do sidebar).
   const quickItems: { key: View; label: string; icon: React.ElementType }[] = [
     { key: 'dashboard',                  label: 'Início',     icon: LayoutDashboard },
-    { key: 'pipeline',                   label: 'Leads',      icon: Kanban },
     { key: 'financeiro',                 label: 'Financeiro', icon: BarChart3 },
     { key: 'operacoes_calendario_geral', label: 'Calendário', icon: CalendarDays },
   ];

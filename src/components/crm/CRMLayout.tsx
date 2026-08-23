@@ -13,7 +13,6 @@ import { FichaPessoaProvider } from './pessoa/FichaPessoaProvider';
 
 // Code splitting: cada módulo carrega só quando o usuário navega até ele
 const Dashboard        = lazy(() => import('./Dashboard').then(m => ({ default: m.Dashboard })));
-const Pipeline         = lazy(() => import('./Pipeline').then(m => ({ default: m.Pipeline })));
 const TeamManagement   = lazy(() => import('./TeamManagement').then(m => ({ default: m.TeamManagement })));
 const Settings         = lazy(() => import('./Settings').then(m => ({ default: m.Settings })));
 const NPAEventos       = lazy(() => import('./NPAEventos').then(m => ({ default: m.NPAEventos })));
@@ -35,7 +34,6 @@ const IDMPsiFranquias   = lazy(() => import('./IDMPsiFranquias').then(m => ({ de
 const Posts             = lazy(() => import('./Posts').then(m => ({ default: m.Posts })));
 const Parceiros         = lazy(() => import('./Parceiros').then(m => ({ default: m.Parceiros })));
 const Equipe11ds        = lazy(() => import('./Equipe11ds').then(m => ({ default: m.Equipe11ds })));
-const ReelsIDM           = lazy(() => import('./ReelsIDM').then(m => ({ default: m.ReelsIDM })));
 const TimeComercial      = lazy(() => import('./TimeComercial').then(m => ({ default: m.TimeComercial })));
 
 function ModuleLoader() {
@@ -239,7 +237,6 @@ export function CRMLayout() {
 
     switch (currentView) {
       case 'dashboard': return <Dashboard />;
-      case 'pipeline': return <Pipeline onEditLead={handleEditLead} />;
       case 'pessoas':  return <Pessoas />;
       case 'time_comercial': return <TimeComercial />;
       case 'npa_overview': return <NPAEventos />;
@@ -275,7 +272,6 @@ export function CRMLayout() {
         ? <Equipe11ds onNavigateToPosts={() => setCurrentView('posts')} onNavigateToAluno={(alunoId) => setCurrentView(`financeiro_aluno_${alunoId}` as View)} />
         : <RestrictedView />;
       case 'franquia_psi': return <IDMPsiFranquias />;
-      case 'reels_idm': return isAdmin ? <ReelsIDM /> : <RestrictedView />;
       default: return <Dashboard />;
     }
   };

@@ -24,28 +24,66 @@ export const premiumZebraRow = (idx: number) => (idx % 2 === 0 ? 'bg-card' : 'bg
 /**
  * Card de número. Label em vinho maiúsculo, ícone lucide em badge sólido e um brilho no
  * canto — para não virar bloco branco genérico.
+ *
+ * `tom` existe para o número que carrega julgamento — dinheiro em atraso não é igual a
+ * dinheiro recebido. É semântico, não decorativo: uma tela com cinco cores diferentes,
+ * uma por card, não diz nada. Por padrão todos usam o vinho da casa.
+ *
+ * `onClick` + `ativo` permitem que o card também seja um filtro. Sem isso, cada tela que
+ * precisa disso reinventa o card e o vocabulário volta a divergir — foi o que aconteceu
+ * no Financeiro, que tinha cinco cards próprios em cinco cores.
  */
+export type TomStat = 'padrao' | 'bom' | 'atencao' | 'ruim';
+
+const TOM: Record<TomStat, { rotulo: string; badge: string; brilho: string; anel: string }> = {
+  padrao:  { rotulo: 'text-primary',     badge: 'bg-primary text-primary-foreground', brilho: 'bg-primary/10',   anel: 'ring-primary/40' },
+  bom:     { rotulo: 'text-emerald-700', badge: 'bg-emerald-600 text-white',          brilho: 'bg-emerald-500/10', anel: 'ring-emerald-500/40' },
+  atencao: { rotulo: 'text-amber-700',   badge: 'bg-amber-500 text-white',            brilho: 'bg-amber-500/10',  anel: 'ring-amber-500/40' },
+  ruim:    { rotulo: 'text-red-700',     badge: 'bg-red-600 text-white',              brilho: 'bg-red-500/10',    anel: 'ring-red-500/40' },
+};
+
 export function StatTile({
-  label, value, hint, icon: Icon,
+  label, value, hint, icon: Icon, tom = 'padrao', onClick, ativo = false,
 }: {
   label: string;
   value: React.ReactNode;
-  hint?: string;
+  hint?: React.ReactNode;
   icon?: React.ElementType;
+  tom?: TomStat;
+  onClick?: () => void;
+  ativo?: boolean;
 }) {
-  return (
-    <Card className="p-3 lg:p-4 rounded-xl border-primary/15 shadow-[0_4px_14px_-4px_rgba(169,51,86,0.15)] relative overflow-hidden">
-      <div className="absolute -top-5 -right-5 w-20 h-20 rounded-full bg-primary/10 pointer-events-none" />
+  const c = TOM[tom];
+  const conteudo = (
+    <>
+      <div className={`absolute -top-5 -right-5 w-20 h-20 rounded-full pointer-events-none ${c.brilho}`} />
       <div className="relative flex items-start justify-between gap-2">
-        <p className="text-[10px] font-bold uppercase tracking-wide text-primary">{label}</p>
+        <p className={`text-[10px] font-bold uppercase tracking-wide ${c.rotulo}`}>{label}</p>
         {Icon && (
-          <div className="w-6 h-6 rounded-md bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0">
+          <div className={`w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 ${c.badge}`}>
             <Icon className="h-3.5 w-3.5" />
           </div>
         )}
       </div>
-      <p className="text-xl lg:text-2xl font-bold text-foreground mt-1 relative">{value}</p>
-      {hint && <p className="text-xs text-muted-foreground mt-0.5 relative">{hint}</p>}
+      <p className="text-xl lg:text-2xl font-bold text-foreground mt-1 relative tabular-nums">{value}</p>
+      {hint && <div className="text-xs text-muted-foreground mt-0.5 relative">{hint}</div>}
+    </>
+  );
+
+  const base = 'p-3 lg:p-4 rounded-xl border-primary/15 shadow-[0_4px_14px_-4px_rgba(169,51,86,0.15)] relative overflow-hidden';
+
+  if (!onClick) return <Card className={base}>{conteudo}</Card>;
+
+  return (
+    <Card
+      className={`${base} cursor-pointer text-left transition-shadow hover:shadow-md ${ativo ? `ring-2 ${c.anel}` : ''}`}
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      aria-pressed={ativo}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
+    >
+      {conteudo}
     </Card>
   );
 }

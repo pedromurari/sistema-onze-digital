@@ -47,7 +47,7 @@ const ICONE_EVENTO: Record<TipoEventoPessoa, React.ElementType> = {
 };
 
 const ROTULO_ORIGEM: Record<string, string> = {
-  leads: 'Pipeline',
+  leads: 'Time Comercial',
   lancamento_leads: 'Lançamento',
   alunos: 'Financeiro',
   npa_evento_leads: 'Evento NPA',
