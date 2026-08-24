@@ -227,6 +227,11 @@ export function FunilLancamento() {
   const [configs,         setConfigs]         = useState<Record<string, FunnelConfig>>({});
   const [renamingFunnel,  setRenamingFunnel]  = useState<{ name: string; newName: string } | null>(null);
   const [deletingFunnel,  setDeletingFunnel]  = useState<string | null>(null);
+  const [duplicateOpen,      setDuplicateOpen]      = useState(false);
+  const [duplicateSource,    setDuplicateSource]    = useState('');
+  const [duplicateName,      setDuplicateName]      = useState('');
+  const [duplicateStartDate, setDuplicateStartDate] = useState('');
+  const [duplicating,        setDuplicating]        = useState(false);
 
   // Quick send state
   const [qType,    setQType]    = useState<RecipientType>('group');
@@ -535,6 +540,82 @@ export function FunilLancamento() {
     loadFunnels();
   }
 
+  async function duplicateFunnel() {
+    const source = duplicateSource;
+    const name = duplicateName.trim();
+    if (!source) { toast.error('Selecione o funil de origem'); return; }
+    if (!name) { toast.error('Dê um nome ao novo funil'); return; }
+    if (funnelNames.includes(name)) { toast.error('Já existe um funil com esse nome'); return; }
+    setDuplicating(true);
+    try {
+      const [{ data: srcConfig, error: cfgErr }, { data: srcMessages, error: msgErr }] = await Promise.all([
+        supabase.from('funnel_configs').select('*').eq('funnel_name', source).maybeSingle(),
+        supabase.from('funnel_messages').select('*').eq('funnel_name', source).order('day_number', { ascending: true }),
+      ]);
+      if (cfgErr) throw new Error(cfgErr.message);
+      if (msgErr) throw new Error(msgErr.message);
+
+      const newCfg = {
+        ...EMPTY_CONFIG(name),
+        imagem_manha: (srcConfig as any)?.imagem_manha || '',
+        imagem_tarde: (srcConfig as any)?.imagem_tarde || '',
+        imagem_noite: (srcConfig as any)?.imagem_noite || '',
+        imagens:      ((srcConfig as any)?.imagens as Record<string, string>) || {},
+      };
+      const { error: insertCfgErr } = await supabase.from('funnel_configs').insert(newCfg as any);
+      if (insertCfgErr) throw new Error(insertCfgErr.message);
+
+      const startDate = duplicateStartDate || todayInput();
+      const newMessages = ((srcMessages || []) as any[]).map(m => {
+        const srcDate = new Date(m.scheduled_at);
+        const hh = String(srcDate.getHours()).padStart(2, '0');
+        const mm = String(srcDate.getMinutes()).padStart(2, '0');
+        const dayOffset = (m.day_number || 1) - 1;
+        const newDate = new Date(`${startDate}T00:00:00`);
+        newDate.setDate(newDate.getDate() + dayOffset);
+        const y = newDate.getFullYear();
+        const mo = String(newDate.getMonth() + 1).padStart(2, '0');
+        const da = String(newDate.getDate()).padStart(2, '0');
+        return {
+          funnel_name:           name,
+          day_number:            m.day_number,
+          scheduled_at:          new Date(`${y}-${mo}-${da}T${hh}:${mm}:00`).toISOString(),
+          recipient_type:        m.recipient_type,
+          recipient_id:          m.recipient_id,
+          message_type:          m.message_type,
+          message_text:          m.message_text,
+          media_url:             m.media_url,
+          poll_name:             m.poll_name,
+          poll_options:          m.poll_options,
+          poll_selectable_count: m.poll_selectable_count,
+          link_preview:          m.link_preview,
+          mention_everyone:      m.mention_everyone,
+          send_header_image:     m.send_header_image,
+          update_group_picture:  m.update_group_picture,
+          subtipo:               m.subtipo,
+          status:                'draft',
+        };
+      });
+
+      if (newMessages.length > 0) {
+        const { error: insertMsgErr } = await supabase.from('funnel_messages').insert(newMessages as any);
+        if (insertMsgErr) throw new Error(insertMsgErr.message);
+      }
+
+      toast.success(`Funil duplicado! ${newMessages.length} mensagens copiadas como rascunho — revise os destinatários antes de agendar.`);
+      setDuplicateOpen(false);
+      setDuplicateSource('');
+      setDuplicateName('');
+      setDuplicateStartDate('');
+      setExpandedFunnels(prev => new Set([...prev, name]));
+      loadFunnels();
+    } catch (e: any) {
+      toast.error(`Erro ao duplicar: ${e?.message ?? 'desconhecido'}`);
+    } finally {
+      setDuplicating(false);
+    }
+  }
+
   async function handleRenameFunnel(oldName: string, nextName: string) {
     const n = nextName.trim();
     if (!n || n === oldName) { setRenamingFunnel(null); return; }
@@ -634,6 +715,14 @@ export function FunilLancamento() {
             <Button size="sm" variant="outline" className="h-8 px-2" onClick={createFunnel}>
               <Plus className="h-3.5 w-3.5" />
             </Button>
+            {funnelNames.length > 0 && (
+              <Button
+                size="sm" variant="outline" className="h-8 px-2.5 text-xs gap-1.5"
+                onClick={() => { setDuplicateSource(funnelNames[0]); setDuplicateStartDate(todayInput()); setDuplicateOpen(true); }}
+              >
+                <GitBranch className="h-3.5 w-3.5" /> Duplicar funil existente
+              </Button>
+            )}
           </div>
 
           {/* Funnel sections */}
@@ -801,6 +890,53 @@ export function FunilLancamento() {
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancelar</Button>
             <Button variant="destructive"
               onClick={() => deleteTarget && handleDelete(deleteTarget)}>Excluir</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Duplicate funnel dialog */}
+      <Dialog open={duplicateOpen} onOpenChange={v => !v && !duplicating && setDuplicateOpen(false)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Duplicar funil existente</DialogTitle></DialogHeader>
+          <div className="py-1 space-y-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Funil de origem</label>
+              <Select value={duplicateSource} onValueChange={setDuplicateSource}>
+                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  {funnelNames.map(n => <SelectItem key={n} value={n}>{n}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Nome do novo funil</label>
+              <Input
+                placeholder="Ex: Turma #48"
+                value={duplicateName}
+                onChange={e => setDuplicateName(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Data de início (Dia 1)</label>
+              <Input
+                type="date"
+                value={duplicateStartDate}
+                onChange={e => setDuplicateStartDate(e.target.value)}
+              />
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Copia as mensagens e as imagens de cabeçalho do funil de origem, recalculando as datas
+              a partir do Dia 1 acima. As mensagens entram como <strong>rascunho</strong> — revise os
+              grupos/destinatários em "Configurar funil" antes de agendar.
+            </p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDuplicateOpen(false)} disabled={duplicating}>Cancelar</Button>
+            <Button onClick={duplicateFunnel} disabled={duplicating} className="bg-primary hover:bg-primary/90 gap-2">
+              {duplicating ? <Spinner small /> : <GitBranch className="h-4 w-4" />}
+              Duplicar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
