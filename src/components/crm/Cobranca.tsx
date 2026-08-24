@@ -557,6 +557,47 @@ function MensagemBubble({ mensagem }: { mensagem: CobrancaIaMensagem }) {
   );
 }
 
+// Flag de ativo/inativo da IA de cobrança (cobranca_ia_config, singleton) --
+// desligada vira early-return em evo-resposta, antes até do toggle por aluno
+// (alunos.cobranca_ia_ativa). Código intacto, só para de agir -- religa a
+// qualquer momento voltando a marcar ativo.
+function CobrancaIaAtivoToggle() {
+  const [ativo, setAtivo] = useState<boolean | null>(null);
+  const [salvando, setSalvando] = useState(false);
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from('cobranca_ia_config' as any).select('ativo').eq('id', 'default').maybeSingle();
+    setAtivo(((data as any)?.ativo) ?? true);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function toggle(v: boolean) {
+    setSalvando(true);
+    const { error } = await supabase.from('cobranca_ia_config' as any).update({ ativo: v } as any).eq('id', 'default');
+    setSalvando(false);
+    if (error) { toast.error('Erro ao salvar: ' + error.message); return; }
+    setAtivo(v);
+    toast.success(v ? 'IA de cobrança reativada' : 'IA de cobrança desativada -- alunos que responderem seguem só com o toggle manual de "Marquei que cobrei"');
+  }
+
+  if (ativo === null) return null;
+
+  return (
+    <div className={`flex items-center justify-between rounded-xl border p-3 mb-3 ${ativo ? 'border-emerald-200 bg-emerald-50' : 'border-border bg-muted/20'}`}>
+      <div>
+        <p className="text-sm font-medium">{ativo ? 'IA de cobrança ativa' : 'IA de cobrança desativada'}</p>
+        <p className="text-xs text-muted-foreground">
+          {ativo
+            ? 'Quando um aluno responde a uma cobrança, a IA assume a conversa automaticamente.'
+            : 'Nenhum aluno é atendido pela IA agora -- respostas de cobrança ficam só na fila manual.'}
+        </p>
+      </div>
+      <Switch checked={ativo} disabled={salvando} onCheckedChange={toggle} />
+    </div>
+  );
+}
+
 // Card por conversa na aba "Conversas IA": nome/telefone/status/data prometida
 // colapsado por padrão, expande pra ver a transcript completa (carregada sob
 // demanda, não pré-carregada com o resto da tela).
@@ -2100,6 +2141,7 @@ export function Cobranca() {
 
         {/* ─── CONVERSAS IA ───────────────────────────────────────────────── */}
         <TabsContent value="conversas_ia" className="mt-4">
+          <CobrancaIaAtivoToggle />
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">

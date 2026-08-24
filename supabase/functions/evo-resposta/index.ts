@@ -285,6 +285,16 @@ async function tentarAcionarIaCobranca(
   instance: string,
 ): Promise<void> {
   try {
+    // Flag global (cobranca_ia_config, singleton) -- desligada vira early-return
+    // aqui, antes de qualquer toggle por aluno. Código intacto, só para de agir --
+    // religa a qualquer momento voltando a marcar ativo.
+    const { data: iaCfg } = await supabase
+      .from('cobranca_ia_config')
+      .select('ativo')
+      .eq('id', 'default')
+      .maybeSingle();
+    if (iaCfg && iaCfg.ativo === false) return;
+
     const comAluno = cobrancaLogs.filter(l => l.aluno_id);
     if (!comAluno.length) return;
 
