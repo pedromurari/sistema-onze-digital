@@ -3,11 +3,11 @@ import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // Endpoint de captação pro funil "Time Comercial" (Helen/Miguel/Aline) — usado por
-// formulários externos (landing page da Semana do Despertar, n8n, Zapier etc.).
-// Diferente de webhook-leads/index.ts: aqui origem é sempre 'Time Comercial', o lead
-// sempre cai como etapa='frio' (primeira etapa do funil SDD, ver TimeComercial.tsx),
-// e o produto de interesse (curso_interesse) é obrigatório — sem ele o vendedor não
-// sabe qual condição/turma seguir na negociação.
+// formulários externos (landing page da Semana do Despertar, formação em Psicanálise
+// via lead-direto, n8n, Zapier etc.). Diferente de webhook-leads/index.ts: aqui origem
+// é sempre 'Time Comercial', o lead cai na etapa de entrada do funil do canal (ver
+// TimeComercial.tsx), e o produto de interesse (curso_interesse) é obrigatório — sem
+// ele o vendedor não sabe qual condição/turma seguir na negociação.
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -203,8 +203,9 @@ serve(async (req) => {
     }
 
     const now = new Date().toISOString();
-    // origem='Time Comercial' + status='frio' é o que faz o lead cair certinho na
-    // primeira coluna do funil SDD em TimeComercial.tsx (ver SDD_STAGES). Atenção:
+    // origem='Time Comercial' + status na etapa de entrada do funil do canal —
+    // 'frio' é a primeira coluna do funil SDD (ver SDD_STAGES em TimeComercial.tsx),
+    // 'novo' é a primeira coluna dos demais canais (ver GENERIC_STAGES). Atenção:
     // a coluna real de etapa/estágio em `leads` é `status` (não `etapa`). `produto`
     // é categórico (CHECK: direto/lancamento/npa/time_comercial), reflete a origem —
     // o produto/curso de interesse de verdade vai em `interesse_produto` (texto livre).
@@ -214,7 +215,7 @@ serve(async (req) => {
       telefone,
       whatsapp: telefone,
       origem: 'Time Comercial',
-      status: 'frio',
+      status: canal === 'SDD' ? 'frio' : 'novo',
       canal,
       produto: 'time_comercial',
       interesse_produto: interesseProduto,
