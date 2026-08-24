@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import {
@@ -142,7 +141,6 @@ function EventoCard({ evento, onOpen }: { evento: NPAEvento; onOpen: () => void 
 // ─── NPAEventos (Visão Geral) ───────────────────────────────────────────────
 
 export function NPAEventos({ onOpenEvento }: { onOpenEvento?: (id: string) => void }) {
-  const { users } = useAuth();
   const [eventos, setEventos] = useState<NPAEvento[]>([]);
   const [loading, setLoading] = useState(true);
   const [resumoLeads, setResumoLeads] = useState<ResumoLead[]>([]);
@@ -157,8 +155,6 @@ export function NPAEventos({ onOpenEvento }: { onOpenEvento?: (id: string) => vo
   const [calendarioSearch, setCalendarioSearch] = useState('');
   const [eventoCalSelecionado, setEventoCalSelecionado] = useState<EventoCalendario | null>(null);
   const [modoCreate, setModoCreate] = useState<'vincular' | 'novo'>('vincular');
-
-  void users;
 
   useEffect(() => {
     const load = async () => {
