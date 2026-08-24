@@ -1403,7 +1403,11 @@ export function Cobranca() {
       const ordenados = [...envios].sort((a, b) => new Date(b.enviado_em!).getTime() - new Date(a.enviado_em!).getTime());
       resultado.set(chave, {
         ultimoEnvio: ordenados[0].enviado_em!,
-        respondeu: envios.some(l => !!l.respondeu_em),
+        // Só a resposta ao envio MAIS RECENTE conta -- se o aluno respondeu uma
+        // cobrança antiga e depois mandamos uma nova mensagem (respondeu_em nulo
+        // nessa nova linha), o badge "Respondeu" não pode continuar aceso: é
+        // exatamente essa mensagem nova que ainda está sem resposta.
+        respondeu: !!ordenados[0].respondeu_em,
       });
     }
     return resultado;
