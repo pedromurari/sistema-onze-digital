@@ -270,6 +270,21 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
     return !Number.isNaN(criado) && Date.now() - criado < 24 * 60 * 60 * 1000;
   };
 
+  // Bônus de matrícula rápida (canal Direto, página-ponte /obrigado do site) —
+  // prazo corrido de 24h a partir do cadastro. Só mostra enquanto o prazo não
+  // vence; não checa se já matriculou (isso o vendedor vê pela etapa do lead).
+  const BONUS_MATRICULA_RAPIDA_HORAS = 24;
+  const prazoBonusRestante = (lead: LeadComCanal): string | null => {
+    if (lead.canal !== 'Direto') return null;
+    const criado = new Date(lead.criadoEm).getTime();
+    if (Number.isNaN(criado)) return null;
+    const restanteMs = criado + BONUS_MATRICULA_RAPIDA_HORAS * 60 * 60 * 1000 - Date.now();
+    if (restanteMs <= 0) return null;
+    const horas = Math.floor(restanteMs / (60 * 60 * 1000));
+    const minutos = Math.floor((restanteMs % (60 * 60 * 1000)) / (60 * 1000));
+    return horas > 0 ? `${horas}h restantes` : `${minutos}min restantes`;
+  };
+
   // Pill do canal não conta leads de campanha de retorno — só o que está "em jogo"
   // agora (funil principal + campanhas de contato novo). A base antiga continua
   // visível e contada normalmente dentro do seletor de campanha, só não infla esse número.
@@ -691,6 +706,9 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
                           )}
                           {lead.campanhaId && campanhas.find((c) => c.id === lead.campanhaId) && (
                             <Badge variant="outline" className="text-[10px] border-success/40 text-success">{campanhas.find((c) => c.id === lead.campanhaId)?.nome}</Badge>
+                          )}
+                          {prazoBonusRestante(lead) && (
+                            <Badge className="text-[10px] bg-warning/15 text-warning border border-warning/30">⏱ {prazoBonusRestante(lead)} · bônus matrícula</Badge>
                           )}
                         </div>
                       </div>
