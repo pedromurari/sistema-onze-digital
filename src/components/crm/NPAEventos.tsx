@@ -46,6 +46,14 @@ interface NPAEventoLead {
   created_at: string;
 }
 
+interface ResumoLead {
+  npa_evento_id: string;
+  ingresso_pago: boolean;
+  esteve_no_evento: boolean;
+  comprou_material: boolean;
+  matriculado: boolean;
+}
+
 interface EventoCalendario {
   id: string;
   titulo: string;
@@ -53,6 +61,104 @@ interface EventoCalendario {
   data_inicio: string;
   data_fim?: string;
   cor: string;
+}
+
+// ─── FunilConsolidadoNPA ────────────────────────────────────────────────────
+// "IDM Pelo Brasil" — soma o funil de compras (Parte 1 do redesenho) de
+// todos os eventos NPA juntos, com o detalhamento por evento logo abaixo.
+
+function FunilConsolidadoNPA({ eventos, resumoLeads, loading }: {
+  eventos: NPAEvento[];
+  resumoLeads: ResumoLead[];
+  loading: boolean;
+}) {
+  const nomePorEvento = new Map(eventos.map((e) => [e.id, e.nome]));
+
+  const porEvento = new Map<string, { ingresso: number; foi: number; material: number; mentoria: number }>();
+  for (const l of resumoLeads) {
+    const acc = porEvento.get(l.npa_evento_id) ?? { ingresso: 0, foi: 0, material: 0, mentoria: 0 };
+    if (l.ingresso_pago) acc.ingresso++;
+    if (l.esteve_no_evento) acc.foi++;
+    if (l.esteve_no_evento && l.comprou_material && !l.matriculado) acc.material++;
+    if (l.esteve_no_evento && l.matriculado) acc.mentoria++;
+    porEvento.set(l.npa_evento_id, acc);
+  }
+
+  const totais = [...porEvento.values()].reduce(
+    (acc, v) => ({
+      ingresso: acc.ingresso + v.ingresso,
+      foi: acc.foi + v.foi,
+      material: acc.material + v.material,
+      mentoria: acc.mentoria + v.mentoria,
+    }),
+    { ingresso: 0, foi: 0, material: 0, mentoria: 0 },
+  );
+
+  const linhas = [...porEvento.entries()]
+    .map(([id, v]) => ({ id, nome: nomePorEvento.get(id) ?? 'Evento removido', ...v }))
+    .sort((a, b) => b.ingresso - a.ingresso);
+
+  return (
+    <div className="rounded-2xl border border-border p-5 space-y-5 bg-white">
+      <div>
+        <h2 className="text-lg font-600 text-foreground">IDM Pelo Brasil — todos os eventos</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">Brasil todo, desde o início</p>
+      </div>
+
+      {loading ? (
+        <div className="py-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="rounded-xl p-3 text-center bg-gray-50 border border-gray-200">
+              <p className="text-[11px] font-medium text-gray-500">Ingressos vendidos</p>
+              <p className="text-2xl font-bold mt-1 text-gray-700">{totais.ingresso}</p>
+            </div>
+            <div className="rounded-xl p-3 text-center bg-gray-50 border border-gray-200">
+              <p className="text-[11px] font-medium text-gray-500">Foram ao evento</p>
+              <p className="text-2xl font-bold mt-1 text-gray-700">{totais.foi}</p>
+            </div>
+            <div className="rounded-xl p-3 text-center bg-pink-50 border border-pink-200">
+              <p className="text-[11px] font-medium text-pink-700">Compraram material</p>
+              <p className="text-2xl font-bold mt-1 text-pink-700">{totais.material}</p>
+            </div>
+            <div className="rounded-xl p-3 text-center bg-amber-50 border border-amber-200">
+              <p className="text-[11px] font-medium text-amber-700">Compraram mentoria</p>
+              <p className="text-2xl font-bold mt-1 text-amber-700">{totais.mentoria}</p>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <th className="py-1.5 pr-3">Evento</th>
+                  <th className="py-1.5 pr-3">Ingresso</th>
+                  <th className="py-1.5 pr-3">Foi</th>
+                  <th className="py-1.5 pr-3">Material</th>
+                  <th className="py-1.5 pr-3">Mentoria</th>
+                </tr>
+              </thead>
+              <tbody>
+                {linhas.length === 0 && (
+                  <tr><td colSpan={5} className="py-4 text-center text-muted-foreground">Nenhum evento com leads ainda.</td></tr>
+                )}
+                {linhas.map((l) => (
+                  <tr key={l.id} className="border-t border-border/60">
+                    <td className="py-2 pr-3 font-medium text-foreground">{l.nome}</td>
+                    <td className="py-2 pr-3">{l.ingresso}</td>
+                    <td className="py-2 pr-3">{l.foi}</td>
+                    <td className="py-2 pr-3">{l.material}</td>
+                    <td className="py-2 pr-3">{l.mentoria}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 export function NPAEventos() {
@@ -74,6 +180,10 @@ export function NPAEventos() {
   const [eventoCalSelecionado, setEventoCalSelecionado] = useState<EventoCalendario | null>(null);
   const [modoCreate, setModoCreate] = useState<'vincular' | 'novo'>('vincular');
 
+  // Resumo cross-evento — "quantas pessoas em todo o Brasil compraram material/mentoria"
+  const [resumoLeads, setResumoLeads] = useState<ResumoLead[]>([]);
+  const [loadingResumo, setLoadingResumo] = useState(true);
+
   const vinicius = users.find(u => u.nome?.toLowerCase().includes('vinicius'));
 
   // Fetch eventos NPA
@@ -89,6 +199,19 @@ export function NPAEventos() {
         if (data.length > 0 && !currentEventoId) setCurrentEventoId(data[0].id);
       }
       setLoading(false);
+    };
+    load();
+  }, []);
+
+  // Resumo cross-evento — carrega uma vez só os campos que o funil consolidado precisa
+  useEffect(() => {
+    const load = async () => {
+      setLoadingResumo(true);
+      const { data } = await supabase
+        .from('npa_evento_leads')
+        .select('npa_evento_id, ingresso_pago, esteve_no_evento, comprou_material, matriculado');
+      if (data) setResumoLeads(data as ResumoLead[]);
+      setLoadingResumo(false);
     };
     load();
   }, []);
@@ -278,6 +401,8 @@ export function NPAEventos() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6 pb-20 lg:pb-6 overflow-y-auto h-full bg-white">
+      <FunilConsolidadoNPA eventos={eventos} resumoLeads={resumoLeads} loading={loadingResumo} />
+
       {/* Header com Toggle */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-border pb-4">
         <div>

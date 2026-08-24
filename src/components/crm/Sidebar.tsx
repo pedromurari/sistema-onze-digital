@@ -268,6 +268,18 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
           </button>
           {isOpen && (
             <div className="ml-0 mt-1 mb-1 space-y-0.5 pl-3 border-l-2 border-primary/15">
+              {item.group === 'npa_dinamico' && (
+                <button
+                  onClick={() => navigateMobile('npa_overview' as View)}
+                  className={cn(
+                    'w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs font-600 transition-colors mb-0.5',
+                    currentView === 'npa_overview' ? 'bg-primary/12 text-primary' : 'text-foreground/70 hover:bg-primary/5',
+                  )}
+                >
+                  <BarChart3 className="h-3.5 w-3.5 flex-shrink-0" />
+                  Visão geral (todos os eventos)
+                </button>
+              )}
               {renderedChildren.length === 0 && (
                 <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum item ainda</p>
               )}
@@ -402,6 +414,18 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
 
                 {isOpen && !collapsed && (
                   <div className="ml-0 mt-1 space-y-0.5 pl-3 border-l-2 border-primary/15">
+                    {item.group === 'npa_dinamico' && (
+                      <button
+                        onClick={() => onViewChange('npa_overview' as View)}
+                        className={cn(
+                          'w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs font-600 transition-all duration-300 mb-0.5',
+                          currentView === 'npa_overview' ? 'bg-primary/12 text-primary' : 'text-foreground/70 hover:text-primary hover:bg-primary/5',
+                        )}
+                      >
+                        <BarChart3 className="h-3.5 w-3.5 flex-shrink-0" />
+                        Visão geral (todos os eventos)
+                      </button>
+                    )}
                     {renderedChildren.map((child) => {
                       const isLancOrNpa = item.group === 'lancamentos_legado' || item.group === 'npa_dinamico';
                       const childId = child.key.replace(/^(lancamentos|npa)_/, '');

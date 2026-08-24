@@ -120,7 +120,7 @@ export function CRMLayout() {
 
   useEffect(() => {
     const loadNpaEventoId = async () => {
-      if (typeof currentView === 'string' && currentView.startsWith('npa_')) {
+      if (typeof currentView === 'string' && currentView.startsWith('npa_') && currentView !== 'npa_overview') {
         setLoadingNpaEvento(true);
         const possibleId = currentView.replace('npa_', '');
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -165,7 +165,7 @@ export function CRMLayout() {
       return <LancamentoKanban lancamentoId={lancamentoId} />;
     }
 
-    if (typeof currentView === 'string' && currentView.startsWith('npa_')) {
+    if (typeof currentView === 'string' && currentView.startsWith('npa_') && currentView !== 'npa_overview') {
       if (loadingNpaEvento) {
         return (
           <div className="flex items-center justify-center h-full">

@@ -240,6 +240,93 @@ function MetaBar({ label, value, meta, color = '#be123c' }: {
   );
 }
 
+// ─── FunilComprasPosEvento ──────────────────────────────────────────────────
+// Segmenta os leads em baldes mutuamente exclusivos de resultado de venda —
+// é a pergunta "quem comprou o quê" que antes exigia filtrar o Kanban na mão.
+
+type FunilBucketId = 'nao_foi' | 'foi_sem_comprar' | 'comprou_material' | 'comprou_mentoria';
+
+interface FunilBucket {
+  id: FunilBucketId;
+  label: string;
+  bg: string;
+  fg: string;
+  leads: NPALead[];
+}
+
+function FunilComprasPosEvento({ leads }: { leads: NPALead[] }) {
+  const [bucketAberto, setBucketAberto] = useState<FunilBucketId | null>(null);
+
+  const compraramIngressoNaoForam = leads.filter((l) => l.ingresso_pago && !l.esteve_no_evento);
+  const foiSemComprar             = leads.filter((l) => l.esteve_no_evento && !l.comprou_material && !l.matriculado);
+  const foiComprouMaterial        = leads.filter((l) => l.esteve_no_evento && l.comprou_material && !l.matriculado);
+  const foiComprouMentoria        = leads.filter((l) => l.esteve_no_evento && l.matriculado);
+
+  const buckets: FunilBucket[] = [
+    { id: 'nao_foi',            label: 'Comprou ingresso, não foi', bg: 'bg-gray-50 border-gray-200',   fg: 'text-gray-500',   leads: compraramIngressoNaoForam },
+    { id: 'foi_sem_comprar',    label: 'Foi, não comprou nada',     bg: 'bg-gray-50 border-gray-200',   fg: 'text-gray-500',   leads: foiSemComprar },
+    { id: 'comprou_material',   label: 'Foi, comprou material 🛍️', bg: 'bg-pink-50 border-pink-200',   fg: 'text-pink-700',   leads: foiComprouMaterial },
+    { id: 'comprou_mentoria',   label: 'Foi, comprou mentoria 🎓',  bg: 'bg-amber-50 border-amber-200', fg: 'text-amber-700',  leads: foiComprouMentoria },
+  ];
+
+  const bucketSelecionado = buckets.find((b) => b.id === bucketAberto) ?? null;
+
+  return (
+    <div className="mb-4">
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+        Depois do evento — funil de compras
+      </p>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {buckets.map((b) => (
+          <button
+            key={b.id}
+            onClick={() => setBucketAberto(b.id)}
+            className={`rounded-xl border p-3 text-center transition-all hover:shadow-sm ${b.bg}`}
+          >
+            <p className={`text-[11px] leading-tight font-medium ${b.fg}`}>{b.label}</p>
+            <p className={`text-2xl font-bold mt-1 ${b.fg}`}>{b.leads.length}</p>
+          </button>
+        ))}
+        <div className="rounded-xl border border-dashed border-gray-200 p-3 text-center bg-white">
+          <p className="text-[11px] leading-tight font-medium text-gray-400">Está no NPS 🚀</p>
+          <p className="text-[10px] text-gray-300 mt-2">em breve</p>
+        </div>
+      </div>
+
+      <Dialog open={!!bucketSelecionado} onOpenChange={(o) => !o && setBucketAberto(null)}>
+        <DialogContent className="rounded-2xl max-w-md max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>{bucketSelecionado?.label}</DialogTitle>
+            <DialogDescription>{bucketSelecionado?.leads.length ?? 0} lead(s)</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 overflow-y-auto flex-1 min-h-0">
+            {bucketSelecionado?.leads.length === 0 && (
+              <p className="text-sm text-gray-400 text-center py-6">Nenhum lead neste grupo ainda.</p>
+            )}
+            {bucketSelecionado?.leads.map((l) => (
+              <div key={l.id} className="flex items-center justify-between gap-2 p-2.5 rounded-lg border border-gray-100">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-800 truncate">{l.nome}</p>
+                  <p className="text-xs text-gray-400">{l.whatsapp}</p>
+                </div>
+                {l.whatsapp && (
+                  <button
+                    onClick={() => window.open(`https://wa.me/${l.whatsapp}`, '_blank')}
+                    className="p-1.5 rounded-md text-gray-400 hover:text-green-500 hover:bg-green-50 transition-colors flex-shrink-0"
+                    title="Abrir WhatsApp"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 // ─── LeadCard ─────────────────────────────────────────────────────────────────
 
 interface LeadCardProps {
@@ -248,10 +335,11 @@ interface LeadCardProps {
   onMove: (leadId: string, phase: NPAPhase) => void;
   onDelete: (lead: NPALead) => void;
   onToggleMaterial: (leadId: string, current: boolean) => void;
+  onToggleMentoria: (leadId: string, current: boolean) => void;
 }
 
 const LeadCard = memo(({
-  lead, eventoFinalizado, onMove, onDelete, onToggleMaterial,
+  lead, eventoFinalizado, onMove, onDelete, onToggleMaterial, onToggleMentoria,
 }: LeadCardProps) => {
   return (
     <div className={`p-3 rounded-xl border ${lead.erro ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200'} shadow-sm hover:shadow-md transition-all`}>
@@ -305,6 +393,21 @@ const LeadCard = memo(({
       >
         <ShoppingBag className="h-3 w-3 flex-shrink-0" />
         {lead.comprou_material ? 'Material comprado 🛍️' : 'Comprou material?'}
+      </button>
+
+      {/* Toggle comprou mentoria — independente da fase, dispara liberação de acesso */}
+      <button
+        onClick={() => onToggleMentoria(lead.id, lead.matriculado)}
+        disabled={eventoFinalizado}
+        title="Comprou a mentoria NPA"
+        className={`mb-2 w-full flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium border transition-all ${
+          lead.matriculado
+            ? 'bg-amber-50 border-amber-200 text-amber-700'
+            : 'bg-gray-50 border-gray-200 text-gray-400 hover:border-amber-200 hover:text-amber-600'
+        }`}
+      >
+        <Award className="h-3 w-3 flex-shrink-0" />
+        {lead.matriculado ? 'Mentoria comprada 🎓' : 'Comprou mentoria?'}
       </button>
 
       <Select
@@ -1594,6 +1697,21 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
     }
   }, []);
 
+  // ── Toggle mentoria (matriculado) ─────────────────────────────────────────
+  // Direto no campo, sem passar pelo dropdown de fase — o trigger
+  // sync_fase_npa_lead recalcula `fase` sozinho a partir de `matriculado`.
+  const handleToggleMentoria = useCallback(async (leadId: string, current: boolean) => {
+    setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, matriculado: !current } : l));
+    const { error } = await supabase
+      .from('npa_evento_leads')
+      .update({ matriculado: !current, updated_at: new Date().toISOString() })
+      .eq('id', leadId);
+    if (error) {
+      setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, matriculado: current } : l));
+      toast.error('Erro ao atualizar mentoria');
+    }
+  }, []);
+
   // ── Add lead ──────────────────────────────────────────────────────────────
   const handleAddLead = async () => {
     if (!newLeadForm.nome.trim() || !newLeadForm.whatsapp.trim()) return;
@@ -2006,6 +2124,19 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
                             <ShoppingBag className="h-3 w-3 flex-shrink-0" />
                             {lead.comprou_material ? 'Material comprado 🛍️' : 'Comprou material?'}
                           </button>
+                          <button
+                            onClick={() => handleToggleMentoria(lead.id, lead.matriculado)}
+                            disabled={evento?.status === 'finalizado'}
+                            title="Comprou a mentoria NPA"
+                            className={`mb-2 w-full flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium border transition-all ${
+                              lead.matriculado
+                                ? 'bg-amber-50 border-amber-200 text-amber-700'
+                                : 'bg-gray-50 border-gray-200 text-gray-400 hover:border-amber-200 hover:text-amber-600'
+                            }`}
+                          >
+                            <Award className="h-3 w-3 flex-shrink-0" />
+                            {lead.matriculado ? 'Mentoria comprada 🎓' : 'Comprou mentoria?'}
+                          </button>
                           <Select
                             key={`${lead.id}-${lead.fase}`}
                             value={lead.fase}
@@ -2333,6 +2464,12 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* Funil de compras pós-evento — responde "quem comprou o quê" de cara,
+          sem precisar filtrar leads no Kanban. Buckets mutuamente exclusivos:
+          quem comprou mentoria conta só no bucket de mentoria, mesmo que
+          também tenha comprado material. */}
+      <FunilComprasPosEvento leads={leads} />
 
       {/* Kanban */}
       {turmaView === 'lado_a_lado' ? (
