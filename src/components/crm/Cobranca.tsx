@@ -347,7 +347,7 @@ function SituacaoBadge({ critica, isInadimplente }: { critica: FilaItem; isInadi
 // elegível pra cobrança hoje), pra deixar claro o tamanho real da dívida de uma vez.
 function AlunoFilaCard({
   grupo, horaEstimada, jaCobradoHoje, isSending, onEnviar, onMarcarCobrado, onSalvarPrevisao, ultimoContato,
-  onToggleAutomacao, onToggleIa,
+  onToggleAutomacao,
 }: {
   grupo: AlunoGrupo;
   horaEstimada?: string;
@@ -358,7 +358,6 @@ function AlunoFilaCard({
   onSalvarPrevisao: (pagamentoId: string, data: string) => void;
   ultimoContato?: UltimoContato;
   onToggleAutomacao: (ativo: boolean) => void;
-  onToggleIa: (ativo: boolean) => void;
 }) {
   const severidade = severidadeGrupo(grupo.critica);
   return (
@@ -402,10 +401,6 @@ function AlunoFilaCard({
               <label className="flex items-center gap-1 text-[11px] text-muted-foreground cursor-pointer" title="Desligar mantém o aluno visível na fila, só para de cobrar ele sozinho -- continua podendo cobrar manualmente">
                 Automático
                 <Switch checked={grupo.cobrancaAtiva} onCheckedChange={onToggleAutomacao} className="scale-75" />
-              </label>
-              <label className="flex items-center gap-1 text-[11px] text-muted-foreground cursor-pointer" title="Controla se a IA pode assumir a conversa quando esse aluno responder a uma cobrança">
-                IA
-                <Switch checked={grupo.cobrancaIaAtiva} onCheckedChange={onToggleIa} className="scale-75" />
               </label>
             </div>
           </div>
@@ -1224,17 +1219,6 @@ export function Cobranca() {
     toast.success(ativo ? 'Cobrança automática ligada.' : 'Cobrança automática desligada — o time precisa cobrar esse aluno manualmente.');
   };
 
-  // Toggle "IA": alunos.cobranca_ia_ativa, checado em evo-resposta antes de acionar
-  // cobranca-ia-responder. Independente do toggle de automação -- não tira o aluno da
-  // fila, então só atualiza o estado local (mesmo padrão de salvarPrevisaoPagamento).
-  const toggleIaAtiva = async (alunoId: string, ativo: boolean) => {
-    const { error } = await supabase.from('alunos').update({ cobranca_ia_ativa: ativo }).eq('id', alunoId);
-    if (error) { toast.error('Erro ao atualizar: ' + error.message); return; }
-    invalidar('alunos');
-    setFila(prev => prev.map(item => item.aluno_id === alunoId ? { ...item, cobranca_ia_ativa: ativo } : item));
-    toast.success(ativo ? 'IA pode responder esse aluno.' : 'IA não vai mais responder esse aluno.');
-  };
-
   const reenviarLog = async (log: CobrancaLog) => {
     setEnviandoIds(p => new Set([...p, log.id]));
     const { data: sess } = await supabase.auth.getSession();
@@ -1674,7 +1658,6 @@ export function Cobranca() {
                     onSalvarPrevisao={salvarPrevisaoPagamento}
                     ultimoContato={ultimoContatoPorAluno.get(grupo.aluno_id)}
                     onToggleAutomacao={ativo => toggleCobrancaAutomatica(grupo.aluno_id, ativo)}
-                    onToggleIa={ativo => toggleIaAtiva(grupo.aluno_id, ativo)}
                   />
                 ))
               )}
