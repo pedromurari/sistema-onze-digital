@@ -5623,6 +5623,8 @@ export type Database = {
       }
       npa_evento_leads: {
         Row: {
+          acesso_membros_liberado_em: string | null
+          acesso_membros_url: string | null
           aguardando_dados_convidado: boolean
           bv_enviado: boolean | null
           bv_enviado_em: string | null
@@ -5664,6 +5666,8 @@ export type Database = {
           whatsapp: string | null
         }
         Insert: {
+          acesso_membros_liberado_em?: string | null
+          acesso_membros_url?: string | null
           aguardando_dados_convidado?: boolean
           bv_enviado?: boolean | null
           bv_enviado_em?: string | null
@@ -5705,6 +5709,8 @@ export type Database = {
           whatsapp?: string | null
         }
         Update: {
+          acesso_membros_liberado_em?: string | null
+          acesso_membros_url?: string | null
           aguardando_dados_convidado?: boolean
           bv_enviado?: boolean | null
           bv_enviado_em?: string | null
@@ -8651,6 +8657,24 @@ export type Database = {
         }
         Relationships: []
       }
+      time_comercial_rodizio: {
+        Row: {
+          atualizado_em: string
+          canal: string
+          proximo: number
+        }
+        Insert: {
+          atualizado_em?: string
+          canal: string
+          proximo?: number
+        }
+        Update: {
+          atualizado_em?: string
+          canal?: string
+          proximo?: number
+        }
+        Relationships: []
+      }
       turma_disparo_config: {
         Row: {
           created_at: string
@@ -9871,6 +9895,10 @@ export type Database = {
           tipo: string
           vendedor: string
         }[]
+      }
+      time_comercial_proximo_indice: {
+        Args: { p_canal: string; p_total: number }
+        Returns: number
       }
       time_comercial_registrar_contato: {
         Args: {

@@ -13,7 +13,7 @@ import {
   Flame, MessageCircle, Pencil, ShoppingBag, Trophy,
   TrendingUp, BarChart3, Target, ArrowLeft, Award, Percent,
   CheckCircle2, XCircle, Send, Play, Square, Pause, X as XIcon,
-  ChevronUp, ChevronDown,
+  ChevronUp, ChevronDown, Copy,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useKanbanColunas } from './kanban/useKanbanColunas';
@@ -68,6 +68,8 @@ interface NPALead {
   follow_up_03: boolean;
   matriculado: boolean;
   comprou_material: boolean;
+  acesso_membros_url?: string | null;
+  acesso_membros_liberado_em?: string | null;
   valor_ingresso: number;
   valor_matricula: number;
   valor_material: number;
@@ -308,6 +310,11 @@ function FunilComprasPosEvento({ leads }: { leads: NPALead[] }) {
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-800 truncate">{l.nome}</p>
                   <p className="text-xs text-gray-400">{l.whatsapp}</p>
+                  {(l.comprou_material || l.matriculado) && (
+                    <p className={`text-[10px] font-medium mt-0.5 ${l.acesso_membros_url ? 'text-green-600' : 'text-amber-600'}`}>
+                      {l.acesso_membros_url ? '✅ Acesso liberado' : '⏳ Liberação pendente'}
+                    </p>
+                  )}
                 </div>
                 {l.whatsapp && (
                   <button
@@ -1684,6 +1691,34 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
     }
   }, []);
 
+  // ── Liberar acesso na Área de Membros IDM ─────────────────────────────────
+  // Parte 2 do spec: dispara ao marcar material/mentoria como comprado, e
+  // também é chamável de novo pelo botão "Tentar liberar de novo" no card
+  // se a chamada falhar (repo separado, deploy independente).
+  const [liberandoAcesso, setLiberandoAcesso] = useState<string | null>(null);
+  const handleLiberarAcesso = useCallback(async (leadId: string, produtoSlug: 'ebook-telas-npa' | 'mentoria-npa') => {
+    setLiberandoAcesso(leadId);
+    try {
+      const { data, error } = await supabase.functions.invoke('npa-liberar-acesso-membros', {
+        body: { leadId, produtoSlug },
+      });
+      const loginUrl = (data as { loginUrl?: string } | null)?.loginUrl;
+      const invokeError = error?.message ?? (data as { error?: string } | null)?.error;
+      if (invokeError || !loginUrl) {
+        toast.error(`Liberação pendente: ${invokeError ?? 'a Área de Membros não respondeu'}`);
+        return;
+      }
+      setLeads((prev) => prev.map((l) => l.id === leadId
+        ? { ...l, acesso_membros_url: loginUrl, acesso_membros_liberado_em: new Date().toISOString() }
+        : l));
+      toast.success('Acesso liberado na Área de Membros!');
+    } catch (e) {
+      toast.error(`Erro ao liberar acesso: ${e instanceof Error ? e.message : 'desconhecido'}`);
+    } finally {
+      setLiberandoAcesso(null);
+    }
+  }, []);
+
   // ── Toggle material ───────────────────────────────────────────────────────
   const handleToggleMaterial = useCallback(async (leadId: string, current: boolean) => {
     setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, comprou_material: !current } : l));
@@ -1694,8 +1729,10 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
     if (error) {
       setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, comprou_material: current } : l));
       toast.error('Erro ao atualizar material');
+      return;
     }
-  }, []);
+    if (!current) void handleLiberarAcesso(leadId, 'ebook-telas-npa');
+  }, [handleLiberarAcesso]);
 
   // ── Toggle mentoria (matriculado) ─────────────────────────────────────────
   // Direto no campo, sem passar pelo dropdown de fase — o trigger
@@ -1709,8 +1746,10 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
     if (error) {
       setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, matriculado: current } : l));
       toast.error('Erro ao atualizar mentoria');
+      return;
     }
-  }, []);
+    if (!current) void handleLiberarAcesso(leadId, 'mentoria-npa');
+  }, [handleLiberarAcesso]);
 
   // ── Add lead ──────────────────────────────────────────────────────────────
   const handleAddLead = async () => {
@@ -2137,6 +2176,31 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
                             <Award className="h-3 w-3 flex-shrink-0" />
                             {lead.matriculado ? 'Mentoria comprada 🎓' : 'Comprou mentoria?'}
                           </button>
+                          {(lead.comprou_material || lead.matriculado) && (
+                            lead.acesso_membros_url ? (
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(lead.acesso_membros_url!);
+                                  toast.success('Link de acesso copiado!');
+                                }}
+                                className="mb-2 w-full flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 transition-all"
+                                title="Copiar link de acesso à Área de Membros"
+                              >
+                                <Copy className="h-3 w-3 flex-shrink-0" />
+                                Copiar acesso ✅
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleLiberarAcesso(lead.id, lead.matriculado ? 'mentoria-npa' : 'ebook-telas-npa')}
+                                disabled={liberandoAcesso === lead.id}
+                                className="mb-2 w-full flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-all disabled:opacity-50"
+                                title="Tentar liberar de novo o acesso à Área de Membros"
+                              >
+                                <Copy className="h-3 w-3 flex-shrink-0" />
+                                {liberandoAcesso === lead.id ? 'Liberando...' : 'Liberação pendente — tentar de novo'}
+                              </button>
+                            )
+                          )}
                           <Select
                             key={`${lead.id}-${lead.fase}`}
                             value={lead.fase}

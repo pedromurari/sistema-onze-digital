@@ -150,12 +150,13 @@ Essa rota nova é o único código a escrever no repo da Área de Membros para a
 
 ### Aviso ao cliente
 
-- Email automático sai da própria Área de Membros quando o magic link é gerado (comportamento
-  padrão do Supabase Auth pra `generateLink` tipo `magiclink`, já em uso hoje pelo fluxo de
-  checkout externo — sem trabalho novo).
-- Card do lead no Sistema 11ds ganha um botão "Copiar acesso" (aparece assim que
-  `acesso_membros_url` é preenchido) — o vendedor manda o link por WhatsApp na hora, sem
-  esperar o cliente notar o email.
+- **Correção**: `admin.generateLink()` (usado por `criarAcessoMembro`) só gera o link — o
+  Supabase Auth não envia nada sozinho nesse modo. Não existe email automático aqui, ao
+  contrário do que a primeira versão deste spec dizia.
+- Único caminho de entrega implementado: o card do lead no Sistema 11ds ganha um botão
+  "Copiar acesso" (aparece assim que `acesso_membros_url` é preenchido) — o vendedor copia e
+  manda o link por WhatsApp na hora.
+- Envio automático por email/WhatsApp fica como melhoria futura, não neste spec.
 
 ---
 
