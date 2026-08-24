@@ -193,7 +193,7 @@ export function CRMLayout() {
       case 'dashboard': return <Dashboard />;
       case 'pessoas':  return <Pessoas />;
       case 'time_comercial': return <TimeComercial />;
-      case 'npa_overview': return <NPAEventos />;
+      case 'npa_overview': return <NPAEventos onOpenEvento={(id) => setCurrentView(`npa_${id}` as View)} />;
       case 'financeiro': return <Financeiro />;
       case 'financeiro_cfo': return <FinanceiroCFO />;
       case 'balanco': return <Balanco />;

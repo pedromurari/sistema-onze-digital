@@ -248,6 +248,37 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
       if (item.group === 'npa_dinamico' && !permissions.canViewNpa && !isAdmin) return null;
       if (renderedChildren.length === 0 && !isAdmin) return null;
 
+      if (item.group === 'npa_dinamico') {
+        const npaActive = currentView === 'npa_overview' || (typeof currentView === 'string' && currentView.startsWith('npa_'));
+        const groupSection = SECTION_BEFORE[item.group];
+        return (
+          <React.Fragment key={`mobile-${item.group}`}>
+            {groupSection && <SectionDivider label={groupSection} />}
+            <div className="flex items-center">
+              <button
+                onClick={() => navigateMobile('npa_overview' as View)}
+                className={cn(
+                  'flex-1 flex items-center gap-2.5 px-3 py-2.5 rounded text-left text-sm font-600 transition-colors',
+                  npaActive ? 'text-primary bg-primary/8' : 'text-foreground hover:bg-primary/5',
+                )}
+              >
+                <item.icon className={cn('h-4.5 w-4.5 flex-shrink-0', npaActive ? 'text-primary' : 'text-foreground/60')} />
+                <span className="flex-1">{item.label}</span>
+              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => { onMobileMenuOpenChange(false); openWizardNew('npa'); }}
+                  className="p-2 mr-1 rounded hover:bg-primary/10 transition-all flex-shrink-0"
+                  title="Novo IDM"
+                >
+                  <Plus className="h-4 w-4 text-primary/70" />
+                </button>
+              )}
+            </div>
+          </React.Fragment>
+        );
+      }
+
       const isOpen = Boolean(expanded[item.group]);
       const groupActive = renderedChildren.some(c => c.key === currentView);
       const groupSection = SECTION_BEFORE[item.group];
@@ -280,10 +311,10 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
                   Visão geral (todos os eventos)
                 </button>
               )}
-              {renderedChildren.length === 0 && (
+              {item.group !== 'npa_dinamico' && renderedChildren.length === 0 && (
                 <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum item ainda</p>
               )}
-              {renderedChildren.map((child) => (
+              {item.group !== 'npa_dinamico' && renderedChildren.map((child) => (
                 <button
                   key={child.key}
                   onClick={() => navigateMobile(child.key)}
@@ -377,6 +408,42 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
             if (item.group === 'operacoes' && !permissions.canViewOperacoes && !isAdmin) return null;
             if (renderedChildren.length === 0 && item.group !== 'operacoes' && !isAdmin) return null;
 
+            // IDM Pelo Brasil não precisa mais listar cada evento aqui — eles vivem
+            // como cards dentro da própria Visão Geral. Vira um link direto, com um
+            // atalho "+" ao lado pra abrir o assistente de criar novo IDM.
+            if (item.group === 'npa_dinamico') {
+              const npaActive = currentView === 'npa_overview' || (typeof currentView === 'string' && currentView.startsWith('npa_'));
+              const groupSection = SECTION_BEFORE[item.group];
+              return (
+                <React.Fragment key={item.group}>
+                  {groupSection && !collapsed && !editMode && <SectionDivider label={groupSection} />}
+                  <div className="flex items-center group">
+                    <button
+                      onClick={() => onViewChange('npa_overview' as View)}
+                      title={collapsed ? item.label : undefined}
+                      className={cn(
+                        'flex-1 flex items-center rounded transition-all duration-300 text-left text-sm font-600',
+                        collapsed ? 'justify-center px-2 py-2.5' : 'gap-2.5 px-3 py-2.5',
+                        npaActive ? 'text-primary bg-primary/8' : 'text-foreground hover:bg-primary/5 hover:text-primary',
+                      )}
+                    >
+                      <item.icon className={cn('h-4.5 w-4.5 transition-colors duration-300 flex-shrink-0', npaActive ? 'text-primary' : 'text-foreground/60')} />
+                      {!collapsed && <span className="flex-1">{item.label}</span>}
+                    </button>
+                    {isAdmin && !collapsed && (
+                      <button
+                        onClick={() => openWizardNew('npa')}
+                        className="opacity-0 group-hover:opacity-100 p-1.5 mr-1 rounded hover:bg-primary/10 transition-all flex-shrink-0"
+                        title="Novo IDM"
+                      >
+                        <Plus className="h-4 w-4 text-primary/70" />
+                      </button>
+                    )}
+                  </div>
+                </React.Fragment>
+              );
+            }
+
             const isOpen = !editMode && !collapsed && expanded[item.group];
             const groupActive = isGroupActive(renderedChildren);
 
@@ -426,7 +493,7 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
                         Visão geral (todos os eventos)
                       </button>
                     )}
-                    {renderedChildren.map((child) => {
+                    {item.group !== 'npa_dinamico' && renderedChildren.map((child) => {
                       const isLancOrNpa = item.group === 'lancamentos_legado' || item.group === 'npa_dinamico';
                       const childId = child.key.replace(/^(lancamentos|npa)_/, '');
                       const childTipo = item.group === 'lancamentos_legado' ? 'lancamento' : 'npa';

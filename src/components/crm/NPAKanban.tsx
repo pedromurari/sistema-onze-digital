@@ -27,8 +27,7 @@ import {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type NPAPhase =
-  | 'novo' | 'ingresso_pago' | 'no_grupo' | 'confirmado' | 'evento'
-  | 'closer' | 'follow_up_01' | 'follow_up_02' | 'follow_up_03' | 'matricula';
+  | 'novo' | 'ingresso_pago' | 'no_grupo' | 'confirmado' | 'evento' | 'matricula';
 
 type Turma = 'manha' | 'tarde' | 'unica';
 type TurmaView = 'todas' | 'manha' | 'tarde' | 'lado_a_lado';
@@ -91,10 +90,6 @@ const PHASES: { id: NPAPhase; label: string; color: string }[] = [
   { id: 'no_grupo',      label: 'No Grupo',      color: 'bg-[#eff6ff]' },
   { id: 'confirmado',    label: 'Confirmado',    color: 'bg-[#fefce8]' },
   { id: 'evento',        label: 'Evento',        color: 'bg-[#faf5ff]' },
-  { id: 'closer',        label: 'Closer',        color: 'bg-[#fff7ed]' },
-  { id: 'follow_up_01',  label: 'Follow Up 01',  color: 'bg-[#fef2f2]' },
-  { id: 'follow_up_02',  label: 'Follow Up 02',  color: 'bg-[#fef2f2]' },
-  { id: 'follow_up_03',  label: 'Follow Up 03',  color: 'bg-[#fef2f2]' },
   { id: 'matricula',     label: 'Matrícula ✅',  color: 'bg-[#ecfdf5]' },
 ];
 
@@ -115,23 +110,15 @@ const VALOR_MATERIAL_PADRAO  = 97;
 function getPhasePayload(newPhase: NPAPhase): Record<string, boolean> {
   switch (newPhase) {
     case 'novo':
-      return { ingresso_pago: false, no_grupo: false, presente_evento: false, esteve_no_evento: false, closer: false, follow_up_01: false, follow_up_02: false, follow_up_03: false, matriculado: false };
+      return { ingresso_pago: false, no_grupo: false, presente_evento: false, esteve_no_evento: false, matriculado: false };
     case 'ingresso_pago':
-      return { ingresso_pago: true, no_grupo: false, presente_evento: false, esteve_no_evento: false, closer: false, follow_up_01: false, follow_up_02: false, follow_up_03: false, matriculado: false };
+      return { ingresso_pago: true, no_grupo: false, presente_evento: false, esteve_no_evento: false, matriculado: false };
     case 'no_grupo':
-      return { no_grupo: true, presente_evento: false, esteve_no_evento: false, closer: false, follow_up_01: false, follow_up_02: false, follow_up_03: false, matriculado: false };
+      return { no_grupo: true, presente_evento: false, esteve_no_evento: false, matriculado: false };
     case 'confirmado':
-      return { presente_evento: true, esteve_no_evento: false, closer: false, follow_up_01: false, follow_up_02: false, follow_up_03: false, matriculado: false };
+      return { presente_evento: true, esteve_no_evento: false, matriculado: false };
     case 'evento':
-      return { esteve_no_evento: true, closer: false, follow_up_01: false, follow_up_02: false, follow_up_03: false, matriculado: false };
-    case 'closer':
-      return { closer: true, follow_up_01: false, follow_up_02: false, follow_up_03: false, matriculado: false };
-    case 'follow_up_01':
-      return { follow_up_01: true, follow_up_02: false, follow_up_03: false, matriculado: false };
-    case 'follow_up_02':
-      return { follow_up_02: true, follow_up_03: false, matriculado: false };
-    case 'follow_up_03':
-      return { follow_up_03: true, matriculado: false };
+      return { esteve_no_evento: true, matriculado: false };
     case 'matricula':
       return { matriculado: true };
   }
