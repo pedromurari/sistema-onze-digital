@@ -108,13 +108,14 @@ export function permissionsToToggles(permissions: AccessPermissions): Permission
 /** Uma tela pode ser varias views (Operacoes tem tres). Aqui elas viram um recurso so. */
 const RECURSO_POR_VIEW: Record<string, string> = {
   npa_overview:                  'npa',
+  lancamentos_overview:          'lancamentos',
   operacoes_tarefas:             'operacoes',
   operacoes_calendario_geral:    'operacoes',
   operacoes_calendario_conteudo: 'operacoes',
 };
 
 export type AppView =
-  | 'dashboard' | 'npa_overview' | 'financeiro' | 'financeiro_cfo' | 'balanco' | 'rodrygo'
+  | 'dashboard' | 'npa_overview' | 'lancamentos_overview' | 'financeiro' | 'financeiro_cfo' | 'balanco' | 'rodrygo'
   | 'lancamentos_30' | 'lancamentos_31' | 'lancamentos_32'
   | 'team' | 'settings' | 'cobranca' | 'funil_lancamento' | 'disparos_monitor' | 'chat_conversas'
   | 'operacoes_tarefas' | 'operacoes_calendario_geral' | 'operacoes_calendario_conteudo'
@@ -226,6 +227,8 @@ export function canAccessView(
 ) {
   if (isAdmin) return true;
 
+  if (view === 'lancamentos_overview') return permissions.canViewLancamentos;
+
   if (view.startsWith('lancamentos_')) {
     const lancamentoId = view.replace('lancamentos_', '');
     return canAccessLancamento(permissions, lancamentoId);
@@ -246,6 +249,7 @@ export function canAccessView(
     dashboard: permissions.canViewDashboard,
     time_comercial: permissions.canViewTimeComercial,
     npa_overview: permissions.canViewNpa,
+    lancamentos_overview: permissions.canViewLancamentos,
     financeiro: permissions.canViewFinanceiro,
     financeiro_cfo: permissions.canViewFinanceiroCfo,
     balanco: permissions.canViewBalanco,

@@ -19,6 +19,7 @@ import { toast } from 'sonner';
 import { useKanbanColunas } from './kanban/useKanbanColunas';
 import type { KanbanColuna } from './kanban/useKanbanColunas';
 import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
+import { LancamentoWizard } from '@/components/crm/LancamentoWizard';
 import {
   KanbanColunaHeader, AddColunaButton,
   RenameColunaModal, ColunaSettingsModal, DeleteColunaModal,
@@ -1492,6 +1493,11 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
   // Verificar grupos
   const [showVerificarGrupos, setShowVerificarGrupos] = useState(false);
 
+  // Reabrir o wizard de criação pra editar grupos WPP, aulas, boas-vindas e
+  // produtos Vega — único lugar que configura isso, já que esta página só edita
+  // valor de ingresso/material e metas.
+  const [showWizard, setShowWizard] = useState(false);
+
   // Disparo por fase
   const [disparos, setDisparos]               = useState<NPADisparoItem[]>([]);
   const [showDisparoModal, setShowDisparoModal] = useState(false);
@@ -1597,7 +1603,11 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
     const eventoAnt  = evento;
     setEvento({ ...evento, ativo: novoAtivo, status: novoStatus });
     try {
-      if (novoAtivo) await supabase.from('npa_eventos').update({ ativo: false }).neq('id', npaEventoId);
+      // Sem cascata: cada NPA tem seu ativo/inativo independente. Ativar este não
+      // desativa os outros — vários eventos rodam em paralelo o tempo todo (é
+      // assim que "Ocupação de Turmas" já mostra várias turmas simultâneas), e a
+      // cascata anterior desativava por baixo dos panos quem outra pessoa estava
+      // gerenciando ao mesmo tempo.
       const { error } = await supabase.from('npa_eventos').update({ ativo: novoAtivo, status: novoStatus }).eq('id', npaEventoId);
       if (error) { setEvento(eventoAnt); toast.error(`Erro: ${error.message}`); return; }
       toast.success(`NPA ${novoAtivo ? 'ativado' : 'desativado'}!`);
@@ -2289,6 +2299,15 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => setShowWizard(true)}
+            className="gap-1.5 border-gray-200 text-gray-600 hover:bg-gray-50 font-medium"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Configurar
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setShowVerificarGrupos(true)}
             className="gap-1.5 border-green-200 text-green-700 hover:bg-green-50 font-medium"
           >
@@ -2531,6 +2550,19 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
           </div>
         </div>
       ) : renderKanban()}
+
+      {/* Wizard de configuração (grupos WPP, aulas, boas-vindas, produtos Vega) */}
+      <LancamentoWizard
+        open={showWizard}
+        onClose={() => setShowWizard(false)}
+        onSuccess={async () => {
+          setShowWizard(false);
+          const { data } = await supabase.from('npa_eventos').select('*').eq('id', npaEventoId).single();
+          if (data) setEvento(data as NPAEvento);
+        }}
+        existingId={npaEventoId}
+        existingTipo="npa"
+      />
 
       {/* Modal delete NPA */}
       <Dialog open={showDeleteModal} onOpenChange={setShowDeleteModal}>

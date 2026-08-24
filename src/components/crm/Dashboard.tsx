@@ -652,10 +652,6 @@ export function Dashboard() {
       noGrupo:     countAtLeast(NPA_STAGE_RANK.no_grupo),
       confirmado:  countAtLeast(NPA_STAGE_RANK.confirmado),
       evento:      countAtLeast(NPA_STAGE_RANK.evento),
-      closer:      countAtLeast(NPA_STAGE_RANK.closer),
-      followUp01:  countAtLeast(NPA_STAGE_RANK.follow_up_01),
-      followUp02:  countAtLeast(NPA_STAGE_RANK.follow_up_02),
-      followUp03:  countAtLeast(NPA_STAGE_RANK.follow_up_03),
       matricula:   countAtLeast(NPA_STAGE_RANK.matricula),
     };
   }, [npaLeads]);
@@ -1348,7 +1344,7 @@ export function Dashboard() {
               <p className="text-xs text-muted-foreground mt-1.5">Cada barra soma quem chegou até ali ou foi além — não zera quando a pessoa avança.</p>
             </CardHeader>
             <CardContent className="space-y-2.5">
-              {[['Novo','novo'],['Ingresso Pago','ingressoPago'],['No Grupo','noGrupo'],['Confirmado','confirmado'],['Evento','evento'],['Closer','closer'],['Follow-up 01','followUp01'],['Follow-up 02','followUp02'],['Follow-up 03','followUp03'],['Matrícula','matricula']].map(([label, key], i, arr) => (
+              {[['Novo','novo'],['Ingresso Pago','ingressoPago'],['No Grupo','noGrupo'],['Confirmado','confirmado'],['Evento','evento'],['Matrícula','matricula']].map(([label, key], i, arr) => (
                 <FunnelBar key={key} label={label} count={(funilNpa as any)[key] ?? 0} total={npaTotal} isLast={i === arr.length - 1} accent="#f59e0b" />
               ))}
             </CardContent>

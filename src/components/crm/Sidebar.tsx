@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
   LayoutDashboard, Kanban, Settings, UserCog,
-  Rocket, BarChart3, ChevronDown,
+  Rocket, BarChart3,
   ChevronLeft, ChevronRight, Plus, Brain, Scale, Menu,
   GripVertical, Pencil, Check, MessageSquare, MessageCircle, TrendingUp, GitBranch, CalendarDays, Radio, Image, Handshake, Bot, Flame, Users, Contact,
 } from 'lucide-react';
@@ -107,7 +107,6 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
     mapa_mental:        'Gestão',
     ...(isAdmin ? { team: 'Admin' } : { settings: 'Admin' }),
   };
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
   });
@@ -181,8 +180,6 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
     });
   };
 
-  const toggle = (g: string) => setExpanded(p => ({ ...p, [g]: !p[g] }));
-  const isGroupActive = (children: { key: View }[]) => children.some(c => c.key === currentView);
   const MENU = applyOrder(BASE_MENU, menuOrder);
   const accessibleLancamentos = lancamentos.filter((item) => canAccessLancamento(permissions, item.id));
 
@@ -222,12 +219,6 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
     setWizardOpen(true);
   };
 
-  const openWizardEdit = (id: string, tipo: 'lancamento' | 'npa') => {
-    setWizardExistingId(id);
-    setWizardExistingTipo(tipo);
-    setWizardOpen(true);
-  };
-
   const closeMobileMenu = () => onMobileMenuOpenChange(false);
 
   const navigateMobile = (view: View) => {
@@ -248,28 +239,32 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
       if (item.group === 'npa_dinamico' && !permissions.canViewNpa && !isAdmin) return null;
       if (renderedChildren.length === 0 && !isAdmin) return null;
 
-      if (item.group === 'npa_dinamico') {
-        const npaActive = currentView === 'npa_overview' || (typeof currentView === 'string' && currentView.startsWith('npa_'));
+      if (item.group === 'npa_dinamico' || item.group === 'lancamentos_legado') {
+        const overviewView = item.group === 'npa_dinamico' ? 'npa_overview' : 'lancamentos_overview';
+        const prefix = item.group === 'npa_dinamico' ? 'npa_' : 'lancamentos_';
+        const wizardTipo = item.group === 'npa_dinamico' ? 'npa' : 'lancamento';
+        const wizardTitle = item.group === 'npa_dinamico' ? 'Novo IDM' : 'Nova Semana do Despertar';
+        const groupActive = currentView === overviewView || (typeof currentView === 'string' && currentView.startsWith(prefix));
         const groupSection = SECTION_BEFORE[item.group];
         return (
           <React.Fragment key={`mobile-${item.group}`}>
             {groupSection && <SectionDivider label={groupSection} />}
             <div className="flex items-center">
               <button
-                onClick={() => navigateMobile('npa_overview' as View)}
+                onClick={() => navigateMobile(overviewView as View)}
                 className={cn(
                   'flex-1 flex items-center gap-2.5 px-3 py-2.5 rounded text-left text-sm font-600 transition-colors',
-                  npaActive ? 'text-primary bg-primary/8' : 'text-foreground hover:bg-primary/5',
+                  groupActive ? 'text-primary bg-primary/8' : 'text-foreground hover:bg-primary/5',
                 )}
               >
-                <item.icon className={cn('h-4.5 w-4.5 flex-shrink-0', npaActive ? 'text-primary' : 'text-foreground/60')} />
+                <item.icon className={cn('h-4.5 w-4.5 flex-shrink-0', groupActive ? 'text-primary' : 'text-foreground/60')} />
                 <span className="flex-1">{item.label}</span>
               </button>
               {isAdmin && (
                 <button
-                  onClick={() => { onMobileMenuOpenChange(false); openWizardNew('npa'); }}
+                  onClick={() => { onMobileMenuOpenChange(false); openWizardNew(wizardTipo as 'lancamento' | 'npa'); }}
                   className="p-2 mr-1 rounded hover:bg-primary/10 transition-all flex-shrink-0"
-                  title="Novo IDM"
+                  title={wizardTitle}
                 >
                   <Plus className="h-4 w-4 text-primary/70" />
                 </button>
@@ -279,58 +274,9 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
         );
       }
 
-      const isOpen = Boolean(expanded[item.group]);
-      const groupActive = renderedChildren.some(c => c.key === currentView);
-      const groupSection = SECTION_BEFORE[item.group];
-
-      return (
-        <React.Fragment key={`mobile-${item.group}`}>
-          {groupSection && <SectionDivider label={groupSection} />}
-          <button
-            onClick={() => toggle(item.group)}
-            className={cn(
-              'w-full flex items-center gap-2.5 px-3 py-2.5 rounded text-left text-sm font-600 transition-colors',
-              groupActive ? 'text-primary bg-primary/8' : 'text-foreground hover:bg-primary/5',
-            )}
-          >
-            <item.icon className={cn('h-4.5 w-4.5 flex-shrink-0', groupActive ? 'text-primary' : 'text-foreground/60')} />
-            <span className="flex-1">{item.label}</span>
-            <ChevronDown className={cn('h-3.5 w-3.5 flex-shrink-0 transition-transform duration-300', isOpen ? 'rotate-180 text-primary' : 'text-foreground/40')} />
-          </button>
-          {isOpen && (
-            <div className="ml-0 mt-1 mb-1 space-y-0.5 pl-3 border-l-2 border-primary/15">
-              {item.group === 'npa_dinamico' && (
-                <button
-                  onClick={() => navigateMobile('npa_overview' as View)}
-                  className={cn(
-                    'w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs font-600 transition-colors mb-0.5',
-                    currentView === 'npa_overview' ? 'bg-primary/12 text-primary' : 'text-foreground/70 hover:bg-primary/5',
-                  )}
-                >
-                  <BarChart3 className="h-3.5 w-3.5 flex-shrink-0" />
-                  Visão geral (todos os eventos)
-                </button>
-              )}
-              {item.group !== 'npa_dinamico' && renderedChildren.length === 0 && (
-                <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum item ainda</p>
-              )}
-              {item.group !== 'npa_dinamico' && renderedChildren.map((child) => (
-                <button
-                  key={child.key}
-                  onClick={() => navigateMobile(child.key)}
-                  className={cn(
-                    'w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs transition-colors',
-                    currentView === child.key ? 'bg-primary/12 text-primary font-600' : 'text-foreground/70 hover:bg-primary/5',
-                  )}
-                >
-                  <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', currentView === child.key ? 'bg-primary' : 'bg-foreground/30')} />
-                  <span className="truncate">{child.label}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </React.Fragment>
-      );
+      // Todo 'group' hoje é 'npa_dinamico' ou 'lancamentos_legado', e os dois já
+      // retornaram acima — chegar aqui significaria um grupo novo sem tratamento.
+      return null;
     }
 
     const mi = item as { key: View; label: string; icon: React.ElementType };
@@ -408,33 +354,38 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
             if (item.group === 'operacoes' && !permissions.canViewOperacoes && !isAdmin) return null;
             if (renderedChildren.length === 0 && item.group !== 'operacoes' && !isAdmin) return null;
 
-            // IDM Pelo Brasil não precisa mais listar cada evento aqui — eles vivem
-            // como cards dentro da própria Visão Geral. Vira um link direto, com um
-            // atalho "+" ao lado pra abrir o assistente de criar novo IDM.
-            if (item.group === 'npa_dinamico') {
-              const npaActive = currentView === 'npa_overview' || (typeof currentView === 'string' && currentView.startsWith('npa_'));
+            // IDM Pelo Brasil e Semana do Despertar não precisam mais listar cada
+            // evento/turma aqui — eles vivem como cards dentro da própria Visão
+            // Geral. Viram um link direto, com um atalho "+" ao lado pra abrir o
+            // assistente de criar um novo.
+            if (item.group === 'npa_dinamico' || item.group === 'lancamentos_legado') {
+              const overviewView = item.group === 'npa_dinamico' ? 'npa_overview' : 'lancamentos_overview';
+              const prefix = item.group === 'npa_dinamico' ? 'npa_' : 'lancamentos_';
+              const wizardTipo = item.group === 'npa_dinamico' ? 'npa' : 'lancamento';
+              const wizardTitle = item.group === 'npa_dinamico' ? 'Novo IDM' : 'Nova Semana do Despertar';
+              const groupActive = currentView === overviewView || (typeof currentView === 'string' && currentView.startsWith(prefix));
               const groupSection = SECTION_BEFORE[item.group];
               return (
                 <React.Fragment key={item.group}>
                   {groupSection && !collapsed && !editMode && <SectionDivider label={groupSection} />}
                   <div className="flex items-center group">
                     <button
-                      onClick={() => onViewChange('npa_overview' as View)}
+                      onClick={() => onViewChange(overviewView as View)}
                       title={collapsed ? item.label : undefined}
                       className={cn(
                         'flex-1 flex items-center rounded transition-all duration-300 text-left text-sm font-600',
                         collapsed ? 'justify-center px-2 py-2.5' : 'gap-2.5 px-3 py-2.5',
-                        npaActive ? 'text-primary bg-primary/8' : 'text-foreground hover:bg-primary/5 hover:text-primary',
+                        groupActive ? 'text-primary bg-primary/8' : 'text-foreground hover:bg-primary/5 hover:text-primary',
                       )}
                     >
-                      <item.icon className={cn('h-4.5 w-4.5 transition-colors duration-300 flex-shrink-0', npaActive ? 'text-primary' : 'text-foreground/60')} />
+                      <item.icon className={cn('h-4.5 w-4.5 transition-colors duration-300 flex-shrink-0', groupActive ? 'text-primary' : 'text-foreground/60')} />
                       {!collapsed && <span className="flex-1">{item.label}</span>}
                     </button>
                     {isAdmin && !collapsed && (
                       <button
-                        onClick={() => openWizardNew('npa')}
+                        onClick={() => openWizardNew(wizardTipo as 'lancamento' | 'npa')}
                         className="opacity-0 group-hover:opacity-100 p-1.5 mr-1 rounded hover:bg-primary/10 transition-all flex-shrink-0"
-                        title="Novo IDM"
+                        title={wizardTitle}
                       >
                         <Plus className="h-4 w-4 text-primary/70" />
                       </button>
@@ -444,106 +395,9 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
               );
             }
 
-            const isOpen = !editMode && !collapsed && expanded[item.group];
-            const groupActive = isGroupActive(renderedChildren);
-
-            const groupSection = SECTION_BEFORE[item.group];
-            return (
-              <React.Fragment key={item.group}>
-                {groupSection && !collapsed && !editMode && <SectionDivider label={groupSection} />}
-              <div
-                draggable={editMode}
-                onDragStart={() => handleDragStart(idx)}
-                onDragOver={(e) => handleDragOver(e, idx, itemId)}
-                onDrop={handleDrop}
-                onDragEnd={() => setDragOverId(null)}
-                className={cn('rounded transition-colors', isDragOver && editMode && 'bg-primary/10 ring-1 ring-primary')}
-              >
-                <button
-                  onClick={() => { if (editMode) return; collapsed ? toggleSidebar() : toggle(item.group); }}
-                  title={collapsed ? item.label : undefined}
-                  className={cn(
-                    'w-full flex items-center rounded transition-all duration-300 text-left text-sm font-600',
-                    collapsed ? 'justify-center px-2 py-2.5' : 'gap-2.5 px-3 py-2.5',
-                    editMode ? 'cursor-grab active:cursor-grabbing' : '',
-                    groupActive ? 'text-primary bg-primary/8' : 'text-foreground hover:bg-primary/5 hover:text-primary',
-                  )}
-                >
-                  {editMode && !collapsed && <GripVertical className="h-3.5 w-3.5 text-foreground/30 flex-shrink-0" />}
-                  <item.icon className={cn('h-4.5 w-4.5 transition-colors duration-300 flex-shrink-0', groupActive ? 'text-primary' : 'text-foreground/60')} />
-                  {!collapsed && (
-                    <>
-                      <span className="flex-1">{item.label}</span>
-                      {!editMode && <ChevronDown className={cn('h-3.5 w-3.5 transition-all duration-300 flex-shrink-0', isOpen ? 'rotate-180 text-primary' : 'text-foreground/40')} />}
-                    </>
-                  )}
-                </button>
-
-                {isOpen && !collapsed && (
-                  <div className="ml-0 mt-1 space-y-0.5 pl-3 border-l-2 border-primary/15">
-                    {item.group === 'npa_dinamico' && (
-                      <button
-                        onClick={() => onViewChange('npa_overview' as View)}
-                        className={cn(
-                          'w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs font-600 transition-all duration-300 mb-0.5',
-                          currentView === 'npa_overview' ? 'bg-primary/12 text-primary' : 'text-foreground/70 hover:text-primary hover:bg-primary/5',
-                        )}
-                      >
-                        <BarChart3 className="h-3.5 w-3.5 flex-shrink-0" />
-                        Visão geral (todos os eventos)
-                      </button>
-                    )}
-                    {item.group !== 'npa_dinamico' && renderedChildren.map((child) => {
-                      const isLancOrNpa = item.group === 'lancamentos_legado' || item.group === 'npa_dinamico';
-                      const childId = child.key.replace(/^(lancamentos|npa)_/, '');
-                      const childTipo = item.group === 'lancamentos_legado' ? 'lancamento' : 'npa';
-                      return (
-                        <div key={child.key} className="flex items-center group">
-                          <button
-                            onClick={() => onViewChange(child.key)}
-                            className={cn(
-                              'flex-1 flex items-center gap-2 px-3 py-2 rounded text-left text-xs transition-all duration-300',
-                              currentView === child.key ? 'bg-primary/12 text-primary font-600' : 'text-foreground/70 hover:text-primary hover:bg-primary/5',
-                            )}
-                          >
-                            <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', currentView === child.key ? 'bg-primary' : 'bg-foreground/30')} />
-                            <span className="truncate">{child.label}</span>
-                          </button>
-                          {isAdmin && isLancOrNpa && (
-                            <button
-                              onClick={() => openWizardEdit(childId, childTipo as 'lancamento' | 'npa')}
-                              className="opacity-0 group-hover:opacity-100 p-1 mr-1 rounded hover:bg-primary/10 transition-all flex-shrink-0"
-                              title="Configurar"
-                            >
-                              <Settings className="h-3 w-3 text-primary/70" />
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-
-                    {item.group === 'lancamentos_legado' && isAdmin && (
-                      <button
-                        onClick={() => openWizardNew('lancamento')}
-                        className="w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs text-primary hover:bg-primary/10 mt-1 font-600"
-                      >
-                        <Plus className="h-4 w-4" /> Nova Semana do Despertar
-                      </button>
-                    )}
-
-                    {item.group === 'npa_dinamico' && isAdmin && (
-                      <button
-                        onClick={() => openWizardNew('npa')}
-                        className="w-full flex items-center gap-2 px-3 py-2 rounded text-left text-xs text-primary hover:bg-primary/10 mt-1 font-600"
-                      >
-                        <Plus className="h-4 w-4" /> Novo IDM
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-              </React.Fragment>
-            );
+            // Todo 'group' hoje é 'npa_dinamico' ou 'lancamentos_legado', e os dois já
+            // retornaram acima — chegar aqui significaria um grupo novo sem tratamento.
+            return null;
           }
 
           const mi = item as { key: View; label: string; icon: React.ElementType };

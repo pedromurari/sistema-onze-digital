@@ -30,6 +30,7 @@ import type { CapturaTemplateData } from '@/lib/captura-template';
 import { isPagamentoRealizado } from '@/lib/financial-utils';
 import { fetchAll } from '@/lib/db';
 import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
+import { LancamentoWizard } from '@/components/crm/LancamentoWizard';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1385,6 +1386,10 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
   const [syncingFromEvo, setSyncingFromEvo] = useState(false);
   const [syncDebug, setSyncDebug] = useState<Record<string, unknown> | null>(null);
 
+  // Reabrir o wizard de criação pra editar grupos WPP, aulas, boas-vindas —
+  // único lugar que configura isso fora da criação inicial.
+  const [showWizard, setShowWizard] = useState(false);
+
   // Webhook groups config
   const [showWebhookModal, setShowWebhookModal] = useState(false);
   const [webhookForm, setWebhookForm] = useState({ grupoLancamentoJid: '', grupoOfertaJid: '', n8nBvWebhook: '' });
@@ -2056,9 +2061,11 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
     const novoStatus = novoAtivo ? 'em_andamento' : 'finalizado';
     setLancamento({ ...lancamento, ativo: novoAtivo, status: novoStatus });
 
-    if (novoAtivo) {
-      await supabase.from('lancamentos').update({ ativo: false }).neq('id', lancamentoId);
-    }
+    // Sem cascata: cada turma tem seu ativo/inativo independente. Ativar esta não
+    // desativa as outras — várias turmas rodam em paralelo o tempo todo (é assim
+    // que "Ocupação de Turmas" já mostra várias simultâneas), e a cascata
+    // anterior desativava por baixo dos panos quem outra pessoa estava
+    // gerenciando ao mesmo tempo — a causa do "ativo/inativo bugado".
     const { error } = await supabase
       .from('lancamentos')
       .update({ ativo: novoAtivo, status: novoStatus })
@@ -2307,6 +2314,14 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
           >
             <FileText className="h-4 w-4" />
             Página de Captura
+          </Button>
+          <Button
+            variant="outline" size="sm"
+            onClick={() => setShowWizard(true)}
+            className="gap-1.5 border-gray-200 text-gray-600 hover:bg-gray-50"
+          >
+            <Pencil className="h-4 w-4" />
+            Configurar
           </Button>
           <Button
             variant="outline" size="sm"
@@ -3094,6 +3109,19 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── Wizard de configuração (grupos WPP, aulas, boas-vindas) ── */}
+      <LancamentoWizard
+        open={showWizard}
+        onClose={() => setShowWizard(false)}
+        onSuccess={async () => {
+          setShowWizard(false);
+          const { data } = await supabase.from('lancamentos').select('*').eq('id', lancamentoId).single();
+          if (data) setLancamento(prev => prev ? { ...prev, ...data } : (data as Launch));
+        }}
+        existingId={lancamentoId}
+        existingTipo="lancamento"
+      />
 
       {/* ── Delete Lancamento Modal ── */}
       <Dialog open={showDeleteModal} onOpenChange={setShowDeleteModal}>
