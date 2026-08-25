@@ -4,13 +4,16 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // Atribui automaticamente um vendedor a um lead do canal Direto, intercalando
 // entre os vendedores cadastrados (rodízio atômico via time_comercial_proximo_indice,
-// migration time_comercial_rodizio_vendedor). Chamado pela página-ponte /obrigado
-// do site lead-direto via api/atribuir-vendedor -- nunca direto do navegador, a
-// chave (WEBHOOK_API_KEY) fica só no servidor do site.
+// migration time_comercial_rodizio_vendedor). Chamado pelo site lead-direto
+// (WhatsAppLeadModal / página-ponte /obrigado) via api/atribuir-vendedor --
+// nunca direto do navegador, a chave (WEBHOOK_API_KEY) fica só no servidor
+// do site.
 //
-// Idempotente: se o lead já tem vendedor (retry do cliente, ou alguém "pegou" o
-// lead manualmente no meio tempo), devolve quem já está atribuído em vez de
-// girar o rodízio de novo -- importante porque isso afeta comissão de vendedor.
+// Grava leads.vendedor de verdade -- o lead some da fila "sem vendedor" do
+// Kanban assim que atribuído, pra evitar os dois vendedores puxando o mesmo
+// lead ao mesmo tempo. Idempotente: se o lead já tem vendedor (retry do
+// cliente), devolve o mesmo em vez de girar o rodízio de novo -- importante
+// porque isso afeta comissão de vendedor.
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
