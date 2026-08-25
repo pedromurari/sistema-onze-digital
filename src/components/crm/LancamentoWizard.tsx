@@ -3,7 +3,7 @@
  * Wizard multi-passo para criar/editar lançamentos e NPAs.
  * Configura tudo de uma vez: lancamento, kanban, funil, boas-vindas, grupos.
  */
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { ensureDefaultLancamentoKanbanColumns } from '@/components/crm/kanban/useKanbanColunas';
 import {
@@ -40,16 +40,19 @@ interface LancamentoWizardProps {
   open: boolean;
   onClose: () => void;
   onSuccess: (id: string, tipo: 'lancamento' | 'npa') => void;
-  /** Se fornecido, abre em modo edição */
+  /** Se fornecido, abre em modo edição. Também define o tipo (Semana do
+   *  Despertar × IDM Pelo Brasil) ao criar — cada um abre pelo seu próprio
+   *  atalho no menu, então o tipo já vem decidido e não precisa de escolha
+   *  manual dentro do wizard. */
   existingId?: string;
   existingTipo?: 'lancamento' | 'npa';
 }
 
 // ─── Config padrão ────────────────────────────────────────────────────────────
 
-function defaultConfig(): WizardConfig {
+function defaultConfig(tipo: 'lancamento' | 'npa' = 'lancamento'): WizardConfig {
   return {
-    nome: '', tipo: 'lancamento',
+    nome: '', tipo,
     data_live: '', hora_live: '20:00',
     slogan: 'Excelente', professor_convidado: '',
     meta_leads: 0, meta_matriculas: 0, responsavel_id: '',
@@ -63,11 +66,13 @@ function defaultConfig(): WizardConfig {
       { nickname: '', jid: '', link: '', participantes: [] }, // oferta / tarde
     ],
     instancia_evolution: '__priority__',
-    aulas: [
-      { data: '', hora: '20:00', link: '', professor: '' },
-      { data: '', hora: '20:00', link: '', professor: '' },
-      { data: '', hora: '20:00', link: '', professor: '' },
-    ],
+    aulas: tipo === 'npa'
+      ? [{ data: '', hora: '20:00', link: '', professor: '' }]
+      : [
+          { data: '', hora: '20:00', link: '', professor: '' },
+          { data: '', hora: '20:00', link: '', professor: '' },
+          { data: '', hora: '20:00', link: '', professor: '' },
+        ],
     links_extras: [{ key: 'link_checkout', value: '' }],
     bv_wpp_ativo: true, bv_wpp_mensagem: '',
     bv_wpp_mensagem_tarde: '', pix_mensagem_template: '',
@@ -144,48 +149,17 @@ function Step1({ config, setConfig, responsaveis }: {
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="sm:col-span-2 space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Nome *</label>
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-medium text-muted-foreground">Nome *</label>
+            <Badge variant="outline" className="text-[10px] font-medium">
+              {config.tipo === 'npa' ? '🎯 IDM Pelo Brasil (1 aula)' : '🚀 Semana do Despertar (3 aulas)'}
+            </Badge>
+          </div>
           <Input value={config.nome} onChange={e => set('nome', e.target.value)} placeholder="Ex: Lançamento #35" />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Saudação do grupo</label>
-          <Input value={config.slogan ?? 'Excelente'} onChange={e => set('slogan', e.target.value)} placeholder="Ex: Excelente, Bom, Ótimo…" />
-          <p className="text-[10px] text-muted-foreground">Aparece nas mensagens como "Excelente dia! ☀️"</p>
         </div>
         <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground">Professor convidado</label>
           <Input value={config.professor_convidado ?? ''} onChange={e => set('professor_convidado', e.target.value)} placeholder="Nome do convidado (opcional)" />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Tipo</label>
-          <div className="flex gap-2">
-            {(['lancamento', 'npa'] as const).map(t => (
-              <button
-                key={t}
-                onClick={() => {
-                  set('tipo', t);
-                  // Ajusta aulas padrão conforme o tipo
-                  setConfig(prev => {
-                    if (t === 'lancamento' && prev.aulas.length < 3) {
-                      const extras = Array.from({ length: 3 - prev.aulas.length }, () => ({
-                        data: '', hora: '20:00', link: '', professor: '',
-                      }));
-                      return { ...prev, tipo: t, aulas: [...prev.aulas, ...extras] };
-                    }
-                    if (t === 'npa' && prev.aulas.length > 1) {
-                      return { ...prev, tipo: t, aulas: [prev.aulas[0]] };
-                    }
-                    return { ...prev, tipo: t };
-                  });
-                }}
-                className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${
-                  config.tipo === t ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/40'
-                }`}
-              >
-                {t === 'lancamento' ? '🚀 Lançamento (3 aulas)' : '🎯 NPA (1 aula)'}
-              </button>
-            ))}
-          </div>
         </div>
         <div className="sm:col-span-2 space-y-1">
           <div className="flex items-center justify-between">
@@ -227,6 +201,9 @@ function Step1({ config, setConfig, responsaveis }: {
             <option value="">— Selecionar —</option>
             {responsaveis.map(r => <option key={r.id} value={r.id}>{r.nome}</option>)}
           </select>
+          <p className="text-[10px] text-muted-foreground">
+            Ao salvar, a turma vinculada passa a repassar 50% pra esse responsável no Balanço — o resto fica com o IDM.
+          </p>
         </div>
         <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground">Meta de leads</label>
@@ -1743,6 +1720,75 @@ function Step6({ messages, setMessages, config }: {
   );
 }
 
+// ─── Repasse automático da turma vinculada ─────────────────────────────────────
+// Escolher um Responsável aqui não bastava pra aparecer no Balanço — o cálculo de
+// repasse (calcRepassePagamento) lê a tabela `turma_responsaveis`, não o
+// `responsavel_id` do lançamento/NPA. Sem essa linha a recorrência da turma ia
+// 100% pro IDM em silêncio (ver financial-utils.ts). "IDM" e "Onze Digital" são a
+// própria casa — não contam como investidor externo, então não geram linha (já é
+// o comportamento padrão sem split).
+const NOMES_SEM_SPLIT = new Set(['IDM', 'Onze Digital']);
+
+async function ensureTurmaResponsavel(turmaId: string, responsavelId: string, responsaveis: Responsavel[]) {
+  const resp = responsaveis.find(r => r.id === responsavelId);
+  if (!resp || NOMES_SEM_SPLIT.has(resp.nome)) return;
+
+  const { data: existente } = await supabase
+    .from('turma_responsaveis')
+    .select('id')
+    .eq('turma_id', turmaId)
+    .eq('user_id', responsavelId)
+    .maybeSingle();
+  if (existente) return;
+
+  await supabase.from('turma_responsaveis').insert({
+    turma_id: turmaId,
+    user_id: responsavelId,
+    nome_ref: resp.nome,
+    percentual: 50,
+  });
+}
+
+// Ao editar, se o responsável (ou a turma) mudou desde a última vez que o wizard
+// salvou, a linha antiga em `turma_responsaveis` fica pra trás — o investidor
+// anterior continuaria recebendo 50% de uma turma que já não é mais dele.
+// Aqui a gente tira a linha antiga (pelo par turma+responsável exato que o
+// próprio wizard tinha criado) antes de criar a nova, e avisa o que mudou.
+async function syncTurmaResponsavel(
+  novoTurmaId: string,
+  novoResponsavelId: string,
+  previousLink: { turmaId: string | null; responsavelId: string | null } | null,
+  responsaveis: Responsavel[],
+  turmas: Turma[],
+): Promise<string | null> {
+  let aviso: string | null = null;
+
+  const linkMudou = previousLink
+    && previousLink.turmaId && previousLink.responsavelId
+    && (previousLink.turmaId !== novoTurmaId || previousLink.responsavelId !== novoResponsavelId);
+
+  if (linkMudou) {
+    const respAntigo = responsaveis.find(r => r.id === previousLink!.responsavelId);
+    if (respAntigo && !NOMES_SEM_SPLIT.has(respAntigo.nome)) {
+      const { error, count } = await supabase
+        .from('turma_responsaveis')
+        .delete({ count: 'exact' })
+        .eq('turma_id', previousLink!.turmaId!)
+        .eq('user_id', previousLink!.responsavelId!);
+      if (!error && count) {
+        const turmaAntiga = turmas.find(t => t.id === previousLink!.turmaId);
+        aviso = `Repasse de ${respAntigo.nome} na turma "${turmaAntiga?.nome ?? 'anterior'}" removido — responsável ou turma mudou. Confira o Balanço se precisar ajustar.`;
+      }
+    }
+  }
+
+  if (novoTurmaId && novoResponsavelId) {
+    await ensureTurmaResponsavel(novoTurmaId, novoResponsavelId, responsaveis);
+  }
+
+  return aviso;
+}
+
 // ─── Main Wizard Component ────────────────────────────────────────────────────
 
 export function LancamentoWizard({ open, onClose, onSuccess, existingId, existingTipo }: LancamentoWizardProps) {
@@ -1755,6 +1801,11 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
   const [turmas, setTurmas] = useState<Turma[]>([]);
   const [responsaveis, setResponsaveis] = useState<Responsavel[]>([]);
   const [evoInstances, setEvoInstances] = useState<EvoInstance[]>([]);
+
+  // Turma/responsável como estavam ao abrir em modo edição — pra saber se o
+  // usuário trocou o responsável (ou a turma) e precisamos tirar o repasse
+  // antigo antes de criar o novo (ver ensureTurmaResponsavel/handleSave).
+  const previousLinkRef = useRef<{ turmaId: string | null; responsavelId: string | null } | null>(null);
 
   // Load lookup data once
   useEffect(() => {
@@ -1773,7 +1824,8 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
   // If editing, pre-load existing data
   useEffect(() => {
     if (!open || !existingId) {
-      setConfig(defaultConfig());
+      previousLinkRef.current = null;
+      setConfig(defaultConfig(existingTipo || 'lancamento'));
       setStep(1);
       return;
     }
@@ -1781,6 +1833,11 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
       const table = existingTipo === 'npa' ? 'npa_eventos' : 'lancamentos';
       const { data: lancData } = await supabase.from(table).select('*').eq('id', existingId).single();
       if (!lancData) return;
+
+      previousLinkRef.current = {
+        turmaId: (lancData as any).turma_destino_id || null,
+        responsavelId: (lancData as any).responsavel_id || null,
+      };
 
       const { data: fConfig } = await supabase.from('funnel_configs').select('*').eq('funnel_name', lancData.nome).maybeSingle();
       const { data: bvConfig } = await supabase.from('boas_vindas_config').select('*').eq('funnel_name', lancData.nome).maybeSingle();
@@ -1959,6 +2016,12 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
         if (config.tipo === 'lancamento') { try { await ensureDefaultLancamentoKanbanColumns(lancId!); } catch {} }
       }
 
+      try {
+        const aviso = await syncTurmaResponsavel(config.turma_destino_id, config.responsavel_id, previousLinkRef.current, responsaveis, turmas);
+        if (aviso) toast.warning(aviso);
+        previousLinkRef.current = { turmaId: config.turma_destino_id || null, responsavelId: config.responsavel_id || null };
+      } catch {}
+
       // funnel_configs
       const variaveis = buildFunnelVariaveis(config);
       config.grupos.slice(2).forEach((g, i) => { if (g.jid) variaveis[`grupo_${i + 3}`] = g.jid; });
@@ -2083,6 +2146,12 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
           try { await ensureDefaultLancamentoKanbanColumns(lancId!); } catch {}
         }
       }
+
+      try {
+        const aviso = await syncTurmaResponsavel(config.turma_destino_id, config.responsavel_id, previousLinkRef.current, responsaveis, turmas);
+        if (aviso) toast.warning(aviso);
+        previousLinkRef.current = { turmaId: config.turma_destino_id || null, responsavelId: config.responsavel_id || null };
+      } catch {}
 
       // 2. Upsert funnel_configs
       const variaveis = buildFunnelVariaveis(config);

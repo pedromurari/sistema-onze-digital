@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   UserPlus, ArrowRightLeft, GraduationCap, DollarSign,
-  MessageCircle, CalendarDays, Phone, Mail, Layers, Clock,
+  MessageCircle, CalendarDays, Phone, Mail, Layers, Clock, IdCard,
 } from 'lucide-react';
 import {
   useVinculosDaPessoa, useTimelineDaPessoa,
@@ -64,6 +64,13 @@ function formatarTelefone(tel: string | null) {
   const resto = semPais.slice(2);
   const meio = resto.length === 9 ? resto.slice(0, 5) : resto.slice(0, 4);
   return `(${ddd}) ${meio}-${resto.slice(meio.length)}`;
+}
+
+function formatarCpf(cpf: string | null) {
+  if (!cpf) return null;
+  const digitos = cpf.replace(/\D/g, '');
+  if (digitos.length !== 11) return cpf;
+  return `${digitos.slice(0, 3)}.${digitos.slice(3, 6)}.${digitos.slice(6, 9)}-${digitos.slice(9)}`;
 }
 
 function dataCurta(iso: string) {
@@ -138,6 +145,12 @@ export function FichaPessoa({
                   <span className="inline-flex items-center gap-1 text-xs text-muted-foreground truncate">
                     <Mail className="h-3 w-3 flex-shrink-0" />
                     <span className="truncate">{pessoa.email}</span>
+                  </span>
+                )}
+                {pessoa.cpf && (
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                    <IdCard className="h-3 w-3 flex-shrink-0" />
+                    {formatarCpf(pessoa.cpf)}
                   </span>
                 )}
               </div>

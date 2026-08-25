@@ -16,8 +16,9 @@ import {
   Plus, Search, AlertCircle, Users, Target, DollarSign,
   Loader2, Power, Trash2, Pencil, TrendingUp, BarChart2,
   ChevronUp, ChevronDown, Upload, FileText, UserCheck, Globe, Copy,
-  Send, Play, Square, Pause, X as XIcon, CheckCircle2, RefreshCw,
+  Send, Play, Square, Pause, X as XIcon, CheckCircle2, RefreshCw, MoreHorizontal,
 } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 import { useKanbanColunas } from './kanban/useKanbanColunas';
 import type { KanbanColuna } from './kanban/useKanbanColunas';
@@ -30,6 +31,7 @@ import type { CapturaTemplateData } from '@/lib/captura-template';
 import { isPagamentoRealizado } from '@/lib/financial-utils';
 import { fetchAll } from '@/lib/db';
 import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
+import { LancamentoWizard } from '@/components/crm/LancamentoWizard';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1385,6 +1387,10 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
   const [syncingFromEvo, setSyncingFromEvo] = useState(false);
   const [syncDebug, setSyncDebug] = useState<Record<string, unknown> | null>(null);
 
+  // Reabrir o wizard de criação pra editar grupos WPP, aulas, boas-vindas —
+  // único lugar que configura isso fora da criação inicial.
+  const [showWizard, setShowWizard] = useState(false);
+
   // Webhook groups config
   const [showWebhookModal, setShowWebhookModal] = useState(false);
   const [webhookForm, setWebhookForm] = useState({ grupoLancamentoJid: '', grupoOfertaJid: '', n8nBvWebhook: '' });
@@ -2056,9 +2062,11 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
     const novoStatus = novoAtivo ? 'em_andamento' : 'finalizado';
     setLancamento({ ...lancamento, ativo: novoAtivo, status: novoStatus });
 
-    if (novoAtivo) {
-      await supabase.from('lancamentos').update({ ativo: false }).neq('id', lancamentoId);
-    }
+    // Sem cascata: cada turma tem seu ativo/inativo independente. Ativar esta não
+    // desativa as outras — várias turmas rodam em paralelo o tempo todo (é assim
+    // que "Ocupação de Turmas" já mostra várias simultâneas), e a cascata
+    // anterior desativava por baixo dos panos quem outra pessoa estava
+    // gerenciando ao mesmo tempo — a causa do "ativo/inativo bugado".
     const { error } = await supabase
       .from('lancamentos')
       .update({ ativo: novoAtivo, status: novoStatus })
@@ -2289,48 +2297,46 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
           <div>
             <h1 className="text-3xl font-bold text-foreground">{lancamento.nome}</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {lancamento.status === 'finalizado' ? '✅ Finalizado' : '🚀 Em Andamento'}
+              {lancamento.status === 'finalizado' ? 'Finalizado' : 'Em andamento'}
             </p>
           </div>
-          {lancamento.status === 'finalizado' && (
-            <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 border-yellow-200">
-              Finalizado
-            </Badge>
-          )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            variant="outline" size="sm"
-            onClick={handleOpenCaptura}
-            className="gap-1.5 border-purple-200 text-purple-700 hover:bg-purple-50"
-            title="Exportar página de captura em HTML"
-          >
-            <FileText className="h-4 w-4" />
-            Página de Captura
-          </Button>
-          <Button
-            variant="outline" size="sm"
-            onClick={() => setShowWebhookModal(true)}
-            className="gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50"
-            title="Configurar webhook de grupo WhatsApp"
-          >
-            <Globe className="h-4 w-4" />
-            Webhook Grupos
-            {(lancamento.grupo_lancamento_jid || lancamento.grupo_oferta_jid) && (
-              <span className="w-2 h-2 rounded-full bg-green-500 ml-0.5" />
-            )}
-          </Button>
-          <Button variant="destructive" size="sm" onClick={() => setShowDeleteModal(true)} className="gap-2">
-            <Trash2 className="h-4 w-4" />
-            Apagar
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" className="h-9 w-9">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setShowWizard(true)}>
+                <Pencil className="h-3.5 w-3.5 mr-2" />
+                Configurar
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleOpenCaptura}>
+                <FileText className="h-3.5 w-3.5 mr-2" />
+                Página de captura
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowWebhookModal(true)}>
+                <Globe className="h-3.5 w-3.5 mr-2" />
+                Webhook grupos
+                {(lancamento.grupo_lancamento_jid || lancamento.grupo_oferta_jid) && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 ml-1.5" />
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowDeleteModal(true)} className="text-destructive focus:text-destructive">
+                <Trash2 className="h-3.5 w-3.5 mr-2" />
+                Apagar turma
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <button
             onClick={handleToggleActive}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all text-white ${
-              lancamento.ativo ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-500 hover:bg-gray-600'
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors text-white ${
+              lancamento.ativo ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-400 hover:bg-gray-500'
             }`}
           >
-            <Power className="h-4 w-4" />
+            <Power className="h-3.5 w-3.5" />
             {lancamento.ativo ? 'Ativo' : 'Inativo'}
           </button>
         </div>
@@ -2393,7 +2399,7 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
           { id: 'kanban', label: 'Kanban' },
           { id: 'metas', label: 'Metas' },
           { id: 'relatorio', label: 'Relatório' },
-          { id: 'trafego', label: '📊 Tráfego' },
+          { id: 'trafego', label: 'Tráfego' },
         ] as { id: ActiveView; label: string }[]).map(tab => (
           <button
             key={tab.id}
@@ -3094,6 +3100,19 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── Wizard de configuração (grupos WPP, aulas, boas-vindas) ── */}
+      <LancamentoWizard
+        open={showWizard}
+        onClose={() => setShowWizard(false)}
+        onSuccess={async () => {
+          setShowWizard(false);
+          const { data } = await supabase.from('lancamentos').select('*').eq('id', lancamentoId).single();
+          if (data) setLancamento(prev => prev ? { ...prev, ...data } : (data as Launch));
+        }}
+        existingId={lancamentoId}
+        existingTipo="lancamento"
+      />
 
       {/* ── Delete Lancamento Modal ── */}
       <Dialog open={showDeleteModal} onOpenChange={setShowDeleteModal}>

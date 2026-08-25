@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
   Dialog, DialogContent, DialogDescription,
   DialogHeader, DialogTitle, DialogTrigger,
@@ -11,14 +12,15 @@ import {
 import {
   Plus, Search, Users, DollarSign, Loader2, Power, Trash2,
   Flame, MessageCircle, Pencil, ShoppingBag, Trophy,
-  TrendingUp, BarChart3, Target, ArrowLeft, Award, Percent,
+  TrendingUp, BarChart3, Target, Award, Percent,
   CheckCircle2, XCircle, Send, Play, Square, Pause, X as XIcon,
-  ChevronUp, ChevronDown,
+  ChevronUp, ChevronDown, Copy, MoreHorizontal,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useKanbanColunas } from './kanban/useKanbanColunas';
 import type { KanbanColuna } from './kanban/useKanbanColunas';
 import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
+import { LancamentoWizard } from '@/components/crm/LancamentoWizard';
 import {
   KanbanColunaHeader, AddColunaButton,
   RenameColunaModal, ColunaSettingsModal, DeleteColunaModal,
@@ -27,8 +29,7 @@ import {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type NPAPhase =
-  | 'novo' | 'ingresso_pago' | 'no_grupo' | 'confirmado' | 'evento'
-  | 'closer' | 'follow_up_01' | 'follow_up_02' | 'follow_up_03' | 'matricula';
+  | 'novo' | 'ingresso_pago' | 'no_grupo' | 'confirmado' | 'evento' | 'matricula';
 
 type Turma = 'manha' | 'tarde' | 'unica';
 type TurmaView = 'todas' | 'manha' | 'tarde' | 'lado_a_lado';
@@ -68,6 +69,8 @@ interface NPALead {
   follow_up_03: boolean;
   matriculado: boolean;
   comprou_material: boolean;
+  acesso_membros_url?: string | null;
+  acesso_membros_liberado_em?: string | null;
   valor_ingresso: number;
   valor_matricula: number;
   valor_material: number;
@@ -89,10 +92,6 @@ const PHASES: { id: NPAPhase; label: string; color: string }[] = [
   { id: 'no_grupo',      label: 'No Grupo',      color: 'bg-[#eff6ff]' },
   { id: 'confirmado',    label: 'Confirmado',    color: 'bg-[#fefce8]' },
   { id: 'evento',        label: 'Evento',        color: 'bg-[#faf5ff]' },
-  { id: 'closer',        label: 'Closer',        color: 'bg-[#fff7ed]' },
-  { id: 'follow_up_01',  label: 'Follow Up 01',  color: 'bg-[#fef2f2]' },
-  { id: 'follow_up_02',  label: 'Follow Up 02',  color: 'bg-[#fef2f2]' },
-  { id: 'follow_up_03',  label: 'Follow Up 03',  color: 'bg-[#fef2f2]' },
   { id: 'matricula',     label: 'Matrícula ✅',  color: 'bg-[#ecfdf5]' },
 ];
 
@@ -113,23 +112,15 @@ const VALOR_MATERIAL_PADRAO  = 97;
 function getPhasePayload(newPhase: NPAPhase): Record<string, boolean> {
   switch (newPhase) {
     case 'novo':
-      return { ingresso_pago: false, no_grupo: false, presente_evento: false, esteve_no_evento: false, closer: false, follow_up_01: false, follow_up_02: false, follow_up_03: false, matriculado: false };
+      return { ingresso_pago: false, no_grupo: false, presente_evento: false, esteve_no_evento: false, matriculado: false };
     case 'ingresso_pago':
-      return { ingresso_pago: true, no_grupo: false, presente_evento: false, esteve_no_evento: false, closer: false, follow_up_01: false, follow_up_02: false, follow_up_03: false, matriculado: false };
+      return { ingresso_pago: true, no_grupo: false, presente_evento: false, esteve_no_evento: false, matriculado: false };
     case 'no_grupo':
-      return { no_grupo: true, presente_evento: false, esteve_no_evento: false, closer: false, follow_up_01: false, follow_up_02: false, follow_up_03: false, matriculado: false };
+      return { no_grupo: true, presente_evento: false, esteve_no_evento: false, matriculado: false };
     case 'confirmado':
-      return { presente_evento: true, esteve_no_evento: false, closer: false, follow_up_01: false, follow_up_02: false, follow_up_03: false, matriculado: false };
+      return { presente_evento: true, esteve_no_evento: false, matriculado: false };
     case 'evento':
-      return { esteve_no_evento: true, closer: false, follow_up_01: false, follow_up_02: false, follow_up_03: false, matriculado: false };
-    case 'closer':
-      return { closer: true, follow_up_01: false, follow_up_02: false, follow_up_03: false, matriculado: false };
-    case 'follow_up_01':
-      return { follow_up_01: true, follow_up_02: false, follow_up_03: false, matriculado: false };
-    case 'follow_up_02':
-      return { follow_up_02: true, follow_up_03: false, matriculado: false };
-    case 'follow_up_03':
-      return { follow_up_03: true, matriculado: false };
+      return { esteve_no_evento: true, matriculado: false };
     case 'matricula':
       return { matriculado: true };
   }
@@ -240,6 +231,98 @@ function MetaBar({ label, value, meta, color = '#be123c' }: {
   );
 }
 
+// ─── FunilComprasPosEvento ──────────────────────────────────────────────────
+// Segmenta os leads em baldes mutuamente exclusivos de resultado de venda —
+// é a pergunta "quem comprou o quê" que antes exigia filtrar o Kanban na mão.
+
+type FunilBucketId = 'nao_foi' | 'foi_sem_comprar' | 'comprou_material' | 'comprou_mentoria';
+
+interface FunilBucket {
+  id: FunilBucketId;
+  label: string;
+  bg: string;
+  fg: string;
+  leads: NPALead[];
+}
+
+function FunilComprasPosEvento({ leads }: { leads: NPALead[] }) {
+  const [bucketAberto, setBucketAberto] = useState<FunilBucketId | null>(null);
+
+  const compraramIngressoNaoForam = leads.filter((l) => l.ingresso_pago && !l.esteve_no_evento);
+  const foiSemComprar             = leads.filter((l) => l.esteve_no_evento && !l.comprou_material && !l.matriculado);
+  const foiComprouMaterial        = leads.filter((l) => l.esteve_no_evento && l.comprou_material && !l.matriculado);
+  const foiComprouMentoria        = leads.filter((l) => l.esteve_no_evento && l.matriculado);
+
+  const buckets: FunilBucket[] = [
+    { id: 'nao_foi',            label: 'Comprou ingresso, não foi', bg: 'bg-gray-50 border-gray-200',   fg: 'text-gray-500',   leads: compraramIngressoNaoForam },
+    { id: 'foi_sem_comprar',    label: 'Foi, não comprou nada',     bg: 'bg-gray-50 border-gray-200',   fg: 'text-gray-500',   leads: foiSemComprar },
+    { id: 'comprou_material',   label: 'Foi, comprou material 🛍️', bg: 'bg-pink-50 border-pink-200',   fg: 'text-pink-700',   leads: foiComprouMaterial },
+    { id: 'comprou_mentoria',   label: 'Foi, comprou mentoria 🎓',  bg: 'bg-amber-50 border-amber-200', fg: 'text-amber-700',  leads: foiComprouMentoria },
+  ];
+
+  const bucketSelecionado = buckets.find((b) => b.id === bucketAberto) ?? null;
+
+  return (
+    <div className="mb-4">
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+        Depois do evento — funil de compras
+      </p>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {buckets.map((b) => (
+          <button
+            key={b.id}
+            onClick={() => setBucketAberto(b.id)}
+            className={`rounded-xl border p-3 text-center transition-all hover:shadow-sm ${b.bg}`}
+          >
+            <p className={`text-[11px] leading-tight font-medium ${b.fg}`}>{b.label}</p>
+            <p className={`text-2xl font-bold mt-1 ${b.fg}`}>{b.leads.length}</p>
+          </button>
+        ))}
+        <div className="rounded-xl border border-dashed border-gray-200 p-3 text-center bg-white">
+          <p className="text-[11px] leading-tight font-medium text-gray-400">Está no NPS 🚀</p>
+          <p className="text-[10px] text-gray-300 mt-2">em breve</p>
+        </div>
+      </div>
+
+      <Dialog open={!!bucketSelecionado} onOpenChange={(o) => !o && setBucketAberto(null)}>
+        <DialogContent className="rounded-2xl max-w-md max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>{bucketSelecionado?.label}</DialogTitle>
+            <DialogDescription>{bucketSelecionado?.leads.length ?? 0} lead(s)</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 overflow-y-auto flex-1 min-h-0">
+            {bucketSelecionado?.leads.length === 0 && (
+              <p className="text-sm text-gray-400 text-center py-6">Nenhum lead neste grupo ainda.</p>
+            )}
+            {bucketSelecionado?.leads.map((l) => (
+              <div key={l.id} className="flex items-center justify-between gap-2 p-2.5 rounded-lg border border-gray-100">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-800 truncate">{l.nome}</p>
+                  <p className="text-xs text-gray-400">{l.whatsapp}</p>
+                  {(l.comprou_material || l.matriculado) && (
+                    <p className={`text-[10px] font-medium mt-0.5 ${l.acesso_membros_url ? 'text-green-600' : 'text-amber-600'}`}>
+                      {l.acesso_membros_url ? '✅ Acesso liberado' : '⏳ Liberação pendente'}
+                    </p>
+                  )}
+                </div>
+                {l.whatsapp && (
+                  <button
+                    onClick={() => window.open(`https://wa.me/${l.whatsapp}`, '_blank')}
+                    className="p-1.5 rounded-md text-gray-400 hover:text-green-500 hover:bg-green-50 transition-colors flex-shrink-0"
+                    title="Abrir WhatsApp"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 // ─── LeadCard ─────────────────────────────────────────────────────────────────
 
 interface LeadCardProps {
@@ -248,10 +331,11 @@ interface LeadCardProps {
   onMove: (leadId: string, phase: NPAPhase) => void;
   onDelete: (lead: NPALead) => void;
   onToggleMaterial: (leadId: string, current: boolean) => void;
+  onToggleMentoria: (leadId: string, current: boolean) => void;
 }
 
 const LeadCard = memo(({
-  lead, eventoFinalizado, onMove, onDelete, onToggleMaterial,
+  lead, eventoFinalizado, onMove, onDelete, onToggleMaterial, onToggleMentoria,
 }: LeadCardProps) => {
   return (
     <div className={`p-3 rounded-xl border ${lead.erro ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200'} shadow-sm hover:shadow-md transition-all`}>
@@ -305,6 +389,21 @@ const LeadCard = memo(({
       >
         <ShoppingBag className="h-3 w-3 flex-shrink-0" />
         {lead.comprou_material ? 'Material comprado 🛍️' : 'Comprou material?'}
+      </button>
+
+      {/* Toggle comprou mentoria — independente da fase, dispara liberação de acesso */}
+      <button
+        onClick={() => onToggleMentoria(lead.id, lead.matriculado)}
+        disabled={eventoFinalizado}
+        title="Comprou a mentoria NPA"
+        className={`mb-2 w-full flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium border transition-all ${
+          lead.matriculado
+            ? 'bg-amber-50 border-amber-200 text-amber-700'
+            : 'bg-gray-50 border-gray-200 text-gray-400 hover:border-amber-200 hover:text-amber-600'
+        }`}
+      >
+        <Award className="h-3 w-3 flex-shrink-0" />
+        {lead.matriculado ? 'Mentoria comprada 🎓' : 'Comprou mentoria?'}
       </button>
 
       <Select
@@ -365,28 +464,10 @@ function MatriculaColumnHeader({ leads, valorIngressoEvento }: {
 function Relatorio({
   evento,
   leads,
-  onClose,
-  onSaveMetas,
 }: {
   evento: NPAEvento;
   leads: NPALead[];
-  onClose: () => void;
-  onSaveMetas: (metas: {
-    meta_matriculas: number;
-    meta_faturamento: number;
-    meta_presentes: number;
-    meta_ingressos: number;
-  }) => Promise<void>;
 }) {
-  const [editandoMetas, setEditandoMetas] = useState(false);
-  const [savingMetas, setSavingMetas] = useState(false);
-  const [metaForm, setMetaForm] = useState({
-    meta_matriculas: String(evento.meta_matriculas ?? 0),
-    meta_faturamento: String(evento.meta_faturamento ?? 0),
-    meta_presentes:   String(evento.meta_presentes ?? 0),
-    meta_ingressos:   String(evento.meta_ingressos ?? 0),
-  });
-
   // ── métricas reais ──
   const valorIngressoEvento = Number(evento.valor_ingresso)        || 10;
   const valorMaterialRelatorio = Number(evento.valor_material_padrao) || VALOR_MATERIAL_PADRAO;
@@ -418,96 +499,55 @@ function Relatorio({
   const mPres = evento.meta_presentes   ?? 0;
   const mIng  = evento.meta_ingressos   ?? 0;
 
-  const handleSave = async () => {
-    setSavingMetas(true);
-    await onSaveMetas({
-      meta_matriculas:  Number(metaForm.meta_matriculas)  || 0,
-      meta_faturamento: Number(metaForm.meta_faturamento) || 0,
-      meta_presentes:   Number(metaForm.meta_presentes)   || 0,
-      meta_ingressos:   Number(metaForm.meta_ingressos)   || 0,
-    });
-    setSavingMetas(false);
-    setEditandoMetas(false);
-  };
-
-  const StatCard = ({ icon, label, value, sub, color = '#be123c' }: {
+  const StatCard = ({ icon, label, value, sub, color = 'text-primary' }: {
     icon: React.ReactNode; label: string; value: string; sub?: string; color?: string;
   }) => (
-    <Card className="p-4 border border-gray-100 shadow-sm rounded-2xl">
+    <Card className="p-4 border border-border">
       <div className="flex items-center justify-between mb-2">
-        <p className="text-xs text-gray-500 font-medium">{label}</p>
-        <div className="p-1.5 rounded-lg" style={{ backgroundColor: `${color}18` }}>
-          <div style={{ color }}>{icon}</div>
-        </div>
+        <p className="text-xs text-muted-foreground font-medium">{label}</p>
+        <div className={color}>{icon}</div>
       </div>
-      <p className="text-2xl font-black text-gray-900">{value}</p>
-      {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+      <p className="text-2xl font-bold">{value}</p>
+      {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
     </Card>
   );
 
   return (
-    <div className="p-4 lg:p-6 space-y-6 pb-20 lg:pb-6 overflow-y-auto h-full bg-white">
-
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl border border-gray-200 hover:bg-gray-50 text-gray-500 transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          <div>
-            <h1 className="text-xl font-black text-gray-900">📊 Relatório — {evento.nome}</h1>
-            <p className="text-xs text-gray-400 mt-0.5">{evento.status === 'finalizado' ? '✅ Finalizado' : '🚀 Em Andamento'}</p>
-          </div>
-        </div>
-        <button
-          onClick={() => setEditandoMetas(true)}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
-        >
-          <Pencil className="h-3.5 w-3.5" />
-          Definir Metas
-        </button>
-      </div>
-
+    <div className="space-y-6">
       {/* Cards de métricas */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard icon={<Users className="h-4 w-4" />}     label="Total de Leads"    value={String(totalLeads)}    color="#6366f1" />
-        <StatCard icon={<Flame className="h-4 w-4" />}     label="Ingressos Pagos"   value={String(ingressosPagos)} sub={fmt(receitaIngressos)} color="#f97316" />
-        <StatCard icon={<Target className="h-4 w-4" />}    label="Presentes"         value={String(presentesEvento)} color="#8b5cf6" />
-        <StatCard icon={<ShoppingBag className="h-4 w-4" />} label="Compraram Material" value={String(comprouMaterial)} sub={fmt(receitaMateriais)} color="#ec4899" />
-        <StatCard icon={<Trophy className="h-4 w-4" />}    label="Matrículas"        value={String(totalMatriculas)} sub={fmt(receitaMatriculas)} color="#16a34a" />
-        <StatCard icon={<DollarSign className="h-4 w-4" />} label="Faturamento Estimado" value={fmt(receitaTotal)} sub="preço configurado × contagem, não é soma de pagamentos reais" color="#be123c" />
-        <StatCard icon={<TrendingUp className="h-4 w-4" />} label="Ticket Médio Mat." value={totalMatriculas > 0 ? fmt(receitaMatriculas / totalMatriculas) : 'R$ 0'} color="#0ea5e9" />
-        <StatCard icon={<Percent className="h-4 w-4" />}   label="Conv. → Matrícula" value={`${convMatricula}%`} sub="dos presentes" color="#f59e0b" />
+        <StatCard icon={<Users className="h-4 w-4" />}     label="Total de Leads"    value={String(totalLeads)}    color="text-blue-600" />
+        <StatCard icon={<Flame className="h-4 w-4" />}     label="Ingressos Pagos"   value={String(ingressosPagos)} sub={fmt(receitaIngressos)} color="text-orange-500" />
+        <StatCard icon={<Target className="h-4 w-4" />}    label="Presentes"         value={String(presentesEvento)} color="text-purple-500" />
+        <StatCard icon={<ShoppingBag className="h-4 w-4" />} label="Compraram Material" value={String(comprouMaterial)} sub={fmt(receitaMateriais)} color="text-pink-500" />
+        <StatCard icon={<Trophy className="h-4 w-4" />}    label="Matrículas"        value={String(totalMatriculas)} sub={fmt(receitaMatriculas)} color="text-green-600" />
+        <StatCard icon={<DollarSign className="h-4 w-4" />} label="Faturamento Estimado" value={fmt(receitaTotal)} sub="preço configurado × contagem, não é soma de pagamentos reais" />
+        <StatCard icon={<TrendingUp className="h-4 w-4" />} label="Ticket Médio Mat." value={totalMatriculas > 0 ? fmt(receitaMatriculas / totalMatriculas) : 'R$ 0'} color="text-sky-500" />
+        <StatCard icon={<Percent className="h-4 w-4" />}   label="Conv. → Matrícula" value={`${convMatricula}%`} sub="dos presentes" color="text-amber-500" />
       </div>
 
       {/* Funil de conversão */}
-      <Card className="p-5 border border-gray-100 shadow-sm rounded-2xl">
+      <Card className="p-5 border border-border">
         <div className="flex items-center gap-2 mb-4">
-          <BarChart3 className="h-4 w-4 text-[#be123c]" />
-          <h2 className="font-black text-sm text-gray-800">Funil de Conversão</h2>
+          <BarChart3 className="h-4 w-4 text-primary" />
+          <h2 className="font-semibold text-sm">Funil de Conversão</h2>
         </div>
         <div className="space-y-3">
           {[
-            { label: 'Leads → Ingresso Pago', value: ingressosPagos, total: totalLeads,       color: '#f97316' },
-            { label: 'Ingresso → Presente',   value: presentesEvento, total: ingressosPagos,  color: '#8b5cf6' },
-            { label: 'Presente → Matrícula',  value: totalMatriculas, total: presentesEvento, color: '#16a34a' },
-            { label: 'Evento → Material',      value: materialNoDia,   total: presentesEvento, color: '#ec4899' },
-          ].map(({ label, value, total, color }) => {
+            { label: 'Leads → Ingresso Pago', value: ingressosPagos, total: totalLeads,       barClass: 'bg-orange-500' },
+            { label: 'Ingresso → Presente',   value: presentesEvento, total: ingressosPagos,  barClass: 'bg-purple-500' },
+            { label: 'Presente → Matrícula',  value: totalMatriculas, total: presentesEvento, barClass: 'bg-green-500' },
+            { label: 'Evento → Material',      value: materialNoDia,   total: presentesEvento, barClass: 'bg-pink-500' },
+          ].map(({ label, value, total, barClass }) => {
             const p = pct(value, total);
             return (
               <div key={label} className="space-y-1">
                 <div className="flex justify-between text-xs">
-                  <span className="text-gray-600 font-medium">{label}</span>
-                  <span className="font-bold text-gray-800">{value}/{total} <span className="text-gray-400">({p}%)</span></span>
+                  <span className="text-muted-foreground font-medium">{label}</span>
+                  <span className="font-semibold">{value}/{total} <span className="text-muted-foreground">({p}%)</span></span>
                 </div>
-                <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-700"
-                    style={{ width: `${p}%`, backgroundColor: color }}
-                  />
+                <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full transition-all duration-700 ${barClass}`} style={{ width: `${p}%` }} />
                 </div>
               </div>
             );
@@ -516,56 +556,41 @@ function Relatorio({
       </Card>
 
       {/* Metas vs Realizado */}
-      <Card className="p-5 border border-gray-100 shadow-sm rounded-2xl">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Award className="h-4 w-4 text-[#be123c]" />
-            <h2 className="font-black text-sm text-gray-800">Metas vs Realizado</h2>
-          </div>
-          {(mMat === 0 && mFat === 0 && mPres === 0 && mIng === 0) && (
-            <button
-              onClick={() => setEditandoMetas(true)}
-              className="text-xs text-[#be123c] font-semibold hover:underline"
-            >
-              + Definir metas
-            </button>
-          )}
+      <Card className="p-5 border border-border">
+        <div className="flex items-center gap-2 mb-4">
+          <Award className="h-4 w-4 text-primary" />
+          <h2 className="font-semibold text-sm">Metas vs Realizado</h2>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <MetaBar label="Ingressos Pagos"   value={ingressosPagos}  meta={mIng}  color="#f97316" />
           <MetaBar label="Presentes"         value={presentesEvento} meta={mPres} color="#8b5cf6" />
           <MetaBar label="Matrículas"        value={totalMatriculas} meta={mMat}  color="#16a34a" />
-          <MetaBar
-            label="Faturamento Estimado"
-            value={Math.round(receitaTotal)}
-            meta={mFat}
-            color="#be123c"
-          />
+          <MetaBar label="Faturamento Estimado" value={Math.round(receitaTotal)} meta={mFat} />
         </div>
       </Card>
 
       {/* Lista de matriculados */}
-      <Card className="p-5 border border-gray-100 shadow-sm rounded-2xl">
+      <Card className="p-5 border border-border">
         <div className="flex items-center gap-2 mb-4">
           <Trophy className="h-4 w-4 text-green-600" />
-          <h2 className="font-black text-sm text-gray-800">Matriculados ({totalMatriculas})</h2>
+          <h2 className="font-semibold text-sm">Matriculados ({totalMatriculas})</h2>
         </div>
         {matriculados.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-4">Nenhuma matrícula ainda.</p>
+          <p className="text-sm text-muted-foreground text-center py-4">Nenhuma matrícula ainda.</p>
         ) : (
           <div className="space-y-2">
             {matriculados.map((l) => (
-              <div key={l.id} className="flex items-center justify-between p-3 rounded-xl bg-green-50 border border-green-100">
+              <div key={l.id} className="flex items-center justify-between p-3 rounded-lg bg-green-50 border border-green-100">
                 <div>
-                  <p className="text-sm font-semibold text-gray-800">{l.nome}</p>
-                  <p className="text-xs text-gray-400">{l.whatsapp}</p>
+                  <p className="text-sm font-medium">{l.nome}</p>
+                  <p className="text-xs text-muted-foreground">{l.whatsapp}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-bold text-green-700">
+                  <p className="text-sm font-semibold text-green-700">
                     {fmt(Number(l.valor_matricula) > 0 ? Number(l.valor_matricula) : VALOR_MATRICULA_PADRAO)}
                   </p>
                   {l.comprou_material && (
-                    <span className="text-[10px] text-purple-600 font-medium">+ material 🛍️</span>
+                    <span className="text-[10px] text-purple-600 font-medium">+ material</span>
                   )}
                 </div>
               </div>
@@ -573,46 +598,6 @@ function Relatorio({
           </div>
         )}
       </Card>
-
-      {/* Modal de metas */}
-      {editandoMetas && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4">
-            <h2 className="text-lg font-black text-gray-900 mb-1">🎯 Definir Metas</h2>
-            <p className="text-sm text-gray-500 mb-4">Configure as metas para este NPA.</p>
-            <div className="space-y-3">
-              {[
-                { label: 'Meta de Ingressos',     key: 'meta_ingressos',   placeholder: 'Ex: 50' },
-                { label: 'Meta de Presentes',     key: 'meta_presentes',   placeholder: 'Ex: 40' },
-                { label: 'Meta de Matrículas',    key: 'meta_matriculas',  placeholder: 'Ex: 10' },
-                { label: 'Meta de Faturamento (R$)', key: 'meta_faturamento', placeholder: 'Ex: 5000' },
-              ].map(({ label, key, placeholder }) => (
-                <div key={key}>
-                  <label className="text-xs font-semibold text-gray-600 block mb-1">{label}</label>
-                  <Input
-                    type="number"
-                    placeholder={placeholder}
-                    value={metaForm[key as keyof typeof metaForm]}
-                    onChange={(e) => setMetaForm((prev) => ({ ...prev, [key]: e.target.value }))}
-                    className="rounded-xl"
-                  />
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-2 justify-end mt-5">
-              <Button variant="outline" onClick={() => setEditandoMetas(false)} className="rounded-xl">Cancelar</Button>
-              <Button
-                onClick={handleSave}
-                disabled={savingMetas}
-                className="bg-[#be123c] hover:bg-[#9f1239] text-white rounded-xl font-semibold"
-              >
-                {savingMetas && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                Salvar
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -622,12 +607,10 @@ function Relatorio({
 function MetaTab({
   evento,
   leads,
-  onClose,
   onSaveMetas,
 }: {
   evento: NPAEvento;
   leads: NPALead[];
-  onClose: () => void;
   onSaveMetas: (metas: {
     meta_matriculas: number;
     meta_faturamento: number;
@@ -651,7 +634,6 @@ function MetaTab({
   const matriculados    = leads.filter((l) => l.matriculado);
   const totalMatriculas = matriculados.length;
   const comprouMaterial = leads.filter((l) => l.comprou_material).length;
-  const materialNoDia   = leads.filter((l) => l.esteve_no_evento && l.comprou_material).length;
 
   const receitaIngressos  = ingressosPagos  * valorIngressoEvento;
   const receitaMatriculas = matriculados.reduce((acc, l) =>
@@ -676,58 +658,32 @@ function MetaTab({
   };
 
   const metaFields = [
-    { label: 'Meta de Ingressos',        key: 'meta_ingressos',   placeholder: 'Ex: 50',    icon: <Flame className="h-4 w-4" />,    color: '#f97316' },
-    { label: 'Meta de Presentes',        key: 'meta_presentes',   placeholder: 'Ex: 40',    icon: <Target className="h-4 w-4" />,   color: '#8b5cf6' },
-    { label: 'Meta de Matrículas',       key: 'meta_matriculas',  placeholder: 'Ex: 10',    icon: <Trophy className="h-4 w-4" />,   color: '#16a34a' },
-    { label: 'Meta de Faturamento (R$)', key: 'meta_faturamento', placeholder: 'Ex: 5000',  icon: <DollarSign className="h-4 w-4" />, color: '#be123c' },
+    { label: 'Meta de Ingressos',        key: 'meta_ingressos',   placeholder: 'Ex: 50' },
+    { label: 'Meta de Presentes',        key: 'meta_presentes',   placeholder: 'Ex: 40' },
+    { label: 'Meta de Matrículas',       key: 'meta_matriculas',  placeholder: 'Ex: 10' },
+    { label: 'Meta de Faturamento (R$)', key: 'meta_faturamento', placeholder: 'Ex: 5000' },
   ];
 
   return (
-    <div className="p-4 lg:p-6 space-y-6 pb-20 lg:pb-6 overflow-y-auto h-full bg-white">
-
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <button
-          onClick={onClose}
-          className="p-2 rounded-xl border border-gray-200 hover:bg-gray-50 text-gray-500 transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-        <div>
-          <h1 className="text-xl font-black text-gray-900">🎯 Metas — {evento.nome}</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Defina e acompanhe as metas do lançamento</p>
-        </div>
-      </div>
-
+    <div className="space-y-6 max-w-2xl">
       {/* Formulário de metas */}
-      <Card className="p-5 border border-gray-100 shadow-sm rounded-2xl">
-        <div className="flex items-center gap-2 mb-4">
-          <Target className="h-4 w-4 text-[#be123c]" />
-          <h2 className="font-black text-sm text-gray-800">Definir Metas</h2>
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {metaFields.map(({ label, key, placeholder, icon, color }) => (
+      <Card className="p-5 border border-border">
+        <h2 className="font-semibold text-sm mb-4">Definir Metas</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {metaFields.map(({ label, key, placeholder }) => (
             <div key={key} className="space-y-1">
-              <label className="text-xs font-semibold text-gray-600 flex items-center gap-1.5">
-                <span style={{ color }}>{icon}</span>
-                {label}
-              </label>
+              <label className="text-xs text-muted-foreground">{label}</label>
               <Input
                 type="number"
                 placeholder={placeholder}
                 value={metaForm[key as keyof typeof metaForm]}
                 onChange={(e) => setMetaForm((prev) => ({ ...prev, [key]: e.target.value }))}
-                className="rounded-xl"
               />
             </div>
           ))}
         </div>
         <div className="flex justify-end mt-5">
-          <Button
-            onClick={handleSave}
-            disabled={saving}
-            className="bg-[#be123c] hover:bg-[#9f1239] text-white rounded-xl font-semibold px-6"
-          >
+          <Button onClick={handleSave} disabled={saving} size="sm">
             {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
             Salvar Metas
           </Button>
@@ -735,56 +691,15 @@ function MetaTab({
       </Card>
 
       {/* Meta vs Realidade */}
-      <Card className="p-5 border border-gray-100 shadow-sm rounded-2xl">
-        <div className="flex items-center gap-2 mb-4">
-          <Award className="h-4 w-4 text-[#be123c]" />
-          <h2 className="font-black text-sm text-gray-800">Meta vs Realidade</h2>
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <Card className="p-5 border border-border">
+        <h2 className="font-semibold text-sm mb-4">Meta vs Realidade</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
           <MetaBar label="Ingressos Pagos"   value={ingressosPagos}  meta={mIng}  color="#f97316" />
           <MetaBar label="Presentes"         value={presentesEvento} meta={mPres} color="#8b5cf6" />
           <MetaBar label="Matrículas"        value={totalMatriculas} meta={mMat}  color="#16a34a" />
-          <MetaBar label="Faturamento Estimado" value={Math.round(receitaTotal)} meta={mFat} color="#be123c" />
+          <MetaBar label="Faturamento Estimado" value={Math.round(receitaTotal)} meta={mFat} />
         </div>
       </Card>
-
-      {/* Resumo rápido */}
-      <Card className="p-5 border border-gray-100 shadow-sm rounded-2xl">
-        <div className="flex items-center gap-2 mb-4">
-          <BarChart3 className="h-4 w-4 text-[#be123c]" />
-          <h2 className="font-black text-sm text-gray-800">Resumo do Lançamento</h2>
-        </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {[
-            { label: 'Ingressos',        value: String(ingressosPagos),    sub: fmt(receitaIngressos),   color: '#f97316' },
-            { label: 'Presentes',        value: String(presentesEvento),   sub: `${pct(presentesEvento, ingressosPagos)}% dos ingressos`, color: '#8b5cf6' },
-            { label: 'Material Evento',  value: String(materialNoDia),     sub: `${pct(materialNoDia, presentesEvento)}% dos presentes`,  color: '#ec4899' },
-            { label: 'Matrículas',       value: String(totalMatriculas),   sub: fmt(receitaMatriculas),  color: '#16a34a' },
-          ].map(({ label, value, sub, color }) => (
-            <div key={label} className="p-3 rounded-xl border border-gray-100 bg-gray-50">
-              <p className="text-xs text-gray-500 font-medium mb-1">{label}</p>
-              <p className="text-xl font-black" style={{ color }}>{value}</p>
-              <p className="text-[10px] text-gray-400 mt-0.5">{sub}</p>
-            </div>
-          ))}
-        </div>
-        <div className="mt-4 p-3 rounded-xl bg-gradient-to-r from-rose-50 to-red-50 border border-rose-100">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-[#be123c]" />
-              <span className="text-sm font-bold text-gray-800">Faturamento Estimado</span>
-            </div>
-            <span className="text-xl font-black text-[#be123c]">{fmt(receitaTotal)}</span>
-          </div>
-          <p className="text-[10px] text-gray-400 mt-1">Preço configurado × contagem — não é soma de pagamentos reais</p>
-          {mFat > 0 && (
-            <p className="text-xs text-gray-500 mt-1">
-              {pct(Math.round(receitaTotal), mFat)}% da meta de {fmt(mFat)}
-            </p>
-          )}
-        </div>
-      </Card>
-
     </div>
   );
 }
@@ -1395,6 +1310,11 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
   // Verificar grupos
   const [showVerificarGrupos, setShowVerificarGrupos] = useState(false);
 
+  // Reabrir o wizard de criação pra editar grupos WPP, aulas, boas-vindas e
+  // produtos Vega — único lugar que configura isso, já que esta página só edita
+  // valor de ingresso/material e metas.
+  const [showWizard, setShowWizard] = useState(false);
+
   // Disparo por fase
   const [disparos, setDisparos]               = useState<NPADisparoItem[]>([]);
   const [showDisparoModal, setShowDisparoModal] = useState(false);
@@ -1500,7 +1420,11 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
     const eventoAnt  = evento;
     setEvento({ ...evento, ativo: novoAtivo, status: novoStatus });
     try {
-      if (novoAtivo) await supabase.from('npa_eventos').update({ ativo: false }).neq('id', npaEventoId);
+      // Sem cascata: cada NPA tem seu ativo/inativo independente. Ativar este não
+      // desativa os outros — vários eventos rodam em paralelo o tempo todo (é
+      // assim que "Ocupação de Turmas" já mostra várias turmas simultâneas), e a
+      // cascata anterior desativava por baixo dos panos quem outra pessoa estava
+      // gerenciando ao mesmo tempo.
       const { error } = await supabase.from('npa_eventos').update({ ativo: novoAtivo, status: novoStatus }).eq('id', npaEventoId);
       if (error) { setEvento(eventoAnt); toast.error(`Erro: ${error.message}`); return; }
       toast.success(`NPA ${novoAtivo ? 'ativado' : 'desativado'}!`);
@@ -1581,6 +1505,34 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
     }
   }, []);
 
+  // ── Liberar acesso na Área de Membros IDM ─────────────────────────────────
+  // Parte 2 do spec: dispara ao marcar material/mentoria como comprado, e
+  // também é chamável de novo pelo botão "Tentar liberar de novo" no card
+  // se a chamada falhar (repo separado, deploy independente).
+  const [liberandoAcesso, setLiberandoAcesso] = useState<string | null>(null);
+  const handleLiberarAcesso = useCallback(async (leadId: string, produtoSlug: 'ebook-telas-npa' | 'mentoria-npa') => {
+    setLiberandoAcesso(leadId);
+    try {
+      const { data, error } = await supabase.functions.invoke('npa-liberar-acesso-membros', {
+        body: { leadId, produtoSlug },
+      });
+      const loginUrl = (data as { loginUrl?: string } | null)?.loginUrl;
+      const invokeError = error?.message ?? (data as { error?: string } | null)?.error;
+      if (invokeError || !loginUrl) {
+        toast.error(`Liberação pendente: ${invokeError ?? 'a Área de Membros não respondeu'}`);
+        return;
+      }
+      setLeads((prev) => prev.map((l) => l.id === leadId
+        ? { ...l, acesso_membros_url: loginUrl, acesso_membros_liberado_em: new Date().toISOString() }
+        : l));
+      toast.success('Acesso liberado na Área de Membros!');
+    } catch (e) {
+      toast.error(`Erro ao liberar acesso: ${e instanceof Error ? e.message : 'desconhecido'}`);
+    } finally {
+      setLiberandoAcesso(null);
+    }
+  }, []);
+
   // ── Toggle material ───────────────────────────────────────────────────────
   const handleToggleMaterial = useCallback(async (leadId: string, current: boolean) => {
     setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, comprou_material: !current } : l));
@@ -1591,8 +1543,27 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
     if (error) {
       setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, comprou_material: current } : l));
       toast.error('Erro ao atualizar material');
+      return;
     }
-  }, []);
+    if (!current) void handleLiberarAcesso(leadId, 'ebook-telas-npa');
+  }, [handleLiberarAcesso]);
+
+  // ── Toggle mentoria (matriculado) ─────────────────────────────────────────
+  // Direto no campo, sem passar pelo dropdown de fase — o trigger
+  // sync_fase_npa_lead recalcula `fase` sozinho a partir de `matriculado`.
+  const handleToggleMentoria = useCallback(async (leadId: string, current: boolean) => {
+    setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, matriculado: !current } : l));
+    const { error } = await supabase
+      .from('npa_evento_leads')
+      .update({ matriculado: !current, updated_at: new Date().toISOString() })
+      .eq('id', leadId);
+    if (error) {
+      setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, matriculado: current } : l));
+      toast.error('Erro ao atualizar mentoria');
+      return;
+    }
+    if (!current) void handleLiberarAcesso(leadId, 'mentoria-npa');
+  }, [handleLiberarAcesso]);
 
   // ── Add lead ──────────────────────────────────────────────────────────────
   const handleAddLead = async () => {
@@ -1868,7 +1839,6 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
   const presentesEvento      = leads.filter((l) => l.esteve_no_evento).length;  // fase "Evento" ou acima
   const matriculas           = leads.filter((l) => l.matriculado).length;
   const comprouMaterial      = leads.filter((l) => l.comprou_material).length;
-  const materialNoDia        = leads.filter((l) => l.esteve_no_evento && l.comprou_material).length;
   // Receitas: sempre multiplicam pelo valor do evento (atualiza quando o valor muda)
   const receitaIngressos     = ingressosPagos * valorIngressoEvento;
   const receitaMatriculas    = leads
@@ -2006,6 +1976,44 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
                             <ShoppingBag className="h-3 w-3 flex-shrink-0" />
                             {lead.comprou_material ? 'Material comprado 🛍️' : 'Comprou material?'}
                           </button>
+                          <button
+                            onClick={() => handleToggleMentoria(lead.id, lead.matriculado)}
+                            disabled={evento?.status === 'finalizado'}
+                            title="Comprou a mentoria NPA"
+                            className={`mb-2 w-full flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium border transition-all ${
+                              lead.matriculado
+                                ? 'bg-amber-50 border-amber-200 text-amber-700'
+                                : 'bg-gray-50 border-gray-200 text-gray-400 hover:border-amber-200 hover:text-amber-600'
+                            }`}
+                          >
+                            <Award className="h-3 w-3 flex-shrink-0" />
+                            {lead.matriculado ? 'Mentoria comprada 🎓' : 'Comprou mentoria?'}
+                          </button>
+                          {(lead.comprou_material || lead.matriculado) && (
+                            lead.acesso_membros_url ? (
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(lead.acesso_membros_url!);
+                                  toast.success('Link de acesso copiado!');
+                                }}
+                                className="mb-2 w-full flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 transition-all"
+                                title="Copiar link de acesso à Área de Membros"
+                              >
+                                <Copy className="h-3 w-3 flex-shrink-0" />
+                                Copiar acesso ✅
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleLiberarAcesso(lead.id, lead.matriculado ? 'mentoria-npa' : 'ebook-telas-npa')}
+                                disabled={liberandoAcesso === lead.id}
+                                className="mb-2 w-full flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-all disabled:opacity-50"
+                                title="Tentar liberar de novo o acesso à Área de Membros"
+                              >
+                                <Copy className="h-3 w-3 flex-shrink-0" />
+                                {liberandoAcesso === lead.id ? 'Liberando...' : 'Liberação pendente — tentar de novo'}
+                              </button>
+                            )
+                          )}
                           <Select
                             key={`${lead.id}-${lead.fase}`}
                             value={lead.fase}
@@ -2047,31 +2055,7 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
     );
   }
 
-  // ── Metas view ────────────────────────────────────────────────────────────
-  if (activeView === 'metas') {
-    return (
-      <MetaTab
-        evento={evento}
-        leads={leads}
-        onClose={() => setActiveView('kanban')}
-        onSaveMetas={handleSaveMetas}
-      />
-    );
-  }
-
-  // ── Relatório view ────────────────────────────────────────────────────────
-  if (activeView === 'relatorio') {
-    return (
-      <Relatorio
-        evento={evento}
-        leads={leads}
-        onClose={() => setActiveView('kanban')}
-        onSaveMetas={handleSaveMetas}
-      />
-    );
-  }
-
-  // ── Kanban view ───────────────────────────────────────────────────────────
+  // ── Página do evento (Kanban / Metas / Relatório em abas) ───────────────────
   return (
     <div className="p-4 lg:p-6 space-y-5 pb-20 lg:pb-6 overflow-y-auto h-full bg-white">
 
@@ -2080,61 +2064,44 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{evento.nome}</h1>
           <p className="text-sm text-gray-400 mt-0.5">
-            {evento.status === 'finalizado' ? '✅ Finalizado' : '🚀 Em Andamento'}
+            {evento.status === 'finalizado' ? 'Finalizado' : 'Em andamento'}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Botão Metas */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setActiveView('metas')}
-            className="gap-1.5 border-gray-200 text-gray-600 hover:bg-gray-50 font-medium"
-          >
-            <Target className="h-3.5 w-3.5" />
-            Metas
-          </Button>
-          {/* Botão Relatório */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setActiveView('relatorio')}
-            className="gap-1.5 border-gray-200 text-gray-600 hover:bg-gray-50 font-medium"
-          >
-            <BarChart3 className="h-3.5 w-3.5" />
-            Relatório
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowVerificarGrupos(true)}
-            className="gap-1.5 border-green-200 text-green-700 hover:bg-green-50 font-medium"
-          >
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            Grupos
-          </Button>
           <Button
             variant="outline"
             size="sm"
             onClick={() => { setPreselectFase(null); setShowDisparoModal(true); }}
-            className="gap-1.5 border-blue-200 text-blue-600 hover:bg-blue-50 font-medium"
+            className="gap-1.5"
           >
             <Send className="h-3.5 w-3.5" />
             Disparar
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowDeleteModal(true)}
-            className="gap-1.5 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 font-medium"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            Apagar
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" className="h-9 w-9">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setShowWizard(true)}>
+                <Pencil className="h-3.5 w-3.5 mr-2" />
+                Configurar
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowVerificarGrupos(true)}>
+                <CheckCircle2 className="h-3.5 w-3.5 mr-2" />
+                Verificar grupos
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowDeleteModal(true)} className="text-destructive focus:text-destructive">
+                <Trash2 className="h-3.5 w-3.5 mr-2" />
+                Apagar evento
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <button
             onClick={handleToggleActive}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-all text-white shadow-sm ${
-              evento.ativo ? 'bg-green-500 hover:bg-green-600' : 'bg-gray-400 hover:bg-gray-500'
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors text-white ${
+              evento.ativo ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-400 hover:bg-gray-500'
             }`}
           >
             <Power className="h-3.5 w-3.5" />
@@ -2143,8 +2110,31 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
         </div>
       </div>
 
+      {/* Abas */}
+      <div className="flex gap-2 border-b border-border">
+        {([
+          { id: 'kanban', label: 'Kanban' },
+          { id: 'metas', label: 'Metas' },
+          { id: 'relatorio', label: 'Relatório' },
+        ] as { id: ActiveView; label: string }[]).map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveView(tab.id)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeView === tab.id
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeView === 'kanban' && (
+      <>
       {/* Cards de métricas */}
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <Card className="p-4 border border-gray-100 shadow-sm rounded-xl">
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs text-gray-500">Total de Leads</p>
@@ -2196,15 +2186,6 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
           <p className="text-2xl font-bold text-gray-900">{comprouMaterial}</p>
           <p className="text-xs text-gray-400">{fmt(receitaMateriais)}</p>
           <p className="text-[10px] text-gray-300">{fmt(valorMaterialEvento)} / un</p>
-        </Card>
-
-        <Card className="p-4 border border-gray-100 shadow-sm rounded-xl bg-purple-50">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs text-purple-600 font-medium">Material no Evento</p>
-            <ShoppingBag className="h-4 w-4 text-purple-500" />
-          </div>
-          <p className="text-2xl font-bold text-purple-700">{materialNoDia}</p>
-          <p className="text-xs text-purple-400">presentes que compraram</p>
         </Card>
 
         <Card className="p-4 border border-gray-100 shadow-sm rounded-xl">
@@ -2334,6 +2315,12 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
         </Dialog>
       </div>
 
+      {/* Funil de compras pós-evento — responde "quem comprou o quê" de cara,
+          sem precisar filtrar leads no Kanban. Buckets mutuamente exclusivos:
+          quem comprou mentoria conta só no bucket de mentoria, mesmo que
+          também tenha comprado material. */}
+      <FunilComprasPosEvento leads={leads} />
+
       {/* Kanban */}
       {turmaView === 'lado_a_lado' ? (
         <div className="space-y-8">
@@ -2343,6 +2330,29 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
           </div>
         </div>
       ) : renderKanban()}
+      </>
+      )}
+
+      {activeView === 'metas' && (
+        <MetaTab evento={evento} leads={leads} onSaveMetas={handleSaveMetas} />
+      )}
+
+      {activeView === 'relatorio' && (
+        <Relatorio evento={evento} leads={leads} />
+      )}
+
+      {/* Wizard de configuração (grupos WPP, aulas, boas-vindas, produtos Vega) */}
+      <LancamentoWizard
+        open={showWizard}
+        onClose={() => setShowWizard(false)}
+        onSuccess={async () => {
+          setShowWizard(false);
+          const { data } = await supabase.from('npa_eventos').select('*').eq('id', npaEventoId).single();
+          if (data) setEvento(data as NPAEvento);
+        }}
+        existingId={npaEventoId}
+        existingTipo="npa"
+      />
 
       {/* Modal delete NPA */}
       <Dialog open={showDeleteModal} onOpenChange={setShowDeleteModal}>

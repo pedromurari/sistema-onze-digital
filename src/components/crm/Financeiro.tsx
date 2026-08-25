@@ -836,6 +836,62 @@ function TurmaDisparoModal({
   );
 }
 
+// ─── FunilNumerologiaResumo ─────────────────────────────────────────────────
+// Parte 3 do spec docs/superpowers/specs/2026-08-24-funil-npa-e-area-membros-design.md:
+// o mesmo funil de compras do NPA (visão consolidada de "IDM Pelo Brasil"),
+// reaproveitado aqui pro fechamento financeiro — uma verdade só, dois lugares
+// de leitura.
+function FunilNumerologiaResumo() {
+  const [totais, setTotais] = useState<{ ingresso: number; foi: number; material: number; mentoria: number } | null>(null);
+
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      const { data } = await supabase
+        .from('npa_evento_leads')
+        .select('ingresso_pago, esteve_no_evento, comprou_material, matriculado');
+      if (cancelado || !data) return;
+      const acc = { ingresso: 0, foi: 0, material: 0, mentoria: 0 };
+      for (const l of data as { ingresso_pago: boolean; esteve_no_evento: boolean; comprou_material: boolean; matriculado: boolean }[]) {
+        if (l.ingresso_pago) acc.ingresso++;
+        if (l.esteve_no_evento) acc.foi++;
+        if (l.esteve_no_evento && l.comprou_material && !l.matriculado) acc.material++;
+        if (l.esteve_no_evento && l.matriculado) acc.mentoria++;
+      }
+      setTotais(acc);
+    })();
+    return () => { cancelado = true; };
+  }, []);
+
+  if (!totais) return null;
+
+  return (
+    <Card className="p-4 mb-4">
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+        Funil NPA — IDM Pelo Brasil (todos os eventos)
+      </p>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="rounded-xl p-3 text-center bg-muted/40">
+          <p className="text-[11px] font-medium text-muted-foreground">Ingressos vendidos</p>
+          <p className="text-2xl font-bold mt-1">{totais.ingresso}</p>
+        </div>
+        <div className="rounded-xl p-3 text-center bg-muted/40">
+          <p className="text-[11px] font-medium text-muted-foreground">Foram ao evento</p>
+          <p className="text-2xl font-bold mt-1">{totais.foi}</p>
+        </div>
+        <div className="rounded-xl p-3 text-center bg-pink-50">
+          <p className="text-[11px] font-medium text-pink-700">Compraram material</p>
+          <p className="text-2xl font-bold mt-1 text-pink-700">{totais.material}</p>
+        </div>
+        <div className="rounded-xl p-3 text-center bg-amber-50">
+          <p className="text-[11px] font-medium text-amber-700">Compraram mentoria</p>
+          <p className="text-2xl font-bold mt-1 text-amber-700">{totais.mentoria}</p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {}) {
   const { user } = useAuth();
   const isAdmin = user?.tipo === 'admin';
@@ -1977,6 +2033,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
   // Sub-componente compartilhado para Alunos e Turmas
   const ProdutoContent = () => (
     <div className="space-y-4">
+      {activeTab === 'numerologia' && <FunilNumerologiaResumo />}
       {/* Sub-tabs */}
       <div className="flex gap-1 border-b border-border pb-2">
         <button onClick={() => setSubView('alunos')} className={`px-4 py-1.5 rounded-t text-sm font-medium transition-colors ${subView === 'alunos' ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'}`}>

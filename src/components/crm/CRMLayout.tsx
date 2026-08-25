@@ -16,6 +16,7 @@ const Dashboard        = lazy(() => import('./Dashboard').then(m => ({ default: 
 const TeamManagement   = lazy(() => import('./TeamManagement').then(m => ({ default: m.TeamManagement })));
 const Settings         = lazy(() => import('./Settings').then(m => ({ default: m.Settings })));
 const NPAEventos       = lazy(() => import('./NPAEventos').then(m => ({ default: m.NPAEventos })));
+const LancamentosOverview = lazy(() => import('./LancamentosOverview').then(m => ({ default: m.LancamentosOverview })));
 const Operacoes        = lazy(() => import('./Operacoes').then(m => ({ default: m.Operacoes })));
 const MapaMental       = lazy(() => import('./MapaMental').then(m => ({ default: m.MapaMental })));
 const Financeiro       = lazy(() => import('./Financeiro').then(m => ({ default: m.Financeiro })));
@@ -98,7 +99,7 @@ export function CRMLayout() {
 
   useEffect(() => {
     const loadLancamentoId = async () => {
-      if (typeof currentView === 'string' && currentView.startsWith('lancamentos_')) {
+      if (typeof currentView === 'string' && currentView.startsWith('lancamentos_') && currentView !== 'lancamentos_overview') {
         setLoadingLancamento(true);
         const possibleId = currentView.replace('lancamentos_', '');
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -120,7 +121,7 @@ export function CRMLayout() {
 
   useEffect(() => {
     const loadNpaEventoId = async () => {
-      if (typeof currentView === 'string' && currentView.startsWith('npa_')) {
+      if (typeof currentView === 'string' && currentView.startsWith('npa_') && currentView !== 'npa_overview') {
         setLoadingNpaEvento(true);
         const possibleId = currentView.replace('npa_', '');
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -145,7 +146,7 @@ export function CRMLayout() {
       return <RestrictedView />;
     }
 
-    if (typeof currentView === 'string' && currentView.startsWith('lancamentos_')) {
+    if (typeof currentView === 'string' && currentView.startsWith('lancamentos_') && currentView !== 'lancamentos_overview') {
       if (loadingLancamento) {
         return (
           <div className="flex items-center justify-center h-full">
@@ -165,7 +166,7 @@ export function CRMLayout() {
       return <LancamentoKanban lancamentoId={lancamentoId} />;
     }
 
-    if (typeof currentView === 'string' && currentView.startsWith('npa_')) {
+    if (typeof currentView === 'string' && currentView.startsWith('npa_') && currentView !== 'npa_overview') {
       if (loadingNpaEvento) {
         return (
           <div className="flex items-center justify-center h-full">
@@ -193,7 +194,8 @@ export function CRMLayout() {
       case 'dashboard': return <Dashboard />;
       case 'pessoas':  return <Pessoas />;
       case 'time_comercial': return <TimeComercial />;
-      case 'npa_overview': return <NPAEventos />;
+      case 'npa_overview': return <NPAEventos onOpenEvento={(id) => setCurrentView(`npa_${id}` as View)} />;
+      case 'lancamentos_overview': return <LancamentosOverview onOpenLancamento={(id) => setCurrentView(`lancamentos_${id}` as View)} />;
       case 'financeiro': return <Financeiro />;
       case 'financeiro_cfo': return <FinanceiroCFO />;
       case 'balanco': return <Balanco />;
