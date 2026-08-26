@@ -10,6 +10,7 @@ import NotFound from "./pages/NotFound";
 const TarefaPublica   = React.lazy(() => import("./pages/TarefaPublica"));
 const ContratoPublico = React.lazy(() => import("./pages/ContratoPublico"));
 const FormularioAluno = React.lazy(() => import("./pages/FormularioAluno"));
+const MatriculaTimeComercial = React.lazy(() => import("./pages/MatriculaTimeComercial"));
 const AreaMembros     = React.lazy(() => import("./pages/AreaMembros"));
 const Checkout        = React.lazy(() => import("./pages/Checkout"));
 const LinkRedirect    = React.lazy(() => import("./pages/LinkRedirect"));
@@ -79,6 +80,7 @@ const App = () => (
               {/* Rotas públicas — sem autenticação */}
               <Route path="/forms/tarefa/:tarefaId" element={<TarefaPublica />} />
               <Route path="/formulario/:token"      element={<FormularioAluno />} />
+              <Route path="/matricula/:vendedor"    element={<MatriculaTimeComercial />} />
               <Route path="/assinar/:token"         element={<ContratoPublico />} />
               <Route path="/membros/:token"         element={<AreaMembros />} />
               <Route path="/comprar/:produtoId"     element={<Checkout />} />

@@ -1,0 +1,1515 @@
+    /* ── TOKENS ─────────────────────────────────────── */
+    .idm-matricula {
+      --navy:         #1C2B4A;
+      --navy-dark:    #111C30;
+      --navy-deeper:  #0A1020;
+      --surface:      #FAFAF7;
+      --surface-alt:  #F0EFE9;
+      --text:         #1C1C1A;
+      --text-muted:   #6B6B5F;
+      --gold:         #B8960C;
+      --gold-light:   #D4A817;
+      --gold-pale:    #F5ECC8;
+      --border:       rgba(28,43,74,0.12);
+      --border-gold:  rgba(184,150,12,0.3);
+      --error:        #8B1A1A;
+      --font-heading: 'Poppins', system-ui, sans-serif;
+      --font-body:    'Poppins', system-ui, sans-serif;
+      --ease-expo:    cubic-bezier(0.16, 1, 0.3, 1);
+      --space-1: 4px; --space-2: 8px; --space-3: 12px;
+      --space-4: 16px; --space-5: 20px; --space-6: 24px;
+      --space-8: 32px; --space-10: 40px; --space-12: 48px;
+      --space-16: 64px; --space-24: 96px;
+    }
+
+    .idm-matricula *,
+.idm-matricula *::before,
+.idm-matricula *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    .idm-matricula { scroll-behavior: smooth; }
+
+    .idm-matricula {
+      background: var(--surface);
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 1rem;
+      line-height: 1.6;
+      font-weight: 400;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .idm-matricula *,
+.idm-matricula *::before,
+.idm-matricula *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
+
+    /* ── LOADING ──────────────────────────────────── */
+    .idm-matricula #loading-screen {
+      position: fixed; inset: 0; z-index: 200;
+      background: var(--navy-deeper);
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: var(--space-6);
+      transition: opacity 0.6s var(--ease-expo);
+    }
+    .idm-matricula #loading-screen.out { opacity: 0; pointer-events: none; }
+
+    .idm-matricula .loading-seal {
+      width: 64px; height: 64px;
+      border: 1px solid rgba(184,150,12,0.4);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      animation: rotateSeal 8s linear infinite;
+    }
+    @keyframes rotateSeal {
+      to { transform: rotate(360deg); }
+    }
+    .idm-matricula .loading-seal-inner {
+      font-family: var(--font-heading);
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--gold-light);
+      letter-spacing: 0.05em;
+      animation: rotateSeal 8s linear infinite reverse;
+    }
+    .idm-matricula .loading-wordmark {
+      font-family: var(--font-heading);
+      font-size: 14px;
+      font-weight: 400;
+      letter-spacing: 0.35em;
+      text-transform: uppercase;
+      color: rgba(245,240,228,0.5);
+    }
+
+    /* ── SUCCESS SCREEN ───────────────────────────── */
+    .idm-matricula #success-screen {
+      display: none;
+      position: fixed; inset: 0; z-index: 100;
+      background: var(--navy-deeper);
+      overflow-y: auto;
+    }
+    .idm-matricula #success-screen.show { display: block; animation: fadeIn 0.7s var(--ease-expo); }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
+
+    .idm-matricula .obrigado-wrap {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: var(--space-12) var(--space-6);
+      text-align: center;
+      position: relative;
+    }
+
+    /* estrelas decorativas */
+    .idm-matricula .obrigado-wrap::before {
+      content: '✦';
+      position: absolute; top: 48px; left: 50%;
+      transform: translateX(-50%);
+      font-size: 10px;
+      color: var(--gold);
+      letter-spacing: 24px;
+      opacity: 0.5;
+    }
+
+    .idm-matricula .obrigado-seal {
+      width: 88px; height: 88px;
+      border: 1px solid var(--gold);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto var(--space-8);
+      position: relative;
+      animation: glowSeal 3s ease-in-out infinite;
+    }
+    @keyframes glowSeal {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(184,150,12,0); }
+      50%       { box-shadow: 0 0 24px 4px rgba(184,150,12,0.18); }
+    }
+    .idm-matricula .obrigado-seal::before {
+      content: '';
+      position: absolute; inset: 6px;
+      border: 1px solid rgba(184,150,12,0.25);
+      border-radius: 50%;
+    }
+    .idm-matricula .obrigado-check {
+      font-size: 32px; color: var(--gold); line-height: 1;
+    }
+
+    .idm-matricula .obrigado-eyebrow {
+      font-size: 0.6875rem;
+      font-weight: 700;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: var(--space-4);
+    }
+
+    .idm-matricula .obrigado-title {
+      font-family: var(--font-heading);
+      font-size: clamp(2rem, 6vw, 3.75rem);
+      font-weight: 700;
+      color: #F5F0E4;
+      line-height: 1.1;
+      margin-bottom: var(--space-3);
+      letter-spacing: -0.02em;
+    }
+
+    .idm-matricula .obrigado-instituto {
+      font-family: var(--font-heading);
+      font-size: clamp(1.1rem, 3vw, 1.6rem);
+      font-weight: 400;
+      color: var(--gold-light);
+      margin-bottom: var(--space-8);
+      letter-spacing: 0.02em;
+    }
+
+    .idm-matricula .obrigado-rule {
+      width: 48px; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--gold), transparent);
+      margin: 0 auto var(--space-8);
+    }
+
+    .idm-matricula .obrigado-card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(184,150,12,0.2);
+      padding: var(--space-6) var(--space-8);
+      max-width: 440px;
+      margin: 0 auto var(--space-8);
+    }
+    .idm-matricula .obrigado-card p {
+      font-size: 0.9375rem;
+      color: rgba(245,240,228,0.7);
+      line-height: 1.75;
+    }
+    .idm-matricula .obrigado-card strong {
+      color: #F5F0E4;
+      font-weight: 600;
+    }
+
+    .idm-matricula .obrigado-wpp {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-3);
+      background: #1A5C2A;
+      color: #fff;
+      padding: var(--space-4) var(--space-8);
+      font-family: var(--font-body);
+      font-size: 0.875rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-decoration: none;
+      transition: background 0.15s;
+      margin-top: var(--space-4);
+    }
+    .idm-matricula .obrigado-wpp:hover { background: #144822; }
+
+    .idm-matricula .obrigado-footer-note {
+      margin-top: var(--space-10);
+      font-size: 0.75rem;
+      color: rgba(245,240,228,0.2);
+      letter-spacing: 0.08em;
+    }
+
+    /* ── CORTESIA (payment screen) ─────────────────── */
+    .idm-matricula .cortesia-box {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: var(--space-10) var(--space-6);
+      gap: var(--space-5);
+    }
+    .idm-matricula .cortesia-box.show { display: flex; }
+    .idm-matricula .cortesia-icon { font-size: 48px; }
+    .idm-matricula .cortesia-title {
+      font-family: var(--font-heading);
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--navy);
+    }
+    .idm-matricula .cortesia-sub {
+      font-size: 0.9375rem;
+      color: var(--text-muted);
+      max-width: 360px;
+      line-height: 1.7;
+    }
+
+    /* ── CORTESIA GATE (código de autorização) ───────── */
+    .idm-matricula .cortesia-gate {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-3);
+    }
+    .idm-matricula .cortesia-gate-text {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      line-height: 1.55;
+    }
+    .idm-matricula .cortesia-gate-row {
+      display: flex;
+      gap: var(--space-2);
+    }
+    .idm-matricula .cortesia-gate-row input {
+      flex: 1;
+      min-width: 0;
+    }
+    .idm-matricula .btn-cortesia-validar {
+      padding: 0 var(--space-5);
+      background: var(--navy);
+      color: #F5F0E4;
+      border: none;
+      font-family: var(--font-body);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .idm-matricula .btn-cortesia-validar:hover { background: var(--navy-dark); }
+    .idm-matricula .cortesia-gate-msg {
+      display: none;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.75rem;
+    }
+    .idm-matricula .cortesia-gate-msg.show { display: flex; }
+    .idm-matricula .cortesia-gate-msg.error { color: var(--error); }
+
+    /* ── ERROR SCREEN ─────────────────────────────── */
+    .idm-matricula #error-screen { display: none; text-align: center; padding: var(--space-24) var(--space-6); }
+    .idm-matricula #error-screen.show { display: block; }
+
+    /* ── HEADER ───────────────────────────────────── */
+    .idm-matricula .site-header {
+      background: var(--navy-deeper);
+      position: relative;
+      overflow: hidden;
+    }
+    .idm-matricula .site-header::after {
+      content: '';
+      position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent 0%, var(--gold) 30%, var(--gold-light) 50%, var(--gold) 70%, transparent 100%);
+    }
+
+    /* Deco grid lines */
+    .idm-matricula .header-deco {
+      position: absolute; inset: 0; pointer-events: none; overflow: hidden;
+    }
+    .idm-matricula .header-deco::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 50%; transform: translateX(-50%);
+      width: 600px; height: 600px;
+      border: 1px solid rgba(184,150,12,0.06);
+      border-radius: 50%;
+      top: -200px;
+    }
+    .idm-matricula .header-deco::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 50%; transform: translateX(-50%);
+      width: 400px; height: 400px;
+      border: 1px solid rgba(184,150,12,0.05);
+      border-radius: 50%;
+      top: -120px;
+    }
+
+    .idm-matricula .header-inner {
+      position: relative; z-index: 1;
+      max-width: 720px;
+      margin: 0 auto;
+      padding: var(--space-16) var(--space-6) var(--space-12);
+      text-align: center;
+    }
+
+    .idm-matricula .header-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-3);
+      margin-bottom: var(--space-8);
+    }
+    .idm-matricula .badge-line {
+      width: 32px; height: 1px;
+      background: rgba(184,150,12,0.5);
+    }
+    .idm-matricula .badge-text {
+      font-family: var(--font-body);
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold);
+    }
+
+    .idm-matricula .header-seal {
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto var(--space-6);
+    }
+    .idm-matricula .header-seal-letters {
+      font-family: var(--font-heading);
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      color: var(--gold-light);
+    }
+
+    .idm-matricula .header-kicker {
+      font-family: var(--font-body);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: rgba(245,240,228,0.5);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: var(--space-4);
+    }
+
+    .idm-matricula .header-title {
+      font-family: var(--font-heading);
+      font-size: clamp(2.2rem, 6vw, 4rem);
+      font-weight: 700;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      color: #F5F0E4;
+      margin-bottom: var(--space-5);
+    }
+    .idm-matricula .header-title em {
+      display: block;
+      font-style: normal;
+      font-weight: 700;
+      color: var(--gold-light);
+    }
+
+    .idm-matricula #lancamento-nome {
+      font-family: var(--font-body);
+      font-size: 0.9375rem;
+      font-weight: 400;
+      color: rgba(245,240,228,0.45);
+      margin-bottom: var(--space-8);
+      min-height: 1.5em;
+    }
+
+    .idm-matricula .header-meta {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-6);
+      flex-wrap: wrap;
+    }
+    .idm-matricula .meta-item {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      font-size: 0.75rem;
+      color: rgba(245,240,228,0.35);
+      letter-spacing: 0.05em;
+    }
+    .idm-matricula .meta-dot {
+      width: 3px; height: 3px;
+      background: rgba(184,150,12,0.5);
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ── PROGRESS STEPS ───────────────────────────── */
+    .idm-matricula .steps-bar {
+      background: var(--navy);
+      border-bottom: 1px solid rgba(28,43,74,0.3);
+    }
+    .idm-matricula .steps-inner {
+      max-width: 720px; margin: 0 auto;
+      padding: var(--space-4) var(--space-6);
+      display: flex; align-items: center; gap: 0;
+    }
+    .idm-matricula .step-item {
+      display: flex; align-items: center; gap: var(--space-2);
+      flex: 1;
+    }
+    .idm-matricula .step-circle {
+      width: 24px; height: 24px; border-radius: 50%;
+      border: 1px solid rgba(184,150,12,0.3);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.625rem; font-weight: 600;
+      color: rgba(184,150,12,0.5);
+      flex-shrink: 0;
+      transition: all 0.3s;
+    }
+    .idm-matricula .step-circle.active {
+      border-color: var(--gold);
+      background: var(--gold);
+      color: var(--navy-deeper);
+    }
+    .idm-matricula .step-circle.done {
+      border-color: var(--gold);
+      background: transparent;
+      color: var(--gold);
+    }
+    .idm-matricula .step-label {
+      font-size: 0.6875rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(245,240,228,0.3);
+    }
+    .idm-matricula .step-label.active { color: rgba(245,240,228,0.7); }
+    .idm-matricula .step-connector {
+      flex: 1;
+      height: 1px;
+      background: rgba(184,150,12,0.15);
+      margin: 0 var(--space-3);
+    }
+
+    /* ── PROGRESS BAR ─────────────────────────────── */
+    .idm-matricula .progress-track {
+      height: 2px;
+      background: rgba(28,43,74,0.08);
+      position: sticky; top: 0; z-index: 10;
+    }
+    .idm-matricula .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--gold), var(--gold-light));
+      transition: width 0.4s var(--ease-expo);
+      width: 0%;
+    }
+
+    /* ── MAIN FORM ────────────────────────────────── */
+    .idm-matricula .form-shell {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 0 var(--space-6) var(--space-24);
+    }
+
+    /* ── SECTION ──────────────────────────────────── */
+    .idm-matricula .form-section {
+      padding-top: var(--space-12);
+    }
+
+    .idm-matricula .section-header {
+      margin-bottom: var(--space-8);
+    }
+
+    .idm-matricula .section-num {
+      font-family: var(--font-heading);
+      font-size: clamp(4.5rem, 12vw, 8rem);
+      font-weight: 700;
+      line-height: 0.85;
+      color: var(--navy);
+      opacity: 0.04;
+      position: absolute;
+      right: 0;
+      top: -16px;
+      pointer-events: none;
+      user-select: none;
+      letter-spacing: -0.04em;
+    }
+
+    .idm-matricula .section-eyebrow {
+      font-family: var(--font-body);
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: var(--space-2);
+      display: flex; align-items: center; gap: var(--space-3);
+    }
+    .idm-matricula .section-eyebrow::before {
+      content: '';
+      width: 20px; height: 1px;
+      background: var(--gold);
+      opacity: 0.6;
+    }
+
+    .idm-matricula .section-title {
+      font-family: var(--font-heading);
+      font-size: clamp(1.3rem, 3vw, 1.75rem);
+      font-weight: 700;
+      line-height: 1.15;
+      color: var(--navy);
+      letter-spacing: -0.02em;
+    }
+
+    .idm-matricula .section-rule {
+      height: 1px;
+      background: var(--border);
+      margin-bottom: var(--space-8);
+    }
+
+    /* ── FIELD GRID ───────────────────────────────── */
+    .idm-matricula .field-grid {
+      display: grid;
+      gap: var(--space-6);
+    }
+    .idm-matricula .field-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+    .idm-matricula .field-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+    @media (max-width: 560px) {
+      .idm-matricula .field-grid.cols-2,
+.idm-matricula .field-grid.cols-3 { grid-template-columns: 1fr; }
+    }
+
+    /* ── FIELD ────────────────────────────────────── */
+    .idm-matricula .field {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+    .idm-matricula .field.span-full { grid-column: 1 / -1; }
+
+    .idm-matricula .field-label {
+      font-family: var(--font-body);
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--navy);
+      display: flex; align-items: center; gap: 4px;
+    }
+    .idm-matricula .field-required { color: var(--gold); margin-left: 1px; }
+
+    .idm-matricula .field-control {
+      position: relative;
+    }
+
+    /* ── DATE PICKER CUSTOM ─────────────────────── */
+    .idm-matricula .date-selects {
+      display: grid;
+      grid-template-columns: 1fr 2fr 1fr;
+      gap: var(--space-2);
+    }
+    .idm-matricula .date-selects select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%231C2B4A' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      padding-right: 32px;
+      cursor: pointer;
+    }
+    .idm-matricula .date-selects select:focus { border-color: var(--navy); }
+
+    .idm-matricula input[type="text"],
+.idm-matricula input[type="email"],
+.idm-matricula input[type="tel"],
+.idm-matricula textarea,
+.idm-matricula select {
+      width: 100%;
+      background: #fff;
+      border: 1.5px solid var(--border);
+      border-radius: 0;
+      padding: 11px 14px;
+      font-family: var(--font-body);
+      font-size: 1rem;
+      font-weight: 300;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+
+    .idm-matricula input::placeholder,
+.idm-matricula textarea::placeholder { color: #C0BAA8; }
+    .idm-matricula textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
+
+    .idm-matricula input:focus,
+.idm-matricula textarea:focus,
+.idm-matricula select:focus {
+      border-color: var(--navy);
+      box-shadow: 0 0 0 3px rgba(28,43,74,0.06);
+    }
+
+    .idm-matricula input.has-error,
+.idm-matricula textarea.has-error {
+      border-color: var(--error);
+      box-shadow: 0 0 0 3px rgba(139,26,26,0.05);
+    }
+
+    .idm-matricula .field-hint {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-style: italic;
+      line-height: 1.4;
+    }
+
+    .idm-matricula .field-error-msg {
+      font-size: 0.75rem;
+      color: var(--error);
+      display: none;
+      align-items: center;
+      gap: 4px;
+    }
+    .idm-matricula .field-error-msg.show { display: flex; }
+    .idm-matricula .field-error-msg::before {
+      content: '—';
+      opacity: 0.5;
+    }
+
+    /* ── VENCIMENTO GRUPOS ────────────────────────── */
+    .idm-matricula .venc-grupos {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-4);
+    }
+
+    .idm-matricula .venc-grupo {
+      border: 1.5px solid var(--border);
+      background: #fff;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .idm-matricula .venc-grupo.has-selection { border-color: var(--navy); }
+
+    .idm-matricula .venc-grupo-header {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      padding: var(--space-4) var(--space-5);
+      background: var(--surface-alt);
+      border-bottom: 1px solid var(--border);
+    }
+    .idm-matricula .venc-grupo.has-selection .venc-grupo-header {
+      background: var(--navy);
+    }
+    .idm-matricula .venc-grupo-icon {
+      font-size: 18px;
+      line-height: 1;
+    }
+    .idm-matricula .venc-grupo-title {
+      font-size: 0.875rem;
+      font-weight: 700;
+      color: var(--navy);
+      flex: 1;
+    }
+    .idm-matricula .venc-grupo.has-selection .venc-grupo-title { color: #F5F0E4; }
+    .idm-matricula .venc-grupo-desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    .idm-matricula .venc-grupo.has-selection .venc-grupo-desc { color: rgba(245,240,228,0.5); }
+
+    .idm-matricula .venc-grupo-body {
+      padding: var(--space-3) var(--space-5) var(--space-4);
+    }
+
+    /* Sub-opções (dias) */
+    .idm-matricula .venc-sub-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: var(--space-2);
+    }
+    @media (max-width: 440px) {
+      .idm-matricula .venc-sub-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    .idm-matricula .venc-option {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: var(--space-3) var(--space-3);
+      border: 1.5px solid var(--border);
+      background: #fff;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+      user-select: none;
+    }
+    .idm-matricula .venc-option:hover { border-color: rgba(28,43,74,0.3); background: #FAFAF7; }
+    .idm-matricula .venc-option.selected { border-color: var(--navy); background: rgba(28,43,74,0.04); }
+    .idm-matricula .venc-option.selected::after {
+      content: '';
+      position: absolute; left: 0; top: 0; bottom: 0;
+      width: 2px; background: var(--gold);
+    }
+    .idm-matricula .venc-option input[type="radio"] {
+      width: 14px; height: 14px;
+      accent-color: var(--navy);
+      cursor: pointer; flex-shrink: 0;
+    }
+    .idm-matricula .venc-option-text {
+      font-size: 0.875rem;
+      font-weight: 400;
+      color: var(--text);
+    }
+    .idm-matricula .venc-option.selected .venc-option-text { font-weight: 600; color: var(--navy); }
+
+    /* Opção única (cartão / à vista) — ocupa linha inteira */
+    .idm-matricula .venc-option-single {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      padding: var(--space-3) var(--space-3);
+      border: 1.5px solid var(--border);
+      background: #fff;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+      user-select: none;
+    }
+    .idm-matricula .venc-option-single:hover { border-color: rgba(28,43,74,0.3); background: #FAFAF7; }
+    .idm-matricula .venc-option-single.selected { border-color: var(--navy); background: rgba(28,43,74,0.04); }
+    .idm-matricula .venc-option-single.selected::after {
+      content: '';
+      position: absolute; left: 0; top: 0; bottom: 0;
+      width: 2px; background: var(--gold);
+    }
+    .idm-matricula .venc-option-single input[type="radio"] {
+      width: 14px; height: 14px;
+      accent-color: var(--navy);
+      cursor: pointer; flex-shrink: 0;
+    }
+    .idm-matricula .venc-option-single .venc-option-text {
+      font-size: 0.9375rem;
+      font-weight: 400;
+      color: var(--text);
+    }
+    .idm-matricula .venc-option-single.selected .venc-option-text { font-weight: 600; color: var(--navy); }
+
+    .idm-matricula .outro-field-wrap {
+      display: none;
+      margin-top: var(--space-3);
+    }
+    .idm-matricula .outro-field-wrap.show { display: block; }
+
+    /* ── DIVIDER STATEMENT ────────────────────────── */
+    .idm-matricula .statement-divider {
+      background: var(--navy);
+      margin: var(--space-16) calc(-1 * var(--space-6));
+      padding: var(--space-8) var(--space-6) var(--space-8) calc(var(--space-6) + 16px);
+      display: flex;
+      align-items: center;
+      gap: var(--space-6);
+      position: relative;
+      border-top: 1px solid rgba(184,150,12,0.2);
+      border-bottom: 1px solid rgba(184,150,12,0.2);
+    }
+    .idm-matricula .statement-divider::before {
+      content: '';
+      position: absolute; left: 0; top: 0; bottom: 0;
+      width: 4px;
+      background: var(--gold);
+    }
+    .idm-matricula .statement-tag {
+      flex-shrink: 0;
+      background: rgba(184,150,12,0.15);
+      border: 1px solid rgba(184,150,12,0.3);
+      padding: 4px 10px;
+      font-family: var(--font-body);
+      font-size: 0.625rem;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--gold-light);
+      white-space: nowrap;
+    }
+    .idm-matricula .statement-text {
+      font-family: var(--font-body);
+      font-size: 0.9375rem;
+      font-weight: 400;
+      color: rgba(245,240,228,0.75);
+      line-height: 1.55;
+      max-width: 65ch;
+    }
+    .idm-matricula .statement-text strong {
+      font-weight: 700;
+      color: #F5F0E4;
+    }
+
+    /* ── SUBMIT ZONE ──────────────────────────────── */
+    .idm-matricula .submit-zone {
+      padding-top: var(--space-12);
+      border-top: 1px solid var(--border);
+      margin-top: var(--space-12);
+    }
+
+    .idm-matricula .submit-declaration {
+      background: var(--surface-alt);
+      border-left: 3px solid var(--border-gold);
+      padding: var(--space-4) var(--space-5);
+      margin-bottom: var(--space-8);
+    }
+    .idm-matricula .submit-declaration p {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      line-height: 1.65;
+      max-width: 65ch;
+    }
+
+    .idm-matricula .btn-submit {
+      width: 100%;
+      padding: 18px var(--space-8);
+      background: var(--navy);
+      color: #F5F0E4;
+      border: none;
+      font-family: var(--font-body);
+      font-size: 0.8125rem;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: background 0.2s, transform 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-3);
+      min-height: 56px;
+    }
+    .idm-matricula .btn-submit::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--gold), var(--gold-light), var(--gold), transparent);
+    }
+    .idm-matricula .btn-submit:hover { background: var(--navy-dark); transform: translateY(-1px); }
+    .idm-matricula .btn-submit:active { transform: translateY(0); }
+    .idm-matricula .btn-submit:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
+    .idm-matricula .btn-submit .btn-icon { font-size: 16px; opacity: 0.7; }
+    .idm-matricula .btn-spinner {
+      display: none;
+      width: 16px; height: 16px;
+      border: 2px solid rgba(245,240,228,0.3);
+      border-top-color: #F5F0E4;
+      border-radius: 50%;
+      animation: spin 0.65s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .idm-matricula .btn-submit.loading .btn-text { display: none; }
+    .idm-matricula .btn-submit.loading .btn-icon { display: none; }
+    .idm-matricula .btn-submit.loading .btn-spinner { display: block; }
+
+    .idm-matricula .submit-subtext {
+      margin-top: var(--space-4);
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-2);
+    }
+    .idm-matricula .lock-icon { font-size: 10px; opacity: 0.6; }
+
+    .idm-matricula .global-error {
+      display: none;
+      margin-top: var(--space-4);
+      padding: var(--space-4) var(--space-5);
+      background: #FFF5F5;
+      border-left: 3px solid var(--error);
+      font-size: 0.875rem;
+      color: var(--error);
+      line-height: 1.5;
+    }
+    .idm-matricula .global-error.show { display: block; }
+
+    /* ── FOOTER ───────────────────────────────────── */
+    /* ── ANHANGUERA BADGE ─────────────────────────── */
+    .idm-matricula .anhanguera-badge {
+      margin-top: var(--space-8);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--space-2);
+    }
+    .idm-matricula .anhanguera-rule {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      width: 100%;
+      max-width: 360px;
+    }
+    .idm-matricula .anhanguera-rule::before,
+.idm-matricula .anhanguera-rule::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: rgba(184,150,12,0.25);
+    }
+    .idm-matricula .anhanguera-label {
+      font-size: 0.6rem;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--gold);
+      white-space: nowrap;
+    }
+    .idm-matricula .anhanguera-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+    }
+    .idm-matricula .anhanguera-name {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: rgba(245,240,228,0.9);
+      letter-spacing: 0.02em;
+    }
+    .idm-matricula .anhanguera-desc {
+      font-size: 0.72rem;
+      color: rgba(245,240,228,0.4);
+      letter-spacing: 0.04em;
+    }
+
+    .idm-matricula .site-footer {
+      background: var(--navy-deeper);
+      padding: var(--space-8) var(--space-6);
+      text-align: center;
+    }
+    .idm-matricula .footer-logo {
+      font-family: var(--font-heading);
+      font-size: 0.875rem;
+      font-weight: 300;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: rgba(245,240,228,0.25);
+    }
+    .idm-matricula .footer-rule {
+      width: 30px; height: 1px;
+      background: rgba(184,150,12,0.25);
+      margin: var(--space-4) auto;
+    }
+    .idm-matricula .footer-note {
+      font-size: 0.6875rem;
+      color: rgba(245,240,228,0.18);
+      letter-spacing: 0.06em;
+    }
+
+    /* ── AOS ──────────────────────────────────────── */
+    .idm-matricula .aos {
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.65s var(--ease-expo), transform 0.65s var(--ease-expo);
+    }
+    .idm-matricula .aos.in { opacity: 1; transform: none; }
+
+    /* ── PAYMENT SCREEN ───────────────────────────── */
+    .idm-matricula #payment-screen {
+      display: none;
+      position: fixed; inset: 0; z-index: 90;
+      background: var(--surface);
+      overflow-y: auto;
+      animation: fadeIn 0.5s var(--ease-expo);
+    }
+    .idm-matricula #payment-screen.show { display: block; }
+
+    .idm-matricula .pay-header {
+      background: var(--navy-deeper);
+      padding: var(--space-8) var(--space-6);
+      text-align: center;
+      position: relative;
+    }
+    .idm-matricula .pay-header::after {
+      content: '';
+      position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent 0%, var(--gold) 30%, var(--gold-light) 50%, var(--gold) 70%, transparent 100%);
+    }
+    .idm-matricula .pay-header-badge {
+      font-size: 0.625rem;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: var(--space-3);
+    }
+    .idm-matricula .pay-header-title {
+      font-family: var(--font-heading);
+      font-size: clamp(1.5rem, 4vw, 2.25rem);
+      font-weight: 700;
+      color: #F5F0E4;
+      margin-bottom: var(--space-2);
+    }
+    .idm-matricula .pay-header-name {
+      font-size: 0.875rem;
+      font-weight: 400;
+      color: rgba(245,240,228,0.5);
+    }
+
+    .idm-matricula .pay-body {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: var(--space-10) var(--space-6) var(--space-16);
+    }
+
+    .idm-matricula .pay-intro {
+      text-align: center;
+      margin-bottom: var(--space-8);
+    }
+    .idm-matricula .pay-intro p {
+      font-size: 0.9375rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    .idm-matricula .pay-intro strong { color: var(--text); font-weight: 600; }
+
+    /* ── PAYMENT OPTIONS ──────────────────────────── */
+    .idm-matricula .pay-options {
+      display: grid;
+      gap: var(--space-4);
+      margin-bottom: var(--space-8);
+    }
+
+    .idm-matricula .pay-card {
+      border: 2px solid var(--border);
+      background: #fff;
+      cursor: pointer;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      overflow: hidden;
+    }
+    .idm-matricula .pay-card:hover { border-color: rgba(28,43,74,0.3); box-shadow: 0 4px 20px rgba(28,43,74,0.06); }
+    .idm-matricula .pay-card.active { border-color: var(--navy); }
+    .idm-matricula .pay-card.active .pay-card-header { background: var(--navy); }
+    .idm-matricula .pay-card.active .pay-card-title { color: #F5F0E4; }
+    .idm-matricula .pay-card.active .pay-card-sub { color: rgba(245,240,228,0.55); }
+    .idm-matricula .pay-card.active .pay-card-icon { background: rgba(255,255,255,0.1); color: var(--gold-light); }
+    .idm-matricula .pay-card.active .pay-card-check { border-color: var(--gold); background: var(--gold); color: var(--navy-deeper); }
+
+    .idm-matricula .pay-card-header {
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+      padding: var(--space-5) var(--space-5);
+      transition: background 0.2s;
+    }
+
+    .idm-matricula .pay-card-icon {
+      width: 44px; height: 44px; border-radius: 50%;
+      background: var(--surface-alt);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+      transition: background 0.2s, color 0.2s;
+    }
+    .idm-matricula .pay-card-info { flex: 1; }
+    .idm-matricula .pay-card-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--navy);
+      transition: color 0.2s;
+    }
+    .idm-matricula .pay-card-sub {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+      transition: color 0.2s;
+    }
+    .idm-matricula .pay-card-check {
+      width: 22px; height: 22px; border-radius: 50%;
+      border: 2px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+      color: transparent;
+      flex-shrink: 0;
+      transition: all 0.2s;
+    }
+
+    .idm-matricula .pay-card-body {
+      display: none;
+      padding: 0 var(--space-5) var(--space-5);
+      border-top: 1px solid var(--border);
+    }
+    .idm-matricula .pay-card.active .pay-card-body { display: block; }
+
+    /* ── PIX QR AREA ──────────────────────────────── */
+    .idm-matricula .pix-container {
+      padding-top: var(--space-5);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--space-4);
+    }
+
+    .idm-matricula .pix-amount-badge {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 4px;
+      background: var(--surface-alt);
+      border: 1px solid var(--border-gold);
+      padding: var(--space-2) var(--space-4);
+    }
+    .idm-matricula .pix-amount-label { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase; }
+    .idm-matricula .pix-amount-value { font-size: 1.5rem; font-weight: 700; color: var(--navy); }
+
+    .idm-matricula .qr-wrapper {
+      width: 200px; height: 200px;
+      border: 2px solid var(--border);
+      background: #fff;
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column;
+      gap: var(--space-3);
+      position: relative;
+    }
+    .idm-matricula .qr-wrapper img { width: 100%; height: 100%; object-fit: contain; }
+
+    /* Placeholder quando sem integração */
+    .idm-matricula .qr-placeholder {
+      text-align: center;
+      padding: var(--space-4);
+    }
+    .idm-matricula .qr-placeholder-icon { font-size: 36px; opacity: 0.3; }
+    .idm-matricula .qr-placeholder-text {
+      font-size: 0.6875rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-top: var(--space-2);
+      line-height: 1.5;
+    }
+
+    .idm-matricula .qr-loading {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--space-3);
+    }
+    .idm-matricula .qr-loading.show { display: flex; }
+    .idm-matricula .qr-spinner {
+      width: 28px; height: 28px;
+      border: 2px solid var(--border);
+      border-top-color: var(--navy);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    .idm-matricula .qr-loading-text { font-size: 0.8125rem; color: var(--text-muted); }
+
+    .idm-matricula .pix-code-wrap {
+      width: 100%;
+      max-width: 380px;
+    }
+    .idm-matricula .pix-code-label {
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: var(--space-2);
+    }
+    .idm-matricula .pix-code-box {
+      display: flex;
+      gap: var(--space-2);
+      align-items: stretch;
+    }
+    .idm-matricula .pix-code-input {
+      flex: 1;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      padding: var(--space-3) var(--space-4);
+      font-size: 0.75rem;
+      font-family: monospace;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .idm-matricula .btn-copy {
+      padding: var(--space-3) var(--space-4);
+      background: var(--navy);
+      color: #F5F0E4;
+      border: none;
+      font-family: var(--font-body);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+    .idm-matricula .btn-copy:hover { background: var(--navy-dark); }
+    .idm-matricula .btn-copy.copied { background: #1A5C2A; }
+
+    .idm-matricula .pix-info-list {
+      width: 100%;
+      max-width: 380px;
+    }
+    .idm-matricula .pix-info-item {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--space-3);
+      padding: var(--space-3) 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .idm-matricula .pix-info-item:last-child { border-bottom: none; }
+    .idm-matricula .pix-info-dot {
+      width: 6px; height: 6px;
+      background: var(--gold);
+      border-radius: 50%;
+      flex-shrink: 0;
+      margin-top: 5px;
+    }
+
+    /* ── INTEGRAÇÃO PLACEHOLDER ───────────────────── */
+    .idm-matricula .integration-notice {
+      background: #FFFBEC;
+      border: 1px solid rgba(184,150,12,0.25);
+      border-left: 3px solid var(--gold);
+      padding: var(--space-3) var(--space-4);
+      margin-top: var(--space-4);
+      font-size: 0.8125rem;
+      color: #7A6000;
+      line-height: 1.5;
+    }
+    .idm-matricula .integration-notice strong { font-weight: 700; }
+
+    /* ── BTN LINK PAGAMENTO ───────────────────────── */
+    .idm-matricula .btn-pay-link {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-3);
+      width: 100%;
+      padding: 16px var(--space-6);
+      background: var(--navy);
+      color: #F5F0E4;
+      text-decoration: none;
+      font-family: var(--font-body);
+      font-size: 0.875rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      margin-top: var(--space-5);
+      transition: background 0.15s;
+      border: none; cursor: pointer;
+      position: relative;
+    }
+    .idm-matricula .btn-pay-link::after {
+      content: '';
+      position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    }
+    .idm-matricula .btn-pay-link:hover { background: var(--navy-dark); }
+    .idm-matricula .btn-pay-link.disabled {
+      opacity: 0.45; cursor: not-allowed; pointer-events: none;
+    }
+
+    .idm-matricula .pay-confirmed-btn {
+      width: 100%;
+      padding: 16px;
+      background: #1A5C2A;
+      color: #fff;
+      border: none;
+      font-family: var(--font-body);
+      font-size: 0.875rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      cursor: pointer;
+      margin-top: var(--space-5);
+      transition: background 0.15s;
+    }
+    .idm-matricula .pay-confirmed-btn:hover { background: #144822; }
+
+    .idm-matricula .pay-footer-note {
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: var(--space-6);
+      line-height: 1.6;
+    }
+
+    /* ── ASSINATURA DO CONTRATO ────────────────────── */
+    .idm-matricula #sign-screen {
+      display: none;
+      position: fixed; inset: 0; z-index: 93;
+      background: var(--surface);
+      overflow-y: auto;
+      animation: fadeIn 0.5s var(--ease-expo);
+    }
+    .idm-matricula #sign-screen.show { display: block; }
+
+    .idm-matricula .sign-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: var(--space-4);
+      max-width: 420px;
+      margin: 0 auto;
+    }
+    .idm-matricula .sign-icon { font-size: 40px; }
+    .idm-matricula .sign-ready-text,
+.idm-matricula .sign-error-text {
+      font-size: 0.9375rem;
+      color: var(--text-muted);
+      line-height: 1.65;
+    }
+    .idm-matricula .sign-note {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: var(--space-2);
+    }
+
+    /* Assinatura embutida (Autentique) */
+    .idm-matricula #sign-ready {
+      max-width: 900px;
+      width: 100%;
+    }
+    .idm-matricula .sign-iframe-wrap {
+      width: 100%;
+      border: 1.5px solid var(--border);
+      background: #fff;
+      position: relative;
+    }
+    .idm-matricula #sign-iframe {
+      width: 100%;
+      height: 75vh;
+      min-height: 480px;
+      border: none;
+      display: block;
+    }
+    .idm-matricula .sign-fallback-note {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* ── REFERRAL / INDICAÇÕES SCREEN ─────────────── */
+    .idm-matricula #referral-screen {
+      display: none;
+      position: fixed; inset: 0; z-index: 95;
+      background: var(--surface);
+      overflow-y: auto;
+      animation: fadeIn 0.5s var(--ease-expo);
+    }
+    .idm-matricula #referral-screen.show { display: block; }
+
+    .idm-matricula .ref-header {
+      background: var(--navy-deeper);
+      padding: var(--space-12) var(--space-6) var(--space-8);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .idm-matricula .ref-header::after {
+      content: '';
+      position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent 0%, var(--gold) 30%, var(--gold-light) 50%, var(--gold) 70%, transparent 100%);
+    }
+    .idm-matricula .ref-stars {
+      font-size: 11px;
+      letter-spacing: 18px;
+      color: var(--gold);
+      opacity: 0.6;
+      margin-bottom: var(--space-5);
+    }
+    .idm-matricula .ref-badge {
+      display: inline-block;
+      background: rgba(184,150,12,0.15);
+      border: 1px solid rgba(184,150,12,0.35);
+      padding: 6px 14px;
+      font-size: 0.6875rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--gold-light);
+      margin-bottom: var(--space-5);
+    }
+    .idm-matricula .ref-title {
+      font-family: var(--font-heading);
+      font-size: clamp(1.6rem, 4.5vw, 2.5rem);
+      font-weight: 700;
+      color: #F5F0E4;
+      margin-bottom: var(--space-4);
+      letter-spacing: -0.02em;
+    }
+    .idm-matricula .ref-subtitle {
+      font-size: 0.9375rem;
+      color: rgba(245,240,228,0.6);
+      max-width: 480px;
+      margin: 0 auto;
+      line-height: 1.6;
+    }
+
+    .idm-matricula .ref-body {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: var(--space-10) var(--space-6) var(--space-16);
+    }
+
+    .idm-matricula .ref-offer-card {
+      background: var(--surface-alt);
+      border: 1px solid var(--border-gold);
+      border-left: 3px solid var(--gold);
+      padding: var(--space-6);
+      margin-bottom: var(--space-8);
+      text-align: center;
+    }
+    .idm-matricula .ref-offer-icon { font-size: 32px; margin-bottom: var(--space-3); }
+    .idm-matricula .ref-offer-text {
+      font-size: 1rem;
+      color: var(--text);
+      line-height: 1.65;
+      margin-bottom: var(--space-3);
+    }
+    .idm-matricula .ref-offer-subtext {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    .idm-matricula .ref-list {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-3);
+      margin-bottom: var(--space-8);
+    }
+    .idm-matricula .ref-row {
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+      border: 1.5px solid var(--border);
+      background: #fff;
+      padding: var(--space-3) var(--space-4);
+    }
+    .idm-matricula .ref-row-num {
+      width: 26px; height: 26px; border-radius: 50%;
+      background: var(--navy);
+      color: var(--gold-light);
+      font-size: 0.75rem;
+      font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .idm-matricula .ref-row-fields {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: var(--space-3);
+      flex: 1;
+    }
+    @media (max-width: 560px) {
+      .idm-matricula .ref-row-fields { grid-template-columns: 1fr; }
+    }
+    .idm-matricula .ref-row-fields input {
+      border: 1px solid var(--border);
+      padding: 9px 12px;
+    }
+
+    .idm-matricula .ref-skip {
+      display: block;
+      width: 100%;
+      text-align: center;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.8125rem;
+      text-decoration: underline;
+      cursor: pointer;
+      margin-top: var(--space-4);
+      padding: var(--space-2);
+      font-family: var(--font-body);
+    }
+    .idm-matricula .ref-skip:hover { color: var(--text); }
+
+    .idm-matricula .ref-footnote {
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: var(--space-6);
+      line-height: 1.6;
+    }

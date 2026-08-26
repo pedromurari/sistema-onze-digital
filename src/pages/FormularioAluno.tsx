@@ -207,7 +207,7 @@ export default function FormularioAluno() {
           style={{ background: 'linear-gradient(135deg, #6c63ff 0%, #8b5cf6 100%)', borderTop: '8px solid #4f46e5' }}
         >
           <h1 className="text-2xl font-bold mb-1">Formulário de Matrícula</h1>
-          <p className="text-purple-100 text-sm">{produtoLabel} — 11 Digital Strategy</p>
+          <p className="text-purple-100 text-sm">{produtoLabel} — Instituto Despertamente</p>
           <p className="text-purple-200 text-xs mt-3">
             Preencha seus dados complementares para concluir a matrícula e receber o contrato.
           </p>
@@ -235,7 +235,7 @@ export default function FormularioAluno() {
           )}
           <div className="flex items-center gap-2 text-xs text-gray-400 pt-2 border-t border-gray-100">
             <Shield className="h-3.5 w-3.5 flex-shrink-0" />
-            <span>Dados protegidos — apenas a equipe 11 Digital tem acesso.</span>
+            <span>Dados protegidos — apenas a equipe do Instituto Despertamente tem acesso.</span>
           </div>
         </div>
 
