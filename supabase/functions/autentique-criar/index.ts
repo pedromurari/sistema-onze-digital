@@ -34,6 +34,14 @@ function buildContratoHtml(d: Record<string, unknown>): string {
   const pais     = String(d.pais || 'Brasil');
   const diaVenc  = String(d.dia_vencimento || '');
   const tipoPag  = String(d.tipo_pagamento || 'mensalidade');
+  // forma_pagamento (alunos.forma_pagamento: 'avista'|'cartao'|'boleto') é o
+  // sinal correto do plano escolhido -- dia_vencimento/tipo_pagamento sozinhos
+  // não bastam (dia_vencimento é integer no banco pro plano boleto, nunca
+  // guarda 'a_vista'/'cartao' de verdade; tipo_pagamento só distingue
+  // mensalidade/bolsa/cortesia, não o método de pagamento). Corrigido em
+  // 2026-08-26: antes disso, tipo_pagamento==='bolsa' caía incorretamente em
+  // isVista (contrato de R$997 à vista) em vez de isBolsa.
+  const formaPag = String(d.forma_pagamento || '').toLowerCase();
 
   const valorParcelaCustom = d.valor_parcela ? parseFloat(String(d.valor_parcela)) : null;
   const numParcelasCustom  = d.num_parcelas  ? parseInt(String(d.num_parcelas))    : null;
@@ -42,9 +50,9 @@ function buildContratoHtml(d: Record<string, unknown>): string {
   const dns = String(d.data_nascimento || '');
   if (dns) { const [ano,mes,dia] = dns.split('-'); dataNasc = `${dia}/${mes}/${ano}`; }
 
-  const isBolsa  = tipoPag === 'cortesia' || diaVenc === 'cortesia';
-  const isVista  = tipoPag === 'bolsa'    || diaVenc === 'a_vista';
-  const isCartao = tipoPag === 'cartao'   || diaVenc === 'cartao';
+  const isBolsa  = tipoPag === 'bolsa' || tipoPag === 'cortesia' || formaPag === 'bolsa' || diaVenc === 'cortesia';
+  const isVista  = formaPag === 'avista' || diaVenc === 'a_vista';
+  const isCartao = formaPag === 'cartao' || diaVenc === 'cartao';
 
   let numParcelas: number, valorParcela: number, valorTotal: number;
   let formaResumo: string, planoSelecionado: string, diaVencTexto: string;
@@ -91,9 +99,9 @@ function buildContratoHtml(d: Record<string, unknown>): string {
 <p class="c"><strong>4.3.</strong> O não cumprimento das obrigações acadêmicas ou a desistência imotivada poderão implicar na revogação da bolsa a critério da CONTRATADA.</p>
 ` : `
 <p class="c"><strong>4.1.</strong> O CONTRATANTE declara ter escolhido, no ato da matrícula, uma das seguintes condições comerciais:</p>
-<p class="c" style="margin-left:16px;">a) pagamento à vista: R$ 997,00 (novecentos e noventa e sete reais);</p>
-<p class="c" style="margin-left:16px;">b) cartão de crédito: em até 12 (doze) parcelas de R$ 109,40 (cento e nove reais e quarenta centavos), conforme disponibilidade e aprovação da operadora/meio de pagamento;</p>
-<p class="c" style="margin-left:16px;">c) plano por boleto: 1 (uma) parcela inicial, seguida de 14 (quatorze) parcelas mensais de R$ 109,90 (cento e nove reais e noventa centavos), totalizando 15 (quinze) pagamentos.</p>
+<p class="c" style="margin-left:16px;">a) pagamento à vista: R$ 1.500,00 (mil e quinhentos reais);</p>
+<p class="c" style="margin-left:16px;">b) cartão de crédito: em até 12 (doze) parcelas de R$ 150,00 (cento e cinquenta reais), totalizando R$ 1.800,00 (mil e oitocentos reais), conforme disponibilidade e aprovação da operadora/meio de pagamento;</p>
+<p class="c" style="margin-left:16px;">c) plano por boleto: 1 (uma) parcela inicial, seguida de 14 (quatorze) parcelas mensais de R$ 150,00 (cento e cinquenta reais), totalizando 15 (quinze) pagamentos de R$ 2.250,00 (dois mil, duzentos e cinquenta reais).</p>
 <p class="c"><strong>4.2.</strong> No plano por boleto, a quantidade de pagamentos constitui a condição comercial contratada e não deve ser confundida com a quantidade de meses da formação, que permanece com duração prevista de 14 meses.</p>
 <p class="c"><strong>4.3.</strong> O plano efetivamente escolhido pelo CONTRATANTE é o <strong>${planoSelecionado}</strong>, conforme registrado no quadro-resumo acima.</p>
 `;
@@ -407,15 +415,19 @@ serve(async (req) => {
       });
     }
 
-    // ── Buscar aluno + turma ─────────────────────────────────────────────────
+    // ── Buscar aluno ──────────────────────────────────────────────────────────
+    // Sem embed de turmas: `alunos` tem 2 FKs pra `turmas` (turma_id e
+    // grupo_turma_id), o que deixa `turmas(...)` ambíguo pro PostgREST e
+    // quebra a query com erro (nunca era usado no corpo da função mesmo).
     const { data: aluno, error: alunoErr } = await sb
       .from('alunos')
-      .select('*, turmas(nome, produto)')
+      .select('*')
       .eq('id', aluno_id)
       .single();
 
     if (alunoErr || !aluno) {
-      return new Response(JSON.stringify({ error: 'Aluno não encontrado' }), {
+      console.error('autentique-criar: aluno não encontrado', aluno_id, alunoErr);
+      return new Response(JSON.stringify({ error: 'Aluno não encontrado', detalhe: alunoErr?.message }), {
         status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -454,6 +466,7 @@ serve(async (req) => {
           pais:            aluno.pais ?? 'Brasil',
           dia_vencimento:  aluno.dia_vencimento ?? '',
           tipo_pagamento:  aluno.tipo_pagamento ?? 'mensalidade',
+          forma_pagamento: aluno.forma_pagamento ?? '',
           valor_parcela:   aluno.valor_mensalidade ?? null,
           num_parcelas:    aluno.total_mensalidades ?? null,
         });

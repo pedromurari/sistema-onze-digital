@@ -43,6 +43,7 @@ DECLARE
   v_existente json;
   v_forma text;
   v_valor numeric;
+  v_total_mensalidades integer;
   v_novo_id uuid;
 BEGIN
   IF coalesce(trim(p_nome), '') = '' THEN
@@ -66,12 +67,25 @@ BEGIN
     ELSE 0
   END;
 
+  -- alunos.total_mensalidades tem DEFAULT 15 na tabela -- sem gravar
+  -- explicitamente aqui, avista (1 pagamento) e cartão (12x) herdavam esse
+  -- default errado (achado em teste real 2026-08-26, o contrato mostrava
+  -- "cartão 15x" em vez de "cartão 12x"). Boleto já batia com o default por
+  -- coincidência.
+  v_total_mensalidades := CASE
+    WHEN v_forma = 'avista' THEN 1
+    WHEN v_forma = 'cartao' THEN 12
+    WHEN v_forma = 'boleto' THEN 15
+    ELSE 0
+  END;
+
   INSERT INTO public.alunos (
     nome, email, whatsapp, cpf, rg, sexo, data_nascimento,
     pais, endereco, cep, cidade_estado,
     produto, origem_lead, vendedor_id,
     turma_id, status, data_matricula,
     tipo_pagamento, forma_pagamento, valor_mensalidade, dia_vencimento,
+    total_mensalidades,
     observacoes
   ) VALUES (
     trim(p_nome), nullif(trim(p_email), ''), nullif(trim(p_whatsapp), ''), nullif(trim(p_cpf), ''), nullif(trim(p_rg), ''),
@@ -83,6 +97,7 @@ BEGIN
     CASE WHEN v_forma = 'bolsa' THEN NULL ELSE v_forma END,
     v_valor,
     CASE WHEN v_forma = 'boleto' THEN p_dia_vencimento ELSE NULL END,
+    v_total_mensalidades,
     CASE WHEN v_forma = 'bolsa' AND coalesce(trim(p_codigo_bolsa), '') <> ''
       THEN 'Canal: ' || coalesce(p_canal, 'Direto') || E'\nCódigo de bolsa informado: ' || trim(p_codigo_bolsa)
       ELSE 'Canal: ' || coalesce(p_canal, 'Direto')
@@ -101,4 +116,4 @@ GRANT EXECUTE ON FUNCTION public.matricula_time_comercial_criar(
 ) TO anon, authenticated;
 
 COMMENT ON FUNCTION public.matricula_time_comercial_criar IS
-  'Cria matrícula (aluno) a partir da ficha pública /matricula/:vendedor do Time Comercial. SECURITY DEFINER para não precisar dar SELECT/INSERT direto em alunos pro anon -- ver nota da migration.';
+  'Cria matrícula (aluno) a partir da ficha pública /matricula/:vendedor do Time Comercial. SECURITY DEFINER para não precisar dar SELECT/INSERT direto em alunos pro anon -- ver nota da migration. Grava total_mensalidades explicitamente por plano (corrigido 2026-08-26, antes usava o DEFAULT 15 da coluna mesmo pra avista/cartão).';

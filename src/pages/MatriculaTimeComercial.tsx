@@ -21,7 +21,7 @@
  * boleto, Card Payment Brick) já está testada em produção e não foi
  * alterada aqui — só o layout ao redor dela.
  */
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -51,6 +51,14 @@ declare global {
 const VENDEDORES: Record<string, string> = {
   helen: 'Helen Magna',
   miguel: 'Miguel Fogaça',
+};
+
+// WhatsApp de cada vendedor (com DDI 55, só dígitos) — usado pra redirecionar
+// o aluno assim que o pagamento é confirmado, com uma mensagem pronta de
+// "finalizei a matrícula", pedido explícito do dono do produto.
+const VENDEDOR_WHATSAPP: Record<string, string> = {
+  helen: '5511965781940',
+  miguel: '5511932203852',
 };
 
 // Forma aceita pela RPC matricula_time_comercial_criar (contrato não muda).
@@ -138,13 +146,14 @@ function StatusPagamentoBadge({ status }: { status: string }) {
 }
 
 function PagamentoStep({
-  alunoId, nome, email, cpf, metodoInicial,
+  alunoId, nome, email, cpf, metodoInicial, vendedorWhatsapp,
 }: {
   alunoId: string;
   nome: string;
   email: string;
   cpf: string;
   metodoInicial: MetodoCobravel;
+  vendedorWhatsapp: string;
 }) {
   const [metodo, setMetodo] = useState<MetodoCobravel>(metodoInicial);
   const [publicKey, setPublicKey] = useState<string | null>(null);
@@ -236,6 +245,30 @@ function PagamentoStep({
     return () => { if (pixPollRef.current.timer) clearInterval(pixPollRef.current.timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pix, pixStatus]);
+
+  // ── WhatsApp do vendedor assim que o pagamento confirma ─────────────────────
+  // (PIX aprovado, ou cartão aprovado/em análise) -- pedido explícito do dono
+  // do produto após o teste real mostrar que a página só ficava parada na
+  // tela de sucesso sem indicar o próximo passo pro aluno. Redireciona
+  // automaticamente depois de um tempinho, e também mostra um botão manual
+  // (fallback caso o navegador bloqueie o redirect automático, ou o aluno
+  // feche a aba antes de acontecer).
+  const waUrl = useMemo(() => {
+    const primeiroNome = nome.trim().split(/\s+/)[0] || 'Aluno';
+    const mensagem = `Olá! Sou ${primeiroNome} e acabei de finalizar minha matrícula e o pagamento na Formação em Psicanálise. 🎉`;
+    return `https://wa.me/${vendedorWhatsapp}?text=${encodeURIComponent(mensagem)}`;
+  }, [nome, vendedorWhatsapp]);
+
+  const cartaoOk = cardResultado && ['approved', 'authorized', 'in_process', 'pending'].includes(cardResultado.status);
+  const pagamentoConfirmado = pixStatus === 'approved' || Boolean(cartaoOk);
+
+  const redirectRef = useRef(false);
+  useEffect(() => {
+    if (!pagamentoConfirmado || redirectRef.current) return;
+    redirectRef.current = true;
+    const timer = setTimeout(() => { window.location.href = waUrl; }, 2500);
+    return () => clearTimeout(timer);
+  }, [pagamentoConfirmado, waUrl]);
 
   // ── Cartão (parcelado/recorrente): monta o Card Payment Brick da MP ─────────
   useEffect(() => {
@@ -441,9 +474,17 @@ function PagamentoStep({
                 </p>
               )}
               {pixStatus === 'approved' && (
-                <p style={{ fontSize: '0.9375rem', color: 'var(--text)', fontWeight: 600 }}>
-                  Pagamento confirmado!{metodo === 'boleto' ? ' As próximas 14 parcelas serão geradas e enviadas automaticamente por WhatsApp/e-mail, um boleto por mês.' : ''}
-                </p>
+                <>
+                  <p style={{ fontSize: '0.9375rem', color: 'var(--text)', fontWeight: 600 }}>
+                    Pagamento confirmado!{metodo === 'boleto' ? ' As próximas 14 parcelas serão geradas e enviadas automaticamente por WhatsApp/e-mail, um boleto por mês.' : ''}
+                  </p>
+                  <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+                    Redirecionando para o WhatsApp da sua consultora em instantes...
+                  </p>
+                  <a href={waUrl} className="btn-submit" style={{ marginTop: 'var(--space-3)', display: 'inline-flex' }}>
+                    <span className="btn-text">Voltar a falar com a consultora</span>
+                  </a>
+                </>
               )}
               {metodo === 'boleto' && pixStatus !== 'approved' && (
                 <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', lineHeight: 1.6, textAlign: 'center', maxWidth: 380 }}>
@@ -479,6 +520,12 @@ function PagamentoStep({
                   ? 'Assinatura mensal ativada com sucesso.'
                   : 'Pagamento processado. Sua matrícula está confirmada.'}
               </p>
+              <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+                Redirecionando para o WhatsApp da sua consultora em instantes...
+              </p>
+              <a href={waUrl} className="btn-submit" style={{ display: 'inline-flex' }}>
+                <span className="btn-text">Voltar a falar com a consultora</span>
+              </a>
             </div>
           )}
         </div>
@@ -575,6 +622,7 @@ export default function MatriculaTimeComercial() {
             email={form.email.trim()}
             cpf={form.cpf.trim()}
             metodoInicial={formaPagamento as MetodoCobravel}
+            vendedorWhatsapp={VENDEDOR_WHATSAPP[slug!.toLowerCase()] ?? ''}
           />
         </main>
       </div>
