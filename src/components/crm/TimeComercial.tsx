@@ -91,7 +91,7 @@ const RETORNO_STAGES: { key: TimeComercialStage; label: string; color: string }[
 const stagesForCanal = (canal?: string | null) =>
   canal === 'SDD' ? SDD_STAGES : canal === RETORNO_CANAL ? RETORNO_STAGES : GENERIC_STAGES;
 
-type LeadComCanal = Lead & { canal?: string | null; vendedor?: string | null; lancamentoId?: string | null; cidade?: string | null; campanhaId?: string | null };
+type LeadComCanal = Lead & { canal?: string | null; vendedor?: string | null; lancamentoId?: string | null; cidade?: string | null; campanhaId?: string | null; ultimaAtividade?: string | null };
 
 interface Campanha { id: string; canal: string; nome: string; condicoes: string | null; ativa: boolean; tipo: 'novo' | 'retorno'; }
 
@@ -247,7 +247,7 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
       // interesse_produto é o produto/curso de interesse de verdade (ex: "Psicanálise");
       // `produto` na tabela é categórico (direto/lancamento/npa/time_comercial), não serve
       // pra exibir — sobrescreve o fallback de dbRowToLead que cairia nele por engano.
-      setLeads(data.map((row: any) => ({ ...dbRowToLead(row), canal: row.canal, vendedor: row.vendedor, cursoInteresse: row.interesse_produto || '', lancamentoId: row.lancamento_id, cidade: row.cidade, campanhaId: row.campanha_id })));
+      setLeads(data.map((row: any) => ({ ...dbRowToLead(row), canal: row.canal, vendedor: row.vendedor, cursoInteresse: row.interesse_produto || '', lancamentoId: row.lancamento_id, cidade: row.cidade, campanhaId: row.campanha_id, ultimaAtividade: row.ultima_atividade })));
       setTotalCarregavel(count ?? data.length);
     }
   };
@@ -310,7 +310,16 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
     fetchLeads();
   }, [canalAtivo, campanhaAtiva, buscaDebounced, viewAsName, campanhas]);
 
-  const getLeadsByStage = (stage: TimeComercialStage) => leads.filter((lead) => lead.etapa === stage);
+  // Lead recém pego ou movido de etapa aparece primeiro na coluna --
+  // `ultima_atividade` é atualizada automaticamente por trigger no banco em
+  // qualquer UPDATE do lead, então isso já reflete "pegar lead"/mudança de
+  // etapa sem precisar de lógica extra. Pedido da Helen 2026-08-27: o lead
+  // que ela acabou de pegar/mover precisa ficar visível no topo, não perdido
+  // no meio da coluna ordenado por data de importação antiga.
+  const getLeadsByStage = (stage: TimeComercialStage) =>
+    leads
+      .filter((lead) => lead.etapa === stage)
+      .sort((a, b) => new Date(b.ultimaAtividade || b.criadoEm).getTime() - new Date(a.ultimaAtividade || a.criadoEm).getTime());
 
   // "Novo" só faz sentido como aviso na visão "Todos os canais" — dentro de um canal
   // específico o vendedor já sabe que está olhando pra base daquele canal; o alerta é
@@ -408,10 +417,21 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
     }
   };
 
-  const claimLead = async (lead: Lead) => {
+  const claimLead = async (lead: LeadComCanal) => {
     if (!viewAsName) return;
     try {
-      await (supabase.from('leads') as any).update({ vendedor: viewAsName }).eq('id', lead.id);
+      // No canal Retorno/Base, pegar um lead ainda "frio" (retorno/novo) já
+      // avança ele pra "Aquecimento" -- pedido explícito da Helen (2026-08-27):
+      // antes o lead ficava parado na coluna de entrada até alguém trocar a
+      // etapa manualmente, o que ela achava confuso ("cliquei em pegar e ele
+      // não passou pra aquecimento"). Não mexe em leads que já estão mais
+      // adiante no funil (aquecimento/sdr/closer/matrícula) nem nos outros
+      // canais, que têm funil próprio.
+      const updates: Record<string, unknown> = { vendedor: viewAsName };
+      if (lead.canal === RETORNO_CANAL && ['retorno', 'novo'].includes(lead.etapa as string)) {
+        updates.status = 'aquecimento';
+      }
+      await (supabase.from('leads') as any).update(updates).eq('id', lead.id);
       fetchLeads();
       fetchContagens();
       toast({ title: 'Lead marcado como seu!' });
