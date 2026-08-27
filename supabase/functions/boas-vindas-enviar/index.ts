@@ -10,7 +10,7 @@ function applyVars(text: string, vars: Record<string, string>): string {
   return text.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`);
 }
 
-// ── Áudio: conserto de MP4 não-streamable ───────────────────────────────────
+// ── Áudio: conserto de MP4 não-streamable ─────────────────────────────────────────────
 // A Evolution entrega o áudio ao ffmpeg por um pipe (não-seekable). MP4 com o
 // atom `moov` (o índice) no fim do arquivo não é demuxável assim: o ffmpeg
 // precisaria voltar atrás pra ler os dados que já passaram. Ele falha, e aí um
@@ -182,7 +182,10 @@ async function resolveInstances(
   allActive: EvoInstance[],
 ): Promise<EvoInstance[]> {
   if (cfg.wpp_instance_name) {
-    const scoped = allActive.filter(r => r.instance_name === cfg.wpp_instance_name);
+    // wpp_instance_name aceita uma lista separada por vírgula, pra funis que
+    // querem intercalar entre várias instâncias em vez de usar só uma fixa.
+    const wantedNames = cfg.wpp_instance_name.split(',').map(s => s.trim()).filter(Boolean);
+    const scoped = allActive.filter(r => wantedNames.includes(r.instance_name));
     if (scoped.length) return scoped;
   }
 
@@ -247,7 +250,7 @@ serve(async (req) => {
       });
     }
 
-    // ── Carrega configuração de boas-vindas ───────────────────────────────────
+    // ── Carrega configuração de boas-vindas ────────────────────────────────
     const { data: cfg } = await supabase
       .from('boas_vindas_config')
       .select('*')
@@ -272,8 +275,26 @@ serve(async (req) => {
     let wppError: string | null = null;
     let emailError: string | null = null;
 
-    // ── Envio WhatsApp ────────────────────────────────────────────────────────
-    if (cfg.wpp_ativo && whatsapp) {
+    // Lead já em conversa com o SDR de IA (leads-ia-responder, origem='Direto')
+    // não pode levar por cima um boas-vindas de outro funil -- são scripts
+    // diferentes chegando quase juntos, confunde o lead (ver evo-resposta).
+    let sdrAtivo = false;
+    if (whatsapp) {
+      const s8 = whatsapp.replace(/\D/g, '').slice(-8);
+      if (s8) {
+        const { data: conversaAtiva } = await supabase
+          .from('leads_ia_conversas')
+          .select('id')
+          .in('status', ['ativo', 'aguardando_humano'])
+          .filter('telefone', 'ilike', `%${s8}`)
+          .limit(1)
+          .maybeSingle();
+        sdrAtivo = Boolean(conversaAtiva);
+      }
+    }
+
+    // ── Envio WhatsApp ──────────────────────────────────────────────
+    if (cfg.wpp_ativo && whatsapp && !sdrAtivo) {
       try {
         // Instâncias Evolution
         const { data: evoRows } = await supabase
@@ -285,6 +306,12 @@ serve(async (req) => {
         if (!evoRows?.length) throw new Error('Nenhuma instância Evolution ativa');
 
         const candidateInstances = await resolveInstances(supabase, cfg, evoRows as EvoInstance[]);
+        // Intercala qual instancia comeca a tentativa quando o funil tem mais de uma
+        // configurada (evita sempre cair na mesma primeiro); mantem o failover pras demais.
+        if (candidateInstances.length > 1) {
+          const rotateBy = Math.floor(Date.now() / 1000) % candidateInstances.length;
+          candidateInstances.push(...candidateInstances.splice(0, rotateBy));
+        }
         const connectedFlags = await Promise.all(candidateInstances.map(isInstanceConnected));
         const activeInstances = candidateInstances.filter((_: unknown, i: number) => connectedFlags[i]);
 
@@ -348,9 +375,11 @@ serve(async (req) => {
         wppStatus = 'error';
         wppError  = (e as Error).message;
       }
+    } else if (sdrAtivo) {
+      wppError = 'Pulado: lead já em conversa ativa com o SDR de IA (Direto)';
     }
 
-    // ── Envio Email ───────────────────────────────────────────────────────────
+    // ── Envio Email ──────────────────────────────────────────────
     if (cfg.email_ativo && email) {
       try {
         const assunto = applyVars(cfg.email_assunto, vars);
@@ -374,7 +403,7 @@ serve(async (req) => {
       }
     }
 
-    // ── Log ───────────────────────────────────────────────────────────────────
+    // ── Log ─────────────────────────────────────────────────────────────
     await supabase.from('boas_vindas_logs').insert({
       funnel_name,
       nome:         nome || null,
