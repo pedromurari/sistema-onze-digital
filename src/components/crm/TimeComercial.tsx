@@ -36,7 +36,7 @@ import {
 // compartilham estrutura, so paleta.
 // -----------------------------------------------------------------------
 
-type GenericStage = 'retorno' | 'novo' | 'sdr' | 'closer' | 'matricula';
+type GenericStage = 'retorno' | 'novo' | 'aquecimento' | 'sdr' | 'closer' | 'matricula';
 type SddStage = 'frio' | 'pre_aquecimento' | 'grupo_oferta' | 'primeiro_contato' | 'negociacao' | 'matricula';
 type TimeComercialStage = GenericStage | SddStage;
 
@@ -74,6 +74,23 @@ type CanalAquisicao = typeof CANAIS_AQUISICAO[number];
 // se aplica aqui: esse canal existe justamente pra mostrar essa base.
 const RETORNO_CANAL: CanalAquisicao = 'Retorno/Base';
 
+// Funil próprio do canal Retorno/Base — pedido da Helen (2026-08-27): o funil
+// genérico ia direto de "Novo"/"Retorno" pra "SDR", sem um lugar pra deixar o
+// lead enquanto ela ainda está reaquecendo o contato antes de classificar
+// como SDR de verdade. "Aquecimento" entra como etapa nova só nesse canal —
+// não mexe em nenhum lead existente, é só mais uma opção no seletor de etapa;
+// quem já está em SDR/Closer/etc. continua exatamente onde está.
+const RETORNO_STAGES: { key: TimeComercialStage; label: string; color: string }[] = [
+  { key: 'novo', label: 'Novo', color: 'bg-pipeline-novo' },
+  { key: 'aquecimento', label: 'Aquecimento', color: 'bg-pipeline-followup1' },
+  { key: 'sdr', label: 'SDR', color: 'bg-pipeline-sdr' },
+  { key: 'closer', label: 'Closer', color: 'bg-pipeline-closer' },
+  { key: 'matricula', label: 'Matrícula', color: 'bg-pipeline-matricula' },
+];
+
+const stagesForCanal = (canal?: string | null) =>
+  canal === 'SDD' ? SDD_STAGES : canal === RETORNO_CANAL ? RETORNO_STAGES : GENERIC_STAGES;
+
 type LeadComCanal = Lead & { canal?: string | null; vendedor?: string | null; lancamentoId?: string | null; cidade?: string | null; campanhaId?: string | null };
 
 interface Campanha { id: string; canal: string; nome: string; condicoes: string | null; ativa: boolean; tipo: 'novo' | 'retorno'; }
@@ -92,7 +109,7 @@ interface VendorScopeProps { viewAsName: string | null; }
 
 function stageInfoFor(lead: LeadComCanal) {
   if ((lead.etapa as string) === 'retorno') return RETORNO_STAGE;
-  const stages = lead.canal === 'SDD' ? SDD_STAGES : GENERIC_STAGES;
+  const stages = stagesForCanal(lead.canal);
   return stages.find((s) => s.key === lead.etapa) ?? stages[0];
 }
 
@@ -177,7 +194,17 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
         : (query as any).ilike('nome', `%${buscaDebounced}%`);
     }
 
-    const { data, error, count } = await query.order('criado_em', { ascending: false }).limit(LEADS_RENDER_LIMIT);
+    // Desempate por `id` é essencial pra bases grandes com muitos leads no
+    // mesmo `criado_em` (ex: importação em lote da base antiga) -- sem isso o
+    // Postgres não garante ordem estável entre eles, e um lead que só teve o
+    // `vendedor` atualizado (ex: "Pegar lead") pode sair da janela dos
+    // LEADS_RENDER_LIMIT mais recentes só por causa da reordenação, mesmo sem
+    // nada relevante ter mudado -- parecendo "sumir" da lista mesmo a
+    // contagem (agregada à parte) continuando igual. Achado real 2026-08-27.
+    const { data, error, count } = await query
+      .order('criado_em', { ascending: false })
+      .order('id', { ascending: true })
+      .limit(LEADS_RENDER_LIMIT);
 
     if (error) {
       console.error('Erro ao carregar leads do Time Comercial:', error);
@@ -471,7 +498,7 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
   // lead nela (campanha de reativação) — substitui "Novo" quando é só retorno
   // (campanha 100% de reativação), ou aparece ao lado quando os dois se misturam
   // (ex: "Todas as campanhas" dentro de um canal com campanha nova + de retorno).
-  let activeStages = canalAtivo === 'SDD' ? SDD_STAGES : GENERIC_STAGES;
+  let activeStages = stagesForCanal(canalAtivo);
   {
     // Etapa de entrada "genérica" que "Retorno" substitui/acompanha: "Frio" no
     // funil SDD, "Novo" nos demais canais.
@@ -780,7 +807,7 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
                         <SelectTrigger className="w-full h-8 text-xs bg-card"><SelectValue /></SelectTrigger>
                         <SelectContent className="bg-card border-border z-[100]" position="popper" sideOffset={4}>
                           {(() => {
-                            const base = lead.canal === 'SDD' ? SDD_STAGES : GENERIC_STAGES;
+                            const base = stagesForCanal(lead.canal);
                             return (lead.etapa as string) === 'retorno' ? [RETORNO_STAGE, ...base] : base;
                           })().map((s) => (
                             <SelectItem key={s.key} value={s.key} className="text-xs cursor-pointer">
@@ -864,7 +891,7 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
               const isWhatsapp = item.origem_mudanca === 'contato_whatsapp';
               const isLigacao = item.origem_mudanca === 'contato_ligacao';
               const isContato = isWhatsapp || isLigacao;
-              const stageInfo = (historico.lead.canal === 'SDD' ? SDD_STAGES : GENERIC_STAGES).find((s) => s.key === item.fase_nova);
+              const stageInfo = stagesForCanal(historico.lead.canal).find((s) => s.key === item.fase_nova);
               const titulo = isAtribuicao
                 ? `Lead atribuído a ${item.vendedor}`
                 : isDevolucao
@@ -2114,7 +2141,7 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
   // Linha do tempo "o que eu fiz hoje/ontem/etc" — fica tudo gravado (não
   // reseta), agrupado por dia pra dar pra revisar rapidinho a atividade
   // recente de cada vendedor.
-  const STAGE_LABELS: Record<string, string> = Object.fromEntries([...GENERIC_STAGES, ...SDD_STAGES].map((s) => [s.key, s.label]));
+  const STAGE_LABELS: Record<string, string> = Object.fromEntries([...GENERIC_STAGES, ...SDD_STAGES, ...RETORNO_STAGES, RETORNO_STAGE].map((s) => [s.key, s.label]));
   const descreverAtividade = (item: AtividadeItem) => {
     switch (item.origem_mudanca) {
       case 'criacao': return `Lead entrou (${STAGE_LABELS[item.fase_nova ?? ''] ?? item.fase_nova})`;
