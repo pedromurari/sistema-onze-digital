@@ -166,7 +166,22 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
     return () => clearTimeout(t);
   }, [busca]);
 
-  const fetchLeads = async () => {
+  // Status "de entrada" (lead ainda não trabalhado) -- só esses entram no corte
+  // de LEADS_RENDER_LIMIT. Qualquer lead que já saiu daqui (aquecimento, sdr,
+  // closer, matrícula, ou as etapas próprias do funil SDD) é trabalho ativo de
+  // alguém e nunca pode desaparecer da tela por causa do volume da base fria.
+  // Achado real 2026-08-27: 33 leads que a Helen já tinha movido pra "sdr" no
+  // canal Retorno/Base sumiram da lista porque a base tem quase 12 mil leads
+  // com criado_em parecido (importação em lote) e só os 150 mais recentes
+  // eram buscados -- os 33 dela, mesmo que velhos, tinham status diferente
+  // dos leads "frios" e deveriam sempre aparecer.
+  const STATUS_ENTRADA = ['novo', 'frio', 'retorno'];
+
+  const buildLeadsBaseQuery = () => {
+    // count:'exact' aqui não é afetado por um .limit() aplicado depois --
+    // o PostgREST sempre devolve a contagem total de linhas que batem com
+    // os filtros, então dá pra somar emAndamento.count + deEntrada.count
+    // sem precisar de uma 3ª query só pra contar.
     let query = supabase
       .from('leads')
       .select('*', { count: 'exact' })
@@ -193,19 +208,28 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
         ? (query as any).or(`nome.ilike.%${buscaDebounced}%,telefone.ilike.%${digitos}%`)
         : (query as any).ilike('nome', `%${buscaDebounced}%`);
     }
+    return query;
+  };
 
+  const fetchLeads = async () => {
     // Desempate por `id` é essencial pra bases grandes com muitos leads no
     // mesmo `criado_em` (ex: importação em lote da base antiga) -- sem isso o
     // Postgres não garante ordem estável entre eles, e um lead que só teve o
     // `vendedor` atualizado (ex: "Pegar lead") pode sair da janela dos
     // LEADS_RENDER_LIMIT mais recentes só por causa da reordenação, mesmo sem
-    // nada relevante ter mudado -- parecendo "sumir" da lista mesmo a
-    // contagem (agregada à parte) continuando igual. Achado real 2026-08-27.
-    const { data, error, count } = await query
-      .order('criado_em', { ascending: false })
-      .order('id', { ascending: true })
-      .limit(LEADS_RENDER_LIMIT);
+    // nada relevante ter mudado. Achado real 2026-08-27.
+    const [emAndamento, deEntrada] = await Promise.all([
+      (buildLeadsBaseQuery() as any)
+        .not('status', 'in', `(${STATUS_ENTRADA.join(',')})`)
+        .order('criado_em', { ascending: false }),
+      (buildLeadsBaseQuery() as any)
+        .in('status', STATUS_ENTRADA)
+        .order('criado_em', { ascending: false })
+        .order('id', { ascending: true })
+        .limit(LEADS_RENDER_LIMIT),
+    ]);
 
+    const error = emAndamento.error || deEntrada.error;
     if (error) {
       console.error('Erro ao carregar leads do Time Comercial:', error);
       toast({
@@ -215,6 +239,9 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
       });
       return;
     }
+
+    const data = [...(emAndamento.data ?? []), ...(deEntrada.data ?? [])];
+    const count = (emAndamento.count ?? 0) + (deEntrada.count ?? 0);
 
     if (data) {
       // interesse_produto é o produto/curso de interesse de verdade (ex: "Psicanálise");
