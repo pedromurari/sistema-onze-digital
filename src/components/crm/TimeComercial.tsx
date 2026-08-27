@@ -855,7 +855,13 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
                         <SelectContent className="bg-card border-border z-[100]" position="popper" sideOffset={4}>
                           {(() => {
                             const base = stagesForCanal(lead.canal);
-                            return (lead.etapa as string) === 'retorno' ? [RETORNO_STAGE, ...base] : base;
+                            // "Retorno" sempre aparece como opção pra devolver o lead pra
+                            // base geral no canal Retorno/Base, mesmo quando a etapa atual
+                            // já não é mais 'retorno' -- antes só aparecia se a etapa atual
+                            // já fosse 'retorno', então não dava pra voltar um lead que já
+                            // tinha avançado pra Aquecimento/SDR/etc. Pedido da Helen 2026-08-27.
+                            const mostrarRetorno = (lead.etapa as string) === 'retorno' || lead.canal === RETORNO_CANAL;
+                            return mostrarRetorno ? [RETORNO_STAGE, ...base] : base;
                           })().map((s) => (
                             <SelectItem key={s.key} value={s.key} className="text-xs cursor-pointer">
                               <div className="flex items-center gap-2"><div className={`w-2 h-2 rounded-full ${s.color}`} />{s.label}</div>
