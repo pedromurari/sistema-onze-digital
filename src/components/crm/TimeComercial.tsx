@@ -863,11 +863,11 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
           return (
             <div key={stage.key} className="flex-shrink-0 flex items-stretch gap-3 lg:gap-4">
               {mostraDivisoriaSql && (
-                <div className="relative flex-shrink-0 w-6 self-stretch" title="A partir daqui o lead vira SQL (Sales Qualified Lead)">
-                  <div className="absolute inset-y-2 left-1/2 -translate-x-1/2 w-0.5 rounded-full bg-gradient-to-b from-transparent via-primary/50 to-transparent" />
-                  <span className="absolute -top-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[9px] font-bold text-primary shadow-sm">
+                <div className="flex-shrink-0 flex flex-col items-center self-stretch px-1" title="A partir daqui o lead vira SQL (Sales Qualified Lead)">
+                  <span className="whitespace-nowrap rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[9px] font-bold text-primary shadow-sm mb-1.5">
                     MQL → SQL
                   </span>
+                  <div className="w-0.5 flex-1 rounded-full bg-gradient-to-b from-primary/50 via-primary/50 to-transparent" />
                 </div>
               )}
             <div className={`w-[85vw] sm:w-72 lg:w-80 snap-center lg:snap-align-none ${isLeadsColumn ? 'rounded-lg border-2 border-dashed border-muted-foreground/30 p-1.5 -m-1.5 lg:mr-2' : ''}`}>
