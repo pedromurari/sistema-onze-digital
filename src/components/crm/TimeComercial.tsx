@@ -51,15 +51,48 @@ interface StageInfo { key: TimeComercialStage; label: string; color: string; des
 // vira SQL (Sales Qualified Lead) — antes disso é MQL. A divisória visual
 // MQL/SQL e o selo "SQL" no card usam essa flag.
 const FUNIL_STAGES: StageInfo[] = [
-  { key: 'novo', label: 'Novo', color: 'bg-pipeline-novo', descricao: 'Lead acabou de entrar, ninguém pegou ainda.' },
-  { key: 'primeiro_contato', label: 'Primeiro Contato', color: 'bg-pipeline-sdr', descricao: 'Vendedor pegou o lead, tentando engajar pela primeira vez.' },
-  { key: 'aquecimento', label: 'Aquecimento', color: 'bg-pipeline-aquecimento', descricao: 'Lead respondeu, conversa rolando, ainda entendendo perfil/dor.' },
-  { key: 'qualificado', label: 'Qualificado', color: 'bg-pipeline-handoff', descricao: 'Perfil validado, vale a pena seguir de verdade — vira SQL a partir daqui.', sql: true },
-  { key: 'proposta_enviada', label: 'Proposta Enviada', color: 'bg-pipeline-followup1', descricao: 'Já apresentou a oferta/condição de pagamento.', sql: true },
-  { key: 'negociacao', label: 'Negociação', color: 'bg-pipeline-followup2', descricao: 'Tratando objeção, ajustando condição, perto de fechar.', sql: true },
-  { key: 'followup', label: 'Follow-up', color: 'bg-pipeline-closer', descricao: 'Lead pediu um prazo pra decidir — cronômetro e contador de tentativas rodando.', sql: true },
-  { key: 'aquecimento_conteudo', label: 'Aquecimento de Conteúdo', color: 'bg-pipeline-aquecimento', descricao: 'Estagnou depois de várias tentativas de follow-up — entra em nutrição em vez de abordagem direta.', sql: true },
-  { key: 'matricula', label: 'Matrícula', color: 'bg-pipeline-matricula', descricao: 'Fechou, virou aluno.', sql: true },
+  {
+    key: 'novo', label: 'Novo', color: 'bg-pipeline-novo',
+    descricao: 'Lead recém-chegado ao funil, ainda sem responsável. Fica aqui até alguém pegar e iniciar o atendimento.',
+  },
+  {
+    key: 'primeiro_contato', label: 'Primeiro Contato', color: 'bg-pipeline-sdr',
+    descricao: 'Etapa de abordagem inicial. O lead já tem um responsável e o próximo passo é iniciar a conversa — WhatsApp ou ligação — para começar o atendimento.',
+  },
+  {
+    key: 'aquecimento', label: 'Aquecimento', color: 'bg-pipeline-aquecimento',
+    descricao: 'O lead já respondeu e a conversa está em andamento. Etapa de entender o perfil, a necessidade e o momento da pessoa antes de seguir adiante.',
+  },
+  {
+    key: 'qualificado', label: 'Qualificado', color: 'bg-pipeline-handoff',
+    descricao: 'Marca o momento em que o lead é considerado qualificado: o perfil combina com o que é oferecido e vale a pena seguir negociando. A partir desta etapa o lead passa a ser tratado como SQL (Sales Qualified Lead) — veja a divisória MQL/SQL no funil.',
+    sql: true,
+  },
+  {
+    key: 'proposta_enviada', label: 'Proposta Enviada', color: 'bg-pipeline-followup1',
+    descricao: 'A oferta e as condições de pagamento já foram apresentadas ao lead.',
+    sql: true,
+  },
+  {
+    key: 'negociacao', label: 'Negociação', color: 'bg-pipeline-followup2',
+    descricao: 'Etapa de ajuste final: tratando dúvidas, objeções e condições comerciais antes do fechamento.',
+    sql: true,
+  },
+  {
+    key: 'followup', label: 'Follow-up', color: 'bg-pipeline-closer',
+    descricao: 'Use esta etapa quando o lead pedir um prazo pra decidir (ex.: "só posso comprar depois que terminar meu curso em dezembro"). Ao mover o lead pra cá, o sistema pede a data combinada de retorno e conta automaticamente quantas vezes esse follow-up já foi feito com esse lead (tentativa #1, #2...). Um cronômetro aparece no card lembrando o prazo, e quando a data vence, o sistema avisa automaticamente por WhatsApp. Depois de algumas tentativas sem avanço, o sistema sugere mover o lead pra "Aquecimento de Conteúdo" em vez de continuar insistindo no contato direto.',
+    sql: true,
+  },
+  {
+    key: 'aquecimento_conteudo', label: 'Aquecimento de Conteúdo', color: 'bg-pipeline-aquecimento',
+    descricao: 'Para leads que já passaram por várias tentativas de follow-up sem avançar. Em vez de continuar com abordagem direta, o lead entra numa esteira de conteúdo pra se manter aquecido até estar pronto pra retomar a conversa.',
+    sql: true,
+  },
+  {
+    key: 'matricula', label: 'Matrícula', color: 'bg-pipeline-matricula',
+    descricao: 'O lead fechou e virou aluno.',
+    sql: true,
+  },
 ];
 
 // "Retorno" substitui "Novo" como ponto de entrada — só pra campanhas marcadas como
@@ -480,16 +513,15 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
   const claimLead = async (lead: LeadComCanal) => {
     if (!viewAsName) return;
     try {
-      // No canal Retorno/Base, pegar um lead ainda "frio" (retorno/novo) já
-      // avança ele pra "Aquecimento" -- pedido explícito da Helen (2026-08-27):
-      // antes o lead ficava parado na coluna de entrada até alguém trocar a
-      // etapa manualmente, o que ela achava confuso ("cliquei em pegar e ele
-      // não passou pra aquecimento"). Não mexe em leads que já estão mais
-      // adiante no funil (aquecimento/sdr/closer/matrícula) nem nos outros
-      // canais, que têm funil próprio.
+      // Pegar um lead ainda "frio" (retorno/novo) já avança ele pra "Primeiro
+      // Contato" -- pedido explícito do Pedro/Helen (2026-08-27): antes o
+      // lead ficava parado na coluna de entrada até alguém trocar a etapa
+      // manualmente. Vale pra qualquer canal com o funil fragmentado (todos
+      // exceto SDD, que tem funil próprio e não passa por aqui). Não mexe em
+      // leads que já estão mais adiante no funil.
       const updates: Record<string, unknown> = { vendedor: viewAsName };
-      if (lead.canal === RETORNO_CANAL && ['retorno', 'novo'].includes(lead.etapa as string)) {
-        updates.status = 'aquecimento';
+      if (lead.canal !== 'SDD' && ['retorno', 'novo'].includes(lead.etapa as string)) {
+        updates.status = 'primeiro_contato';
       }
       await (supabase.from('leads') as any).update(updates).eq('id', lead.id);
       fetchLeads();
@@ -831,9 +863,11 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
           return (
             <div key={stage.key} className="flex-shrink-0 flex items-stretch gap-3 lg:gap-4">
               {mostraDivisoriaSql && (
-                <div className="flex flex-col items-center justify-start pt-1 flex-shrink-0" title="A partir daqui o lead vira SQL (Sales Qualified Lead)">
-                  <span className="text-[9px] font-bold text-muted-foreground tracking-wide -rotate-90 whitespace-nowrap mt-8">MQL · SQL</span>
-                  <div className="w-px flex-1 border-l-2 border-dashed border-primary/40 mt-2" />
+                <div className="relative flex-shrink-0 w-6 self-stretch" title="A partir daqui o lead vira SQL (Sales Qualified Lead)">
+                  <div className="absolute inset-y-2 left-1/2 -translate-x-1/2 w-0.5 rounded-full bg-gradient-to-b from-transparent via-primary/50 to-transparent" />
+                  <span className="absolute -top-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[9px] font-bold text-primary shadow-sm">
+                    MQL → SQL
+                  </span>
                 </div>
               )}
             <div className={`w-[85vw] sm:w-72 lg:w-80 snap-center lg:snap-align-none ${isLeadsColumn ? 'rounded-lg border-2 border-dashed border-muted-foreground/30 p-1.5 -m-1.5 lg:mr-2' : ''}`}>
@@ -859,7 +893,7 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
                               <Info className="h-3 w-3" />
                             </button>
                           </PopoverTrigger>
-                          <PopoverContent className="w-64 text-xs" side="top">
+                          <PopoverContent className="w-80 text-xs leading-relaxed" side="top">
                             {(stage as StageInfo).descricao}
                           </PopoverContent>
                         </Popover>
