@@ -15,11 +15,12 @@ export interface VendorRow {
   meta: number;
   vistaCartao: number;
   boleto: number;
+  whatsapp?: string; // DDI 55 + DDD + número, só dígitos -- usado em alertas automáticos (ex: follow-up vencido)
 }
 
 export const INITIAL_VENDORS: VendorRow[] = [
-  { name: 'Helen Magna', role: 'Vendedora', gerente: false, initials: 'HM', cor: '#A93356', meta: 30, vistaCartao: 9, boleto: 21 },
-  { name: 'Miguel Fogaça', role: 'Vendedor', gerente: false, initials: 'MF', cor: '#4A90E2', meta: 30, vistaCartao: 15, boleto: 35 },
+  { name: 'Helen Magna', role: 'Vendedora', gerente: false, initials: 'HM', cor: '#A93356', meta: 30, vistaCartao: 9, boleto: 21, whatsapp: '5511965781940' },
+  { name: 'Miguel Fogaça', role: 'Vendedor', gerente: false, initials: 'MF', cor: '#4A90E2', meta: 30, vistaCartao: 15, boleto: 35, whatsapp: '5511932203852' },
 ];
 
 export const COM_VISTA_CARTAO = 147;

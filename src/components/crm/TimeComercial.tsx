@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { dbRowToLead } from '@/contexts/LeadsContext';
@@ -24,7 +25,7 @@ import {
   MessageCircle, Target, Copy, ExternalLink, Users, TrendingUp, DollarSign, CalendarDays,
   Video, Rocket, Repeat, GraduationCap, Link2, Wallet, CreditCard, Crown, Kanban, ClipboardList,
   Search, X, History, Filter, CornerDownRight, Eye, Zap, BookOpen, Layers, Trash2, RotateCcw,
-  Activity, Percent, BarChart3, Phone, Trophy, Timer,
+  Activity, Percent, BarChart3, Phone, Trophy, Timer, Info, StickyNote, AlarmClock,
 } from 'lucide-react';
 
 // -----------------------------------------------------------------------
@@ -36,31 +37,44 @@ import {
 // compartilham estrutura, so paleta.
 // -----------------------------------------------------------------------
 
-type GenericStage = 'retorno' | 'novo' | 'aquecimento' | 'sdr' | 'closer' | 'matricula';
+type GenericStage =
+  | 'retorno' | 'novo' | 'primeiro_contato' | 'aquecimento' | 'qualificado'
+  | 'proposta_enviada' | 'negociacao' | 'followup' | 'aquecimento_conteudo' | 'matricula';
 type SddStage = 'frio' | 'pre_aquecimento' | 'grupo_oferta' | 'primeiro_contato' | 'negociacao' | 'matricula';
 type TimeComercialStage = GenericStage | SddStage;
 
-// Etapas provisórias — ainda valem pra canais sem funil próprio definido.
-const GENERIC_STAGES: { key: TimeComercialStage; label: string; color: string }[] = [
-  { key: 'novo', label: 'Novo', color: 'bg-pipeline-novo' },
-  { key: 'sdr', label: 'SDR', color: 'bg-pipeline-sdr' },
-  { key: 'closer', label: 'Closer', color: 'bg-pipeline-closer' },
-  { key: 'matricula', label: 'Matrícula', color: 'bg-pipeline-matricula' },
+interface StageInfo { key: TimeComercialStage; label: string; color: string; descricao: string; sql?: boolean; }
+
+// Funil único (2026-08-27, redesenhado com Pedro depois do feedback do Miguel
+// e da Helen) — vale pra todos os canais exceto SDD, que tem funil próprio
+// definido pelo dono do negócio. "sql: true" marca a partir de onde o lead
+// vira SQL (Sales Qualified Lead) — antes disso é MQL. A divisória visual
+// MQL/SQL e o selo "SQL" no card usam essa flag.
+const FUNIL_STAGES: StageInfo[] = [
+  { key: 'novo', label: 'Novo', color: 'bg-pipeline-novo', descricao: 'Lead acabou de entrar, ninguém pegou ainda.' },
+  { key: 'primeiro_contato', label: 'Primeiro Contato', color: 'bg-pipeline-sdr', descricao: 'Vendedor pegou o lead, tentando engajar pela primeira vez.' },
+  { key: 'aquecimento', label: 'Aquecimento', color: 'bg-pipeline-aquecimento', descricao: 'Lead respondeu, conversa rolando, ainda entendendo perfil/dor.' },
+  { key: 'qualificado', label: 'Qualificado', color: 'bg-pipeline-handoff', descricao: 'Perfil validado, vale a pena seguir de verdade — vira SQL a partir daqui.', sql: true },
+  { key: 'proposta_enviada', label: 'Proposta Enviada', color: 'bg-pipeline-followup1', descricao: 'Já apresentou a oferta/condição de pagamento.', sql: true },
+  { key: 'negociacao', label: 'Negociação', color: 'bg-pipeline-followup2', descricao: 'Tratando objeção, ajustando condição, perto de fechar.', sql: true },
+  { key: 'followup', label: 'Follow-up', color: 'bg-pipeline-closer', descricao: 'Lead pediu um prazo pra decidir — cronômetro e contador de tentativas rodando.', sql: true },
+  { key: 'aquecimento_conteudo', label: 'Aquecimento de Conteúdo', color: 'bg-pipeline-aquecimento', descricao: 'Estagnou depois de várias tentativas de follow-up — entra em nutrição em vez de abordagem direta.', sql: true },
+  { key: 'matricula', label: 'Matrícula', color: 'bg-pipeline-matricula', descricao: 'Fechou, virou aluno.', sql: true },
 ];
 
 // "Retorno" substitui "Novo" como ponto de entrada — só pra campanhas marcadas como
 // tipo "retorno" (lead que já existia no sistema antes, não é contato inédito). Não
 // é uma etapa genérica fixa: só aparece na aba quando existe algum lead nela.
-const RETORNO_STAGE: { key: TimeComercialStage; label: string; color: string } = { key: 'retorno', label: 'Retorno', color: 'bg-pipeline-followup3' };
+const RETORNO_STAGE: StageInfo = { key: 'retorno', label: 'Retorno', color: 'bg-pipeline-followup3', descricao: 'Lead voltou da base antiga (reimportada), ainda não trabalhado nesse ciclo.' };
 
 // Funil próprio do canal SDD (Semana do Despertar) — definido pelo dono do negócio.
-const SDD_STAGES: { key: TimeComercialStage; label: string; color: string }[] = [
-  { key: 'frio', label: 'Frio', color: 'bg-pipeline-sdr' },
-  { key: 'pre_aquecimento', label: 'Pré-aquecimento', color: 'bg-pipeline-followup1' },
-  { key: 'grupo_oferta', label: 'Grupo de Oferta', color: 'bg-pipeline-aquecimento' },
-  { key: 'primeiro_contato', label: 'Primeiro contato', color: 'bg-pipeline-followup2' },
-  { key: 'negociacao', label: 'Negociação', color: 'bg-pipeline-closer' },
-  { key: 'matricula', label: 'Matrícula', color: 'bg-pipeline-matricula' },
+const SDD_STAGES: StageInfo[] = [
+  { key: 'frio', label: 'Frio', color: 'bg-pipeline-sdr', descricao: 'Captado num lançamento, ainda não assistiu/avançou.' },
+  { key: 'pre_aquecimento', label: 'Pré-aquecimento', color: 'bg-pipeline-followup1', descricao: 'Confirmado na turma, esquenta antes da semana ao vivo.' },
+  { key: 'grupo_oferta', label: 'Grupo de Oferta', color: 'bg-pipeline-aquecimento', descricao: 'Entrou no grupo de oferta da turma.' },
+  { key: 'primeiro_contato', label: 'Primeiro contato', color: 'bg-pipeline-followup2', descricao: 'Vendedor abordou pela primeira vez.' },
+  { key: 'negociacao', label: 'Negociação', color: 'bg-pipeline-closer', descricao: 'Tratando objeção, perto de fechar.' },
+  { key: 'matricula', label: 'Matrícula', color: 'bg-pipeline-matricula', descricao: 'Fechou, virou aluno.' },
 ];
 
 // Canal de aquisição — campo próprio (`leads.canal`), separado de `origem`
@@ -74,24 +88,14 @@ type CanalAquisicao = typeof CANAIS_AQUISICAO[number];
 // se aplica aqui: esse canal existe justamente pra mostrar essa base.
 const RETORNO_CANAL: CanalAquisicao = 'Retorno/Base';
 
-// Funil próprio do canal Retorno/Base — pedido da Helen (2026-08-27): o funil
-// genérico ia direto de "Novo"/"Retorno" pra "SDR", sem um lugar pra deixar o
-// lead enquanto ela ainda está reaquecendo o contato antes de classificar
-// como SDR de verdade. "Aquecimento" entra como etapa nova só nesse canal —
-// não mexe em nenhum lead existente, é só mais uma opção no seletor de etapa;
-// quem já está em SDR/Closer/etc. continua exatamente onde está.
-const RETORNO_STAGES: { key: TimeComercialStage; label: string; color: string }[] = [
-  { key: 'novo', label: 'Novo', color: 'bg-pipeline-novo' },
-  { key: 'aquecimento', label: 'Aquecimento', color: 'bg-pipeline-followup1' },
-  { key: 'sdr', label: 'SDR', color: 'bg-pipeline-sdr' },
-  { key: 'closer', label: 'Closer', color: 'bg-pipeline-closer' },
-  { key: 'matricula', label: 'Matrícula', color: 'bg-pipeline-matricula' },
-];
-
 const stagesForCanal = (canal?: string | null) =>
-  canal === 'SDD' ? SDD_STAGES : canal === RETORNO_CANAL ? RETORNO_STAGES : GENERIC_STAGES;
+  canal === 'SDD' ? SDD_STAGES : FUNIL_STAGES;
 
-type LeadComCanal = Lead & { canal?: string | null; vendedor?: string | null; lancamentoId?: string | null; cidade?: string | null; campanhaId?: string | null; ultimaAtividade?: string | null };
+type LeadComCanal = Lead & {
+  canal?: string | null; vendedor?: string | null; lancamentoId?: string | null; cidade?: string | null;
+  campanhaId?: string | null; ultimaAtividade?: string | null;
+  followupManualPrazo?: string | null; followupManualTentativas?: number | null; observacoes?: string | null;
+};
 
 interface Campanha { id: string; canal: string; nome: string; condicoes: string | null; ativa: boolean; tipo: 'novo' | 'retorno'; }
 
@@ -247,7 +251,11 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
       // interesse_produto é o produto/curso de interesse de verdade (ex: "Psicanálise");
       // `produto` na tabela é categórico (direto/lancamento/npa/time_comercial), não serve
       // pra exibir — sobrescreve o fallback de dbRowToLead que cairia nele por engano.
-      setLeads(data.map((row: any) => ({ ...dbRowToLead(row), canal: row.canal, vendedor: row.vendedor, cursoInteresse: row.interesse_produto || '', lancamentoId: row.lancamento_id, cidade: row.cidade, campanhaId: row.campanha_id, ultimaAtividade: row.ultima_atividade })));
+      setLeads(data.map((row: any) => ({
+        ...dbRowToLead(row), canal: row.canal, vendedor: row.vendedor, cursoInteresse: row.interesse_produto || '',
+        lancamentoId: row.lancamento_id, cidade: row.cidade, campanhaId: row.campanha_id, ultimaAtividade: row.ultima_atividade,
+        followupManualPrazo: row.followup_manual_prazo, followupManualTentativas: row.followup_manual_tentativas, observacoes: row.observacoes,
+      })));
       setTotalCarregavel(count ?? data.length);
     }
   };
@@ -348,6 +356,16 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
     return horas > 0 ? `${horas}h restantes` : `${minutos}min restantes`;
   };
 
+  // Cronômetro do follow-up manual: "volta em Xd" / "vence hoje" / "atrasado Xd".
+  const followupCountdown = (prazo: string): { texto: string; atrasado: boolean } => {
+    const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+    const dataPrazo = new Date(prazo + 'T00:00:00');
+    const dias = Math.round((dataPrazo.getTime() - hoje.getTime()) / (24 * 60 * 60 * 1000));
+    if (dias > 0) return { texto: `volta em ${dias}d`, atrasado: false };
+    if (dias === 0) return { texto: 'vence hoje', atrasado: false };
+    return { texto: `atrasado ${Math.abs(dias)}d`, atrasado: true };
+  };
+
   // Pill do canal não conta leads de campanha de retorno — só o que está "em jogo"
   // agora (funil principal + campanhas de contato novo). A base antiga continua
   // visível e contada normalmente dentro do seletor de campanha, só não infla esse número.
@@ -407,7 +425,10 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
     fetchCampanhas();
   };
 
-  const handleStageChange = async (lead: Lead, newStage: TimeComercialStage) => {
+  const handleStageChange = async (lead: LeadComCanal, newStage: TimeComercialStage) => {
+    // "Follow-up" sempre pede a data de retorno primeiro -- não muda a etapa
+    // direto, abre o dialog (ver abrirFollowup). Pedido do Pedro 2026-08-27.
+    if (newStage === 'followup') { abrirFollowup(lead); return; }
     try {
       await supabase.from('leads').update({ status: newStage }).eq('id', lead.id);
       fetchLeads();
@@ -415,6 +436,45 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Não foi possível alterar a etapa', description: error?.message || 'Tente novamente.' });
     }
+  };
+
+  // ── Follow-up manual (etapa "Follow-up") ────────────────────────────────
+  // Ao mover um lead pra essa etapa, pede a data de retorno -- cada vez que
+  // isso acontece conta como uma tentativa nova (followup_manual_tentativas).
+  // Depois de FOLLOWUP_SUGESTAO_APOS tentativas, o card sugere (sem forçar)
+  // mover pra "Aquecimento de Conteúdo" em vez de continuar tentando. Pedido
+  // do Pedro 2026-08-27, depois da conversa com o Miguel sobre follow-up.
+  const FOLLOWUP_SUGESTAO_APOS = 3;
+  const [leadParaFollowup, setLeadParaFollowup] = useState<LeadComCanal | null>(null);
+  const [followupPrazo, setFollowupPrazo] = useState('');
+  const [salvandoFollowup, setSalvandoFollowup] = useState(false);
+
+  const abrirFollowup = (lead: LeadComCanal) => {
+    setLeadParaFollowup(lead);
+    const daquiATresDias = new Date();
+    daquiATresDias.setDate(daquiATresDias.getDate() + 3);
+    setFollowupPrazo(daquiATresDias.toISOString().slice(0, 10));
+  };
+
+  const salvarFollowup = async () => {
+    if (!leadParaFollowup || !followupPrazo) return;
+    setSalvandoFollowup(true);
+    const tentativas = (leadParaFollowup.followupManualTentativas ?? 0) + 1;
+    const { error } = await (supabase.from('leads') as any).update({
+      status: 'followup',
+      followup_manual_prazo: followupPrazo,
+      followup_manual_tentativas: tentativas,
+      followup_manual_ultima_em: new Date().toISOString(),
+    }).eq('id', leadParaFollowup.id);
+    setSalvandoFollowup(false);
+    if (error) {
+      toast({ variant: 'destructive', title: 'Não foi possível marcar o follow-up', description: error.message });
+      return;
+    }
+    setLeadParaFollowup(null);
+    fetchLeads();
+    fetchContagens();
+    toast({ title: `Follow-up #${tentativas} marcado!` });
   };
 
   const claimLead = async (lead: LeadComCanal) => {
@@ -508,6 +568,19 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
     }
     setLeadParaLigacao(null);
     toast({ title: 'Ligação registrada!' });
+  };
+
+  // Nota manual por lead ("Rodrygo me passou..." -> pedido do Miguel 2026-08-27:
+  // deixar anotado que uma cliente só compra em dezembro, por exemplo). Usa a
+  // coluna `observacoes` que já existia no banco, só faltava a telinha.
+  const salvarNota = async (lead: LeadComCanal, texto: string) => {
+    if (texto === (lead.observacoes ?? '')) return;
+    const { error } = await supabase.from('leads').update({ observacoes: texto || null }).eq('id', lead.id);
+    if (error) {
+      toast({ variant: 'destructive', title: 'Não foi possível salvar a nota', description: error.message });
+      return;
+    }
+    fetchLeads();
   };
 
   const [leadParaExcluir, setLeadParaExcluir] = useState<LeadComCanal | null>(null);
@@ -677,6 +750,16 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
           hint={leadsAtribuidos > 0 ? `${((leadsEmMatricula / leadsAtribuidos) * 100).toFixed(1)}% dos leads em gestão (com vendedor)` : 'Nenhum lead com vendedor ainda'}
           icon={TrendingUp}
         />
+        <StatTile
+          label="Aguardando Follow-up"
+          value={contagemFiltrada((c) => totalLeadsPred(c) && c.status === 'followup')}
+          hint={(() => {
+            const hojeIso = new Date().toISOString().slice(0, 10);
+            const vencidos = leads.filter((l) => (l.etapa as string) === 'followup' && l.followupManualPrazo && l.followupManualPrazo <= hojeIso).length;
+            return vencidos > 0 ? `${vencidos} já venceu o prazo` : 'Nenhum venceu o prazo ainda';
+          })()}
+          icon={AlarmClock}
+        />
       </div>
 
       {metricasTurma.length > 0 && canalAtivo === 'SDD' && (
@@ -737,11 +820,23 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
         </p>
       )}
       <div className="flex-1 flex gap-3 lg:gap-4 overflow-x-auto pb-4 snap-x snap-mandatory lg:snap-none min-h-0">
-        {displayColumns.map((stage) => {
+        {displayColumns.map((stage, idx) => {
           const stageLeads = stage.key === LEADS_COLUMN_KEY ? leadsVisiveis : getLeadsByStage(stage.key as TimeComercialStage);
           const isLeadsColumn = stage.key === LEADS_COLUMN_KEY;
+          // Divisória MQL/SQL: aparece bem à esquerda da primeira coluna marcada
+          // "sql: true" no funil, desde que a coluna anterior não seja também SQL
+          // (evita repetir a divisória entre duas colunas SQL seguidas).
+          const anterior = displayColumns[idx - 1] as StageInfo | undefined;
+          const mostraDivisoriaSql = (stage as StageInfo).sql && !anterior?.sql;
           return (
-            <div key={stage.key} className={`flex-shrink-0 w-[85vw] sm:w-72 lg:w-80 snap-center lg:snap-align-none ${isLeadsColumn ? 'rounded-lg border-2 border-dashed border-muted-foreground/30 p-1.5 -m-1.5 lg:mr-2' : ''}`}>
+            <div key={stage.key} className="flex-shrink-0 flex items-stretch gap-3 lg:gap-4">
+              {mostraDivisoriaSql && (
+                <div className="flex flex-col items-center justify-start pt-1 flex-shrink-0" title="A partir daqui o lead vira SQL (Sales Qualified Lead)">
+                  <span className="text-[9px] font-bold text-muted-foreground tracking-wide -rotate-90 whitespace-nowrap mt-8">MQL · SQL</span>
+                  <div className="w-px flex-1 border-l-2 border-dashed border-primary/40 mt-2" />
+                </div>
+              )}
+            <div className={`w-[85vw] sm:w-72 lg:w-80 snap-center lg:snap-align-none ${isLeadsColumn ? 'rounded-lg border-2 border-dashed border-muted-foreground/30 p-1.5 -m-1.5 lg:mr-2' : ''}`}>
               {isLeadsColumn ? (
                 <div className="rounded-t-md p-2.5 lg:p-3 bg-muted border-b-2 border-dashed border-muted-foreground/30">
                   <div className="flex items-center justify-between">
@@ -755,7 +850,21 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
               ) : (
                 <div className={`rounded-t-lg p-2.5 lg:p-3 ${stage.color}`}>
                   <div className="flex items-center justify-between">
-                    <span className="font-semibold text-primary-foreground text-sm lg:text-base">{stage.label}</span>
+                    <span className="font-semibold text-primary-foreground text-sm lg:text-base inline-flex items-center gap-1">
+                      {stage.label}
+                      {(stage as StageInfo).descricao && (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <button type="button" className="text-primary-foreground/70 hover:text-primary-foreground" title="O que é essa etapa?">
+                              <Info className="h-3 w-3" />
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-64 text-xs" side="top">
+                            {(stage as StageInfo).descricao}
+                          </PopoverContent>
+                        </Popover>
+                      )}
+                    </span>
                     <Badge variant="secondary" className="bg-primary-foreground/20 text-primary-foreground border-0 text-xs">{stageLeads.length}</Badge>
                   </div>
                 </div>
@@ -784,7 +893,23 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
                           {prazoBonusRestante(lead) && (
                             <Badge className="text-[10px] bg-warning/15 text-warning border border-warning/30">⏱ {prazoBonusRestante(lead)} · bônus matrícula</Badge>
                           )}
+                          {stageInfoFor(lead).sql && (
+                            <Badge className="text-[10px] bg-primary text-primary-foreground border-0">SQL</Badge>
+                          )}
+                          {(lead.etapa as string) === 'followup' && lead.followupManualPrazo && (() => {
+                            const { texto, atrasado } = followupCountdown(lead.followupManualPrazo!);
+                            return (
+                              <Badge className={`text-[10px] border ${atrasado ? 'bg-destructive/15 text-destructive border-destructive/30' : 'bg-primary/10 text-primary border-primary/30'}`}>
+                                <AlarmClock className="h-2.5 w-2.5 mr-1 inline" />{texto} · #{lead.followupManualTentativas ?? 1}
+                              </Badge>
+                            );
+                          })()}
                         </div>
+                        {(lead.etapa as string) === 'followup' && (lead.followupManualTentativas ?? 0) >= FOLLOWUP_SUGESTAO_APOS && (
+                          <p className="text-[10px] text-warning mt-1">
+                            Já são {lead.followupManualTentativas} tentativas — considera mover pra "Aquecimento de Conteúdo".
+                          </p>
+                        )}
                       </div>
                       <div className="flex gap-2 mb-2 lg:mb-3">
                         <button
@@ -810,6 +935,27 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
                         >
                           <History className="h-3.5 w-3.5 text-muted-foreground" />
                         </button>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <button
+                              type="button"
+                              title="Nota sobre esse lead"
+                              className="h-8 w-8 flex-shrink-0 inline-flex items-center justify-center rounded-md border border-border bg-card hover:bg-muted transition-colors relative"
+                            >
+                              <StickyNote className="h-3.5 w-3.5 text-muted-foreground" />
+                              {lead.observacoes && <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-primary" />}
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-72" side="top">
+                            <p className="text-xs font-medium mb-1.5">Nota sobre esse lead</p>
+                            <Textarea
+                              defaultValue={lead.observacoes ?? ''}
+                              placeholder='Ex: "só compra em dezembro, depois do curso dela"'
+                              className="text-xs min-h-20"
+                              onBlur={(e) => salvarNota(lead, e.target.value)}
+                            />
+                          </PopoverContent>
+                        </Popover>
                         <button
                           type="button"
                           onClick={() => setLeadParaExcluir(lead)}
@@ -874,6 +1020,7 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
                 })}
                 {stageLeads.length === 0 && <div className="text-center py-6 lg:py-8 text-muted-foreground text-xs lg:text-sm">Nenhum lead nesta etapa</div>}
               </div>
+            </div>
             </div>
           );
         })}
@@ -1054,6 +1201,34 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
             <Button variant="outline" size="sm" onClick={() => setLeadParaLigacao(null)}>Cancelar</Button>
             <Button size="sm" onClick={salvarLigacao} disabled={salvandoLigacao || !ligacaoDataHora || !ligacaoVendedor}>
               {salvandoLigacao ? 'Salvando...' : 'Salvar ligação'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!leadParaFollowup} onOpenChange={(open) => !open && setLeadParaFollowup(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <AlarmClock size={16} /> Marcar follow-up — {leadParaFollowup?.nome}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <div>
+              <Label className="text-xs">Quando você vai voltar nesse lead?</Label>
+              <Input type="date" value={followupPrazo} onChange={(e) => setFollowupPrazo(e.target.value)} className="h-9 text-sm mt-1" />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Essa será a tentativa <strong>#{(leadParaFollowup?.followupManualTentativas ?? 0) + 1}</strong> com esse lead.
+              {(leadParaFollowup?.followupManualTentativas ?? 0) + 1 >= FOLLOWUP_SUGESTAO_APOS && (
+                <> Depois dessa, considera mover pra "Aquecimento de Conteúdo" em vez de continuar tentando.</>
+              )}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setLeadParaFollowup(null)}>Cancelar</Button>
+            <Button size="sm" onClick={salvarFollowup} disabled={salvandoFollowup || !followupPrazo}>
+              {salvandoFollowup ? 'Salvando...' : 'Marcar follow-up'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2194,7 +2369,7 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
   // Linha do tempo "o que eu fiz hoje/ontem/etc" — fica tudo gravado (não
   // reseta), agrupado por dia pra dar pra revisar rapidinho a atividade
   // recente de cada vendedor.
-  const STAGE_LABELS: Record<string, string> = Object.fromEntries([...GENERIC_STAGES, ...SDD_STAGES, ...RETORNO_STAGES, RETORNO_STAGE].map((s) => [s.key, s.label]));
+  const STAGE_LABELS: Record<string, string> = Object.fromEntries([...FUNIL_STAGES, ...SDD_STAGES, RETORNO_STAGE].map((s) => [s.key, s.label]));
   const descreverAtividade = (item: AtividadeItem) => {
     switch (item.origem_mudanca) {
       case 'criacao': return `Lead entrou (${STAGE_LABELS[item.fase_nova ?? ''] ?? item.fase_nova})`;
