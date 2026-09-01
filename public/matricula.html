@@ -1,0 +1,2760 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ficha de Matrícula Oficial | IDM — Instituto Despertamente</title>
+  <meta name="description" content="Formulário oficial de matrícula nas Formações de Psicanálise do Instituto Despertamente." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── TOKENS ─────────────────────────────────────── */
+    :root {
+      --navy:         #1C2B4A;
+      --navy-dark:    #111C30;
+      --navy-deeper:  #0A1020;
+      --surface:      #FAFAF7;
+      --surface-alt:  #F0EFE9;
+      --text:         #1C1C1A;
+      --text-muted:   #6B6B5F;
+      --gold:         #B8960C;
+      --gold-light:   #D4A817;
+      --gold-pale:    #F5ECC8;
+      --border:       rgba(28,43,74,0.12);
+      --border-gold:  rgba(184,150,12,0.3);
+      --error:        #8B1A1A;
+      --font-heading: 'Poppins', system-ui, sans-serif;
+      --font-body:    'Poppins', system-ui, sans-serif;
+      --ease-expo:    cubic-bezier(0.16, 1, 0.3, 1);
+      --space-1: 4px; --space-2: 8px; --space-3: 12px;
+      --space-4: 16px; --space-5: 20px; --space-6: 24px;
+      --space-8: 32px; --space-10: 40px; --space-12: 48px;
+      --space-16: 64px; --space-24: 96px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--surface);
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 1rem;
+      line-height: 1.6;
+      font-weight: 400;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
+
+    /* ── LOADING ──────────────────────────────────── */
+    #loading-screen {
+      position: fixed; inset: 0; z-index: 200;
+      background: var(--navy-deeper);
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: var(--space-6);
+      transition: opacity 0.6s var(--ease-expo);
+    }
+    #loading-screen.out { opacity: 0; pointer-events: none; }
+
+    .loading-seal {
+      width: 64px; height: 64px;
+      border: 1px solid rgba(184,150,12,0.4);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      animation: rotateSeal 8s linear infinite;
+    }
+    @keyframes rotateSeal {
+      to { transform: rotate(360deg); }
+    }
+    .loading-seal-inner {
+      font-family: var(--font-heading);
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--gold-light);
+      letter-spacing: 0.05em;
+      animation: rotateSeal 8s linear infinite reverse;
+    }
+    .loading-wordmark {
+      font-family: var(--font-heading);
+      font-size: 14px;
+      font-weight: 400;
+      letter-spacing: 0.35em;
+      text-transform: uppercase;
+      color: rgba(245,240,228,0.5);
+    }
+
+    /* ── SUCCESS SCREEN ───────────────────────────── */
+    #success-screen {
+      display: none;
+      position: fixed; inset: 0; z-index: 100;
+      background: var(--navy-deeper);
+      overflow-y: auto;
+    }
+    #success-screen.show { display: block; animation: fadeIn 0.7s var(--ease-expo); }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
+
+    .obrigado-wrap {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: var(--space-12) var(--space-6);
+      text-align: center;
+      position: relative;
+    }
+
+    /* estrelas decorativas */
+    .obrigado-wrap::before {
+      content: '✦';
+      position: absolute; top: 48px; left: 50%;
+      transform: translateX(-50%);
+      font-size: 10px;
+      color: var(--gold);
+      letter-spacing: 24px;
+      opacity: 0.5;
+    }
+
+    .obrigado-seal {
+      width: 88px; height: 88px;
+      border: 1px solid var(--gold);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto var(--space-8);
+      position: relative;
+      animation: glowSeal 3s ease-in-out infinite;
+    }
+    @keyframes glowSeal {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(184,150,12,0); }
+      50%       { box-shadow: 0 0 24px 4px rgba(184,150,12,0.18); }
+    }
+    .obrigado-seal::before {
+      content: '';
+      position: absolute; inset: 6px;
+      border: 1px solid rgba(184,150,12,0.25);
+      border-radius: 50%;
+    }
+    .obrigado-check {
+      font-size: 32px; color: var(--gold); line-height: 1;
+    }
+
+    .obrigado-eyebrow {
+      font-size: 0.6875rem;
+      font-weight: 700;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: var(--space-4);
+    }
+
+    .obrigado-title {
+      font-family: var(--font-heading);
+      font-size: clamp(2rem, 6vw, 3.75rem);
+      font-weight: 700;
+      color: #F5F0E4;
+      line-height: 1.1;
+      margin-bottom: var(--space-3);
+      letter-spacing: -0.02em;
+    }
+
+    .obrigado-instituto {
+      font-family: var(--font-heading);
+      font-size: clamp(1.1rem, 3vw, 1.6rem);
+      font-weight: 400;
+      color: var(--gold-light);
+      margin-bottom: var(--space-8);
+      letter-spacing: 0.02em;
+    }
+
+    .obrigado-rule {
+      width: 48px; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--gold), transparent);
+      margin: 0 auto var(--space-8);
+    }
+
+    .obrigado-card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(184,150,12,0.2);
+      padding: var(--space-6) var(--space-8);
+      max-width: 440px;
+      margin: 0 auto var(--space-8);
+    }
+    .obrigado-card p {
+      font-size: 0.9375rem;
+      color: rgba(245,240,228,0.7);
+      line-height: 1.75;
+    }
+    .obrigado-card strong {
+      color: #F5F0E4;
+      font-weight: 600;
+    }
+
+    .obrigado-wpp {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-3);
+      background: #1A5C2A;
+      color: #fff;
+      padding: var(--space-4) var(--space-8);
+      font-family: var(--font-body);
+      font-size: 0.875rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-decoration: none;
+      transition: background 0.15s;
+      margin-top: var(--space-4);
+    }
+    .obrigado-wpp:hover { background: #144822; }
+
+    .obrigado-footer-note {
+      margin-top: var(--space-10);
+      font-size: 0.75rem;
+      color: rgba(245,240,228,0.2);
+      letter-spacing: 0.08em;
+    }
+
+    /* ── CORTESIA (payment screen) ─────────────────── */
+    .cortesia-box {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: var(--space-10) var(--space-6);
+      gap: var(--space-5);
+    }
+    .cortesia-box.show { display: flex; }
+    .cortesia-icon { font-size: 48px; }
+    .cortesia-title {
+      font-family: var(--font-heading);
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--navy);
+    }
+    .cortesia-sub {
+      font-size: 0.9375rem;
+      color: var(--text-muted);
+      max-width: 360px;
+      line-height: 1.7;
+    }
+
+    /* ── CORTESIA GATE (código de autorização) ───────── */
+    .cortesia-gate {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-3);
+    }
+    .cortesia-gate-text {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      line-height: 1.55;
+    }
+    .cortesia-gate-row {
+      display: flex;
+      gap: var(--space-2);
+    }
+    .cortesia-gate-row input {
+      flex: 1;
+      min-width: 0;
+    }
+    .btn-cortesia-validar {
+      padding: 0 var(--space-5);
+      background: var(--navy);
+      color: #F5F0E4;
+      border: none;
+      font-family: var(--font-body);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .btn-cortesia-validar:hover { background: var(--navy-dark); }
+    .cortesia-gate-msg {
+      display: none;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.75rem;
+    }
+    .cortesia-gate-msg.show { display: flex; }
+    .cortesia-gate-msg.error { color: var(--error); }
+
+    /* ── ERROR SCREEN ─────────────────────────────── */
+    #error-screen { display: none; text-align: center; padding: var(--space-24) var(--space-6); }
+    #error-screen.show { display: block; }
+
+    /* ── HEADER ───────────────────────────────────── */
+    .site-header {
+      background: var(--navy-deeper);
+      position: relative;
+      overflow: hidden;
+    }
+    .site-header::after {
+      content: '';
+      position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent 0%, var(--gold) 30%, var(--gold-light) 50%, var(--gold) 70%, transparent 100%);
+    }
+
+    /* Deco grid lines */
+    .header-deco {
+      position: absolute; inset: 0; pointer-events: none; overflow: hidden;
+    }
+    .header-deco::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 50%; transform: translateX(-50%);
+      width: 600px; height: 600px;
+      border: 1px solid rgba(184,150,12,0.06);
+      border-radius: 50%;
+      top: -200px;
+    }
+    .header-deco::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 50%; transform: translateX(-50%);
+      width: 400px; height: 400px;
+      border: 1px solid rgba(184,150,12,0.05);
+      border-radius: 50%;
+      top: -120px;
+    }
+
+    .header-inner {
+      position: relative; z-index: 1;
+      max-width: 720px;
+      margin: 0 auto;
+      padding: var(--space-16) var(--space-6) var(--space-12);
+      text-align: center;
+    }
+
+    .header-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-3);
+      margin-bottom: var(--space-8);
+    }
+    .badge-line {
+      width: 32px; height: 1px;
+      background: rgba(184,150,12,0.5);
+    }
+    .badge-text {
+      font-family: var(--font-body);
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold);
+    }
+
+    .header-seal {
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto var(--space-6);
+    }
+    .header-seal-letters {
+      font-family: var(--font-heading);
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      color: var(--gold-light);
+    }
+
+    .header-kicker {
+      font-family: var(--font-body);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: rgba(245,240,228,0.5);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: var(--space-4);
+    }
+
+    .header-title {
+      font-family: var(--font-heading);
+      font-size: clamp(2.2rem, 6vw, 4rem);
+      font-weight: 700;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      color: #F5F0E4;
+      margin-bottom: var(--space-5);
+    }
+    .header-title em {
+      display: block;
+      font-style: normal;
+      font-weight: 700;
+      color: var(--gold-light);
+    }
+
+    #lancamento-nome {
+      font-family: var(--font-body);
+      font-size: 0.9375rem;
+      font-weight: 400;
+      color: rgba(245,240,228,0.45);
+      margin-bottom: var(--space-8);
+      min-height: 1.5em;
+    }
+
+    .header-meta {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-6);
+      flex-wrap: wrap;
+    }
+    .meta-item {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      font-size: 0.75rem;
+      color: rgba(245,240,228,0.35);
+      letter-spacing: 0.05em;
+    }
+    .meta-dot {
+      width: 3px; height: 3px;
+      background: rgba(184,150,12,0.5);
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ── PROGRESS STEPS ───────────────────────────── */
+    .steps-bar {
+      background: var(--navy);
+      border-bottom: 1px solid rgba(28,43,74,0.3);
+    }
+    .steps-inner {
+      max-width: 720px; margin: 0 auto;
+      padding: var(--space-4) var(--space-6);
+      display: flex; align-items: center; gap: 0;
+    }
+    .step-item {
+      display: flex; align-items: center; gap: var(--space-2);
+      flex: 1;
+    }
+    .step-circle {
+      width: 24px; height: 24px; border-radius: 50%;
+      border: 1px solid rgba(184,150,12,0.3);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.625rem; font-weight: 600;
+      color: rgba(184,150,12,0.5);
+      flex-shrink: 0;
+      transition: all 0.3s;
+    }
+    .step-circle.active {
+      border-color: var(--gold);
+      background: var(--gold);
+      color: var(--navy-deeper);
+    }
+    .step-circle.done {
+      border-color: var(--gold);
+      background: transparent;
+      color: var(--gold);
+    }
+    .step-label {
+      font-size: 0.6875rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(245,240,228,0.3);
+    }
+    .step-label.active { color: rgba(245,240,228,0.7); }
+    .step-connector {
+      flex: 1;
+      height: 1px;
+      background: rgba(184,150,12,0.15);
+      margin: 0 var(--space-3);
+    }
+
+    /* ── PROGRESS BAR ─────────────────────────────── */
+    .progress-track {
+      height: 2px;
+      background: rgba(28,43,74,0.08);
+      position: sticky; top: 0; z-index: 10;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--gold), var(--gold-light));
+      transition: width 0.4s var(--ease-expo);
+      width: 0%;
+    }
+
+    /* ── MAIN FORM ────────────────────────────────── */
+    .form-shell {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 0 var(--space-6) var(--space-24);
+    }
+
+    /* ── SECTION ──────────────────────────────────── */
+    .form-section {
+      padding-top: var(--space-12);
+    }
+
+    .section-header {
+      margin-bottom: var(--space-8);
+    }
+
+    .section-num {
+      font-family: var(--font-heading);
+      font-size: clamp(4.5rem, 12vw, 8rem);
+      font-weight: 700;
+      line-height: 0.85;
+      color: var(--navy);
+      opacity: 0.04;
+      position: absolute;
+      right: 0;
+      top: -16px;
+      pointer-events: none;
+      user-select: none;
+      letter-spacing: -0.04em;
+    }
+
+    .section-eyebrow {
+      font-family: var(--font-body);
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: var(--space-2);
+      display: flex; align-items: center; gap: var(--space-3);
+    }
+    .section-eyebrow::before {
+      content: '';
+      width: 20px; height: 1px;
+      background: var(--gold);
+      opacity: 0.6;
+    }
+
+    .section-title {
+      font-family: var(--font-heading);
+      font-size: clamp(1.3rem, 3vw, 1.75rem);
+      font-weight: 700;
+      line-height: 1.15;
+      color: var(--navy);
+      letter-spacing: -0.02em;
+    }
+
+    .section-rule {
+      height: 1px;
+      background: var(--border);
+      margin-bottom: var(--space-8);
+    }
+
+    /* ── FIELD GRID ───────────────────────────────── */
+    .field-grid {
+      display: grid;
+      gap: var(--space-6);
+    }
+    .field-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+    .field-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+    @media (max-width: 560px) {
+      .field-grid.cols-2,
+      .field-grid.cols-3 { grid-template-columns: 1fr; }
+    }
+
+    /* ── FIELD ────────────────────────────────────── */
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+    .field.span-full { grid-column: 1 / -1; }
+
+    .field-label {
+      font-family: var(--font-body);
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--navy);
+      display: flex; align-items: center; gap: 4px;
+    }
+    .field-required { color: var(--gold); margin-left: 1px; }
+
+    .field-control {
+      position: relative;
+    }
+
+    /* ── DATE PICKER CUSTOM ─────────────────────── */
+    .date-selects {
+      display: grid;
+      grid-template-columns: 1fr 2fr 1fr;
+      gap: var(--space-2);
+    }
+    .date-selects select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%231C2B4A' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      padding-right: 32px;
+      cursor: pointer;
+    }
+    .date-selects select:focus { border-color: var(--navy); }
+
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"],
+    textarea,
+    select {
+      width: 100%;
+      background: #fff;
+      border: 1.5px solid var(--border);
+      border-radius: 0;
+      padding: 11px 14px;
+      font-family: var(--font-body);
+      font-size: 1rem;
+      font-weight: 300;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+
+    input::placeholder, textarea::placeholder { color: #C0BAA8; }
+    textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
+
+    input:focus, textarea:focus, select:focus {
+      border-color: var(--navy);
+      box-shadow: 0 0 0 3px rgba(28,43,74,0.06);
+    }
+
+    input.has-error, textarea.has-error {
+      border-color: var(--error);
+      box-shadow: 0 0 0 3px rgba(139,26,26,0.05);
+    }
+
+    .field-hint {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-style: italic;
+      line-height: 1.4;
+    }
+
+    .field-error-msg {
+      font-size: 0.75rem;
+      color: var(--error);
+      display: none;
+      align-items: center;
+      gap: 4px;
+    }
+    .field-error-msg.show { display: flex; }
+    .field-error-msg::before {
+      content: '—';
+      opacity: 0.5;
+    }
+
+    /* ── VENCIMENTO GRUPOS ────────────────────────── */
+    .venc-grupos {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-4);
+    }
+
+    .venc-grupo {
+      border: 1.5px solid var(--border);
+      background: #fff;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .venc-grupo.has-selection { border-color: var(--navy); }
+
+    .venc-grupo-header {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      padding: var(--space-4) var(--space-5);
+      background: var(--surface-alt);
+      border-bottom: 1px solid var(--border);
+    }
+    .venc-grupo.has-selection .venc-grupo-header {
+      background: var(--navy);
+    }
+    .venc-grupo-icon {
+      font-size: 18px;
+      line-height: 1;
+    }
+    .venc-grupo-title {
+      font-size: 0.875rem;
+      font-weight: 700;
+      color: var(--navy);
+      flex: 1;
+    }
+    .venc-grupo.has-selection .venc-grupo-title { color: #F5F0E4; }
+    .venc-grupo-desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    .venc-grupo.has-selection .venc-grupo-desc { color: rgba(245,240,228,0.5); }
+
+    .venc-grupo-body {
+      padding: var(--space-3) var(--space-5) var(--space-4);
+    }
+
+    /* Sub-opções (dias) */
+    .venc-sub-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: var(--space-2);
+    }
+    @media (max-width: 440px) {
+      .venc-sub-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    .venc-option {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: var(--space-3) var(--space-3);
+      border: 1.5px solid var(--border);
+      background: #fff;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+      user-select: none;
+    }
+    .venc-option:hover { border-color: rgba(28,43,74,0.3); background: #FAFAF7; }
+    .venc-option.selected { border-color: var(--navy); background: rgba(28,43,74,0.04); }
+    .venc-option.selected::after {
+      content: '';
+      position: absolute; left: 0; top: 0; bottom: 0;
+      width: 2px; background: var(--gold);
+    }
+    .venc-option input[type="radio"] {
+      width: 14px; height: 14px;
+      accent-color: var(--navy);
+      cursor: pointer; flex-shrink: 0;
+    }
+    .venc-option-text {
+      font-size: 0.875rem;
+      font-weight: 400;
+      color: var(--text);
+    }
+    .venc-option.selected .venc-option-text { font-weight: 600; color: var(--navy); }
+
+    /* Opção única (cartão / à vista) — ocupa linha inteira */
+    .venc-option-single {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      padding: var(--space-3) var(--space-3);
+      border: 1.5px solid var(--border);
+      background: #fff;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+      user-select: none;
+    }
+    .venc-option-single:hover { border-color: rgba(28,43,74,0.3); background: #FAFAF7; }
+    .venc-option-single.selected { border-color: var(--navy); background: rgba(28,43,74,0.04); }
+    .venc-option-single.selected::after {
+      content: '';
+      position: absolute; left: 0; top: 0; bottom: 0;
+      width: 2px; background: var(--gold);
+    }
+    .venc-option-single input[type="radio"] {
+      width: 14px; height: 14px;
+      accent-color: var(--navy);
+      cursor: pointer; flex-shrink: 0;
+    }
+    .venc-option-single .venc-option-text {
+      font-size: 0.9375rem;
+      font-weight: 400;
+      color: var(--text);
+    }
+    .venc-option-single.selected .venc-option-text { font-weight: 600; color: var(--navy); }
+
+    .outro-field-wrap {
+      display: none;
+      margin-top: var(--space-3);
+    }
+    .outro-field-wrap.show { display: block; }
+
+    /* ── DIVIDER STATEMENT ────────────────────────── */
+    .statement-divider {
+      background: var(--navy);
+      margin: var(--space-16) calc(-1 * var(--space-6));
+      padding: var(--space-8) var(--space-6) var(--space-8) calc(var(--space-6) + 16px);
+      display: flex;
+      align-items: center;
+      gap: var(--space-6);
+      position: relative;
+      border-top: 1px solid rgba(184,150,12,0.2);
+      border-bottom: 1px solid rgba(184,150,12,0.2);
+    }
+    .statement-divider::before {
+      content: '';
+      position: absolute; left: 0; top: 0; bottom: 0;
+      width: 4px;
+      background: var(--gold);
+    }
+    .statement-tag {
+      flex-shrink: 0;
+      background: rgba(184,150,12,0.15);
+      border: 1px solid rgba(184,150,12,0.3);
+      padding: 4px 10px;
+      font-family: var(--font-body);
+      font-size: 0.625rem;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--gold-light);
+      white-space: nowrap;
+    }
+    .statement-text {
+      font-family: var(--font-body);
+      font-size: 0.9375rem;
+      font-weight: 400;
+      color: rgba(245,240,228,0.75);
+      line-height: 1.55;
+      max-width: 65ch;
+    }
+    .statement-text strong {
+      font-weight: 700;
+      color: #F5F0E4;
+    }
+
+    /* ── SUBMIT ZONE ──────────────────────────────── */
+    .submit-zone {
+      padding-top: var(--space-12);
+      border-top: 1px solid var(--border);
+      margin-top: var(--space-12);
+    }
+
+    .submit-declaration {
+      background: var(--surface-alt);
+      border-left: 3px solid var(--border-gold);
+      padding: var(--space-4) var(--space-5);
+      margin-bottom: var(--space-8);
+    }
+    .submit-declaration p {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      line-height: 1.65;
+      max-width: 65ch;
+    }
+
+    .btn-submit {
+      width: 100%;
+      padding: 18px var(--space-8);
+      background: var(--navy);
+      color: #F5F0E4;
+      border: none;
+      font-family: var(--font-body);
+      font-size: 0.8125rem;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: background 0.2s, transform 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-3);
+      min-height: 56px;
+    }
+    .btn-submit::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--gold), var(--gold-light), var(--gold), transparent);
+    }
+    .btn-submit:hover { background: var(--navy-dark); transform: translateY(-1px); }
+    .btn-submit:active { transform: translateY(0); }
+    .btn-submit:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
+    .btn-submit .btn-icon { font-size: 16px; opacity: 0.7; }
+    .btn-spinner {
+      display: none;
+      width: 16px; height: 16px;
+      border: 2px solid rgba(245,240,228,0.3);
+      border-top-color: #F5F0E4;
+      border-radius: 50%;
+      animation: spin 0.65s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .btn-submit.loading .btn-text { display: none; }
+    .btn-submit.loading .btn-icon { display: none; }
+    .btn-submit.loading .btn-spinner { display: block; }
+
+    .submit-subtext {
+      margin-top: var(--space-4);
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-2);
+    }
+    .lock-icon { font-size: 10px; opacity: 0.6; }
+
+    .global-error {
+      display: none;
+      margin-top: var(--space-4);
+      padding: var(--space-4) var(--space-5);
+      background: #FFF5F5;
+      border-left: 3px solid var(--error);
+      font-size: 0.875rem;
+      color: var(--error);
+      line-height: 1.5;
+    }
+    .global-error.show { display: block; }
+
+    /* ── FOOTER ───────────────────────────────────── */
+    /* ── ANHANGUERA BADGE ─────────────────────────── */
+    .anhanguera-badge {
+      margin-top: var(--space-8);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--space-2);
+    }
+    .anhanguera-rule {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      width: 100%;
+      max-width: 360px;
+    }
+    .anhanguera-rule::before,
+    .anhanguera-rule::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: rgba(184,150,12,0.25);
+    }
+    .anhanguera-label {
+      font-size: 0.6rem;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--gold);
+      white-space: nowrap;
+    }
+    .anhanguera-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+    }
+    .anhanguera-name {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: rgba(245,240,228,0.9);
+      letter-spacing: 0.02em;
+    }
+    .anhanguera-desc {
+      font-size: 0.72rem;
+      color: rgba(245,240,228,0.4);
+      letter-spacing: 0.04em;
+    }
+
+    .site-footer {
+      background: var(--navy-deeper);
+      padding: var(--space-8) var(--space-6);
+      text-align: center;
+    }
+    .footer-logo {
+      font-family: var(--font-heading);
+      font-size: 0.875rem;
+      font-weight: 300;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: rgba(245,240,228,0.25);
+    }
+    .footer-rule {
+      width: 30px; height: 1px;
+      background: rgba(184,150,12,0.25);
+      margin: var(--space-4) auto;
+    }
+    .footer-note {
+      font-size: 0.6875rem;
+      color: rgba(245,240,228,0.18);
+      letter-spacing: 0.06em;
+    }
+
+    /* ── AOS ──────────────────────────────────────── */
+    .aos {
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.65s var(--ease-expo), transform 0.65s var(--ease-expo);
+    }
+    .aos.in { opacity: 1; transform: none; }
+
+    /* ── PAYMENT SCREEN ───────────────────────────── */
+    #payment-screen {
+      display: none;
+      position: fixed; inset: 0; z-index: 90;
+      background: var(--surface);
+      overflow-y: auto;
+      animation: fadeIn 0.5s var(--ease-expo);
+    }
+    #payment-screen.show { display: block; }
+
+    .pay-header {
+      background: var(--navy-deeper);
+      padding: var(--space-8) var(--space-6);
+      text-align: center;
+      position: relative;
+    }
+    .pay-header::after {
+      content: '';
+      position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent 0%, var(--gold) 30%, var(--gold-light) 50%, var(--gold) 70%, transparent 100%);
+    }
+    .pay-header-badge {
+      font-size: 0.625rem;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: var(--space-3);
+    }
+    .pay-header-title {
+      font-family: var(--font-heading);
+      font-size: clamp(1.5rem, 4vw, 2.25rem);
+      font-weight: 700;
+      color: #F5F0E4;
+      margin-bottom: var(--space-2);
+    }
+    .pay-header-name {
+      font-size: 0.875rem;
+      font-weight: 400;
+      color: rgba(245,240,228,0.5);
+    }
+
+    .pay-body {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: var(--space-10) var(--space-6) var(--space-16);
+    }
+
+    .pay-intro {
+      text-align: center;
+      margin-bottom: var(--space-8);
+    }
+    .pay-intro p {
+      font-size: 0.9375rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    .pay-intro strong { color: var(--text); font-weight: 600; }
+
+    /* ── PAYMENT OPTIONS ──────────────────────────── */
+    .pay-options {
+      display: grid;
+      gap: var(--space-4);
+      margin-bottom: var(--space-8);
+    }
+
+    .pay-card {
+      border: 2px solid var(--border);
+      background: #fff;
+      cursor: pointer;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      overflow: hidden;
+    }
+    .pay-card:hover { border-color: rgba(28,43,74,0.3); box-shadow: 0 4px 20px rgba(28,43,74,0.06); }
+    .pay-card.active { border-color: var(--navy); }
+    .pay-card.active .pay-card-header { background: var(--navy); }
+    .pay-card.active .pay-card-title { color: #F5F0E4; }
+    .pay-card.active .pay-card-sub { color: rgba(245,240,228,0.55); }
+    .pay-card.active .pay-card-icon { background: rgba(255,255,255,0.1); color: var(--gold-light); }
+    .pay-card.active .pay-card-check { border-color: var(--gold); background: var(--gold); color: var(--navy-deeper); }
+
+    .pay-card-header {
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+      padding: var(--space-5) var(--space-5);
+      transition: background 0.2s;
+    }
+
+    .pay-card-icon {
+      width: 44px; height: 44px; border-radius: 50%;
+      background: var(--surface-alt);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+      transition: background 0.2s, color 0.2s;
+    }
+    .pay-card-info { flex: 1; }
+    .pay-card-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--navy);
+      transition: color 0.2s;
+    }
+    .pay-card-sub {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+      transition: color 0.2s;
+    }
+    .pay-card-check {
+      width: 22px; height: 22px; border-radius: 50%;
+      border: 2px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+      color: transparent;
+      flex-shrink: 0;
+      transition: all 0.2s;
+    }
+
+    .pay-card-body {
+      display: none;
+      padding: 0 var(--space-5) var(--space-5);
+      border-top: 1px solid var(--border);
+    }
+    .pay-card.active .pay-card-body { display: block; }
+
+    /* ── PIX QR AREA ──────────────────────────────── */
+    .pix-container {
+      padding-top: var(--space-5);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--space-4);
+    }
+
+    .pix-amount-badge {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 4px;
+      background: var(--surface-alt);
+      border: 1px solid var(--border-gold);
+      padding: var(--space-2) var(--space-4);
+    }
+    .pix-amount-label { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase; }
+    .pix-amount-value { font-size: 1.5rem; font-weight: 700; color: var(--navy); }
+
+    .qr-wrapper {
+      width: 200px; height: 200px;
+      border: 2px solid var(--border);
+      background: #fff;
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column;
+      gap: var(--space-3);
+      position: relative;
+    }
+    .qr-wrapper img { width: 100%; height: 100%; object-fit: contain; }
+
+    /* Placeholder quando sem integração */
+    .qr-placeholder {
+      text-align: center;
+      padding: var(--space-4);
+    }
+    .qr-placeholder-icon { font-size: 36px; opacity: 0.3; }
+    .qr-placeholder-text {
+      font-size: 0.6875rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-top: var(--space-2);
+      line-height: 1.5;
+    }
+
+    .qr-loading {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--space-3);
+    }
+    .qr-loading.show { display: flex; }
+    .qr-spinner {
+      width: 28px; height: 28px;
+      border: 2px solid var(--border);
+      border-top-color: var(--navy);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    .qr-loading-text { font-size: 0.8125rem; color: var(--text-muted); }
+
+    .pix-code-wrap {
+      width: 100%;
+      max-width: 380px;
+    }
+    .pix-code-label {
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: var(--space-2);
+    }
+    .pix-code-box {
+      display: flex;
+      gap: var(--space-2);
+      align-items: stretch;
+    }
+    .pix-code-input {
+      flex: 1;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      padding: var(--space-3) var(--space-4);
+      font-size: 0.75rem;
+      font-family: monospace;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .btn-copy {
+      padding: var(--space-3) var(--space-4);
+      background: var(--navy);
+      color: #F5F0E4;
+      border: none;
+      font-family: var(--font-body);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+    .btn-copy:hover { background: var(--navy-dark); }
+    .btn-copy.copied { background: #1A5C2A; }
+
+    .pix-info-list {
+      width: 100%;
+      max-width: 380px;
+    }
+    .pix-info-item {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--space-3);
+      padding: var(--space-3) 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .pix-info-item:last-child { border-bottom: none; }
+    .pix-info-dot {
+      width: 6px; height: 6px;
+      background: var(--gold);
+      border-radius: 50%;
+      flex-shrink: 0;
+      margin-top: 5px;
+    }
+
+    /* ── INTEGRAÇÃO PLACEHOLDER ───────────────────── */
+    .integration-notice {
+      background: #FFFBEC;
+      border: 1px solid rgba(184,150,12,0.25);
+      border-left: 3px solid var(--gold);
+      padding: var(--space-3) var(--space-4);
+      margin-top: var(--space-4);
+      font-size: 0.8125rem;
+      color: #7A6000;
+      line-height: 1.5;
+    }
+    .integration-notice strong { font-weight: 700; }
+
+    /* ── BTN LINK PAGAMENTO ───────────────────────── */
+    .btn-pay-link {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-3);
+      width: 100%;
+      padding: 16px var(--space-6);
+      background: var(--navy);
+      color: #F5F0E4;
+      text-decoration: none;
+      font-family: var(--font-body);
+      font-size: 0.875rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      margin-top: var(--space-5);
+      transition: background 0.15s;
+      border: none; cursor: pointer;
+      position: relative;
+    }
+    .btn-pay-link::after {
+      content: '';
+      position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    }
+    .btn-pay-link:hover { background: var(--navy-dark); }
+    .btn-pay-link.disabled {
+      opacity: 0.45; cursor: not-allowed; pointer-events: none;
+    }
+
+    .pay-confirmed-btn {
+      width: 100%;
+      padding: 16px;
+      background: #1A5C2A;
+      color: #fff;
+      border: none;
+      font-family: var(--font-body);
+      font-size: 0.875rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      cursor: pointer;
+      margin-top: var(--space-5);
+      transition: background 0.15s;
+    }
+    .pay-confirmed-btn:hover { background: #144822; }
+
+    .pay-footer-note {
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: var(--space-6);
+      line-height: 1.6;
+    }
+
+    /* ── ASSINATURA DO CONTRATO ────────────────────── */
+    #sign-screen {
+      display: none;
+      position: fixed; inset: 0; z-index: 93;
+      background: var(--surface);
+      overflow-y: auto;
+      animation: fadeIn 0.5s var(--ease-expo);
+    }
+    #sign-screen.show { display: block; }
+
+    .sign-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: var(--space-4);
+      max-width: 420px;
+      margin: 0 auto;
+    }
+    .sign-icon { font-size: 40px; }
+    .sign-ready-text, .sign-error-text {
+      font-size: 0.9375rem;
+      color: var(--text-muted);
+      line-height: 1.65;
+    }
+    .sign-note {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: var(--space-2);
+    }
+
+    /* Assinatura embutida (Autentique) */
+    #sign-ready {
+      max-width: 900px;
+      width: 100%;
+    }
+    .sign-iframe-wrap {
+      width: 100%;
+      border: 1.5px solid var(--border);
+      background: #fff;
+      position: relative;
+    }
+    #sign-iframe {
+      width: 100%;
+      height: 75vh;
+      min-height: 480px;
+      border: none;
+      display: block;
+    }
+    .sign-fallback-note {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* ── REFERRAL / INDICAÇÕES SCREEN ─────────────── */
+    #referral-screen {
+      display: none;
+      position: fixed; inset: 0; z-index: 95;
+      background: var(--surface);
+      overflow-y: auto;
+      animation: fadeIn 0.5s var(--ease-expo);
+    }
+    #referral-screen.show { display: block; }
+
+    .ref-header {
+      background: var(--navy-deeper);
+      padding: var(--space-12) var(--space-6) var(--space-8);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .ref-header::after {
+      content: '';
+      position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent 0%, var(--gold) 30%, var(--gold-light) 50%, var(--gold) 70%, transparent 100%);
+    }
+    .ref-stars {
+      font-size: 11px;
+      letter-spacing: 18px;
+      color: var(--gold);
+      opacity: 0.6;
+      margin-bottom: var(--space-5);
+    }
+    .ref-badge {
+      display: inline-block;
+      background: rgba(184,150,12,0.15);
+      border: 1px solid rgba(184,150,12,0.35);
+      padding: 6px 14px;
+      font-size: 0.6875rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--gold-light);
+      margin-bottom: var(--space-5);
+    }
+    .ref-title {
+      font-family: var(--font-heading);
+      font-size: clamp(1.6rem, 4.5vw, 2.5rem);
+      font-weight: 700;
+      color: #F5F0E4;
+      margin-bottom: var(--space-4);
+      letter-spacing: -0.02em;
+    }
+    .ref-subtitle {
+      font-size: 0.9375rem;
+      color: rgba(245,240,228,0.6);
+      max-width: 480px;
+      margin: 0 auto;
+      line-height: 1.6;
+    }
+
+    .ref-body {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: var(--space-10) var(--space-6) var(--space-16);
+    }
+
+    .ref-offer-card {
+      background: var(--surface-alt);
+      border: 1px solid var(--border-gold);
+      border-left: 3px solid var(--gold);
+      padding: var(--space-6);
+      margin-bottom: var(--space-8);
+      text-align: center;
+    }
+    .ref-offer-icon { font-size: 32px; margin-bottom: var(--space-3); }
+    .ref-offer-text {
+      font-size: 1rem;
+      color: var(--text);
+      line-height: 1.65;
+      margin-bottom: var(--space-3);
+    }
+    .ref-offer-subtext {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    .ref-list {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-3);
+      margin-bottom: var(--space-8);
+    }
+    .ref-row {
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+      border: 1.5px solid var(--border);
+      background: #fff;
+      padding: var(--space-3) var(--space-4);
+    }
+    .ref-row-num {
+      width: 26px; height: 26px; border-radius: 50%;
+      background: var(--navy);
+      color: var(--gold-light);
+      font-size: 0.75rem;
+      font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .ref-row-fields {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: var(--space-3);
+      flex: 1;
+    }
+    @media (max-width: 560px) {
+      .ref-row-fields { grid-template-columns: 1fr; }
+    }
+    .ref-row-fields input {
+      border: 1px solid var(--border);
+      padding: 9px 12px;
+    }
+
+    .ref-skip {
+      display: block;
+      width: 100%;
+      text-align: center;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.8125rem;
+      text-decoration: underline;
+      cursor: pointer;
+      margin-top: var(--space-4);
+      padding: var(--space-2);
+      font-family: var(--font-body);
+    }
+    .ref-skip:hover { color: var(--text); }
+
+    .ref-footnote {
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: var(--space-6);
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── LOADING ── -->
+<div id="loading-screen">
+  <div class="loading-seal">
+    <span class="loading-seal-inner">IDM</span>
+  </div>
+  <div class="loading-wordmark">Carregando</div>
+</div>
+
+<!-- ── SUCCESS / OBRIGADO ── -->
+<div id="success-screen">
+  <div class="obrigado-wrap">
+
+    <div class="obrigado-seal">
+      <span class="obrigado-check">✓</span>
+    </div>
+
+    <p class="obrigado-eyebrow">Matrícula confirmada</p>
+
+    <h2 class="obrigado-title">Obrigado!</h2>
+    <p class="obrigado-instituto">Seja muito bem-vindo(a) ao<br>Instituto Despertamente</p>
+
+    <div class="obrigado-rule"></div>
+
+    <div class="obrigado-card">
+      <p>
+        Sua matrícula foi registrada com sucesso.<br><br>
+        Em breve você receberá <strong>todas as informações de acesso
+        e próximos passos pelo WhatsApp.</strong><br><br>
+        Fique de olho nas mensagens — mal podemos esperar para começar essa jornada com você. 🌟
+      </p>
+    </div>
+
+    <p style="font-size:0.8125rem;color:rgba(245,240,228,0.4);margin-top:var(--space-2);">
+      Dúvidas? Entre em contato com nossa equipe
+    </p>
+
+    <div class="obrigado-footer-note">Instituto Despertamente · IDM · Todos os direitos reservados</div>
+
+  </div>
+</div>
+
+<!-- ── PAYMENT SCREEN ── -->
+<div id="payment-screen">
+
+  <div class="pay-header">
+    <div class="pay-header-badge">Instituto Despertamente — IDM</div>
+    <h2 class="pay-header-title" id="pay-header-title">Escolha a forma de pagamento</h2>
+    <p class="pay-header-name" id="pay-header-name"></p>
+  </div>
+
+  <div class="pay-body">
+
+    <div class="pay-intro">
+      <p>Sua matrícula foi registrada com sucesso.<br>
+      Selecione abaixo como deseja realizar o <strong>primeiro pagamento</strong>.</p>
+    </div>
+
+    <div class="pay-options">
+
+      <!-- OPÇÃO 1: À VISTA (SYNCPAY) -->
+      <div class="pay-card" id="pay-vista" onclick="selectPay('vista')">
+        <div class="pay-card-header">
+          <div class="pay-card-icon">⚡</div>
+          <div class="pay-card-info">
+            <div class="pay-card-title">À vista no PIX</div>
+            <div class="pay-card-sub">R$ 1.500,00 · Melhor valor · Aprovação imediata</div>
+          </div>
+          <div class="pay-card-check" id="check-vista">✓</div>
+        </div>
+        <div class="pay-card-body">
+          <div class="pix-container">
+
+            <div class="pix-amount-badge">
+              <span class="pix-amount-label">Total à vista</span>
+              <span class="pix-amount-value">R$ 1.500,00</span>
+            </div>
+
+            <div class="pix-info-list" style="width:100%;max-width:380px;">
+              <div class="pix-info-item"><div class="pix-info-dot"></div><span>Você será redirecionado para a página de pagamento seguro (PIX)</span></div>
+              <div class="pix-info-item"><div class="pix-info-dot"></div><span>Pagamento único de <strong>R$ 1.500,00</strong> — melhor custo-benefício</span></div>
+              <div class="pix-info-item"><div class="pix-info-dot"></div><span>Aprovação imediata após confirmação</span></div>
+            </div>
+
+            <a id="btn-link-vista" href="#" target="_blank" rel="noopener" class="btn-pay-link">
+              Ir para pagamento no PIX →
+            </a>
+
+            <button class="pay-confirmed-btn" onclick="openContractScreen()">Já realizei o pagamento ✓</button>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- OPÇÃO 2: PARCELADO — CARTÃO OU BOLETO (SYNCPAY) -->
+      <div class="pay-card" id="pay-parcelado" onclick="selectPay('parcelado')">
+        <div class="pay-card-header">
+          <div class="pay-card-icon">💳</div>
+          <div class="pay-card-info">
+            <div class="pay-card-title">Parcelado (Cartão ou Boleto)</div>
+            <div class="pay-card-sub">Cartão em até 12x ou boleto em 15x de R$ 150,00</div>
+          </div>
+          <div class="pay-card-check" id="check-parcelado">✓</div>
+        </div>
+        <div class="pay-card-body">
+          <div class="pix-container">
+            <div class="pix-info-list" style="width:100%;max-width:380px;">
+              <div class="pix-info-item"><div class="pix-info-dot"></div><span>Você será redirecionado para a página de pagamento seguro</span></div>
+              <div class="pix-info-item"><div class="pix-info-dot"></div><span>Cartão de crédito em até <strong>12x de R$ 150,00</strong></span></div>
+              <div class="pix-info-item"><div class="pix-info-dot"></div><span>Ou boleto recorrente em <strong>15x fixas de R$ 150,00</strong></span></div>
+              <div class="pix-info-item"><div class="pix-info-dot"></div><span>Escolha a forma exata na página de pagamento</span></div>
+            </div>
+
+            <a id="btn-link-parcelado" href="#" target="_blank" rel="noopener" class="btn-pay-link">
+              Ir para pagamento parcelado →
+            </a>
+
+            <button class="pay-confirmed-btn" onclick="openContractScreen()">Já realizei o pagamento ✓</button>
+
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /pay-options -->
+
+    <!-- CORTESIA -->
+    <div class="cortesia-box" id="cortesia-box">
+      <div class="cortesia-icon">🎓</div>
+      <h3 class="cortesia-title">Você recebeu uma Bolsa de Estudo!</h3>
+      <p class="cortesia-sub">
+        Nenhum pagamento é necessário.<br>
+        Clique abaixo para confirmar sua vaga e receber as informações de acesso no WhatsApp.
+      </p>
+      <button class="pay-confirmed-btn" style="max-width:400px;width:100%;" onclick="openContractScreen()">
+        Confirmar minha vaga gratuitamente ✓
+      </button>
+    </div>
+
+    <p class="pay-footer-note" id="pay-footer-note">
+      Dúvidas sobre o pagamento? Fale com nossa equipe pelo WhatsApp.<br>
+      Seus dados são protegidos com criptografia SSL.
+    </p>
+
+  </div><!-- /pay-body -->
+</div>
+
+<!-- ── ASSINATURA DO CONTRATO (PÓS-PAGAMENTO) ── -->
+<div id="sign-screen">
+  <div class="ref-header">
+    <div class="ref-badge">📝 Último passo</div>
+    <h2 class="ref-title">Assine seu contrato</h2>
+    <p class="ref-subtitle">Pagamento confirmado! Agora vamos formalizar sua matrícula com a assinatura eletrônica do seu contrato — rápido, seguro e com validade jurídica.</p>
+  </div>
+
+  <div class="ref-body">
+
+    <div class="sign-state" id="sign-loading">
+      <div class="qr-spinner"></div>
+      <p class="sign-ready-text">Gerando seu contrato...</p>
+    </div>
+
+    <div class="sign-state" id="sign-ready" style="display:none;">
+      <div class="sign-icon">📄</div>
+      <p class="sign-ready-text">Seu contrato já está pronto. Assine eletronicamente abaixo — leva menos de 2 minutos.</p>
+
+      <div class="sign-iframe-wrap">
+        <iframe id="sign-iframe" title="Assinatura do contrato" src="about:blank" allow="camera"></iframe>
+      </div>
+
+      <p class="sign-fallback-note">Não conseguiu ver o contrato acima? <a id="sign-link" href="#" target="_blank" rel="noopener">Abra a assinatura em uma nova aba</a>.</p>
+
+      <button type="button" class="pay-confirmed-btn" style="margin-top:var(--space-2);" onclick="finishContractScreen()">Já assinei — continuar</button>
+      <button type="button" class="ref-skip" onclick="finishContractScreen()">Prefiro assinar depois</button>
+      <p class="sign-note">Você também vai receber esse link por e-mail e WhatsApp para assinar quando preferir.</p>
+    </div>
+
+    <div class="sign-state" id="sign-error" style="display:none;">
+      <p class="sign-error-text">Não conseguimos gerar o link do contrato agora. Sem problemas — nossa equipe vai te enviar por WhatsApp em instantes.</p>
+      <button type="button" class="pay-confirmed-btn" onclick="finishContractScreen()">Continuar</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── REFERRAL / INDICAÇÕES SCREEN ── -->
+<div id="referral-screen">
+  <div class="ref-header">
+    <div class="ref-stars" aria-hidden="true">✦ ✦ ✦</div>
+    <div class="ref-badge">🎉 Você desbloqueou um privilégio raro</div>
+    <h2 class="ref-title">Parabéns, <span id="ref-nome">!</span></h2>
+    <p class="ref-subtitle">Você acabou de dar o primeiro passo de uma jornada que vai transformar sua vida. Agora chegou a sua vez de transformar a vida de mais 5 pessoas que você ama.</p>
+  </div>
+
+  <div class="ref-body">
+
+    <div class="ref-offer-card">
+      <div class="ref-offer-icon">🎁</div>
+      <p class="ref-offer-text">
+        Separe agora o nome de <strong>5 pessoas</strong> que vão viver essa mesma jornada de transformação
+        ao seu lado, nas <strong>mesmas condições especiais</strong> que você garantiu hoje — e você ainda
+        ganha um <strong>bônus exclusivo</strong> para cada uma delas.
+      </p>
+      <p class="ref-offer-subtext">
+        Pare um segundo e pense: quem vem à sua cabeça agora? Um filho, uma irmã, uma amiga, alguém que você
+        sabe que precisa disso tanto quanto você precisou. Quem mais cresce na vida é quem não guarda as boas
+        oportunidades só pra si. Essa condição especial não vai ficar aberta pra sempre — escreva os 5 nomes
+        abaixo, sem pensar demais, antes de seguir para o pagamento.
+      </p>
+    </div>
+
+    <div class="ref-list" id="ref-list">
+
+      <div class="ref-row">
+        <div class="ref-row-num">1</div>
+        <div class="ref-row-fields">
+          <input type="text" id="ref-nome-1" placeholder="Nome da pessoa" autocomplete="off" />
+          <input type="tel" id="ref-tel-1" placeholder="WhatsApp com DDD" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="ref-row">
+        <div class="ref-row-num">2</div>
+        <div class="ref-row-fields">
+          <input type="text" id="ref-nome-2" placeholder="Nome da pessoa" autocomplete="off" />
+          <input type="tel" id="ref-tel-2" placeholder="WhatsApp com DDD" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="ref-row">
+        <div class="ref-row-num">3</div>
+        <div class="ref-row-fields">
+          <input type="text" id="ref-nome-3" placeholder="Nome da pessoa" autocomplete="off" />
+          <input type="tel" id="ref-tel-3" placeholder="WhatsApp com DDD" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="ref-row">
+        <div class="ref-row-num">4</div>
+        <div class="ref-row-fields">
+          <input type="text" id="ref-nome-4" placeholder="Nome da pessoa" autocomplete="off" />
+          <input type="tel" id="ref-tel-4" placeholder="WhatsApp com DDD" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="ref-row">
+        <div class="ref-row-num">5</div>
+        <div class="ref-row-fields">
+          <input type="text" id="ref-nome-5" placeholder="Nome da pessoa" autocomplete="off" />
+          <input type="tel" id="ref-tel-5" placeholder="WhatsApp com DDD" autocomplete="off" />
+        </div>
+      </div>
+
+    </div><!-- /ref-list -->
+
+    <button type="button" class="btn-submit" id="btn-ref-submit" onclick="submitReferrals()">
+      <span class="btn-text">Confirmar minhas 5 indicações e continuar</span>
+      <span class="btn-icon" aria-hidden="true">→</span>
+      <span class="btn-spinner" aria-hidden="true"></span>
+    </button>
+
+    <button type="button" class="ref-skip" onclick="skipReferrals()">Prefiro abrir mão dessa oportunidade agora</button>
+
+    <p class="ref-footnote">Nossa equipe entrará em contato com cada indicação para apresentar essa mesma oportunidade especial. Seus dados e os das suas indicações são protegidos.</p>
+
+  </div>
+</div>
+
+<!-- ── ERROR SCREEN ── -->
+<div id="error-screen">
+  <h2 style="font-family:var(--font-heading);font-size:2rem;color:var(--navy);margin-bottom:12px;">Link inválido</h2>
+  <p style="color:var(--text-muted);font-size:0.9375rem;">Este formulário requer um link de matrícula válido.<br>Por favor, utilize o link enviado pela equipe IDM.</p>
+</div>
+
+<!-- ── HEADER ── -->
+<header class="site-header">
+  <div class="header-deco"></div>
+  <div class="header-inner">
+
+    <div class="header-badge">
+      <span class="badge-line"></span>
+      <span class="badge-text">Instituto Despertamente</span>
+      <span class="badge-line"></span>
+    </div>
+
+    <div class="header-seal">
+      <img src="/logo-idm.png" alt="Logo IDM" style="width:80px;height:80px;object-fit:contain;" onerror="this.style.display='none';document.getElementById('header-seal-fallback').style.display='flex';" />
+      <span class="header-seal-letters" id="header-seal-fallback" style="display:none;">IDM</span>
+    </div>
+
+    <p class="header-kicker">Formações de Psicanálise</p>
+
+    <h1 class="header-title">
+      Ficha de<br><em>Matrícula Oficial</em>
+    </h1>
+
+    <div id="lancamento-nome"></div>
+
+    <div class="header-meta">
+      <span class="meta-item"><span class="meta-dot"></span>Documento oficial</span>
+      <span class="meta-item"><span class="meta-dot"></span>Dados protegidos</span>
+      <span class="meta-item"><span class="meta-dot"></span>Preenchimento obrigatório</span>
+    </div>
+
+    <div class="anhanguera-badge">
+      <div class="anhanguera-rule">
+        <span class="anhanguera-label">Parceria oficial</span>
+      </div>
+      <div class="anhanguera-content">
+        <span class="anhanguera-name">Faculdade Anhanguera</span>
+        <span class="anhanguera-desc">Formação com Extensão Universitária reconhecida</span>
+      </div>
+    </div>
+
+  </div>
+</header>
+
+<!-- ── STEP BAR ── -->
+<nav class="steps-bar" aria-label="Etapas do formulário">
+  <div class="steps-inner">
+    <div class="step-item">
+      <div class="step-circle active" id="step-1-circle">1</div>
+      <span class="step-label active" id="step-1-label">Pessoal</span>
+    </div>
+    <div class="step-connector"></div>
+    <div class="step-item">
+      <div class="step-circle" id="step-2-circle">2</div>
+      <span class="step-label" id="step-2-label">Endereço</span>
+    </div>
+    <div class="step-connector"></div>
+    <div class="step-item">
+      <div class="step-circle" id="step-3-circle">3</div>
+      <span class="step-label" id="step-3-label">Pagamento</span>
+    </div>
+  </div>
+</nav>
+
+<!-- ── PROGRESS ── -->
+<div class="progress-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+  <div class="progress-fill" id="progress-fill"></div>
+</div>
+
+<!-- ── FORM ── -->
+<main>
+  <div class="form-shell">
+    <form id="matricula-form" novalidate>
+
+      <!-- §1 DADOS PESSOAIS -->
+      <section class="form-section aos" id="section-personal">
+        <div class="section-header" style="position:relative;">
+          <div class="section-num" aria-hidden="true">01</div>
+          <p class="section-eyebrow">Seção 01</p>
+          <h2 class="section-title">Dados Pessoais</h2>
+        </div>
+        <div class="section-rule"></div>
+
+        <div class="field-grid cols-2">
+
+          <div class="field span-full">
+            <label class="field-label" for="nome">Nome completo <span class="field-required">*</span></label>
+            <div class="field-control">
+              <input type="text" id="nome" name="nome" placeholder="Conforme documento de identidade" autocomplete="name" />
+            </div>
+            <span class="field-error-msg" id="err-nome">Informe nome e sobrenome.</span>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="email">E-mail <span class="field-required">*</span></label>
+            <div class="field-control">
+              <input type="email" id="email" name="email" placeholder="seu@email.com" autocomplete="email" />
+            </div>
+            <span class="field-error-msg" id="err-email">E-mail inválido.</span>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="telefone">Telefone / WhatsApp <span class="field-required">*</span></label>
+            <div class="field-control">
+              <input type="tel" id="telefone" name="telefone" placeholder="+55 (11) 9 0000-0000" autocomplete="tel" />
+            </div>
+            <span class="field-error-msg" id="err-telefone">Telefone inválido.</span>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="cpf">CPF <span class="field-required">*</span></label>
+            <div class="field-control">
+              <input type="text" id="cpf" name="cpf" placeholder="000.000.000-00" maxlength="14" inputmode="numeric" />
+            </div>
+            <span class="field-error-msg" id="err-cpf">CPF inválido.</span>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Data de nascimento <span class="field-required">*</span></label>
+            <div class="field-control">
+              <div class="date-selects" id="date-nascimento-wrap">
+                <select id="nasc-dia" aria-label="Dia">
+                  <option value="">Dia</option>
+                </select>
+                <select id="nasc-mes" aria-label="Mês">
+                  <option value="">Mês</option>
+                  <option value="01">Janeiro</option><option value="02">Fevereiro</option>
+                  <option value="03">Março</option><option value="04">Abril</option>
+                  <option value="05">Maio</option><option value="06">Junho</option>
+                  <option value="07">Julho</option><option value="08">Agosto</option>
+                  <option value="09">Setembro</option><option value="10">Outubro</option>
+                  <option value="11">Novembro</option><option value="12">Dezembro</option>
+                </select>
+                <select id="nasc-ano" aria-label="Ano">
+                  <option value="">Ano</option>
+                </select>
+              </div>
+              <input type="hidden" id="data_nascimento" name="data_nascimento" />
+            </div>
+            <span class="field-error-msg" id="err-data_nascimento">Informe a data de nascimento.</span>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="rg">RG <span class="field-required">*</span></label>
+            <div class="field-control">
+              <input type="text" id="rg" name="rg" placeholder="Número do RG" maxlength="20" />
+            </div>
+            <span class="field-error-msg" id="err-rg">Informe o RG.</span>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="sexo">Sexo <span class="field-required">*</span></label>
+            <div class="field-control">
+              <select id="sexo" name="sexo">
+                <option value="">Selecione</option>
+                <option value="Masculino">Masculino</option>
+                <option value="Feminino">Feminino</option>
+                <option value="Outro">Outro</option>
+                <option value="Prefiro não informar">Prefiro não informar</option>
+              </select>
+            </div>
+            <span class="field-error-msg" id="err-sexo">Selecione o sexo.</span>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- STATEMENT -->
+      <div class="statement-divider aos">
+        <span class="statement-tag">Seção 02</span>
+        <p class="statement-text">
+          Preencha seu endereço <strong>exatamente como constará</strong> no contrato de matrícula.
+        </p>
+      </div>
+
+      <!-- §2 ENDEREÇO -->
+      <section class="form-section aos" id="section-address">
+        <div class="section-header" style="position:relative;">
+          <div class="section-num" aria-hidden="true">02</div>
+          <p class="section-eyebrow">Seção 02</p>
+          <h2 class="section-title">Endereço</h2>
+        </div>
+        <div class="section-rule"></div>
+
+        <div class="field-grid cols-2">
+
+          <div class="field">
+            <label class="field-label" for="pais">País <span class="field-required">*</span></label>
+            <div class="field-control">
+              <input type="text" id="pais" name="pais" placeholder="Brasil" value="Brasil" />
+            </div>
+            <span class="field-error-msg" id="err-pais">Informe o país.</span>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="cep">CEP <span class="field-required">*</span></label>
+            <div class="field-control">
+              <input type="text" id="cep" name="cep" placeholder="00000-000" maxlength="9" inputmode="numeric" />
+            </div>
+            <span class="field-error-msg" id="err-cep">CEP inválido.</span>
+          </div>
+
+          <div class="field span-full">
+            <label class="field-label" for="endereco">Endereço completo com número <span class="field-required">*</span></label>
+            <div class="field-control">
+              <textarea id="endereco" name="endereco" placeholder="Rua / Avenida, número, complemento, bairro" rows="3"></textarea>
+            </div>
+            <span class="field-error-msg" id="err-endereco">Informe o endereço completo.</span>
+          </div>
+
+          <div class="field span-full">
+            <label class="field-label" for="cidade_estado">Cidade / Estado <span class="field-required">*</span></label>
+            <div class="field-control">
+              <input type="text" id="cidade_estado" name="cidade_estado" placeholder="São Paulo / SP" />
+            </div>
+            <span class="field-error-msg" id="err-cidade_estado">Informe cidade e estado.</span>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- STATEMENT -->
+      <div class="statement-divider aos">
+        <span class="statement-tag">Seção 03</span>
+        <p class="statement-text">
+          Escolha a data que melhor se encaixa na sua <strong>realidade financeira.</strong>
+        </p>
+      </div>
+
+      <!-- §3 PAGAMENTO -->
+      <section class="form-section aos" id="section-payment">
+        <div class="section-header" style="position:relative;">
+          <div class="section-num" aria-hidden="true">03</div>
+          <p class="section-eyebrow">Seção 03</p>
+          <h2 class="section-title">Vencimento das Faturas</h2>
+        </div>
+        <div class="section-rule"></div>
+
+        <div class="field">
+          <label class="field-label">Como prefere pagar? <span class="field-required">*</span></label>
+
+          <div class="venc-grupos" id="venc-grid">
+
+            <!-- GRUPO BOLETO -->
+            <div class="venc-grupo" id="grupo-boleto">
+              <div class="venc-grupo-header">
+                <span class="venc-grupo-icon">📄</span>
+                <div>
+                  <div class="venc-grupo-title">Boleto bancário</div>
+                  <div class="venc-grupo-desc">15x de R$ 150,00 · Escolha o melhor dia de vencimento</div>
+                </div>
+              </div>
+              <div class="venc-grupo-body">
+                <div class="venc-sub-grid">
+                  <label class="venc-option" id="vopt-10">
+                    <input type="radio" name="dia_vencimento" value="10" />
+                    <span class="venc-option-text">Dia 10</span>
+                  </label>
+                  <label class="venc-option" id="vopt-20">
+                    <input type="radio" name="dia_vencimento" value="20" />
+                    <span class="venc-option-text">Dia 20</span>
+                  </label>
+                  <label class="venc-option" id="vopt-30">
+                    <input type="radio" name="dia_vencimento" value="30" />
+                    <span class="venc-option-text">Dia 30</span>
+                  </label>
+                </div>
+                <div style="margin-top:var(--space-2);">
+                  <label class="venc-option" id="vopt-outro" style="width:100%;">
+                    <input type="radio" name="dia_vencimento" value="outro" />
+                    <span class="venc-option-text">Outro dia</span>
+                  </label>
+                </div>
+                <div class="outro-field-wrap" id="outro-wrap">
+                  <input type="text" id="outro_vencimento" placeholder="Qual dia prefere?" />
+                </div>
+              </div>
+            </div>
+
+            <!-- GRUPO CARTÃO -->
+            <div class="venc-grupo" id="grupo-cartao">
+              <div class="venc-grupo-header">
+                <span class="venc-grupo-icon">💳</span>
+                <div>
+                  <div class="venc-grupo-title">Cartão de crédito</div>
+                  <div class="venc-grupo-desc">Em até 12x de R$ 150,00</div>
+                </div>
+              </div>
+              <div class="venc-grupo-body">
+                <label class="venc-option-single" id="vopt-cartao">
+                  <input type="radio" name="dia_vencimento" value="cartao" />
+                  <span class="venc-option-text">Vou pagar no cartão de crédito</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- GRUPO À VISTA -->
+            <div class="venc-grupo" id="grupo-vista">
+              <div class="venc-grupo-header">
+                <span class="venc-grupo-icon">⚡</span>
+                <div>
+                  <div class="venc-grupo-title">PIX à vista</div>
+                  <div class="venc-grupo-desc">R$ 1.500,00 · Melhor valor</div>
+                </div>
+              </div>
+              <div class="venc-grupo-body">
+                <label class="venc-option-single" id="vopt-vista">
+                  <input type="radio" name="dia_vencimento" value="a_vista" />
+                  <span class="venc-option-text">Vou pagar à vista no PIX</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- GRUPO CORTESIA -->
+            <div class="venc-grupo" id="grupo-cortesia">
+              <div class="venc-grupo-header">
+                <span class="venc-grupo-icon">🎓</span>
+                <div>
+                  <div class="venc-grupo-title">Bolsa de Estudo</div>
+                  <div class="venc-grupo-desc">Acesso exclusivo mediante código de autorização</div>
+                </div>
+              </div>
+              <div class="venc-grupo-body">
+
+                <div class="cortesia-gate" id="cortesia-gate">
+                  <p class="cortesia-gate-text">Recebeu uma bolsa de estudo da nossa equipe? Digite o código de autorização para liberar esta opção.</p>
+                  <div class="cortesia-gate-row">
+                    <input type="text" id="cortesia-code-input" placeholder="Código de autorização" autocomplete="off" />
+                    <button type="button" class="btn-cortesia-validar" onclick="validarCodigoCortesia()">Validar</button>
+                  </div>
+                  <span class="cortesia-gate-msg" id="cortesia-gate-msg"></span>
+                </div>
+
+                <label class="venc-option-single" id="vopt-cortesia" style="display:none;">
+                  <input type="radio" name="dia_vencimento" value="cortesia" id="radio-cortesia" />
+                  <span class="venc-option-text">✓ Bolsa de estudo autorizada — código validado</span>
+                </label>
+
+              </div>
+            </div>
+
+          </div><!-- /venc-grupos -->
+
+          <span class="field-error-msg" id="err-vencimento">Selecione uma forma de pagamento.</span>
+        </div>
+      </section>
+
+      <!-- ── SUBMIT ── -->
+      <div class="submit-zone aos">
+
+        <div class="submit-declaration">
+          <p>
+            Ao enviar esta ficha, declaro que as informações prestadas são verdadeiras e autorizo o
+            Instituto Despertamente — IDM a utilizá-las para fins de matrícula e emissão do contrato de formação.
+          </p>
+        </div>
+
+        <button type="submit" class="btn-submit" id="btn-submit" aria-label="Confirmar matrícula">
+          <span class="btn-text">Confirmar minha matrícula</span>
+          <span class="btn-icon" aria-hidden="true">→</span>
+          <span class="btn-spinner" aria-hidden="true"></span>
+        </button>
+
+        <p class="submit-subtext">
+          <span class="lock-icon">🔒</span>
+          Seus dados são criptografados e protegidos
+        </p>
+
+        <div class="global-error" id="global-error" role="alert"></div>
+
+      </div>
+
+    </form>
+  </div>
+</main>
+
+<!-- ── FOOTER ── -->
+<footer class="site-footer">
+  <p class="footer-logo">IDM — Instituto Despertamente</p>
+  <div class="footer-rule"></div>
+  <p class="footer-note">Documento oficial de matrícula · Todas as informações são confidenciais</p>
+</footer>
+
+<script>
+/* ── DATE SELECTS INIT ───────────────────────────── */
+(function () {
+  // Preencher dias 1-31
+  const diaEl = document.getElementById('nasc-dia');
+  for (let d = 1; d <= 31; d++) {
+    const o = document.createElement('option');
+    o.value = String(d).padStart(2, '0');
+    o.textContent = String(d).padStart(2, '0');
+    diaEl.appendChild(o);
+  }
+  // Preencher anos (100 anos atrás até hoje)
+  const anoEl = document.getElementById('nasc-ano');
+  const anoAtual = new Date().getFullYear();
+  for (let a = anoAtual - 10; a >= anoAtual - 100; a--) {
+    const o = document.createElement('option');
+    o.value = a;
+    o.textContent = a;
+    anoEl.appendChild(o);
+  }
+
+  function syncHidden() {
+    const d = diaEl.value;
+    const m = document.getElementById('nasc-mes').value;
+    const a = anoEl.value;
+    document.getElementById('data_nascimento').value = (d && m && a) ? `${a}-${m}-${d}` : '';
+    updateSteps && updateSteps();
+  }
+
+  ['nasc-dia','nasc-mes','nasc-ano'].forEach(id => {
+    document.getElementById(id).addEventListener('change', syncHidden);
+  });
+})();
+
+/* ── CONFIGURAÇÃO DE PAGAMENTO (SYNCPAY) ─────────── */
+const EDGE_GERAR_CONTRATO  = 'https://usqiyekfmwwnvkmkdlej.supabase.co/functions/v1/gerar-contrato';
+const LINK_SYNCPAY_VISTA     = 'https://link.syncpayments.com.br/K2xfdF';
+const LINK_SYNCPAY_PARCELADO = 'https://link.syncpayments.com.br/MCZdi3';
+
+/* ── CONFIG SUPABASE ─────────────────────────────── */
+const SUPABASE_URL = 'https://usqiyekfmwwnvkmkdlej.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzcWl5ZWtmbXd3bnZrbWtkbGVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1NTM5MTIsImV4cCI6MjA5MDEyOTkxMn0.HImguQINgMUvuetgIfDL3sr7KwhSWGoXvaNMKldxYmQ';
+
+const SB_HEADERS = {
+  'apikey': SUPABASE_KEY,
+  'Authorization': `Bearer ${SUPABASE_KEY}`,
+  'Content-Type': 'application/json',
+  // return=minimal: o anon key nao tem (e nao deve ter) permissao de leitura
+  // em leads/alunos, entao pedir a linha de volta (return=representation) faz
+  // o Postgres recusar com "permission denied" antes mesmo de gravar. Nenhuma
+  // chamada deste arquivo usa o corpo de resposta de um insert/patch.
+  'Prefer': 'return=minimal'
+};
+
+async function sb(path, opts = {}) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    headers: { ...SB_HEADERS, ...(opts.headers || {}) },
+    ...opts
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(e.message || e.details || `Erro HTTP ${res.status}`);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+/* ── INIT ────────────────────────────────────────── */
+const params     = new URLSearchParams(location.search);
+const lancamentoId = params.get('lancamento');
+let   lancamentoData = null;
+
+/* ── ATRIBUIÇÃO DE VENDEDOR (link ?v=<código>) ───── */
+const VENDEDORES_POR_CODIGO = {
+  '6be52633': 'Helen Magna',
+  'd95ebfdc': 'Miguel Fogaça',
+  '1b8a0e29': 'Aline Horta',
+};
+const vendedorCodigo = params.get('v');
+const vendedorNome   = vendedorCodigo ? (VENDEDORES_POR_CODIGO[vendedorCodigo] || null) : null;
+
+async function init() {
+  const loadEl = document.getElementById('loading-screen');
+  const errEl  = document.getElementById('error-screen');
+
+  try {
+    if (lancamentoId) {
+      const rows = await sb(
+        `lancamentos?id=eq.${lancamentoId}&select=id,nome,turma_destino_id,produto_destino,valor_mensalidade_destino,total_mensalidades_destino`
+      );
+      if (rows && rows.length > 0) {
+        lancamentoData = rows[0];
+        const el = document.getElementById('lancamento-nome');
+        if (el && lancamentoData.nome) el.textContent = lancamentoData.nome;
+      }
+    }
+  } catch (e) {
+    console.warn('Lançamento não carregado:', e.message);
+  }
+
+  setTimeout(() => {
+    loadEl.classList.add('out');
+    setTimeout(() => loadEl.style.display = 'none', 600);
+  }, 700);
+}
+
+init();
+
+/* ── AOS ─────────────────────────────────────────── */
+const obsAOS = new IntersectionObserver(
+  entries => entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); obsAOS.unobserve(e.target); } }),
+  { threshold: 0.08, rootMargin: '0px 0px -30px 0px' }
+);
+document.querySelectorAll('.aos').forEach(el => obsAOS.observe(el));
+
+/* ── MASKS ───────────────────────────────────────── */
+document.getElementById('rg').addEventListener('input', function () {
+  this.value = this.value.replace(/[^0-9A-Za-z.\-\/]/g, '').slice(0, 20);
+});
+
+document.getElementById('cpf').addEventListener('input', function () {
+  let v = this.value.replace(/\D/g, '').slice(0, 11);
+  if (v.length > 9)      v = v.replace(/(\d{3})(\d{3})(\d{3})(\d{0,2})/, '$1.$2.$3-$4');
+  else if (v.length > 6) v = v.replace(/(\d{3})(\d{3})(\d{0,3})/, '$1.$2.$3');
+  else if (v.length > 3) v = v.replace(/(\d{3})(\d{0,3})/, '$1.$2');
+  this.value = v;
+});
+
+document.getElementById('cep').addEventListener('input', function () {
+  let v = this.value.replace(/\D/g, '').slice(0, 8);
+  if (v.length > 5) v = v.replace(/(\d{5})(\d{0,3})/, '$1-$2');
+  this.value = v;
+});
+
+/* ── CÓDIGO DE AUTORIZAÇÃO DA BOLSA/CORTESIA ─────── */
+const CORTESIA_CODE = 'super motivos';
+
+function validarCodigoCortesia() {
+  const input = document.getElementById('cortesia-code-input');
+  const msg   = document.getElementById('cortesia-gate-msg');
+  const val   = input.value.trim().toLowerCase().replace(/\s+/g, ' ');
+
+  if (!val) {
+    msg.textContent = 'Digite o código para continuar.';
+    msg.className = 'cortesia-gate-msg show error';
+    return;
+  }
+
+  if (val === CORTESIA_CODE) {
+    document.getElementById('cortesia-gate').style.display = 'none';
+    const optEl = document.getElementById('vopt-cortesia');
+    optEl.style.display = 'flex';
+    const radio = document.getElementById('radio-cortesia');
+    radio.checked = true;
+    radio.dispatchEvent(new Event('change'));
+  } else {
+    msg.textContent = 'Código inválido. Confira com a equipe do Instituto Despertamente.';
+    msg.className = 'cortesia-gate-msg show error';
+    input.classList.add('has-error');
+  }
+}
+
+document.getElementById('cortesia-code-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); validarCodigoCortesia(); }
+});
+document.getElementById('cortesia-code-input').addEventListener('input', function () {
+  this.classList.remove('has-error');
+});
+
+/* ── RADIO VENCIMENTO ────────────────────────────── */
+document.querySelectorAll('input[name="dia_vencimento"]').forEach(radio => {
+  radio.addEventListener('change', () => {
+    // limpar todas as seleções visuais
+    document.querySelectorAll('.venc-option, .venc-option-single').forEach(o => o.classList.remove('selected'));
+    document.querySelectorAll('.venc-grupo').forEach(g => g.classList.remove('has-selection'));
+
+    // marcar opção selecionada
+    const optEl = radio.closest('.venc-option, .venc-option-single');
+    if (optEl) optEl.classList.add('selected');
+
+    // destacar grupo pai
+    const grupoEl = radio.closest('.venc-grupo');
+    if (grupoEl) grupoEl.classList.add('has-selection');
+
+    // mostrar campo "outro dia"
+    document.getElementById('outro-wrap').classList.toggle('show', radio.value === 'outro');
+
+    updateSteps();
+  });
+});
+
+/* ── STEP INDICATOR ──────────────────────────────── */
+const STEP_FIELDS = [
+  ['nome', 'email', 'telefone', 'cpf', 'data_nascimento'],  // step 1
+  ['pais', 'cep', 'endereco', 'cidade_estado'],              // step 2
+  []                                                          // step 3 = vencimento radio
+];
+
+function updateSteps() {
+  const s1Done = STEP_FIELDS[0].every(id => document.getElementById(id)?.value?.trim());
+  const s2Done = STEP_FIELDS[1].every(id => document.getElementById(id)?.value?.trim());
+  const s3Done = !!document.querySelector('input[name="dia_vencimento"]:checked');
+
+  const mark = (n, done, active) => {
+    const c = document.getElementById(`step-${n}-circle`);
+    const l = document.getElementById(`step-${n}-label`);
+    c.classList.toggle('done', done && !active);
+    c.classList.toggle('active', active);
+    c.textContent = done && !active ? '✓' : n;
+    l.classList.toggle('active', active || done);
+  };
+
+  mark(1, s1Done, !s1Done);
+  mark(2, s2Done, s1Done && !s2Done);
+  mark(3, s3Done, s1Done && s2Done && !s3Done);
+
+  // progress
+  let filled = 0;
+  const all = ['nome','email','telefone','cpf','data_nascimento','pais','cep','endereco','cidade_estado'];
+  all.forEach(id => { if (document.getElementById(id)?.value?.trim()) filled++; });
+  if (s3Done) filled++;
+  const pct = Math.round((filled / (all.length + 1)) * 100);
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.querySelector('.progress-track').setAttribute('aria-valuenow', pct);
+}
+
+document.querySelectorAll('input, textarea').forEach(el => {
+  el.addEventListener('input', updateSteps);
+  el.addEventListener('change', updateSteps);
+});
+
+/* ── VALIDATION ──────────────────────────────────── */
+function validarCPF(cpf) {
+  const c = cpf.replace(/\D/g, '');
+  if (c.length !== 11 || /^(\d)\1+$/.test(c)) return false;
+  let s = 0;
+  for (let i = 0; i < 9; i++) s += +c[i] * (10 - i);
+  let r = (s * 10) % 11; if (r >= 10) r = 0;
+  if (r !== +c[9]) return false;
+  s = 0;
+  for (let i = 0; i < 10; i++) s += +c[i] * (11 - i);
+  r = (s * 10) % 11; if (r >= 10) r = 0;
+  return r === +c[10];
+}
+
+function clearErrors() {
+  document.querySelectorAll('.field-error-msg.show').forEach(e => e.classList.remove('show'));
+  document.querySelectorAll('.has-error').forEach(e => e.classList.remove('has-error'));
+}
+
+function fieldError(errId, inputId) {
+  document.getElementById(errId)?.classList.add('show');
+  const el = document.getElementById(inputId);
+  if (el) el.classList.add('has-error');
+}
+
+function validate(d) {
+  let ok = true;
+  if (!d.nome || d.nome.trim().split(/\s+/).length < 2) { fieldError('err-nome','nome'); ok = false; }
+  if (!d.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)) { fieldError('err-email','email'); ok = false; }
+  if (!d.telefone || d.telefone.replace(/\D/g,'').length < 10) { fieldError('err-telefone','telefone'); ok = false; }
+  if (!validarCPF(d.cpf)) { fieldError('err-cpf','cpf'); ok = false; }
+  if (!d.data_nascimento) { fieldError('err-data_nascimento','data_nascimento'); ok = false; }
+  if (!d.rg || d.rg.trim().length < 4) { fieldError('err-rg','rg'); ok = false; }
+  if (!d.sexo) { fieldError('err-sexo','sexo'); ok = false; }
+  if (!d.pais) { fieldError('err-pais','pais'); ok = false; }
+  if (!d.cep || d.cep.replace(/\D/g,'').length < 8) { fieldError('err-cep','cep'); ok = false; }
+  if (!d.endereco) { fieldError('err-endereco','endereco'); ok = false; }
+  if (!d.cidade_estado) { fieldError('err-cidade_estado','cidade_estado'); ok = false; }
+  if (!d.dia_vencimento) { fieldError('err-vencimento','venc-grid'); ok = false; }
+  return ok;
+}
+
+/* ── SUBMIT ──────────────────────────────────────── */
+document.getElementById('matricula-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearErrors();
+
+  const radioVenc = document.querySelector('input[name="dia_vencimento"]:checked');
+  let vencVal = radioVenc ? radioVenc.value : '';
+  if (vencVal === 'outro') {
+    const custom = document.getElementById('outro_vencimento').value.trim();
+    vencVal = custom || 'outro';
+  }
+
+  const data = {
+    nome:            document.getElementById('nome').value.trim(),
+    email:           document.getElementById('email').value.trim().toLowerCase(),
+    telefone:        document.getElementById('telefone').value.trim(),
+    cpf:             document.getElementById('cpf').value.trim(),
+    rg:              document.getElementById('rg').value.trim(),
+    sexo:            document.getElementById('sexo').value,
+    data_nascimento: (() => { const d=document.getElementById('nasc-dia').value, m=document.getElementById('nasc-mes').value, a=document.getElementById('nasc-ano').value; return (d&&m&&a)?`${a}-${m}-${d}`:''; })(),
+    pais:            document.getElementById('pais').value.trim(),
+    cep:             document.getElementById('cep').value.trim(),
+    endereco:        document.getElementById('endereco').value.trim(),
+    cidade_estado:   document.getElementById('cidade_estado').value.trim(),
+    dia_vencimento:  vencVal,
+  };
+
+  if (!validate(data)) {
+    const firstErr = document.querySelector('.field-error-msg.show');
+    if (firstErr) firstErr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+
+  const btn = document.getElementById('btn-submit');
+  const gErr = document.getElementById('global-error');
+  btn.classList.add('loading');
+  btn.disabled = true;
+  gErr.classList.remove('show');
+
+  try {
+    const phone9 = data.telefone.replace(/\D/g, '').slice(-9);
+
+    // 1. Buscar lead/aluno existentes via função segura no banco — o anon key
+    // deste formulário não tem (nem deve ter) permissão de leitura direta em
+    // leads/alunos, pois isso exporia CPF/RG/dados de todo mundo publicamente.
+    const existente = await sb('rpc/matricula_checar_existente', {
+      method: 'POST',
+      headers: { 'Prefer': 'return=representation' },
+      body: JSON.stringify({ p_email: data.email, p_phone9: phone9 }),
+    }) || {};
+    const lead = existente.lead_id ? { id: existente.lead_id } : null;
+
+    const leadPayload = {
+      nome:             data.nome,
+      email:            data.email,
+      whatsapp:         data.telefone,
+      telefone:         data.telefone,
+      status:           'Matriculado',
+      origem:           'lancamento',
+      produto:          'lancamento',
+      ultima_atividade: new Date().toISOString(),
+      ...(lancamentoId                           ? { lancamento_id: lancamentoId }                        : {}),
+      ...(lancamentoData?.turma_destino_id       ? { turma_id: lancamentoData.turma_destino_id }         : {}),
+      ...(vendedorNome                           ? { vendedor: vendedorNome }                              : {}),
+    };
+
+    let leadId;
+    if (lead) {
+      await sb(`leads?id=eq.${lead.id}`, { method: 'PATCH', body: JSON.stringify(leadPayload) });
+      leadId = lead.id;
+    } else {
+      const newLead = await sb('leads', { method: 'POST', body: JSON.stringify({ ...leadPayload, criado_em: new Date().toISOString() }) });
+      leadId = newLead?.[0]?.id;
+    }
+
+    // 2. Criar/atualizar aluno
+    const diaNum        = ['10','20','30'].includes(data.dia_vencimento) ? parseInt(data.dia_vencimento) : null;
+    const tipoPagamento = data.dia_vencimento === 'a_vista'    ? 'bolsa'
+                        : data.dia_vencimento === 'cortesia'   ? 'cortesia'
+                        : 'mensalidade';
+
+    const alunoPayload = {
+      nome:                  data.nome,
+      email:                 data.email,
+      whatsapp:              data.telefone,
+      cpf:                   data.cpf,
+      rg:                    data.rg,
+      sexo:                  data.sexo,
+      data_nascimento:       data.data_nascimento,
+      pais:                  data.pais,
+      cep:                   data.cep,
+      endereco:              data.endereco,
+      cidade_estado:         data.cidade_estado,
+      dia_vencimento_contrato: data.dia_vencimento,
+      dia_vencimento:        diaNum,
+      status:                'ativo',
+      origem_lead:           'lancamento',
+      tipo_pagamento:        tipoPagamento,
+      forms_respondido:      true,
+      forms_respondido_em:   new Date().toISOString(),
+      data_matricula:        new Date().toISOString().split('T')[0],
+      ...(lancamentoId                              ? { lancamento_id: lancamentoId }                         : {}),
+      ...(lancamentoData?.turma_destino_id          ? { turma_id: lancamentoData.turma_destino_id }          : {}),
+      ...(lancamentoData?.produto_destino           ? { produto: lancamentoData.produto_destino }             : {}),
+      ...(lancamentoData?.valor_mensalidade_destino ? { valor_mensalidade: lancamentoData.valor_mensalidade_destino } : {}),
+      ...(lancamentoData?.total_mensalidades_destino ? { total_mensalidades: lancamentoData.total_mensalidades_destino } : {}),
+      ...(vendedorNome                              ? { vendedor: vendedorNome, vendedor_id: vendedorNome } : {}),
+    };
+
+    if (existente.aluno_id) {
+      await sb(`alunos?id=eq.${existente.aluno_id}`, { method: 'PATCH', body: JSON.stringify(alunoPayload) });
+    } else {
+      await sb('alunos', { method: 'POST', body: JSON.stringify(alunoPayload) });
+    }
+
+    // Registro ok → abrir pagamento (o contrato só é gerado depois do pagamento confirmado)
+    openPaymentScreen(data);
+
+  } catch (err) {
+    console.error(err);
+    gErr.textContent = `Ocorreu um erro ao registrar sua matrícula. Por favor, tente novamente. (${err.message})`;
+    gErr.classList.add('show');
+    btn.classList.remove('loading');
+    btn.disabled = false;
+  }
+});
+
+/* ── DADOS DO ALUNO (guardados para o MP) ─────────── */
+let _alunoData = null;
+
+/* ── TELA DE ASSINATURA DO CONTRATO (PÓS-PAGAMENTO) ── */
+async function openContractScreen() {
+  document.getElementById('payment-screen').classList.remove('show');
+  document.getElementById('sign-screen').classList.add('show');
+  document.body.style.overflow = 'auto';
+  window.scrollTo(0, 0);
+
+  document.getElementById('sign-loading').style.display = 'flex';
+  document.getElementById('sign-ready').style.display   = 'none';
+  document.getElementById('sign-error').style.display   = 'none';
+
+  if (!_alunoData) { finishContractScreen(); return; }
+
+  const tipoPagamento = _alunoData.dia_vencimento === 'a_vista'  ? 'bolsa'
+                      : _alunoData.dia_vencimento === 'cortesia' ? 'cortesia'
+                      : 'mensalidade';
+
+  // Boleto/cartão seguem o valor e o número de parcelas reais do lançamento
+  // (quando existir) — sem isso o contrato caía nos valores fixos padrão
+  const usaValoresLancamento = tipoPagamento === 'mensalidade';
+  const valorParcelaLancamento = usaValoresLancamento ? (lancamentoData?.valor_mensalidade_destino  ?? 150.00) : null;
+  const numParcelasLancamento  = usaValoresLancamento ? (lancamentoData?.total_mensalidades_destino ?? 15)     : null;
+
+  try {
+    const res = await fetch(EDGE_GERAR_CONTRATO, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nome:              _alunoData.nome,
+        email:             _alunoData.email,
+        whatsapp:          _alunoData.telefone,
+        telefone:          _alunoData.telefone,
+        cpf:               _alunoData.cpf,
+        rg:                _alunoData.rg,
+        sexo:              _alunoData.sexo,
+        data_nascimento:   _alunoData.data_nascimento,
+        endereco:          _alunoData.endereco,
+        cep:               _alunoData.cep,
+        cidade_estado:     _alunoData.cidade_estado,
+        pais:              _alunoData.pais,
+        dia_vencimento:    _alunoData.dia_vencimento,
+        tipo_pagamento:    tipoPagamento,
+        ...(valorParcelaLancamento ? { valor_parcela: valorParcelaLancamento } : {}),
+        ...(numParcelasLancamento  ? { num_parcelas: numParcelasLancamento }   : {}),
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.link_assinatura) throw new Error(json.error || 'Sem link de assinatura');
+
+    document.getElementById('sign-link').href   = json.link_assinatura;
+    document.getElementById('sign-iframe').src  = json.link_assinatura;
+    document.getElementById('sign-loading').style.display = 'none';
+    document.getElementById('sign-ready').style.display   = 'flex';
+  } catch (e) {
+    console.warn('Erro ao gerar contrato:', e.message);
+    document.getElementById('sign-loading').style.display = 'none';
+    document.getElementById('sign-error').style.display   = 'flex';
+  }
+}
+
+function finishContractScreen() {
+  document.getElementById('sign-screen').classList.remove('show');
+  openReferralScreen();
+}
+
+/* ── TELA DE INDICAÇÕES (PÓS-PAGAMENTO, PRÉ-SUCESSO) ── */
+function openReferralScreen() {
+  const firstName = (_alunoData?.nome || '').split(' ')[0];
+  document.getElementById('ref-nome').textContent = firstName + '!';
+  document.getElementById('payment-screen').classList.remove('show');
+  document.getElementById('referral-screen').classList.add('show');
+  document.body.style.overflow = 'auto';
+  window.scrollTo(0, 0);
+}
+
+async function submitReferrals() {
+  const btn = document.getElementById('btn-ref-submit');
+  btn.classList.add('loading');
+  btn.disabled = true;
+
+  const referidos = [];
+  for (let i = 1; i <= 5; i++) {
+    const nome = document.getElementById(`ref-nome-${i}`).value.trim();
+    const tel  = document.getElementById(`ref-tel-${i}`).value.trim();
+    if (nome && tel) referidos.push({ nome, tel });
+  }
+
+  try {
+    if (referidos.length > 0 && _alunoData) {
+      await Promise.all(referidos.map(r => sb('leads', {
+        method: 'POST',
+        body: JSON.stringify({
+          nome:             r.nome,
+          telefone:         r.tel,
+          whatsapp:         r.tel,
+          origem:           'indicacao_matricula',
+          status:           'Indicado',
+          produto:          'lancamento',
+          observacoes:      `Indicado(a) por ${_alunoData.nome} (${_alunoData.email} · ${_alunoData.telefone}) pela Ficha de Matrícula — condição especial + bônus.`,
+          ...(lancamentoId ? { lancamento_id: lancamentoId } : {}),
+          criado_em:        new Date().toISOString(),
+          ultima_atividade: new Date().toISOString(),
+        }),
+      })));
+    }
+  } catch (e) {
+    console.warn('Erro ao salvar indicações (não bloqueia o fluxo):', e.message);
+  }
+
+  finishReferralScreen();
+}
+
+function skipReferrals() {
+  finishReferralScreen();
+}
+
+function finishReferralScreen() {
+  document.getElementById('referral-screen').classList.remove('show');
+  showSuccess();
+}
+
+/* ── ABRIR TELA DE PAGAMENTO ─────────────────────── */
+function openPaymentScreen(data) {
+  _alunoData = data;
+
+  // Exibir nome no header
+  const firstName = data.nome.split(' ')[0];
+  document.getElementById('pay-header-name').textContent = `Olá, ${firstName}!`;
+
+  // Links de pagamento SyncPay
+  document.getElementById('btn-link-vista').href     = LINK_SYNCPAY_VISTA;
+  document.getElementById('btn-link-parcelado').href = LINK_SYNCPAY_PARCELADO;
+
+  // Cortesia: esconde pagamento, mostra box especial
+  const venc = data.dia_vencimento;
+  const isCortesia = venc === 'cortesia';
+
+  document.querySelector('.pay-options').style.display   = isCortesia ? 'none' : '';
+  document.getElementById('cortesia-box').classList.toggle('show', isCortesia);
+  document.getElementById('pay-footer-note').style.display = isCortesia ? 'none' : '';
+
+  if (isCortesia) {
+    document.getElementById('pay-header-title').textContent = 'Sua vaga está reservada!';
+  }
+
+  // Pré-selecionar opção de pagamento
+  if (!isCortesia) {
+    let preSelect = null;
+    if (venc === 'a_vista') preSelect = 'vista';
+    else if (venc === 'cartao' || ['10','20','30'].includes(venc)) preSelect = 'parcelado';
+    if (preSelect) selectPay(preSelect);
+  }
+
+  // Mostrar tela
+  document.getElementById('payment-screen').classList.add('show');
+  document.body.style.overflow = 'auto';
+  window.scrollTo(0, 0);
+}
+
+/* ── SELECIONAR OPÇÃO DE PAGAMENTO ───────────────── */
+let _paySelected = null;
+
+function selectPay(tipo) {
+  if (_paySelected === tipo) return; // toggle off ignorado — mantém aberto
+  _paySelected = tipo;
+
+  ['vista', 'parcelado'].forEach(t => {
+    document.getElementById(`pay-${t}`).classList.toggle('active', t === tipo);
+  });
+}
+
+/* ── TELA DE SUCESSO FINAL ───────────────────────── */
+function showSuccess() {
+  document.getElementById('payment-screen').classList.remove('show');
+  document.getElementById('success-screen').classList.add('show');
+  document.body.style.overflow = 'hidden';
+  window.scrollTo(0, 0);
+}
+</script>
+
+</body>
+</html>
