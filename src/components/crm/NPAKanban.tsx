@@ -428,21 +428,24 @@ LeadCard.displayName = 'LeadCard';
 
 // ─── MatriculaColumnHeader ─────────────────────────────────────────────────────
 
-function MatriculaColumnHeader({ leads, valorIngressoEvento }: {
+function MatriculaColumnHeader({ leads, valorMaterialEvento }: {
   leads: NPALead[];
-  valorIngressoEvento: number;
+  valorMaterialEvento: number;
 }) {
   const matriculados = leads.filter((l) => l.fase === 'matricula');
   const totalFat = matriculados.reduce(
     (acc, l) => acc + (Number(l.valor_matricula) > 0 ? Number(l.valor_matricula) : VALOR_MATRICULA_PADRAO),
     0,
   );
-  const totalMat = matriculados.reduce(
-    (acc, l) => acc + (l.comprou_material ? (Number(l.valor_material) > 0 ? Number(l.valor_material) : VALOR_MATERIAL_PADRAO) : 0),
-    0,
-  );
+  // Materiais: soma TODO mundo que comprou material no evento, nao so quem
+  // tambem matriculou (bug antigo excluia quem comprou so o material).
+  // Usa o preco configurado no evento (valor_material_padrao), nao o campo
+  // por-lead l.valor_material, que fica com um valor default de cadastro
+  // e nao reflete o preco promocional realmente cobrado.
+  const compraramMaterial = leads.filter((l) => l.comprou_material);
+  const totalMat = compraramMaterial.length * valorMaterialEvento;
 
-  if (matriculados.length === 0) return null;
+  if (matriculados.length === 0 && compraramMaterial.length === 0) return null;
 
   return (
     <div className="mb-3 p-3 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 text-white shadow-md">
@@ -1905,7 +1908,7 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
 
                     {/* Faturamento card — só na coluna matrícula */}
                     {faseKey === 'matricula' && (
-                      <MatriculaColumnHeader leads={leads} valorIngressoEvento={valorIngressoEvento} />
+                      <MatriculaColumnHeader leads={leads} valorMaterialEvento={valorMaterialEvento} />
                     )}
 
                     <div className="space-y-2 max-h-[520px] overflow-y-auto pr-0.5">
