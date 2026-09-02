@@ -2229,9 +2229,14 @@ const SB_HEADERS = {
 };
 
 async function sb(path, opts = {}) {
+  // ATENCAO: nao faça `{ headers: {...}, ...opts }` — opts tambem tem uma chave
+  // `headers`, e o spread de opts por cima sobrescreve o objeto de headers já
+  // mesclado, apagando apikey/Authorization sempre que o chamador passar seu
+  // próprio `headers` (ex: pra pedir `Prefer: return=representation` na RPC).
+  const { headers: extraHeaders, ...restOpts } = opts;
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: { ...SB_HEADERS, ...(opts.headers || {}) },
-    ...opts
+    headers: { ...SB_HEADERS, ...(extraHeaders || {}) },
+    ...restOpts
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
