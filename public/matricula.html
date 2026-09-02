@@ -2524,7 +2524,7 @@ document.getElementById('matricula-form').addEventListener('submit', async (e) =
 
     let leadId;
     if (lead) {
-      await sb(`leads?id=eq.${lead.id}`, { method: 'PATCH', body: JSON.stringify(leadPayload) });
+      await sb('rpc/matricula_atualizar_lead', { method: 'POST', body: JSON.stringify({ p_id: lead.id, p_dados: leadPayload }) });
       leadId = lead.id;
     } else {
       const newLead = await sb('leads', { method: 'POST', body: JSON.stringify({ ...leadPayload, criado_em: new Date().toISOString() }) });
@@ -2566,7 +2566,7 @@ document.getElementById('matricula-form').addEventListener('submit', async (e) =
     };
 
     if (existente.aluno_id) {
-      await sb(`alunos?id=eq.${existente.aluno_id}`, { method: 'PATCH', body: JSON.stringify(alunoPayload) });
+      await sb('rpc/matricula_atualizar_aluno', { method: 'POST', body: JSON.stringify({ p_id: existente.aluno_id, p_dados: alunoPayload }) });
     } else {
       await sb('alunos', { method: 'POST', body: JSON.stringify(alunoPayload) });
     }
