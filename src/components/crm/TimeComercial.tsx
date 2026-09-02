@@ -15,7 +15,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { toast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { dbRowToLead } from '@/contexts/LeadsContext';
-import { assignTurmaEAtualizarParcelas } from '@/lib/parcelasAluno';
 import { ChatTimeComercial } from './chat/ChatTimeComercial';
 import { PREMIUM_TABLE_HEADER_ROW, premiumZebraRow, StatTile, SectionBar } from '@/components/crm/ui/premium';
 import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
@@ -1793,7 +1792,19 @@ function AlunosAguardandoTurmaCard({ viewAsName }: VendorScopeProps) {
   const assignTurma = async (aluno: AlunoAguardandoTurma, turmaId: string) => {
     setAssigning((prev) => ({ ...prev, [aluno.id]: true }));
     try {
-      await assignTurmaEAtualizarParcelas(aluno.id, turmaId, aluno);
+      // Roda no servidor (time-comercial-atribuir-turma), não direto no
+      // client -- essa ação grava em `pagamentos`, e a RLS dessa tabela
+      // exige permissão de "financeiro" que vendedores não têm (nem devem
+      // ter, senão a tela de Financeiro inteira ficaria visível pra eles).
+      // A function autoriza checando que o aluno é mesmo do vendedor
+      // logado. Achado real 2026-08-27 ao revisar RLS antes de liberar o
+      // sistema pra Helen/Miguel de verdade.
+      const { data, error } = await supabase.functions.invoke('time-comercial-atribuir-turma', {
+        body: { alunoId: aluno.id, turmaId },
+      });
+      if (error || !(data as any)?.ok) {
+        throw new Error((data as any)?.erro || error?.message || 'Erro ao atribuir turma.');
+      }
       // Atribuir turma refaz as PARCELAS do aluno, não só o vínculo. Sem avisar, o
       // Financeiro segue mostrando as parcelas antigas e a Cobrança a fila velha.
       // `alunos` já arrasta `pagamentos` pela invalidação cruzada.
