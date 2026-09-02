@@ -2238,11 +2238,16 @@ async function sb(path, opts = {}) {
     headers: { ...SB_HEADERS, ...(extraHeaders || {}) },
     ...restOpts
   });
+  const raw = await res.text();
+  const parse = () => { try { return raw ? JSON.parse(raw) : {}; } catch { return {}; } };
   if (!res.ok) {
-    const e = await res.json().catch(() => ({}));
+    const e = parse();
     throw new Error(e.message || e.details || `Erro HTTP ${res.status}`);
   }
-  return res.status === 204 ? null : res.json();
+  // return=minimal (e algumas respostas 200) vem com corpo vazio -- checar o
+  // status 204 sozinho nao cobre todo caso; se nao tem corpo, nao tem o que
+  // parsear como JSON.
+  return raw ? parse() : null;
 }
 
 /* ── INIT ────────────────────────────────────────── */
