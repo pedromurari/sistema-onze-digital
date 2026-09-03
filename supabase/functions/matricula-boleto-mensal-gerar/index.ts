@@ -1,22 +1,20 @@
 /**
  * matricula-boleto-mensal-gerar
- * Gera (via Asaas, PRODUCAO) os boletos reais das parcelas 2-15 do plano
- * "boleto" da ficha de matrícula pública do Time Comercial (ver
- * src/pages/MatriculaTimeComercial.tsx e matricula-pagamento-criar). A 1ª
- * parcela desse plano continua sendo cobrada via PIX no Mercado Pago na
- * hora da matrícula (matricula-pagamento-criar, forma==='boleto') -- esta
- * function cuida só das parcelas seguintes, agora via Asaas (pedido
- * explícito do dono do produto em 2026-09-03 -- antes disso era Mercado
- * Pago 'bolbradesco', ver histórico deste arquivo).
+ * Rede de segurança: gera (via Asaas, PRODUCAO) qualquer boleto do plano
+ * "boleto" (15x R$150) da matrícula do Time Comercial que não tenha sido
+ * criado ainda. Desde 2026-09-03, as 15 parcelas (inclusive a 1ª) já são
+ * geradas de uma vez direto em matricula-pagamento-criar, na hora da
+ * matrícula -- esta function só entra em ação se alguma parcela falhar
+ * naquele momento (timeout, erro pontual do Asaas, etc.), pra não deixar o
+ * aluno sem boleto de forma silenciosa. Antes de 2026-09-03, cuidava só das
+ * parcelas 2-15 (a 1ª era PIX-MP instantâneo); ver histórico deste arquivo.
  *
- * Cliente Asaas: criado uma única vez por aluno (na primeira parcela
- * processada) e reaproveitado nas seguintes -- id salvo em
- * alunos.asaas_customer_id.
+ * Cliente Asaas: criado uma única vez por aluno e reaproveitado -- id salvo
+ * em alunos.asaas_customer_id.
  *
  * Idempotente/seguro rodar repetidamente: só processa pagamentos com
  * asaas_payment_id IS NULL (ainda não gerados). Já vem com cron agendado
- * (matricula-boleto-mensal-gerar-cron, 12h/18h -- ver migrations) igual
- * era com o Mercado Pago, só trocando o que a function faz por dentro.
+ * (matricula-boleto-mensal-gerar-cron, 12h/18h -- ver migrations).
  *
  * Auth: só aceita chamada com o header `x-cron-key` batendo com
  * public.get_equipe_11ds_cron_secret() (secret genérica do projeto, já
@@ -25,7 +23,6 @@
  * Critério de elegibilidade (ver WHERE abaixo):
  *   - alunos.origem_lead = 'time_comercial'
  *   - alunos.forma_pagamento = 'boleto'
- *   - pagamentos.numero_parcela >= 2
  *   - pagamentos.status = 'pendente'
  *   - pagamentos.asaas_payment_id IS NULL          (ainda não gerado)
  *   - pagamentos.data_vencimento <= hoje + 10 dias  (gera com folga antes do
@@ -121,7 +118,6 @@ serve(async (req) => {
       `)
       .eq('status', 'pendente')
       .is('asaas_payment_id', null)
-      .gte('numero_parcela', 2)
       .lte('data_vencimento', limiteVencimentoStr)
       .eq('alunos.origem_lead', 'time_comercial')
       .eq('alunos.forma_pagamento', 'boleto');

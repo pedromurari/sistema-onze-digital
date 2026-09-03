@@ -1,8 +1,9 @@
 /**
  * matricula-pagamento-criar
- * Cria a cobrança no Mercado Pago (PRODUCAO) pra um aluno ja matriculado via
- * matricula_time_comercial_criar (fluxo publico /matricula/:vendedor,
- * ver src/pages/MatriculaTimeComercial.tsx).
+ * Cria a cobrança pra um aluno ja matriculado via matricula_time_comercial_criar
+ * (fluxo publico /matricula/:vendedor, ver src/pages/MatriculaTimeComercial.tsx).
+ * PIX à vista e cartão (parcelado/recorrente) via Mercado Pago; boleto via
+ * Asaas -- ver ramo de cada forma abaixo.
  *
  * PIX, boleto e cartao parcelado validados com cartao de teste e liberados
  * pra producao em 2026-08-26. Cartao recorrente liberado em 2026-09-03 apos
@@ -10,13 +11,18 @@
  * not found" no ambiente de sandbox do MP -- limitacao do sandbox pra esse
  * recurso especificamente, nao reproduziu com token/cartao real).
  *
- * A partir de 2026-08-26: forma 'boleto' cobra a 1ª parcela (R$150) via PIX
- * (não mais via boleto bancário real 'bolbradesco') — mesmo formato de
- * resposta do 'avista' (qrCodeBase64/qrCode/paymentId/status). As outras 14
- * parcelas são boletos reais gerados via Asaas (nao mais Mercado Pago, desde
- * 2026-09-03) e enviados automaticamente pelo cron matricula-boleto-mensal-gerar
- * (não passa por aqui) via WhatsApp/e-mail usando o sistema de cobrança já
- * existente (enviar-cobranca).
+ * A partir de 2026-09-03: forma 'boleto' gera as 15 parcelas (R$150 cada) de
+ * uma vez só, direto no Asaas -- inclusive a 1ª, que antes era cobrada via
+ * PIX no Mercado Pago pra ter confirmação instantânea (pedido explícito do
+ * dono do produto: "o primeiro pagamento pode ir direto pro asaas mesmo, já
+ * gera as 15 parcelas"). Pra não perder a UX de QR code/copia-e-cola que a
+ * tela de pagamento já tinha, a 1ª parcela usa o Pix embutido do próprio
+ * boleto Asaas (todo BOLETO no Asaas tem um Pix equivalente em paralelo --
+ * GET /payments/{id}/pixQrCode). As linhas em `pagamentos` são criadas aqui
+ * mesmo (turma_id NULL, igual o resto da matrícula -- só é atribuída depois
+ * pelo vendedor). Ver também: parcelasAluno.ts (sincronizarParcelasAluno foi
+ * ajustado pra preservar essas linhas já cobradas quando a turma é
+ * atribuída, e parou de pré-marcar a 1ª parcela do boleto como paga).
  *
  * Body: {
  *   alunoId: string,
@@ -25,7 +31,7 @@
  *   cardToken?: string,
  *   installments?: number,
  *   paymentMethodId?: string,
- *   // status check (polling do Pix):
+ *   // status check (polling do Pix -- MP ou Asaas, detectado pelo formato do id):
  *   checkStatus?: boolean,
  *   paymentId?: string | number,
  *   // dados do pagador (fallback: busca em `alunos` se não vier):
@@ -46,6 +52,9 @@ const corsHeaders = {
 const MP_ACCESS_TOKEN = Deno.env.get('MP_ACCESS_TOKEN')!;
 const MP_API = 'https://api.mercadopago.com';
 
+const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY')!;
+const ASAAS_API = 'https://api.asaas.com/v3';
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -65,6 +74,52 @@ async function mpFetch(path: string, init: RequestInit) {
   return { ok: res.ok, status: res.status, data };
 }
 
+async function asaasFetch(path: string, init: RequestInit) {
+  const res = await fetch(`${ASAAS_API}${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      access_token: ASAAS_API_KEY,
+      ...(init.headers ?? {}),
+    },
+  });
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, data };
+}
+
+// IDs do Mercado Pago são sempre numéricos; IDs do Asaas vêm com prefixo
+// alfanumérico (ex: "pay_xxx", "cus_xxx"). Usado pra rotear o polling de
+// status pro gateway certo sem precisar que o front informe qual é.
+const ehIdAsaas = (paymentId: string) => !/^\d+$/.test(paymentId);
+
+const formatLocalDate = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+const dateComDiaTravado = (year: number, month: number, day: number) => {
+  const ultimoDia = new Date(year, month + 1, 0).getDate();
+  return new Date(year, month, Math.min(day, ultimoDia));
+};
+
+// Marca uma parcela como paga (idempotente) e recalcula mensalidades_pagas --
+// mesma lógica usada pelo webhook asaas-webhook-time-comercial, duplicada
+// aqui pro polling (checkStatus) conseguir confirmar mais rápido que o
+// webhook às vezes, sem esperar o round-trip do Asaas até nós.
+async function marcarParcelaPaga(supabase: ReturnType<typeof createClient>, pagamentoId: string) {
+  const { data: pagamento } = await supabase
+    .from('pagamentos').select('id, aluno_id, status').eq('id', pagamentoId).maybeSingle();
+  if (!pagamento || pagamento.status === 'pago') return;
+
+  await supabase.from('pagamentos').update({
+    status: 'pago',
+    data_pagamento: new Date().toISOString().slice(0, 10),
+  }).eq('id', pagamento.id);
+
+  const { count } = await supabase
+    .from('pagamentos').select('id', { count: 'exact', head: true })
+    .eq('aluno_id', pagamento.aluno_id).eq('status', 'pago');
+  await supabase.from('alunos').update({ mensalidades_pagas: count ?? 0 }).eq('id', pagamento.aluno_id);
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ ok: false, erro: 'method not allowed' }, 405);
@@ -82,10 +137,24 @@ serve(async (req) => {
 
     const body = await req.json();
 
-    // ── Status check (polling do Pix) ────────────────────────────────────────
+    // ── Status check (polling do Pix/boleto) ─────────────────────────────────
     if (body?.checkStatus) {
       const paymentId = String(body.paymentId ?? '');
       if (!paymentId) return json({ ok: false, erro: 'paymentId ausente' }, 400);
+
+      if (ehIdAsaas(paymentId)) {
+        const { ok, data } = await asaasFetch(`/payments/${paymentId}`, { method: 'GET' });
+        if (!ok) {
+          console.error('matricula-pagamento-criar: erro ao consultar status (Asaas)', data);
+          return json({ ok: false, erro: 'Erro ao consultar status do pagamento.' }, 400);
+        }
+        const pago = data.status === 'RECEIVED' || data.status === 'CONFIRMED';
+        if (pago && data.externalReference) {
+          await marcarParcelaPaga(supabase, String(data.externalReference));
+        }
+        const statusOut = pago ? 'approved' : (data.status === 'OVERDUE' ? 'rejected' : 'pending');
+        return json({ ok: true, status: statusOut, statusDetail: data.status });
+      }
 
       const { ok, data } = await mpFetch(`/v1/payments/${paymentId}`, { method: 'GET' });
       if (!ok) {
@@ -108,7 +177,9 @@ serve(async (req) => {
     }
 
     const { data: aluno, error: alunoErr } = await supabase
-      .from('alunos').select('id, nome, email, cpf').eq('id', alunoId).maybeSingle();
+      .from('alunos')
+      .select('id, nome, email, cpf, endereco, cep, cidade_estado, dia_vencimento, data_matricula, asaas_customer_id')
+      .eq('id', alunoId).maybeSingle();
 
     if (alunoErr || !aluno) {
       return json({ ok: false, erro: 'Aluno não encontrado.' }, 404);
@@ -159,36 +230,125 @@ serve(async (req) => {
       });
     }
 
-    // ── Boleto (plano 15x R$150; a 1ª parcela agora é cobrada via PIX, igual ao ──
-    // avista, só que R$150. As outras 14 parcelas são boletos reais gerados e
-    // enviados automaticamente pelo cron matricula-boleto-mensal-gerar (edge
-    // function separada) — ver comentário no topo do arquivo.
+    // ── Boleto (15x R$150, tudo via Asaas -- inclusive a 1ª parcela) ────────────
     if (forma === 'boleto') {
-      const { ok, data } = await mpFetch('/v1/payments', {
-        method: 'POST',
-        headers: { 'X-Idempotency-Key': idempotencyKey },
-        body: JSON.stringify({
-          payment_method_id: 'pix',
-          transaction_amount: 150,
-          description: `Matrícula PSI (1ª parcela PIX) - ${nomeCompleto || aluno.id}`,
-          external_reference: alunoId,
-          payer,
-        }),
-      });
-
-      if (!ok) {
-        console.error('matricula-pagamento-criar: erro MP (boleto/pix)', data);
-        return json({ ok: false, erro: data?.message || 'Não foi possível gerar o Pix. Tente novamente.' }, 400);
+      if (!cpfDigits) return json({ ok: false, erro: 'CPF ausente -- não é possível gerar o boleto.' }, 400);
+      if (!ASAAS_API_KEY) {
+        console.error('matricula-pagamento-criar: ASAAS_API_KEY não configurado');
+        return json({ ok: false, erro: 'Pagamento indisponível no momento. Avise a equipe.' }, 500);
       }
 
-      await supabase.from('alunos').update({ mp_status: data.status }).eq('id', alunoId);
+      // ── Cliente Asaas: reaproveita se já existe, cria se não ─────────────────
+      let customerId = (aluno as any).asaas_customer_id as string | null;
+      if (!customerId) {
+        const enderecoTexto = String((aluno as any).endereco ?? '').trim();
+        const numeroMatch = enderecoTexto.match(/\d+/);
+
+        const { ok: custOk, data: custData } = await asaasFetch('/customers', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: nomeCompleto || 'Aluno',
+            cpfCnpj: cpfDigits,
+            email: email || undefined,
+            address: enderecoTexto || undefined,
+            addressNumber: numeroMatch ? numeroMatch[0] : undefined,
+            postalCode: String((aluno as any).cep ?? '').replace(/\D/g, '') || undefined,
+          }),
+        });
+
+        if (!custOk || !custData?.id) {
+          console.error('matricula-pagamento-criar: erro ao criar cliente Asaas', custData);
+          return json({ ok: false, erro: custData?.errors?.[0]?.description || 'Não foi possível gerar o boleto. Tente novamente.' }, 400);
+        }
+
+        customerId = String(custData.id);
+        await supabase.from('alunos').update({ asaas_customer_id: customerId }).eq('id', alunoId);
+      }
+
+      // ── Datas de vencimento das 15 parcelas (1ª = hoje/data da matrícula, ──
+      // as seguintes ancoradas no dia de vencimento escolhido) -- mesma regra
+      // de src/lib/parcelasAluno.ts (buildInstallments) pra ficar consistente
+      // com o que o CRM recalcularia se precisasse.
+      const diaVencimento = Number((aluno as any).dia_vencimento) || 10;
+      const dataMatriculaStr = (aluno as any).data_matricula as string | null;
+      const matricula = dataMatriculaStr ? new Date(`${dataMatriculaStr}T12:00:00`) : new Date();
+
+      const parcelas = Array.from({ length: 15 }, (_, index) => {
+        const numeroParcela = index + 1;
+        const dueDate = index === 0
+          ? matricula
+          : dateComDiaTravado(matricula.getFullYear(), matricula.getMonth() + index, diaVencimento);
+        return {
+          numero_parcela: numeroParcela,
+          data_vencimento: formatLocalDate(dueDate),
+          mes_referencia: formatLocalDate(new Date(dueDate.getFullYear(), dueDate.getMonth(), 1)),
+        };
+      });
+
+      const { data: inseridos, error: insErr } = await supabase
+        .from('pagamentos')
+        .insert(parcelas.map(p => ({
+          aluno_id: alunoId,
+          produto: 'psicanalise',
+          valor: 150,
+          mes_referencia: p.mes_referencia,
+          data_vencimento: p.data_vencimento,
+          numero_parcela: p.numero_parcela,
+          status: 'pendente',
+          observacoes: p.numero_parcela === 1 ? 'Ato de matricula' : null,
+        })))
+        .select('id, numero_parcela, data_vencimento, valor');
+
+      if (insErr || !inseridos) {
+        console.error('matricula-pagamento-criar: erro ao criar parcelas', insErr);
+        return json({ ok: false, erro: 'Não foi possível gerar as parcelas. Tente novamente.' }, 500);
+      }
+
+      // ── Gera o boleto de cada parcela no Asaas, em paralelo ──────────────────
+      const resultados = await Promise.all(inseridos.map(async (row) => {
+        const { ok, data } = await asaasFetch('/payments', {
+          method: 'POST',
+          body: JSON.stringify({
+            customer: customerId,
+            billingType: 'BOLETO',
+            value: Number(row.valor),
+            dueDate: row.data_vencimento,
+            description: `Matrícula PSI (parcela ${row.numero_parcela}/15) - ${nomeCompleto || alunoId}`,
+            externalReference: row.id,
+          }),
+        });
+        return { row, ok, data };
+      }));
+
+      await Promise.all(resultados.map(async (r) => {
+        if (!r.ok || !r.data?.id) {
+          console.error('matricula-pagamento-criar: erro Asaas na parcela', r.row.numero_parcela, r.data);
+          return;
+        }
+        await supabase.from('pagamentos').update({
+          asaas_payment_id: String(r.data.id),
+          link_pagamento_asaas: r.data.bankSlipUrl ?? r.data.invoiceUrl ?? null,
+        }).eq('id', r.row.id);
+      }));
+
+      const primeira = resultados.find(r => r.row.numero_parcela === 1);
+      if (!primeira?.ok || !primeira.data?.id) {
+        return json({ ok: false, erro: primeira?.data?.errors?.[0]?.description || 'Não foi possível gerar o boleto. Tente novamente ou avise a equipe.' }, 400);
+      }
+
+      // Todo boleto no Asaas tem um Pix equivalente em paralelo -- usamos ele
+      // pra manter a mesma UX de QR code/copia-e-cola da tela de pagamento.
+      const { ok: pixOk, data: pixData } = await asaasFetch(`/payments/${primeira.data.id}/pixQrCode`, { method: 'GET' });
+      if (!pixOk) {
+        console.error('matricula-pagamento-criar: erro ao buscar Pix do boleto Asaas', pixData);
+      }
 
       return json({
         ok: true,
-        paymentId: data.id,
-        status: data.status,
-        qrCodeBase64: data.point_of_interaction?.transaction_data?.qr_code_base64 ?? null,
-        qrCode: data.point_of_interaction?.transaction_data?.qr_code ?? null,
+        paymentId: primeira.data.id,
+        status: 'pending',
+        qrCodeBase64: pixOk ? (pixData?.encodedImage ?? null) : null,
+        qrCode: pixOk ? (pixData?.payload ?? null) : null,
       });
     }
 
