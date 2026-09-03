@@ -395,6 +395,12 @@ serve(async (req) => {
       if (!cardToken) return json({ ok: false, erro: 'Token do cartão ausente.' }, 400);
       if (!email) return json({ ok: false, erro: 'E-mail do pagador ausente.' }, 400);
 
+      // 15 cobranças mensais (igual ao boleto) -- end_date logo depois da 15ª
+      // pra assinatura parar sozinha em vez de cobrar indefinidamente (MP
+      // preapproval não tem campo "número de cobranças", só start/end_date).
+      const dataAssinaturaMp = new Date();
+      const dataFimAssinatura = new Date(dataAssinaturaMp.getFullYear(), dataAssinaturaMp.getMonth() + 15, dataAssinaturaMp.getDate());
+
       const { ok, data } = await mpFetch('/preapproval', {
         method: 'POST',
         headers: { 'X-Idempotency-Key': idempotencyKey },
@@ -409,6 +415,7 @@ serve(async (req) => {
             frequency_type: 'months',
             transaction_amount: 150,
             currency_id: 'BRL',
+            end_date: dataFimAssinatura.toISOString(),
           },
           status: 'authorized',
         }),
@@ -424,14 +431,15 @@ serve(async (req) => {
         mp_status: data.status,
       }).eq('id', alunoId);
 
-      // ── 12 parcelas pendentes, uma por mês, ancoradas no dia da assinatura ──
+      // ── 15 parcelas pendentes, uma por mês, ancoradas no dia da assinatura ──
       // (não tem dia de vencimento escolhido pelo aluno nesse plano, diferente
-      // do boleto). Nenhuma vem pré-marcada como paga -- cada cobrança real
-      // que a MP mandar via webhook (mp-webhook-time-comercial) consome a mais
-      // antiga pendente, na ordem (ver o branch cartao_recorrente lá).
-      const diaAssinatura = new Date().getDate();
-      const dataAssinatura = new Date();
-      const parcelasRecorrente = Array.from({ length: 12 }, (_, index) => {
+      // do boleto; 15x igual ao boleto -- só o parcelado é 12x). Nenhuma vem
+      // pré-marcada como paga -- cada cobrança real que a MP mandar via
+      // webhook (mp-webhook-time-comercial) consome a mais antiga pendente,
+      // na ordem (ver o branch cartao_recorrente lá).
+      const diaAssinatura = dataAssinaturaMp.getDate();
+      const dataAssinatura = dataAssinaturaMp;
+      const parcelasRecorrente = Array.from({ length: 15 }, (_, index) => {
         const dueDate = index === 0
           ? dataAssinatura
           : dateComDiaTravado(dataAssinatura.getFullYear(), dataAssinatura.getMonth() + index, diaAssinatura);

@@ -44,7 +44,8 @@ export const paymentMethodTotal = (method?: string | null) => {
   const normalized = normalizePaymentMethod(method);
   if (normalized === 'cartao') return 1;
   if (normalized === 'avista') return 1;
-  if (normalized === 'cartao_recorrente') return 12;
+  // cartao_recorrente é 15x R$150, igual boleto -- só o parcelado (acima)
+  // fica em 1 (transação única, ainda que exibida como "12x" pro aluno).
   return 15;
 };
 
