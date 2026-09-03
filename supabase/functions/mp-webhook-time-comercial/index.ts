@@ -137,7 +137,10 @@ async function enviarConfirmacoes(
     try {
       await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
         method: 'POST', headers: fnHeaders,
-        body: JSON.stringify({ numero, mensagem }),
+        // instance_name fixo em 'disp3' (WhatsApp "Financeiro IDM") -- pedido
+        // explícito do dono do produto pra esse número ser o wpp de
+        // financeiro (2026-09-03), em vez de cair no rodízio por prioridade.
+        body: JSON.stringify({ numero, mensagem, instance_name: 'disp3' }),
       });
     } catch (e) {
       console.error('mp-webhook-time-comercial: falha ao enviar whatsapp de confirmação', e);

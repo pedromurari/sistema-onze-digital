@@ -1603,9 +1603,14 @@ function proximaTurmaFormacao() {
   return TURMAS_FORMACAO.find((t) => t.data >= hoje) ?? TURMAS_FORMACAO[TURMAS_FORMACAO.length - 1];
 }
 
+// Atualizado em 2026-09-03: eram links do matricula.html antigo (SyncPay,
+// pagamento autodeclarado) em www.idmpsi.com.br. Os vendedores hoje usam a
+// ficha em /matricula/:vendedor (Mercado Pago + Asaas automatizados), servida
+// em ir.idmpsi.com.br/helen e /miguel -- ver App.tsx (rota "/:vendedor") e
+// vercel.json do projeto sistema-onze-digital.
 const LINKS_MATRICULA: OperacaoLink[] = [
-  { label: 'Ficha de Matrícula — Helen Magna', url: 'https://www.idmpsi.com.br/matricula.html?v=6be52633', vendedor: 'Helen Magna' },
-  { label: 'Ficha de Matrícula — Miguel Fogaça', url: 'https://www.idmpsi.com.br/matricula.html?v=d95ebfdc', vendedor: 'Miguel Fogaça' },
+  { label: 'Ficha de Matrícula — Helen Magna', url: 'https://ir.idmpsi.com.br/helen', vendedor: 'Helen Magna' },
+  { label: 'Ficha de Matrícula — Miguel Fogaça', url: 'https://ir.idmpsi.com.br/miguel', vendedor: 'Miguel Fogaça' },
 ];
 
 function copyLink(url: string) {

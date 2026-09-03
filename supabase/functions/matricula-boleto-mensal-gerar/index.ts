@@ -211,7 +211,9 @@ serve(async (req) => {
           .from('pagamentos')
           .update({
             asaas_payment_id: String(data.id),
-            link_pagamento_asaas: data.bankSlipUrl ?? data.invoiceUrl ?? null,
+            // invoiceUrl mostra boleto E Pix na mesma página -- prioridade
+            // sobre bankSlipUrl, mesmo critério de matricula-pagamento-criar.
+            link_pagamento_asaas: data.invoiceUrl ?? data.bankSlipUrl ?? null,
           })
           .eq('id', pagamento.id);
 

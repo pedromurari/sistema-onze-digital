@@ -327,7 +327,10 @@ serve(async (req) => {
         }
         await supabase.from('pagamentos').update({
           asaas_payment_id: String(r.data.id),
-          link_pagamento_asaas: r.data.bankSlipUrl ?? r.data.invoiceUrl ?? null,
+          // invoiceUrl (fatura hospedada no Asaas) mostra boleto E Pix na
+          // mesma página -- prioridade sobre bankSlipUrl (só o boleto em si)
+          // pro aviso de cobrança sempre ter a opção de Pix visível.
+          link_pagamento_asaas: r.data.invoiceUrl ?? r.data.bankSlipUrl ?? null,
         }).eq('id', r.row.id);
       }));
 
