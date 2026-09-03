@@ -48,17 +48,29 @@ declare global {
 // Aline saiu do time; INITIAL_VENDORS hoje tem só Helen e Miguel. Mapeamos slug → nome
 // completo aqui (não importamos INITIAL_VENDORS porque o slug de URL é uma decisão desta
 // página, não do modelo de dados do CRM).
+//
+// "direto" (2026-09-03): link genérico pra venda sem vendedor definido (ex:
+// campanha direta, indicação). Rótulo só de exibição -- NUNCA vira
+// vendedor_id de verdade (ver SEM_VENDEDOR_ATRIBUIDO abaixo), pra cair como
+// "sem turma/sem dono" pra qualquer um da equipe reivindicar, em vez de virar
+// um vendedor fantasma no faturamento por vendedor.
 const VENDEDORES: Record<string, string> = {
   helen: 'Helen Magna',
   miguel: 'Miguel Fogaça',
+  direto: 'Equipe Instituto Despertamente',
 };
+
+const SEM_VENDEDOR_ATRIBUIDO = new Set(['direto']);
 
 // WhatsApp de cada vendedor (com DDI 55, só dígitos) — usado pra redirecionar
 // o aluno assim que o pagamento é confirmado, com uma mensagem pronta de
-// "finalizei a matrícula", pedido explícito do dono do produto.
+// "finalizei a matrícula", pedido explícito do dono do produto. "direto" vai
+// pro WhatsApp do financeiro (disp3/"Financeiro IDM"), já que não tem
+// consultora dona pra assumir a conversa.
 const VENDEDOR_WHATSAPP: Record<string, string> = {
   helen: '5511965781940',
   miguel: '5511932203852',
+  direto: '5511976736081',
 };
 
 // Forma aceita pela RPC matricula_time_comercial_criar. Desde 2026-09-03,
@@ -680,7 +692,7 @@ export default function MatriculaTimeComercial() {
         p_forma_pagamento: formaRpcDe(formaPagamento as MetodoPagamentoUI),
         p_dia_vencimento: formaPagamento === 'boleto' ? diaVencimentoFinal : null,
         p_codigo_bolsa: formaPagamento === 'bolsa' ? form.codigo_bolsa.trim() : null,
-        p_vendedor: nomeVendedor,
+        p_vendedor: SEM_VENDEDOR_ATRIBUIDO.has(slug!.toLowerCase()) ? null : nomeVendedor,
         p_canal: 'Direto',
       });
 
