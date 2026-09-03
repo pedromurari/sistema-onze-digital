@@ -385,12 +385,10 @@ function PagamentoStep({
     setMetodo(novo);
   };
 
-  // Cartão recorrente segue oculto/indisponível na UI de troca de método
-  // também (mesma regra do step 1) — o backend já rejeita 'cartao_recorrente'
-  // com 409, então não faz sentido oferecer a troca para ele aqui.
-  const metodosTroca = (Object.keys(LABEL_METODO) as MetodoCobravel[]).filter(
-    m => m !== 'cartao_recorrente'
-  );
+  // Cartão recorrente liberado em 2026-09-03 -- todas as formas ficam
+  // disponíveis na troca de método (o aluno pode cair pro parcelado se a
+  // recorrente falhar, por exemplo).
+  const metodosTroca = Object.keys(LABEL_METODO) as MetodoCobravel[];
 
   return (
     <div className="pay-body" style={{ padding: 0 }}>
@@ -596,7 +594,7 @@ export default function MatriculaTimeComercial() {
   // ── forma de pagamento derivada da escolha no §3 ────────────────────────────
   const formaPagamento: MetodoPagamentoUI | '' =
     form.vencimentoRadio === '' ? ''
-    : form.vencimentoRadio === 'cartao' ? 'cartao_parcelado'
+    : form.vencimentoRadio === 'cartao' ? 'cartao_recorrente'
     : form.vencimentoRadio === 'a_vista' ? 'avista'
     : form.vencimentoRadio === 'cortesia' ? 'bolsa'
     : 'boleto';

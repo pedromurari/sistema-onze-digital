@@ -1,7 +1,5 @@
 {
   "rewrites": [
-    { "source": "/helen", "destination": "/matricula.html?v=6be52633" },
-    { "source": "/miguel", "destination": "/matricula.html?v=d95ebfdc" },
     { "source": "/matricula", "destination": "/matricula.html" },
     { "source": "/(.*)", "destination": "/" }
   ]

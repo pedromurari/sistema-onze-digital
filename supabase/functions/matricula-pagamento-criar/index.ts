@@ -5,15 +5,18 @@
  * ver src/pages/MatriculaTimeComercial.tsx).
  *
  * PIX, boleto e cartao parcelado validados com cartao de teste e liberados
- * pra producao em 2026-08-26. Cartao recorrente segue bloqueado (ver checagem
- * de forma === 'cartao_recorrente' abaixo) ate validar com valor real.
+ * pra producao em 2026-08-26. Cartao recorrente liberado em 2026-09-03 apos
+ * teste com cobranca real (estava bloqueado por ter dado "Card token service
+ * not found" no ambiente de sandbox do MP -- limitacao do sandbox pra esse
+ * recurso especificamente, nao reproduziu com token/cartao real).
  *
  * A partir de 2026-08-26: forma 'boleto' cobra a 1ª parcela (R$150) via PIX
  * (não mais via boleto bancário real 'bolbradesco') — mesmo formato de
  * resposta do 'avista' (qrCodeBase64/qrCode/paymentId/status). As outras 14
- * parcelas são boletos reais, gerados e enviados automaticamente pelo cron
- * matricula-boleto-mensal-gerar (não passa por aqui) via WhatsApp/e-mail
- * usando o sistema de cobrança já existente (enviar-cobranca).
+ * parcelas são boletos reais gerados via Asaas (nao mais Mercado Pago, desde
+ * 2026-09-03) e enviados automaticamente pelo cron matricula-boleto-mensal-gerar
+ * (não passa por aqui) via WhatsApp/e-mail usando o sistema de cobrança já
+ * existente (enviar-cobranca).
  *
  * Body: {
  *   alunoId: string,
@@ -102,15 +105,6 @@ serve(async (req) => {
 
     if (!alunoId || !['avista', 'cartao_parcelado', 'cartao_recorrente', 'boleto'].includes(forma)) {
       return json({ ok: false, erro: 'Dados obrigatórios ausentes.' }, 400);
-    }
-
-    // Cartão recorrente (preapproval) ainda não foi validado em produção --
-    // "Card token service not found" no ambiente de teste do MP, provável
-    // limitação do sandbox pra esse recurso especificamente. Bloqueio aqui
-    // (além de já estar escondido no formulário) até testarmos com valor
-    // real e liberar de propósito.
-    if (forma === 'cartao_recorrente') {
-      return json({ ok: false, erro: 'Cartão recorrente ainda não está disponível. Escolha outra forma de pagamento.' }, 409);
     }
 
     const { data: aluno, error: alunoErr } = await supabase

@@ -81,6 +81,11 @@ const App = () => (
               <Route path="/forms/tarefa/:tarefaId" element={<TarefaPublica />} />
               <Route path="/formulario/:token"      element={<FormularioAluno />} />
               <Route path="/matricula/:vendedor"    element={<MatriculaTimeComercial />} />
+              {/* Alias curto pra vendedor (ir.idmpsi.com.br/helen, /miguel) --
+                  aponta pro mesmo componente que /matricula/:vendedor. Rota
+                  dinâmica de 1 segmento só, então não conflita com as rotas
+                  estáticas acima/abaixo (react-router v6 prioriza estáticas). */}
+              <Route path="/:vendedor"              element={<MatriculaTimeComercial />} />
               <Route path="/assinar/:token"         element={<ContratoPublico />} />
               <Route path="/membros/:token"         element={<AreaMembros />} />
               <Route path="/comprar/:produtoId"     element={<Checkout />} />

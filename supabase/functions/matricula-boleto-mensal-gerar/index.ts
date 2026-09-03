@@ -1,19 +1,22 @@
 /**
  * matricula-boleto-mensal-gerar
- * Gera (via Mercado Pago, PRODUCAO) os boletos reais das parcelas 2-15 do
- * plano "boleto" da ficha de matrícula pública do Time Comercial (ver
+ * Gera (via Asaas, PRODUCAO) os boletos reais das parcelas 2-15 do plano
+ * "boleto" da ficha de matrícula pública do Time Comercial (ver
  * src/pages/MatriculaTimeComercial.tsx e matricula-pagamento-criar). A 1ª
- * parcela desse plano já é cobrada via PIX na hora da matrícula
- * (matricula-pagamento-criar, forma==='boleto') -- esta function cuida só
- * das parcelas seguintes, que continuam sendo boleto bancário de verdade
- * (payment_method_id 'bolbradesco'), mas agora geradas automaticamente em
- * vez de processo manual.
+ * parcela desse plano continua sendo cobrada via PIX no Mercado Pago na
+ * hora da matrícula (matricula-pagamento-criar, forma==='boleto') -- esta
+ * function cuida só das parcelas seguintes, agora via Asaas (pedido
+ * explícito do dono do produto em 2026-09-03 -- antes disso era Mercado
+ * Pago 'bolbradesco', ver histórico deste arquivo).
+ *
+ * Cliente Asaas: criado uma única vez por aluno (na primeira parcela
+ * processada) e reaproveitado nas seguintes -- id salvo em
+ * alunos.asaas_customer_id.
  *
  * Idempotente/seguro rodar repetidamente: só processa pagamentos com
- * mp_payment_id IS NULL (ainda não gerados). Pensado pra rodar via cron
- * (net.http_post + x-cron-key, mesmo padrão de followup-vendedor-enviar) --
- * o cron.schedule() NÃO está incluído nesta migration/deploy, fica pra
- * revisão manual (ver relatório da tarefa).
+ * asaas_payment_id IS NULL (ainda não gerados). Já vem com cron agendado
+ * (matricula-boleto-mensal-gerar-cron, 12h/18h -- ver migrations) igual
+ * era com o Mercado Pago, só trocando o que a function faz por dentro.
  *
  * Auth: só aceita chamada com o header `x-cron-key` batendo com
  * public.get_equipe_11ds_cron_secret() (secret genérica do projeto, já
@@ -24,11 +27,11 @@
  *   - alunos.forma_pagamento = 'boleto'
  *   - pagamentos.numero_parcela >= 2
  *   - pagamentos.status = 'pendente'
- *   - pagamentos.mp_payment_id IS NULL           (ainda não gerado)
+ *   - pagamentos.asaas_payment_id IS NULL          (ainda não gerado)
  *   - pagamentos.data_vencimento <= hoje + 10 dias  (gera com folga antes do
  *     lembrete de 7 dias antes do vencimento que o enviar-cobranca já manda)
  *
- * No sucesso: grava mp_payment_id e link_pagamento_mp (usado pelo
+ * No sucesso: grava asaas_payment_id e link_pagamento_asaas (usado pelo
  * get_alunos_para_cobranca / enviar-cobranca pra achar o link do boleto).
  * Falha em uma linha não aborta o lote -- mesmo princípio de resiliência do
  * disparo-runner/enviar-cobranca.
@@ -41,8 +44,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-key',
 };
 
-const MP_ACCESS_TOKEN = Deno.env.get('MP_ACCESS_TOKEN')!;
-const MP_API = 'https://api.mercadopago.com';
+const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY')!;
+const ASAAS_API = 'https://api.asaas.com/v3';
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -50,12 +53,12 @@ function json(body: unknown, status = 200) {
   });
 }
 
-async function mpFetch(path: string, init: RequestInit) {
-  const res = await fetch(`${MP_API}${path}`, {
+async function asaasFetch(path: string, init: RequestInit) {
+  const res = await fetch(`${ASAAS_API}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${MP_ACCESS_TOKEN}`,
+      access_token: ASAAS_API_KEY,
       ...(init.headers ?? {}),
     },
   });
@@ -76,6 +79,7 @@ interface PagamentoRow {
     endereco: string | null;
     cep: string | null;
     cidade_estado: string | null;
+    asaas_customer_id: string | null;
   } | null;
 }
 
@@ -84,8 +88,8 @@ serve(async (req) => {
   if (req.method !== 'POST') return json({ ok: false, erro: 'method not allowed' }, 405);
 
   try {
-    if (!MP_ACCESS_TOKEN) {
-      console.error('matricula-boleto-mensal-gerar: MP_ACCESS_TOKEN não configurado');
+    if (!ASAAS_API_KEY) {
+      console.error('matricula-boleto-mensal-gerar: ASAAS_API_KEY não configurado');
       return json({ ok: false, erro: 'Pagamento indisponível no momento.' }, 500);
     }
 
@@ -111,12 +115,12 @@ serve(async (req) => {
       .select(`
         id, aluno_id, valor, numero_parcela, data_vencimento,
         alunos!inner (
-          nome, email, cpf, endereco, cep, cidade_estado,
+          nome, email, cpf, endereco, cep, cidade_estado, asaas_customer_id,
           origem_lead, forma_pagamento
         )
       `)
       .eq('status', 'pendente')
-      .is('mp_payment_id', null)
+      .is('asaas_payment_id', null)
       .gte('numero_parcela', 2)
       .lte('data_vencimento', limiteVencimentoStr)
       .eq('alunos.origem_lead', 'time_comercial')
@@ -131,6 +135,12 @@ serve(async (req) => {
     const errors: Array<{ pagamentoId: string; erro: string }> = [];
     let generated = 0;
 
+    // Cache de customer_id por aluno dentro desta execução -- evita criar o
+    // mesmo cliente Asaas duas vezes se o lote tiver mais de uma parcela do
+    // mesmo aluno (não deveria acontecer dado o filtro de vencimento, mas
+    // custa nada ser resiliente).
+    const customerCache = new Map<string, string>();
+
     for (const pagamento of pagamentos) {
       const aluno = pagamento.alunos;
       if (!aluno) {
@@ -139,63 +149,78 @@ serve(async (req) => {
       }
 
       try {
-        const nomeCompleto = String(aluno.nome ?? '').trim();
-        const [firstName, ...restName] = nomeCompleto.split(/\s+/);
-        const lastName = restName.join(' ') || firstName || 'Aluno';
-        const email = String(aluno.email ?? '');
-        const cpfDigits = String(aluno.cpf ?? '').replace(/\D/g, '');
+        // ── Cliente Asaas: reaproveita se já existe, cria se não ────────────
+        let customerId = aluno.asaas_customer_id || customerCache.get(pagamento.aluno_id) || null;
 
-        const [cidadeRaw, ufRaw] = String(aluno.cidade_estado ?? '').split('/');
-        const enderecoTexto = String(aluno.endereco ?? '').trim();
-        const numeroMatch = enderecoTexto.match(/\d+/);
+        if (!customerId) {
+          const cpfDigits = String(aluno.cpf ?? '').replace(/\D/g, '');
+          if (!cpfDigits) {
+            errors.push({ pagamentoId: pagamento.id, erro: 'CPF ausente -- não é possível criar cliente Asaas' });
+            continue;
+          }
 
-        const address = {
-          zip_code: String(aluno.cep ?? '').replace(/\D/g, '') || '01310930',
-          street_name: enderecoTexto || 'Não informado',
-          street_number: numeroMatch ? Number(numeroMatch[0]) : 1,
-          neighborhood: 'Centro',
-          city: cidadeRaw?.trim() || 'São Paulo',
-          federal_unit: (ufRaw?.trim() || 'SP').slice(0, 2).toUpperCase(),
-        };
+          const enderecoTexto = String(aluno.endereco ?? '').trim();
+          const numeroMatch = enderecoTexto.match(/\d+/);
 
-        const payer: Record<string, unknown> = {
-          email,
-          first_name: firstName || 'Aluno',
-          last_name: lastName,
-          ...(cpfDigits ? { identification: { type: 'CPF', number: cpfDigits } } : {}),
-          address,
-        };
+          const { ok: custOk, data: custData } = await asaasFetch('/customers', {
+            method: 'POST',
+            body: JSON.stringify({
+              name: String(aluno.nome ?? 'Aluno').trim() || 'Aluno',
+              cpfCnpj: cpfDigits,
+              email: aluno.email || undefined,
+              address: enderecoTexto || undefined,
+              addressNumber: numeroMatch ? numeroMatch[0] : undefined,
+              postalCode: String(aluno.cep ?? '').replace(/\D/g, '') || undefined,
+            }),
+          });
 
-        const idempotencyKey = crypto.randomUUID();
+          if (!custOk || !custData?.id) {
+            console.error('matricula-boleto-mensal-gerar: erro ao criar cliente Asaas', pagamento.id, custData);
+            errors.push({ pagamentoId: pagamento.id, erro: custData?.errors?.[0]?.description || 'Não foi possível criar o cliente no Asaas.' });
+            continue;
+          }
 
-        const { ok, data } = await mpFetch('/v1/payments', {
+          customerId = String(custData.id);
+          customerCache.set(pagamento.aluno_id, customerId);
+
+          const { error: custUpdateErr } = await supabase
+            .from('alunos')
+            .update({ asaas_customer_id: customerId })
+            .eq('id', pagamento.aluno_id);
+          if (custUpdateErr) {
+            console.error('matricula-boleto-mensal-gerar: erro ao gravar asaas_customer_id', pagamento.aluno_id, custUpdateErr);
+          }
+        }
+
+        // ── Cobrança (boleto) da parcela ─────────────────────────────────────
+        const { ok, data } = await asaasFetch('/payments', {
           method: 'POST',
-          headers: { 'X-Idempotency-Key': idempotencyKey },
           body: JSON.stringify({
-            payment_method_id: 'bolbradesco',
-            transaction_amount: Number(pagamento.valor),
-            description: `Matrícula PSI (parcela ${pagamento.numero_parcela}/15) - ${nomeCompleto || pagamento.aluno_id}`,
-            external_reference: pagamento.id,
-            payer,
+            customer: customerId,
+            billingType: 'BOLETO',
+            value: Number(pagamento.valor),
+            dueDate: pagamento.data_vencimento,
+            description: `Matrícula PSI (parcela ${pagamento.numero_parcela}/15) - ${aluno.nome ?? pagamento.aluno_id}`,
+            externalReference: pagamento.id,
           }),
         });
 
-        if (!ok) {
-          console.error('matricula-boleto-mensal-gerar: erro MP', pagamento.id, data);
-          errors.push({ pagamentoId: pagamento.id, erro: data?.message || `MP erro ${data?.status ?? ''}` });
+        if (!ok || !data?.id) {
+          console.error('matricula-boleto-mensal-gerar: erro Asaas', pagamento.id, data);
+          errors.push({ pagamentoId: pagamento.id, erro: data?.errors?.[0]?.description || `Asaas erro ${data?.status ?? ''}` });
           continue;
         }
 
         const { error: updateErr } = await supabase
           .from('pagamentos')
           .update({
-            mp_payment_id: String(data.id),
-            link_pagamento_mp: data.transaction_details?.external_resource_url ?? null,
+            asaas_payment_id: String(data.id),
+            link_pagamento_asaas: data.bankSlipUrl ?? data.invoiceUrl ?? null,
           })
           .eq('id', pagamento.id);
 
         if (updateErr) {
-          console.error('matricula-boleto-mensal-gerar: erro ao gravar mp_payment_id', pagamento.id, updateErr);
+          console.error('matricula-boleto-mensal-gerar: erro ao gravar asaas_payment_id', pagamento.id, updateErr);
           errors.push({ pagamentoId: pagamento.id, erro: `boleto gerado mas falhou ao salvar: ${updateErr.message}` });
           continue;
         }
