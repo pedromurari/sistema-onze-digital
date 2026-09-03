@@ -61,16 +61,18 @@ const VENDEDOR_WHATSAPP: Record<string, string> = {
   miguel: '5511932203852',
 };
 
-// Forma aceita pela RPC matricula_time_comercial_criar (contrato não muda).
-type FormaPagamento = 'avista' | 'cartao' | 'boleto' | 'bolsa';
+// Forma aceita pela RPC matricula_time_comercial_criar. Desde 2026-09-03,
+// 'cartao' (parcelado, 1 transação só) e 'cartao_recorrente' (assinatura,
+// 12 cobranças mensais reais) gravam valores DIFERENTES em
+// alunos.forma_pagamento -- antes os dois gravavam só 'cartao', e não dava
+// pra saber depois qual era qual (nem pra parcelasAluno.ts tratar direito:
+// parcelado pré-marca as 12 parcelas como pagas, recorrente não pode).
+type FormaPagamento = 'avista' | 'cartao' | 'cartao_recorrente' | 'boleto' | 'bolsa';
 
-// Escolha na UI: "cartao" vira duas opções (parcelado/recorrente) — ambas
-// chamam a RPC com p_forma_pagamento:'cartao' (ela só usa isso pra exibição),
-// e a distinção parcelado/recorrente é resolvida no step de pagamento real.
 type MetodoPagamentoUI = 'avista' | 'cartao_parcelado' | 'cartao_recorrente' | 'boleto' | 'bolsa';
 
 const formaRpcDe = (m: MetodoPagamentoUI): FormaPagamento =>
-  m === 'cartao_parcelado' || m === 'cartao_recorrente' ? 'cartao' : m;
+  m === 'cartao_parcelado' ? 'cartao' : m;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

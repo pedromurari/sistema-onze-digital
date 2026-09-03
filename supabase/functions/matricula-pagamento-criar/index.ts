@@ -424,6 +424,37 @@ serve(async (req) => {
         mp_status: data.status,
       }).eq('id', alunoId);
 
+      // ── 12 parcelas pendentes, uma por mês, ancoradas no dia da assinatura ──
+      // (não tem dia de vencimento escolhido pelo aluno nesse plano, diferente
+      // do boleto). Nenhuma vem pré-marcada como paga -- cada cobrança real
+      // que a MP mandar via webhook (mp-webhook-time-comercial) consome a mais
+      // antiga pendente, na ordem (ver o branch cartao_recorrente lá).
+      const diaAssinatura = new Date().getDate();
+      const dataAssinatura = new Date();
+      const parcelasRecorrente = Array.from({ length: 12 }, (_, index) => {
+        const dueDate = index === 0
+          ? dataAssinatura
+          : dateComDiaTravado(dataAssinatura.getFullYear(), dataAssinatura.getMonth() + index, diaAssinatura);
+        return {
+          aluno_id: alunoId,
+          produto: 'psicanalise',
+          valor: 150,
+          mes_referencia: formatLocalDate(new Date(dueDate.getFullYear(), dueDate.getMonth(), 1)),
+          data_vencimento: formatLocalDate(dueDate),
+          numero_parcela: index + 1,
+          status: 'pendente',
+          observacoes: index === 0 ? 'Ato de matricula' : null,
+        };
+      });
+      const { error: parcelasErr } = await supabase.from('pagamentos').insert(parcelasRecorrente);
+      if (parcelasErr) {
+        // Assinatura já foi ativada na MP -- não desfaz por causa disso, só
+        // loga. O cron/webhook seguinte não tem uma rede de segurança pra
+        // recriar essas linhas (diferente do boleto), então isso pede
+        // atenção manual se acontecer.
+        console.error('matricula-pagamento-criar: assinatura ativada mas falhou ao criar parcelas', alunoId, parcelasErr);
+      }
+
       return json({ ok: true, preapprovalId: data.id, status: data.status });
     }
 

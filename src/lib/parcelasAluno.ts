@@ -10,7 +10,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 
-export type PaymentMethod = 'boleto' | 'cartao' | 'avista';
+export type PaymentMethod = 'boleto' | 'cartao' | 'cartao_recorrente' | 'avista';
 
 export const todayDateInput = () => {
   const now = new Date();
@@ -34,6 +34,7 @@ const dateWithClampedDay = (year: number, month: number, day: number) => {
 
 export const normalizePaymentMethod = (value?: string | null): PaymentMethod => {
   const normalized = (value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  if (normalized === 'cartao_recorrente') return 'cartao_recorrente';
   if (normalized === 'cartao') return 'cartao';
   if (normalized === 'pix' || normalized === 'avista' || normalized === 'a_vista' || normalized === 'a vista') return 'avista';
   return 'boleto';
@@ -43,6 +44,7 @@ export const paymentMethodTotal = (method?: string | null) => {
   const normalized = normalizePaymentMethod(method);
   if (normalized === 'cartao') return 1;
   if (normalized === 'avista') return 1;
+  if (normalized === 'cartao_recorrente') return 12;
   return 15;
 };
 

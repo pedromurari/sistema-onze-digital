@@ -27,22 +27,26 @@
  *      usada pelos boletos mensais gerados por matricula-boleto-mensal-gerar
  *      (parcelas >=2 do plano boleto). Se achar, marca a parcela como paga e
  *      recalcula `alunos.mensalidades_pagas`.
- *   2. Se não achar como pagamento (convenção antiga: `external_reference`
- *      é o próprio `alunos.id`, usada por avista/cartão/1ª parcela PIX),
- *      cai no comportamento existente (só mp_status).
- *   Em ambos os casos, só na primeira transição pra "approved" (nunca em
- *   retry do webhook), dispara confirmação por WhatsApp (wpp-enviar) e
- *   e-mail (email-enviar) -- os dois best-effort, nunca derrubam a resposta
- *   200 do webhook em caso de falha (mesmo princípio de mp-webhook).
+ *   2. Se não achar como pagamento, cai na convenção antiga:
+ *      `external_reference` é o próprio `alunos.id` (avista/cartão
+ *      parcelado/1ª parcela PIX/assinatura recorrente). Dentro dela:
+ *      a. forma_pagamento === 'cartao_recorrente' (2026-09-03): a MP manda
+ *         o MESMO alunos.id em toda cobrança mensal da assinatura (não diz
+ *         "isso é a parcela X") -- consome a parcela pendente mais antiga em
+ *         `pagamentos` (criadas todas de uma vez, 12x, em
+ *         matricula-pagamento-criar), idempotente pelo mp_payment_id da
+ *         própria cobrança. Confirma por WhatsApp/e-mail TODO mês (não só
+ *         uma vez -- cada cobrança é um pagamento novo de verdade).
+ *      b. Outras formas (avista/cartão parcelado/1ª parcela PIX): só
+ *         mp_status, confirmação best-effort só na 1ª transição pra
+ *         "approved" (pagamento único, não repete).
+ *   Confirmação (wpp-enviar/email-enviar) e contrato (autentique-criar) são
+ *   best-effort -- nunca derrubam a resposta 200 do webhook em caso de
+ *   falha (mesmo princípio de mp-webhook).
  *
- *   Só na convenção antiga (external_reference = alunos.id -- cobre avista/
- *   cartão/1ª parcela PIX, ou seja, o primeiro pagamento de qualquer aluno)
- *   e só na primeira transição pra "approved", também gera e envia o
- *   contrato via autentique-criar (mesmo texto/fluxo já usado em
- *   FormularioAluno.tsx -- envia o link de assinatura por WhatsApp; o
- *   e-mail ao signatário é disparado pela própria Autentique). Não repete
- *   isso nas parcelas seguintes (convenção pagamentos.id) -- o contrato só
- *   sai uma vez, no primeiro pagamento confirmado do aluno.
+ *   Contrato: só na convenção antiga (external_reference = alunos.id) e só
+ *   na primeira transição pra "approved" do aluno (mesmo pra recorrente --
+ *   o contrato sai uma vez só, na 1ª cobrança aprovada da assinatura).
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -273,16 +277,63 @@ serve(async (req) => {
         // próprio alunos.id (avista/cartão/1ª parcela PIX) ─────────────────────
         const { data: alunoAntes } = await supabase
           .from('alunos')
-          .select('nome, email, whatsapp, cobranca_telefone, mp_status, cpf, data_nascimento, endereco, cep, cidade_estado')
+          .select('nome, email, whatsapp, cobranca_telefone, mp_status, forma_pagamento, cpf, data_nascimento, endereco, cep, cidade_estado')
           .eq('id', externalReference)
           .maybeSingle();
 
+        const jaAprovadoAntes = alunoAntes?.mp_status === 'approved';
         await supabase.from('alunos').update({ mp_status: data.status }).eq('id', externalReference);
 
-        if (data.status === 'approved' && alunoAntes && alunoAntes.mp_status !== 'approved') {
+        if (data.status === 'approved' && alunoAntes?.forma_pagamento === 'cartao_recorrente') {
+          // Assinatura: a MP manda o MESMO alunos.id em toda cobrança mensal
+          // (não diz "isso é a parcela X") -- consome a parcela pendente mais
+          // antiga em `pagamentos`, uma por cobrança. Idempotência pelo próprio
+          // mp_payment_id da cobrança (não pelo mp_status do aluno, que já fica
+          // 'approved' desde o mês 1 e não serve mais de guarda aqui).
+          const { data: jaProcessada } = await supabase
+            .from('pagamentos').select('id').eq('mp_payment_id', String(id)).maybeSingle();
+
+          if (!jaProcessada) {
+            const { data: proximaParcela } = await supabase
+              .from('pagamentos')
+              .select('id, valor')
+              .eq('aluno_id', externalReference)
+              .eq('status', 'pendente')
+              .order('numero_parcela', { ascending: true })
+              .limit(1)
+              .maybeSingle();
+
+            if (proximaParcela) {
+              await supabase.from('pagamentos').update({
+                status: 'pago',
+                data_pagamento: new Date().toISOString().slice(0, 10),
+                mp_payment_id: String(id),
+              }).eq('id', proximaParcela.id);
+
+              const { count } = await supabase
+                .from('pagamentos')
+                .select('id', { count: 'exact', head: true })
+                .eq('aluno_id', externalReference)
+                .eq('status', 'pago');
+              await supabase.from('alunos').update({ mensalidades_pagas: count ?? 0 }).eq('id', externalReference);
+
+              // Diferente do resto do fallback: confirma TODO mês, não só na
+              // 1ª vez -- cada cobrança da assinatura é um pagamento de verdade.
+              await enviarConfirmacoes(supabaseUrl, serviceKey, alunoAntes as any, Number(proximaParcela.valor)).catch((e) =>
+                console.error('mp-webhook-time-comercial: falha ao enviar confirmações (recorrente)', e));
+            } else {
+              console.error('mp-webhook-time-comercial: cobrança recorrente aprovada sem parcela pendente pra consumir', externalReference, id);
+            }
+          }
+        } else if (data.status === 'approved' && alunoAntes && !jaAprovadoAntes) {
           const valorPago = Number(data.transaction_amount ?? 0);
           await enviarConfirmacoes(supabaseUrl, serviceKey, alunoAntes as any, valorPago).catch((e) =>
             console.error('mp-webhook-time-comercial: falha ao enviar confirmações (aluno)', e));
+        }
+
+        // Contrato: sempre só na 1ª transição pra "approved" do aluno, seja
+        // qual for a forma de pagamento (inclusive recorrente).
+        if (data.status === 'approved' && alunoAntes && !jaAprovadoAntes) {
           await enviarContrato(supabaseUrl, serviceKey, { id: externalReference, ...alunoAntes } as any).catch((e) =>
             console.error('mp-webhook-time-comercial: falha ao enviar contrato', e));
         }
