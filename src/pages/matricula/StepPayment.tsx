@@ -14,6 +14,11 @@ import { useState } from 'react';
 
 export type VencimentoRadio = '' | '10' | '20' | '30' | 'outro' | 'cartao_parcelado' | 'cartao_recorrente' | 'a_vista' | 'cortesia';
 
+// Formas exibidas nesta tela -- usado por slugs com oferta restrita (ex:
+// "997": só cartão de crédito, sem PIX/boleto/recorrente/bolsa). undefined
+// (prop ausente) = mostra todas, comportamento padrão.
+export type FormaPagamentoPermitida = 'cartao_parcelado' | 'cartao_recorrente' | 'boleto' | 'avista' | 'bolsa';
+
 const DIAS_BOLETO: Array<'10' | '20' | '30'> = ['10', '20', '30'];
 
 const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -27,6 +32,7 @@ export function StepPayment({
   submitting, podeEnviar, erro,
   onVoltar,
   plano,
+  formasPermitidas,
 }: {
   vencimentoRadio: VencimentoRadio;
   onSelecionar: (v: VencimentoRadio) => void;
@@ -42,8 +48,11 @@ export function StepPayment({
   podeEnviar: boolean;
   erro: string;
   onVoltar: () => void;
-  plano: { avista: number; parcela: number; cartaoBase: number };
+  plano: { avista: number; parcela: number; cartaoBase: number; cartaoMaxParcelas: number };
+  formasPermitidas?: FormaPagamentoPermitida[];
 }) {
+  const mostra = (forma: FormaPagamentoPermitida) => !formasPermitidas || formasPermitidas.includes(forma);
+  const somenteCartaoAVista = plano.cartaoMaxParcelas === 1;
   const [gateMsg, setGateMsg] = useState('');
 
   const handleValidar = () => {
@@ -71,127 +80,142 @@ export function StepPayment({
           <div className="venc-grupos" id="venc-grid">
 
             {/* GRUPO CARTÃO PARCELADO (1x a 12x, uma única cobrança -- juros de
-                2x em diante calculados pela MP a partir do valor à vista) */}
-            <div className={`venc-grupo${vencimentoRadio === 'cartao_parcelado' ? ' has-selection' : ''}`}>
-              <div className="venc-grupo-header">
-                <span className="venc-grupo-icon">💳</span>
-                <div>
-                  <div className="venc-grupo-title">Cartão parcelado</div>
-                  <div className="venc-grupo-desc">De 1x a 12x no cartão · R$ {fmtBRL(plano.cartaoBase)}, ou parcelado com juros</div>
+                2x em diante calculados pela MP a partir do valor à vista;
+                cartaoMaxParcelas=1 trava em pagamento único, sem parcelar) */}
+            {mostra('cartao_parcelado') && (
+              <div className={`venc-grupo${vencimentoRadio === 'cartao_parcelado' ? ' has-selection' : ''}`}>
+                <div className="venc-grupo-header">
+                  <span className="venc-grupo-icon">💳</span>
+                  <div>
+                    <div className="venc-grupo-title">{somenteCartaoAVista ? 'Cartão de crédito' : 'Cartão parcelado'}</div>
+                    <div className="venc-grupo-desc">
+                      {somenteCartaoAVista
+                        ? `Pagamento único de R$ ${fmtBRL(plano.cartaoBase)} no cartão de crédito`
+                        : `De 1x a 12x no cartão · R$ ${fmtBRL(plano.cartaoBase)}, ou parcelado com juros`}
+                    </div>
+                  </div>
+                </div>
+                <div className="venc-grupo-body">
+                  <label className={`venc-option-single${vencimentoRadio === 'cartao_parcelado' ? ' selected' : ''}`}>
+                    <input type="radio" name="dia_vencimento" value="cartao_parcelado" checked={vencimentoRadio === 'cartao_parcelado'} onChange={() => onSelecionar('cartao_parcelado')} />
+                    <span className="venc-option-text">{somenteCartaoAVista ? 'Vou pagar no cartão de crédito' : 'Vou pagar no cartão, à vista ou parcelado'}</span>
+                  </label>
                 </div>
               </div>
-              <div className="venc-grupo-body">
-                <label className={`venc-option-single${vencimentoRadio === 'cartao_parcelado' ? ' selected' : ''}`}>
-                  <input type="radio" name="dia_vencimento" value="cartao_parcelado" checked={vencimentoRadio === 'cartao_parcelado'} onChange={() => onSelecionar('cartao_parcelado')} />
-                  <span className="venc-option-text">Vou pagar no cartão, à vista ou parcelado</span>
-                </label>
-              </div>
-            </div>
+            )}
 
             {/* GRUPO CARTÃO RECORRENTE (assinatura, 15 cobranças mensais) */}
-            <div className={`venc-grupo${vencimentoRadio === 'cartao_recorrente' ? ' has-selection' : ''}`}>
-              <div className="venc-grupo-header">
-                <span className="venc-grupo-icon">🔄</span>
-                <div>
-                  <div className="venc-grupo-title">Cartão recorrente</div>
-                  <div className="venc-grupo-desc">15x de R$ {fmtBRL(plano.parcela)} · cobrança mensal automática no cartão</div>
+            {mostra('cartao_recorrente') && (
+              <div className={`venc-grupo${vencimentoRadio === 'cartao_recorrente' ? ' has-selection' : ''}`}>
+                <div className="venc-grupo-header">
+                  <span className="venc-grupo-icon">🔄</span>
+                  <div>
+                    <div className="venc-grupo-title">Cartão recorrente</div>
+                    <div className="venc-grupo-desc">15x de R$ {fmtBRL(plano.parcela)} · cobrança mensal automática no cartão</div>
+                  </div>
+                </div>
+                <div className="venc-grupo-body">
+                  <label className={`venc-option-single${vencimentoRadio === 'cartao_recorrente' ? ' selected' : ''}`}>
+                    <input type="radio" name="dia_vencimento" value="cartao_recorrente" checked={vencimentoRadio === 'cartao_recorrente'} onChange={() => onSelecionar('cartao_recorrente')} />
+                    <span className="venc-option-text">Vou pagar no cartão, assinatura mensal</span>
+                  </label>
                 </div>
               </div>
-              <div className="venc-grupo-body">
-                <label className={`venc-option-single${vencimentoRadio === 'cartao_recorrente' ? ' selected' : ''}`}>
-                  <input type="radio" name="dia_vencimento" value="cartao_recorrente" checked={vencimentoRadio === 'cartao_recorrente'} onChange={() => onSelecionar('cartao_recorrente')} />
-                  <span className="venc-option-text">Vou pagar no cartão, assinatura mensal</span>
-                </label>
-              </div>
-            </div>
+            )}
 
             {/* GRUPO BOLETO RECORRENTE (15x, 1ª parcela no PIX, depois boleto mensal) */}
-            <div className={`venc-grupo${['10', '20', '30', 'outro'].includes(vencimentoRadio) ? ' has-selection' : ''}`}>
-              <div className="venc-grupo-header">
-                <span className="venc-grupo-icon">📄</span>
-                <div>
-                  <div className="venc-grupo-title">Boleto recorrente</div>
-                  <div className="venc-grupo-desc">15x de R$ {fmtBRL(plano.parcela)} · Escolha o melhor dia de vencimento</div>
-                  <div className="venc-grupo-desc" style={{ marginTop: 2 }}>1ª parcela no PIX, depois boleto mensal</div>
+            {mostra('boleto') && (
+              <div className={`venc-grupo${['10', '20', '30', 'outro'].includes(vencimentoRadio) ? ' has-selection' : ''}`}>
+                <div className="venc-grupo-header">
+                  <span className="venc-grupo-icon">📄</span>
+                  <div>
+                    <div className="venc-grupo-title">Boleto recorrente</div>
+                    <div className="venc-grupo-desc">15x de R$ {fmtBRL(plano.parcela)} · Escolha o melhor dia de vencimento</div>
+                    <div className="venc-grupo-desc" style={{ marginTop: 2 }}>1ª parcela no PIX, depois boleto mensal</div>
+                  </div>
                 </div>
-              </div>
-              <div className="venc-grupo-body">
-                <div className="venc-sub-grid">
-                  {DIAS_BOLETO.map(dia => (
-                    <label key={dia} className={`venc-option${vencimentoRadio === dia ? ' selected' : ''}`}>
-                      <input type="radio" name="dia_vencimento" value={dia} checked={vencimentoRadio === dia} onChange={() => onSelecionar(dia)} />
-                      <span className="venc-option-text">Dia {dia}</span>
+                <div className="venc-grupo-body">
+                  <div className="venc-sub-grid">
+                    {DIAS_BOLETO.map(dia => (
+                      <label key={dia} className={`venc-option${vencimentoRadio === dia ? ' selected' : ''}`}>
+                        <input type="radio" name="dia_vencimento" value={dia} checked={vencimentoRadio === dia} onChange={() => onSelecionar(dia)} />
+                        <span className="venc-option-text">Dia {dia}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 'var(--space-2)' }}>
+                    <label className={`venc-option${vencimentoRadio === 'outro' ? ' selected' : ''}`} style={{ width: '100%' }}>
+                      <input type="radio" name="dia_vencimento" value="outro" checked={vencimentoRadio === 'outro'} onChange={() => onSelecionar('outro')} />
+                      <span className="venc-option-text">Outro dia</span>
                     </label>
-                  ))}
-                </div>
-                <div style={{ marginTop: 'var(--space-2)' }}>
-                  <label className={`venc-option${vencimentoRadio === 'outro' ? ' selected' : ''}`} style={{ width: '100%' }}>
-                    <input type="radio" name="dia_vencimento" value="outro" checked={vencimentoRadio === 'outro'} onChange={() => onSelecionar('outro')} />
-                    <span className="venc-option-text">Outro dia</span>
-                  </label>
-                </div>
-                <div className={`outro-field-wrap${vencimentoRadio === 'outro' ? ' show' : ''}`}>
-                  <input
-                    type="number" min={1} max={28} placeholder="Qual dia prefere? (1-28)"
-                    value={diaOutro} onChange={e => onDiaOutroChange(e.target.value)}
-                  />
+                  </div>
+                  <div className={`outro-field-wrap${vencimentoRadio === 'outro' ? ' show' : ''}`}>
+                    <input
+                      type="number" min={1} max={28} placeholder="Qual dia prefere? (1-28)"
+                      value={diaOutro} onChange={e => onDiaOutroChange(e.target.value)}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* GRUPO À VISTA */}
-            <div className={`venc-grupo${vencimentoRadio === 'a_vista' ? ' has-selection' : ''}`}>
-              <div className="venc-grupo-header">
-                <span className="venc-grupo-icon">⚡</span>
-                <div>
-                  <div className="venc-grupo-title">PIX à vista</div>
-                  <div className="venc-grupo-desc">R$ {fmtBRL(plano.avista)} · Melhor valor</div>
+            {mostra('avista') && (
+              <div className={`venc-grupo${vencimentoRadio === 'a_vista' ? ' has-selection' : ''}`}>
+                <div className="venc-grupo-header">
+                  <span className="venc-grupo-icon">⚡</span>
+                  <div>
+                    <div className="venc-grupo-title">PIX à vista</div>
+                    <div className="venc-grupo-desc">R$ {fmtBRL(plano.avista)} · Melhor valor</div>
+                  </div>
+                </div>
+                <div className="venc-grupo-body">
+                  <label className={`venc-option-single${vencimentoRadio === 'a_vista' ? ' selected' : ''}`}>
+                    <input type="radio" name="dia_vencimento" value="a_vista" checked={vencimentoRadio === 'a_vista'} onChange={() => onSelecionar('a_vista')} />
+                    <span className="venc-option-text">Vou pagar à vista no PIX</span>
+                  </label>
                 </div>
               </div>
-              <div className="venc-grupo-body">
-                <label className={`venc-option-single${vencimentoRadio === 'a_vista' ? ' selected' : ''}`}>
-                  <input type="radio" name="dia_vencimento" value="a_vista" checked={vencimentoRadio === 'a_vista'} onChange={() => onSelecionar('a_vista')} />
-                  <span className="venc-option-text">Vou pagar à vista no PIX</span>
-                </label>
-              </div>
-            </div>
+            )}
 
             {/* GRUPO BOLSA */}
-            <div className={`venc-grupo${vencimentoRadio === 'cortesia' ? ' has-selection' : ''}`}>
-              <div className="venc-grupo-header">
-                <span className="venc-grupo-icon">🎓</span>
-                <div>
-                  <div className="venc-grupo-title">Bolsa de Estudo</div>
-                  <div className="venc-grupo-desc">Acesso exclusivo mediante código de autorização</div>
+            {mostra('bolsa') && (
+              <div className={`venc-grupo${vencimentoRadio === 'cortesia' ? ' has-selection' : ''}`}>
+                <div className="venc-grupo-header">
+                  <span className="venc-grupo-icon">🎓</span>
+                  <div>
+                    <div className="venc-grupo-title">Bolsa de Estudo</div>
+                    <div className="venc-grupo-desc">Acesso exclusivo mediante código de autorização</div>
+                  </div>
+                </div>
+                <div className="venc-grupo-body">
+
+                  {!bolsaValidada && (
+                    <div className="cortesia-gate">
+                      <p className="cortesia-gate-text">Recebeu uma bolsa de estudo da nossa equipe? Digite o código de autorização para liberar esta opção.</p>
+                      <div className="cortesia-gate-row">
+                        <input
+                          type="text" placeholder="Código de autorização" autoComplete="off"
+                          value={codigoBolsa}
+                          onChange={e => { onCodigoBolsaChange(e.target.value); setGateMsg(''); }}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleValidar(); } }}
+                        />
+                        <button type="button" className="btn-cortesia-validar" onClick={handleValidar}>Validar</button>
+                      </div>
+                      {gateMsg && <span className="cortesia-gate-msg show error">{gateMsg}</span>}
+                    </div>
+                  )}
+
+                  {bolsaValidada && (
+                    <label className={`venc-option-single${vencimentoRadio === 'cortesia' ? ' selected' : ''}`}>
+                      <input type="radio" name="dia_vencimento" value="cortesia" checked={vencimentoRadio === 'cortesia'} onChange={() => onSelecionar('cortesia')} />
+                      <span className="venc-option-text">✓ Bolsa de estudo autorizada — código validado</span>
+                    </label>
+                  )}
+
                 </div>
               </div>
-              <div className="venc-grupo-body">
-
-                {!bolsaValidada && (
-                  <div className="cortesia-gate">
-                    <p className="cortesia-gate-text">Recebeu uma bolsa de estudo da nossa equipe? Digite o código de autorização para liberar esta opção.</p>
-                    <div className="cortesia-gate-row">
-                      <input
-                        type="text" placeholder="Código de autorização" autoComplete="off"
-                        value={codigoBolsa}
-                        onChange={e => { onCodigoBolsaChange(e.target.value); setGateMsg(''); }}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleValidar(); } }}
-                      />
-                      <button type="button" className="btn-cortesia-validar" onClick={handleValidar}>Validar</button>
-                    </div>
-                    {gateMsg && <span className="cortesia-gate-msg show error">{gateMsg}</span>}
-                  </div>
-                )}
-
-                {bolsaValidada && (
-                  <label className={`venc-option-single${vencimentoRadio === 'cortesia' ? ' selected' : ''}`}>
-                    <input type="radio" name="dia_vencimento" value="cortesia" checked={vencimentoRadio === 'cortesia'} onChange={() => onSelecionar('cortesia')} />
-                    <span className="venc-option-text">✓ Bolsa de estudo autorizada — código validado</span>
-                  </label>
-                )}
-
-              </div>
-            </div>
+            )}
 
           </div>
         </div>

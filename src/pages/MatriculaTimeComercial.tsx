@@ -37,7 +37,7 @@ import { ensurePoppinsFontLoaded } from './matricula/theme';
 import { MatriculaHeader } from './matricula/MatriculaHeader';
 import { StepPersonal, type DadosPessoais } from './matricula/StepPersonal';
 import { StepAddress, type DadosEndereco } from './matricula/StepAddress';
-import { StepPayment, type VencimentoRadio } from './matricula/StepPayment';
+import { StepPayment, type VencimentoRadio, type FormaPagamentoPermitida } from './matricula/StepPayment';
 import { ObrigadoScreen } from './matricula/ObrigadoScreen';
 
 declare global {
@@ -59,9 +59,10 @@ const VENDEDORES: Record<string, string> = {
   miguel: 'Miguel Fogaça',
   direto: 'Equipe Instituto Despertamente',
   promo: 'Equipe Instituto Despertamente',
+  '997': 'Equipe Instituto Despertamente',
 };
 
-const SEM_VENDEDOR_ATRIBUIDO = new Set(['direto', 'promo']);
+const SEM_VENDEDOR_ATRIBUIDO = new Set(['direto', 'promo', '997']);
 
 // WhatsApp de cada vendedor (com DDI 55, só dígitos) — usado pra redirecionar
 // o aluno assim que o pagamento é confirmado, com uma mensagem pronta de
@@ -73,29 +74,46 @@ const VENDEDOR_WHATSAPP: Record<string, string> = {
   miguel: '5511932203852',
   direto: '5511976736081',
   promo: '5511976736081',
+  '997': '5511976736081',
 };
 
 // ─── Planos de preço por slug ───────────────────────────────────────────────
-// Quantidade de parcelas é sempre a mesma (1x a 12x cartão parcelado, 15x
-// boleto/recorrente) -- só o valor muda. "promo" (2026-09-04): condição
-// antiga reativada pra uma venda específica (R$997 à vista, R$110/mês nas
-// demais formas), em vez do padrão atual (R$1.500/R$150).
+// Quantidade de parcelas do cartão parcelado varia por plano (cartaoMaxParcelas)
+// -- boleto/recorrente são sempre 15x -- só o valor muda. "promo"
+// (2026-09-04): condição antiga reativada pra uma venda específica (R$997 à
+// vista, R$110/mês nas demais formas), em vez do padrão atual (R$1.500/R$150).
+// "997" (2026-09-04): oferta específica pra um lead que pediu por WhatsApp
+// pra pagar à vista NO CARTÃO em vez de PIX (que o /promo já oferecia) --
+// cartão em parcela única (1x), sem opção de parcelar, PIX, boleto ou
+// recorrente.
 //
 // cartaoBase (2026-09-04) é DIFERENTE de avista de propósito: é o valor que
-// alimenta o Card Payment Brick pra calcular o parcelamento (1x a 12x) --
-// não pode ser o preço com desconto do PIX/à vista, senão os juros da MP
-// incidem sobre um valor menor do que deveriam e a parcela de 12x fica
-// abaixo do anunciado. Os dois valores foram achados no simulador de taxas
-// do próprio Mercado Pago (Cobrar > Link de pagamento > "Detalhes do
+// alimenta o Card Payment Brick pra calcular o parcelamento -- não pode ser
+// o preço com desconto do PIX/à vista, senão os juros da MP incidem sobre um
+// valor menor do que deveriam e a parcela de 12x fica abaixo do anunciado.
+// Os valores de "padrao"/"promo" foram achados no simulador de taxas do
+// próprio Mercado Pago (Cobrar > Link de pagamento > "Detalhes do
 // parcelamento"), conferidos pelo dono do produto: "promo" preço-base
 // R$1.080,00 -> 12x de R$109,90 (bate com o anunciado "12x de R$110");
-// "padrao" preço-base R$1.474,10 -> 12x de R$150,00 (bate exato).
-const PLANOS: Record<string, { avista: number; parcela: number; cartaoBase: number }> = {
-  padrao: { avista: 1500, parcela: 150, cartaoBase: 1474.10 },
-  promo: { avista: 997, parcela: 110, cartaoBase: 1080 },
+// "padrao" preço-base R$1.474,10 -> 12x de R$150,00 (bate exato). "997" não
+// tem esse problema -- 1x não tem juros, então cartaoBase = avista = 997.
+const PLANOS: Record<string, { avista: number; parcela: number; cartaoBase: number; cartaoMaxParcelas: number }> = {
+  padrao: { avista: 1500, parcela: 150, cartaoBase: 1474.10, cartaoMaxParcelas: 12 },
+  promo: { avista: 997, parcela: 110, cartaoBase: 1080, cartaoMaxParcelas: 12 },
+  '997': { avista: 997, parcela: 997, cartaoBase: 997, cartaoMaxParcelas: 1 },
 };
 
-const planoDoSlug = (slug: string): keyof typeof PLANOS => (slug.toLowerCase() === 'promo' ? 'promo' : 'padrao');
+const planoDoSlug = (slug: string): keyof typeof PLANOS => {
+  const s = slug.toLowerCase();
+  return (s === 'promo' || s === '997') ? s : 'padrao';
+};
+
+// Slugs cuja tela de pagamento (§3) mostra só um subconjunto das formas --
+// undefined/ausente = todas (comportamento padrão). "997": só cartão de
+// crédito (sem PIX, boleto, recorrente ou bolsa).
+const FORMAS_PERMITIDAS: Record<string, FormaPagamentoPermitida[] | undefined> = {
+  '997': ['cartao_parcelado'],
+};
 
 // Forma aceita pela RPC matricula_time_comercial_criar. Desde 2026-09-03,
 // 'cartao' (parcelado, 1 transação só) e 'cartao_recorrente' (assinatura,
@@ -186,7 +204,7 @@ function StatusPagamentoBadge({ status }: { status: string }) {
 const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function PagamentoStep({
-  alunoId, nome, email, cpf, metodoInicial, vendedorWhatsapp, plano,
+  alunoId, nome, email, cpf, metodoInicial, vendedorWhatsapp, plano, formasPermitidas,
 }: {
   alunoId: string;
   nome: string;
@@ -194,7 +212,8 @@ function PagamentoStep({
   cpf: string;
   metodoInicial: MetodoCobravel;
   vendedorWhatsapp: string;
-  plano: { avista: number; parcela: number; cartaoBase: number };
+  plano: { avista: number; parcela: number; cartaoBase: number; cartaoMaxParcelas: number };
+  formasPermitidas?: FormaPagamentoPermitida[];
 }) {
   const [metodo, setMetodo] = useState<MetodoCobravel>(metodoInicial);
   const [publicKey, setPublicKey] = useState<string | null>(null);
@@ -344,14 +363,14 @@ function PagamentoStep({
         initialization: { amount },
         customization: {
           paymentMethods: {
-            // 1x a 12x, sempre calculado pela MP a partir do valor a vista --
-            // inclui a opcao "1x sem juros" (o proprio R$997 a vista no
-            // cartao, pedido explicito do dono do produto) alem do
-            // parcelamento com juros de 2x a 12x. O menu de parcelas so
+            // 1x a plano.cartaoMaxParcelas, sempre calculado pela MP a partir
+            // do valor a vista/cheio -- inclui a opcao "1x sem juros" alem do
+            // parcelamento com juros. Planos com cartaoMaxParcelas=1 (ex:
+            // "997") travam em pagamento unico -- o menu de parcelas so
             // aparece quando existe mais de uma opcao (por isso ficava
-            // invisivel antes, com min=max=12).
-            maxInstallments: metodo === 'cartao_parcelado' ? 12 : 1,
-            minInstallments: metodo === 'cartao_parcelado' ? 1 : 1,
+            // invisivel antes, com min=max=12 fixo).
+            maxInstallments: metodo === 'cartao_parcelado' ? plano.cartaoMaxParcelas : 1,
+            minInstallments: 1,
           },
         },
         callbacks: {
@@ -449,13 +468,22 @@ function PagamentoStep({
 
   // Cartão recorrente liberado em 2026-09-03 -- todas as formas ficam
   // disponíveis na troca de método (o aluno pode cair pro parcelado se a
-  // recorrente falhar, por exemplo).
-  const metodosTroca = Object.keys(LABEL_METODO) as MetodoCobravel[];
+  // recorrente falhar, por exemplo) -- exceto em slugs com oferta restrita
+  // (ex: "997", só cartão), onde formasPermitidas filtra as demais.
+  const metodosTroca = (Object.keys(LABEL_METODO) as MetodoCobravel[])
+    .filter(m => !formasPermitidas || formasPermitidas.includes(m));
+
+  // Rótulo do cartão parcelado depende do plano -- "997" trava em 1x, não
+  // faz sentido anunciar "1x a 12x" nesse caso.
+  const labelMetodo: Record<MetodoCobravel, string> = {
+    ...LABEL_METODO,
+    cartao_parcelado: plano.cartaoMaxParcelas === 1 ? 'Cartão de crédito (à vista)' : LABEL_METODO.cartao_parcelado,
+  };
 
   return (
     <div className="pay-body" style={{ padding: 0 }}>
       <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginBottom: 'var(--space-4)' }}>
-        Matrícula registrada. Agora é só concluir o pagamento — <strong style={{ color: 'var(--text)' }}>{LABEL_METODO[metodo]}</strong>.
+        Matrícula registrada. Agora é só concluir o pagamento — <strong style={{ color: 'var(--text)' }}>{labelMetodo[metodo]}</strong>.
       </p>
 
       {/* ── Troca de método sem perder a matrícula já criada ── */}
@@ -473,7 +501,7 @@ function PagamentoStep({
               cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
             }}
           >
-            <span>{ICONE_METODO[m]}</span> {LABEL_METODO[m]}
+            <span>{ICONE_METODO[m]}</span> {labelMetodo[m]}
           </button>
         ))}
       </div>
@@ -562,15 +590,18 @@ function PagamentoStep({
         <div>
           <div className="pix-amount-badge" style={{ marginBottom: 'var(--space-4)' }}>
             <span className="pix-amount-label">
-              {metodo === 'cartao_parcelado' ? 'Valor no cartão (parcele de 1x a 12x abaixo)' : 'Cobrança mensal (assinatura, 15x)'}
+              {metodo === 'cartao_parcelado'
+                ? (plano.cartaoMaxParcelas === 1 ? 'Valor no cartão (à vista)' : `Valor no cartão (parcele de 1x a ${plano.cartaoMaxParcelas}x abaixo)`)
+                : 'Cobrança mensal (assinatura, 15x)'}
             </span>
             <span className="pix-amount-value">
               R$ {fmtBRL(metodo === 'cartao_parcelado' ? plano.cartaoBase : plano.parcela)}
             </span>
           </div>
-          {metodo === 'cartao_parcelado' && (
+          {metodo === 'cartao_parcelado' && plano.cartaoMaxParcelas > 1 && (
             <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginBottom: 'var(--space-4)' }}>
-              Escolha a quantidade de parcelas no campo abaixo — o valor de cada parcela (com os juros do cartão, quando houver) aparece no próprio menu. Pagando à vista no PIX o valor é R$ {fmtBRL(plano.avista)}.
+              Escolha a quantidade de parcelas no campo abaixo — o valor de cada parcela (com os juros do cartão, quando houver) aparece no próprio menu.
+              {(!formasPermitidas || formasPermitidas.includes('avista')) && ` Pagando à vista no PIX o valor é R$ ${fmtBRL(plano.avista)}.`}
             </p>
           )}
           {!publicKey && (
@@ -641,6 +672,7 @@ export default function MatriculaTimeComercial() {
   const { vendedor: slug } = useParams<{ vendedor: string }>();
   const nomeVendedor = slug ? VENDEDORES[slug.toLowerCase()] : undefined;
   const plano = PLANOS[slug ? planoDoSlug(slug) : 'padrao'];
+  const formasPermitidas = slug ? FORMAS_PERMITIDAS[slug.toLowerCase()] : undefined;
 
   useEffect(() => { ensurePoppinsFontLoaded(); }, []);
 
@@ -699,6 +731,7 @@ export default function MatriculaTimeComercial() {
             metodoInicial={formaPagamento as MetodoCobravel}
             vendedorWhatsapp={VENDEDOR_WHATSAPP[slug!.toLowerCase()] ?? ''}
             plano={plano}
+            formasPermitidas={formasPermitidas}
           />
         </main>
       </div>
@@ -856,6 +889,7 @@ export default function MatriculaTimeComercial() {
                 erro={erro}
                 onVoltar={voltarPasso}
                 plano={plano}
+                formasPermitidas={formasPermitidas}
               />
             )}
 
