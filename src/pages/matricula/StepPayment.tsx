@@ -12,7 +12,7 @@
  */
 import { useState } from 'react';
 
-export type VencimentoRadio = '' | '10' | '20' | '30' | 'outro' | 'cartao' | 'a_vista' | 'cortesia';
+export type VencimentoRadio = '' | '10' | '20' | '30' | 'outro' | 'cartao_parcelado' | 'cartao_recorrente' | 'a_vista' | 'cortesia';
 
 const DIAS_BOLETO: Array<'10' | '20' | '30'> = ['10', '20', '30'];
 
@@ -71,12 +71,46 @@ export function StepPayment({
 
           <div className="venc-grupos" id="venc-grid">
 
-            {/* GRUPO BOLETO */}
+            {/* GRUPO CARTÃO PARCELADO (12x, uma única cobrança) */}
+            <div className={`venc-grupo${vencimentoRadio === 'cartao_parcelado' ? ' has-selection' : ''}`}>
+              <div className="venc-grupo-header">
+                <span className="venc-grupo-icon">💳</span>
+                <div>
+                  <div className="venc-grupo-title">Cartão parcelado</div>
+                  <div className="venc-grupo-desc">12x de R$ {fmtBRL(plano.parcela)} · uma única cobrança parcelada no cartão</div>
+                </div>
+              </div>
+              <div className="venc-grupo-body">
+                <label className={`venc-option-single${vencimentoRadio === 'cartao_parcelado' ? ' selected' : ''}`}>
+                  <input type="radio" name="dia_vencimento" value="cartao_parcelado" checked={vencimentoRadio === 'cartao_parcelado'} onChange={() => onSelecionar('cartao_parcelado')} />
+                  <span className="venc-option-text">Vou pagar no cartão, parcelado em 12x</span>
+                </label>
+              </div>
+            </div>
+
+            {/* GRUPO CARTÃO RECORRENTE (assinatura, 15 cobranças mensais) */}
+            <div className={`venc-grupo${vencimentoRadio === 'cartao_recorrente' ? ' has-selection' : ''}`}>
+              <div className="venc-grupo-header">
+                <span className="venc-grupo-icon">🔄</span>
+                <div>
+                  <div className="venc-grupo-title">Cartão recorrente</div>
+                  <div className="venc-grupo-desc">15x de R$ {fmtBRL(plano.parcela)} · cobrança mensal automática no cartão</div>
+                </div>
+              </div>
+              <div className="venc-grupo-body">
+                <label className={`venc-option-single${vencimentoRadio === 'cartao_recorrente' ? ' selected' : ''}`}>
+                  <input type="radio" name="dia_vencimento" value="cartao_recorrente" checked={vencimentoRadio === 'cartao_recorrente'} onChange={() => onSelecionar('cartao_recorrente')} />
+                  <span className="venc-option-text">Vou pagar no cartão, assinatura mensal</span>
+                </label>
+              </div>
+            </div>
+
+            {/* GRUPO BOLETO RECORRENTE (15x, 1ª parcela no PIX, depois boleto mensal) */}
             <div className={`venc-grupo${['10', '20', '30', 'outro'].includes(vencimentoRadio) ? ' has-selection' : ''}`}>
               <div className="venc-grupo-header">
                 <span className="venc-grupo-icon">📄</span>
                 <div>
-                  <div className="venc-grupo-title">Boleto bancário</div>
+                  <div className="venc-grupo-title">Boleto recorrente</div>
                   <div className="venc-grupo-desc">15x de R$ {fmtBRL(plano.parcela)} · Escolha o melhor dia de vencimento</div>
                   <div className="venc-grupo-desc" style={{ marginTop: 2 }}>1ª parcela no PIX, depois boleto mensal</div>
                 </div>
@@ -102,27 +136,6 @@ export function StepPayment({
                     value={diaOutro} onChange={e => onDiaOutroChange(e.target.value)}
                   />
                 </div>
-              </div>
-            </div>
-
-            {/* GRUPO CARTÃO */}
-            <div className={`venc-grupo${vencimentoRadio === 'cartao' ? ' has-selection' : ''}`}>
-              <div className="venc-grupo-header">
-                <span className="venc-grupo-icon">💳</span>
-                <div>
-                  <div className="venc-grupo-title">Cartão de crédito</div>
-                  {/* Essa opção vira 'cartao_recorrente' (assinatura, 15x) no
-                      passo seguinte, não 'cartao_parcelado' (12x) -- ver
-                      formaPagamento em MatriculaTimeComercial.tsx. Texto
-                      corrigido em 2026-09-04 (dizia "12x" por engano). */}
-                  <div className="venc-grupo-desc">15x de R$ {fmtBRL(plano.parcela)} · cobrança mensal automática</div>
-                </div>
-              </div>
-              <div className="venc-grupo-body">
-                <label className={`venc-option-single${vencimentoRadio === 'cartao' ? ' selected' : ''}`}>
-                  <input type="radio" name="dia_vencimento" value="cartao" checked={vencimentoRadio === 'cartao'} onChange={() => onSelecionar('cartao')} />
-                  <span className="venc-option-text">Vou pagar no cartão de crédito</span>
-                </label>
               </div>
             </div>
 

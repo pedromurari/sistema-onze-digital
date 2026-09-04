@@ -626,7 +626,8 @@ export default function MatriculaTimeComercial() {
   // ── forma de pagamento derivada da escolha no §3 ────────────────────────────
   const formaPagamento: MetodoPagamentoUI | '' =
     form.vencimentoRadio === '' ? ''
-    : form.vencimentoRadio === 'cartao' ? 'cartao_recorrente'
+    : form.vencimentoRadio === 'cartao_parcelado' ? 'cartao_parcelado'
+    : form.vencimentoRadio === 'cartao_recorrente' ? 'cartao_recorrente'
     : form.vencimentoRadio === 'a_vista' ? 'avista'
     : form.vencimentoRadio === 'cortesia' ? 'bolsa'
     : 'boleto';
