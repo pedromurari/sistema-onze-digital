@@ -22,6 +22,15 @@ function fmt(v: number): string {
   return Number(v).toFixed(2).replace('.', ',');
 }
 
+// fmt() não põe separador de milhar (nunca precisou até agora -- os valores
+// da cláusula 4.1 eram texto fixo, com o ponto digitado à mão). A partir de
+// 2026-09-04 esses valores viram dinâmicos (padrão ou plano /promo), então
+// precisam de um formatador de verdade pra não sair "R$ 1500,00" em vez de
+// "R$ 1.500,00".
+function fmtMoeda(v: number): string {
+  return Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function buildContratoHtml(d: Record<string, unknown>): string {
   const nome     = String(d.nome || '');
   const email    = String(d.email || '');
@@ -52,7 +61,12 @@ function buildContratoHtml(d: Record<string, unknown>): string {
 
   const isBolsa  = tipoPag === 'bolsa' || tipoPag === 'cortesia' || formaPag === 'bolsa' || diaVenc === 'cortesia';
   const isVista  = formaPag === 'avista' || diaVenc === 'a_vista';
-  const isCartao = formaPag === 'cartao' || diaVenc === 'cartao';
+  // formaPag pode ser 'cartao' (parcelado) ou 'cartao_recorrente' (assinatura,
+  // desde 2026-09-03) -- os dois são "cartão" pra fins de contrato, só o
+  // numParcelas (12 vs 15, via aluno.total_mensalidades) já muda sozinho.
+  // Bug real: antes só reconhecia 'cartao' e um aluno recorrente caía na
+  // cláusula de boleto por engano.
+  const isCartao = formaPag === 'cartao' || formaPag === 'cartao_recorrente' || diaVenc === 'cartao';
 
   let numParcelas: number, valorParcela: number, valorTotal: number;
   let formaResumo: string, planoSelecionado: string, diaVencTexto: string;
@@ -92,6 +106,26 @@ function buildContratoHtml(d: Record<string, unknown>): string {
   const horaFmt     = hoje.toLocaleTimeString('pt-BR');
   const dataExtenso = `${hoje.getDate()} de ${meses[hoje.getMonth()]} de ${hoje.getFullYear()}`;
 
+  // Cláusula 4.1 (a/b/c) lista as 3 condições comerciais oferecidas -- não é
+  // só a que o aluno escolheu (essa vem em 4.3/planoSelecionado). Até
+  // 2026-09-04 os 3 valores vinham hardcoded em 1.500/150/1.800/2.250
+  // (padrão), mesmo pra alunos de um plano com preço diferente (ex: link
+  // /promo, R$997/R$110) -- contradizia o valor real cobrado, registrado
+  // logo abaixo em 4.3. Detecta o plano pelo próprio valorParcelaCustom
+  // (=aluno.valor_mensalidade) já recebido, sem precisar de campo novo.
+  const isPromoPlano = isVista ? valorParcelaCustom === 997 : valorParcelaCustom === 110;
+  const menuValorAvista = isPromoPlano ? 997 : 1500;
+  const menuValorParcela = isPromoPlano ? 110 : 150;
+  const menuValorCartaoTotal = menuValorParcela * 12;
+  const menuValorBoletoTotal = menuValorParcela * 15;
+  // "por extenso" só pros valores padrão (texto fixo, conferido manualmente);
+  // pra plano com preço diferente, mostra só o número -- não é exigência
+  // legal ter o extenso, só um estilo que o texto original já tinha.
+  const extensoAvista = isPromoPlano ? '' : ' (mil e quinhentos reais)';
+  const extensoParcela = isPromoPlano ? '' : ' (cento e cinquenta reais)';
+  const extensoCartaoTotal = isPromoPlano ? '' : ' (mil e oitocentos reais)';
+  const extensoBoletoTotal = isPromoPlano ? '' : ' (dois mil, duzentos e cinquenta reais)';
+
   // Cláusula 4 dinâmica
   const clausula4Bolsa = isBolsa ? `
 <p class="c"><strong>4.1.</strong> O CONTRATANTE foi contemplado com <strong>Bolsa de Estudos integral</strong> concedida pela CONTRATADA, eximindo-o do pagamento de qualquer valor pela prestação dos serviços educacionais descritos neste contrato.</p>
@@ -99,9 +133,9 @@ function buildContratoHtml(d: Record<string, unknown>): string {
 <p class="c"><strong>4.3.</strong> O não cumprimento das obrigações acadêmicas ou a desistência imotivada poderão implicar na revogação da bolsa a critério da CONTRATADA.</p>
 ` : `
 <p class="c"><strong>4.1.</strong> O CONTRATANTE declara ter escolhido, no ato da matrícula, uma das seguintes condições comerciais:</p>
-<p class="c" style="margin-left:16px;">a) pagamento à vista: R$ 1.500,00 (mil e quinhentos reais);</p>
-<p class="c" style="margin-left:16px;">b) cartão de crédito: em até 12 (doze) parcelas de R$ 150,00 (cento e cinquenta reais), totalizando R$ 1.800,00 (mil e oitocentos reais), conforme disponibilidade e aprovação da operadora/meio de pagamento;</p>
-<p class="c" style="margin-left:16px;">c) plano por boleto: 1 (uma) parcela inicial, seguida de 14 (quatorze) parcelas mensais de R$ 150,00 (cento e cinquenta reais), totalizando 15 (quinze) pagamentos de R$ 2.250,00 (dois mil, duzentos e cinquenta reais).</p>
+<p class="c" style="margin-left:16px;">a) pagamento à vista: R$ ${fmtMoeda(menuValorAvista)}${extensoAvista};</p>
+<p class="c" style="margin-left:16px;">b) cartão de crédito: em até 12 (doze) parcelas de R$ ${fmtMoeda(menuValorParcela)}${extensoParcela}, totalizando R$ ${fmtMoeda(menuValorCartaoTotal)}${extensoCartaoTotal}, conforme disponibilidade e aprovação da operadora/meio de pagamento;</p>
+<p class="c" style="margin-left:16px;">c) plano por boleto: 1 (uma) parcela inicial, seguida de 14 (quatorze) parcelas mensais de R$ ${fmtMoeda(menuValorParcela)}${extensoParcela}, totalizando 15 (quinze) pagamentos de R$ ${fmtMoeda(menuValorBoletoTotal)}${extensoBoletoTotal}.</p>
 <p class="c"><strong>4.2.</strong> No plano por boleto, a quantidade de pagamentos constitui a condição comercial contratada e não deve ser confundida com a quantidade de meses da formação, que permanece com duração prevista de 14 meses.</p>
 <p class="c"><strong>4.3.</strong> O plano efetivamente escolhido pelo CONTRATANTE é o <strong>${planoSelecionado}</strong>, conforme registrado no quadro-resumo acima.</p>
 `;

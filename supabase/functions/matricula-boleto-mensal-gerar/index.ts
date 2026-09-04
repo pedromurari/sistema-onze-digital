@@ -196,7 +196,9 @@ serve(async (req) => {
             billingType: 'BOLETO',
             value: Number(pagamento.valor),
             dueDate: pagamento.data_vencimento,
-            description: `Matrícula PSI (parcela ${pagamento.numero_parcela}/15) - ${aluno.nome ?? pagamento.aluno_id}`,
+            // "/" e acentos saem estranhos na description do Asaas (achado em
+            // teste real 2026-09-04, "1/15" virava "115") -- texto simples.
+            description: `Matricula PSI (parcela ${pagamento.numero_parcela} de 15) - ${aluno.nome ?? pagamento.aluno_id}`,
             externalReference: pagamento.id,
           }),
         });

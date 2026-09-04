@@ -16,6 +16,8 @@ export type VencimentoRadio = '' | '10' | '20' | '30' | 'outro' | 'cartao' | 'a_
 
 const DIAS_BOLETO: Array<'10' | '20' | '30'> = ['10', '20', '30'];
 
+const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 export function StepPayment({
   vencimentoRadio, onSelecionar,
   diaOutro, onDiaOutroChange,
@@ -24,6 +26,7 @@ export function StepPayment({
   declaracao, onDeclaracaoChange,
   submitting, podeEnviar, erro,
   onSubmit, onVoltar,
+  plano,
 }: {
   vencimentoRadio: VencimentoRadio;
   onSelecionar: (v: VencimentoRadio) => void;
@@ -40,6 +43,7 @@ export function StepPayment({
   erro: string;
   onSubmit: () => void;
   onVoltar: () => void;
+  plano: { avista: number; parcela: number };
 }) {
   const [gateMsg, setGateMsg] = useState('');
 
@@ -73,7 +77,7 @@ export function StepPayment({
                 <span className="venc-grupo-icon">📄</span>
                 <div>
                   <div className="venc-grupo-title">Boleto bancário</div>
-                  <div className="venc-grupo-desc">15x de R$ 150,00 · Escolha o melhor dia de vencimento</div>
+                  <div className="venc-grupo-desc">15x de R$ {fmtBRL(plano.parcela)} · Escolha o melhor dia de vencimento</div>
                   <div className="venc-grupo-desc" style={{ marginTop: 2 }}>1ª parcela no PIX, depois boleto mensal</div>
                 </div>
               </div>
@@ -107,7 +111,11 @@ export function StepPayment({
                 <span className="venc-grupo-icon">💳</span>
                 <div>
                   <div className="venc-grupo-title">Cartão de crédito</div>
-                  <div className="venc-grupo-desc">Em até 12x de R$ 150,00</div>
+                  {/* Essa opção vira 'cartao_recorrente' (assinatura, 15x) no
+                      passo seguinte, não 'cartao_parcelado' (12x) -- ver
+                      formaPagamento em MatriculaTimeComercial.tsx. Texto
+                      corrigido em 2026-09-04 (dizia "12x" por engano). */}
+                  <div className="venc-grupo-desc">15x de R$ {fmtBRL(plano.parcela)} · cobrança mensal automática</div>
                 </div>
               </div>
               <div className="venc-grupo-body">
@@ -124,7 +132,7 @@ export function StepPayment({
                 <span className="venc-grupo-icon">⚡</span>
                 <div>
                   <div className="venc-grupo-title">PIX à vista</div>
-                  <div className="venc-grupo-desc">R$ 1.500,00 · Melhor valor</div>
+                  <div className="venc-grupo-desc">R$ {fmtBRL(plano.avista)} · Melhor valor</div>
                 </div>
               </div>
               <div className="venc-grupo-body">

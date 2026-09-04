@@ -58,20 +58,34 @@ const VENDEDORES: Record<string, string> = {
   helen: 'Helen Magna',
   miguel: 'Miguel Fogaça',
   direto: 'Equipe Instituto Despertamente',
+  promo: 'Equipe Instituto Despertamente',
 };
 
-const SEM_VENDEDOR_ATRIBUIDO = new Set(['direto']);
+const SEM_VENDEDOR_ATRIBUIDO = new Set(['direto', 'promo']);
 
 // WhatsApp de cada vendedor (com DDI 55, só dígitos) — usado pra redirecionar
 // o aluno assim que o pagamento é confirmado, com uma mensagem pronta de
-// "finalizei a matrícula", pedido explícito do dono do produto. "direto" vai
-// pro WhatsApp do financeiro (disp3/"Financeiro IDM"), já que não tem
-// consultora dona pra assumir a conversa.
+// "finalizei a matrícula", pedido explícito do dono do produto. "direto" e
+// "promo" vão pro WhatsApp do financeiro (disp3/"Financeiro IDM"), já que
+// não tem consultora dona pra assumir a conversa.
 const VENDEDOR_WHATSAPP: Record<string, string> = {
   helen: '5511965781940',
   miguel: '5511932203852',
   direto: '5511976736081',
+  promo: '5511976736081',
 };
+
+// ─── Planos de preço por slug ───────────────────────────────────────────────
+// Quantidade de parcelas é sempre a mesma (12x cartão parcelado, 15x
+// boleto/recorrente, 1x à vista) -- só o valor muda. "promo" (2026-09-04):
+// condição antiga reativada pra uma venda específica (R$997 à vista,
+// R$110/mês nas demais formas), em vez do padrão atual (R$1.500/R$150).
+const PLANOS: Record<string, { avista: number; parcela: number }> = {
+  padrao: { avista: 1500, parcela: 150 },
+  promo: { avista: 997, parcela: 110 },
+};
+
+const planoDoSlug = (slug: string): keyof typeof PLANOS => (slug.toLowerCase() === 'promo' ? 'promo' : 'padrao');
 
 // Forma aceita pela RPC matricula_time_comercial_criar. Desde 2026-09-03,
 // 'cartao' (parcelado, 1 transação só) e 'cartao_recorrente' (assinatura,
@@ -159,8 +173,10 @@ function StatusPagamentoBadge({ status }: { status: string }) {
   );
 }
 
+const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 function PagamentoStep({
-  alunoId, nome, email, cpf, metodoInicial, vendedorWhatsapp,
+  alunoId, nome, email, cpf, metodoInicial, vendedorWhatsapp, plano,
 }: {
   alunoId: string;
   nome: string;
@@ -168,6 +184,7 @@ function PagamentoStep({
   cpf: string;
   metodoInicial: MetodoCobravel;
   vendedorWhatsapp: string;
+  plano: { avista: number; parcela: number };
 }) {
   const [metodo, setMetodo] = useState<MetodoCobravel>(metodoInicial);
   const [publicKey, setPublicKey] = useState<string | null>(null);
@@ -301,7 +318,7 @@ function PagamentoStep({
 
       const mp = new window.MercadoPago(publicKey, { locale: 'pt-BR' });
       const bricksBuilder = mp.bricks();
-      const amount = metodo === 'cartao_parcelado' ? 1800 : 150;
+      const amount = metodo === 'cartao_parcelado' ? plano.parcela * 12 : plano.parcela;
 
       brickControllerRef.current = await bricksBuilder.create('cardPayment', brickContainerRef.current.id, {
         initialization: { amount },
@@ -448,7 +465,7 @@ function PagamentoStep({
             <>
               <div className="pix-amount-badge">
                 <span className="pix-amount-label">{metodo === 'avista' ? 'Total à vista' : '1ª parcela (PIX)'}</span>
-                <span className="pix-amount-value">{metodo === 'avista' ? 'R$ 1.500,00' : 'R$ 150,00'}</span>
+                <span className="pix-amount-value">R$ {metodo === 'avista' ? fmtBRL(plano.avista) : fmtBRL(plano.parcela)}</span>
               </div>
 
               <div className="qr-wrapper">
@@ -579,6 +596,7 @@ type FormState = DadosPessoais & DadosEndereco & {
 export default function MatriculaTimeComercial() {
   const { vendedor: slug } = useParams<{ vendedor: string }>();
   const nomeVendedor = slug ? VENDEDORES[slug.toLowerCase()] : undefined;
+  const plano = PLANOS[slug ? planoDoSlug(slug) : 'padrao'];
 
   useEffect(() => { ensurePoppinsFontLoaded(); }, []);
 
@@ -635,6 +653,7 @@ export default function MatriculaTimeComercial() {
             cpf={form.cpf.trim()}
             metodoInicial={formaPagamento as MetodoCobravel}
             vendedorWhatsapp={VENDEDOR_WHATSAPP[slug!.toLowerCase()] ?? ''}
+            plano={plano}
           />
         </main>
       </div>
@@ -694,6 +713,8 @@ export default function MatriculaTimeComercial() {
         p_codigo_bolsa: formaPagamento === 'bolsa' ? form.codigo_bolsa.trim() : null,
         p_vendedor: SEM_VENDEDOR_ATRIBUIDO.has(slug!.toLowerCase()) ? null : nomeVendedor,
         p_canal: 'Direto',
+        p_valor_avista: plano.avista,
+        p_valor_parcela: plano.parcela,
       });
 
       if (error) {
@@ -790,6 +811,7 @@ export default function MatriculaTimeComercial() {
                 erro={erro}
                 onSubmit={handleSubmit}
                 onVoltar={voltarPasso}
+                plano={plano}
               />
             )}
 

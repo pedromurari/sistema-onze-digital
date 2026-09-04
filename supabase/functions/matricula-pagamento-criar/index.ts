@@ -24,6 +24,14 @@
  * ajustado pra preservar essas linhas já cobradas quando a turma é
  * atribuída, e parou de pré-marcar a 1ª parcela do boleto como paga).
  *
+ * Preço por plano (2026-09-04): nenhum valor é hardcoded aqui -- todo mundo
+ * lê `aluno.valor_mensalidade` (gravado pela RPC matricula_time_comercial_criar
+ * a partir de p_valor_avista/p_valor_parcela, ver PLANOS em
+ * src/pages/MatriculaTimeComercial.tsx). É isso que permite o link /promo
+ * (R$997 à vista, R$110/mês) sem duplicar nenhum branch de forma de
+ * pagamento -- só o valor muda, a quantidade de parcelas é sempre a mesma
+ * (12x cartão parcelado, 15x boleto/recorrente).
+ *
  * Body: {
  *   alunoId: string,
  *   forma: 'avista' | 'cartao_parcelado' | 'cartao_recorrente' | 'boleto',
@@ -178,11 +186,22 @@ serve(async (req) => {
 
     const { data: aluno, error: alunoErr } = await supabase
       .from('alunos')
-      .select('id, nome, email, cpf, endereco, cep, cidade_estado, dia_vencimento, data_matricula, asaas_customer_id')
+      .select('id, nome, email, cpf, endereco, cep, cidade_estado, dia_vencimento, data_matricula, asaas_customer_id, valor_mensalidade')
       .eq('id', alunoId).maybeSingle();
 
     if (alunoErr || !aluno) {
       return json({ ok: false, erro: 'Aluno não encontrado.' }, 404);
+    }
+
+    // valor_mensalidade guarda o valor do PLANO desse aluno (gravado pela RPC
+    // matricula_time_comercial_criar): lump sum pra avista, valor por parcela
+    // pras demais formas. Nunca hardcoded aqui -- é o que permite planos com
+    // preço diferente do padrão (ex: /promo, R$997/R$110 em vez de
+    // R$1.500/R$150) sem duplicar branch nenhum.
+    const valorPlano = Number((aluno as any).valor_mensalidade);
+    if (!valorPlano || valorPlano <= 0) {
+      console.error('matricula-pagamento-criar: valor_mensalidade ausente/inválido', alunoId, (aluno as any).valor_mensalidade);
+      return json({ ok: false, erro: 'Valor do plano não encontrado. Avise a equipe.' }, 500);
     }
 
     const nomeCompleto = String(body?.payerFirstName ? `${body.payerFirstName} ${body.payerLastName ?? ''}` : (aluno as any).nome ?? '').trim();
@@ -207,7 +226,7 @@ serve(async (req) => {
         headers: { 'X-Idempotency-Key': idempotencyKey },
         body: JSON.stringify({
           payment_method_id: 'pix',
-          transaction_amount: 1500,
+          transaction_amount: valorPlano,
           description: `Matrícula PSI - ${nomeCompleto || aluno.id}`,
           external_reference: alunoId,
           payer,
@@ -290,7 +309,7 @@ serve(async (req) => {
         .insert(parcelas.map(p => ({
           aluno_id: alunoId,
           produto: 'psicanalise',
-          valor: 150,
+          valor: valorPlano,
           mes_referencia: p.mes_referencia,
           data_vencimento: p.data_vencimento,
           numero_parcela: p.numero_parcela,
@@ -313,7 +332,10 @@ serve(async (req) => {
             billingType: 'BOLETO',
             value: Number(row.valor),
             dueDate: row.data_vencimento,
-            description: `Matrícula PSI (parcela ${row.numero_parcela}/15) - ${nomeCompleto || alunoId}`,
+            // "/" sai da description (achado em teste real 2026-09-04: o
+            // Asaas engole caracteres especiais nesse campo, "1/15" virava
+            // "115") -- "de" no lugar da barra.
+            description: `Matricula PSI (parcela ${row.numero_parcela} de 15) - ${nomeCompleto || alunoId}`,
             externalReference: row.id,
           }),
         });
@@ -341,9 +363,20 @@ serve(async (req) => {
 
       // Todo boleto no Asaas tem um Pix equivalente em paralelo -- usamos ele
       // pra manter a mesma UX de QR code/copia-e-cola da tela de pagamento.
-      const { ok: pixOk, data: pixData } = await asaasFetch(`/payments/${primeira.data.id}/pixQrCode`, { method: 'GET' });
+      // O Pix não fica pronto instantaneamente na criação do boleto (achado
+      // em teste real 2026-09-04: 1ª tentativa às vezes vem vazia, funciona
+      // ao tentar de novo alguns segundos depois) -- tenta até 3x com espera
+      // curta antes de desistir, em vez de devolver QR vazio pro aluno.
+      let pixOk = false;
+      let pixData: any = null;
+      for (let tentativa = 0; tentativa < 3 && !pixOk; tentativa++) {
+        if (tentativa > 0) await new Promise(r => setTimeout(r, 1500));
+        const resultado = await asaasFetch(`/payments/${primeira.data.id}/pixQrCode`, { method: 'GET' });
+        pixOk = resultado.ok;
+        pixData = resultado.data;
+      }
       if (!pixOk) {
-        console.error('matricula-pagamento-criar: erro ao buscar Pix do boleto Asaas', pixData);
+        console.error('matricula-pagamento-criar: erro ao buscar Pix do boleto Asaas (3 tentativas)', pixData);
       }
 
       return json({
@@ -365,7 +398,7 @@ serve(async (req) => {
         headers: { 'X-Idempotency-Key': idempotencyKey },
         body: JSON.stringify({
           token: cardToken,
-          transaction_amount: 1800,
+          transaction_amount: valorPlano * 12,
           installments: Number(body?.installments ?? 12),
           payment_method_id: body?.paymentMethodId,
           description: `Matrícula PSI (cartão 12x) - ${nomeCompleto || aluno.id}`,
@@ -413,7 +446,7 @@ serve(async (req) => {
           auto_recurring: {
             frequency: 1,
             frequency_type: 'months',
-            transaction_amount: 150,
+            transaction_amount: valorPlano,
             currency_id: 'BRL',
             end_date: dataFimAssinatura.toISOString(),
           },
@@ -446,7 +479,7 @@ serve(async (req) => {
         return {
           aluno_id: alunoId,
           produto: 'psicanalise',
-          valor: 150,
+          valor: valorPlano,
           mes_referencia: formatLocalDate(new Date(dueDate.getFullYear(), dueDate.getMonth(), 1)),
           data_vencimento: formatLocalDate(dueDate),
           numero_parcela: index + 1,
