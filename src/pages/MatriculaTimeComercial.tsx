@@ -85,15 +85,13 @@ const VENDEDOR_WHATSAPP: Record<string, string> = {
 // alimenta o Card Payment Brick pra calcular o parcelamento (1x a 12x) --
 // não pode ser o preço com desconto do PIX/à vista, senão os juros da MP
 // incidem sobre um valor menor do que deveriam e a parcela de 12x fica
-// abaixo do anunciado. O valor certo é achado no simulador de taxas do
-// próprio Mercado Pago (Cobrar > Link de pagamento > "Detalhes do
-// parcelamento"): pra "promo" (aluno confirmou com o simulador), preço-base
-// R$1.080,00 com os juros do cartão da conta resulta em 12x de R$109,90 --
-// bate com o anunciado historicamente ("12x de R$110"). O de "padrao" ainda
-// usa o mesmo valor do avista (1500) por não ter sido conferido no
-// simulador ainda -- pode ter o mesmo problema, mas isso não foi confirmado.
+// abaixo do anunciado. Os dois valores foram achados no simulador de taxas
+// do próprio Mercado Pago (Cobrar > Link de pagamento > "Detalhes do
+// parcelamento"), conferidos pelo dono do produto: "promo" preço-base
+// R$1.080,00 -> 12x de R$109,90 (bate com o anunciado "12x de R$110");
+// "padrao" preço-base R$1.474,10 -> 12x de R$150,00 (bate exato).
 const PLANOS: Record<string, { avista: number; parcela: number; cartaoBase: number }> = {
-  padrao: { avista: 1500, parcela: 150, cartaoBase: 1500 },
+  padrao: { avista: 1500, parcela: 150, cartaoBase: 1474.10 },
   promo: { avista: 997, parcela: 110, cartaoBase: 1080 },
 };
 
