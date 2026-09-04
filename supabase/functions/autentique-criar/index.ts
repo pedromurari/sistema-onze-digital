@@ -113,7 +113,12 @@ function buildContratoHtml(d: Record<string, unknown>): string {
   // /promo, R$997/R$110) -- contradizia o valor real cobrado, registrado
   // logo abaixo em 4.3. Detecta o plano pelo próprio valorParcelaCustom
   // (=aluno.valor_mensalidade) já recebido, sem precisar de campo novo.
-  const isPromoPlano = isVista ? valorParcelaCustom === 997 : valorParcelaCustom === 110;
+  //
+  // Checa os dois valores (997 e 110) independente da forma de pagamento --
+  // não só quando isVista -- porque o link /997 (2026-09-04) cobra R$997 via
+  // CARTÃO (à vista, 1x), não via PIX/avista. Antes disso, um aluno do /997
+  // caía errado no menu do plano padrão (1.500/150) mesmo tendo pago 997.
+  const isPromoPlano = valorParcelaCustom === 997 || valorParcelaCustom === 110;
   const menuValorAvista = isPromoPlano ? 997 : 1500;
   const menuValorParcela = isPromoPlano ? 110 : 150;
   const menuValorCartaoTotal = menuValorParcela * 12;
