@@ -11,6 +11,7 @@ const TarefaPublica   = React.lazy(() => import("./pages/TarefaPublica"));
 const ContratoPublico = React.lazy(() => import("./pages/ContratoPublico"));
 const FormularioAluno = React.lazy(() => import("./pages/FormularioAluno"));
 const MatriculaTimeComercial = React.lazy(() => import("./pages/MatriculaTimeComercial"));
+const PnlContrato = React.lazy(() => import("./pages/PnlContrato"));
 const AreaMembros     = React.lazy(() => import("./pages/AreaMembros"));
 const Checkout        = React.lazy(() => import("./pages/Checkout"));
 const LinkRedirect    = React.lazy(() => import("./pages/LinkRedirect"));
@@ -81,6 +82,7 @@ const App = () => (
               <Route path="/forms/tarefa/:tarefaId" element={<TarefaPublica />} />
               <Route path="/formulario/:token"      element={<FormularioAluno />} />
               <Route path="/matricula/:vendedor"    element={<MatriculaTimeComercial />} />
+              <Route path="/pnl-contrato"           element={<PnlContrato />} />
               {/* Alias curto pra vendedor (ir.idmpsi.com.br/helen, /miguel) --
                   aponta pro mesmo componente que /matricula/:vendedor. Rota
                   dinâmica de 1 segmento só, então não conflita com as rotas
