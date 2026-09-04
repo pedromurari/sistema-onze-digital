@@ -25,7 +25,7 @@ export function StepPayment({
   bolsaValidada, onValidarBolsa,
   declaracao, onDeclaracaoChange,
   submitting, podeEnviar, erro,
-  onSubmit, onVoltar,
+  onVoltar,
   plano,
 }: {
   vencimentoRadio: VencimentoRadio;
@@ -41,9 +41,8 @@ export function StepPayment({
   submitting: boolean;
   podeEnviar: boolean;
   erro: string;
-  onSubmit: () => void;
   onVoltar: () => void;
-  plano: { avista: number; parcela: number };
+  plano: { avista: number; parcela: number; cartaoBase: number };
 }) {
   const [gateMsg, setGateMsg] = useState('');
 
@@ -78,7 +77,7 @@ export function StepPayment({
                 <span className="venc-grupo-icon">💳</span>
                 <div>
                   <div className="venc-grupo-title">Cartão parcelado</div>
-                  <div className="venc-grupo-desc">De 1x a 12x no cartão · R$ {fmtBRL(plano.avista)} à vista, ou parcelado com juros</div>
+                  <div className="venc-grupo-desc">De 1x a 12x no cartão · R$ {fmtBRL(plano.cartaoBase)}, ou parcelado com juros</div>
                 </div>
               </div>
               <div className="venc-grupo-body">
@@ -237,7 +236,6 @@ export function StepPayment({
             aria-label="Confirmar matrícula"
             style={{ flex: 1 }}
             disabled={!podeEnviar}
-            onClick={onSubmit}
           >
             <span className="btn-text">Confirmar minha matrícula</span>
             <span className="btn-icon" aria-hidden="true">→</span>

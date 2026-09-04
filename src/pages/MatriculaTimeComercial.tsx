@@ -76,13 +76,25 @@ const VENDEDOR_WHATSAPP: Record<string, string> = {
 };
 
 // ─── Planos de preço por slug ───────────────────────────────────────────────
-// Quantidade de parcelas é sempre a mesma (12x cartão parcelado, 15x
-// boleto/recorrente, 1x à vista) -- só o valor muda. "promo" (2026-09-04):
-// condição antiga reativada pra uma venda específica (R$997 à vista,
-// R$110/mês nas demais formas), em vez do padrão atual (R$1.500/R$150).
-const PLANOS: Record<string, { avista: number; parcela: number }> = {
-  padrao: { avista: 1500, parcela: 150 },
-  promo: { avista: 997, parcela: 110 },
+// Quantidade de parcelas é sempre a mesma (1x a 12x cartão parcelado, 15x
+// boleto/recorrente) -- só o valor muda. "promo" (2026-09-04): condição
+// antiga reativada pra uma venda específica (R$997 à vista, R$110/mês nas
+// demais formas), em vez do padrão atual (R$1.500/R$150).
+//
+// cartaoBase (2026-09-04) é DIFERENTE de avista de propósito: é o valor que
+// alimenta o Card Payment Brick pra calcular o parcelamento (1x a 12x) --
+// não pode ser o preço com desconto do PIX/à vista, senão os juros da MP
+// incidem sobre um valor menor do que deveriam e a parcela de 12x fica
+// abaixo do anunciado. O valor certo é achado no simulador de taxas do
+// próprio Mercado Pago (Cobrar > Link de pagamento > "Detalhes do
+// parcelamento"): pra "promo" (aluno confirmou com o simulador), preço-base
+// R$1.080,00 com os juros do cartão da conta resulta em 12x de R$109,90 --
+// bate com o anunciado historicamente ("12x de R$110"). O de "padrao" ainda
+// usa o mesmo valor do avista (1500) por não ter sido conferido no
+// simulador ainda -- pode ter o mesmo problema, mas isso não foi confirmado.
+const PLANOS: Record<string, { avista: number; parcela: number; cartaoBase: number }> = {
+  padrao: { avista: 1500, parcela: 150, cartaoBase: 1500 },
+  promo: { avista: 997, parcela: 110, cartaoBase: 1080 },
 };
 
 const planoDoSlug = (slug: string): keyof typeof PLANOS => (slug.toLowerCase() === 'promo' ? 'promo' : 'padrao');
@@ -184,7 +196,7 @@ function PagamentoStep({
   cpf: string;
   metodoInicial: MetodoCobravel;
   vendedorWhatsapp: string;
-  plano: { avista: number; parcela: number };
+  plano: { avista: number; parcela: number; cartaoBase: number };
 }) {
   const [metodo, setMetodo] = useState<MetodoCobravel>(metodoInicial);
   const [publicKey, setPublicKey] = useState<string | null>(null);
@@ -318,16 +330,17 @@ function PagamentoStep({
 
       const mp = new window.MercadoPago(publicKey, { locale: 'pt-BR' });
       const bricksBuilder = mp.bricks();
-      // 'cartao_parcelado': a base do calculo tem que ser o valor A VISTA
-      // (plano.avista), nunca "parcela * parcelas" -- os juros do parcelamento
-      // no cartao sao calculados pela propria MP EM CIMA desse valor a vista,
-      // por parcela escolhida. Mandar um total ja multiplicado como se fosse o
-      // preco a vista faz a MP aplicar juros sobre um valor ja inflado,
-      // encarecendo cada parcela bem acima do anunciado (achado real
-      // 2026-09-04). 'cartao_recorrente' nao tem esse problema -- e uma
+      // 'cartao_parcelado': a base do calculo tem que ser plano.cartaoBase --
+      // NUNCA "parcela * parcelas" (isso fazia a MP aplicar juros EM CIMA de
+      // um total ja multiplicado, achado real 2026-09-04) e NUNCA plano.avista
+      // (esse e o preco com desconto do PIX/a vista -- o cartao usa o preco
+      // "cheio", sem o desconto, senao os juros da MP incidem sobre um valor
+      // menor do que deveriam e a parcela de 12x fica abaixo do anunciado).
+      // Ver comentario em PLANOS (topo do arquivo) sobre como esse valor foi
+      // calculado. 'cartao_recorrente' nao tem esse problema -- e uma
       // assinatura (N cobrancas mensais separadas de valor fixo), nao um
       // parcelamento no cartao, entao usa plano.parcela normalmente.
-      const amount = metodo === 'cartao_parcelado' ? plano.avista : plano.parcela;
+      const amount = metodo === 'cartao_parcelado' ? plano.cartaoBase : plano.parcela;
 
       brickControllerRef.current = await bricksBuilder.create('cardPayment', brickContainerRef.current.id, {
         initialization: { amount },
@@ -551,15 +564,15 @@ function PagamentoStep({
         <div>
           <div className="pix-amount-badge" style={{ marginBottom: 'var(--space-4)' }}>
             <span className="pix-amount-label">
-              {metodo === 'cartao_parcelado' ? 'Valor à vista (parcele de 1x a 12x abaixo)' : 'Cobrança mensal (assinatura, 15x)'}
+              {metodo === 'cartao_parcelado' ? 'Valor no cartão (parcele de 1x a 12x abaixo)' : 'Cobrança mensal (assinatura, 15x)'}
             </span>
             <span className="pix-amount-value">
-              R$ {fmtBRL(metodo === 'cartao_parcelado' ? plano.avista : plano.parcela)}
+              R$ {fmtBRL(metodo === 'cartao_parcelado' ? plano.cartaoBase : plano.parcela)}
             </span>
           </div>
           {metodo === 'cartao_parcelado' && (
             <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginBottom: 'var(--space-4)' }}>
-              Escolha a quantidade de parcelas no campo abaixo — o valor de cada parcela (com os juros do cartão, quando houver) aparece no próprio menu.
+              Escolha a quantidade de parcelas no campo abaixo — o valor de cada parcela (com os juros do cartão, quando houver) aparece no próprio menu. Pagando à vista no PIX o valor é R$ {fmtBRL(plano.avista)}.
             </p>
           )}
           {!publicKey && (
@@ -843,7 +856,6 @@ export default function MatriculaTimeComercial() {
                 submitting={submitting}
                 podeEnviar={podeEnviar}
                 erro={erro}
-                onSubmit={handleSubmit}
                 onVoltar={voltarPasso}
                 plano={plano}
               />
