@@ -493,20 +493,35 @@ serve(async (req) => {
       });
     }
 
-    // ── Cartão parcelado (12x, uma única cobrança com installments:12) ─────────
+    // ── Cartão parcelado (1x a 12x, uma única cobrança) ─────────────────────────
+    // O valor COM os juros da parcela escolhida (2x em diante) é calculado
+    // pela própria MP (Card Payment Brick), a partir do valor à vista --
+    // NUNCA aqui no backend. Mandar "valorPlano * parcelas" como
+    // transaction_amount fixo (jeito antigo) fazia a MP aplicar juros EM CIMA
+    // desse total já multiplicado, encarecendo cada parcela bem acima do
+    // anunciado (achado real 2026-09-04, confirmado pelo dono do produto).
     if (forma === 'cartao_parcelado') {
       const cardToken = String(body?.cardToken ?? '');
       if (!cardToken) return json({ ok: false, erro: 'Token do cartão ausente.' }, 400);
+
+      const transactionAmount = Number(body?.transactionAmount);
+      if (!transactionAmount || transactionAmount <= 0) {
+        return json({ ok: false, erro: 'Valor do pagamento ausente ou inválido.' }, 400);
+      }
+      const installments = Number(body?.installments);
+      if (!installments || installments < 1 || installments > 12) {
+        return json({ ok: false, erro: 'Quantidade de parcelas inválida.' }, 400);
+      }
 
       const { ok, data } = await mpFetch('/v1/payments', {
         method: 'POST',
         headers: { 'X-Idempotency-Key': idempotencyKey },
         body: JSON.stringify({
           token: cardToken,
-          transaction_amount: valorPlano * 12,
-          installments: Number(body?.installments ?? 12),
+          transaction_amount: transactionAmount,
+          installments,
           payment_method_id: body?.paymentMethodId,
-          description: `Matrícula PSI (cartão 12x) - ${nomeCompleto || aluno.id}`,
+          description: `Matrícula PSI (cartão ${installments}x) - ${nomeCompleto || aluno.id}`,
           external_reference: alunoId,
           payer,
         }),
@@ -517,7 +532,11 @@ serve(async (req) => {
         return json({ ok: false, erro: data?.message || 'Não foi possível processar o cartão.' }, 400);
       }
 
-      await supabase.from('alunos').update({ mp_status: data.status }).eq('id', alunoId);
+      // total_mensalidades reflete a quantidade REAL escolhida pelo aluno no
+      // Brick (1x a 12x) -- a RPC de matrícula grava 12 como valor inicial
+      // (chute antes de saber a escolha), corrigido aqui pro relatório/CRM
+      // mostrar o número certo de parcelas dessa cobrança.
+      await supabase.from('alunos').update({ mp_status: data.status, total_mensalidades: installments }).eq('id', alunoId);
 
       return json({
         ok: true,

@@ -71,19 +71,20 @@ export function StepPayment({
 
           <div className="venc-grupos" id="venc-grid">
 
-            {/* GRUPO CARTÃO PARCELADO (12x, uma única cobrança) */}
+            {/* GRUPO CARTÃO PARCELADO (1x a 12x, uma única cobrança -- juros de
+                2x em diante calculados pela MP a partir do valor à vista) */}
             <div className={`venc-grupo${vencimentoRadio === 'cartao_parcelado' ? ' has-selection' : ''}`}>
               <div className="venc-grupo-header">
                 <span className="venc-grupo-icon">💳</span>
                 <div>
                   <div className="venc-grupo-title">Cartão parcelado</div>
-                  <div className="venc-grupo-desc">12x de R$ {fmtBRL(plano.parcela)} · uma única cobrança parcelada no cartão</div>
+                  <div className="venc-grupo-desc">De 1x a 12x no cartão · R$ {fmtBRL(plano.avista)} à vista, ou parcelado com juros</div>
                 </div>
               </div>
               <div className="venc-grupo-body">
                 <label className={`venc-option-single${vencimentoRadio === 'cartao_parcelado' ? ' selected' : ''}`}>
                   <input type="radio" name="dia_vencimento" value="cartao_parcelado" checked={vencimentoRadio === 'cartao_parcelado'} onChange={() => onSelecionar('cartao_parcelado')} />
-                  <span className="venc-option-text">Vou pagar no cartão, parcelado em 12x</span>
+                  <span className="venc-option-text">Vou pagar no cartão, à vista ou parcelado</span>
                 </label>
               </div>
             </div>

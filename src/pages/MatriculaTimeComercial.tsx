@@ -140,7 +140,7 @@ const SUPABASE_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v
 
 const LABEL_METODO: Record<MetodoCobravel, string> = {
   avista: 'PIX à vista',
-  cartao_parcelado: 'Cartão parcelado (12x)',
+  cartao_parcelado: 'Cartão (1x a 12x)',
   cartao_recorrente: 'Cartão recorrente (assinatura mensal)',
   boleto: 'Boleto bancário',
 };
@@ -318,14 +318,29 @@ function PagamentoStep({
 
       const mp = new window.MercadoPago(publicKey, { locale: 'pt-BR' });
       const bricksBuilder = mp.bricks();
-      const amount = metodo === 'cartao_parcelado' ? plano.parcela * 12 : plano.parcela;
+      // 'cartao_parcelado': a base do calculo tem que ser o valor A VISTA
+      // (plano.avista), nunca "parcela * parcelas" -- os juros do parcelamento
+      // no cartao sao calculados pela propria MP EM CIMA desse valor a vista,
+      // por parcela escolhida. Mandar um total ja multiplicado como se fosse o
+      // preco a vista faz a MP aplicar juros sobre um valor ja inflado,
+      // encarecendo cada parcela bem acima do anunciado (achado real
+      // 2026-09-04). 'cartao_recorrente' nao tem esse problema -- e uma
+      // assinatura (N cobrancas mensais separadas de valor fixo), nao um
+      // parcelamento no cartao, entao usa plano.parcela normalmente.
+      const amount = metodo === 'cartao_parcelado' ? plano.avista : plano.parcela;
 
       brickControllerRef.current = await bricksBuilder.create('cardPayment', brickContainerRef.current.id, {
         initialization: { amount },
         customization: {
           paymentMethods: {
+            // 1x a 12x, sempre calculado pela MP a partir do valor a vista --
+            // inclui a opcao "1x sem juros" (o proprio R$997 a vista no
+            // cartao, pedido explicito do dono do produto) alem do
+            // parcelamento com juros de 2x a 12x. O menu de parcelas so
+            // aparece quando existe mais de uma opcao (por isso ficava
+            // invisivel antes, com min=max=12).
             maxInstallments: metodo === 'cartao_parcelado' ? 12 : 1,
-            minInstallments: metodo === 'cartao_parcelado' ? 12 : 1,
+            minInstallments: metodo === 'cartao_parcelado' ? 1 : 1,
           },
         },
         callbacks: {
@@ -347,6 +362,11 @@ function PagamentoStep({
                 forma: metodo,
                 cardToken: cardFormData.token,
                 installments: cardFormData.installments,
+                // Valor final COM os juros da parcela escolhida, calculado
+                // pela propria Brick a partir do amount a vista -- so usado
+                // pelo backend em cartao_parcelado (cartao_recorrente ignora,
+                // usa plano.parcela fixo por cobranca mensal).
+                transactionAmount: cardFormData.transaction_amount,
                 paymentMethodId: cardFormData.payment_method_id,
                 payerEmail: cardFormData.payer?.email || email,
                 payerFirstName, payerLastName,
@@ -529,6 +549,19 @@ function PagamentoStep({
       {/* ── Cartão (parcelado/recorrente) ── */}
       {(metodo === 'cartao_parcelado' || metodo === 'cartao_recorrente') && (
         <div>
+          <div className="pix-amount-badge" style={{ marginBottom: 'var(--space-4)' }}>
+            <span className="pix-amount-label">
+              {metodo === 'cartao_parcelado' ? 'Valor à vista (parcele de 1x a 12x abaixo)' : 'Cobrança mensal (assinatura, 15x)'}
+            </span>
+            <span className="pix-amount-value">
+              R$ {fmtBRL(metodo === 'cartao_parcelado' ? plano.avista : plano.parcela)}
+            </span>
+          </div>
+          {metodo === 'cartao_parcelado' && (
+            <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginBottom: 'var(--space-4)' }}>
+              Escolha a quantidade de parcelas no campo abaixo — o valor de cada parcela (com os juros do cartão, quando houver) aparece no próprio menu.
+            </p>
+          )}
           {!publicKey && (
             <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <Loader2 className="h-4 w-4 animate-spin" /> Carregando...
