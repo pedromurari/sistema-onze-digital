@@ -229,21 +229,29 @@ serve(async (req) => {
       if (externalReference) {
         // ── 1ª tentativa: convenção nova (parcelas >=2 do plano boleto) --
         // external_reference é o id da linha em `pagamentos` ──────────────────
-        const { data: pagamento } = await supabase
+        const { data: pagamentoExiste } = await supabase
           .from('pagamentos')
-          .select('id, aluno_id, valor, status')
+          .select('id, aluno_id, valor')
           .eq('id', externalReference)
           .maybeSingle();
 
-        if (pagamento) {
+        if (pagamentoExiste) {
           if (data.status === 'approved') {
-            const jaEstavaPago = pagamento.status === 'pago';
-
-            await supabase.from('pagamentos').update({
-              status: 'pago',
-              data_pagamento: new Date().toISOString().slice(0, 10),
-              mp_payment_id: String(id),
-            }).eq('id', pagamento.id);
+            // UPDATE...WHERE status<>'pago'...RETURNING, não SELECT-depois-UPDATE
+            // -- a MP pode reentregar o mesmo webhook (ou o polling do front
+            // marcar primeiro) quase ao mesmo tempo; sem o gate atômico, as duas
+            // chamadas leem "ainda não pago" e mandam confirmação em dobro.
+            const { data: transicionou } = await supabase
+              .from('pagamentos')
+              .update({
+                status: 'pago',
+                data_pagamento: new Date().toISOString().slice(0, 10),
+                mp_payment_id: String(id),
+              })
+              .eq('id', pagamentoExiste.id)
+              .neq('status', 'pago')
+              .select('id')
+              .maybeSingle();
 
             // Recalcula mensalidades_pagas -- mesma convenção de
             // sincronizarParcelasAluno (src/lib/parcelasAluno.ts): contagem de
@@ -251,18 +259,18 @@ serve(async (req) => {
             const { count } = await supabase
               .from('pagamentos')
               .select('id', { count: 'exact', head: true })
-              .eq('aluno_id', pagamento.aluno_id)
+              .eq('aluno_id', pagamentoExiste.aluno_id)
               .eq('status', 'pago');
-            await supabase.from('alunos').update({ mensalidades_pagas: count ?? 0 }).eq('id', pagamento.aluno_id);
+            await supabase.from('alunos').update({ mensalidades_pagas: count ?? 0 }).eq('id', pagamentoExiste.aluno_id);
 
-            if (!jaEstavaPago) {
+            if (transicionou) {
               const { data: aluno } = await supabase
                 .from('alunos')
                 .select('nome, email, whatsapp, cobranca_telefone')
-                .eq('id', pagamento.aluno_id)
+                .eq('id', pagamentoExiste.aluno_id)
                 .maybeSingle();
               if (aluno) {
-                await enviarConfirmacoes(supabaseUrl, serviceKey, aluno as any, Number(pagamento.valor)).catch((e) =>
+                await enviarConfirmacoes(supabaseUrl, serviceKey, aluno as any, Number(pagamentoExiste.valor)).catch((e) =>
                   console.error('mp-webhook-time-comercial: falha ao enviar confirmações (pagamento)', e));
               }
             }
@@ -277,12 +285,27 @@ serve(async (req) => {
         // próprio alunos.id (avista/cartão/1ª parcela PIX) ─────────────────────
         const { data: alunoAntes } = await supabase
           .from('alunos')
-          .select('nome, email, whatsapp, cobranca_telefone, mp_status, forma_pagamento, cpf, data_nascimento, endereco, cep, cidade_estado')
+          .select('nome, email, whatsapp, cobranca_telefone, forma_pagamento, cpf, data_nascimento, endereco, cep, cidade_estado')
           .eq('id', externalReference)
           .maybeSingle();
 
-        const jaAprovadoAntes = alunoAntes?.mp_status === 'approved';
-        await supabase.from('alunos').update({ mp_status: data.status }).eq('id', externalReference);
+        // Mesmo gate atômico do bloco acima: só considera "transição de
+        // verdade" quem realmente flipar mp_status de algo != 'approved' pra
+        // 'approved' -- evita confirmação/contrato em dobro se dois eventos
+        // (ou webhook + polling) chegarem quase juntos.
+        let transicionouAprovado = false;
+        if (data.status === 'approved') {
+          const { data: transicao } = await supabase
+            .from('alunos')
+            .update({ mp_status: 'approved' })
+            .eq('id', externalReference)
+            .neq('mp_status', 'approved')
+            .select('id')
+            .maybeSingle();
+          transicionouAprovado = !!transicao;
+        } else {
+          await supabase.from('alunos').update({ mp_status: data.status }).eq('id', externalReference);
+        }
 
         if (data.status === 'approved' && alunoAntes?.forma_pagamento === 'cartao_recorrente') {
           // Assinatura: a MP manda o MESMO alunos.id em toda cobrança mensal
@@ -304,28 +327,39 @@ serve(async (req) => {
               .maybeSingle();
 
             if (proximaParcela) {
-              await supabase.from('pagamentos').update({
-                status: 'pago',
-                data_pagamento: new Date().toISOString().slice(0, 10),
-                mp_payment_id: String(id),
-              }).eq('id', proximaParcela.id);
-
-              const { count } = await supabase
+              // Atômico também: só segue se essa parcela específica ainda
+              // estava 'pendente' no instante do UPDATE (duas entregas do
+              // mesmo evento não podem consumir/confirmar a mesma parcela 2x).
+              const { data: parcelaConsumida } = await supabase
                 .from('pagamentos')
-                .select('id', { count: 'exact', head: true })
-                .eq('aluno_id', externalReference)
-                .eq('status', 'pago');
-              await supabase.from('alunos').update({ mensalidades_pagas: count ?? 0 }).eq('id', externalReference);
+                .update({
+                  status: 'pago',
+                  data_pagamento: new Date().toISOString().slice(0, 10),
+                  mp_payment_id: String(id),
+                })
+                .eq('id', proximaParcela.id)
+                .eq('status', 'pendente')
+                .select('id')
+                .maybeSingle();
 
-              // Diferente do resto do fallback: confirma TODO mês, não só na
-              // 1ª vez -- cada cobrança da assinatura é um pagamento de verdade.
-              await enviarConfirmacoes(supabaseUrl, serviceKey, alunoAntes as any, Number(proximaParcela.valor)).catch((e) =>
-                console.error('mp-webhook-time-comercial: falha ao enviar confirmações (recorrente)', e));
+              if (parcelaConsumida) {
+                const { count } = await supabase
+                  .from('pagamentos')
+                  .select('id', { count: 'exact', head: true })
+                  .eq('aluno_id', externalReference)
+                  .eq('status', 'pago');
+                await supabase.from('alunos').update({ mensalidades_pagas: count ?? 0 }).eq('id', externalReference);
+
+                // Diferente do resto do fallback: confirma TODO mês, não só na
+                // 1ª vez -- cada cobrança da assinatura é um pagamento de verdade.
+                await enviarConfirmacoes(supabaseUrl, serviceKey, alunoAntes as any, Number(proximaParcela.valor)).catch((e) =>
+                  console.error('mp-webhook-time-comercial: falha ao enviar confirmações (recorrente)', e));
+              }
             } else {
               console.error('mp-webhook-time-comercial: cobrança recorrente aprovada sem parcela pendente pra consumir', externalReference, id);
             }
           }
-        } else if (data.status === 'approved' && alunoAntes && !jaAprovadoAntes) {
+        } else if (transicionouAprovado && alunoAntes) {
           const valorPago = Number(data.transaction_amount ?? 0);
           await enviarConfirmacoes(supabaseUrl, serviceKey, alunoAntes as any, valorPago).catch((e) =>
             console.error('mp-webhook-time-comercial: falha ao enviar confirmações (aluno)', e));
@@ -333,7 +367,7 @@ serve(async (req) => {
 
         // Contrato: sempre só na 1ª transição pra "approved" do aluno, seja
         // qual for a forma de pagamento (inclusive recorrente).
-        if (data.status === 'approved' && alunoAntes && !jaAprovadoAntes) {
+        if (transicionouAprovado && alunoAntes) {
           await enviarContrato(supabaseUrl, serviceKey, { id: externalReference, ...alunoAntes } as any).catch((e) =>
             console.error('mp-webhook-time-comercial: falha ao enviar contrato', e));
         }

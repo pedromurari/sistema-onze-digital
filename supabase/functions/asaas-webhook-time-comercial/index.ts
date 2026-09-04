@@ -34,6 +34,48 @@ const ASAAS_WEBHOOK_TOKEN = Deno.env.get('ASAAS_WEBHOOK_TOKEN');
 
 const EVENTOS_PAGO = new Set(['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED']);
 
+// ── Contrato (Autentique) -- best-effort, só no 1º pagamento aprovado ────────
+// Mesma função que mp-webhook-time-comercial já usa (não dá pra importar
+// entre edge functions Deno separadas, duplicada de propósito). Reaproveita
+// autentique-criar (mesmo fluxo de FormularioAluno.tsx) -- gera o contrato e
+// manda o link de assinatura por WhatsApp; o e-mail ao signatário sai pela
+// própria Autentique. Nunca lança -- falha aqui não derruba a resposta 200.
+//
+// BUG REAL corrigido em 2026-09-04: desde que o boleto passou a ser 100%
+// Asaas (inclusive a 1ª parcela, que antes era PIX-MP e por isso passava
+// pelo enviarContrato de mp-webhook-time-comercial), essa function nunca
+// chamava enviarContrato -- nenhum aluno do plano boleto estava recebendo
+// contrato automático. Corrigido chamando aqui, na 1ª parcela confirmada.
+async function enviarContrato(
+  supabaseUrl: string,
+  serviceKey: string,
+  aluno: {
+    id: string; cpf: string | null; data_nascimento: string | null;
+    endereco: string | null; cep: string | null; cidade_estado: string | null;
+  },
+): Promise<void> {
+  if (!aluno.cpf || !aluno.data_nascimento || !aluno.endereco || !aluno.cidade_estado) {
+    console.error('asaas-webhook-time-comercial: dados insuficientes pra gerar contrato', aluno.id);
+    return;
+  }
+  try {
+    await fetch(`${supabaseUrl}/functions/v1/autentique-criar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey },
+      body: JSON.stringify({
+        aluno_id: aluno.id,
+        cpf: aluno.cpf,
+        data_nascimento: aluno.data_nascimento,
+        endereco: aluno.endereco,
+        cep: aluno.cep,
+        cidade_estado: aluno.cidade_estado,
+      }),
+    });
+  } catch (e) {
+    console.error('asaas-webhook-time-comercial: falha ao gerar/enviar contrato', aluno.id, e);
+  }
+}
+
 // ── Confirmação por WhatsApp + e-mail -- best-effort, nunca derruba o 200 ────
 async function enviarConfirmacoes(
   supabaseUrl: string,
@@ -161,15 +203,27 @@ async function marcarPago(
   pagamento: { id: string; aluno_id: string; valor: number; numero_parcela: number; status: string | null },
   asaasPaymentId: string,
 ) {
-  const jaEstavaPago = pagamento.status === 'pago';
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-  await supabase.from('pagamentos').update({
-    status: 'pago',
-    data_pagamento: new Date().toISOString().slice(0, 10),
-    asaas_payment_id: asaasPaymentId,
-  }).eq('id', pagamento.id);
+  // UPDATE...WHERE status<>'pago'...RETURNING (não confiar no `pagamento`
+  // pré-carregado) de propósito: esse `pagamento` foi lido num SELECT
+  // separado, antes desta function ser chamada -- entre esse SELECT e este
+  // UPDATE, o polling de checkStatus (matricula-pagamento-criar, a cada 4s)
+  // pode ter marcado a mesma parcela como paga primeiro. Sem essa checagem
+  // atômica, os dois mandariam confirmação/contrato em dobro pro aluno.
+  const { data: transicionou } = await supabase
+    .from('pagamentos')
+    .update({
+      status: 'pago',
+      data_pagamento: new Date().toISOString().slice(0, 10),
+      asaas_payment_id: asaasPaymentId,
+    })
+    .eq('id', pagamento.id)
+    .neq('status', 'pago')
+    .select('id')
+    .maybeSingle();
+  const jaEstavaPago = !transicionou;
 
   // Recalcula mensalidades_pagas -- mesma convenção usada por
   // mp-webhook-time-comercial (contagem de pagamentos status='pago').
@@ -183,12 +237,20 @@ async function marcarPago(
   if (!jaEstavaPago) {
     const { data: aluno } = await supabase
       .from('alunos')
-      .select('nome, email, whatsapp, cobranca_telefone')
+      .select('nome, email, whatsapp, cobranca_telefone, cpf, data_nascimento, endereco, cep, cidade_estado')
       .eq('id', pagamento.aluno_id)
       .maybeSingle();
     if (aluno) {
       await enviarConfirmacoes(supabaseUrl, serviceKey, aluno as any, Number(pagamento.valor), pagamento.numero_parcela).catch((e) =>
         console.error('asaas-webhook-time-comercial: falha ao enviar confirmações', e));
+
+      // Contrato só na 1ª parcela do plano boleto (equivalente ao "primeiro
+      // pagamento do aluno" que mp-webhook-time-comercial usa como gatilho
+      // pra avista/cartão) -- nunca repete nas parcelas 2-15.
+      if (pagamento.numero_parcela === 1) {
+        await enviarContrato(supabaseUrl, serviceKey, { id: pagamento.aluno_id, ...aluno } as any).catch((e) =>
+          console.error('asaas-webhook-time-comercial: falha ao enviar contrato', e));
+      }
     }
   }
 

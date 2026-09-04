@@ -108,24 +108,129 @@ const dateComDiaTravado = (year: number, month: number, day: number) => {
   return new Date(year, month, Math.min(day, ultimoDia));
 };
 
+// ── Contrato + confirmação -- mesmo texto/fluxo de asaas-webhook-time-comercial,
+// duplicado aqui (edge functions Deno não importam entre si) pro polling
+// (checkStatus) conseguir disparar tudo se ele "ganhar a corrida" do webhook
+// (aconteceu de verdade: o polling roda a cada 4s e às vezes marca a parcela
+// como paga antes do webhook do Asaas chegar -- se só o polling escrevesse
+// status='pago' sem mandar confirmação/contrato, e o webhook depois visse
+// jaEstavaPago=true, o aluno nunca receberia nenhum dos dois. Corrigido
+// 2026-09-04 fazendo o polling disparar os dois igual o webhook).
+async function enviarContrato(
+  supabaseUrl: string,
+  serviceKey: string,
+  aluno: {
+    id: string; cpf: string | null; data_nascimento: string | null;
+    endereco: string | null; cep: string | null; cidade_estado: string | null;
+  },
+): Promise<void> {
+  if (!aluno.cpf || !aluno.data_nascimento || !aluno.endereco || !aluno.cidade_estado) {
+    console.error('matricula-pagamento-criar: dados insuficientes pra gerar contrato', aluno.id);
+    return;
+  }
+  try {
+    await fetch(`${supabaseUrl}/functions/v1/autentique-criar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey },
+      body: JSON.stringify({
+        aluno_id: aluno.id,
+        cpf: aluno.cpf,
+        data_nascimento: aluno.data_nascimento,
+        endereco: aluno.endereco,
+        cep: aluno.cep,
+        cidade_estado: aluno.cidade_estado,
+      }),
+    });
+  } catch (e) {
+    console.error('matricula-pagamento-criar: falha ao gerar/enviar contrato', aluno.id, e);
+  }
+}
+
+async function enviarConfirmacoesParcela(
+  supabaseUrl: string,
+  serviceKey: string,
+  aluno: { nome: string | null; email: string | null; whatsapp: string | null; cobranca_telefone: string | null },
+  valor: number,
+  parcela: number,
+): Promise<void> {
+  const fnHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey };
+  const nome = aluno.nome || 'aluno(a)';
+  const valorFmt = Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+
+  const numero = aluno.cobranca_telefone || aluno.whatsapp;
+  if (numero) {
+    try {
+      await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
+        method: 'POST', headers: fnHeaders,
+        body: JSON.stringify({
+          numero,
+          mensagem: `✅ Pagamento confirmado, ${nome}!\n\nRecebemos a parcela ${parcela}/15 (*R$ ${valorFmt}*) da sua matrícula no *Instituto Despertamente*.\n\nQualquer dúvida, é só chamar por aqui.`,
+          instance_name: 'disp3',
+        }),
+      });
+    } catch (e) {
+      console.error('matricula-pagamento-criar: falha ao enviar whatsapp de confirmação', e);
+    }
+  }
+
+  if (aluno.email) {
+    try {
+      await fetch(`${supabaseUrl}/functions/v1/email-enviar`, {
+        method: 'POST', headers: fnHeaders,
+        body: JSON.stringify({
+          to: aluno.email,
+          to_name: nome,
+          subject: 'Pagamento confirmado - Instituto Despertamente',
+          html: `<h2>Pagamento aprovado! 🎉</h2><p>Oi, ${nome}!</p><p>Confirmamos o pagamento da parcela ${parcela}/15 (<strong>R$ ${valorFmt}</strong>) da sua matrícula no Instituto Despertamente.</p><p>Qualquer dúvida, é só responder este e-mail.</p>`,
+        }),
+      });
+    } catch (e) {
+      console.error('matricula-pagamento-criar: falha ao enviar email de confirmação', e);
+    }
+  }
+}
+
 // Marca uma parcela como paga (idempotente) e recalcula mensalidades_pagas --
-// mesma lógica usada pelo webhook asaas-webhook-time-comercial, duplicada
-// aqui pro polling (checkStatus) conseguir confirmar mais rápido que o
-// webhook às vezes, sem esperar o round-trip do Asaas até nós.
+// e, na 1ª transição pra pago, dispara confirmação + (se for a parcela 1)
+// contrato, igual o webhook faria (ver comentário acima).
+//
+// UPDATE...WHERE status<>'pago'...RETURNING (não SELECT-depois-UPDATE) de
+// propósito: o polling (a cada 4s) e o webhook do Asaas podem chegar quase
+// juntos, e um SELECT separado do UPDATE deixa os dois lerem "ainda não
+// pago" antes de qualquer um escrever -- os dois mandariam confirmação e
+// contrato em dobro pro aluno. O UPDATE atômico com WHERE só deixa UM dos
+// dois "ganhar" a transição (o Postgres serializa updates concorrentes na
+// mesma linha); quem perde recebe 0 linhas de volta e não faz nada.
 async function marcarParcelaPaga(supabase: ReturnType<typeof createClient>, pagamentoId: string) {
   const { data: pagamento } = await supabase
-    .from('pagamentos').select('id, aluno_id, status').eq('id', pagamentoId).maybeSingle();
-  if (!pagamento || pagamento.status === 'pago') return;
-
-  await supabase.from('pagamentos').update({
-    status: 'pago',
-    data_pagamento: new Date().toISOString().slice(0, 10),
-  }).eq('id', pagamento.id);
+    .from('pagamentos')
+    .update({ status: 'pago', data_pagamento: new Date().toISOString().slice(0, 10) })
+    .eq('id', pagamentoId)
+    .neq('status', 'pago')
+    .select('id, aluno_id, valor, numero_parcela')
+    .maybeSingle();
+  if (!pagamento) return; // já estava pago (webhook ganhou a corrida) ou id não existe
 
   const { count } = await supabase
     .from('pagamentos').select('id', { count: 'exact', head: true })
     .eq('aluno_id', pagamento.aluno_id).eq('status', 'pago');
   await supabase.from('alunos').update({ mensalidades_pagas: count ?? 0 }).eq('id', pagamento.aluno_id);
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const { data: aluno } = await supabase
+    .from('alunos')
+    .select('nome, email, whatsapp, cobranca_telefone, cpf, data_nascimento, endereco, cep, cidade_estado')
+    .eq('id', pagamento.aluno_id)
+    .maybeSingle();
+  if (aluno) {
+    await enviarConfirmacoesParcela(supabaseUrl, serviceKey, aluno as any, Number(pagamento.valor), pagamento.numero_parcela).catch((e) =>
+      console.error('matricula-pagamento-criar: falha ao enviar confirmações (polling)', e));
+    if (pagamento.numero_parcela === 1) {
+      await enviarContrato(supabaseUrl, serviceKey, { id: pagamento.aluno_id, ...aluno } as any).catch((e) =>
+        console.error('matricula-pagamento-criar: falha ao enviar contrato (polling)', e));
+    }
+  }
 }
 
 serve(async (req) => {
