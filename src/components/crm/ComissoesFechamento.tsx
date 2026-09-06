@@ -125,7 +125,7 @@ export function ComissoesFechamento() {
   };
 
   const adicionarManual = async () => {
-    const vendedor = prompt('Nome do vendedor:');
+    const vendedor = prompt('Nome do vendedor (exatamente "Helen Magna" ou "Miguel Fogaça", pra agrupar certinho):', 'Helen Magna');
     if (!vendedor?.trim()) return;
     const aluno_nome = prompt('Nome do aluno/cliente:');
     if (!aluno_nome?.trim()) return;
@@ -144,11 +144,12 @@ export function ComissoesFechamento() {
     }
   };
 
-  const totalPorVendedor = rows.reduce<Record<string, { pendente: number; reservado: number; pago: number }>>((acc, r) => {
-    if (!acc[r.vendedor]) acc[r.vendedor] = { pendente: 0, reservado: 0, pago: 0 };
-    acc[r.vendedor][r.status] += Number(r.valor_comissao);
+  const porVendedor = rows.reduce<Record<string, ComissaoRow[]>>((acc, r) => {
+    (acc[r.vendedor] ??= []).push(r);
     return acc;
   }, {});
+  // Vendedores com pelo menos uma linha primeiro; ordem estável por nome.
+  const vendedoresOrdenados = Object.keys(porVendedor).sort((a, b) => a.localeCompare(b));
 
   if (loading) {
     return (
@@ -176,27 +177,53 @@ export function ComissoesFechamento() {
         </div>
       </div>
 
-      {Object.keys(totalPorVendedor).length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {Object.entries(totalPorVendedor).map(([vendedor, tot]) => (
-            <div key={vendedor} className="rounded-lg border border-border bg-card p-3">
-              <p className="text-sm font-semibold text-foreground mb-1.5">{vendedor}</p>
-              <div className="flex gap-3 text-xs text-muted-foreground flex-wrap">
-                <span>Pendente: <strong className="text-foreground">R$ {fmtBRL(tot.pendente)}</strong></span>
-                <span>Reservado: <strong className="text-foreground">R$ {fmtBRL(tot.reservado)}</strong></span>
-                <span>Pago: <strong className="text-foreground">R$ {fmtBRL(tot.pago)}</strong></span>
-              </div>
-            </div>
-          ))}
-        </div>
+      {rows.length === 0 && (
+        <p className="text-center text-sm text-muted-foreground py-8 border border-dashed border-border rounded-lg">
+          Nenhuma comissão registrada ainda. Clique em "Buscar novas vendas" pra importar as matrículas já pagas.
+        </p>
       )}
+
+      {vendedoresOrdenados.map(vendedor => (
+        <TabelaVendedor
+          key={vendedor}
+          vendedor={vendedor}
+          rows={porVendedor[vendedor]}
+          salvandoId={salvandoId}
+          onAtualizar={atualizarCampo}
+          onExcluir={excluir}
+        />
+      ))}
+    </div>
+  );
+}
+
+function TabelaVendedor({
+  vendedor, rows, salvandoId, onAtualizar, onExcluir,
+}: {
+  vendedor: string;
+  rows: ComissaoRow[];
+  salvandoId: string | null;
+  onAtualizar: (id: string, patch: Partial<ComissaoRow>) => void;
+  onExcluir: (id: string) => void;
+}) {
+  const totais = rows.reduce((acc, r) => { acc[r.status] += Number(r.valor_comissao); return acc; }, { pendente: 0, reservado: 0, pago: 0 });
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-3 flex-wrap rounded-lg border border-border bg-card px-3 py-2.5">
+        <p className="text-sm font-semibold text-foreground">{vendedor}</p>
+        <div className="flex gap-3 text-xs text-muted-foreground flex-wrap">
+          <span>Pendente: <strong className="text-foreground">R$ {fmtBRL(totais.pendente)}</strong></span>
+          <span>Reservado: <strong className="text-foreground">R$ {fmtBRL(totais.reservado)}</strong></span>
+          <span>Pago: <strong className="text-foreground">R$ {fmtBRL(totais.pago)}</strong></span>
+        </div>
+      </div>
 
       <div className="overflow-x-auto rounded-lg border border-border">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Data</TableHead>
-              <TableHead>Vendedor</TableHead>
               <TableHead>Aluno</TableHead>
               <TableHead>Produto / Forma</TableHead>
               <TableHead className="text-right">Valor venda</TableHead>
@@ -207,17 +234,9 @@ export function ComissoesFechamento() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={9} className="text-center text-sm text-muted-foreground py-8">
-                  Nenhuma comissão registrada ainda. Clique em "Buscar novas vendas" pra importar as matrículas já feitas.
-                </TableCell>
-              </TableRow>
-            )}
             {rows.map(r => (
               <TableRow key={r.id}>
                 <TableCell className="text-xs whitespace-nowrap">{new Date(r.data_venda + 'T12:00:00').toLocaleDateString('pt-BR')}</TableCell>
-                <TableCell className="text-xs font-medium whitespace-nowrap">{r.vendedor}</TableCell>
                 <TableCell className="text-xs">{r.aluno_nome}</TableCell>
                 <TableCell className="text-xs whitespace-nowrap">
                   {r.produto ? (PRODUTO_LABEL[r.produto] ?? r.produto) : '—'}
@@ -230,12 +249,12 @@ export function ComissoesFechamento() {
                     className="h-7 w-24 text-xs text-right ml-auto"
                     onBlur={e => {
                       const v = Number(e.target.value);
-                      if (!Number.isNaN(v) && v !== r.valor_comissao) atualizarCampo(r.id, { valor_comissao: v });
+                      if (!Number.isNaN(v) && v !== r.valor_comissao) onAtualizar(r.id, { valor_comissao: v });
                     }}
                   />
                 </TableCell>
                 <TableCell>
-                  <Select value={r.status} onValueChange={(v) => atualizarCampo(r.id, { status: v as ComissaoRow['status'], data_pagamento: v === 'pago' ? new Date().toISOString().slice(0, 10) : r.data_pagamento })}>
+                  <Select value={r.status} onValueChange={(v) => onAtualizar(r.id, { status: v as ComissaoRow['status'], data_pagamento: v === 'pago' ? new Date().toISOString().slice(0, 10) : r.data_pagamento })}>
                     <SelectTrigger className="h-7 w-[150px] text-xs">
                       <SelectValue />
                     </SelectTrigger>
@@ -253,14 +272,14 @@ export function ComissoesFechamento() {
                     className="text-xs min-h-7 h-7 resize-y"
                     onBlur={e => {
                       const v = e.target.value;
-                      if (v !== (r.observacoes ?? '')) atualizarCampo(r.id, { observacoes: v || null });
+                      if (v !== (r.observacoes ?? '')) onAtualizar(r.id, { observacoes: v || null });
                     }}
                   />
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-1">
                     {salvandoId === r.id && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => excluir(r.id)}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onExcluir(r.id)}>
                       <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
                     </Button>
                   </div>
