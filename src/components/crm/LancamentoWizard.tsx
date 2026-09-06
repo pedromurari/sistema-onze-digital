@@ -2023,7 +2023,16 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
       } catch {}
 
       // funnel_configs
-      const variaveis = buildFunnelVariaveis(config);
+      // Mescla com o que ja existe -- um upsert direto aqui apagava chaves
+      // configuradas fora do wizard (link_grupo_manha, bv_wpp_manha,
+      // lembrete_30min, etc.), o que ja causou aluno pagante sem receber
+      // link de grupo em produção.
+      const { data: existingFunnelCfg } = await supabase
+        .from('funnel_configs')
+        .select('variaveis')
+        .eq('funnel_name', config.nome)
+        .maybeSingle();
+      const variaveis = { ...((existingFunnelCfg as any)?.variaveis || {}), ...buildFunnelVariaveis(config) };
       config.grupos.slice(2).forEach((g, i) => { if (g.jid) variaveis[`grupo_${i + 3}`] = g.jid; });
       await supabase.from('funnel_configs').upsert({
         funnel_name: config.nome,
@@ -2154,7 +2163,16 @@ export function LancamentoWizard({ open, onClose, onSuccess, existingId, existin
       } catch {}
 
       // 2. Upsert funnel_configs
-      const variaveis = buildFunnelVariaveis(config);
+      // Mescla com o que ja existe -- um upsert direto aqui apagava chaves
+      // configuradas fora do wizard (link_grupo_manha, bv_wpp_manha,
+      // lembrete_30min, etc.), o que ja causou aluno pagante sem receber
+      // link de grupo em produção.
+      const { data: existingFunnelCfg2 } = await supabase
+        .from('funnel_configs')
+        .select('variaveis')
+        .eq('funnel_name', config.nome)
+        .maybeSingle();
+      const variaveis = { ...((existingFunnelCfg2 as any)?.variaveis || {}), ...buildFunnelVariaveis(config) };
       // Adiciona grupos 3+ em variaveis
       config.grupos.slice(2).forEach((g, i) => { if (g.jid) variaveis[`grupo_${i + 3}`] = g.jid; });
 
