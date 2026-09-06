@@ -18,13 +18,14 @@ import { dbRowToLead } from '@/contexts/LeadsContext';
 import { ChatTimeComercial } from './chat/ChatTimeComercial';
 import { PREMIUM_TABLE_HEADER_ROW, premiumZebraRow, StatTile, SectionBar } from '@/components/crm/ui/premium';
 import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
+import { ComissoesFechamento } from '@/components/crm/ComissoesFechamento';
 import { useInvalidarDados } from '@/lib/db';
 import { INITIAL_VENDORS, calcVendor, type VendorRow, BONUS_MOTIVO, BONUS_SUPERACAO } from '@/lib/vendedores';
 import {
   MessageCircle, Target, Copy, ExternalLink, Users, TrendingUp, DollarSign, CalendarDays,
   Video, Rocket, Repeat, GraduationCap, Link2, Wallet, CreditCard, Crown, Kanban, ClipboardList,
   Search, X, History, Filter, CornerDownRight, Eye, Zap, BookOpen, Layers, Trash2, RotateCcw,
-  Activity, Percent, BarChart3, Phone, Trophy, Timer, Info, StickyNote, AlarmClock,
+  Activity, Percent, BarChart3, Phone, Trophy, Timer, Info, StickyNote, AlarmClock, Lock,
 } from 'lucide-react';
 
 // -----------------------------------------------------------------------
@@ -2905,12 +2906,31 @@ export function TimeComercial() {
             >
               <MessageCircle className="h-3.5 w-3.5" /> Chat
             </TabsTrigger>
+
+            {/* Fechamento de comissao -- so visivel pro Pedro (pdrmurari@gmail.com,
+                pedido explicito "somente eu posso conseguir ver"). A trava de
+                verdade e a RLS da tabela comissoes_vendedores; isso aqui so evita
+                mostrar a aba (e a existencia do painel) pra qualquer outra pessoa. */}
+            {user?.email === 'pdrmurari@gmail.com' && (
+              <TabsTrigger
+                value="comissoes_fechamento"
+                className="rounded-lg px-4 py-2 text-sm font-medium bg-muted border border-border text-muted-foreground hover:text-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-sm gap-1.5"
+              >
+                <Lock className="h-3.5 w-3.5" /> Fechamento Comissão
+              </TabsTrigger>
+            )}
           </TabsList>
         </div>
 
         <TabsContent value="funil" className="flex-1 min-h-0">
           <FunilTimeComercial viewAsName={viewAsName} />
         </TabsContent>
+
+        {user?.email === 'pdrmurari@gmail.com' && (
+          <TabsContent value="comissoes_fechamento">
+            <ComissoesFechamento />
+          </TabsContent>
+        )}
 
         <TabsContent value="chat" className="flex flex-col gap-3">
           <p className="text-sm text-muted-foreground">
