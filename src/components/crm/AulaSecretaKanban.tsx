@@ -63,11 +63,11 @@ function getPhasePayloadByColName(nome: string): Record<string, boolean> {
   return { matriculado: false };
 }
 
-// Map legacy string fase values → column UUID via fase_key
+// Map legacy string fase values → column UUID via fase_id
 function resolveLegacyFase(fase: string, colunas: KanbanColuna[]): string {
   const normalized = normColName(fase.replace(/_/g, ' '));
   const col = colunas.find(c =>
-    normColName(c.fase_key ?? '') === normalized || normColName(c.nome) === normalized
+    normColName(c.fase_id ?? '') === normalized || normColName(c.nome) === normalized
   );
   return col?.id ?? colunas[0].id;
 }

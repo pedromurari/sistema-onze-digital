@@ -1666,9 +1666,9 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
 
   // ── Delete column ─────────────────────────────────────────────────────────
   const handleDeleteColWithLeads = async (id: string) => {
-    // NPA: can only delete custom columns (standard ones have fase_key)
+    // NPA: can only delete custom columns (standard ones have fase_id)
     const col = colunasRef.current.find(c => c.id === id);
-    if (col?.fase_key) { toast.error('Não é possível apagar colunas padrão do NPA'); return; }
+    if (col?.fase_id) { toast.error('Não é possível apagar colunas padrão do NPA'); return; }
     await deleteColuna(id);
     setDeletingColuna(null);
   };
@@ -1858,7 +1858,7 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
       ? colunas
       : PHASES.map((p, i) => ({
           id: p.id, nome: p.label, ordem: i,
-          fase_key: p.id, cor: null, meta_leads: null, tipo_regra: 'normal',
+          fase_id: p.id, cor: null, meta_leads: null, tipo_regra: 'normal',
         } as KanbanColuna));
 
     return (
@@ -1874,7 +1874,7 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
         <div className="overflow-x-auto pb-2">
           <div className="flex gap-3 min-w-max items-start">
             {displayCols.map((coluna) => {
-              const faseKey = coluna.fase_key as NPAPhase | undefined;
+              const faseKey = coluna.fase_id as NPAPhase | undefined;
               const phaseLeads = filteredLeads.filter((l) =>
                 faseKey ? l.fase === faseKey : false
               );

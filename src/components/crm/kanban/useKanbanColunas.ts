@@ -6,7 +6,7 @@ export interface KanbanColuna {
   id: string;
   nome: string;
   ordem: number;
-  fase_key?: string | null;
+  fase_id?: string | null;
   cor?: string | null;
   meta_leads?: number | null;
   tipo_regra?: string | null; // 'normal' | 'receita' | 'roi'
