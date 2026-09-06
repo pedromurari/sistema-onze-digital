@@ -27,7 +27,6 @@ function isLid(s: string): boolean {
 function extractJid(p: unknown): string {
   if (typeof p === 'string') return p;
   const o = p as Record<string, unknown>;
-  // phoneNumber (@s.whatsapp.net) must come before id (@lid)
   return String(o?.phoneNumber ?? o?.phone ?? o?.number ?? o?.id ?? o?.jid ?? '');
 }
 
@@ -76,56 +75,68 @@ async function findColunaId(
   return null;
 }
 
-async function resolveParticipants(
-  api_url: string,
-  instance_name: string,
+type EvoInstance = { instance_name: string; api_url: string; api_key: string };
+
+// Nem toda instancia ativa é membro do grupo de cada turma -- a Evolution API
+// retorna "forbidden" quando a instancia consultada nao esta no grupo. Por isso
+// tenta cada instancia ate achar uma que responda com participantes de verdade,
+// em vez de assumir que a primeira "ativo=true" serve.
+async function fetchParticipantsAnyInstance(
+  instances: EvoInstance[],
   groupJid: string,
-  evoHeaders: Record<string, string>,
-): Promise<string[]> {
+): Promise<{ raw: unknown[]; usedInstance: string | null }> {
   const enc = encodeURIComponent(groupJid);
 
-  // Call both endpoints in parallel — whichever answers fastest wins
-  const [info, part] = await Promise.all([
-    safeFetch(`${api_url}/group/findGroupInfos/${instance_name}?groupJid=${enc}`, { headers: evoHeaders }),
-    safeFetch(`${api_url}/group/findParticipants/${instance_name}?groupJid=${enc}`, { headers: evoHeaders }),
-  ]);
+  for (const inst of instances) {
+    const evoHeaders = { 'apikey': inst.api_key, 'Content-Type': 'application/json' };
+    const part = await safeFetch(`${inst.api_url}/group/participants/${inst.instance_name}?groupJid=${enc}`, { headers: evoHeaders });
+    if (!part) continue;
 
-  console.log('findGroupInfos sample:', JSON.stringify(info).slice(0, 300));
-  console.log('findParticipants sample:', JSON.stringify(part).slice(0, 300));
-
-  // Merge all JIDs from both responses
-  const allJids = new Set<string>();
-  for (const json of [info, part]) {
-    if (!json) continue;
-    toRawList(json).map(extractJid).filter(s => /\d{8,}/.test(s)).forEach(j => allJids.add(j));
+    const raw = toRawList(part);
+    if (raw.length) {
+      console.log(`fetchParticipantsAnyInstance: sucesso via "${inst.instance_name}", ${raw.length} participantes`);
+      return { raw, usedInstance: inst.instance_name };
+    }
   }
+
+  return { raw: [], usedInstance: null };
+}
+
+async function resolveParticipants(
+  instances: EvoInstance[],
+  groupJid: string,
+): Promise<{ jids: string[]; usedInstance: string | null }> {
+  const { raw, usedInstance } = await fetchParticipantsAnyInstance(instances, groupJid);
+
+  const allJids = new Set<string>();
+  raw.map(extractJid).filter(s => /\d{8,}/.test(s)).forEach(j => allJids.add(j));
 
   const phones = [...allJids].filter(isPhoneJid);
   const lids   = [...allJids].filter(isLid);
   console.log(`Combined: ${phones.length} phone JIDs, ${lids.length} @lid`);
 
-  if (phones.length) return phones;
+  if (phones.length) return { jids: phones, usedInstance };
 
-  if (lids.length) {
+  if (lids.length && usedInstance) {
+    const usedInst = instances.find(i => i.instance_name === usedInstance)!;
     console.log('All @lid — trying contacts resolution...');
-    const resolved = await resolveLidsViaContacts(api_url, instance_name, evoHeaders, lids);
+    const resolved = await resolveLidsViaContacts(usedInst.api_url, usedInst.instance_name, { apikey: usedInst.api_key, 'Content-Type': 'application/json' }, lids);
     if (resolved.length) {
       console.log(`Resolved ${resolved.length}/${lids.length} via contacts`);
-      return resolved;
+      return { jids: resolved, usedInstance };
     }
 
-    // Fallback: extract unique senders from group message history (@s.whatsapp.net)
     console.log('Trying message history fallback...');
-    const msgPhones = await resolveViaMessages(api_url, instance_name, groupJid, evoHeaders);
+    const msgPhones = await resolveViaMessages(usedInst.api_url, usedInst.instance_name, groupJid, { apikey: usedInst.api_key, 'Content-Type': 'application/json' });
     if (msgPhones.length) {
       console.log(`Message history: ${msgPhones.length} unique senders`);
-      return msgPhones;
+      return { jids: msgPhones, usedInstance };
     }
 
-    return lids; // Return @lid so caller can report 422
+    return { jids: lids, usedInstance };
   }
 
-  return [];
+  return { jids: [], usedInstance };
 }
 
 async function resolveViaMessages(
@@ -136,7 +147,6 @@ async function resolveViaMessages(
 ): Promise<string[]> {
   const enc = encodeURIComponent(groupJid);
 
-  // Try multiple body/url formats — Evolution API versions differ in how messages are queried
   const messageCandidates: Array<() => Promise<unknown | null>> = [
     () => safeFetch(`${api_url}/message/findMessages/${instance_name}`, {
       method: 'POST', headers: evoHeaders,
@@ -179,7 +189,6 @@ async function resolveViaMessages(
   return [...senders];
 }
 
-// Build @lid → @s.whatsapp.net map from Evolution's contact store, then resolve
 async function resolveLidsViaContacts(
   api_url: string,
   instance_name: string,
@@ -188,8 +197,6 @@ async function resolveLidsViaContacts(
 ): Promise<string[]> {
   let contactList: unknown[] = [];
 
-  // Try multiple endpoint variants in order — different Evolution API versions
-  // expose contacts at different paths/methods
   const candidates: Array<() => Promise<unknown | null>> = [
     () => safeFetch(`${api_url}/contact/findContacts/${instance_name}`, {
       method: 'POST', headers: evoHeaders, body: JSON.stringify({ where: {} }),
@@ -212,14 +219,12 @@ async function resolveLidsViaContacts(
   if (!contactList.length) return [];
   console.log(`Contacts fetched: ${contactList.length}. Sample:`, JSON.stringify(contactList.slice(0, 2)));
 
-  // Build lid → phone map: contacts may have a `lid` field alongside `id` (@s.whatsapp.net)
   const lidMap = new Map<string, string>();
   for (const c of contactList) {
     const contact = c as Record<string, unknown>;
     const phoneJid = String(contact.id ?? contact.jid ?? '');
     const lidVal   = String(contact.lid ?? contact.auxiliaryPhoneId ?? '');
     if (isPhoneJid(phoneJid) && lidVal) {
-      // Normalize lid key
       const key = lidVal.includes('@') ? lidVal : `${lidVal}@lid`;
       lidMap.set(key, phoneJid);
     }
@@ -247,7 +252,6 @@ serve(async (req) => {
 
     if (!lancamentoId) return respond({ error: 'lancamentoId required' }, 400);
 
-    // 1. Get lancamento group JID
     const { data: lanc } = await supabase
       .from('lancamentos')
       .select('id, grupo_lancamento_jid, grupo_oferta_jid')
@@ -257,20 +261,15 @@ serve(async (req) => {
     const groupJid = tipo === 'lancamento' ? lanc?.grupo_lancamento_jid : lanc?.grupo_oferta_jid;
     if (!groupJid) return respond({ error: `grupo_${tipo}_jid not configured for this lancamento` }, 400);
 
-    // 2. Get active Evolution API instance
     const { data: instances } = await supabase
       .from('evolution_config')
       .select('instance_name, api_url, api_key')
       .eq('ativo', true)
-      .limit(1);
+      .order('prioridade', { ascending: true });
 
     if (!instances?.length) return respond({ error: 'No active Evolution API instance found' }, 400);
 
-    const { instance_name, api_url, api_key } = instances[0];
-    const evoHeaders = { 'apikey': api_key, 'Content-Type': 'application/json' };
-
-    // 3. Resolve participants (multi-strategy, @lid resolution included)
-    const participants = await resolveParticipants(api_url, instance_name, groupJid, evoHeaders);
+    const { jids: participants, usedInstance } = await resolveParticipants(instances as EvoInstance[], groupJid);
 
     if (!participants.length) {
       return respond({ error: 'No participants returned from Evolution API. Check instance config and group JID.' }, 400);
@@ -283,20 +282,17 @@ serve(async (req) => {
                'Isso ocorre quando o WhatsApp usa protocolo multi-device. ' +
                'Reconecte a instância ou adicione os leads manualmente.',
         participants: participants.length,
-        _debug: { sampleParticipants: participants.slice(0, 5), format: '@lid' },
+        _debug: { sampleParticipants: participants.slice(0, 5), format: '@lid', usedInstance },
       }, 422);
     }
 
-    // 4. Build suffix8 set (only phone-format participants)
     const phoneParticipants = participants.filter(p => !isLid(p));
     const groupSuffix8 = new Set(phoneParticipants.map(p => suffix8(p)));
-    console.log(`suffix8 set size: ${groupSuffix8.size}, sample: ${[...groupSuffix8].slice(0, 5).join(', ')}`);
+    console.log(`suffix8 set size: ${groupSuffix8.size}, sample: ${[...groupSuffix8].slice(0, 5).join(', ')}, usedInstance: ${usedInstance}`);
 
-    // 5. Find kanban column
     const colunaId = await findColunaId(supabase, lancamentoId, tipo);
     const fieldName = tipo === 'lancamento' ? 'no_grupo' : 'grupo_oferta';
 
-    // 6. Load all leads
     const { data: leads, error: leadsError } = await supabase
       .from('lancamento_leads')
       .select('id, whatsapp')
@@ -307,7 +303,6 @@ serve(async (req) => {
 
     console.log(`Leads: ${leads.length}. Sample: ${leads.slice(0, 3).map(l => l.whatsapp).join(', ')}`);
 
-    // 7. Match and update
     const matched = leads.filter(l => l.whatsapp && groupSuffix8.has(suffix8(l.whatsapp)));
     console.log(`Matched: ${matched.length}`);
 
@@ -328,6 +323,7 @@ serve(async (req) => {
       notFound: phoneParticipants.length - matched.length,
       total: leads.length,
       participants: phoneParticipants.length,
+      usedInstance,
     });
 
   } catch (e: unknown) {
