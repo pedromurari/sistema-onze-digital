@@ -57,6 +57,13 @@ interface EventoCalendario {
   cor: string;
 }
 
+interface Turma {
+  id: string;
+  nome: string;
+  data_inicio?: string;
+  produto?: string;
+}
+
 interface ConteudoCalendario {
   id: string;
   titulo: string;
@@ -96,6 +103,7 @@ export function Operacoes({ currentPage }: OperacoesProps) {
   const [tarefas, setTarefas] = useState<Tarefa[]>([]);
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([]);
   const [npaEventos, setNpaEventos] = useState<NPAEvento[]>([]);
+  const [turmas, setTurmas] = useState<Turma[]>([]);
   const [eventosCalendario, setEventosCalendario] = useState<EventoCalendario[]>([]);
   const [conteudoCalendario, setConteudoCalendario] = useState<ConteudoCalendario[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -148,18 +156,36 @@ export function Operacoes({ currentPage }: OperacoesProps) {
       }
 
       // Carregar lançamentos e NPA (se existirem)
+      // Bug real (2026-09-06): lancamentos.data_live e npa_eventos.data_evento
+      // eram buscados mas NUNCA mapeados pra data_inicio, que é o campo que
+      // CalendarioGeralView realmente lê -- essas duas categorias nunca
+      // apareciam no calendário, mesmo com registros reais no banco.
       try {
         const lancamentosRes = await supabase.from('lancamentos').select('id, nome, status, ativo, data_live').limit(50);
-        if (lancamentosRes.data) setLancamentos(lancamentosRes.data);
+        if (lancamentosRes.data) {
+          setLancamentos(lancamentosRes.data.map(l => ({ id: l.id, nome: l.nome, data_inicio: l.data_live ?? undefined })));
+        }
       } catch (error) {
         setLancamentos([]);
       }
 
       try {
         const npaRes = await supabase.from('npa_eventos').select('id, nome, status, ativo, data_evento').limit(50);
-        if (npaRes.data) setNpaEventos(npaRes.data);
+        if (npaRes.data) {
+          setNpaEventos(npaRes.data.map(n => ({ id: n.id, nome: n.nome, data_inicio: n.data_evento ?? undefined })));
+        }
       } catch (error) {
         setNpaEventos([]);
+      }
+
+      // Turmas reais (psicanálise/PNL/numerologia) -- antes não apareciam no
+      // calendário de jeito nenhum, exigindo recriar cada turma manualmente
+      // como "evento avulso" pra ela mostrar aqui.
+      try {
+        const turmasRes = await supabase.from('turmas').select('id, nome, data_inicio, produto').not('data_inicio', 'is', null).limit(200);
+        if (turmasRes.data) setTurmas(turmasRes.data);
+      } catch (error) {
+        setTurmas([]);
       }
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
@@ -262,6 +288,7 @@ export function Operacoes({ currentPage }: OperacoesProps) {
               tarefas={tarefas}
               lancamentos={lancamentos}
               npaEventos={npaEventos}
+              turmas={turmas}
               eventosCalendario={eventosCalendario}
               user={user}
               getPriorityHexColor={getPriorityHexColor}

@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { format, parseISO, isSameDay, isSameMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Plus, Calendar, Rocket, BarChart3, Zap, Trash2, Pencil, X, Check, Loader2, AlertTriangle } from 'lucide-react';
+import { Plus, Calendar, Rocket, BarChart3, Zap, Trash2, Pencil, X, Check, Loader2, AlertTriangle, GraduationCap } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/components/ui/use-toast';
 import { useCalendario } from './useCalendario';
@@ -18,23 +18,25 @@ interface Tarefa {
 }
 interface Lancamento { id: string; nome: string; data_inicio?: string; data_fim?: string; }
 interface NPAEvento { id: string; nome: string; data_inicio?: string; data_fim?: string; }
+interface Turma { id: string; nome: string; data_inicio?: string; produto?: string; }
 interface EventoCalendario { id: string; titulo: string; descricao?: string; data_inicio: string; data_fim?: string; cor: string; }
 interface CalendarioGeralViewProps {
   tarefas: Tarefa[];
   lancamentos: Lancamento[];
   npaEventos: NPAEvento[];
+  turmas: Turma[];
   eventosCalendario: EventoCalendario[];
   user: any;
   getPriorityHexColor: (prioridade: string) => string;
   onOpenTarefaDetail: (tarefa: Tarefa) => void;
   onLoadData: () => void;
 }
-interface EventoDia { id: string; titulo: string; tipo: 'tarefa' | 'lancamento' | 'npa' | 'evento'; cor: string; data: Date; dados: any; }
+interface EventoDia { id: string; titulo: string; tipo: 'tarefa' | 'lancamento' | 'npa' | 'turma' | 'evento'; cor: string; data: Date; dados: any; }
 
 const CORES_PRESET = ['#3b82f6','#ef4444','#10b981','#f59e0b','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f97316','#6366f1','#14b8a6','#e11d48'];
-const TIPO_LABEL: Record<string, string> = { tarefa: 'Tarefa', lancamento: 'Lançamento', npa: 'NPA', evento: 'Evento' };
+const TIPO_LABEL: Record<string, string> = { tarefa: 'Tarefa', lancamento: 'Lançamento', npa: 'NPA', turma: 'Turma', evento: 'Evento' };
 
-export function CalendarioGeralView({ tarefas, lancamentos, npaEventos, eventosCalendario, user, getPriorityHexColor, onOpenTarefaDetail, onLoadData }: CalendarioGeralViewProps) {
+export function CalendarioGeralView({ tarefas, lancamentos, npaEventos, turmas, eventosCalendario, user, getPriorityHexColor, onOpenTarefaDetail, onLoadData }: CalendarioGeralViewProps) {
   const { currentDate, currentMonth, currentYear, getWeeksInMonth, mesAnterior, mesProximo, irParaHoje } = useCalendario();
 
   const [showCreateEvento, setShowCreateEvento] = useState(false);
@@ -96,6 +98,19 @@ export function CalendarioGeralView({ tarefas, lancamentos, npaEventos, eventosC
       epd[key].push({ id: `npa-${n.id}`, titulo: n.nome, tipo: 'npa', cor: '#7C3AED', data, dados: n });
     });
 
+    // Turmas reais (psicanálise/PNL/numerologia) -- marca só o dia de início
+    // (data_fim de uma turma costuma ser mais de um ano depois; espalhar o
+    // evento por todo esse período encheria o calendário inteiro de marcador
+    // repetido, então segue o mesmo padrão de lançamento/NPA: um marcador no
+    // dia que a turma começa).
+    (turmas ?? []).forEach(t => {
+      if (!t.data_inicio) return;
+      const data = parseISO(t.data_inicio);
+      const key = format(data, 'yyyy-MM-dd');
+      if (!epd[key]) epd[key] = [];
+      epd[key].push({ id: `turma-${t.id}`, titulo: t.nome, tipo: 'turma', cor: '#4F46E5', data, dados: t });
+    });
+
     const dist = distribuirEventosDias(eventosCalendario ?? []);
     Object.entries(dist).forEach(([key, evs]) => {
       if (!epd[key]) epd[key] = [];
@@ -103,10 +118,10 @@ export function CalendarioGeralView({ tarefas, lancamentos, npaEventos, eventosC
     });
 
     return epd;
-  }, [tarefas, lancamentos, npaEventos, eventosCalendario, getPriorityHexColor]);
+  }, [tarefas, lancamentos, npaEventos, turmas, eventosCalendario, getPriorityHexColor]);
 
   const getTipoIcon = (tipo: string, cls = 'h-3 w-3') => {
-    const icons: Record<string, any> = { tarefa: Calendar, lancamento: Rocket, npa: BarChart3, evento: Zap };
+    const icons: Record<string, any> = { tarefa: Calendar, lancamento: Rocket, npa: BarChart3, turma: GraduationCap, evento: Zap };
     const Icon = icons[tipo] || Calendar;
     return <Icon className={cls} />;
   };
@@ -203,7 +218,7 @@ export function CalendarioGeralView({ tarefas, lancamentos, npaEventos, eventosC
       {/* Legenda */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <div className="flex flex-wrap gap-4 text-sm">
-          {[['bg-red-500','Tarefas'],['bg-orange-500','Lançamentos'],['bg-purple-500','NPA'],['bg-blue-500','Eventos']].map(([cor, label]) => (
+          {[['bg-red-500','Tarefas'],['bg-orange-500','Lançamentos'],['bg-purple-500','NPA'],['bg-indigo-600','Turmas'],['bg-blue-500','Eventos']].map(([cor, label]) => (
             <div key={label} className="flex items-center gap-2"><div className={`w-3 h-3 ${cor} rounded`}/><span>{label}</span></div>
           ))}
         </div>
