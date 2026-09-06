@@ -2928,7 +2928,7 @@ export function TimeComercial() {
 
         {user?.email === 'pdrmurari@gmail.com' && (
           <TabsContent value="comissoes_fechamento">
-            <ComissoesFechamento />
+            <ComissoesFechamento viewAsName={viewAsName} />
           </TabsContent>
         )}
 

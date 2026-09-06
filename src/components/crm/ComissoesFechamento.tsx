@@ -71,7 +71,7 @@ const STATUS_LABEL: Record<ComissaoRow['status'], string> = {
 
 const fmtBRL = (v: number) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export function ComissoesFechamento() {
+export function ComissoesFechamento({ viewAsName }: { viewAsName: string | null }) {
   const [rows, setRows] = useState<ComissaoRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [sincronizando, setSincronizando] = useState(false);
@@ -154,7 +154,12 @@ export function ComissoesFechamento() {
     }
   };
 
-  const porVendedor = rows.reduce<Record<string, ComissaoRow[]>>((acc, r) => {
+  // Respeita o seletor "Ver como" do topo da página (Todos/Helen/Miguel) --
+  // sem isso, o admin trocando o filtro em qualquer outra aba não via efeito
+  // nenhum aqui e continuava vendo todo mundo junto.
+  const rowsFiltradas = viewAsName ? rows.filter(r => r.vendedor === viewAsName) : rows;
+
+  const porVendedor = rowsFiltradas.reduce<Record<string, ComissaoRow[]>>((acc, r) => {
     (acc[r.vendedor] ??= []).push(r);
     return acc;
   }, {});
@@ -187,9 +192,11 @@ export function ComissoesFechamento() {
         </div>
       </div>
 
-      {rows.length === 0 && (
+      {rowsFiltradas.length === 0 && (
         <p className="text-center text-sm text-muted-foreground py-8 border border-dashed border-border rounded-lg">
-          Nenhuma comissão registrada ainda. Clique em "Buscar novas vendas" pra importar as matrículas já pagas.
+          {viewAsName
+            ? `Nenhum lançamento de ${viewAsName} ainda.`
+            : 'Nenhuma comissão registrada ainda. Clique em "Buscar novas vendas" pra importar as matrículas já pagas.'}
         </p>
       )}
 
