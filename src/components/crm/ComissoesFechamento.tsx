@@ -35,11 +35,18 @@ interface ComissaoRow {
   valor_venda: number;
   valor_comissao: number;
   origem: 'auto' | 'manual';
+  tipo: 'comissao' | 'ajuda_custo' | 'outro';
   status: 'pendente' | 'reservado' | 'pago';
   data_venda: string;
   data_pagamento: string | null;
   observacoes: string | null;
 }
+
+const TIPO_LABEL: Record<ComissaoRow['tipo'], string> = {
+  comissao: 'Comissão',
+  ajuda_custo: 'Ajuda de custo',
+  outro: 'Outro',
+};
 
 const PRODUTO_LABEL: Record<string, string> = {
   psicanalise: 'Psicanálise',
@@ -127,11 +134,14 @@ export function ComissoesFechamento() {
   const adicionarManual = async () => {
     const vendedor = prompt('Nome do vendedor (exatamente "Helen Magna" ou "Miguel Fogaça", pra agrupar certinho):', 'Helen Magna');
     if (!vendedor?.trim()) return;
-    const aluno_nome = prompt('Nome do aluno/cliente:');
+    const tipoInput = prompt('Tipo de lançamento: "comissao" (venda), "ajuda_custo" (fixo mensal) ou "outro"?', 'comissao');
+    const tipo = (['comissao', 'ajuda_custo', 'outro'].includes(tipoInput ?? '') ? tipoInput : 'comissao') as ComissaoRow['tipo'];
+    const aluno_nome = prompt(tipo === 'comissao' ? 'Nome do aluno/cliente:' : 'Descrição do lançamento (ex: "Ajuda de custo - agosto"):');
     if (!aluno_nome?.trim()) return;
     const { error } = await (supabase as any).from('comissoes_vendedores').insert({
       vendedor: vendedor.trim(),
       aluno_nome: aluno_nome.trim(),
+      tipo,
       origem: 'manual',
       valor_venda: 0,
       valor_comissao: 0,
@@ -224,10 +234,11 @@ function TabelaVendedor({
           <TableHeader>
             <TableRow>
               <TableHead>Data</TableHead>
-              <TableHead>Aluno</TableHead>
+              <TableHead>Tipo</TableHead>
+              <TableHead>Aluno / Descrição</TableHead>
               <TableHead>Produto / Forma</TableHead>
               <TableHead className="text-right">Valor venda</TableHead>
-              <TableHead className="text-right">Comissão</TableHead>
+              <TableHead className="text-right">Valor a pagar</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Observações</TableHead>
               <TableHead></TableHead>
@@ -237,6 +248,11 @@ function TabelaVendedor({
             {rows.map(r => (
               <TableRow key={r.id}>
                 <TableCell className="text-xs whitespace-nowrap">{new Date(r.data_venda + 'T12:00:00').toLocaleDateString('pt-BR')}</TableCell>
+                <TableCell className="text-xs whitespace-nowrap">
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${r.tipo === 'comissao' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                    {TIPO_LABEL[r.tipo]}
+                  </span>
+                </TableCell>
                 <TableCell className="text-xs">{r.aluno_nome}</TableCell>
                 <TableCell className="text-xs whitespace-nowrap">
                   {r.produto ? (PRODUTO_LABEL[r.produto] ?? r.produto) : '—'}
