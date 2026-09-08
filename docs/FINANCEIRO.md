@@ -86,6 +86,7 @@ Entregável final: sistema + Manual do Financeiro fechado → contratar auxiliar
 | 2026-09-06 | Manual do Financeiro publicado (artifact). |
 | 2026-09-08 | **1.2** — migração `20260908120000_financeiro_1_2_...sql` aplicada. `pagamentos` +7 col (`conta_recebimento`, `forma_pagamento`, `categoria_contabil`, `nf_status`, `nf_numero`, `nf_link`, `nf_emitida_em`) + 2 índices. `balanco_itens` +5 col (`conta_pagamento`, `data_competencia`, `data_caixa`, `fornecedor`, `comprovante_url`). CHECK de `categoria` expandido p/ plano de contas. CHECK de `produto` removido em `pagamentos` e `balanco_itens`. Backfill: `forma_pagamento` ← `alunos`; `data_competencia` ← `mes_referencia`. |
 | 2026-09-08 | `types.ts` atualizado à mão: blocos `pagamentos` e `balanco_itens` (colunas novas + `mp_payment_id`/`asaas_payment_id`/`link_pagamento_*` que faltavam). |
+| 2026-09-08 | **1.2-UI A+B** (commit `5792005`) — `Balanco.tsx`: form de gasto com plano de contas completo + `conta_pagamento` + `fornecedor` + `data_competencia`. `Financeiro.tsx`: modal de baixa com seletor `conta_recebimento`. Contas em const local (TODO: unificar com `src/lib/contas.ts` da C3). Sem novos erros de type; 58 testes ok. |
 
 ---
 
@@ -95,12 +96,12 @@ Entregável final: sistema + Manual do Financeiro fechado → contratar auxiliar
 - [x] 1.1 Fonte única (cleanup)
 - [x] 1.2 Modelo de dados: competência, caixa, categoria, conta, NF (migração + types)
 - [ ] **1.2-UI** Ligar os campos novos nas telas:
-  - [ ] **A** `Balanco.tsx` — form de despesa: trocar lista de `Categoria` pelo plano de
-        contas; adicionar `conta_pagamento`, `fornecedor`, `data_competencia`/`data_caixa`.
-  - [ ] **B** `Financeiro.tsx` — baixa de parcela: seletor de `conta_recebimento`
-        (+ `categoria_contabil` quando não for `receita_curso`).
-  - [ ] **C** Painel **Notas Fiscais** (novo) — fila `nf_status='nao_emitida'` de parcelas
-        pagas; ações emitir/dispensar + guardar `nf_numero`/`nf_link`/`nf_emitida_em`.
+  - [x] **A** `Balanco.tsx` — form de despesa: plano de contas + `conta_pagamento` +
+        `fornecedor` + `data_competencia` (commit `5792005`).
+  - [x] **B** `Financeiro.tsx` — baixa de parcela: seletor `conta_recebimento` (`5792005`).
+  - [ ] **C** Painel **Notas Fiscais** (novo) — **Codex (C1)**.
+  - [ ] **A2** unificar as consts de conta em `Balanco.tsx`/`Financeiro.tsx` com
+        `src/lib/contas.ts` assim que a C3 do Codex cair — **Claude**.
 - [ ] 1.4 `balanco_config` — form de sócios + saldo inicial por conta + alíquota efetiva
       do Simples (dados vêm do Pedro; o form pode ser feito antes).
 - [ ] 1.5 Higiene — corrigir 4 alunos sem turma, 6 sem forma, 90 parcelas sem forma, 91
