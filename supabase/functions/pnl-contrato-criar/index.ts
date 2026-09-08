@@ -305,6 +305,28 @@ ${clausula6Extra}
 </body></html>`;
 }
 
+async function criarLinkAssinatura(token: string, publicId: string): Promise<string | null> {
+  const query = `mutation CreateSignatureLink($publicId: UUID!) {
+    createLinkToSignature(public_id: $publicId) { short_link }
+  }`;
+
+  const res = await fetch(AUTENTIQUE_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ query, variables: { publicId } }),
+  });
+
+  const json = await res.json();
+  if (json.errors) {
+    console.error('createLinkToSignature error:', JSON.stringify(json.errors));
+    return null;
+  }
+  return json.data?.createLinkToSignature?.short_link ?? null;
+}
+
 async function criarDocumentoAutentique(
   token: string,
   nome_doc: string,
@@ -351,10 +373,29 @@ async function criarDocumentoAutentique(
   const doc = json.data?.createDocument;
   if (!doc) throw new Error('Autentique sem documento: ' + JSON.stringify(json));
 
-  const assinatura = doc.signatures?.[0];
-  const publicId = assinatura?.public_id ?? null;
-  const link = assinatura?.link?.short_link
-    ?? (publicId ? `https://painel.autentique.com.br/assinar/${publicId}` : '');
+  // A Autentique inclui automaticamente a conta dona do token como uma
+  // assinatura extra (sem action) — pegar sempre signatures[0] pegava essa
+  // conta em vez do aluno, gerando um link de assinatura que não existe pra
+  // ele (achado real 2026-09-08, mesmo bug já corrigido em gerar-contrato).
+  // Aqui buscamos a assinatura de quem realmente precisa assinar.
+  const assinatura = doc.signatures?.find(
+    (s: any) => s?.email === signatario_email && s?.action?.name === 'SIGN'
+  ) ?? doc.signatures?.find((s: any) => s?.action?.name === 'SIGN');
+
+  if (!assinatura?.public_id) {
+    throw new Error('Autentique: assinatura do signatário não encontrada no documento criado');
+  }
+
+  // O campo signatures[].link.short_link retornado na criação do documento
+  // não é o link público de assinatura (às vezes vem vazio, ou uma URL do
+  // painel administrativo que dá "documento não existe" pro signatário
+  // externo -- achado real 2026-09-08, contrato da Jesiane Alves). O link
+  // público correto só existe através desta mutation dedicada -- por isso é
+  // sempre chamada, nunca reaproveitada nem montada manualmente.
+  const link = await criarLinkAssinatura(token, assinatura.public_id);
+  if (!link) {
+    throw new Error('Autentique: não foi possível gerar o link de assinatura');
+  }
 
   return { id: doc.id ?? '', link };
 }
