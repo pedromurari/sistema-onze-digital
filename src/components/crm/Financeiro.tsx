@@ -175,8 +175,19 @@ interface ParcelaLocal {
   deleted?: boolean;
 }
 
-type ProdutoTab = 'psicanalise' | 'numerologia';
+type ProdutoTab = 'psicanalise' | 'numerologia' | 'pnl';
+// Produto real gravado em turmas/alunos/pagamentos -- 'pnl' na aba/ProdutoTab e um
+// guarda-chuva (mostra Practitioner e Master juntos), nunca um valor de verdade no banco.
+type ProdutoReal = 'psicanalise' | 'numerologia' | 'pnl-practitioner' | 'pnl-master';
 type SubView = 'alunos' | 'turmas' | 'responsaveis';
+
+// 'pnl' casa com qualquer produto que comece com 'pnl-' (practitioner ou master);
+// os demais tabs continuam exigindo igualdade exata. Sem isso, comparar com === sempre
+// dava 0 resultado pro PNL (o valor gravado nunca e a string solta 'pnl') -- mesmo bug
+// já corrigido no card "Saúde Financeira" do Dashboard (2026-09-08).
+const matchesProdutoTab = (produtoReal: string | null | undefined, tab: ProdutoTab) =>
+  tab === 'pnl' ? !!produtoReal?.startsWith('pnl') : produtoReal === tab;
+
 type PaymentFilter = 'todos' | PaymentMethod;
 type DueFilter = 'todos' | 'vencidos' | 'hoje' | 'proximos_7' | 'proximos_30' | 'quitados';
 type DueDayFilter = 'todos' | `dia_${number}`;
@@ -952,7 +963,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
   const [disparoTurma, setDisparoTurma] = useState<{ id: string; nome: string } | null>(null);
 
   // Formularios
-  const emptyTurmaForm = { nome: '', produto: 'psicanalise' as ProdutoTab, data_inicio: '', data_fim: '', valor_mensalidade: '109.90', total_mensalidades: '15' };
+  const emptyTurmaForm = { nome: '', produto: 'psicanalise' as ProdutoReal, data_inicio: '', data_fim: '', valor_mensalidade: '109.90', total_mensalidades: '15' };
   const emptyAlunoForm = getEmptyAlunoForm();
 
   const [newTurmaForm, setNewTurmaForm] = useState(emptyTurmaForm);
@@ -1037,7 +1048,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
 
   const filteredTurmas = useMemo(() => {
     return turmas.filter(t => {
-      if ((t.tipo || t.produto) !== activeTab) return false;
+      if (!matchesProdutoTab(t.tipo || t.produto, activeTab)) return false;
       if (isAdmin) return true;
       if (!permissions) return false;
       return canAccessFinanceiroTurma(permissions, t.id);
@@ -1046,14 +1057,14 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
 
   // Tabs visíveis conforme turmas acessíveis
   const visibleTabs = useMemo<ProdutoTab[]>(() => {
-    if (isAdmin) return ['psicanalise', 'numerologia'];
-    const tabs: ProdutoTab[] = (['psicanalise', 'numerologia'] as ProdutoTab[]).filter(tab =>
-      turmas.some(t => (t.tipo || t.produto) === tab && permissions && canAccessFinanceiroTurma(permissions, t.id))
+    if (isAdmin) return ['psicanalise', 'numerologia', 'pnl'];
+    const tabs: ProdutoTab[] = (['psicanalise', 'numerologia', 'pnl'] as ProdutoTab[]).filter(tab =>
+      turmas.some(t => matchesProdutoTab(t.tipo || t.produto, tab) && permissions && canAccessFinanceiroTurma(permissions, t.id))
     );
     return tabs.length > 0 ? tabs : ['psicanalise'];
   }, [turmas, permissions, isAdmin]);
 
-  const filteredPagamentos = useMemo(() => pagamentos.filter(p => p.produto === activeTab && p.status !== 'isento'), [pagamentos, activeTab]);
+  const filteredPagamentos = useMemo(() => pagamentos.filter(p => matchesProdutoTab(p.produto, activeTab) && p.status !== 'isento'), [pagamentos, activeTab]);
   const pagamentosPorAluno = useMemo(() => {
     const map: Record<string, Pagamento[]> = {};
     filteredPagamentos.forEach(p => {
@@ -1091,7 +1102,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
   // Base: produto + turma + permissões apenas — sem statusFilter/paymentFilter/dueFilter
   const alunosBase = useMemo(() => {
     let r = alunos.filter(a => {
-      if (a.produto !== activeTab) return false;
+      if (!matchesProdutoTab(a.produto, activeTab)) return false;
       if (isAdmin) return true;
       if (!permissions) return false;
       return canAccessFinanceiroTurma(permissions, a.turma_id);
@@ -1376,6 +1387,10 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
       if (dup) { setDuplicataWarning(dup); return; }
     }
     try {
+      // Produto real vem da turma escolhida, nao da aba -- na aba 'pnl' a turma pode
+      // ser 'pnl-practitioner' ou 'pnl-master' (a aba so agrupa as duas pra exibicao).
+      const turmaSelecionada = turmas.find(t => t.id === newAlunoForm.turma_id);
+      const produtoReal = (turmaSelecionada?.produto || turmaSelecionada?.tipo || activeTab) as ProdutoReal;
       const method = normalizePaymentMethod(newAlunoForm.forma_pagamento);
       const diaVenc = extractDueDay(newAlunoForm.dia_vencimento);
       const customTotal = newAlunoForm.total_parcelas ? parseInt(newAlunoForm.total_parcelas) : 0;
@@ -1385,7 +1400,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
       const isIsento = newAlunoForm.tipo_pagamento === 'bolsa' || newAlunoForm.tipo_pagamento === 'cortesia';
       const { data: inserted, error } = await supabase.from('alunos').insert({
         turma_id: newAlunoForm.turma_id,
-        produto: activeTab,
+        produto: produtoReal,
         nome: newAlunoForm.nome,
         whatsapp: newAlunoForm.whatsapp || null,
         email: newAlunoForm.email || null,
@@ -1420,7 +1435,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
       const rows = buildInstallments({
         alunoId: inserted.id,
         turmaId: newAlunoForm.turma_id,
-        produto: activeTab,
+        produto: produtoReal,
         valor: valorEfetivo,
         method,
         diaVencimento: diaVenc,
@@ -2631,7 +2646,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
             <div className="space-y-4">
               {responsaveis.map(resp => {
                 const turmasResp = filteredTurmas.filter(t => t.responsavel_id === resp.id);
-                const alunosResp = alunos.filter(a => turmasResp.some(t => t.id === a.turma_id) && a.produto === activeTab);
+                const alunosResp = alunos.filter(a => turmasResp.some(t => t.id === a.turma_id) && matchesProdutoTab(a.produto, activeTab));
                 const ativosResp = alunosResp.filter(a => a.status === 'ativo');
                 const pagResp = filteredPagamentos.filter(p => turmasResp.some(t => t.id === p.turma_id));
                 const recebidoResp = pagResp.filter(p => p.status === 'pago').reduce((s, p) => s + p.valor, 0);
@@ -2858,6 +2873,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
               <TabsList className={`grid w-full max-w-xs`} style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, 1fr)` }}>
                 {visibleTabs.includes('psicanalise') && <TabsTrigger value="psicanalise">Psicanalise</TabsTrigger>}
                 {visibleTabs.includes('numerologia') && <TabsTrigger value="numerologia">Numerologia</TabsTrigger>}
+                {visibleTabs.includes('pnl') && <TabsTrigger value="pnl">PNL</TabsTrigger>}
               </TabsList>
             </Tabs>
           </div>
@@ -2886,11 +2902,13 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
             </div>
             <div>
               <label className="text-sm font-medium">Produto</label>
-              <Select value={newTurmaForm.produto} onValueChange={v => setNewTurmaForm({ ...newTurmaForm, produto: v as ProdutoTab })}>
+              <Select value={newTurmaForm.produto} onValueChange={v => setNewTurmaForm({ ...newTurmaForm, produto: v as ProdutoReal })}>
                 <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="psicanalise">Psicanalise</SelectItem>
                   <SelectItem value="numerologia">Numerologia</SelectItem>
+                  <SelectItem value="pnl-practitioner">PNL Practitioner</SelectItem>
+                  <SelectItem value="pnl-master">PNL Master</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -3408,7 +3426,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                       <label className="text-xs text-muted-foreground">Turma</label>
                       <Select value={editAlunoForm.turma_id || ''} onValueChange={v => setEditAlunoForm({ ...editAlunoForm, turma_id: v })}>
                         <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue /></SelectTrigger>
-                        <SelectContent>{turmas.filter(t => t.produto === activeTab || t.tipo === activeTab).map(t => <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>)}</SelectContent>
+                        <SelectContent>{turmas.filter(t => matchesProdutoTab(t.produto, activeTab) || matchesProdutoTab(t.tipo, activeTab)).map(t => <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
                     <div>
