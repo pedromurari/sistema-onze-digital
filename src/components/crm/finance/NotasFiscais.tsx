@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ExternalLink, FileCheck2, Loader2, ReceiptText } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { useAlunos, useInvalidarDados, usePagamentos } from '@/lib/db';
+import { useAlunos, useBalancoConfig, useInvalidarDados, usePagamentos } from '@/lib/db';
 import { getContaLabel } from '@/lib/contas';
 import { toast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -92,7 +92,12 @@ const filtrarEOrdenar = (lista: PagamentoNota[], competencia: string, produto: s
 export function NotasFiscais() {
   const { data: pagamentos = [], isLoading, error } = usePagamentos<PagamentoNota>(COLUNAS_NOTA);
   const { data: alunos = [] } = useAlunos<AlunoNota>('id, nome');
+  const { data: config } = useBalancoConfig<{ inicio_operacao_fiscal: string }>();
   const invalidar = useInvalidarDados();
+
+  // Corte da operação fiscal: nada anterior a esta data entra na fila de NFS-e --
+  // decisão explícita do dono do produto (nada retroativo, ver balanco_config).
+  const corteFiscal = config?.inicio_operacao_fiscal ?? '2026-09-01';
 
   const [competencia, setCompetencia] = useState('todos');
   const [produto, setProduto] = useState('todos');
@@ -108,11 +113,16 @@ export function NotasFiscais() {
     [alunos],
   );
 
-  // A fila fiscal nasce exclusivamente de caixa realizado: parcela pendente não gera
-  // obrigação nesta tela, mesmo que sua competência já tenha passado.
+  // A fila fiscal nasce exclusivamente de caixa realizado E a partir do corte:
+  // parcela pendente não gera obrigação aqui, e parcela paga antes de
+  // `corteFiscal` fica de fora (nada retroativo).
   const pagas = useMemo(
-    () => pagamentos.filter((pagamento) => pagamento.status === 'pago'),
-    [pagamentos],
+    () => pagamentos.filter((pagamento) =>
+      pagamento.status === 'pago' &&
+      !!pagamento.data_pagamento &&
+      pagamento.data_pagamento.slice(0, 10) >= corteFiscal,
+    ),
+    [pagamentos, corteFiscal],
   );
 
   const competencias = useMemo(
@@ -277,7 +287,8 @@ export function NotasFiscais() {
             <h1 className="text-2xl font-bold tracking-tight">Notas Fiscais</h1>
           </div>
           <p className="max-w-3xl text-sm text-muted-foreground">
-            Controle das NFS-e das parcelas recebidas. A emissão é feita no painel da Agilize em
+            Controle das NFS-e das parcelas recebidas <strong>a partir de {formatarData(corteFiscal)}</strong>{' '}
+            (histórico anterior não entra na fila). A emissão é feita no painel da Agilize em
             <strong> Notas de serviço → Emitir nota</strong>; depois, registre o resultado aqui.
             CNAE 8599-6/04 · atividade 05762.
           </p>

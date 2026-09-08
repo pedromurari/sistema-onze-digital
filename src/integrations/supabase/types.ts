@@ -925,21 +925,27 @@ export type Database = {
       balanco_config: {
         Row: {
           id: string
+          inicio_operacao_fiscal: string
           parametros_cfo: Json
+          saldo_inicial_contas: Json
           socios: Json
           taxas: Json
           updated_at: string | null
         }
         Insert: {
           id?: string
+          inicio_operacao_fiscal?: string
           parametros_cfo?: Json
+          saldo_inicial_contas?: Json
           socios?: Json
           taxas?: Json
           updated_at?: string | null
         }
         Update: {
           id?: string
+          inicio_operacao_fiscal?: string
           parametros_cfo?: Json
+          saldo_inicial_contas?: Json
           socios?: Json
           taxas?: Json
           updated_at?: string | null

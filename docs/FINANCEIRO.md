@@ -20,6 +20,14 @@ Entregável final: sistema + Manual do Financeiro fechado → contratar auxiliar
 
 ## 2. Contexto fixo (decisões travadas — não reabrir sem o Pedro)
 
+> **NADA RETROATIVO.** Decisão do dono do produto (2026-09-08): não criar/alterar
+> notas, pagamentos ou repasses antigos. Estrutura é para o futuro. Toda automação
+> (fila de NFS-e, conciliação, repasse recalculado, geração/cobrança via Asaas)
+> filtra por `balanco_config.inicio_operacao_fiscal` (**2026-09-01**) e só age no que
+> vier a partir dessa data. O histórico anterior **continua visível** nas telas de
+> sempre — não é escondido nem apagado, só não entra nas filas de automação.
+
+
 - **Empresa:** GRUPO DESPERTAMENTE, CNPJ 55.184.481/0001-24. Empresário Individual, ME,
   **Simples Nacional**. Contador: **Agilize**. CNAE 8599-6/04. Sede São Paulo/SP.
 - **6 contas** (enum `conta_recebimento` / `conta_pagamento`):
@@ -87,6 +95,9 @@ Entregável final: sistema + Manual do Financeiro fechado → contratar auxiliar
 | 2026-09-08 | **1.2** — migração `20260908120000_financeiro_1_2_...sql` aplicada. `pagamentos` +7 col (`conta_recebimento`, `forma_pagamento`, `categoria_contabil`, `nf_status`, `nf_numero`, `nf_link`, `nf_emitida_em`) + 2 índices. `balanco_itens` +5 col (`conta_pagamento`, `data_competencia`, `data_caixa`, `fornecedor`, `comprovante_url`). CHECK de `categoria` expandido p/ plano de contas. CHECK de `produto` removido em `pagamentos` e `balanco_itens`. Backfill: `forma_pagamento` ← `alunos`; `data_competencia` ← `mes_referencia`. |
 | 2026-09-08 | `types.ts` atualizado à mão: blocos `pagamentos` e `balanco_itens` (colunas novas + `mp_payment_id`/`asaas_payment_id`/`link_pagamento_*` que faltavam). |
 | 2026-09-08 | **1.2-UI A+B** (commit `5792005`) — `Balanco.tsx`: form de gasto com plano de contas completo + `conta_pagamento` + `fornecedor` + `data_competencia`. `Financeiro.tsx`: modal de baixa com seletor `conta_recebimento`. Contas em const local (TODO: unificar com `src/lib/contas.ts` da C3). Sem novos erros de type; 58 testes ok. |
+| 2026-09-08 | **A2** (`b946013`) — Balanço e Financeiro consomem `src/lib/contas.ts`. |
+| 2026-09-08 | **Codex** — `494b021` painel Notas Fiscais (C1), `c2fe749` BalancoConfigForm + `src/lib/db/balanco-config.ts` (C2). |
+| 2026-09-08 | **Corte fiscal** — migrações `20260908150000` (`saldo_inicial_contas`) e `20260908160000` (`inicio_operacao_fiscal` = 2026-09-01) aplicadas. `NotasFiscais.tsx` passa a filtrar a fila por `data_pagamento >= inicio_operacao_fiscal` — as 698 parcelas antigas não entram. `types.ts` + `COLUNAS_BALANCO_CONFIG` atualizados. |
 
 ---
 
