@@ -31,6 +31,34 @@ const corsHeaders = {
 };
 
 const ASAAS_WEBHOOK_TOKEN = Deno.env.get('ASAAS_WEBHOOK_TOKEN');
+const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY');
+const ASAAS_API = 'https://api.asaas.com/v3';
+
+// Taxa REAL da transação: o Asaas devolve `netValue` (valor já com a taxa dele
+// descontada) no próprio webhook. taxa = value - netValue. Se por algum motivo
+// não vier no corpo, busca em GET /payments/{id}. Sem número confiável, deixa
+// null -- melhor não gravar do que gravar chute (o Balanço/CFO leem taxa_valor
+// pra montar o líquido real).
+async function calcularTaxaAsaas(
+  paymentId: string,
+  value: number,
+  netValueDoWebhook: unknown,
+): Promise<number | null> {
+  let net = typeof netValueDoWebhook === 'number' ? netValueDoWebhook : null;
+  if (net == null && ASAAS_API_KEY) {
+    try {
+      const res = await fetch(`${ASAAS_API}/payments/${paymentId}`, {
+        headers: { 'Content-Type': 'application/json', access_token: ASAAS_API_KEY },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (typeof data?.netValue === 'number') net = data.netValue;
+    } catch (e) {
+      console.error('asaas-webhook-time-comercial: falha ao buscar netValue', paymentId, e);
+    }
+  }
+  if (net == null || !(value > 0) || net > value) return null;
+  return Math.round((value - net) * 100) / 100;
+}
 
 const EVENTOS_PAGO = new Set(['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED']);
 
@@ -186,10 +214,10 @@ serve(async (req) => {
         });
       }
 
-      return await marcarPago(supabase, pagamentoPorRef, String(payment.id));
+      return await marcarPago(supabase, pagamentoPorRef, String(payment.id), payment.netValue);
     }
 
-    return await marcarPago(supabase, pagamento, String(payment.id));
+    return await marcarPago(supabase, pagamento, String(payment.id), payment.netValue);
   } catch (error) {
     console.error('asaas-webhook-time-comercial error:', error);
     return new Response(JSON.stringify({ ok: false }), {
@@ -202,9 +230,12 @@ async function marcarPago(
   supabase: ReturnType<typeof createClient>,
   pagamento: { id: string; aluno_id: string; valor: number; numero_parcela: number; status: string | null },
   asaasPaymentId: string,
+  netValueDoWebhook?: unknown,
 ) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+  const taxaValor = await calcularTaxaAsaas(asaasPaymentId, Number(pagamento.valor), netValueDoWebhook);
 
   // UPDATE...WHERE status<>'pago'...RETURNING (não confiar no `pagamento`
   // pré-carregado) de propósito: esse `pagamento` foi lido num SELECT
@@ -218,6 +249,8 @@ async function marcarPago(
       status: 'pago',
       data_pagamento: new Date().toISOString().slice(0, 10),
       asaas_payment_id: asaasPaymentId,
+      conta_recebimento: 'asaas',
+      ...(taxaValor != null ? { taxa_valor: taxaValor } : {}),
     })
     .eq('id', pagamento.id)
     .neq('status', 'pago')
