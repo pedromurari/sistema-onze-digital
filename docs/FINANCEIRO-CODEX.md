@@ -92,4 +92,5 @@ Comentários em português, densos, explicando o porquê (padrão do repo).
 | Quando | Quem | Arquivo(s) | Status |
 |---|---|---|---|
 | 2026-09-08 | Claude | `Financeiro.tsx`, `types.ts`, migração 1.2 | concluído (não commitado) |
-| — | Codex | C3 `src/lib/contas.ts` → C1 `NotasFiscais.tsx` → C2 `BalancoConfigForm.tsx` | a fazer |
+| 2026-09-08 | Codex | C3 `src/lib/contas.ts`, `src/lib/contas.test.ts` | concluído; typecheck sem erros nos arquivos novos (baseline global 77→84 já documentado); 58 testes passando |
+| — | Codex | C1 `NotasFiscais.tsx` → C2 `BalancoConfigForm.tsx` | a fazer |
