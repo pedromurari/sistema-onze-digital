@@ -928,7 +928,6 @@ export type Database = {
           id: string
           inicio_operacao_fiscal: string
           parametros_cfo: Json
-          parcela_voomp_extensao: number
           saldo_inicial_contas: Json
           socios: Json
           taxas: Json
@@ -939,7 +938,6 @@ export type Database = {
           id?: string
           inicio_operacao_fiscal?: string
           parametros_cfo?: Json
-          parcela_voomp_extensao?: number
           saldo_inicial_contas?: Json
           socios?: Json
           taxas?: Json
@@ -950,7 +948,6 @@ export type Database = {
           id?: string
           inicio_operacao_fiscal?: string
           parametros_cfo?: Json
-          parcela_voomp_extensao?: number
           saldo_inicial_contas?: Json
           socios?: Json
           taxas?: Json

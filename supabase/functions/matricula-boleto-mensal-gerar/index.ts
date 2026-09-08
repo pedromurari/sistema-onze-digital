@@ -11,11 +11,13 @@
  * `balanco_config.asaas_novos_ativo = false` (padrão): só o fluxo do Time
  * Comercial, como sempre. Quando `true`: passa a cobrir alunos de QUALQUER
  * origem, mas só os com `data_matricula >= inicio_operacao_fiscal` -- os alunos
- * atuais continuam na Voomp por construção. A parcela nº
- * `parcela_voomp_extensao` (padrão 2) é paga pela empresa na Voomp por fora:
- * aqui ela só recebe `conta_recebimento = 'voomp'` e não gera boleto.
- * Valor e nº de parcelas saem de `pagamentos.valor` / `total_mensalidades` --
- * nada hardcoded.
+ * atuais continuam na Voomp por construção. O aluno novo paga 100% das parcelas
+ * pelo Asaas (nada é pulado). Valor e nº de parcelas saem de `pagamentos.valor`
+ * / `total_mensalidades` -- nada hardcoded.
+ *
+ * A extensão universitária (Anhanguera) é OUTRA cobrança: um boleto na Voomp,
+ * no nome do aluno, que a EMPRESA paga por fora pra registrar o vínculo. Não
+ * passa por aqui nem por `pagamentos` -- é despesa da empresa, lançada à parte.
  *
  * Cliente Asaas: criado uma única vez por aluno e reaproveitado -- id salvo
  * em alunos.asaas_customer_id.
@@ -78,7 +80,6 @@ interface PagamentoRow {
   numero_parcela: number;
   data_vencimento: string;
   total_mensalidades: number | null;
-  conta_recebimento: string | null;
   alunos: {
     nome: string | null;
     email: string | null;
@@ -119,25 +120,22 @@ serve(async (req) => {
     limiteVencimento.setDate(limiteVencimento.getDate() + 10);
     const limiteVencimentoStr = limiteVencimento.toISOString().slice(0, 10);
 
-    // ── Config: trava do "Asaas para alunos novos" + parcela da Voomp ─────────
+    // ── Config: trava do "Asaas para alunos novos" ──────────────────────────
     // Decisão do dono do produto (2026-09-08): alunos ATUAIS continuam na Voomp;
-    // só os NOVOS (data_matricula >= inicio_operacao_fiscal) vão pro Asaas. A
-    // parcela da extensão Anhanguera é paga pela empresa na Voomp -- aqui ela
-    // só é marcada (conta_recebimento='voomp') e não gera boleto.
+    // só os NOVOS (data_matricula >= inicio_operacao_fiscal) vão pro Asaas, e
+    // pagam 100% das parcelas por lá.
     const { data: cfg } = await supabase
       .from('balanco_config')
-      .select('inicio_operacao_fiscal, asaas_novos_ativo, parcela_voomp_extensao')
+      .select('inicio_operacao_fiscal, asaas_novos_ativo')
       .eq('id', 'onze_digital')
       .maybeSingle();
     const asaasNovosAtivo = cfg?.asaas_novos_ativo === true;
     const inicioOperacaoFiscal = cfg?.inicio_operacao_fiscal ?? '2026-09-01';
-    const parcelaVoomp = Number(cfg?.parcela_voomp_extensao ?? 2);
 
     let query = supabase
       .from('pagamentos')
       .select(`
         id, aluno_id, valor, numero_parcela, data_vencimento, total_mensalidades,
-        conta_recebimento,
         alunos!inner (
           nome, email, cpf, endereco, cep, cidade_estado, asaas_customer_id,
           origem_lead, forma_pagamento, data_matricula
@@ -178,17 +176,6 @@ serve(async (req) => {
       const aluno = pagamento.alunos;
       if (!aluno) {
         errors.push({ pagamentoId: pagamento.id, erro: 'aluno não encontrado' });
-        continue;
-      }
-
-      // A parcela da extensão universitária é paga pela empresa na Voomp, por
-      // fora. Não gera boleto Asaas -- só marca a conta uma vez.
-      if (asaasNovosAtivo && pagamento.numero_parcela === parcelaVoomp) {
-        if (pagamento.conta_recebimento !== 'voomp') {
-          await supabase.from('pagamentos')
-            .update({ conta_recebimento: 'voomp' })
-            .eq('id', pagamento.id);
-        }
         continue;
       }
 

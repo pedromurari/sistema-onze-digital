@@ -134,10 +134,13 @@ Entregável final: sistema + Manual do Financeiro fechado → contratar auxiliar
 ### Paralelo — Asaas (só alunos NOVOS; atuais continuam na Voomp)
 - [x] `matricula-boleto-mensal-gerar` generalizado atrás da trava `balanco_config.asaas_novos_ativo`
       (começa `false`). Quando `true`: cobre qualquer origem, só `data_matricula >= inicio_operacao_fiscal`
-      (atuais ficam de fora por construção); valor/parcelas de `pagamentos.valor`/`total_mensalidades`;
-      a parcela nº `parcela_voomp_extensao` (padrão 2, paga pela empresa na Voomp) recebe
-      `conta_recebimento='voomp'` e **não** gera boleto. Migração `20260908170000`.
-- [ ] **Ativar:** Pedro seta `asaas_novos_ativo = true` quando quiser ligar (revisar antes).
+      (atuais ficam de fora por construção); **aluno novo paga 100% das parcelas pelo Asaas**;
+      valor/qtd de `pagamentos.valor`/`total_mensalidades`. Migrações `20260908170000` (`asaas_novos_ativo`)
+      e `20260908180000` (dropa `parcela_voomp_extensao` — modelo errado, ver abaixo).
+- [ ] **Extensão Anhanguera:** boleto SEPARADO na Voomp, no nome do aluno, que a **empresa paga por
+      fora** pra registrar o vínculo. Não é parcela do aluno, não passa por `pagamentos`. É despesa da
+      empresa — lançar em `balanco_itens` (conta `voomp`) quando acontecer. (Automação disso: a definir.)
+- [ ] **Ativar:** Pedro seta `asaas_novos_ativo = true` + redeploy da edge function (revisar antes).
 - [ ] `POST /payments` com `fine` (multa) + `interest` (juros) — depende da cláusula do
       contrato (padrão: multa 2% + juros 1% a.m.).
 - [ ] Webhook: conciliar valor recebido > valor da parcela (multa/juros efetivos).
