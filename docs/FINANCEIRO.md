@@ -131,9 +131,13 @@ Entregável final: sistema + Manual do Financeiro fechado → contratar auxiliar
 ### Fase 4 — Cockpit + entrega
 - [ ] Dashboard financeiro único. Manual fechado. Perfil de acesso da auxiliar (RLS).
 
-### Paralelo — Asaas (habilitar "tudo via Asaas")
-- [ ] Generalizar `matricula-boleto-mensal-gerar`: hoje só `origem_lead='time_comercial'`
-      + R$150 15x hardcoded. Precisa cobrir `direto`/`lancamento` e valor/parcelas do aluno.
+### Paralelo — Asaas (só alunos NOVOS; atuais continuam na Voomp)
+- [x] `matricula-boleto-mensal-gerar` generalizado atrás da trava `balanco_config.asaas_novos_ativo`
+      (começa `false`). Quando `true`: cobre qualquer origem, só `data_matricula >= inicio_operacao_fiscal`
+      (atuais ficam de fora por construção); valor/parcelas de `pagamentos.valor`/`total_mensalidades`;
+      a parcela nº `parcela_voomp_extensao` (padrão 2, paga pela empresa na Voomp) recebe
+      `conta_recebimento='voomp'` e **não** gera boleto. Migração `20260908170000`.
+- [ ] **Ativar:** Pedro seta `asaas_novos_ativo = true` quando quiser ligar (revisar antes).
 - [ ] `POST /payments` com `fine` (multa) + `interest` (juros) — depende da cláusula do
       contrato (padrão: multa 2% + juros 1% a.m.).
 - [ ] Webhook: conciliar valor recebido > valor da parcela (multa/juros efetivos).

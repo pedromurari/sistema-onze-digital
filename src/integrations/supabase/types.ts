@@ -924,27 +924,33 @@ export type Database = {
       }
       balanco_config: {
         Row: {
+          asaas_novos_ativo: boolean
           id: string
           inicio_operacao_fiscal: string
           parametros_cfo: Json
+          parcela_voomp_extensao: number
           saldo_inicial_contas: Json
           socios: Json
           taxas: Json
           updated_at: string | null
         }
         Insert: {
+          asaas_novos_ativo?: boolean
           id?: string
           inicio_operacao_fiscal?: string
           parametros_cfo?: Json
+          parcela_voomp_extensao?: number
           saldo_inicial_contas?: Json
           socios?: Json
           taxas?: Json
           updated_at?: string | null
         }
         Update: {
+          asaas_novos_ativo?: boolean
           id?: string
           inicio_operacao_fiscal?: string
           parametros_cfo?: Json
+          parcela_voomp_extensao?: number
           saldo_inicial_contas?: Json
           socios?: Json
           taxas?: Json
