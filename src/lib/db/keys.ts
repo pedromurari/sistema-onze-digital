@@ -38,6 +38,11 @@ export const chaves = {
     porTurma: () => [...chaves.responsaveis.raiz, 'porTurma'] as const,
   },
 
+  balancoConfig: {
+    raiz: ['balanco-config'] as const,
+    porEmpresa: (empresaId: string) => [...chaves.balancoConfig.raiz, empresaId] as const,
+  },
+
   leads: {
     raiz: ['leads'] as const,
     lista: () => [...chaves.leads.raiz, 'lista'] as const,
@@ -80,6 +85,7 @@ export const invalidacaoCruzada: Record<string, readonly (readonly string[])[]> 
   // Mexer no split de uma turma muda o repasse de todo pagamento dela — Balanço e CFO
   // precisam recalcular, não só a tela que editou.
   responsaveis: [chaves.responsaveis.raiz, chaves.pagamentos.raiz, chaves.turmas.raiz],
+  balancoConfig: [chaves.balancoConfig.raiz, chaves.pagamentos.raiz],
   leads:      [chaves.leads.raiz, chaves.pessoas.raiz],
   // Lead de lançamento vira lead do pool e pessoa canônica pelos gatilhos
   // `sync_lancamento_lead_to_time_comercial` e `trg_pessoa_vincular`. Sem esta linha,

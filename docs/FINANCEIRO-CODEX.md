@@ -94,4 +94,4 @@ Comentários em português, densos, explicando o porquê (padrão do repo).
 | 2026-09-08 | Claude | `Financeiro.tsx`, `types.ts`, migração 1.2 | concluído (não commitado) |
 | 2026-09-08 | Codex | C3 `src/lib/contas.ts`, `src/lib/contas.test.ts` | concluído; typecheck sem erros nos arquivos novos (baseline global 77→84 já documentado); 58 testes passando |
 | 2026-09-08 | Codex | C1 `NotasFiscais.tsx`, registros em `Sidebar.tsx`, `CRMLayout.tsx` e `access-control.ts` | concluído; typecheck sem erros nos arquivos da C1 (84 globais preexistentes); 58 testes passando |
-| — | Codex | C2 `BalancoConfigForm.tsx` | a fazer |
+| 2026-09-08 | Codex | C2 `BalancoConfigForm.tsx`, hook `src/lib/db/balanco-config.ts`, chaves de cache e `20260908150000_balanco_config_saldo_inicial_contas.sql` | concluído; migration escrita e não aplicada; typecheck sem erros da C2 (84 globais preexistentes); 58 testes passando |
