@@ -725,8 +725,16 @@ export function Dashboard() {
 
   // ── Financial health by product ───────────────────────────────────────────
 
+  // 'pnl' no card da Saúde Financeira é um slug guarda-chuva -- produto real do
+  // aluno/turma vem gravado como 'pnl-practitioner' ou 'pnl-master' (nunca a
+  // string solta 'pnl'). Comparar com === sempre dava 0 aluno mesmo com venda
+  // real cadastrada, escondendo o card pra sempre (achado real 2026-09-08,
+  // primeira matrícula de PNL Master, a da Rosangela Souza de Brito).
+  const matchProdutoSaude = (produtoDoRegistro: string | null | undefined, alvo: string) =>
+    alvo === 'pnl' ? !!produtoDoRegistro?.startsWith('pnl') : produtoDoRegistro === alvo;
+
   const getSaude = (produto: string) => {
-    const ativos = alunosAtivos.filter(a => a.produto === produto);
+    const ativos = alunosAtivos.filter(a => matchProdutoSaude(a.produto, produto));
     const ids = new Set(ativos.map(a => a.id));
     const recebido = filtrarPagamentosPorPeriodo(pagamentos, mesRange.start, mesRange.end)
       .filter(p => ids.has(p.aluno_id)).reduce((s, p) => s + (p.valor || 0), 0);
@@ -737,7 +745,7 @@ export function Dashboard() {
     // mais próxima de acontecer (chegou a mostrar uma turma de 2025 como "próxima").
     const hojeISO = new Date().toISOString().slice(0, 10);
     const proxTurma = turmasReais
-      .filter(t => t.produto === produto && t.data_inicio && t.data_inicio >= hojeISO)
+      .filter(t => matchProdutoSaude(t.produto, produto) && t.data_inicio && t.data_inicio >= hojeISO)
       .sort((a, b) => new Date(a.data_inicio!).getTime() - new Date(b.data_inicio!).getTime())[0];
     const mrr = ativos.reduce((sum, a) => {
       const t = turmas.find(tr => tr.id === a.turma_id);
