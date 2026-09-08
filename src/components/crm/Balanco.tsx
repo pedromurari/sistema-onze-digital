@@ -23,6 +23,7 @@ import { CONTAS, getContaLabel, type Conta } from '@/lib/contas';
 import { useAuth } from '@/contexts/AuthContext';
 import { TaxasPagamentoConfig } from './finance/TaxasPagamentoConfig';
 import { RepasseTurmasConfig } from './finance/RepasseTurmasConfig';
+import { BalancoConfigForm } from './finance/BalancoConfigForm';
 import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
 import { StatTile, SecaoRecolhivel } from '@/components/crm/ui/premium';
 
@@ -1332,7 +1333,7 @@ export function Balanco() {
           {/* ────────────────── CONFIG ────────────────── */}
           {view === 'config' && (
             <div className="space-y-6">
-
+              <BalancoConfigForm onSaved={() => invalidar('balancoConfig')} />
               <TaxasPagamentoConfig produtos={produtos} taxas={taxasRates} canais={canaisCobranca} onSaved={setTaxasRates} />
               <RepasseTurmasConfig turmas={turmasInfo} onSaved={reloadTurmaResponsaveis} />
             </div>
