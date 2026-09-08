@@ -19,6 +19,7 @@ import {
   type RepasseCalculado, type Produto, type PagamentoParaRepasse,
 } from '@/lib/financial-utils';
 import { useTurmas, useResponsaveis, useTurmaResponsaveis, useInvalidarDados } from '@/lib/db';
+import { CONTAS, getContaLabel, type Conta } from '@/lib/contas';
 import { useAuth } from '@/contexts/AuthContext';
 import { TaxasPagamentoConfig } from './finance/TaxasPagamentoConfig';
 import { RepasseTurmasConfig } from './finance/RepasseTurmasConfig';
@@ -46,18 +47,6 @@ type Categoria =
   | 'custo_fixo' | 'custo_variavel' | 'alocacao' | 'outro_entrada' | 'outro_saida';
 type View = 'fechamento' | 'config';
 type StatusFechamento = 'aberto' | 'fechado';
-
-// Contas de recebimento / pagamento. TODO: unificar com src/lib/contas.ts quando o
-// Codex entregar a tarefa C3 (ver docs/FINANCEIRO-CODEX.md).
-type Conta = 'inter' | 'c6' | 'mercado_pago' | 'asaas' | 'voomp' | 'outro';
-const CONTA_LABELS: Record<Conta, string> = {
-  inter:        'Inter (Pedro)',
-  c6:           'C6 (Rodrygo)',
-  mercado_pago: 'Mercado Pago',
-  asaas:        'Asaas',
-  voomp:        'Voomp',
-  outro:        'Outro',
-};
 
 interface BalancoItem {
   id: string;
@@ -888,7 +877,7 @@ export function Balanco() {
                           <Select value={gastoForm.conta || undefined} onValueChange={v => setGastoForm(f => ({ ...f, conta: v as Conta }))}>
                             <SelectTrigger className="h-8 text-xs sm:col-span-1"><SelectValue placeholder="Conta que pagou" /></SelectTrigger>
                             <SelectContent>
-                              {(Object.keys(CONTA_LABELS) as Conta[]).map(c => <SelectItem key={c} value={c}>{CONTA_LABELS[c]}</SelectItem>)}
+                              {CONTAS.map(c => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
                             </SelectContent>
                           </Select>
                           <Input
@@ -984,7 +973,7 @@ export function Balanco() {
                                   <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                                     <span className="text-xs text-muted-foreground">{CAT_LABELS[g.categoria] ?? g.categoria}</span>
                                     {g.conta_pagamento && (
-                                      <span className="text-[10px] bg-muted/50 px-1.5 py-0.5 rounded-full">{CONTA_LABELS[g.conta_pagamento] ?? g.conta_pagamento}</span>
+                                      <span className="text-[10px] bg-muted/50 px-1.5 py-0.5 rounded-full">{getContaLabel(g.conta_pagamento)}</span>
                                     )}
                                     {g.fornecedor && (
                                       <span className="text-[10px] text-muted-foreground">· {g.fornecedor}</span>
