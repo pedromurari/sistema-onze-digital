@@ -109,27 +109,41 @@ function buildContratoHtml(d: Record<string, unknown>): string {
   // Cláusula 4.1 (a/b/c) lista as 3 condições comerciais oferecidas -- não é
   // só a que o aluno escolheu (essa vem em 4.3/planoSelecionado). Até
   // 2026-09-04 os 3 valores vinham hardcoded em 1.500/150/1.800/2.250
-  // (padrão), mesmo pra alunos de um plano com preço diferente (ex: link
-  // /promo, R$997/R$110) -- contradizia o valor real cobrado, registrado
-  // logo abaixo em 4.3. Detecta o plano pelo próprio valorParcelaCustom
-  // (=aluno.valor_mensalidade) já recebido, sem precisar de campo novo.
+  // (padrão), mesmo pra alunos de um plano com preço diferente -- contradizia
+  // o valor real cobrado, registrado logo abaixo em 4.3.
   //
-  // Checa os dois valores (997 e 110) independente da forma de pagamento --
-  // não só quando isVista -- porque o link /997 (2026-09-04) cobra R$997 via
-  // CARTÃO (à vista, 1x), não via PIX/avista. Antes disso, um aluno do /997
-  // caía errado no menu do plano padrão (1.500/150) mesmo tendo pago 997.
+  // 2026-09-08: a detecção por "bate com 997 ou 110" (valor mágico) já
+  // causou bug real uma vez (link /997, cartão à vista) e ia quebrar de novo
+  // com o link /15x50 (R$50/parcela -- não bate com nenhum valor conhecido).
+  // Fonte de verdade agora é `plano_slug` (gravado no aluno em
+  // matricula_time_comercial_criar, mesmo dicionário de PLANOS usado no
+  // formulário) -- só cai no detector antigo por valor mágico pra alunos
+  // matriculados ANTES desse campo existir (sem plano_slug gravado).
+  const PLANOS_CONTRATO: Record<string, { avista: number; parcela: number }> = {
+    padrao: { avista: 1500, parcela: 150 },
+    promo: { avista: 997, parcela: 110 },
+    // "997" (cartão à vista 1x, sem parcelamento) não tem valor de parcela
+    // próprio -- pra cláusula 4.1 (menu geral, não é o que ESSE aluno
+    // escolheu, isso é a 4.3) usa o mesmo menu do "promo", já que é a mesma
+    // família de preço (R$997 à vista).
+    '997': { avista: 997, parcela: 110 },
+    '15x50': { avista: 750, parcela: 50 },
+  };
+  const planoSlug = String(d.plano_slug || '').toLowerCase();
+  const planoPorSlug = PLANOS_CONTRATO[planoSlug];
   const isPromoPlano = valorParcelaCustom === 997 || valorParcelaCustom === 110;
-  const menuValorAvista = isPromoPlano ? 997 : 1500;
-  const menuValorParcela = isPromoPlano ? 110 : 150;
+  const menuValorAvista = planoPorSlug ? planoPorSlug.avista : (isPromoPlano ? 997 : 1500);
+  const menuValorParcela = planoPorSlug ? planoPorSlug.parcela : (isPromoPlano ? 110 : 150);
   const menuValorCartaoTotal = menuValorParcela * 12;
   const menuValorBoletoTotal = menuValorParcela * 15;
-  // "por extenso" só pros valores padrão (texto fixo, conferido manualmente);
-  // pra plano com preço diferente, mostra só o número -- não é exigência
+  // "por extenso" só pro valor padrão de verdade (texto fixo, conferido
+  // manualmente); qualquer outro plano mostra só o número -- não é exigência
   // legal ter o extenso, só um estilo que o texto original já tinha.
-  const extensoAvista = isPromoPlano ? '' : ' (mil e quinhentos reais)';
-  const extensoParcela = isPromoPlano ? '' : ' (cento e cinquenta reais)';
-  const extensoCartaoTotal = isPromoPlano ? '' : ' (mil e oitocentos reais)';
-  const extensoBoletoTotal = isPromoPlano ? '' : ' (dois mil, duzentos e cinquenta reais)';
+  const ehPadraoDeVerdade = planoPorSlug ? planoSlug === 'padrao' : !isPromoPlano;
+  const extensoAvista = ehPadraoDeVerdade ? ' (mil e quinhentos reais)' : '';
+  const extensoParcela = ehPadraoDeVerdade ? ' (cento e cinquenta reais)' : '';
+  const extensoCartaoTotal = ehPadraoDeVerdade ? ' (mil e oitocentos reais)' : '';
+  const extensoBoletoTotal = ehPadraoDeVerdade ? ' (dois mil, duzentos e cinquenta reais)' : '';
 
   // Cláusula 4 dinâmica
   const clausula4Bolsa = isBolsa ? `
@@ -508,6 +522,7 @@ serve(async (req) => {
           forma_pagamento: aluno.forma_pagamento ?? '',
           valor_parcela:   aluno.valor_mensalidade ?? null,
           num_parcelas:    aluno.total_mensalidades ?? null,
+          plano_slug:      aluno.plano_slug ?? null,
         });
 
         const result = await criarDocumentoAutentique(

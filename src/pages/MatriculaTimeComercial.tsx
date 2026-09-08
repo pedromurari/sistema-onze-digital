@@ -60,9 +60,10 @@ const VENDEDORES: Record<string, string> = {
   direto: 'Equipe Instituto Despertamente',
   promo: 'Equipe Instituto Despertamente',
   '997': 'Equipe Instituto Despertamente',
+  '15x50': 'Equipe Instituto Despertamente',
 };
 
-const SEM_VENDEDOR_ATRIBUIDO = new Set(['direto', 'promo', '997']);
+const SEM_VENDEDOR_ATRIBUIDO = new Set(['direto', 'promo', '997', '15x50']);
 
 // WhatsApp de cada vendedor (com DDI 55, só dígitos) — usado pra redirecionar
 // o aluno assim que o pagamento é confirmado, com uma mensagem pronta de
@@ -75,6 +76,7 @@ const VENDEDOR_WHATSAPP: Record<string, string> = {
   direto: '5511976736081',
   promo: '5511976736081',
   '997': '5511976736081',
+  '15x50': '5511976736081',
 };
 
 // ─── Planos de preço por slug ───────────────────────────────────────────────
@@ -97,22 +99,31 @@ const VENDEDOR_WHATSAPP: Record<string, string> = {
 // R$1.080,00 -> 12x de R$109,90 (bate com o anunciado "12x de R$110");
 // "padrao" preço-base R$1.474,10 -> 12x de R$150,00 (bate exato). "997" não
 // tem esse problema -- 1x não tem juros, então cartaoBase = avista = 997.
+// "15x50" (2026-09-08): venda pontual da Camila -- ex-aluna refazendo a
+// turma, pai dela paga a parcela pela metade (R$50 em vez de R$100). Só
+// boleto recorrente (Asaas, 15x) -- sem PIX/cartão/bolsa, mesmo esquema do
+// FORMAS_PERMITIDAS do /997. avista/cartaoBase não são usados de verdade
+// (formas ocultas por FORMAS_PERMITIDAS abaixo), mantidos só por
+// consistência de tipo.
 const PLANOS: Record<string, { avista: number; parcela: number; cartaoBase: number; cartaoMaxParcelas: number }> = {
   padrao: { avista: 1500, parcela: 150, cartaoBase: 1474.10, cartaoMaxParcelas: 12 },
   promo: { avista: 997, parcela: 110, cartaoBase: 1080, cartaoMaxParcelas: 12 },
   '997': { avista: 997, parcela: 997, cartaoBase: 997, cartaoMaxParcelas: 1 },
+  '15x50': { avista: 750, parcela: 50, cartaoBase: 750, cartaoMaxParcelas: 12 },
 };
 
 const planoDoSlug = (slug: string): keyof typeof PLANOS => {
   const s = slug.toLowerCase();
-  return (s === 'promo' || s === '997') ? s : 'padrao';
+  return (s in PLANOS) ? (s as keyof typeof PLANOS) : 'padrao';
 };
 
 // Slugs cuja tela de pagamento (§3) mostra só um subconjunto das formas --
 // undefined/ausente = todas (comportamento padrão). "997": só cartão de
-// crédito (sem PIX, boleto, recorrente ou bolsa).
+// crédito (sem PIX, boleto, recorrente ou bolsa). "15x50": só boleto
+// recorrente (sem PIX, cartão ou bolsa).
 const FORMAS_PERMITIDAS: Record<string, FormaPagamentoPermitida[] | undefined> = {
   '997': ['cartao_parcelado'],
+  '15x50': ['boleto'],
 };
 
 // Forma aceita pela RPC matricula_time_comercial_criar. Desde 2026-09-03,
@@ -793,6 +804,7 @@ export default function MatriculaTimeComercial() {
         p_canal: 'Direto',
         p_valor_avista: plano.avista,
         p_valor_parcela: plano.parcela,
+        p_plano_slug: planoDoSlug(slug ?? ''),
       });
 
       if (error) {
