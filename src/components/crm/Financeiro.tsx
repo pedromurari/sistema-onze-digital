@@ -177,6 +177,14 @@ interface ParcelaLocal {
 
 type ProdutoTab = 'psicanalise' | 'numerologia';
 type SubView = 'alunos' | 'turmas' | 'responsaveis';
+
+// Conta que recebeu a parcela -- base da conciliação de caixa. TODO: unificar com
+// src/lib/contas.ts quando o Codex entregar C3 (ver docs/FINANCEIRO-CODEX.md).
+type ContaRecebimento = 'inter' | 'c6' | 'mercado_pago' | 'asaas' | 'voomp' | 'outro';
+const CONTA_RECEBIMENTO_LABELS: Record<ContaRecebimento, string> = {
+  inter: 'Inter (Pedro)', c6: 'C6 (Rodrygo)', mercado_pago: 'Mercado Pago',
+  asaas: 'Asaas', voomp: 'Voomp', outro: 'Outro',
+};
 type PaymentFilter = 'todos' | PaymentMethod;
 type DueFilter = 'todos' | 'vencidos' | 'hoje' | 'proximos_7' | 'proximos_30' | 'quitados';
 type DueDayFilter = 'todos' | `dia_${number}`;
@@ -963,7 +971,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
   const [uploadingContrato, setUploadingContrato] = useState(false);
   const [savingTurma, setSavingTurma] = useState(false);
   const [showPagoDialog, setShowPagoDialog] = useState(false);
-  const [pagoInfo, setPagoInfo] = useState<{ pagamentoId: string; alunoId: string; data: string; canal_cobranca: string } | null>(null);
+  const [pagoInfo, setPagoInfo] = useState<{ pagamentoId: string; alunoId: string; data: string; canal_cobranca: string; conta: ContaRecebimento | '' } | null>(null);
   const [statusFilter, setStatusFilter] = useState<'todos' | 'ativo' | 'inadimplente' | 'cancelado' | 'pre_matricula'>('todos');
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('todos');
   const [dueDayFilter, setDueDayFilter] = useState<DueDayFilter>('todos');
@@ -1924,7 +1932,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
 
   const abrirPagoDialog = (pagamentoId: string, alunoId: string) => {
     const hoje = todayDateInput();
-    setPagoInfo({ pagamentoId, alunoId, data: hoje, canal_cobranca: '' });
+    setPagoInfo({ pagamentoId, alunoId, data: hoje, canal_cobranca: '', conta: '' });
     setShowPagoDialog(true);
   };
 
@@ -1939,6 +1947,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
       status: 'pago',
       data_pagamento: pagoInfo.data,
       canal_cobranca: pagoInfo.canal_cobranca || null,
+      conta_recebimento: pagoInfo.conta || null,
       taxa_valor: taxa,
     }).eq('id', pagoInfo.pagamentoId);
     if (error) { toast({ variant: 'destructive', title: 'Erro', description: error.message }); return; }
@@ -3839,6 +3848,18 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
           <div>
             <label className="text-sm font-medium">Data do Pagamento</label>
             <Input type="date" value={pagoInfo?.data || ''} onChange={e => setPagoInfo(prev => prev ? { ...prev, data: e.target.value } : prev)} className="mt-1" />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Conta que recebeu</label>
+            <Select value={pagoInfo?.conta || ''} onValueChange={v => setPagoInfo(prev => prev ? { ...prev, conta: v as ContaRecebimento } : prev)}>
+              <SelectTrigger className="mt-1"><SelectValue placeholder="Onde o dinheiro caiu?" /></SelectTrigger>
+              <SelectContent>
+                {(Object.keys(CONTA_RECEBIMENTO_LABELS) as ContaRecebimento[]).map(c => (
+                  <SelectItem key={c} value={c}>{CONTA_RECEBIMENTO_LABELS[c]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground mt-1">Base da conciliação de caixa.</p>
           </div>
           <div>
             <label className="text-sm font-medium">Canal de cobrança</label>

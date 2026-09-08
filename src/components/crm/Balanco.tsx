@@ -28,11 +28,36 @@ import { StatTile, SecaoRecolhivel } from '@/components/crm/ui/premium';
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 type Tipo = 'entrada' | 'saida';
+// Plano de contas v1 (ver docs/FINANCEIRO.md e Manual do Financeiro §3). O CHECK do
+// banco (migração 20260908120000) aceita esta lista + as legadas. Este form só lida
+// com saída, então o seletor abaixo mostra só as categorias de saída.
 type Categoria =
-  | 'matricula' | 'outro_entrada'
-  | 'custo_fixo' | 'custo_variavel' | 'ads' | 'alocacao' | 'outro_saida';
+  // entradas
+  | 'receita_curso' | 'matricula' | 'receita_outra'
+  // deduções
+  | 'imposto' | 'taxa_gateway' | 'estorno'
+  // custos diretos
+  | 'comissao' | 'repasse_investidor' | 'custo_produto'
+  // despesas fixas
+  | 'pro_labore' | 'folha' | 'software' | 'contabilidade' | 'ads' | 'adm'
+  // não operacional
+  | 'financeiro' | 'investimento' | 'distribuicao_lucro'
+  // legado (linhas já gravadas antes do plano de contas)
+  | 'custo_fixo' | 'custo_variavel' | 'alocacao' | 'outro_entrada' | 'outro_saida';
 type View = 'fechamento' | 'config';
 type StatusFechamento = 'aberto' | 'fechado';
+
+// Contas de recebimento / pagamento. TODO: unificar com src/lib/contas.ts quando o
+// Codex entregar a tarefa C3 (ver docs/FINANCEIRO-CODEX.md).
+type Conta = 'inter' | 'c6' | 'mercado_pago' | 'asaas' | 'voomp' | 'outro';
+const CONTA_LABELS: Record<Conta, string> = {
+  inter:        'Inter (Pedro)',
+  c6:           'C6 (Rodrygo)',
+  mercado_pago: 'Mercado Pago',
+  asaas:        'Asaas',
+  voomp:        'Voomp',
+  outro:        'Outro',
+};
 
 interface BalancoItem {
   id: string;
@@ -46,6 +71,11 @@ interface BalancoItem {
   dia_vencimento: number | null;
   retorno_realizado: number;
   created_at: string;
+  conta_pagamento: Conta | null;
+  data_competencia: string | null;
+  data_caixa: string | null;
+  fornecedor: string | null;
+  comprovante_url: string | null;
 }
 
 /** Quem paga uma despesa e em que percentual — mesma forma de TurmaResponsavelRow, para custo. */
@@ -136,14 +166,44 @@ const FORMA_COR: Record<string, string> = {
 };
 
 const CAT_LABELS: Record<Categoria, string> = {
-  matricula:      'Matrícula / Receita',
-  outro_entrada:  'Outra Entrada',
-  custo_fixo:     'Custo Fixo',
-  custo_variavel: 'Custo Variável',
-  ads:            'Ads / Marketing',
-  alocacao:       'Alocação de Caixa',
-  outro_saida:    'Outra Saída',
+  // entradas
+  receita_curso:      'Receita de curso',
+  matricula:          'Matrícula',
+  receita_outra:      'Outra receita',
+  // deduções
+  imposto:            'Imposto (DAS/Simples)',
+  taxa_gateway:       'Taxa de gateway',
+  estorno:            'Estorno / reembolso',
+  // custos diretos
+  comissao:           'Comissão de vendedor',
+  repasse_investidor: 'Repasse a investidor',
+  custo_produto:      'Custo de produto',
+  // despesas fixas
+  pro_labore:         'Pró-labore',
+  folha:              'Folha / prestadores',
+  software:           'Software / infra',
+  contabilidade:      'Contabilidade',
+  ads:                'Ads / Marketing',
+  adm:                'Administrativa',
+  // não operacional
+  financeiro:         'Financeira (juros/IOF)',
+  investimento:       'Investimento',
+  distribuicao_lucro: 'Distribuição de lucro',
+  // legado
+  custo_fixo:         'Custo Fixo',
+  custo_variavel:     'Custo Variável',
+  alocacao:           'Alocação de Caixa',
+  outro_entrada:      'Outra Entrada',
+  outro_saida:        'Outra Saída',
 };
+
+// Categorias de saída oferecidas no "registrar gasto" -- ordem por frequência de uso.
+const CAT_SAIDA: Categoria[] = [
+  'software', 'ads', 'pro_labore', 'folha', 'contabilidade', 'adm',
+  'comissao', 'repasse_investidor', 'custo_produto',
+  'imposto', 'taxa_gateway', 'financeiro', 'investimento', 'distribuicao_lucro',
+  'custo_fixo', 'custo_variavel', 'alocacao', 'outro_saida',
+];
 
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
@@ -185,7 +245,8 @@ export function Balanco() {
   // só valem quando o gasto é um custo fixo mensal; `split` é opcional, para quando mais
   // de um responsável divide a conta.
   const [gastoForm, setGastoForm] = useState({
-    descricao: '', valor: '', categoria: 'custo_variavel' as Categoria,
+    descricao: '', valor: '', categoria: 'software' as Categoria,
+    conta: '' as Conta | '', fornecedor: '',
     recorrente: false, diaVencimento: '',
     split: [] as { responsavelId: string; percentual: string }[],
   });
@@ -338,6 +399,11 @@ export function Balanco() {
       categoria: gastoForm.categoria,
       produto: 'geral',
       mes_referencia: range.start.slice(0, 7),
+      // competência = mês do período em que está sendo lançado; caixa fica pra
+      // conciliação (quando o dinheiro de fato sair).
+      data_competencia: range.start,
+      conta_pagamento: gastoForm.conta || null,
+      fornecedor: gastoForm.fornecedor.trim() || null,
       recorrente: gastoForm.recorrente,
       dia_vencimento: diaVenc,
       retorno_realizado: 0,
@@ -375,7 +441,7 @@ export function Balanco() {
     if (splitGravado.length > 0) {
       setDespesaResponsaveis(prev => ({ ...prev, [novaDespesa.id]: splitGravado }));
     }
-    setGastoForm({ descricao: '', valor: '', categoria: 'custo_variavel', recorrente: false, diaVencimento: '', split: [] });
+    setGastoForm({ descricao: '', valor: '', categoria: 'software', conta: '', fornecedor: '', recorrente: false, diaVencimento: '', split: [] });
     toast.success('Gasto registrado!');
   }
 
@@ -799,11 +865,7 @@ export function Balanco() {
                           <Select value={gastoForm.categoria} onValueChange={v => setGastoForm(f => ({ ...f, categoria: v as Categoria }))}>
                             <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="custo_fixo">Custo Fixo</SelectItem>
-                              <SelectItem value="custo_variavel">Custo Variável</SelectItem>
-                              <SelectItem value="ads">Ads / Marketing</SelectItem>
-                              <SelectItem value="alocacao">Alocação</SelectItem>
-                              <SelectItem value="outro_saida">Outro</SelectItem>
+                              {CAT_SAIDA.map(c => <SelectItem key={c} value={c}>{CAT_LABELS[c]}</SelectItem>)}
                             </SelectContent>
                           </Select>
                           <div className="flex gap-2">
@@ -818,6 +880,24 @@ export function Balanco() {
                               <Plus className="h-3.5 w-3.5" />
                             </Button>
                           </div>
+                        </div>
+
+                        {/* Conta que pagou + fornecedor -- entram no pacote mensal da
+                            contabilidade e na conciliação de caixa. */}
+                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                          <Select value={gastoForm.conta || undefined} onValueChange={v => setGastoForm(f => ({ ...f, conta: v as Conta }))}>
+                            <SelectTrigger className="h-8 text-xs sm:col-span-1"><SelectValue placeholder="Conta que pagou" /></SelectTrigger>
+                            <SelectContent>
+                              {(Object.keys(CONTA_LABELS) as Conta[]).map(c => <SelectItem key={c} value={c}>{CONTA_LABELS[c]}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            className="h-8 text-sm sm:col-span-3"
+                            placeholder="Fornecedor (opcional)"
+                            value={gastoForm.fornecedor}
+                            onChange={e => setGastoForm(f => ({ ...f, fornecedor: e.target.value }))}
+                            onKeyDown={e => e.key === 'Enter' && handleAddGastoHoje()}
+                          />
                         </div>
 
                         <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-border/40">
@@ -902,7 +982,13 @@ export function Balanco() {
                                     )}
                                   </div>
                                   <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                                    <span className="text-xs text-muted-foreground">{CAT_LABELS[g.categoria]}</span>
+                                    <span className="text-xs text-muted-foreground">{CAT_LABELS[g.categoria] ?? g.categoria}</span>
+                                    {g.conta_pagamento && (
+                                      <span className="text-[10px] bg-muted/50 px-1.5 py-0.5 rounded-full">{CONTA_LABELS[g.conta_pagamento] ?? g.conta_pagamento}</span>
+                                    )}
+                                    {g.fornecedor && (
+                                      <span className="text-[10px] text-muted-foreground">· {g.fornecedor}</span>
+                                    )}
                                     {split.map(r => (
                                       <span key={r.id} className="text-[10px] bg-muted/50 px-1.5 py-0.5 rounded-full">
                                         {r.nome_ref} <strong>{r.percentual}%</strong>
