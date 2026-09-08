@@ -201,6 +201,17 @@ async function sendBoasVindasLead(
 const fmt = (v: number) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+const fmtCadastro = (iso: string | null | undefined) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit', month: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  });
+};
+
 const pct = (value: number, total: number) =>
   total === 0 ? 0 : Math.round((value / total) * 100);
 
@@ -366,7 +377,10 @@ const LeadCard = memo(({
         </div>
       </div>
 
-      <p className="text-xs text-gray-400 mb-2">{lead.whatsapp}</p>
+      <p className="text-xs text-gray-400 mb-0.5">{lead.whatsapp}</p>
+      <p className="text-[10px] text-gray-400 mb-2" title="Data e hora do cadastro">
+        Cadastro: {fmtCadastro(lead.created_at)}
+      </p>
 
       {lead.turma !== 'unica' && (
         <div className="mb-2">
@@ -1945,7 +1959,10 @@ export default function NPAKanban({ npaEventoId }: NPAKanbanProps) {
                               </button>
                             </div>
                           </div>
-                          <p className="text-xs text-gray-400 mb-2">{lead.whatsapp}</p>
+                          <p className="text-xs text-gray-400 mb-0.5">{lead.whatsapp}</p>
+                          <p className="text-[10px] text-gray-400 mb-2" title="Data e hora do cadastro">
+                            Cadastro: {fmtCadastro(lead.created_at)}
+                          </p>
                           <div className="mb-2">
                             <Select
                               value={lead.turma}
