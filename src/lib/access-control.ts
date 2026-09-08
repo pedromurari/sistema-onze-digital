@@ -112,10 +112,11 @@ const RECURSO_POR_VIEW: Record<string, string> = {
   operacoes_tarefas:             'operacoes',
   operacoes_calendario_geral:    'operacoes',
   operacoes_calendario_conteudo: 'operacoes',
+  financeiro_notas:              'financeiro',
 };
 
 export type AppView =
-  | 'dashboard' | 'npa_overview' | 'lancamentos_overview' | 'financeiro' | 'financeiro_cfo' | 'balanco' | 'rodrygo'
+  | 'dashboard' | 'npa_overview' | 'lancamentos_overview' | 'financeiro' | 'financeiro_notas' | 'financeiro_cfo' | 'balanco' | 'rodrygo'
   | 'lancamentos_30' | 'lancamentos_31' | 'lancamentos_32'
   | 'team' | 'settings' | 'cobranca' | 'funil_lancamento' | 'disparos_monitor' | 'chat_conversas'
   | 'operacoes_tarefas' | 'operacoes_calendario_geral' | 'operacoes_calendario_conteudo'
@@ -251,6 +252,7 @@ export function canAccessView(
     npa_overview: permissions.canViewNpa,
     lancamentos_overview: permissions.canViewLancamentos,
     financeiro: permissions.canViewFinanceiro,
+    financeiro_notas: permissions.canViewFinanceiro,
     financeiro_cfo: permissions.canViewFinanceiroCfo,
     balanco: permissions.canViewBalanco,
     cobranca:          permissions.canViewCobranca,

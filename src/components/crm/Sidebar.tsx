@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Kanban, Settings, UserCog,
   Rocket, BarChart3,
   ChevronLeft, ChevronRight, Plus, Brain, Scale, Menu,
-  GripVertical, Pencil, Check, MessageSquare, MessageCircle, TrendingUp, GitBranch, CalendarDays, Radio, Image, Handshake, Bot, Flame, Users, Contact,
+  GripVertical, Pencil, Check, MessageSquare, MessageCircle, TrendingUp, GitBranch, CalendarDays, Radio, Image, Handshake, Bot, Flame, Users, Contact, ReceiptText,
 } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { LancamentoWizard } from '@/components/crm/LancamentoWizard';
@@ -50,6 +50,7 @@ const BASE_MENU: MenuItem[] = [
   { key: 'aquecimento_chips',         label: 'Aquecimento de Chips', icon: Flame,       adminOnly: true },
   // Financeiro
   { key: 'financeiro',                label: 'Financeiro',           icon: BarChart3 },
+  { key: 'financeiro_notas',          label: 'Notas Fiscais',        icon: ReceiptText },
   { key: 'financeiro_cfo',           label: 'Análise CFO',           icon: TrendingUp },
   { key: 'balanco',                  label: 'Balanço',               icon: Scale },
   { key: 'cobranca',                 label: 'Cobrança',              icon: MessageSquare },
