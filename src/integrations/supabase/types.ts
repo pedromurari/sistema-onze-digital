@@ -949,10 +949,15 @@ export type Database = {
       balanco_itens: {
         Row: {
           categoria: string
+          comprovante_url: string | null
+          conta_pagamento: string | null
           created_at: string | null
+          data_caixa: string | null
+          data_competencia: string | null
           descricao: string
           dia_vencimento: number | null
           empresa: string
+          fornecedor: string | null
           id: string
           mes_referencia: string
           produto: string
@@ -963,10 +968,15 @@ export type Database = {
         }
         Insert: {
           categoria: string
+          comprovante_url?: string | null
+          conta_pagamento?: string | null
           created_at?: string | null
+          data_caixa?: string | null
+          data_competencia?: string | null
           descricao: string
           dia_vencimento?: number | null
           empresa?: string
+          fornecedor?: string | null
           id?: string
           mes_referencia: string
           produto?: string
@@ -977,10 +987,15 @@ export type Database = {
         }
         Update: {
           categoria?: string
+          comprovante_url?: string | null
+          conta_pagamento?: string | null
           created_at?: string | null
+          data_caixa?: string | null
+          data_competencia?: string | null
           descricao?: string
           dia_vencimento?: number | null
           empresa?: string
+          fornecedor?: string | null
           id?: string
           mes_referencia?: string
           produto?: string
@@ -5939,16 +5954,27 @@ export type Database = {
       pagamentos: {
         Row: {
           aluno_id: string | null
+          asaas_payment_id: string | null
           canal_cobranca: string | null
+          categoria_contabil: string
           cobranca_contatado_em: string | null
           conferido_em: string | null
           conferido_por: string | null
+          conta_recebimento: string | null
           created_at: string | null
           data_pagamento: string | null
           data_prevista_pagamento: string | null
           data_vencimento: string | null
+          forma_pagamento: string | null
           id: string
+          link_pagamento_asaas: string | null
+          link_pagamento_mp: string | null
           mes_referencia: string
+          mp_payment_id: string | null
+          nf_emitida_em: string | null
+          nf_link: string | null
+          nf_numero: string | null
+          nf_status: string
           numero_parcela: number | null
           observacoes: string | null
           produto: string | null
@@ -5960,16 +5986,27 @@ export type Database = {
         }
         Insert: {
           aluno_id?: string | null
+          asaas_payment_id?: string | null
           canal_cobranca?: string | null
+          categoria_contabil?: string
           cobranca_contatado_em?: string | null
           conferido_em?: string | null
           conferido_por?: string | null
+          conta_recebimento?: string | null
           created_at?: string | null
           data_pagamento?: string | null
           data_prevista_pagamento?: string | null
           data_vencimento?: string | null
+          forma_pagamento?: string | null
           id?: string
+          link_pagamento_asaas?: string | null
+          link_pagamento_mp?: string | null
           mes_referencia: string
+          mp_payment_id?: string | null
+          nf_emitida_em?: string | null
+          nf_link?: string | null
+          nf_numero?: string | null
+          nf_status?: string
           numero_parcela?: number | null
           observacoes?: string | null
           produto?: string | null
@@ -5981,16 +6018,27 @@ export type Database = {
         }
         Update: {
           aluno_id?: string | null
+          asaas_payment_id?: string | null
           canal_cobranca?: string | null
+          categoria_contabil?: string
           cobranca_contatado_em?: string | null
           conferido_em?: string | null
           conferido_por?: string | null
+          conta_recebimento?: string | null
           created_at?: string | null
           data_pagamento?: string | null
           data_prevista_pagamento?: string | null
           data_vencimento?: string | null
+          forma_pagamento?: string | null
           id?: string
+          link_pagamento_asaas?: string | null
+          link_pagamento_mp?: string | null
           mes_referencia?: string
+          mp_payment_id?: string | null
+          nf_emitida_em?: string | null
+          nf_link?: string | null
+          nf_numero?: string | null
+          nf_status?: string
           numero_parcela?: number | null
           observacoes?: string | null
           produto?: string | null
