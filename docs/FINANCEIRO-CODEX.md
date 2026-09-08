@@ -95,3 +95,6 @@ Comentários em português, densos, explicando o porquê (padrão do repo).
 | 2026-09-08 | Codex | C3 `src/lib/contas.ts`, `src/lib/contas.test.ts` | concluído; typecheck sem erros nos arquivos novos (baseline global 77→84 já documentado); 58 testes passando |
 | 2026-09-08 | Codex | C1 `NotasFiscais.tsx`, registros em `Sidebar.tsx`, `CRMLayout.tsx` e `access-control.ts` | concluído; typecheck sem erros nos arquivos da C1 (84 globais preexistentes); 58 testes passando |
 | 2026-09-08 | Codex | C2 `BalancoConfigForm.tsx`, hook `src/lib/db/balanco-config.ts`, chaves de cache e `20260908150000_balanco_config_saldo_inicial_contas.sql` | concluído; migration escrita e não aplicada; typecheck sem erros da C2 (84 globais preexistentes); 58 testes passando |
+| 2026-09-08 | Claude | 1.2-UI A/A2/B `Balanco.tsx`+`Financeiro.tsx`; migração 1.2 aplicada (MCP) | concluído (`5792005`, `b946013`) |
+| 2026-09-08 | Claude | **corte fiscal** — migrações `20260908150000` (do Codex) + `20260908160000` (`inicio_operacao_fiscal`=2026-09-01) **aplicadas via MCP**; `NotasFiscais.tsx` filtra a fila por `data_pagamento >= inicio_operacao_fiscal`; `balanco-config.ts` COLUNAS + `types.ts` atualizados | concluído (`1276a68`) — princípio "nada retroativo" no topo de `FINANCEIRO.md` |
+| 2026-09-08 | Claude | monta `BalancoConfigForm` na aba Config do `Balanco.tsx` | concluído (`012f88b`) |
