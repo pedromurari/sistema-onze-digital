@@ -1,10 +1,38 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Info, Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight, Info, Loader2, Lock, LockOpen } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { usePagamentos, useBalancoConfig } from '@/lib/db';
 import { fmtBRL, fmtPct, PARAMETROS_CFO_DEFAULT, type ParametrosCfo } from '@/lib/financial-utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from '@/hooks/use-toast';
+import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+
+const EMPRESA = 'onze_digital';
+
+interface DreFechamento {
+  mes: string;
+  receita_bruta: number;
+  receita_por_produto: [string, number][];
+  impostos: number;
+  imposto_estimado: boolean;
+  taxas_gateway: number;
+  estornos: number;
+  receita_liquida: number;
+  custos_diretos: number;
+  custos_diretos_linhas: { label: string; valor: number }[];
+  margem_contribuicao: number;
+  despesas_fixas: number;
+  despesas_fixas_linhas: { label: string; valor: number }[];
+  ebitda: number;
+  nao_operacional: number;
+  nao_op_linhas: { label: string; valor: number }[];
+  resultado: number;
+  fechado_em: string;
+  fechado_por: string | null;
+  reaberto_em: string | null;
+}
 
 /**
  * DRE por competência (Fase 2 da estruturação do financeiro -- ver docs/FINANCEIRO.md).
@@ -81,6 +109,7 @@ const shiftMes = (ym: string, delta: number) => {
 };
 
 export function DreCompetencia() {
+  const { user } = useAuth();
   const [mes, setMes] = useState(mesAtual);
   const { data: pagamentos = [], isLoading: loadingPag } = usePagamentos<PagamentoDre>(
     'id, produto, valor, mes_referencia, status, taxa_valor',
@@ -88,6 +117,8 @@ export function DreCompetencia() {
   const { data: config } = useBalancoConfig<{ parametros_cfo: ParametrosCfo | null }>();
   const [itens, setItens] = useState<BalancoItemDre[]>([]);
   const [loadingItens, setLoadingItens] = useState(true);
+  const [fechamento, setFechamento] = useState<DreFechamento | null>(null);
+  const [salvandoFechamento, setSalvandoFechamento] = useState(false);
 
   useEffect(() => {
     setLoadingItens(true);
@@ -99,6 +130,18 @@ export function DreCompetencia() {
         setLoadingItens(false);
       });
   }, []);
+
+  const carregarFechamento = useCallback(async () => {
+    const { data } = await supabase
+      .from('dre_fechamentos')
+      .select('*')
+      .eq('empresa', EMPRESA)
+      .eq('mes', mes)
+      .maybeSingle();
+    setFechamento((data as unknown as DreFechamento) ?? null);
+  }, [mes]);
+
+  useEffect(() => { carregarFechamento(); }, [carregarFechamento]);
 
   const parametrosCfo = { ...PARAMETROS_CFO_DEFAULT, ...(config?.parametros_cfo ?? {}) };
 
@@ -144,7 +187,6 @@ export function DreCompetencia() {
 
     const custosDiretos = somaCat(CAT_CUSTO_DIRETO, 'saida');
     const margemContribuicao = receitaLiquida - custosDiretos;
-    const margemPct = receitaLiquida > 0 ? (margemContribuicao / receitaLiquida) * 100 : 0;
 
     const despesasFixas = somaCat(CAT_DESPESA_FIXA, 'saida');
     const ebitda = margemContribuicao - despesasFixas;
@@ -153,21 +195,66 @@ export function DreCompetencia() {
     const outrasReceitas = somaCat(CAT_OUTRA_RECEITA, 'entrada');
     const resultado = ebitda - naoOpSaida + outrasReceitas;
 
+    const rotular = (linhas: [string, number][], sinal: 1 | -1) =>
+      linhas.map(([c, val]) => ({ label: LABEL_CATEGORIA[c] ?? c, valor: sinal * val }));
+
     return {
-      receitaBruta, receitaPorProduto: [...receitaPorProduto.entries()].sort((a, b) => b[1] - a[1]),
-      impostos, impostoEstimado, taxasGateway, estornos, receitaLiquida,
-      custosDiretos, custosDiretosLinhas: linhasCat(CAT_CUSTO_DIRETO, 'saida'),
-      margemContribuicao, margemPct,
-      despesasFixas, despesasFixasLinhas: linhasCat(CAT_DESPESA_FIXA, 'saida'),
+      receita_bruta: receitaBruta,
+      receita_por_produto: [...receitaPorProduto.entries()].sort((a, b) => b[1] - a[1]) as [string, number][],
+      impostos, imposto_estimado: impostoEstimado, taxas_gateway: taxasGateway, estornos,
+      receita_liquida: receitaLiquida,
+      custos_diretos: custosDiretos,
+      custos_diretos_linhas: rotular(linhasCat(CAT_CUSTO_DIRETO, 'saida'), -1),
+      margem_contribuicao: margemContribuicao,
+      despesas_fixas: despesasFixas,
+      despesas_fixas_linhas: rotular(linhasCat(CAT_DESPESA_FIXA, 'saida'), -1),
       ebitda,
-      naoOpSaida, naoOpLinhas: linhasCat(CAT_NAO_OP_SAIDA, 'saida'),
-      outrasReceitas, outrasReceitasLinhas: linhasCat(CAT_OUTRA_RECEITA, 'entrada'),
+      nao_operacional: outrasReceitas - naoOpSaida,
+      nao_op_linhas: [
+        ...rotular(linhasCat(CAT_OUTRA_RECEITA, 'entrada'), 1),
+        ...rotular(linhasCat(CAT_NAO_OP_SAIDA, 'saida'), -1),
+      ],
       resultado,
       semDados: pagosDoMes.length === 0 && doMes.length === 0,
     };
   }, [pagamentos, itens, mes, parametrosCfo.impostos_pct]);
 
   const carregando = loadingPag || loadingItens;
+  const fechado = !!fechamento && !fechamento.reaberto_em;
+  // O que a tela mostra: o snapshot fechado, ou o cálculo ao vivo.
+  const v = fechado ? fechamento! : dre;
+  const margemPct = v.receita_liquida > 0 ? (v.margem_contribuicao / v.receita_liquida) * 100 : 0;
+
+  async function fecharMes() {
+    setSalvandoFechamento(true);
+    const payload = {
+      empresa: EMPRESA, mes,
+      receita_bruta: dre.receita_bruta, receita_por_produto: dre.receita_por_produto,
+      impostos: dre.impostos, imposto_estimado: dre.imposto_estimado,
+      taxas_gateway: dre.taxas_gateway, estornos: dre.estornos, receita_liquida: dre.receita_liquida,
+      custos_diretos: dre.custos_diretos, custos_diretos_linhas: dre.custos_diretos_linhas,
+      margem_contribuicao: dre.margem_contribuicao,
+      despesas_fixas: dre.despesas_fixas, despesas_fixas_linhas: dre.despesas_fixas_linhas,
+      ebitda: dre.ebitda, nao_operacional: dre.nao_operacional, nao_op_linhas: dre.nao_op_linhas,
+      resultado: dre.resultado,
+      fechado_em: new Date().toISOString(), fechado_por: user?.nome ?? null, reaberto_em: null,
+    };
+    const { error } = await supabase.from('dre_fechamentos').upsert(payload, { onConflict: 'empresa,mes' });
+    setSalvandoFechamento(false);
+    if (error) { toast({ variant: 'destructive', title: 'Erro ao fechar', description: error.message }); return; }
+    toast({ title: `${rotuloMes(mes)} fechado` });
+    carregarFechamento();
+  }
+
+  async function reabrirMes() {
+    if (!fechamento) return;
+    setSalvandoFechamento(true);
+    const { error } = await supabase.from('dre_fechamentos').update({ reaberto_em: new Date().toISOString() }).eq('empresa', EMPRESA).eq('mes', mes);
+    setSalvandoFechamento(false);
+    if (error) { toast({ variant: 'destructive', title: 'Erro ao reabrir', description: error.message }); return; }
+    toast({ title: `${rotuloMes(mes)} reaberto` });
+    carregarFechamento();
+  }
 
   return (
     <div className="p-4 lg:p-6 space-y-4 max-w-3xl mx-auto pb-20 lg:pb-6">
@@ -191,50 +278,69 @@ export function DreCompetencia() {
         <div className="flex h-40 items-center justify-center text-muted-foreground">
           <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Carregando…
         </div>
-      ) : dre.semDados ? (
+      ) : (!fechado && dre.semDados) ? (
         <Card className="p-6 text-sm text-muted-foreground text-center">
           Sem receita paga nem lançamentos nesta competência.
         </Card>
       ) : (
         <Card className="p-4 sm:p-5">
+          <div className="flex items-center justify-between gap-3 mb-3 pb-3 border-b border-border/60">
+            {fechado ? (
+              <>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Badge className="bg-emerald-100 text-emerald-800 gap-1"><Lock className="h-3 w-3" /> Fechado</Badge>
+                  {fechamento?.fechado_em && <span>em {new Date(fechamento.fechado_em).toLocaleDateString('pt-BR')}{fechamento.fechado_por ? ` por ${fechamento.fechado_por}` : ''}</span>}
+                </div>
+                <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={reabrirMes} disabled={salvandoFechamento}>
+                  <LockOpen className="h-3.5 w-3.5" /> Reabrir
+                </Button>
+              </>
+            ) : (
+              <>
+                <span className="text-xs text-muted-foreground">
+                  {fechamento?.reaberto_em ? `Reaberto em ${new Date(fechamento.reaberto_em).toLocaleDateString('pt-BR')} — cálculo ao vivo` : 'Cálculo ao vivo'}
+                </span>
+                <Button size="sm" className="gap-1.5 text-xs" onClick={fecharMes} disabled={salvandoFechamento || dre.semDados}>
+                  <Lock className="h-3.5 w-3.5" /> {salvandoFechamento ? 'Fechando…' : 'Fechar mês'}
+                </Button>
+              </>
+            )}
+          </div>
+
           <div className="text-sm divide-y divide-border/60">
-            <Bloco titulo="Receita bruta" valor={dre.receitaBruta} tom="bom" total
-              sub={dre.receitaPorProduto.map(([slug, v]) => ({ label: nomeProduto(slug), valor: v }))} />
+            <Bloco titulo="Receita bruta" valor={v.receita_bruta} tom="bom" total
+              sub={v.receita_por_produto.map(([slug, val]) => ({ label: nomeProduto(slug), valor: val }))} />
 
-            <Linha label="(–) Impostos" valor={-dre.impostos}
-              nota={dre.impostoEstimado ? `estimado ${fmtPct(parametrosCfo.impostos_pct ?? 0)} — lance o DAS real em Balanço` : 'lançamento real (Balanço)'} />
-            <Linha label="(–) Taxas de gateway" valor={-dre.taxasGateway}
-              nota={dre.taxasGateway === 0 ? 'nenhuma taxa capturada ainda' : 'taxa real do Asaas'} />
-            {dre.estornos > 0 && <Linha label="(–) Estornos / reembolsos" valor={-dre.estornos} />}
+            <Linha label="(–) Impostos" valor={-v.impostos}
+              nota={v.imposto_estimado ? `estimado ${fmtPct(parametrosCfo.impostos_pct ?? 0)} — lance o DAS real em Balanço` : 'lançamento real (Balanço)'} />
+            <Linha label="(–) Taxas de gateway" valor={-v.taxas_gateway}
+              nota={v.taxas_gateway === 0 ? 'nenhuma taxa capturada ainda' : 'taxa real do Asaas'} />
+            {v.estornos > 0 && <Linha label="(–) Estornos / reembolsos" valor={-v.estornos} />}
 
-            <Linha label="= Receita líquida" valor={dre.receitaLiquida} total />
+            <Linha label="= Receita líquida" valor={v.receita_liquida} total />
 
-            <Bloco titulo="(–) Custos diretos" valor={-dre.custosDiretos}
-              sub={dre.custosDiretosLinhas.map(([c, v]) => ({ label: LABEL_CATEGORIA[c] ?? c, valor: -v }))} />
+            <Bloco titulo="(–) Custos diretos" valor={-v.custos_diretos} sub={v.custos_diretos_linhas} />
 
-            <Linha label="= Margem de contribuição" valor={dre.margemContribuicao} total
-              nota={`${fmtPct(dre.margemPct)} da receita líquida`} />
+            <Linha label="= Margem de contribuição" valor={v.margem_contribuicao} total
+              nota={`${fmtPct(margemPct)} da receita líquida`} />
 
-            <Bloco titulo="(–) Despesas fixas" valor={-dre.despesasFixas}
-              sub={dre.despesasFixasLinhas.map(([c, v]) => ({ label: LABEL_CATEGORIA[c] ?? c, valor: -v }))} />
+            <Bloco titulo="(–) Despesas fixas" valor={-v.despesas_fixas} sub={v.despesas_fixas_linhas} />
 
-            <Linha label="= EBITDA" valor={dre.ebitda} total forte />
+            <Linha label="= EBITDA" valor={v.ebitda} total forte />
 
-            {(dre.naoOpSaida > 0 || dre.outrasReceitas > 0) && (
-              <Bloco titulo="(±) Não operacional" valor={dre.outrasReceitas - dre.naoOpSaida}
-                sub={[
-                  ...dre.outrasReceitasLinhas.map(([c, v]) => ({ label: LABEL_CATEGORIA[c] ?? c, valor: v })),
-                  ...dre.naoOpLinhas.map(([c, v]) => ({ label: LABEL_CATEGORIA[c] ?? c, valor: -v })),
-                ]} />
+            {v.nao_op_linhas.length > 0 && (
+              <Bloco titulo="(±) Não operacional" valor={v.nao_operacional} sub={v.nao_op_linhas} />
             )}
 
-            <Linha label="= Resultado líquido" valor={dre.resultado} total forte
-              tom={dre.resultado >= 0 ? 'bom' : 'ruim'} />
+            <Linha label="= Resultado líquido" valor={v.resultado} total forte
+              tom={v.resultado >= 0 ? 'bom' : 'ruim'} />
           </div>
 
           <p className="text-[11px] text-muted-foreground mt-4 pt-3 border-t border-border/40 flex items-start gap-1.5">
             <Info className="h-3 w-3 mt-0.5 shrink-0" />
-            Custos e despesas vêm dos lançamentos em <strong>Balanço → registrar gasto</strong> (por categoria e competência). Linha zerada = sem lançamento no mês.
+            {fechado
+              ? 'Snapshot congelado — lançamentos posteriores não alteram este mês. Reabra para recalcular.'
+              : <>Custos e despesas vêm dos lançamentos em <strong>Balanço → registrar gasto</strong> (por categoria e competência). Linha zerada = sem lançamento no mês.</>}
           </p>
         </Card>
       )}

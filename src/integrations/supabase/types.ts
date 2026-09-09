@@ -2276,6 +2276,87 @@ export type Database = {
           },
         ]
       }
+      dre_fechamentos: {
+        Row: {
+          created_at: string
+          custos_diretos: number
+          custos_diretos_linhas: Json
+          despesas_fixas: number
+          despesas_fixas_linhas: Json
+          ebitda: number
+          empresa: string
+          estornos: number
+          fechado_em: string
+          fechado_por: string | null
+          id: string
+          imposto_estimado: boolean
+          impostos: number
+          margem_contribuicao: number
+          mes: string
+          nao_op_linhas: Json
+          nao_operacional: number
+          observacoes: string | null
+          reaberto_em: string | null
+          receita_bruta: number
+          receita_liquida: number
+          receita_por_produto: Json
+          resultado: number
+          taxas_gateway: number
+        }
+        Insert: {
+          created_at?: string
+          custos_diretos?: number
+          custos_diretos_linhas?: Json
+          despesas_fixas?: number
+          despesas_fixas_linhas?: Json
+          ebitda?: number
+          empresa?: string
+          estornos?: number
+          fechado_em?: string
+          fechado_por?: string | null
+          id?: string
+          imposto_estimado?: boolean
+          impostos?: number
+          margem_contribuicao?: number
+          mes: string
+          nao_op_linhas?: Json
+          nao_operacional?: number
+          observacoes?: string | null
+          reaberto_em?: string | null
+          receita_bruta?: number
+          receita_liquida?: number
+          receita_por_produto?: Json
+          resultado?: number
+          taxas_gateway?: number
+        }
+        Update: {
+          created_at?: string
+          custos_diretos?: number
+          custos_diretos_linhas?: Json
+          despesas_fixas?: number
+          despesas_fixas_linhas?: Json
+          ebitda?: number
+          empresa?: string
+          estornos?: number
+          fechado_em?: string
+          fechado_por?: string | null
+          id?: string
+          imposto_estimado?: boolean
+          impostos?: number
+          margem_contribuicao?: number
+          mes?: string
+          nao_op_linhas?: Json
+          nao_operacional?: number
+          observacoes?: string | null
+          reaberto_em?: string | null
+          receita_bruta?: number
+          receita_liquida?: number
+          receita_por_produto?: Json
+          resultado?: number
+          taxas_gateway?: number
+        }
+        Relationships: []
+      }
       email_config: {
         Row: {
           api_key: string
