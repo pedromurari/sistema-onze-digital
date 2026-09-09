@@ -4,7 +4,9 @@ Documento de trabalho (técnico) do projeto de unificação do financeiro. Vive 
 cresce a cada avanço. O documento "de negócio" equivalente é o artifact **Manual do
 Financeiro**: https://claude.ai/code/artifact/21a7ffb8-50c9-4760-bae6-cbda0331dc17
 
-> Atualizado: 2026-09-08 · Branch: `main` · Supabase: `usqiyekfmwwnvkmkdlej`
+> Atualizado: 2026-09-10 · Branch: `financeiro-estruturacao` · Supabase: `usqiyekfmwwnvkmkdlej`
+>
+> **Raio-X Financeiro** (business, ago/set): https://claude.ai/code/artifact/9af18481-dc7f-4301-9f06-09e8768b7bda
 
 ---
 
@@ -98,6 +100,9 @@ Entregável final: sistema + Manual do Financeiro fechado → contratar auxiliar
 | 2026-09-08 | **A2** (`b946013`) — Balanço e Financeiro consomem `src/lib/contas.ts`. |
 | 2026-09-08 | **Codex** — `494b021` painel Notas Fiscais (C1), `c2fe749` BalancoConfigForm + `src/lib/db/balanco-config.ts` (C2). |
 | 2026-09-08 | **Corte fiscal** — migrações `20260908150000` (`saldo_inicial_contas`) e `20260908160000` (`inicio_operacao_fiscal` = 2026-09-01) aplicadas. `NotasFiscais.tsx` passa a filtrar a fila por `data_pagamento >= inicio_operacao_fiscal` — as 698 parcelas antigas não entram. `types.ts` + `COLUNAS_BALANCO_CONFIG` atualizados. |
+| 2026-09-10 | **Reconciliação ago/set** (madrugada, autônomo). Parser dos 5 extratos (`scratchpad/parse.py`, 568 lançamentos). DRE reconstruído: descoberto que o DRE **não lia a receita dos eventos NPA** (`npa_evento_leads`: ingressos + material + matrículas) — ~R$17,8k em agosto. Agosto passou de "−R$4,7k" (leitura errada) para **+R$12,9k**. Lançados em `balanco_itens` (competência ago/set): receita de eventos NPA, DKSoft net-new, PNL à vista; custos professoras (Jocimara Anjos R$1.730 + Amanda Calux R$970 = `custo_produto`), Keila 50% competência R$989,45, Meta BR/USD, software, DARF, retiradas Pedro R$7.460 (`pro_labore` não segregado), Igor R$1.376 (`folha`). Voomp/Anhanguera = parcelas de psi c/ extensão universitária, JÁ no CRM a bruto — não somar. DKSoft cross-check: 7 dos 21 alunos de ago já no CRM. |
+| 2026-09-10 | **Fase B+C** (commit `bba84e0`). `balanco_config.socios` agora `{nome, percentual, prolabore_mensal, conta}` + `parametros_cfo` ganha `reserva_minima_operacional` e `prolabore_frequencia` (semanal/quinzenal/mensal). `BalancoConfigForm` edita os novos campos. Nova tela **Sócios** (`financeiro_socios`, `src/components/crm/finance/Socios.tsx`): conta virtual por sócio/mês — pró-labore devido×repassado×falta, cota de lucro (do DRE fechado)×distribuído×falta, botão "registrar repasse" → `balanco_itens` (`pro_labore`/`distribuicao_lucro`, `fornecedor`=nome). Distribuição só habilita c/ DRE fechado; trava quando caixa < reserva mínima. `socios` populado: Pedro/Rodrygo 50/50, contas inter/c6, freq semanal (valores de pró-labore a preencher). |
+| 2026-09-10 | **DRE melhorado** (commit `91d5b70`). `DreCompetencia`: `balanco_itens` tipo=entrada (`receita_curso`/`receita_outra`/`matricula`/`outro_entrada`) soma na Receita bruta como "Receita fora do CRM"; `balanco_itens` categoria `taxa_gateway` (Vega/Pagar.me/tarifa MP) agora entra na linha de taxas (antes só `pagamentos.taxa_valor` contava). |
 
 ---
 
@@ -113,8 +118,9 @@ Entregável final: sistema + Manual do Financeiro fechado → contratar auxiliar
   - [ ] **C** Painel **Notas Fiscais** (novo) — **Codex (C1)**.
   - [ ] **A2** unificar as consts de conta em `Balanco.tsx`/`Financeiro.tsx` com
         `src/lib/contas.ts` assim que a C3 do Codex cair — **Claude**.
-- [ ] 1.4 `balanco_config` — form de sócios + saldo inicial por conta + alíquota efetiva
-      do Simples (dados vêm do Pedro; o form pode ser feito antes).
+- [x] 1.4 `balanco_config` — form de sócios (nome, %, **pró-labore mensal**, **conta**) +
+      saldo inicial por conta + alíquota efetiva do Simples + **reserva mínima operacional** +
+      **frequência do pró-labore**. Feito (commit `bba84e0`). Falta o Pedro **preencher os valores**.
 - [ ] 1.5 Higiene — corrigir 4 alunos sem turma, 6 sem forma, 90 parcelas sem forma, 91
       "pago R$0" → `isento`. Pôr `integridade_financeira` na rotina.
 
@@ -134,10 +140,23 @@ Entregável final: sistema + Manual do Financeiro fechado → contratar auxiliar
 - [ ] **2.4 (Asaas/MP/C6/Inter)** conciliação das outras contas — Asaas já grava taxa via
       webhook; falta a visão de extrato × sistema por conta.
 
+### Fase C — Sócios: pró-labore + distribuição (feito 2026-09-10)
+- [x] Tela `Socios.tsx` (`financeiro_socios`) + config estendida. Ver changelog.
+- [ ] Pedro preenche pró-labore de cada sócio + reserva mínima na Config.
+- [ ] Ligar o número real do caixa (hoje `parametros_cfo.saldo_caixa_manual` é manual) —
+      idealmente somar `saldo_inicial_contas` + movimento do período por conta.
+- [ ] Alerta/relatório: repasse semanal previsto vs pago; "pode distribuir R$ X" pós-fechamento.
+
 ### Fase 3 — A pagar / a receber
-- [ ] Agenda semanal (contas fixas + comissões + repasses).
+- [ ] Agenda semanal (contas fixas + comissões + repasses + pró-labore semanal).
 - [ ] Régua de inadimplência. Extrato do investidor.
 - [ ] Asaas: negativação (Serasa) — decisão de política + config.
+- [ ] **Eventos NPA no DRE:** hoje a receita vem do `npa_evento_leads` lançada à mão em
+      `balanco_itens`. Automatizar: um trigger/rotina que soma ingressos+material+matrículas
+      por evento finalizado e gera/atualiza a linha de receita. Cuidado com dupla contagem
+      quando o matriculado virar aluno com parcela no CRM.
+- [ ] **DKSoft → Asaas:** migrar a coorte legada (21+ alunos, boleto via PJBank→C6) e
+      desligar o DKSoft. Enquanto não migra, a receita entra como `balanco_itens` mensal.
 
 ### Fase 4 — Cockpit + entrega
 - [ ] Dashboard financeiro único. Manual fechado. Perfil de acesso da auxiliar (RLS).
@@ -160,11 +179,15 @@ Entregável final: sistema + Manual do Financeiro fechado → contratar auxiliar
 
 ## 7. Pendências externas (não bloquear o resto)
 
-- **Pedro:** saldo de hoje de cada conta (inter/c6/mercado_pago/asaas/voomp); sócios + %;
-  alíquota efetiva do Simples (ou último DAS + faturamento); cláusula de multa/juros do
-  contrato; conferir toggle do webhook Asaas.
-- **Agilize:** habilitação/regularização NFS-e; código de serviço + ISS; regularização
-  das competências atrasadas; anexo do Simples (III vs V — depende de pró-labore).
+- **Pedro:** **pró-labore mensal de cada sócio + reserva mínima** (Config financeira);
+  nº de turmas ativas por professora (Jocimara/Amanda/Renata); % que a Anhanguera retém na
+  extensão universitária; lista de quem comprou o PNL Master (ele + a mãe venderam);
+  custos de cada evento NPA (locação, deslocamento, professor convidado, ads do evento);
+  gastos PF fixos de cada sócio; cláusula de multa/juros do contrato.
+- **Agilize (pauta pronta no Raio-X §3):** formalizar pró-labore **desde setembro** (Fator R
+  → Anexo III ~6% vs Anexo V ~15,5%, economia ~R$1,8k/mês); retificar PGDAS atrasados com
+  pró-labore retroativo se possível; CNAE secundário p/ consultoria de marketing (Onze
+  Digital/Zaffalon) e palestras (Life Sorrisos); NFS-e a partir de setembro.
 
 ---
 
