@@ -3,15 +3,16 @@ import { ChevronLeft, ChevronRight, Info, Loader2, Lock, Wallet } from 'lucide-r
 import { supabase } from '@/integrations/supabase/client';
 import { useBalancoConfig } from '@/lib/db';
 import {
-  fmtBRL, PARAMETROS_CFO_DEFAULT, calcDreResumoMes,
+  fmtBRL, PARAMETROS_CFO_DEFAULT, calcDreResumoMes, calcDrePorSocio,
   type ParametrosCfo, type ProlaboreFrequencia, type DreItemRow, type DrePagamentoRow,
+  type DrePorSocioItem, type SocioDreRow, type PagamentoParaRepasse,
+  type TurmaResponsavelRow, type ResponsavelRow,
 } from '@/lib/financial-utils';
 import { getContaLabel, type Conta, CONTAS } from '@/lib/contas';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -51,6 +52,26 @@ interface RepasseRow {
   fornecedor: string | null;
   data_caixa: string | null;
   descricao: string;
+}
+
+interface PagRow {
+  status: string | null;
+  valor: number | null;
+  mes_referencia: string | null;
+  taxa_valor: number | null;
+  turma_id: string | null;
+  produto: string | null;
+  numero_parcela: number | null;
+}
+
+interface ItemRaw {
+  tipo: string | null;
+  valor: number | null;
+  categoria: string | null;
+  produto: string | null;
+  fornecedor: string | null;
+  data_competencia: string | null;
+  mes_referencia: string | null;
 }
 
 const DIVISOR_FREQ: Record<ProlaboreFrequencia, number> = { semanal: 4, quinzenal: 2, mensal: 1 };
@@ -100,8 +121,11 @@ export function Socios() {
   const [repasses, setRepasses] = useState<RepasseRow[]>([]);
   const [resultadoFechado, setResultadoFechado] = useState<number | null>(null);
   const [mesFechado, setMesFechado] = useState(false);
-  const [pagamentos, setPagamentos] = useState<DrePagamentoRow[]>([]);
-  const [itensDre, setItensDre] = useState<DreItemRow[]>([]);
+  const [pagamentos, setPagamentos] = useState<PagRow[]>([]);
+  const [itensRaw, setItensRaw] = useState<ItemRaw[]>([]);
+  const [turmaResp, setTurmaResp] = useState<TurmaResponsavelRow[]>([]);
+  const [responsaveis, setResponsaveis] = useState<ResponsavelRow[]>([]);
+  const [turmaMens, setTurmaMens] = useState<Record<string, number | null>>({});
   const [eventosReceita, setEventosReceita] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [dialogSocio, setDialogSocio] = useState<SocioRow | null>(null);
@@ -115,10 +139,13 @@ export function Socios() {
 
   const carregar = useCallback(async () => {
     setLoading(true);
-    const [{ data: itens }, { data: fech }, { data: pags }, { data: eventos }] = await Promise.all([
+    const [
+      { data: itens }, { data: fech }, { data: pags }, { data: eventos },
+      { data: tr }, { data: resp }, { data: turmas },
+    ] = await Promise.all([
       supabase
         .from('balanco_itens')
-        .select('id, valor, tipo, categoria, fornecedor, data_caixa, data_competencia, mes_referencia, descricao'),
+        .select('id, valor, tipo, categoria, produto, fornecedor, data_caixa, data_competencia, mes_referencia, descricao'),
       supabase
         .from('dre_fechamentos')
         .select('resultado, reaberto_em')
@@ -127,21 +154,22 @@ export function Socios() {
         .maybeSingle(),
       supabase
         .from('pagamentos')
-        .select('status, valor, mes_referencia, taxa_valor')
+        .select('status, valor, mes_referencia, taxa_valor, turma_id, produto, numero_parcela')
         .eq('status', 'pago'),
-      supabase
-        .from('vw_receita_eventos_mes')
-        .select('mes, receita_total'),
+      supabase.from('vw_receita_eventos_mes').select('mes, receita_total'),
+      supabase.from('turma_responsaveis').select('id, turma_id, user_id, nome_ref, percentual'),
+      supabase.from('responsaveis').select('id, nome, ativo, email'),
+      supabase.from('turmas').select('id, valor_mensalidade'),
     ]);
     const evAcc: Record<string, number> = {};
     for (const r of (eventos ?? []) as { mes: string; receita_total: number }[]) {
       evAcc[r.mes] = (evAcc[r.mes] ?? 0) + (Number(r.receita_total) || 0);
     }
     setEventosReceita(evAcc);
-    const todos = (itens ?? []) as (RepasseRow & DreItemRow & { data_competencia: string | null; mes_referencia: string | null })[];
-    setItensDre(todos.map((i) => ({
-      tipo: i.tipo, valor: i.valor, categoria: i.categoria,
-      data_competencia: i.data_competencia, mes_referencia: i.mes_referencia,
+    const todos = (itens ?? []) as (RepasseRow & ItemRaw)[];
+    setItensRaw(todos.map((i) => ({
+      tipo: i.tipo, valor: i.valor, categoria: i.categoria, produto: i.produto,
+      fornecedor: i.fornecedor, data_competencia: i.data_competencia, mes_referencia: i.mes_referencia,
     })));
     setRepasses(
       todos
@@ -149,7 +177,12 @@ export function Socios() {
           && (i.categoria === 'pro_labore' || i.categoria === 'distribuicao_lucro'))
         .map(({ id, valor, categoria, fornecedor, data_caixa, descricao }) => ({ id, valor, categoria, fornecedor, data_caixa, descricao })),
     );
-    setPagamentos((pags ?? []) as DrePagamentoRow[]);
+    setPagamentos((pags ?? []) as PagRow[]);
+    setTurmaResp((tr ?? []) as TurmaResponsavelRow[]);
+    setResponsaveis((resp ?? []) as ResponsavelRow[]);
+    const tm: Record<string, number | null> = {};
+    for (const t of (turmas ?? []) as { id: string; valor_mensalidade: number | null }[]) tm[t.id] = t.valor_mensalidade;
+    setTurmaMens(tm);
     const fechado = !!fech && !(fech as { reaberto_em: string | null }).reaberto_em;
     setMesFechado(fechado);
     setResultadoFechado(fechado ? num((fech as { resultado: number }).resultado) : null);
@@ -158,16 +191,57 @@ export function Socios() {
 
   useEffect(() => { carregar(); }, [carregar]);
 
-  const somaPct = socios.reduce((s, x) => s + x.percentual, 0);
+  const eventosMes = eventosReceita[mes] ?? 0;
 
-  // Resultado do mês: o snapshot fechado manda; senão, a prévia ao vivo (mesmas
-  // regras do DRE) — pra o sócio ver a cota antes de o mês ser fechado.
-  const dreLive = useMemo(
-    () => calcDreResumoMes(pagamentos, itensDre, mes, params.impostos_pct ?? 0, eventosReceita[mes] ?? 0),
-    [pagamentos, itensDre, eventosReceita, mes, params.impostos_pct],
+  // balanco_itens do mês (competência), forma crua para os dois cálculos.
+  const itensMes = useMemo(
+    () => itensRaw.filter((i) => ((i.data_competencia ?? i.mes_referencia ?? '') as string).slice(0, 7) === mes),
+    [itensRaw, mes],
   );
-  const resultadoMes = mesFechado ? resultadoFechado : (dreLive.temDados ? dreLive.resultado : null);
-  const resultadoEhPrevia = !mesFechado && resultadoMes != null;
+  const pagosMes = useMemo(
+    () => pagamentos.filter((p) => p.status === 'pago' && (p.mes_referencia ?? '').slice(0, 7) === mes),
+    [pagamentos, mes],
+  );
+
+  // DRE da empresa (contexto no topo) — snapshot fechado manda; senão, ao vivo.
+  const dreLive = useMemo(
+    () => calcDreResumoMes(
+      pagamentos.map((p) => ({ status: p.status, valor: p.valor, mes_referencia: p.mes_referencia, taxa_valor: p.taxa_valor })) as DrePagamentoRow[],
+      itensRaw.map((i) => ({ tipo: (i.tipo ?? 'saida') as 'entrada' | 'saida', valor: i.valor, categoria: i.categoria, data_competencia: i.data_competencia, mes_referencia: i.mes_referencia })) as DreItemRow[],
+      mes, params.impostos_pct ?? 0, eventosMes,
+    ),
+    [pagamentos, itensRaw, eventosMes, mes, params.impostos_pct],
+  );
+  const resultadoEmpresa = mesFechado ? resultadoFechado : (dreLive.temDados ? dreLive.resultado : null);
+  const resultadoEhPrevia = !mesFechado && resultadoEmpresa != null;
+
+  // DRE por sócio — a cota de cada um pelas regras (turmas, eventos, rateio).
+  const nomePedro = socios[0]?.nome ?? 'Pedro';
+  const nomeRodrygo = socios[1]?.nome ?? 'Rodrygo';
+  const drePorSocio = useMemo(() => {
+    const pagsRepasse: PagamentoParaRepasse[] = pagosMes.map((p) => ({
+      turma_id: p.turma_id,
+      produto: p.produto,
+      numero_parcela: p.numero_parcela,
+      liquido: Number(p.valor) || 0,
+      valorMensalidadeTurma: p.turma_id ? turmaMens[p.turma_id] ?? null : null,
+    }));
+    return calcDrePorSocio({
+      nomePedro, nomeRodrygo,
+      pagamentos: pagsRepasse,
+      turmaResponsaveis: turmaResp,
+      responsaveis,
+      itens: itensMes as DrePorSocioItem[],
+      receitaEventos: eventosMes,
+    });
+  }, [pagosMes, itensMes, turmaResp, responsaveis, turmaMens, eventosMes, nomePedro, nomeRodrygo]);
+
+  const dreDoSocio = (nome: string): SocioDreRow | null => {
+    const n = nome.trim().toLowerCase();
+    if (drePorSocio.pedro.nome.trim().toLowerCase() === n) return drePorSocio.pedro;
+    if (drePorSocio.rodrygo.nome.trim().toLowerCase() === n) return drePorSocio.rodrygo;
+    return null;
+  };
 
   const linhas = socios.map((socio) => {
     const meus = repasses.filter((r) => (r.fornecedor ?? '').trim().toLowerCase() === socio.nome.trim().toLowerCase());
@@ -175,9 +249,12 @@ export function Socios() {
     const distribuido = meus.filter((r) => r.categoria === 'distribuicao_lucro').reduce((s, r) => s + num(r.valor), 0);
     const proLaboreFalta = Math.max(0, socio.prolabore_mensal - proLaboreRepassado);
     const parcela = socio.prolabore_mensal / DIVISOR_FREQ[freq];
-    const cotaLucro = resultadoMes != null && resultadoMes > 0 ? (resultadoMes * socio.percentual) / 100 : 0;
-    const distribuirFalta = Math.max(0, cotaLucro - distribuido);
-    return { socio, proLaboreRepassado, distribuido, proLaboreFalta, parcela, cotaLucro, distribuirFalta };
+    const dre = dreDoSocio(socio.nome);
+    const cotaLucro = dre && dre.resultado > 0 ? dre.resultado : 0;
+    // já repassado (pró-labore + distribuição) conta contra a cota
+    const jaRepassado = proLaboreRepassado + distribuido;
+    const distribuirFalta = Math.max(0, cotaLucro - jaRepassado);
+    return { socio, dre, proLaboreRepassado, distribuido, proLaboreFalta, parcela, cotaLucro, distribuirFalta };
   });
 
   const carregando = loadingConfig || loading;
@@ -215,11 +292,11 @@ export function Socios() {
           <Card className="p-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
             <div>
               <span className="text-xs text-muted-foreground block">
-                Resultado do mês {resultadoEhPrevia && <em className="not-italic text-amber-700">· prévia ao vivo</em>}
+                Resultado da empresa {resultadoEhPrevia && <em className="not-italic text-amber-700">· prévia ao vivo</em>}
               </span>
-              {resultadoMes != null ? (
-                <span className={`font-semibold tabular-nums ${resultadoMes >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                  {fmtBRL(resultadoMes)}
+              {resultadoEmpresa != null ? (
+                <span className={`font-semibold tabular-nums ${resultadoEmpresa >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                  {fmtBRL(resultadoEmpresa)}
                 </span>
               ) : (
                 <span className="text-muted-foreground text-xs">sem dados no mês</span>
@@ -234,8 +311,11 @@ export function Socios() {
                 ({fmtBRL(caixaAtual)} − {fmtBRL(reservaMin)})
               </span>
             </div>
-            {Math.abs(somaPct - 100) > 0.01 && (
-              <Badge className="bg-amber-100 text-amber-800">participação soma {somaPct}% — ajuste na config</Badge>
+            {drePorSocio.keilaRepasse > 0 && (
+              <div>
+                <span className="text-xs text-muted-foreground block">Repasse Keila (fora da divisão)</span>
+                <span className="font-semibold tabular-nums">{fmtBRL(drePorSocio.keilaRepasse)}</span>
+              </div>
             )}
           </Card>
 
@@ -247,13 +327,16 @@ export function Socios() {
             </div>
           )}
 
-          {linhas.map(({ socio, proLaboreRepassado, distribuido, proLaboreFalta, parcela, cotaLucro, distribuirFalta }) => (
+          {linhas.map(({ socio, dre, proLaboreRepassado, distribuido, proLaboreFalta, parcela, cotaLucro, distribuirFalta }) => {
+            const totalCotas = drePorSocio.pedro.resultado + drePorSocio.rodrygo.resultado;
+            const pctMes = dre && totalCotas > 0 ? (dre.resultado / totalCotas) * 100 : null;
+            return (
             <Card key={socio.nome} className="p-4 space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h2 className="font-semibold">{socio.nome || '(sem nome)'}</h2>
                   <p className="text-[11px] text-muted-foreground">
-                    {socio.percentual}% do lucro · conta {getContaLabel(socio.conta || null)}
+                    {pctMes != null ? `${pctMes.toFixed(0)}% do resultado do mês · ` : ''}conta {getContaLabel(socio.conta || null)}
                   </p>
                 </div>
                 <Button size="sm" className="gap-1.5 text-xs" disabled={caixaAcimaReserva < 0}
@@ -262,27 +345,38 @@ export function Socios() {
                 </Button>
               </div>
 
+              {dre && (
+                <div className="grid grid-cols-3 gap-x-4 gap-y-1 text-xs rounded-md bg-muted/40 p-2">
+                  <span className="text-muted-foreground">Receita dele</span>
+                  <span className="text-muted-foreground">Custo dele</span>
+                  <span className="text-muted-foreground">= Cota do mês {resultadoEhPrevia && <em className="not-italic text-amber-700">(prévia)</em>}</span>
+                  <span className="tabular-nums">{fmtBRL(dre.receitaTotal)}</span>
+                  <span className="tabular-nums">−{fmtBRL(dre.custoTotal)}</span>
+                  <span className={`tabular-nums font-semibold ${dre.resultado >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{fmtBRL(dre.resultado)}</span>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
                 <Metric label="Pró-labore/mês" valor={socio.prolabore_mensal} />
                 <Metric label={`Parcela ${LABEL_FREQ[freq]}`} valor={parcela} />
-                <Metric label="Repassado no mês" valor={proLaboreRepassado} tom="bom" />
+                <Metric label="Pró-labore repassado" valor={proLaboreRepassado} tom="bom" />
                 <Metric label="Falta de pró-labore" valor={proLaboreFalta} tom={proLaboreFalta > 0 ? 'ruim' : undefined} />
               </div>
 
               <div className="border-t border-border/60 pt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
-                <Metric label="Cota de lucro" valor={cotaLucro}
-                  nota={resultadoMes == null ? 'sem dados' : resultadoMes <= 0 ? 'sem lucro no mês'
+                <Metric label="Cota do mês" valor={cotaLucro}
+                  nota={!dre ? 'sem dados' : dre.resultado <= 0 ? 'sem lucro no mês'
                     : resultadoEhPrevia ? 'prévia — feche o DRE p/ distribuir' : undefined} />
-                <Metric label="Distribuído no mês" valor={distribuido} tom="bom" />
-                <Metric label="Falta distribuir" valor={distribuirFalta} tom={distribuirFalta > 0 ? 'ruim' : undefined} />
+                <Metric label="Já repassado (total)" valor={proLaboreRepassado + distribuido} tom="bom" />
+                <Metric label="Falta repassar" valor={distribuirFalta} tom={distribuirFalta > 0 ? 'ruim' : undefined} />
               </div>
             </Card>
-          ))}
+          );})}
 
           <p className="text-[11px] text-muted-foreground pt-1 flex items-start gap-1.5">
             <Info className="h-3 w-3 mt-0.5 shrink-0" />
-            Cada repasse vira um lançamento em <strong>Balanço</strong> (categoria pró-labore ou distribuição de lucro),
-            então entra no DRE do mês automaticamente. Gasto pessoal do sócio só depois de repassado, na conta dele.
+            A cota de cada sócio é <strong>receita dele − custo dele</strong> pelas regras (turmas, eventos 50/50,
+            rateio dos fixos). Não é % do bolo. Pró-labore e distribuição saem dessa cota e viram lançamento no Balanço.
           </p>
         </>
       )}

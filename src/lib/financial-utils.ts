@@ -817,6 +817,165 @@ export function calcDreResumoMes(
   };
 }
 
+// ─── DRE por sócio ───────────────────────────────────────────────────────────
+//
+// Pedro e Rodrygo são sócios do MESMO CNPJ, mas o lucro NÃO divide 50/50 — divide
+// por turma e por regra (ver memória `divisao-turmas-e-socios`). O motor de
+// repasse (`calcRepasses`) já separa cada mensalidade em "Onze Digital" (= Pedro),
+// "IDM" (= Rodrygo) e investidor (Keila). Aqui a gente pega isso e soma as outras
+// fontes + rateia os custos, chegando na COTA de cada sócio no mês — que é o que
+// vai pra conta PJ dele na distribuição.
+//
+// REGRAS (definidas pelo Pedro, 2026-09):
+//   Receita  · mensalidades → por turma (motor de repasse)
+//            · eventos NPA → 50/50
+//            · DKSoft → 100% Rodrygo   · PNL Master → 50/50
+//            · Zaffalon → 100% Pedro   · Life Sorrisos → 100% Rodrygo
+//   Custo    · fixos compartilhados (ads, software, contab, adm, telefonia,
+//              impostos, comissão, folha) → 50/50
+//            · professoras (custo_produto que não é evento) → proporção Pedro/Rodrygo
+//              da receita de mensalidade (proxy — professora segue a turma)
+//            · custo de evento (custo_produto produto=idm-pelo-brasil) → 50/50
+//            · taxa Voomp (taxa_gateway, fornecedor ~ Voomp) → 100% Rodrygo (ele é
+//              dono do resto da turma #02426, onde a Voomp cobra)
+//            · repasse_investidor (Keila) → NÃO entra (já saiu da receita dela)
+//            · pró-labore / distribuição → NÃO entra (é o repasse em si; a tela
+//              Sócios controla contra a cota)
+//
+// A COTA (resultado) é ANTES de pró-labore/distribuição: é o total que é daquele
+// sócio no mês. Ele decide depois quanto vira pró-labore e quanto fica de caixa.
+const NOME_ONZE = 'Onze Digital';
+
+export interface SocioDreRow {
+  nome: string;
+  receitaMensalidades: number;
+  receitaEventos: number;
+  receitaOutras: number;
+  receitaTotal: number;
+  custoCompartilhado: number;
+  custoProfessoras: number;
+  custoEventos: number;
+  custoDedicado: number; // taxa Voomp e afins, específicos de um sócio
+  custoTotal: number;
+  resultado: number;
+}
+
+export interface DrePorSocio {
+  pedro: SocioDreRow;
+  rodrygo: SocioDreRow;
+  keilaRepasse: number;
+  temDados: boolean;
+}
+
+export interface DrePorSocioItem {
+  tipo: string | null;
+  valor: number | null;
+  categoria: string | null;
+  produto: string | null;
+  fornecedor: string | null;
+}
+
+function zeroSocio(nome: string): SocioDreRow {
+  return {
+    nome,
+    receitaMensalidades: 0, receitaEventos: 0, receitaOutras: 0, receitaTotal: 0,
+    custoCompartilhado: 0, custoProfessoras: 0, custoEventos: 0, custoDedicado: 0,
+    custoTotal: 0, resultado: 0,
+  };
+}
+
+// Onde cai a receita "fora do CRM" (balanco_itens entrada), por fornecedor.
+function fracaoPedroReceitaOutra(fornecedor: string): number {
+  const f = fornecedor.toLowerCase();
+  if (f.includes('zaffalon')) return 1;          // consultoria do Pedro (Onze Digital)
+  if (f.includes('dksoft')) return 0;            // coorte legada — Rodrygo
+  if (f.includes('life sorrisos')) return 0;     // palestra do Rodrygo
+  if (f.includes('pnl')) return 0.5;
+  return 0.5;
+}
+
+export function calcDrePorSocio(opts: {
+  nomePedro: string;
+  nomeRodrygo: string;
+  pagamentos: PagamentoParaRepasse[];
+  turmaResponsaveis: TurmaResponsavelRow[];
+  responsaveis: ResponsavelRow[];
+  itens: DrePorSocioItem[];
+  receitaEventos: number;
+}): DrePorSocio {
+  const { nomePedro, nomeRodrygo, pagamentos, turmaResponsaveis, responsaveis, itens, receitaEventos } = opts;
+  const pedro = zeroSocio(nomePedro);
+  const rodrygo = zeroSocio(nomeRodrygo);
+
+  // ── Mensalidades: motor de repasse (Onze Digital = Pedro, IDM = Rodrygo) ──
+  const rep = calcRepasses(pagamentos, turmaResponsaveis, responsaveis);
+  rodrygo.receitaMensalidades = rep.valorIdm;
+  const linhaOnze = rep.repasses.find((r) => r.nome === NOME_ONZE);
+  pedro.receitaMensalidades = linhaOnze?.valor ?? 0;
+  const keilaRepasse = rep.repasses
+    .filter((r) => r.nome !== NOME_ONZE)
+    .reduce((s, r) => s + r.valor, 0);
+
+  // Proxy pro rateio das professoras: proporção da receita de mensalidade.
+  const baseMens = pedro.receitaMensalidades + rodrygo.receitaMensalidades;
+  const fracaoPedroPsi = baseMens > 0 ? pedro.receitaMensalidades / baseMens : 0.5;
+
+  // ── Eventos NPA: 50/50 ──
+  const ev = Math.max(0, receitaEventos) / 2;
+  pedro.receitaEventos = ev;
+  rodrygo.receitaEventos = ev;
+
+  // ── balanco_itens do mês ──
+  for (const i of itens) {
+    const v = Number(i.valor) || 0;
+    if (!v) continue;
+    const cat = i.categoria ?? '';
+    const forn = i.fornecedor ?? '';
+
+    if (i.tipo === 'entrada') {
+      if (!['receita_curso', 'receita_outra', 'matricula', 'outro_entrada'].includes(cat)) continue;
+      const fp = fracaoPedroReceitaOutra(forn);
+      pedro.receitaOutras += v * fp;
+      rodrygo.receitaOutras += v * (1 - fp);
+      continue;
+    }
+    if (i.tipo !== 'saida') continue;
+
+    // Não entram no rateio dos sócios.
+    if (cat === 'repasse_investidor' || cat === 'pro_labore' || cat === 'distribuicao_lucro' || cat === 'estorno') continue;
+
+    if (cat === 'taxa_gateway' && forn.toLowerCase().includes('voomp')) {
+      rodrygo.custoDedicado += v;
+      continue;
+    }
+    if (cat === 'custo_produto') {
+      if ((i.produto ?? '') === 'idm-pelo-brasil') {
+        pedro.custoEventos += v / 2;
+        rodrygo.custoEventos += v / 2;
+      } else {
+        pedro.custoProfessoras += v * fracaoPedroPsi;
+        rodrygo.custoProfessoras += v * (1 - fracaoPedroPsi);
+      }
+      continue;
+    }
+    // Resto (ads, software, contabilidade, adm, financeiro, imposto, comissao,
+    // folha, custo_fixo, taxa_gateway não-Voomp) → 50/50.
+    pedro.custoCompartilhado += v / 2;
+    rodrygo.custoCompartilhado += v / 2;
+  }
+
+  for (const s of [pedro, rodrygo]) {
+    s.receitaTotal = s.receitaMensalidades + s.receitaEventos + s.receitaOutras;
+    s.custoTotal = s.custoCompartilhado + s.custoProfessoras + s.custoEventos + s.custoDedicado;
+    s.resultado = s.receitaTotal - s.custoTotal;
+  }
+
+  return {
+    pedro, rodrygo, keilaRepasse,
+    temDados: pagamentos.length > 0 || itens.length > 0 || receitaEventos > 0,
+  };
+}
+
 // ─── Breakdown por forma de pagamento ────────────────────────────────────────
 //
 // FONTE: vw_receita_por_fonte agrupado por forma_pagamento
