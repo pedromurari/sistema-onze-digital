@@ -119,9 +119,14 @@ Entregável final: sistema + Manual do Financeiro fechado → contratar auxiliar
       "pago R$0" → `isento`. Pôr `integridade_financeira` na rotina.
 
 ### Fase 2 — DRE + Agilize
-- [ ] Estrutura de DRE fechável por competência (tela).
-- [ ] Exportação no formato do pacote mensal Agilize + campo p/ o retorno (DAS apurado).
-- [ ] Conciliação sistema × extrato das 4 contas.
+- [x] **2.1** Tela `DreCompetencia.tsx` (`financeiro_dre`) — DRE por competência: receita bruta
+      por produto → (–) impostos (DAS real de `balanco_itens 'imposto'`, fallback % config)
+      → (–) taxas de gateway (`pagamentos.taxa_valor` real) → receita líquida → custos diretos
+      → margem → despesas fixas → EBITDA → não operacional → resultado. Navegação por mês.
+      Commit `7f30c40`.
+- [ ] **2.2** Fechar o mês — snapshot imutável do DRE (tabela nova, tipo `fechamentos`).
+- [ ] **2.3** Exportação no formato do pacote mensal Agilize + campo p/ o retorno (DAS apurado).
+- [ ] **2.4** Conciliação sistema × extrato das 4 contas.
 
 ### Fase 3 — A pagar / a receber
 - [ ] Agenda semanal (contas fixas + comissões + repasses).
