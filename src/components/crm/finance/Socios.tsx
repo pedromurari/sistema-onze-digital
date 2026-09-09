@@ -3,7 +3,8 @@ import { ChevronLeft, ChevronRight, Info, Loader2, Lock, Wallet } from 'lucide-r
 import { supabase } from '@/integrations/supabase/client';
 import { useBalancoConfig } from '@/lib/db';
 import {
-  fmtBRL, PARAMETROS_CFO_DEFAULT, type ParametrosCfo, type ProlaboreFrequencia,
+  fmtBRL, PARAMETROS_CFO_DEFAULT, calcDreResumoMes,
+  type ParametrosCfo, type ProlaboreFrequencia, type DreItemRow, type DrePagamentoRow,
 } from '@/lib/financial-utils';
 import { getContaLabel, type Conta, CONTAS } from '@/lib/contas';
 import { useAuth } from '@/contexts/AuthContext';
@@ -97,8 +98,10 @@ export function Socios() {
   }>();
 
   const [repasses, setRepasses] = useState<RepasseRow[]>([]);
-  const [resultadoMes, setResultadoMes] = useState<number | null>(null);
+  const [resultadoFechado, setResultadoFechado] = useState<number | null>(null);
   const [mesFechado, setMesFechado] = useState(false);
+  const [pagamentos, setPagamentos] = useState<DrePagamentoRow[]>([]);
+  const [itensDre, setItensDre] = useState<DreItemRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogSocio, setDialogSocio] = useState<SocioRow | null>(null);
 
@@ -111,31 +114,51 @@ export function Socios() {
 
   const carregar = useCallback(async () => {
     setLoading(true);
-    const [{ data: itens }, { data: fech }] = await Promise.all([
+    const [{ data: itens }, { data: fech }, { data: pags }] = await Promise.all([
       supabase
         .from('balanco_itens')
-        .select('id, valor, categoria, fornecedor, data_caixa, data_competencia, mes_referencia, descricao')
-        .in('categoria', ['pro_labore', 'distribuicao_lucro']),
+        .select('id, valor, tipo, categoria, fornecedor, data_caixa, data_competencia, mes_referencia, descricao'),
       supabase
         .from('dre_fechamentos')
         .select('resultado, reaberto_em')
         .eq('empresa', EMPRESA)
         .eq('mes', mes)
         .maybeSingle(),
+      supabase
+        .from('pagamentos')
+        .select('status, valor, mes_referencia, taxa_valor')
+        .eq('status', 'pago'),
     ]);
-    const doMes = ((itens ?? []) as (RepasseRow & { data_competencia: string | null; mes_referencia: string | null })[])
-      .filter((i) => ((i.data_competencia ?? i.mes_referencia ?? '') as string).slice(0, 7) === mes)
-      .map(({ id, valor, categoria, fornecedor, data_caixa, descricao }) => ({ id, valor, categoria, fornecedor, data_caixa, descricao }));
-    setRepasses(doMes);
+    const todos = (itens ?? []) as (RepasseRow & DreItemRow & { data_competencia: string | null; mes_referencia: string | null })[];
+    setItensDre(todos.map((i) => ({
+      tipo: i.tipo, valor: i.valor, categoria: i.categoria,
+      data_competencia: i.data_competencia, mes_referencia: i.mes_referencia,
+    })));
+    setRepasses(
+      todos
+        .filter((i) => ((i.data_competencia ?? i.mes_referencia ?? '') as string).slice(0, 7) === mes
+          && (i.categoria === 'pro_labore' || i.categoria === 'distribuicao_lucro'))
+        .map(({ id, valor, categoria, fornecedor, data_caixa, descricao }) => ({ id, valor, categoria, fornecedor, data_caixa, descricao })),
+    );
+    setPagamentos((pags ?? []) as DrePagamentoRow[]);
     const fechado = !!fech && !(fech as { reaberto_em: string | null }).reaberto_em;
     setMesFechado(fechado);
-    setResultadoMes(fechado ? num((fech as { resultado: number }).resultado) : null);
+    setResultadoFechado(fechado ? num((fech as { resultado: number }).resultado) : null);
     setLoading(false);
   }, [mes]);
 
   useEffect(() => { carregar(); }, [carregar]);
 
   const somaPct = socios.reduce((s, x) => s + x.percentual, 0);
+
+  // Resultado do mês: o snapshot fechado manda; senão, a prévia ao vivo (mesmas
+  // regras do DRE) — pra o sócio ver a cota antes de o mês ser fechado.
+  const dreLive = useMemo(
+    () => calcDreResumoMes(pagamentos, itensDre, mes, params.impostos_pct ?? 0),
+    [pagamentos, itensDre, mes, params.impostos_pct],
+  );
+  const resultadoMes = mesFechado ? resultadoFechado : (dreLive.temDados ? dreLive.resultado : null);
+  const resultadoEhPrevia = !mesFechado && resultadoMes != null;
 
   const linhas = socios.map((socio) => {
     const meus = repasses.filter((r) => (r.fornecedor ?? '').trim().toLowerCase() === socio.nome.trim().toLowerCase());
@@ -182,13 +205,15 @@ export function Socios() {
         <>
           <Card className="p-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
             <div>
-              <span className="text-xs text-muted-foreground block">Resultado do mês</span>
+              <span className="text-xs text-muted-foreground block">
+                Resultado do mês {resultadoEhPrevia && <em className="not-italic text-amber-700">· prévia ao vivo</em>}
+              </span>
               {resultadoMes != null ? (
                 <span className={`font-semibold tabular-nums ${resultadoMes >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
                   {fmtBRL(resultadoMes)}
                 </span>
               ) : (
-                <span className="text-muted-foreground text-xs">DRE não fechado</span>
+                <span className="text-muted-foreground text-xs">sem dados no mês</span>
               )}
             </div>
             <div>
@@ -237,7 +262,8 @@ export function Socios() {
 
               <div className="border-t border-border/60 pt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
                 <Metric label="Cota de lucro" valor={cotaLucro}
-                  nota={resultadoMes == null ? 'feche o DRE' : resultadoMes <= 0 ? 'sem lucro' : undefined} />
+                  nota={resultadoMes == null ? 'sem dados' : resultadoMes <= 0 ? 'sem lucro no mês'
+                    : resultadoEhPrevia ? 'prévia — feche o DRE p/ distribuir' : undefined} />
                 <Metric label="Distribuído no mês" valor={distribuido} tom="bom" />
                 <Metric label="Falta distribuir" valor={distribuirFalta} tom={distribuirFalta > 0 ? 'ruim' : undefined} />
               </div>

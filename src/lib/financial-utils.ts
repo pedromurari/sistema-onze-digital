@@ -731,6 +731,90 @@ export const PARAMETROS_CFO_DEFAULT: Required<ParametrosCfo> = {
 
 export const EMPRESA_CFO_PADRAO = 'onze_digital';
 
+// ─── DRE do mês (versão enxuta, compartilhada) ───────────────────────────────
+//
+// A tela `DreCompetencia` faz o DRE detalhado inline. Esta função devolve só os
+// totais que outras telas precisam (ex.: `Socios` usa `resultado` como prévia da
+// cota de lucro antes de o mês ser fechado). Mesmas regras: competência =
+// `mes_referencia`/`data_competencia`, só parcela paga, e as mesmas categorias
+// de `balanco_itens` em cada bloco. Mantido em sincronia com DreCompetencia.tsx.
+export interface DrePagamentoRow {
+  status: string | null;
+  valor: number | null;
+  mes_referencia: string | null;
+  taxa_valor?: number | null;
+}
+export interface DreItemRow {
+  tipo: 'entrada' | 'saida';
+  valor: number | null;
+  categoria: string | null;
+  mes_referencia?: string | null;
+  data_competencia?: string | null;
+}
+
+const DRE_CAT_RECEITA_EXTRA = ['receita_curso', 'receita_outra', 'matricula', 'outro_entrada'];
+const DRE_CAT_CUSTO_DIRETO = ['comissao', 'repasse_investidor', 'custo_produto', 'custo_variavel'];
+const DRE_CAT_DESPESA_FIXA = ['pro_labore', 'folha', 'software', 'contabilidade', 'ads', 'adm', 'custo_fixo'];
+const DRE_CAT_NAO_OP_SAIDA = ['financeiro', 'investimento', 'distribuicao_lucro', 'alocacao', 'outro_saida'];
+
+export interface DreResumo {
+  receitaBruta: number;
+  receitaLiquida: number;
+  custosDiretos: number;
+  despesasFixas: number;
+  ebitda: number;
+  resultado: number;
+  temDados: boolean;
+}
+
+export function calcDreResumoMes(
+  pagamentos: DrePagamentoRow[],
+  itens: DreItemRow[],
+  mes: string, // 'YYYY-MM'
+  impostoPct = 0,
+): DreResumo {
+  const pagos = pagamentos.filter(
+    (p) => p.status === 'pago' && (p.mes_referencia ?? '').slice(0, 7) === mes,
+  );
+  let receitaBruta = 0;
+  let taxasGateway = 0;
+  for (const p of pagos) {
+    receitaBruta += Number(p.valor) || 0;
+    taxasGateway += Number(p.taxa_valor) || 0;
+  }
+
+  const doMes = itens.filter(
+    (i) => ((i.data_competencia ?? i.mes_referencia ?? '') as string).slice(0, 7) === mes,
+  );
+  const soma = (cats: string[], tipo: 'entrada' | 'saida') =>
+    doMes
+      .filter((i) => i.tipo === tipo && cats.includes(i.categoria ?? ''))
+      .reduce((s, i) => s + (Number(i.valor) || 0), 0);
+
+  receitaBruta += soma(DRE_CAT_RECEITA_EXTRA, 'entrada');
+
+  const impostoLancado = soma(['imposto'], 'saida');
+  const impostos = impostoLancado > 0 ? impostoLancado : receitaBruta * (impostoPct / 100);
+  taxasGateway += soma(['taxa_gateway'], 'saida');
+  const estornos = soma(['estorno'], 'saida');
+
+  const receitaLiquida = receitaBruta - impostos - taxasGateway - estornos;
+  const custosDiretos = soma(DRE_CAT_CUSTO_DIRETO, 'saida');
+  const despesasFixas = soma(DRE_CAT_DESPESA_FIXA, 'saida');
+  const ebitda = receitaLiquida - custosDiretos - despesasFixas;
+  const naoOp = soma(DRE_CAT_NAO_OP_SAIDA, 'saida');
+
+  return {
+    receitaBruta,
+    receitaLiquida,
+    custosDiretos,
+    despesasFixas,
+    ebitda,
+    resultado: ebitda - naoOp,
+    temDados: pagos.length > 0 || doMes.length > 0,
+  };
+}
+
 // ─── Breakdown por forma de pagamento ────────────────────────────────────────
 //
 // FONTE: vw_receita_por_fonte agrupado por forma_pagamento
