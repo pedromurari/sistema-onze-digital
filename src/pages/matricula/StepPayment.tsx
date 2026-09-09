@@ -65,6 +65,18 @@ export function StepPayment({
   const somenteCartaoAVista = plano.cartaoMaxParcelas === 1;
   const [gateMsg, setGateMsg] = useState('');
 
+  // O botão de confirmar não avisa por que está desabilitado -- some sem
+  // explicação se faltar só a data (pré-matrícula) ou só o checkbox da
+  // declaração, os dois mais fáceis de passar batido (achado real: aluno
+  // reportou "o botão não acende" e era exatamente isso). Lista o que falta
+  // pra mostrar embaixo do botão quando ele estiver travado.
+  const faltando: string[] = [];
+  if (preMatricula && !dataPrimeiraCobranca) faltando.push('a data em que vai pagar a entrada');
+  if (vencimentoRadio === '') faltando.push(preMatricula ? 'o dia de vencimento das próximas parcelas' : 'a forma de pagamento');
+  if (vencimentoRadio === 'outro' && !diaOutro) faltando.push('o dia de vencimento (campo "Outro dia")');
+  if (vencimentoRadio === 'cortesia' && !bolsaValidada) faltando.push('validar o código de bolsa');
+  if (!declaracao) faltando.push('marcar que está de acordo com a declaração');
+
   const handleValidar = () => {
     if (!codigoBolsa.trim()) {
       setGateMsg('Digite o código para continuar.');
@@ -294,6 +306,12 @@ export function StepPayment({
             <span className="btn-spinner" aria-hidden="true"></span>
           </button>
         </div>
+
+        {!podeEnviar && !submitting && faltando.length > 0 && (
+          <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginTop: 'var(--space-2)', textAlign: 'center' }}>
+            Falta preencher: {faltando.join(', ')}.
+          </p>
+        )}
 
         <p className="submit-subtext">
           <span className="lock-icon">🔒</span>

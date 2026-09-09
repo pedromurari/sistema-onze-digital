@@ -592,6 +592,8 @@
     .idm-matricula input[type="text"],
 .idm-matricula input[type="email"],
 .idm-matricula input[type="tel"],
+.idm-matricula input[type="date"],
+.idm-matricula input[type="number"],
 .idm-matricula textarea,
 .idm-matricula select {
       width: 100%;
