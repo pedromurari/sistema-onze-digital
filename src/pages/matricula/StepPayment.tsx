@@ -33,6 +33,9 @@ export function StepPayment({
   onVoltar,
   plano,
   formasPermitidas,
+  preMatricula,
+  dataPrimeiraCobranca,
+  onDataPrimeiraCobrancaChange,
 }: {
   vencimentoRadio: VencimentoRadio;
   onSelecionar: (v: VencimentoRadio) => void;
@@ -50,6 +53,13 @@ export function StepPayment({
   onVoltar: () => void;
   plano: { avista: number; parcela: number; cartaoBase: number; cartaoMaxParcelas: number };
   formasPermitidas?: FormaPagamentoPermitida[];
+  // Pré-matrícula (rota /pre-matricula/:vendedor): só boleto, e a 1ª
+  // cobrança (entrada) não sai na hora -- fica programada pra uma data
+  // futura escolhida aqui. dia de vencimento (10/20/30/outro) continua
+  // valendo só pras parcelas 2 a 15.
+  preMatricula?: boolean;
+  dataPrimeiraCobranca?: string;
+  onDataPrimeiraCobrancaChange?: (v: string) => void;
 }) {
   const mostra = (forma: FormaPagamentoPermitida) => !formasPermitidas || formasPermitidas.includes(forma);
   const somenteCartaoAVista = plano.cartaoMaxParcelas === 1;
@@ -70,12 +80,28 @@ export function StepPayment({
         <div className="section-header" style={{ position: 'relative' }}>
           <div className="section-num" aria-hidden="true">03</div>
           <p className="section-eyebrow">Seção 03</p>
-          <h2 className="section-title">Vencimento das Faturas</h2>
+          <h2 className="section-title">{preMatricula ? 'Pré-Matrícula' : 'Vencimento das Faturas'}</h2>
         </div>
         <div className="section-rule"></div>
 
+        {preMatricula && (
+          <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
+            <label className="field-label">Quando você vai pagar a entrada? <span className="field-required">*</span></label>
+            <div className="venc-grupo-desc" style={{ marginBottom: 6 }}>
+              Sua matrícula e o contrato ficam prontos agora — a cobrança da entrada só é enviada na data escolhida abaixo.
+            </div>
+            <input
+              type="date"
+              value={dataPrimeiraCobranca}
+              onChange={e => onDataPrimeiraCobrancaChange?.(e.target.value)}
+            />
+          </div>
+        )}
+
         <div className="field">
-          <label className="field-label">Como prefere pagar? <span className="field-required">*</span></label>
+          <label className="field-label">
+            {preMatricula ? 'Melhor dia pra vencimento das próximas parcelas?' : 'Como prefere pagar?'} <span className="field-required">*</span>
+          </label>
 
           <div className="venc-grupos" id="venc-grid">
 
@@ -131,7 +157,9 @@ export function StepPayment({
                   <div>
                     <div className="venc-grupo-title">Boleto recorrente</div>
                     <div className="venc-grupo-desc">15x de R$ {fmtBRL(plano.parcela)} · Escolha o melhor dia de vencimento</div>
-                    <div className="venc-grupo-desc" style={{ marginTop: 2 }}>1ª parcela no PIX, depois boleto mensal</div>
+                    <div className="venc-grupo-desc" style={{ marginTop: 2 }}>
+                      {preMatricula ? 'Cobrança programada — sem pagamento imediato' : '1ª parcela no PIX, depois boleto mensal'}
+                    </div>
                   </div>
                 </div>
                 <div className="venc-grupo-body">
@@ -261,7 +289,7 @@ export function StepPayment({
             style={{ flex: 1 }}
             disabled={!podeEnviar}
           >
-            <span className="btn-text">Confirmar minha matrícula</span>
+            <span className="btn-text">{preMatricula ? 'Confirmar pré-matrícula' : 'Confirmar minha matrícula'}</span>
             <span className="btn-icon" aria-hidden="true">→</span>
             <span className="btn-spinner" aria-hidden="true"></span>
           </button>

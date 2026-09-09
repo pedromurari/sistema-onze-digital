@@ -701,6 +701,8 @@ export function calcRepasses(
 // FONTE: balanco_config.parametros_cfo (jsonb, 1 linha por empresa — hoje só
 // 'onze_digital' é usado pela UI). Não existe integração bancária nem fonte
 // automática de impostos/CAC real — todo campo aqui é input manual.
+export type ProlaboreFrequencia = 'semanal' | 'quinzenal' | 'mensal';
+
 export interface ParametrosCfo {
   impostos_pct?: number;
   cac_estimado?: number;
@@ -708,6 +710,12 @@ export interface ParametrosCfo {
   saldo_caixa_manual?: number;
   saldo_caixa_atualizado_em?: string;
   reserva_emergencia_meta_meses?: number;
+  // Piso da conta operacional: o repasse de pró-labore/distribuição só sai
+  // enquanto o caixa da operação estiver acima disto (regra da §7 do Raio-X).
+  reserva_minima_operacional?: number;
+  // Com que cadência o pró-labore mensal é efetivamente pago (o total mensal
+  // é o mesmo que a contabilidade declara; muda só o parcelamento do caixa).
+  prolabore_frequencia?: ProlaboreFrequencia;
 }
 
 export const PARAMETROS_CFO_DEFAULT: Required<ParametrosCfo> = {
@@ -717,9 +725,256 @@ export const PARAMETROS_CFO_DEFAULT: Required<ParametrosCfo> = {
   saldo_caixa_manual: 0,
   saldo_caixa_atualizado_em: '',
   reserva_emergencia_meta_meses: 3,
+  reserva_minima_operacional: 0,
+  prolabore_frequencia: 'semanal',
 };
 
 export const EMPRESA_CFO_PADRAO = 'onze_digital';
+
+// ─── DRE do mês (versão enxuta, compartilhada) ───────────────────────────────
+//
+// A tela `DreCompetencia` faz o DRE detalhado inline. Esta função devolve só os
+// totais que outras telas precisam (ex.: `Socios` usa `resultado` como prévia da
+// cota de lucro antes de o mês ser fechado). Mesmas regras: competência =
+// `mes_referencia`/`data_competencia`, só parcela paga, e as mesmas categorias
+// de `balanco_itens` em cada bloco. Mantido em sincronia com DreCompetencia.tsx.
+export interface DrePagamentoRow {
+  status: string | null;
+  valor: number | null;
+  mes_referencia: string | null;
+  taxa_valor?: number | null;
+}
+export interface DreItemRow {
+  tipo: 'entrada' | 'saida';
+  valor: number | null;
+  categoria: string | null;
+  mes_referencia?: string | null;
+  data_competencia?: string | null;
+}
+
+const DRE_CAT_RECEITA_EXTRA = ['receita_curso', 'receita_outra', 'matricula', 'outro_entrada'];
+const DRE_CAT_CUSTO_DIRETO = ['comissao', 'repasse_investidor', 'custo_produto', 'custo_variavel'];
+const DRE_CAT_DESPESA_FIXA = ['pro_labore', 'folha', 'software', 'contabilidade', 'ads', 'adm', 'custo_fixo'];
+const DRE_CAT_NAO_OP_SAIDA = ['financeiro', 'investimento', 'distribuicao_lucro', 'alocacao', 'outro_saida'];
+
+export interface DreResumo {
+  receitaBruta: number;
+  receitaLiquida: number;
+  custosDiretos: number;
+  despesasFixas: number;
+  ebitda: number;
+  resultado: number;
+  temDados: boolean;
+}
+
+export function calcDreResumoMes(
+  pagamentos: DrePagamentoRow[],
+  itens: DreItemRow[],
+  mes: string, // 'YYYY-MM'
+  impostoPct = 0,
+  receitaEventosMes = 0, // vw_receita_eventos_mes.receita_total do mês
+): DreResumo {
+  const pagos = pagamentos.filter(
+    (p) => p.status === 'pago' && (p.mes_referencia ?? '').slice(0, 7) === mes,
+  );
+  let receitaBruta = 0;
+  let taxasGateway = 0;
+  for (const p of pagos) {
+    receitaBruta += Number(p.valor) || 0;
+    taxasGateway += Number(p.taxa_valor) || 0;
+  }
+
+  const doMes = itens.filter(
+    (i) => ((i.data_competencia ?? i.mes_referencia ?? '') as string).slice(0, 7) === mes,
+  );
+  const soma = (cats: string[], tipo: 'entrada' | 'saida') =>
+    doMes
+      .filter((i) => i.tipo === tipo && cats.includes(i.categoria ?? ''))
+      .reduce((s, i) => s + (Number(i.valor) || 0), 0);
+
+  receitaBruta += soma(DRE_CAT_RECEITA_EXTRA, 'entrada');
+  receitaBruta += Math.max(0, receitaEventosMes);
+
+  const impostoLancado = soma(['imposto'], 'saida');
+  const impostos = impostoLancado > 0 ? impostoLancado : receitaBruta * (impostoPct / 100);
+  taxasGateway += soma(['taxa_gateway'], 'saida');
+  const estornos = soma(['estorno'], 'saida');
+
+  const receitaLiquida = receitaBruta - impostos - taxasGateway - estornos;
+  const custosDiretos = soma(DRE_CAT_CUSTO_DIRETO, 'saida');
+  const despesasFixas = soma(DRE_CAT_DESPESA_FIXA, 'saida');
+  const ebitda = receitaLiquida - custosDiretos - despesasFixas;
+  const naoOp = soma(DRE_CAT_NAO_OP_SAIDA, 'saida');
+
+  return {
+    receitaBruta,
+    receitaLiquida,
+    custosDiretos,
+    despesasFixas,
+    ebitda,
+    resultado: ebitda - naoOp,
+    temDados: pagos.length > 0 || doMes.length > 0 || receitaEventosMes > 0,
+  };
+}
+
+// ─── DRE por sócio ───────────────────────────────────────────────────────────
+//
+// Pedro e Rodrygo são sócios do MESMO CNPJ, mas o lucro NÃO divide 50/50 — divide
+// por turma e por regra (ver memória `divisao-turmas-e-socios`). O motor de
+// repasse (`calcRepasses`) já separa cada mensalidade em "Onze Digital" (= Pedro),
+// "IDM" (= Rodrygo) e investidor (Keila). Aqui a gente pega isso e soma as outras
+// fontes + rateia os custos, chegando na COTA de cada sócio no mês — que é o que
+// vai pra conta PJ dele na distribuição.
+//
+// REGRAS (definidas pelo Pedro, 2026-09):
+//   Receita  · mensalidades → por turma (motor de repasse)
+//            · eventos NPA → 50/50
+//            · DKSoft → 100% Rodrygo   · PNL Master → 50/50
+//            · Zaffalon → 100% Pedro   · Life Sorrisos → 100% Rodrygo
+//   Custo    · fixos compartilhados (ads, software, contab, adm, telefonia,
+//              impostos, comissão, folha) → 50/50
+//            · professoras (custo_produto que não é evento) → proporção Pedro/Rodrygo
+//              da receita de mensalidade (proxy — professora segue a turma)
+//            · custo de evento (custo_produto produto=idm-pelo-brasil) → 50/50
+//            · taxa Voomp (taxa_gateway, fornecedor ~ Voomp) → 100% Rodrygo (ele é
+//              dono do resto da turma #02426, onde a Voomp cobra)
+//            · repasse_investidor (Keila) → NÃO entra (já saiu da receita dela)
+//            · pró-labore / distribuição → NÃO entra (é o repasse em si; a tela
+//              Sócios controla contra a cota)
+//
+// A COTA (resultado) é ANTES de pró-labore/distribuição: é o total que é daquele
+// sócio no mês. Ele decide depois quanto vira pró-labore e quanto fica de caixa.
+const NOME_ONZE = 'Onze Digital';
+
+export interface SocioDreRow {
+  nome: string;
+  receitaMensalidades: number;
+  receitaEventos: number;
+  receitaOutras: number;
+  receitaTotal: number;
+  custoCompartilhado: number;
+  custoProfessoras: number;
+  custoEventos: number;
+  custoDedicado: number; // taxa Voomp e afins, específicos de um sócio
+  custoTotal: number;
+  resultado: number;
+}
+
+export interface DrePorSocio {
+  pedro: SocioDreRow;
+  rodrygo: SocioDreRow;
+  keilaRepasse: number;
+  temDados: boolean;
+}
+
+export interface DrePorSocioItem {
+  tipo: string | null;
+  valor: number | null;
+  categoria: string | null;
+  produto: string | null;
+  fornecedor: string | null;
+}
+
+function zeroSocio(nome: string): SocioDreRow {
+  return {
+    nome,
+    receitaMensalidades: 0, receitaEventos: 0, receitaOutras: 0, receitaTotal: 0,
+    custoCompartilhado: 0, custoProfessoras: 0, custoEventos: 0, custoDedicado: 0,
+    custoTotal: 0, resultado: 0,
+  };
+}
+
+// Onde cai a receita "fora do CRM" (balanco_itens entrada), por fornecedor.
+function fracaoPedroReceitaOutra(fornecedor: string): number {
+  const f = fornecedor.toLowerCase();
+  if (f.includes('zaffalon')) return 1;          // consultoria do Pedro (Onze Digital)
+  if (f.includes('dksoft')) return 0;            // coorte legada — Rodrygo
+  if (f.includes('life sorrisos')) return 0;     // palestra do Rodrygo
+  if (f.includes('pnl')) return 0.5;
+  return 0.5;
+}
+
+export function calcDrePorSocio(opts: {
+  nomePedro: string;
+  nomeRodrygo: string;
+  pagamentos: PagamentoParaRepasse[];
+  turmaResponsaveis: TurmaResponsavelRow[];
+  responsaveis: ResponsavelRow[];
+  itens: DrePorSocioItem[];
+  receitaEventos: number;
+}): DrePorSocio {
+  const { nomePedro, nomeRodrygo, pagamentos, turmaResponsaveis, responsaveis, itens, receitaEventos } = opts;
+  const pedro = zeroSocio(nomePedro);
+  const rodrygo = zeroSocio(nomeRodrygo);
+
+  // ── Mensalidades: motor de repasse (Onze Digital = Pedro, IDM = Rodrygo) ──
+  const rep = calcRepasses(pagamentos, turmaResponsaveis, responsaveis);
+  rodrygo.receitaMensalidades = rep.valorIdm;
+  const linhaOnze = rep.repasses.find((r) => r.nome === NOME_ONZE);
+  pedro.receitaMensalidades = linhaOnze?.valor ?? 0;
+  const keilaRepasse = rep.repasses
+    .filter((r) => r.nome !== NOME_ONZE)
+    .reduce((s, r) => s + r.valor, 0);
+
+  // Proxy pro rateio das professoras: proporção da receita de mensalidade.
+  const baseMens = pedro.receitaMensalidades + rodrygo.receitaMensalidades;
+  const fracaoPedroPsi = baseMens > 0 ? pedro.receitaMensalidades / baseMens : 0.5;
+
+  // ── Eventos NPA: 50/50 ──
+  const ev = Math.max(0, receitaEventos) / 2;
+  pedro.receitaEventos = ev;
+  rodrygo.receitaEventos = ev;
+
+  // ── balanco_itens do mês ──
+  for (const i of itens) {
+    const v = Number(i.valor) || 0;
+    if (!v) continue;
+    const cat = i.categoria ?? '';
+    const forn = i.fornecedor ?? '';
+
+    if (i.tipo === 'entrada') {
+      if (!['receita_curso', 'receita_outra', 'matricula', 'outro_entrada'].includes(cat)) continue;
+      const fp = fracaoPedroReceitaOutra(forn);
+      pedro.receitaOutras += v * fp;
+      rodrygo.receitaOutras += v * (1 - fp);
+      continue;
+    }
+    if (i.tipo !== 'saida') continue;
+
+    // Não entram no rateio dos sócios.
+    if (cat === 'repasse_investidor' || cat === 'pro_labore' || cat === 'distribuicao_lucro' || cat === 'estorno') continue;
+
+    if (cat === 'taxa_gateway' && forn.toLowerCase().includes('voomp')) {
+      rodrygo.custoDedicado += v;
+      continue;
+    }
+    if (cat === 'custo_produto') {
+      if ((i.produto ?? '') === 'idm-pelo-brasil') {
+        pedro.custoEventos += v / 2;
+        rodrygo.custoEventos += v / 2;
+      } else {
+        pedro.custoProfessoras += v * fracaoPedroPsi;
+        rodrygo.custoProfessoras += v * (1 - fracaoPedroPsi);
+      }
+      continue;
+    }
+    // Resto (ads, software, contabilidade, adm, financeiro, imposto, comissao,
+    // folha, custo_fixo, taxa_gateway não-Voomp) → 50/50.
+    pedro.custoCompartilhado += v / 2;
+    rodrygo.custoCompartilhado += v / 2;
+  }
+
+  for (const s of [pedro, rodrygo]) {
+    s.receitaTotal = s.receitaMensalidades + s.receitaEventos + s.receitaOutras;
+    s.custoTotal = s.custoCompartilhado + s.custoProfessoras + s.custoEventos + s.custoDedicado;
+    s.resultado = s.receitaTotal - s.custoTotal;
+  }
+
+  return {
+    pedro, rodrygo, keilaRepasse,
+    temDados: pagamentos.length > 0 || itens.length > 0 || receitaEventos > 0,
+  };
+}
 
 // ─── Breakdown por forma de pagamento ────────────────────────────────────────
 //

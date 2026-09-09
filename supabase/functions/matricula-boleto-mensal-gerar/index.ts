@@ -1,13 +1,23 @@
 /**
  * matricula-boleto-mensal-gerar
  * Rede de segurança: gera (via Asaas, PRODUCAO) qualquer boleto do plano
- * "boleto" (15x R$150) da matrícula do Time Comercial que não tenha sido
- * criado ainda. Desde 2026-09-03, as 15 parcelas (inclusive a 1ª) já são
- * geradas de uma vez direto em matricula-pagamento-criar, na hora da
- * matrícula -- esta function só entra em ação se alguma parcela falhar
+ * "boleto" da matrícula que não tenha sido criado ainda. Desde 2026-09-03, as
+ * parcelas já são geradas de uma vez direto em matricula-pagamento-criar, na
+ * hora da matrícula -- esta function só entra em ação se alguma parcela falhar
  * naquele momento (timeout, erro pontual do Asaas, etc.), pra não deixar o
- * aluno sem boleto de forma silenciosa. Antes de 2026-09-03, cuidava só das
- * parcelas 2-15 (a 1ª era PIX-MP instantâneo); ver histórico deste arquivo.
+ * aluno sem boleto de forma silenciosa.
+ *
+ * ── Escopo (2026-09-08) ──────────────────────────────────────────────────────
+ * `balanco_config.asaas_novos_ativo = false` (padrão): só o fluxo do Time
+ * Comercial, como sempre. Quando `true`: passa a cobrir alunos de QUALQUER
+ * origem, mas só os com `data_matricula >= inicio_operacao_fiscal` -- os alunos
+ * atuais continuam na Voomp por construção. O aluno novo paga 100% das parcelas
+ * pelo Asaas (nada é pulado). Valor e nº de parcelas saem de `pagamentos.valor`
+ * / `total_mensalidades` -- nada hardcoded.
+ *
+ * A extensão universitária (Anhanguera) é OUTRA cobrança: um boleto na Voomp,
+ * no nome do aluno, que a EMPRESA paga por fora pra registrar o vínculo. Não
+ * passa por aqui nem por `pagamentos` -- é despesa da empresa, lançada à parte.
  *
  * Cliente Asaas: criado uma única vez por aluno e reaproveitado -- id salvo
  * em alunos.asaas_customer_id.
@@ -69,6 +79,7 @@ interface PagamentoRow {
   valor: number;
   numero_parcela: number;
   data_vencimento: string;
+  total_mensalidades: number | null;
   alunos: {
     nome: string | null;
     email: string | null;
@@ -77,6 +88,8 @@ interface PagamentoRow {
     cep: string | null;
     cidade_estado: string | null;
     asaas_customer_id: string | null;
+    origem_lead: string | null;
+    data_matricula: string | null;
   } | null;
 }
 
@@ -107,20 +120,42 @@ serve(async (req) => {
     limiteVencimento.setDate(limiteVencimento.getDate() + 10);
     const limiteVencimentoStr = limiteVencimento.toISOString().slice(0, 10);
 
-    const { data: pagamentosRaw, error: pagamentosErr } = await supabase
+    // ── Config: trava do "Asaas para alunos novos" ──────────────────────────
+    // Decisão do dono do produto (2026-09-08): alunos ATUAIS continuam na Voomp;
+    // só os NOVOS (data_matricula >= inicio_operacao_fiscal) vão pro Asaas, e
+    // pagam 100% das parcelas por lá.
+    const { data: cfg } = await supabase
+      .from('balanco_config')
+      .select('inicio_operacao_fiscal, asaas_novos_ativo')
+      .eq('id', 'onze_digital')
+      .maybeSingle();
+    const asaasNovosAtivo = cfg?.asaas_novos_ativo === true;
+    const inicioOperacaoFiscal = cfg?.inicio_operacao_fiscal ?? '2026-09-01';
+
+    let query = supabase
       .from('pagamentos')
       .select(`
-        id, aluno_id, valor, numero_parcela, data_vencimento,
+        id, aluno_id, valor, numero_parcela, data_vencimento, total_mensalidades,
         alunos!inner (
           nome, email, cpf, endereco, cep, cidade_estado, asaas_customer_id,
-          origem_lead, forma_pagamento
+          origem_lead, forma_pagamento, data_matricula
         )
       `)
       .eq('status', 'pendente')
       .is('asaas_payment_id', null)
       .lte('data_vencimento', limiteVencimentoStr)
-      .eq('alunos.origem_lead', 'time_comercial')
       .eq('alunos.forma_pagamento', 'boleto');
+
+    if (asaasNovosAtivo) {
+      // Qualquer origem, mas só matrículas a partir do corte -- os ~136 alunos
+      // atuais ficam de fora por construção.
+      query = query.gte('alunos.data_matricula', inicioOperacaoFiscal);
+    } else {
+      // Comportamento atual: só o fluxo do Time Comercial.
+      query = query.eq('alunos.origem_lead', 'time_comercial');
+    }
+
+    const { data: pagamentosRaw, error: pagamentosErr } = await query;
 
     if (pagamentosErr) {
       console.error('matricula-boleto-mensal-gerar: erro ao buscar pagamentos elegíveis', pagamentosErr);
@@ -198,7 +233,7 @@ serve(async (req) => {
             dueDate: pagamento.data_vencimento,
             // "/" e acentos saem estranhos na description do Asaas (achado em
             // teste real 2026-09-04, "1/15" virava "115") -- texto simples.
-            description: `Matricula PSI (parcela ${pagamento.numero_parcela} de 15) - ${aluno.nome ?? pagamento.aluno_id}`,
+            description: `Matricula PSI (parcela ${pagamento.numero_parcela} de ${pagamento.total_mensalidades ?? 15}) - ${aluno.nome ?? pagamento.aluno_id}`,
             externalReference: pagamento.id,
           }),
         });

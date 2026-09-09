@@ -82,6 +82,11 @@ const App = () => (
               <Route path="/forms/tarefa/:tarefaId" element={<TarefaPublica />} />
               <Route path="/formulario/:token"      element={<FormularioAluno />} />
               <Route path="/matricula/:vendedor"    element={<MatriculaTimeComercial />} />
+              {/* Pré-matrícula: mesmo formulário, mas só boleto e com a 1ª
+                  cobrança (entrada) programada pra uma data futura em vez de
+                  cobrada na hora -- link separado de propósito, pra não
+                  confundir com o link normal de pagamento no ato. */}
+              <Route path="/pre-matricula/:vendedor" element={<MatriculaTimeComercial preMatricula />} />
               <Route path="/pnl-contrato"           element={<PnlContrato />} />
               {/* Alias curto pra vendedor (ir.idmpsi.com.br/helen, /miguel) --
                   aponta pro mesmo componente que /matricula/:vendedor. Rota

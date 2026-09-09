@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { canAccessFinanceiroTurma } from '@/lib/access-control';
@@ -27,6 +27,7 @@ import {
 import { format, isSameMonth, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { isPagamentoInadimplente, calcTaxaTransacao, taxaDoPagamento, type TaxaDetalhe } from '@/lib/financial-utils';
+import { CONTAS, type Conta } from '@/lib/contas';
 import { NomePessoa } from '@/components/crm/pessoa/NomePessoa';
 import { StatTile, FiltroChip } from '@/components/crm/ui/premium';
 import {
@@ -162,6 +163,10 @@ interface Pagamento {
   taxa_valor?: number | null;
   data_prevista_pagamento?: string | null;
   created_at: string;
+  link_pagamento_asaas?: string | null;
+  link_pagamento_mp?: string | null;
+  asaas_payment_id?: string | null;
+  conta_recebimento?: string | null;
 }
 
 interface ParcelaLocal {
@@ -974,7 +979,10 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
   const [uploadingContrato, setUploadingContrato] = useState(false);
   const [savingTurma, setSavingTurma] = useState(false);
   const [showPagoDialog, setShowPagoDialog] = useState(false);
-  const [pagoInfo, setPagoInfo] = useState<{ pagamentoId: string; alunoId: string; data: string; canal_cobranca: string } | null>(null);
+  const [pagoInfo, setPagoInfo] = useState<{ pagamentoId: string; alunoId: string; data: string; canal_cobranca: string; conta: Conta | '' } | null>(null);
+  // Cobrança manual de UMA parcela pelo WhatsApp do Financeiro (instância disp3).
+  const [cobrarParcela, setCobrarParcela] = useState<Pagamento | null>(null);
+  const [enviandoCobranca, setEnviandoCobranca] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'todos' | 'ativo' | 'inadimplente' | 'cancelado' | 'pre_matricula'>('todos');
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('todos');
   const [dueDayFilter, setDueDayFilter] = useState<DueDayFilter>('todos');
@@ -1009,9 +1017,6 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
       openAlunoDetail(aluno);
     }
   }, [initialAlunoId, loading, alunos]);
-
-  const ALUNOS_SELECT_FULL = 'id, turma_id, produto, nome, whatsapp, email, cpf, rg, sexo, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, tipo_pagamento, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, lancamento_id, valor_mensalidade, forma_pagamento, observacoes, grupo_turma_confirmado_em, grupo_turma_id, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, contrato_baixado, contrato_arquivo_url, contrato_arquivo_nome, asaas_integrado, asaas_link, voomp_integrado, voomp_link, contrato_token, token_acesso, link_grupo_whatsapp, created_at';
-  const ALUNOS_SELECT_BASE = 'id, turma_id, produto, nome, whatsapp, email, cpf, rg, sexo, data_nascimento, endereco, cep, cidade_estado, pais, dia_vencimento, dia_vencimento_contrato, status, tipo_pagamento, mensalidades_pagas, total_mensalidades, data_inicio, data_fim, data_matricula, origem_lead, valor_mensalidade, forma_pagamento, observacoes, grupo_turma_confirmado_em, grupo_turma_id, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, created_at';
 
   const loadData = async () => {
     setLoading(true);
@@ -1454,19 +1459,19 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
     }
   };
 
-  useEffect(() => {
+  const carregarCobrancaLogsAluno = useCallback(async () => {
     if (!alunoDetail?.id) { setCobrancaLogsAluno([]); return; }
     setLoadingCobrancaLogsAluno(true);
-    supabase
+    const { data } = await supabase
       .from('cobranca_logs')
       .select('id, pagamento_id, mensagem, template_nome, template_tipo, status, erro_msg, enviado_em, manual, created_at, respondeu_em, ultima_resposta')
       .eq('aluno_id', alunoDetail.id)
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        setCobrancaLogsAluno((data as CobrancaLogAluno[]) || []);
-        setLoadingCobrancaLogsAluno(false);
-      });
+      .order('created_at', { ascending: false });
+    setCobrancaLogsAluno((data as CobrancaLogAluno[]) || []);
+    setLoadingCobrancaLogsAluno(false);
   }, [alunoDetail?.id]);
+
+  useEffect(() => { carregarCobrancaLogsAluno(); }, [carregarCobrancaLogsAluno]);
 
   useEffect(() => {
     if (!alunoDetail?.id) { setIndicadosAluno([]); return; }
@@ -1942,8 +1947,66 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
 
   const abrirPagoDialog = (pagamentoId: string, alunoId: string) => {
     const hoje = todayDateInput();
-    setPagoInfo({ pagamentoId, alunoId, data: hoje, canal_cobranca: '' });
+    setPagoInfo({ pagamentoId, alunoId, data: hoje, canal_cobranca: '', conta: '' });
     setShowPagoDialog(true);
+  };
+
+  // Link do boleto da parcela: prioriza Asaas, cai pro Mercado Pago.
+  const linkBoleto = (p: Pagamento) => p.link_pagamento_asaas || p.link_pagamento_mp || null;
+
+  const copiarLinkParcela = (p: Pagamento) => {
+    const link = linkBoleto(p);
+    if (!link) return;
+    navigator.clipboard.writeText(link);
+    toast({ title: 'Link copiado', description: `Boleto da parcela ${p.numero_parcela}` });
+  };
+
+  const mensagemCobrancaParcela = (p: Pagamento) => {
+    const nome = (alunoDetail?.nome || '').split(' ')[0] || 'aluno(a)';
+    const total = alunoDetail?.total_mensalidades || 15;
+    const link = linkBoleto(p) || '';
+    return `Oi, ${nome}! 😊\n\nAqui é o *Financeiro do Instituto Despertamente*.\n\nSegue o boleto da *parcela ${p.numero_parcela}/${total}*, com *vencimento em ${safeDate(p.data_vencimento)}* — ${formatCurrency(p.valor)}:\n👉 ${link}\n\nQualquer dúvida, é só chamar por aqui. 🙏`;
+  };
+
+  // Envia a cobrança da parcela pelo WhatsApp do Financeiro (disp3) e registra
+  // no histórico (cobranca_logs) -- mesma via que a cobrança automática usa,
+  // marcada como manual.
+  const enviarCobrancaParcela = async () => {
+    if (!cobrarParcela || !alunoDetail) return;
+    const numero = alunoDetail.whatsapp;
+    if (!numero) { toast({ variant: 'destructive', title: 'Sem telefone', description: 'O aluno não tem WhatsApp cadastrado.' }); return; }
+    const mensagem = mensagemCobrancaParcela(cobrarParcela);
+    setEnviandoCobranca(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('wpp-enviar', {
+        body: { numero, mensagem, instance_name: 'disp3' },
+      });
+      if (error || (data && data.ok === false)) throw new Error(error?.message || data?.error || 'Falha no envio');
+
+      await supabase.from('cobranca_logs').insert({
+        aluno_id: alunoDetail.id,
+        pagamento_id: cobrarParcela.id,
+        aluno_nome: alunoDetail.nome || '',
+        telefone: String(numero),
+        mensagem,
+        template_nome: 'Cobrança manual (Financeiro)',
+        template_tipo: 'manual',
+        status: 'enviado',
+        manual: true,
+        enviado_em: new Date().toISOString(),
+      });
+
+      await supabase.from('pagamentos').update({ cobranca_contatado_em: new Date().toISOString(), canal_cobranca: 'Financeiro' }).eq('id', cobrarParcela.id);
+
+      toast({ title: 'Cobrança enviada', description: `Parcela ${cobrarParcela.numero_parcela} pelo WhatsApp do Financeiro` });
+      setCobrarParcela(null);
+      carregarCobrancaLogsAluno();
+      loadData();
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Erro ao enviar', description: e.message });
+    } finally {
+      setEnviandoCobranca(false);
+    }
   };
 
   const confirmarPago = async () => {
@@ -1957,6 +2020,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
       status: 'pago',
       data_pagamento: pagoInfo.data,
       canal_cobranca: pagoInfo.canal_cobranca || null,
+      conta_recebimento: pagoInfo.conta || null,
       taxa_valor: taxa,
     }).eq('id', pagoInfo.pagamentoId);
     if (error) { toast({ variant: 'destructive', title: 'Erro', description: error.message }); return; }
@@ -3660,10 +3724,22 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                                       )}
                                     </td>
                                     <td className="py-2 px-2">
-                                      {p.status === 'pago'
-                                        ? <Button variant="ghost" size="sm" onClick={() => estornarPagamento(p.id, alunoDetail.id)} className="text-orange-500 hover:text-orange-700 h-6 px-2 text-[10px]">Estornar</Button>
-                                        : <Button variant="ghost" size="sm" onClick={() => marcarComoPago(p.id, alunoDetail.id)} className="text-green-600 hover:text-green-800 h-6 px-2 text-[10px] font-semibold">Pago</Button>
-                                      }
+                                      <div className="flex items-center gap-0.5">
+                                        {p.status !== 'pago' && linkBoleto(p) && (
+                                          <>
+                                            <Button variant="ghost" size="sm" onClick={() => copiarLinkParcela(p)} title="Copiar link do boleto" className="text-muted-foreground hover:text-foreground h-6 w-6 p-0">
+                                              <Copy className="h-3.5 w-3.5" />
+                                            </Button>
+                                            <Button variant="ghost" size="sm" onClick={() => setCobrarParcela(p)} title="Cobrar pelo WhatsApp do Financeiro" className="text-blue-600 hover:text-blue-800 h-6 w-6 p-0">
+                                              <MessageSquare className="h-3.5 w-3.5" />
+                                            </Button>
+                                          </>
+                                        )}
+                                        {p.status === 'pago'
+                                          ? <Button variant="ghost" size="sm" onClick={() => estornarPagamento(p.id, alunoDetail.id)} className="text-orange-500 hover:text-orange-700 h-6 px-2 text-[10px]">Estornar</Button>
+                                          : <Button variant="ghost" size="sm" onClick={() => marcarComoPago(p.id, alunoDetail.id)} className="text-green-600 hover:text-green-800 h-6 px-2 text-[10px] font-semibold">Pago</Button>
+                                        }
+                                      </div>
                                     </td>
                                   </tr>
                                 ))}
@@ -3862,6 +3938,18 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
             <Input type="date" value={pagoInfo?.data || ''} onChange={e => setPagoInfo(prev => prev ? { ...prev, data: e.target.value } : prev)} className="mt-1" />
           </div>
           <div>
+            <label className="text-sm font-medium">Conta que recebeu</label>
+            <Select value={pagoInfo?.conta || ''} onValueChange={v => setPagoInfo(prev => prev ? { ...prev, conta: v as Conta } : prev)}>
+              <SelectTrigger className="mt-1"><SelectValue placeholder="Onde o dinheiro caiu?" /></SelectTrigger>
+              <SelectContent>
+                {CONTAS.map(c => (
+                  <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground mt-1">Base da conciliação de caixa.</p>
+          </div>
+          <div>
             <label className="text-sm font-medium">Canal de cobrança</label>
             <Select value={pagoInfo?.canal_cobranca || ''} onValueChange={v => setPagoInfo(prev => prev ? { ...prev, canal_cobranca: v } : prev)}>
               <SelectTrigger className="mt-1"><SelectValue placeholder="De onde veio esse pagamento?" /></SelectTrigger>
@@ -3881,6 +3969,29 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
               className="bg-green-600 hover:bg-green-700 text-white"
             >
               Confirmar Pago
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Cobrar parcela pelo WhatsApp do Financeiro */}
+      <Dialog open={!!cobrarParcela} onOpenChange={(o) => !o && setCobrarParcela(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cobrar pelo Financeiro</DialogTitle>
+            <DialogDescription>
+              Envia pelo WhatsApp do Financeiro para {alunoDetail?.whatsapp || 'o aluno'} e registra no histórico abaixo.
+            </DialogDescription>
+          </DialogHeader>
+          {cobrarParcela && (
+            <div className="rounded-md border border-border bg-muted/30 p-3 text-xs whitespace-pre-wrap max-h-60 overflow-y-auto">
+              {mensagemCobrancaParcela(cobrarParcela)}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCobrarParcela(null)} disabled={enviandoCobranca}>Cancelar</Button>
+            <Button onClick={enviarCobrancaParcela} disabled={enviandoCobranca} className="bg-blue-600 hover:bg-blue-700 text-white">
+              {enviandoCobranca ? 'Enviando…' : 'Enviar cobrança'}
             </Button>
           </DialogFooter>
         </DialogContent>

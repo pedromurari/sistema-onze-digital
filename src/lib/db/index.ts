@@ -41,6 +41,10 @@ export type { ResponsavelRow, TurmaResponsavelRow } from './responsaveis';
 export { useRealtimeInvalidation, useInvalidarDados } from './realtime';
 
 export {
+  buscarBalancoConfig, useBalancoConfig, COLUNAS_BALANCO_CONFIG,
+} from './balanco-config';
+
+export {
   usePessoas, usePessoaPorId, usePessoaPorTelefone,
   useVinculosDaPessoa, useTimelineDaPessoa,
 } from './pessoas';
