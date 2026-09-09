@@ -171,6 +171,30 @@ function ScreenLinkInvalido() {
   );
 }
 
+function PreMatriculaSucesso({ nome, data }: { nome: string; data: string }) {
+  const dataFmt = (() => {
+    if (!data) return '';
+    const [ano, mes, dia] = data.split('-');
+    return dia && mes && ano ? `${dia}/${mes}/${ano}` : '';
+  })();
+  const primeiroNome = nome.trim().split(/\s+/)[0] || '';
+  return (
+    <div className="idm-matricula">
+      <div id="error-screen" className="show">
+        <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', color: 'var(--navy)', marginBottom: 12 }}>
+          Pré-matrícula confirmada{primeiroNome ? `, ${primeiroNome}` : ''}! 🎉
+        </h2>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.9375rem', maxWidth: 480, margin: '0 auto' }}>
+          Seus dados já foram registrados e o contrato de matrícula está sendo enviado por e-mail
+          para assinatura eletrônica.<br /><br />
+          A cobrança da entrada será enviada automaticamente{dataFmt ? <> perto do dia <strong>{dataFmt}</strong></> : ' na data programada'} —
+          não é preciso fazer nada agora além de assinar o contrato quando ele chegar.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ─── Step de pagamento (Mercado Pago) ───────────────────────────────
 
 type MetodoCobravel = Exclude<MetodoPagamentoUI, 'bolsa'>;
@@ -677,19 +701,24 @@ type FormState = DadosPessoais & DadosEndereco & {
   codigo_bolsa: string;
   bolsaValidada: boolean;
   declaracao: boolean;
+  data_primeira_cobranca: string;
 };
 
-export default function MatriculaTimeComercial() {
+export default function MatriculaTimeComercial({ preMatricula = false }: { preMatricula?: boolean } = {}) {
   const { vendedor: slug } = useParams<{ vendedor: string }>();
   const nomeVendedor = slug ? VENDEDORES[slug.toLowerCase()] : undefined;
   const plano = PLANOS[slug ? planoDoSlug(slug) : 'padrao'];
-  const formasPermitidas = slug ? FORMAS_PERMITIDAS[slug.toLowerCase()] : undefined;
+  // Pré-matrícula: só boleto (é a única forma que dá pra "programar" sem
+  // cobrar na hora) -- ignora o FORMAS_PERMITIDAS do slug nesse caso.
+  const formasPermitidas: FormaPagamentoPermitida[] | undefined =
+    preMatricula ? ['boleto'] : (slug ? FORMAS_PERMITIDAS[slug.toLowerCase()] : undefined);
 
   useEffect(() => { ensurePoppinsFontLoaded(); }, []);
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [preMatriculaFeita, setPreMatriculaFeita] = useState(false);
   const [alunoId, setAlunoId] = useState<string | null>(null);
   const [erro, setErro] = useState('');
 
@@ -702,6 +731,7 @@ export default function MatriculaTimeComercial() {
     codigo_bolsa: '',
     bolsaValidada: false,
     declaracao: false,
+    data_primeira_cobranca: '',
   });
 
   const setCampo = <K extends keyof FormState>(campo: K, valor: FormState[K]) =>
@@ -709,6 +739,7 @@ export default function MatriculaTimeComercial() {
 
   if (!nomeVendedor) return <ScreenLinkInvalido />;
   if (done) return <ObrigadoScreen nome={form.nome} />;
+  if (preMatriculaFeita) return <PreMatriculaSucesso nome={form.nome} data={form.data_primeira_cobranca} />;
 
   // ── forma de pagamento derivada da escolha no §3 ────────────────────────────
   const formaPagamento: MetodoPagamentoUI | '' =
@@ -725,7 +756,9 @@ export default function MatriculaTimeComercial() {
     : null;
 
   // ── Tela de cobrança: matrícula já criada, falta pagar (avista/cartão/boleto) ──
-  if (alunoId && formaPagamento && formaPagamento !== 'bolsa') {
+  // Não aparece em pré-matrícula -- a cobrança fica programada, não é feita
+  // na hora (ver handleSubmit).
+  if (!preMatricula && alunoId && formaPagamento && formaPagamento !== 'bolsa') {
     return (
       <div className="idm-matricula">
         <div className="pay-header">
@@ -770,11 +803,16 @@ export default function MatriculaTimeComercial() {
     form.endereco.trim().length > 0 &&
     form.cidadeEstado.trim().length > 0;
 
+  const dataPrimeiraCobrancaOk =
+    !preMatricula ||
+    (form.data_primeira_cobranca.length > 0 && form.data_primeira_cobranca > new Date().toISOString().slice(0, 10));
+
   const pagamentoOk =
     formaPagamento !== '' &&
     (formaPagamento !== 'boleto' ||
       (diaVencimentoFinal !== null && diaVencimentoFinal >= 1 && diaVencimentoFinal <= 28)) &&
-    (formaPagamento !== 'bolsa' || form.codigo_bolsa.trim().length > 0);
+    (formaPagamento !== 'bolsa' || form.codigo_bolsa.trim().length > 0) &&
+    dataPrimeiraCobrancaOk;
 
   const podeEnviar = pessoalOk && enderecoOk && pagamentoOk && form.declaracao && !submitting;
 
@@ -805,6 +843,7 @@ export default function MatriculaTimeComercial() {
         p_valor_avista: plano.avista,
         p_valor_parcela: plano.parcela,
         p_plano_slug: planoDoSlug(slug ?? ''),
+        p_data_primeiro_pagamento: preMatricula ? form.data_primeira_cobranca || null : null,
       });
 
       if (error) {
@@ -827,6 +866,43 @@ export default function MatriculaTimeComercial() {
 
       if (formaPagamento === 'bolsa') {
         setDone(true);
+      } else if (preMatricula) {
+        // Pré-matrícula: nada de tela de PIX/cartão agora. Dispara em segundo
+        // plano (1) a geração das 15 parcelas/boletos no Asaas -- já nascem
+        // com vencimento futuro, ancoradas em alunos.data_matricula (ver
+        // migration matricula_time_comercial_pre_matricula) -- e (2) o envio
+        // do contrato pra assinatura na Autentique. Nenhum dos dois bloqueia
+        // a tela de sucesso -- falha aqui não deve travar o cliente; se der
+        // problema, a equipe vê no aluno (sem asaas_payment_id / sem
+        // contrato_enviado) e reenvia manualmente.
+        fetch(`${SUPABASE_FUNCTIONS_URL}/matricula-pagamento-criar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            alunoId: data.aluno_id,
+            forma: 'boleto',
+            payerEmail: form.email.trim(),
+            payerFirstName: form.nome.trim().split(/\s+/)[0] || 'Aluno',
+            payerLastName: form.nome.trim().split(/\s+/).slice(1).join(' ') || form.nome.trim(),
+            payerCpf: form.cpf.trim(),
+          }),
+        }).catch(e => console.error('[MatriculaTimeComercial] pré-matrícula: erro ao gerar parcelas', e));
+
+        fetch(`${SUPABASE_FUNCTIONS_URL}/autentique-criar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            aluno_id: data.aluno_id,
+            cpf: form.cpf.trim(),
+            data_nascimento: dataNascimento,
+            endereco: form.endereco.trim(),
+            cep: form.cep.trim(),
+            cidade_estado: form.cidadeEstado.trim(),
+            enviar_wpp: true,
+          }),
+        }).catch(e => console.error('[MatriculaTimeComercial] pré-matrícula: erro ao enviar contrato', e));
+
+        setPreMatriculaFeita(true);
       } else {
         setAlunoId(data.aluno_id);
       }
@@ -902,6 +978,9 @@ export default function MatriculaTimeComercial() {
                 onVoltar={voltarPasso}
                 plano={plano}
                 formasPermitidas={formasPermitidas}
+                preMatricula={preMatricula}
+                dataPrimeiraCobranca={form.data_primeira_cobranca}
+                onDataPrimeiraCobrancaChange={v => setCampo('data_primeira_cobranca', v)}
               />
             )}
 
