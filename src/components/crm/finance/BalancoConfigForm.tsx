@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useBalancoConfig, useInvalidarDados } from '@/lib/db';
 import { CONTAS, getContaCor, getContaLabel, type Conta } from '@/lib/contas';
 import {
-  PARAMETROS_CFO_DEFAULT, type ParametrosCfo,
+  PARAMETROS_CFO_DEFAULT, type ParametrosCfo, type ProlaboreFrequencia,
 } from '@/lib/financial-utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,8 +15,19 @@ import { toast } from '@/hooks/use-toast';
 
 export interface SocioConfig {
   nome: string;
+  /** Participação no lucro distribuível — a soma dos sócios tem que dar 100%. */
   percentual: number;
+  /** Pró-labore mensal do sócio (o total que a contabilidade declara todo mês). */
+  prolabore_mensal: number;
+  /** Conta que recebe o pró-labore + a distribuição deste sócio. */
+  conta: Conta | '';
 }
+
+export const PROLABORE_FREQ_LABELS: Record<ProlaboreFrequencia, string> = {
+  semanal: 'Semanal (1/4 por semana)',
+  quinzenal: 'Quinzenal (1/2 a cada 15 dias)',
+  mensal: 'Mensal (parcela única)',
+};
 
 export interface TaxaBalancoConfig {
   conta: Conta;
@@ -76,6 +87,8 @@ const normalizarSocios = (valor: unknown): SocioConfig[] =>
     ? valor.map((item) => objeto(item)).map((item) => ({
         nome: String(item.nome ?? ''),
         percentual: numero(item.percentual),
+        prolabore_mensal: numero(item.prolabore_mensal),
+        conta: CONTAS.some((conta) => conta.id === item.conta) ? (item.conta as Conta) : '',
       }))
     : [];
 
@@ -89,6 +102,8 @@ const normalizarTaxas = (valor: unknown): TaxaBalancoConfig[] =>
       }))
     : [];
 
+const FREQ_VALIDAS: ProlaboreFrequencia[] = ['semanal', 'quinzenal', 'mensal'];
+
 const normalizarParametros = (valor: unknown): Required<ParametrosCfo> => {
   const atual = objeto(valor);
   return {
@@ -100,6 +115,12 @@ const normalizarParametros = (valor: unknown): Required<ParametrosCfo> => {
     reserva_emergencia_meta_meses: numero(
       atual.reserva_emergencia_meta_meses ?? PARAMETROS_CFO_DEFAULT.reserva_emergencia_meta_meses,
     ),
+    reserva_minima_operacional: numero(
+      atual.reserva_minima_operacional ?? PARAMETROS_CFO_DEFAULT.reserva_minima_operacional,
+    ),
+    prolabore_frequencia: FREQ_VALIDAS.includes(atual.prolabore_frequencia as ProlaboreFrequencia)
+      ? (atual.prolabore_frequencia as ProlaboreFrequencia)
+      : PARAMETROS_CFO_DEFAULT.prolabore_frequencia,
   };
 };
 
@@ -202,12 +223,15 @@ function EditorBalancoConfig({ config, onSaved }: EditorProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Sócios e participação</CardTitle>
-          <CardDescription>A distribuição precisa totalizar exatamente 100%.</CardDescription>
+          <CardTitle className="text-base">Sócios, pró-labore e participação</CardTitle>
+          <CardDescription>
+            A participação no lucro precisa totalizar exatamente 100%. O pró-labore é o valor mensal
+            declarado; a conta é para onde vão o pró-labore e a distribuição desse sócio.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-4">
           {socios.map((socio, indice) => (
-            <div key={indice} className="grid gap-2 sm:grid-cols-[1fr_150px_40px]">
+            <div key={indice} className="grid gap-2 md:grid-cols-[1fr_120px_150px_150px_40px]">
               <Input
                 aria-label={`Nome do sócio ${indice + 1}`}
                 value={socio.nome}
@@ -217,7 +241,7 @@ function EditorBalancoConfig({ config, onSaved }: EditorProps) {
               />
               <div className="relative">
                 <Input
-                  aria-label={`Percentual do sócio ${indice + 1}`}
+                  aria-label={`Participação no lucro do sócio ${indice + 1}`}
                   type="number"
                   min="0"
                   max="100"
@@ -229,13 +253,45 @@ function EditorBalancoConfig({ config, onSaved }: EditorProps) {
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">%</span>
               </div>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">R$</span>
+                <Input
+                  aria-label={`Pró-labore mensal do sócio ${indice + 1}`}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="pl-10"
+                  placeholder="pró-labore"
+                  value={socio.prolabore_mensal}
+                  onChange={(event) => setSocios((atuais) => atuais.map((item, i) =>
+                    i === indice ? { ...item, prolabore_mensal: numero(event.target.value) } : item))}
+                />
+              </div>
+              <Select
+                value={socio.conta || undefined}
+                onValueChange={(valor: Conta) => setSocios((atuais) => atuais.map((item, i) =>
+                  i === indice ? { ...item, conta: valor } : item))}
+              >
+                <SelectTrigger aria-label={`Conta do sócio ${indice + 1}`}>
+                  <SelectValue placeholder="Conta" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CONTAS.filter((conta) => conta.id !== 'outro').map((conta) => (
+                    <SelectItem key={conta.id} value={conta.id}>{conta.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Button variant="ghost" size="icon" onClick={() => setSocios((atuais) => atuais.filter((_, i) => i !== indice))} aria-label={`Remover sócio ${indice + 1}`}>
                 <Trash2 className="h-4 w-4 text-destructive" />
               </Button>
             </div>
           ))}
           <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
-            <Button variant="outline" size="sm" onClick={() => setSocios((atuais) => [...atuais, { nome: '', percentual: 0 }])}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSocios((atuais) => [...atuais, { nome: '', percentual: 0, prolabore_mensal: 0, conta: '' }])}
+            >
               <Plus className="mr-2 h-4 w-4" /> Adicionar sócio
             </Button>
             <BadgeSomaSocios soma={somaSocios} valida={somaSociosValida(socios)} />
@@ -283,6 +339,21 @@ function EditorBalancoConfig({ config, onSaved }: EditorProps) {
           <CampoParametro label="Margem bruta" suffix="%" value={parametros.gross_margin_pct} onChange={(valor) => setParametros((atual) => ({ ...atual, gross_margin_pct: valor }))} />
           <CampoParametro label="Saldo de caixa manual" prefix="R$" value={parametros.saldo_caixa_manual} onChange={(valor) => setParametros((atual) => ({ ...atual, saldo_caixa_manual: valor }))} />
           <CampoParametro label="Meta de reserva" suffix="meses" value={parametros.reserva_emergencia_meta_meses} onChange={(valor) => setParametros((atual) => ({ ...atual, reserva_emergencia_meta_meses: valor }))} />
+          <CampoParametro label="Reserva mínima da conta operacional" prefix="R$" value={parametros.reserva_minima_operacional} onChange={(valor) => setParametros((atual) => ({ ...atual, reserva_minima_operacional: valor }))} />
+          <div className="space-y-2">
+            <Label>Frequência do pró-labore</Label>
+            <Select
+              value={parametros.prolabore_frequencia}
+              onValueChange={(valor: ProlaboreFrequencia) => setParametros((atual) => ({ ...atual, prolabore_frequencia: valor }))}
+            >
+              <SelectTrigger aria-label="Frequência do pró-labore"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {(Object.keys(PROLABORE_FREQ_LABELS) as ProlaboreFrequencia[]).map((freq) => (
+                  <SelectItem key={freq} value={freq}>{PROLABORE_FREQ_LABELS[freq]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-2">
             <Label htmlFor="saldo-atualizado-em">Saldo manual atualizado em</Label>
             <Input id="saldo-atualizado-em" type="date" value={parametros.saldo_caixa_atualizado_em} onChange={(event) => setParametros((atual) => ({ ...atual, saldo_caixa_atualizado_em: event.target.value }))} />

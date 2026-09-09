@@ -701,6 +701,8 @@ export function calcRepasses(
 // FONTE: balanco_config.parametros_cfo (jsonb, 1 linha por empresa — hoje só
 // 'onze_digital' é usado pela UI). Não existe integração bancária nem fonte
 // automática de impostos/CAC real — todo campo aqui é input manual.
+export type ProlaboreFrequencia = 'semanal' | 'quinzenal' | 'mensal';
+
 export interface ParametrosCfo {
   impostos_pct?: number;
   cac_estimado?: number;
@@ -708,6 +710,12 @@ export interface ParametrosCfo {
   saldo_caixa_manual?: number;
   saldo_caixa_atualizado_em?: string;
   reserva_emergencia_meta_meses?: number;
+  // Piso da conta operacional: o repasse de pró-labore/distribuição só sai
+  // enquanto o caixa da operação estiver acima disto (regra da §7 do Raio-X).
+  reserva_minima_operacional?: number;
+  // Com que cadência o pró-labore mensal é efetivamente pago (o total mensal
+  // é o mesmo que a contabilidade declara; muda só o parcelamento do caixa).
+  prolabore_frequencia?: ProlaboreFrequencia;
 }
 
 export const PARAMETROS_CFO_DEFAULT: Required<ParametrosCfo> = {
@@ -717,6 +725,8 @@ export const PARAMETROS_CFO_DEFAULT: Required<ParametrosCfo> = {
   saldo_caixa_manual: 0,
   saldo_caixa_atualizado_em: '',
   reserva_emergencia_meta_meses: 3,
+  reserva_minima_operacional: 0,
+  prolabore_frequencia: 'semanal',
 };
 
 export const EMPRESA_CFO_PADRAO = 'onze_digital';

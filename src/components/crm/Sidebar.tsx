@@ -53,6 +53,7 @@ const BASE_MENU: MenuItem[] = [
   { key: 'financeiro_notas',          label: 'Notas Fiscais',        icon: ReceiptText },
   { key: 'financeiro_dre',            label: 'DRE',                   icon: Calculator },
   { key: 'financeiro_conciliacao',    label: 'Conciliação',          icon: Scale },
+  { key: 'financeiro_socios',         label: 'Sócios',               icon: Users },
   { key: 'financeiro_cfo',           label: 'Análise CFO',           icon: TrendingUp },
   { key: 'balanco',                  label: 'Balanço',               icon: Scale },
   { key: 'cobranca',                 label: 'Cobrança',              icon: MessageSquare },
