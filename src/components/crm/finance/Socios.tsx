@@ -102,6 +102,7 @@ export function Socios() {
   const [mesFechado, setMesFechado] = useState(false);
   const [pagamentos, setPagamentos] = useState<DrePagamentoRow[]>([]);
   const [itensDre, setItensDre] = useState<DreItemRow[]>([]);
+  const [eventosReceita, setEventosReceita] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [dialogSocio, setDialogSocio] = useState<SocioRow | null>(null);
 
@@ -114,7 +115,7 @@ export function Socios() {
 
   const carregar = useCallback(async () => {
     setLoading(true);
-    const [{ data: itens }, { data: fech }, { data: pags }] = await Promise.all([
+    const [{ data: itens }, { data: fech }, { data: pags }, { data: eventos }] = await Promise.all([
       supabase
         .from('balanco_itens')
         .select('id, valor, tipo, categoria, fornecedor, data_caixa, data_competencia, mes_referencia, descricao'),
@@ -128,7 +129,15 @@ export function Socios() {
         .from('pagamentos')
         .select('status, valor, mes_referencia, taxa_valor')
         .eq('status', 'pago'),
+      supabase
+        .from('vw_receita_eventos_mes')
+        .select('mes, receita_total'),
     ]);
+    const evAcc: Record<string, number> = {};
+    for (const r of (eventos ?? []) as { mes: string; receita_total: number }[]) {
+      evAcc[r.mes] = (evAcc[r.mes] ?? 0) + (Number(r.receita_total) || 0);
+    }
+    setEventosReceita(evAcc);
     const todos = (itens ?? []) as (RepasseRow & DreItemRow & { data_competencia: string | null; mes_referencia: string | null })[];
     setItensDre(todos.map((i) => ({
       tipo: i.tipo, valor: i.valor, categoria: i.categoria,
@@ -154,8 +163,8 @@ export function Socios() {
   // Resultado do mês: o snapshot fechado manda; senão, a prévia ao vivo (mesmas
   // regras do DRE) — pra o sócio ver a cota antes de o mês ser fechado.
   const dreLive = useMemo(
-    () => calcDreResumoMes(pagamentos, itensDre, mes, params.impostos_pct ?? 0),
-    [pagamentos, itensDre, mes, params.impostos_pct],
+    () => calcDreResumoMes(pagamentos, itensDre, mes, params.impostos_pct ?? 0, eventosReceita[mes] ?? 0),
+    [pagamentos, itensDre, eventosReceita, mes, params.impostos_pct],
   );
   const resultadoMes = mesFechado ? resultadoFechado : (dreLive.temDados ? dreLive.resultado : null);
   const resultadoEhPrevia = !mesFechado && resultadoMes != null;

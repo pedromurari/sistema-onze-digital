@@ -77,7 +77,8 @@ const LABEL_PRODUTO: Record<string, string> = {
   psicanalise: 'Psicanálise', numerologia: 'Numerologia', npa: 'NPA', nps: 'NPS',
   workshop: 'Workshop', 'pnl-practitioner': 'PNL Practitioner', 'pnl-master': 'PNL Master',
   'idm-pelo-brasil': 'IDM pelo Brasil', 'mapa-numerologico': 'Mapa Numerológico',
-  _fora_crm: 'Receita fora do CRM (eventos, DKSoft, avulsos)',
+  _fora_crm: 'Receita fora do CRM (DKSoft, avulsos)',
+  _eventos_npa: 'Eventos NPA / IDM pelo Brasil',
 };
 const nomeProduto = (slug?: string | null) => LABEL_PRODUTO[slug ?? ''] ?? (slug || 'Outro');
 
@@ -121,6 +122,7 @@ export function DreCompetencia() {
   const { data: config } = useBalancoConfig<{ parametros_cfo: ParametrosCfo | null }>();
   const [itens, setItens] = useState<BalancoItemDre[]>([]);
   const [loadingItens, setLoadingItens] = useState(true);
+  const [eventosReceita, setEventosReceita] = useState<Record<string, number>>({});
   const [fechamento, setFechamento] = useState<DreFechamento | null>(null);
   const [salvandoFechamento, setSalvandoFechamento] = useState(false);
 
@@ -132,6 +134,18 @@ export function DreCompetencia() {
       .then(({ data }) => {
         setItens((data ?? []) as BalancoItemDre[]);
         setLoadingItens(false);
+      });
+    // Receita dos eventos NPA/IDM pelo Brasil, direto da fonte (npa_evento_leads
+    // via vw_receita_eventos_mes) — sempre atual, sem lançamento manual por evento.
+    supabase
+      .from('vw_receita_eventos_mes')
+      .select('mes, receita_total')
+      .then(({ data }) => {
+        const acc: Record<string, number> = {};
+        for (const r of (data ?? []) as { mes: string; receita_total: number }[]) {
+          acc[r.mes] = (acc[r.mes] ?? 0) + (Number(r.receita_total) || 0);
+        }
+        setEventosReceita(acc);
       });
   }, []);
 
@@ -180,11 +194,18 @@ export function DreCompetencia() {
       return [...m.entries()].sort((a, b) => b[1] - a[1]);
     };
 
-    // Receita operacional fora do CRM (eventos NPA, DKSoft, avulsos) — soma na bruta.
+    // Receita operacional fora do CRM (DKSoft, vendas avulsas) — lançada em
+    // balanco_itens como tipo=entrada.
     const receitaExtra = somaCat(CAT_RECEITA_EXTRA, 'entrada');
     if (receitaExtra > 0) {
       receitaBruta += receitaExtra;
       receitaPorProduto.set('_fora_crm', (receitaPorProduto.get('_fora_crm') ?? 0) + receitaExtra);
+    }
+    // Receita dos eventos NPA/IDM pelo Brasil (vw_receita_eventos_mes, ao vivo).
+    const receitaEventos = eventosReceita[mes] ?? 0;
+    if (receitaEventos > 0) {
+      receitaBruta += receitaEventos;
+      receitaPorProduto.set('_eventos_npa', (receitaPorProduto.get('_eventos_npa') ?? 0) + receitaEventos);
     }
 
     // Impostos: lançamento real 'imposto' do mês; se não houver, aplica o % de config.
@@ -226,9 +247,9 @@ export function DreCompetencia() {
       nao_operacional: -naoOpSaida,
       nao_op_linhas: rotular(linhasCat(CAT_NAO_OP_SAIDA, 'saida'), -1),
       resultado,
-      semDados: pagosDoMes.length === 0 && doMes.length === 0,
+      semDados: pagosDoMes.length === 0 && doMes.length === 0 && (eventosReceita[mes] ?? 0) === 0,
     };
-  }, [pagamentos, itens, mes, parametrosCfo.impostos_pct]);
+  }, [pagamentos, itens, eventosReceita, mes, parametrosCfo.impostos_pct]);
 
   const carregando = loadingPag || loadingItens;
   const fechado = !!fechamento && !fechamento.reaberto_em;

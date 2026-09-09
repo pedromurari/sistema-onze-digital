@@ -9664,6 +9664,22 @@ export type Database = {
         }
         Relationships: []
       }
+      vw_receita_eventos_mes: {
+        Row: {
+          data_evento: string | null
+          evento: string | null
+          evento_id: string | null
+          mes: string | null
+          qtd_matriculas: number | null
+          qtd_pagantes: number | null
+          receita_ingressos: number | null
+          receita_material: number | null
+          receita_matriculas: number | null
+          receita_total: number | null
+          status: string | null
+        }
+        Relationships: []
+      }
       vw_receita_por_fonte: {
         Row: {
           aluno_id: string | null

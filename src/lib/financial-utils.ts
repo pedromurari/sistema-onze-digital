@@ -772,6 +772,7 @@ export function calcDreResumoMes(
   itens: DreItemRow[],
   mes: string, // 'YYYY-MM'
   impostoPct = 0,
+  receitaEventosMes = 0, // vw_receita_eventos_mes.receita_total do mês
 ): DreResumo {
   const pagos = pagamentos.filter(
     (p) => p.status === 'pago' && (p.mes_referencia ?? '').slice(0, 7) === mes,
@@ -792,6 +793,7 @@ export function calcDreResumoMes(
       .reduce((s, i) => s + (Number(i.valor) || 0), 0);
 
   receitaBruta += soma(DRE_CAT_RECEITA_EXTRA, 'entrada');
+  receitaBruta += Math.max(0, receitaEventosMes);
 
   const impostoLancado = soma(['imposto'], 'saida');
   const impostos = impostoLancado > 0 ? impostoLancado : receitaBruta * (impostoPct / 100);
@@ -811,7 +813,7 @@ export function calcDreResumoMes(
     despesasFixas,
     ebitda,
     resultado: ebitda - naoOp,
-    temDados: pagos.length > 0 || doMes.length > 0,
+    temDados: pagos.length > 0 || doMes.length > 0 || receitaEventosMes > 0,
   };
 }
 
