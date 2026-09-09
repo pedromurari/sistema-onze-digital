@@ -14,7 +14,8 @@ export const COLUNAS_PAGAMENTO_RESUMO =
 
 export const COLUNAS_PAGAMENTO_COMPLETO =
   'id, aluno_id, turma_id, produto, valor, mes_referencia, data_vencimento, data_pagamento, ' +
-  'numero_parcela, status, canal_cobranca, taxa_valor, data_prevista_pagamento, created_at';
+  'numero_parcela, status, canal_cobranca, taxa_valor, data_prevista_pagamento, created_at, ' +
+  'link_pagamento_asaas, link_pagamento_mp, asaas_payment_id, conta_recebimento';
 
 /** Genérico pelo mesmo motivo de `buscarAlunos`: cada tela tem a sua interface. */
 export async function buscarPagamentos<T = Record<string, unknown>>(colunas: string = COLUNAS_PAGAMENTO_RESUMO) {
