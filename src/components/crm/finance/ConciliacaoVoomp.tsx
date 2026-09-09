@@ -96,6 +96,14 @@ export function ConciliacaoVoomp() {
     () => new Map(turmas.map((t) => [t.id, turmaKeyFrom(t.nome || '')])),
     [turmas],
   );
+  // Turmas em parceria com a Keila: o split de 50% acontece DENTRO da Voomp --
+  // metade vai direto pra ela, só a outra metade cai pra Onze. Então o líquido
+  // esperado dessas é ~metade do líquido normal (ex: R$51,71 numa parcela de
+  // R$109,90). O "desconto" aí = taxa Voomp + repasse Keila.
+  const turmaKeilaById = useMemo(
+    () => new Set(turmas.filter((t) => /keila/i.test(t.nome || '')).map((t) => t.id)),
+    [turmas],
+  );
 
   // Sugestão de par: parcela paga da mesma turma, data mais próxima (±3 dias),
   // ainda sem conta_voomp e não usada por outra venda.
@@ -111,10 +119,18 @@ export function ConciliacaoVoomp() {
         .sort((a, b) => a.dist - b.dist);
       const par = cand[0]?.p ?? null;
       if (par) usados.add(par.id);
-      const taxa = par ? Math.max(0, Number(par.valor || 0) - venda.liquido) : 0;
-      return { venda, par, taxa };
+      const bruto = par ? Number(par.valor || 0) : 0;
+      const keilaSplit = !!par && turmaKeilaById.has(par.turma_id || '');
+      const taxa = par ? Math.max(0, bruto - venda.liquido) : 0;
+      // Turma Keila: líquido esperado é ~metade (repasse 50% na Voomp). Válido
+      // se a venda ficou entre 40% e 55% do bruto.
+      const keilaOk = keilaSplit && venda.liquido >= bruto * 0.40 && venda.liquido <= bruto * 0.55;
+      // Taxa da Voomp gira ~6%. Acima de 15% do bruto o par está errado -- exceto
+      // se for split Keila reconhecido.
+      const suspeita = !!par && !keilaOk && taxa > bruto * 0.15;
+      return { venda, par, taxa, suspeita, keilaSplit: keilaOk };
     });
-  }, [parsed, pagamentos, turmaKeyById]);
+  }, [parsed, pagamentos, turmaKeyById, turmaKeilaById]);
 
   const parcelasVoompNoSistema = useMemo(
     () => pagamentos.filter((p) => p.conta_recebimento === 'voomp'),
@@ -123,7 +139,8 @@ export function ConciliacaoVoomp() {
 
   const totalSacado = parsed?.saques.reduce((s, x) => s + x.valor, 0) ?? 0;
   const totalConfirmadoTaxa = sugestoes.reduce((s, x, i) => (confirmadas.has(i) && x.par ? s + x.taxa : s), 0);
-  const qtdComPar = sugestoes.filter((x) => x.par).length;
+  const qtdComPar = sugestoes.filter((x) => x.par && !x.suspeita).length;
+  const qtdSuspeita = sugestoes.filter((x) => x.suspeita).length;
 
   function toggle(i: number) {
     setConfirmadas((prev) => {
@@ -133,7 +150,7 @@ export function ConciliacaoVoomp() {
     });
   }
   function marcarTodas() {
-    setConfirmadas(new Set(sugestoes.map((x, i) => (x.par ? i : -1)).filter((i) => i >= 0)));
+    setConfirmadas(new Set(sugestoes.map((x, i) => (x.par && !x.suspeita ? i : -1)).filter((i) => i >= 0)));
   }
 
   async function aplicar() {
@@ -177,7 +194,8 @@ export function ConciliacaoVoomp() {
           </Button>
           {parsed && (
             <span className="text-xs text-muted-foreground">
-              {parsed.vendas.length} vendas · {parsed.saques.length} saques · {qtdComPar} com par no sistema
+              {parsed.vendas.length} vendas · {parsed.saques.length} saques · {qtdComPar} prontas p/ conciliar
+              {qtdSuspeita > 0 && <span className="text-orange-700"> · {qtdSuspeita} p/ revisar</span>}
             </span>
           )}
         </div>
@@ -229,10 +247,13 @@ export function ConciliacaoVoomp() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sugestoes.map(({ venda, par, taxa }, i) => (
-                    <tr key={venda.id} className={`border-t border-border/40 ${!par ? 'bg-amber-50/50' : ''}`}>
+                  {sugestoes.map(({ venda, par, taxa, suspeita, keilaSplit }, i) => (
+                    <tr key={venda.id} className={`border-t border-border/40 ${!par ? 'bg-amber-50/50' : suspeita ? 'bg-orange-50/60' : ''}`}>
                       <td className="p-2 whitespace-nowrap">{venda.data.split('-').reverse().slice(0, 2).join('/')}</td>
-                      <td className="p-2">#{venda.turmaKey || '—'}</td>
+                      <td className="p-2">
+                        #{venda.turmaKey || '—'}
+                        {keilaSplit && <span className="ml-1 text-[10px] text-violet-700 bg-violet-50 px-1 rounded">Keila 50%</span>}
+                      </td>
                       <td className="p-2 text-right tabular-nums">{fmtBRL(venda.liquido)}</td>
                       <td className="p-2 text-center text-muted-foreground"><ArrowRight className="h-3 w-3 inline" /></td>
                       <td className="p-2">
@@ -241,9 +262,11 @@ export function ConciliacaoVoomp() {
                           : <span className="text-amber-700">sem par — venda sem baixa correspondente</span>}
                       </td>
                       <td className="p-2 text-right tabular-nums">{par ? fmtBRL(Number(par.valor || 0)) : '—'}</td>
-                      <td className="p-2 text-right tabular-nums text-red-600">{par ? `−${fmtBRL(taxa)}` : '—'}</td>
+                      <td className={`p-2 text-right tabular-nums ${suspeita ? 'text-orange-700 font-medium' : 'text-red-600'}`}>
+                        {par ? (suspeita ? 'revisar' : `−${fmtBRL(taxa)}${keilaSplit ? ' *' : ''}`) : '—'}
+                      </td>
                       <td className="p-2 text-center">
-                        {par && (
+                        {par && !suspeita && (
                           <input type="checkbox" checked={confirmadas.has(i)} onChange={() => toggle(i)} className="h-3.5 w-3.5 align-middle" />
                         )}
                       </td>
@@ -258,9 +281,11 @@ export function ConciliacaoVoomp() {
             </div>
           </Card>
 
-          <p className="text-[11px] text-muted-foreground flex items-start gap-1.5">
-            <span>Linha em amarelo = venda na Voomp sem baixa no sistema (parcela não deu baixa, ou a data está fora de ±3 dias). Confira essas antes de fechar o mês.</span>
-          </p>
+          <div className="text-[11px] text-muted-foreground space-y-1">
+            <p><strong>Amarelo</strong> = venda na Voomp sem baixa no sistema (parcela não deu baixa, ou data fora de ±3 dias).</p>
+            <p><strong>Laranja</strong> = par encontrado mas a taxa daria &gt; 15% — provável valor diferente (turma com planos mistos). Precisa de match manual, não entra no "Aplicar".</p>
+            <p><span className="text-violet-700">Keila 50%</span> + <strong>*</strong> = turma em parceria: o repasse de 50% pra Keila já sai na Voomp, então o que cai pra Onze é ~metade. O "desconto" gravado nessas inclui a taxa Voomp <em>e</em> os 50% da Keila (refinar depois pra separar taxa de repasse).</p>
+          </div>
         </>
       )}
     </div>
