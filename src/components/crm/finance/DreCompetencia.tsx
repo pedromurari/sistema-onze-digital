@@ -77,6 +77,7 @@ const LABEL_PRODUTO: Record<string, string> = {
   psicanalise: 'Psicanálise', numerologia: 'Numerologia', npa: 'NPA', nps: 'NPS',
   workshop: 'Workshop', 'pnl-practitioner': 'PNL Practitioner', 'pnl-master': 'PNL Master',
   'idm-pelo-brasil': 'IDM pelo Brasil', 'mapa-numerologico': 'Mapa Numerológico',
+  _fora_crm: 'Receita fora do CRM (eventos, DKSoft, avulsos)',
 };
 const nomeProduto = (slug?: string | null) => LABEL_PRODUTO[slug ?? ''] ?? (slug || 'Outro');
 
@@ -95,7 +96,10 @@ const LABEL_CATEGORIA: Record<string, string> = {
 const CAT_CUSTO_DIRETO = ['comissao', 'repasse_investidor', 'custo_produto', 'custo_variavel'] as const;
 const CAT_DESPESA_FIXA = ['pro_labore', 'folha', 'software', 'contabilidade', 'ads', 'adm', 'custo_fixo'] as const;
 const CAT_NAO_OP_SAIDA = ['financeiro', 'investimento', 'distribuicao_lucro', 'alocacao', 'outro_saida'] as const;
-const CAT_OUTRA_RECEITA = ['receita_outra', 'matricula', 'outro_entrada'] as const;
+// Receita operacional que não passa pelo CRM (pagamentos): eventos NPA, coortes
+// legadas (DKSoft), vendas avulsas. Lançadas como balanco_itens tipo=entrada e
+// somadas na Receita bruta — não no rodapé "não operacional".
+const CAT_RECEITA_EXTRA = ['receita_curso', 'receita_outra', 'matricula', 'outro_entrada'] as const;
 
 const mesAtual = () => new Date().toISOString().slice(0, 7);
 const rotuloMes = (ym: string) => {
@@ -176,11 +180,22 @@ export function DreCompetencia() {
       return [...m.entries()].sort((a, b) => b[1] - a[1]);
     };
 
+    // Receita operacional fora do CRM (eventos NPA, DKSoft, avulsos) — soma na bruta.
+    const receitaExtra = somaCat(CAT_RECEITA_EXTRA, 'entrada');
+    if (receitaExtra > 0) {
+      receitaBruta += receitaExtra;
+      receitaPorProduto.set('_fora_crm', (receitaPorProduto.get('_fora_crm') ?? 0) + receitaExtra);
+    }
+
     // Impostos: lançamento real 'imposto' do mês; se não houver, aplica o % de config.
     const impostoLancado = somaCat(['imposto'], 'saida');
     const impostoPct = (parametrosCfo.impostos_pct ?? 0) / 100;
     const impostos = impostoLancado > 0 ? impostoLancado : receitaBruta * impostoPct;
     const impostoEstimado = impostoLancado === 0 && receitaBruta > 0;
+
+    // Taxas de gateway: as travadas por pagamento (webhook Asaas) + as lançadas
+    // avulsas em Balanço (categoria taxa_gateway — Vega, Pagar.me, tarifa MP…).
+    taxasGateway += somaCat(['taxa_gateway'], 'saida');
 
     const estornos = somaCat(['estorno'], 'saida');
     const receitaLiquida = receitaBruta - impostos - taxasGateway - estornos;
@@ -192,8 +207,7 @@ export function DreCompetencia() {
     const ebitda = margemContribuicao - despesasFixas;
 
     const naoOpSaida = somaCat(CAT_NAO_OP_SAIDA, 'saida');
-    const outrasReceitas = somaCat(CAT_OUTRA_RECEITA, 'entrada');
-    const resultado = ebitda - naoOpSaida + outrasReceitas;
+    const resultado = ebitda - naoOpSaida;
 
     const rotular = (linhas: [string, number][], sinal: 1 | -1) =>
       linhas.map(([c, val]) => ({ label: LABEL_CATEGORIA[c] ?? c, valor: sinal * val }));
@@ -209,11 +223,8 @@ export function DreCompetencia() {
       despesas_fixas: despesasFixas,
       despesas_fixas_linhas: rotular(linhasCat(CAT_DESPESA_FIXA, 'saida'), -1),
       ebitda,
-      nao_operacional: outrasReceitas - naoOpSaida,
-      nao_op_linhas: [
-        ...rotular(linhasCat(CAT_OUTRA_RECEITA, 'entrada'), 1),
-        ...rotular(linhasCat(CAT_NAO_OP_SAIDA, 'saida'), -1),
-      ],
+      nao_operacional: -naoOpSaida,
+      nao_op_linhas: rotular(linhasCat(CAT_NAO_OP_SAIDA, 'saida'), -1),
       resultado,
       semDados: pagosDoMes.length === 0 && doMes.length === 0,
     };
