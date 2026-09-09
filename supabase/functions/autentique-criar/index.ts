@@ -68,6 +68,25 @@ function buildContratoHtml(d: Record<string, unknown>): string {
   // cláusula de boleto por engano.
   const isCartao = formaPag === 'cartao' || formaPag === 'cartao_recorrente' || diaVenc === 'cartao';
 
+  // Pré-matrícula (rota /pre-matricula/:vendedor): a 1ª parcela (entrada) não
+  // é cobrada na hora -- fica programada pra alunos.data_matricula, que nesse
+  // caso é uma data futura (ver matricula_time_comercial_criar). Sem isso o
+  // contrato dizia só "vencimento todo dia X", dando a entender que a
+  // entrada também cai nesse dia do mês corrente, quando na verdade ela só é
+  // cobrada na data programada.
+  const dataMatriculaStr = String(d.data_matricula || '');
+  let dataPrimeiraCobranca = '';
+  if (dataMatriculaStr) {
+    const [anoM, mesM, diaM] = dataMatriculaStr.split('-');
+    if (anoM && mesM && diaM) {
+      const dataMatriculaObj = new Date(`${dataMatriculaStr}T12:00:00`);
+      const hojeSemHora = new Date(); hojeSemHora.setHours(12, 0, 0, 0);
+      if (dataMatriculaObj.getTime() > hojeSemHora.getTime()) {
+        dataPrimeiraCobranca = `${diaM}/${mesM}/${anoM}`;
+      }
+    }
+  }
+
   let numParcelas: number, valorParcela: number, valorTotal: number;
   let formaResumo: string, planoSelecionado: string, diaVencTexto: string;
 
@@ -95,8 +114,12 @@ function buildContratoHtml(d: Record<string, unknown>): string {
     valorParcela  = valorParcelaCustom ?? 109.90;
     valorTotal    = numParcelas * valorParcela;
     const diaNum  = diaVenc.replace(/\D/g,'') || diaVenc;
-    formaResumo   = `Boleto: 1 entrada + ${numParcelas-1} parcelas mensais — vencimento dia ${diaNum}`;
-    planoSelecionado = `plano por boleto, vencimento todo dia ${diaNum} (alínea “c”)`;
+    formaResumo   = dataPrimeiraCobranca
+      ? `Boleto: entrada programada para ${dataPrimeiraCobranca} + ${numParcelas-1} parcelas mensais — vencimento dia ${diaNum}`
+      : `Boleto: 1 entrada + ${numParcelas-1} parcelas mensais — vencimento dia ${diaNum}`;
+    planoSelecionado = dataPrimeiraCobranca
+      ? `plano por boleto (alínea “c”), com a entrada programada para ${dataPrimeiraCobranca} e as demais parcelas mensais vencendo todo dia ${diaNum}`
+      : `plano por boleto, vencimento todo dia ${diaNum} (alínea “c”)`;
     diaVencTexto  = diaNum;
   }
 
@@ -564,6 +587,7 @@ serve(async (req) => {
           valor_parcela:   aluno.valor_mensalidade ?? null,
           num_parcelas:    aluno.total_mensalidades ?? null,
           plano_slug:      aluno.plano_slug ?? null,
+          data_matricula:  aluno.data_matricula ?? null,
         });
 
         const result = await criarDocumentoAutentique(
