@@ -114,10 +114,11 @@ const RECURSO_POR_VIEW: Record<string, string> = {
   operacoes_calendario_conteudo: 'operacoes',
   financeiro_notas:              'financeiro',
   financeiro_dre:               'financeiro',
+  financeiro_conciliacao:       'financeiro',
 };
 
 export type AppView =
-  | 'dashboard' | 'npa_overview' | 'lancamentos_overview' | 'financeiro' | 'financeiro_notas' | 'financeiro_dre' | 'financeiro_cfo' | 'balanco' | 'rodrygo'
+  | 'dashboard' | 'npa_overview' | 'lancamentos_overview' | 'financeiro' | 'financeiro_notas' | 'financeiro_dre' | 'financeiro_conciliacao' | 'financeiro_cfo' | 'balanco' | 'rodrygo'
   | 'lancamentos_30' | 'lancamentos_31' | 'lancamentos_32'
   | 'team' | 'settings' | 'cobranca' | 'funil_lancamento' | 'disparos_monitor' | 'chat_conversas'
   | 'operacoes_tarefas' | 'operacoes_calendario_geral' | 'operacoes_calendario_conteudo'
