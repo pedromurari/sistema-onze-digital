@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Plus, Loader2, Calendar, ChevronRight, ArrowRight } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { MetaAdsPanel } from './MetaAdsPanel';
+import { CopyAgentPanel } from './CopyAgentPanel';
 
 type NPAStatus = 'em_andamento' | 'finalizado';
 
@@ -236,6 +238,10 @@ export function NPAEventos({ onOpenEvento }: { onOpenEvento?: (id: string) => vo
   return (
     <div className="p-4 lg:p-6 space-y-6 pb-20 lg:pb-6 overflow-y-auto h-full bg-gray-50/40">
       <FunilConsolidadoNPA eventos={eventos} resumoLeads={resumoLeads} loading={loadingResumo} />
+
+      <MetaAdsPanel />
+
+      <CopyAgentPanel />
 
       <div>
         <div className="flex items-center justify-between mb-3">
