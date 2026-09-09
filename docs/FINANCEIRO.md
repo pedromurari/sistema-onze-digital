@@ -124,7 +124,8 @@ Entregável final: sistema + Manual do Financeiro fechado → contratar auxiliar
       → (–) taxas de gateway (`pagamentos.taxa_valor` real) → receita líquida → custos diretos
       → margem → despesas fixas → EBITDA → não operacional → resultado. Navegação por mês.
       Commit `7f30c40`.
-- [ ] **2.2** Fechar o mês — snapshot imutável do DRE (tabela nova, tipo `fechamentos`).
+- [x] **2.2** Fechar o mês — snapshot imutável em `dre_fechamentos` (migração `20260908190000`).
+      Botão Fechar/Reabrir na tela de DRE; mês fechado mostra o snapshot congelado. Commit `9aeb5a5`.
 - [ ] **2.3** Exportação no formato do pacote mensal Agilize + campo p/ o retorno (DAS apurado).
 - [ ] **2.4** Conciliação sistema × extrato das 4 contas.
 
