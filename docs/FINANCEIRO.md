@@ -127,7 +127,12 @@ Entregável final: sistema + Manual do Financeiro fechado → contratar auxiliar
 - [x] **2.2** Fechar o mês — snapshot imutável em `dre_fechamentos` (migração `20260908190000`).
       Botão Fechar/Reabrir na tela de DRE; mês fechado mostra o snapshot congelado. Commit `9aeb5a5`.
 - [ ] **2.3** Exportação no formato do pacote mensal Agilize + campo p/ o retorno (DAS apurado).
-- [ ] **2.4** Conciliação sistema × extrato das 4 contas.
+- [x] **2.4 (Voomp)** Tela `ConciliacaoVoomp.tsx` (`financeiro_conciliacao`) — cola o extrato
+      da Voomp, casa venda × parcela paga por turma + data, grava `conta_recebimento='voomp'`
+      + `taxa_valor` real (bruto − líquido). Mostra saques (caixa real) e vendas sem baixa.
+      Commit `70afe13`.
+- [ ] **2.4 (Asaas/MP/C6/Inter)** conciliação das outras contas — Asaas já grava taxa via
+      webhook; falta a visão de extrato × sistema por conta.
 
 ### Fase 3 — A pagar / a receber
 - [ ] Agenda semanal (contas fixas + comissões + repasses).
