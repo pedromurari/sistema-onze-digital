@@ -2610,18 +2610,21 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
         <StatTile label="Taxa de conversão" value={`${conversaoPct.toFixed(1)}%`} hint={leadsEntraram > 0 ? `${vendasTotais} de ${leadsEntraram} leads` : 'Sem leads ainda'} icon={Percent} />
       </div>
 
-      <SectionBar title="Faturamento realizado por vendedor" subtitle="Baseado em matrículas efetivadas, creditadas ao vendedor que reivindicou o aluno." icon={DollarSign} />
+      <SectionBar title={viewAsName ? 'Suas vendas por forma de pagamento' : 'Faturamento realizado por vendedor'} subtitle="Matrículas efetivadas (pré-matrícula não conta), creditadas ao vendedor que reivindicou o aluno." icon={DollarSign} />
       <Card className="p-4 overflow-x-auto">
         <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
           <TableHeader>
             <TableRow className={PREMIUM_TABLE_HEADER_ROW}>
               <TableHead>Vendedor</TableHead>
-              <TableHead className="text-right">À vista/cartão</TableHead>
-              <TableHead className="text-right">Recorrente</TableHead>
-              <TableHead className="text-right">Bolsa/cortesia</TableHead>
+              <TableHead className="text-right">À vista / cartão</TableHead>
+              <TableHead className="text-right">Boleto (15x)</TableHead>
+              <TableHead className="text-right">Bolsa / cortesia</TableHead>
               <TableHead className="text-right">Sem forma de pgto.</TableHead>
-              <TableHead className="text-right">Faturamento</TableHead>
-              <TableHead className="text-right">Comissão</TableHead>
+              <TableHead className="text-right">Total</TableHead>
+              {/* Faturamento e comissão só pro admin -- valor/soma não vai pra
+                  visão do vendedor (mesmo critério do painel Fechamento). */}
+              {!viewAsName && <TableHead className="text-right">Faturamento (est.)</TableHead>}
+              {!viewAsName && <TableHead className="text-right">Comissão (est.)</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -2640,15 +2643,17 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
                   <TableCell className="text-right">{stat?.boleto ?? 0}</TableCell>
                   <TableCell className="text-right">{stat?.bolsa_cortesia ?? 0}</TableCell>
                   <TableCell className="text-right">{stat?.sem_forma ?? 0}</TableCell>
-                  <TableCell className="text-right">{fmt(calc.faturamento)}</TableCell>
-                  <TableCell className="text-right font-semibold text-primary">{fmt(calc.comissao)}</TableCell>
+                  <TableCell className="text-right font-semibold">{stat?.total ?? 0}</TableCell>
+                  {!viewAsName && <TableCell className="text-right">{fmt(calc.faturamento)}</TableCell>}
+                  {!viewAsName && <TableCell className="text-right font-semibold text-primary">{fmt(calc.comissao)}</TableCell>}
                 </TableRow>
               );
             })}
           </TableBody>
         </Table>
         <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 mt-3">
-          "Sem forma de pgto." são matrículas reivindicadas mas sem à-vista/cartão/boleto informado ainda na ficha — não entram no faturamento até isso ser preenchido. "Bolsa/cortesia" não geram comissão.
+          "Sem forma de pgto." são matrículas reivindicadas mas sem à-vista/cartão/boleto informado ainda na ficha.
+          {!viewAsName && ' Faturamento e comissão são estimativa pelo preço padrão de psicanálise — o número real da comissão (inclui PNL e o líquido de cada venda) está no painel Fechamento.'}
         </p>
       </Card>
 
