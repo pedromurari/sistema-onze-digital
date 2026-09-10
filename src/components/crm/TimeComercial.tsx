@@ -2280,9 +2280,6 @@ interface AtividadeItem {
   criado_em: string;
 }
 
-// Meta de reativação da base Retorno/Base (hoje ~11.680 leads) — ainda não
-// definida pelo dono do negócio. Quando ele passar o número, troca aqui.
-const META_RETORNO_BASE_MES: number | null = null;
 
 const DIAS_SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const MESES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -2904,14 +2901,6 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
         )}
       </Card>
 
-      <SectionBar title="Meta de reativação — Retorno/Base" subtitle="Quantas matrículas por mês devem vir da base antiga (Base Fria, Grupo Oferta Não Matriculou etc.)." icon={Repeat} />
-      <Card className="p-4">
-        {META_RETORNO_BASE_MES === null ? (
-          <p className="text-sm text-muted-foreground">Meta ainda não definida — assim que for confirmada, ela entra aqui e passa a comparar com as matrículas reais vindas do canal Retorno/Base.</p>
-        ) : (
-          <p className="text-sm text-foreground">Meta: <span className="font-semibold">{META_RETORNO_BASE_MES}</span> matrículas/mês vindas do Retorno/Base.</p>
-        )}
-      </Card>
     </div>
   );
 }
