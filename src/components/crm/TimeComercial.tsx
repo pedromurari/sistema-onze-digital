@@ -2492,7 +2492,10 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
   const campanhaIdsRetorno = campanhas.filter((c) => c.tipo === 'retorno').map((c) => c.id);
   const leadsEntraram = contagens
     .filter((c) => !(c.campanha_id && campanhaIdsRetorno.includes(c.campanha_id)))
-    .filter((c) => !viewAsName || !c.vendedor || c.vendedor === viewAsName)
+    // Vendedor logado: só os leads REALMENTE atribuídos a ele -- não a pilha
+    // de leads sem dono (SDD/frio etc.), que antes entrava aqui via
+    // `!c.vendedor` e inflava o número (era ~630, quase tudo lead solto).
+    .filter((c) => !viewAsName || c.vendedor === viewAsName)
     .reduce((soma, c) => soma + Number(c.total), 0);
 
   const vendasTotais = vendedoresVisiveis.reduce((soma, v) => soma + (alunosDe(v.name)?.total ?? 0), 0);
