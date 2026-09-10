@@ -4,12 +4,18 @@
 -- produto, valor), sem os números de comissão/soma (esses continuam só no
 -- painel "Fechamento Comissão" do Pedro).
 --
--- Fonte: alunos.vendedor_id. Cobre psicanálise, PNL e pré-matrícula -- tudo
--- que estiver atribuído ao vendedor no sistema. Não expõe valor_comissao.
+-- Duas fontes, unidas:
+--   1. alunos.vendedor_id  -> matrículas no sistema (psicanálise, PNL, pré)
+--   2. comissoes_vendedores (tipo='comissao') -> vendas lançadas à mão no
+--      fechamento que NÃO têm matrícula no sistema (ex: PNL cobrado por
+--      fora, aluno nunca entrou em `alunos`). Dedupe por aluno_id: se a
+--      linha de comissão já aponta pra um aluno que veio da fonte 1, não
+--      repete.
+-- Nenhuma das fontes expõe valor_comissao.
 --
 -- Escopo: admin/gestor vê todos; vendedor(a) vê só as próprias (casado por
--- profiles.nome = alunos.vendedor_id, que é como o resto do CRM Time
--- Comercial já resolve o vendedor).
+-- profiles.nome, que é como o resto do CRM Time Comercial já resolve o
+-- vendedor).
 CREATE OR REPLACE FUNCTION public.time_comercial_minhas_vendas()
 RETURNS TABLE (
   aluno_id uuid,
@@ -24,11 +30,18 @@ RETURNS TABLE (
   data_venda date,
   vendedor text
 )
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 SET search_path TO 'public'
 AS $function$
+DECLARE
+  v_admin boolean := public.has_role(auth.uid(), 'admin'::public.app_role)
+                  OR public.has_role(auth.uid(), 'gestor'::public.app_role);
+  v_nome text := (SELECT p.nome FROM public.profiles p WHERE p.id = auth.uid());
+BEGIN
+  RETURN QUERY
+  -- Fonte 1: matrículas no sistema
   SELECT
     a.id,
     a.nome,
@@ -42,20 +55,46 @@ AS $function$
       ELSE a.valor_mensalidade
     END,
     a.status,
-    a.origem_lead,
+    'matricula'::text,
     a.data_matricula,
     a.vendedor_id
   FROM public.alunos a
   WHERE a.vendedor_id IS NOT NULL
+    AND (v_admin OR a.vendedor_id = v_nome)
+
+  UNION ALL
+
+  -- Fonte 2: vendas lançadas à mão no fechamento, sem matrícula no sistema
+  SELECT
+    c.aluno_id,
+    c.aluno_nome,
+    c.produto,
+    c.forma_pagamento,
+    NULL::numeric,
+    NULL::integer,
+    c.valor_venda,
+    c.status::text,
+    'registro'::text,
+    c.data_venda,
+    c.vendedor
+  FROM public.comissoes_vendedores c
+  WHERE c.tipo = 'comissao'
+    AND (v_admin OR c.vendedor = v_nome)
     AND (
-      public.has_role(auth.uid(), 'admin'::public.app_role)
-      OR public.has_role(auth.uid(), 'gestor'::public.app_role)
-      OR a.vendedor_id = (SELECT p.nome FROM public.profiles p WHERE p.id = auth.uid())
+      c.aluno_id IS NULL
+      OR NOT EXISTS (
+        SELECT 1 FROM public.alunos a2
+        WHERE a2.id = c.aluno_id
+          AND a2.vendedor_id IS NOT NULL
+          AND (v_admin OR a2.vendedor_id = v_nome)
+      )
     )
-  ORDER BY a.data_matricula DESC NULLS LAST, a.created_at DESC;
+
+  ORDER BY 10 DESC NULLS LAST;
+END;
 $function$;
 
 GRANT EXECUTE ON FUNCTION public.time_comercial_minhas_vendas() TO authenticated;
 
 COMMENT ON FUNCTION public.time_comercial_minhas_vendas() IS
-  'Lista nominal de vendas por vendedor (aba Dados do CRM Time Comercial). Fonte: alunos.vendedor_id. Admin/gestor vê todas; vendedor vê só as próprias. NÃO retorna valor de comissão.';
+  'Lista nominal de vendas por vendedor (aba Dados do CRM Time Comercial). Une alunos.vendedor_id + comissoes_vendedores(tipo=comissao) sem matricula, deduplicado por aluno_id. Admin/gestor ve todas; vendedor ve so as proprias. NAO retorna valor de comissao.';
