@@ -104,7 +104,8 @@ projeto e o Raio-X (§ "Divisão de turmas e sócios") pro modelo. Empresa tem 2
        receita_outra_por_fornecedor: { match: string; pct_pedro: number }[];
          // default: [{zaffalon,100},{dksoft,0},{life sorrisos,0},{pnl,50}]
        custo_dedicado_por_fornecedor: { match: string; socio: 'pedro'|'rodrygo' }[];
-         // default: [{voomp, rodrygo}]
+         // default: [{voomp, rodrygo}, {google workspace, rodrygo}]
+         // (nota: já tem `balanco_itens` "Google Workspace (Meet)" marcado 100% Rodrygo)
      }
      ```
    - `REGRAS_SOCIO_DEFAULT` com exatamente os valores de hoje.
@@ -163,3 +164,4 @@ Comentários em português, densos, explicando o porquê (padrão do repo).
 | 2026-09-08 | Claude | monta `BalancoConfigForm` na aba Config do `Balanco.tsx` | concluído (`012f88b`) |
 | 2026-09-10 | Claude | Fase B/C: `Socios.tsx` (novo), `calcDrePorSocio`/`calcDreResumoMes` em `financial-utils.ts`, `vw_receita_eventos_mes` (migração aplicada), DreCompetencia lê a view, `BalancoConfigForm` ganhou pró-labore/reserva/frequência. **Mergeado em `main`.** | concluído |
 | 2026-09-10 | Claude→Codex | **HANDOVER pra C4:** `financial-utils.ts` (só a função `calcDrePorSocio` + as constantes de regra), `Socios.tsx` e `BalancoConfigForm.tsx` liberados pro Codex fazer a C4. Claude não toca nesses até a C4 entrar. Migração `..._balanco_config_regras_socio.sql` (coluna `regras_socio`) **já aplicada** pelo Claude. | Codex pega |
+| 2026-09-10 | Codex | C4 `regras-socio.ts`, `calcDrePorSocio`, `Socios.tsx`, `BalancoConfigForm.tsx`, `balanco-config.ts` e testes | em andamento; arquivos assumidos conforme handover acima |
