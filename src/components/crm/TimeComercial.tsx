@@ -128,6 +128,7 @@ type LeadComCanal = Lead & {
   canal?: string | null; vendedor?: string | null; lancamentoId?: string | null; cidade?: string | null;
   campanhaId?: string | null; ultimaAtividade?: string | null;
   followupManualPrazo?: string | null; followupManualTentativas?: number | null; observacoes?: string | null;
+  notaVendedor?: string | null;
 };
 
 interface Campanha { id: string; canal: string; nome: string; condicoes: string | null; ativa: boolean; tipo: 'novo' | 'retorno'; }
@@ -287,7 +288,7 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
       setLeads(data.map((row: any) => ({
         ...dbRowToLead(row), canal: row.canal, vendedor: row.vendedor, cursoInteresse: row.interesse_produto || '',
         lancamentoId: row.lancamento_id, cidade: row.cidade, campanhaId: row.campanha_id, ultimaAtividade: row.ultima_atividade,
-        followupManualPrazo: row.followup_manual_prazo, followupManualTentativas: row.followup_manual_tentativas, observacoes: row.observacoes,
+        followupManualPrazo: row.followup_manual_prazo, followupManualTentativas: row.followup_manual_tentativas, observacoes: row.observacoes, notaVendedor: row.nota_vendedor,
       })));
       setTotalCarregavel(count ?? data.length);
     }
@@ -603,11 +604,12 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
   };
 
   // Nota manual por lead ("Rodrygo me passou..." -> pedido do Miguel 2026-08-27:
-  // deixar anotado que uma cliente só compra em dezembro, por exemplo). Usa a
-  // coluna `observacoes` que já existia no banco, só faltava a telinha.
+  // deixar anotado que uma cliente só compra em dezembro, por exemplo). Grava em
+  // `nota_vendedor` -- `observacoes` é a origem/UTM do import e não deve ser
+  // sobrescrita pela anotação do vendedor.
   const salvarNota = async (lead: LeadComCanal, texto: string) => {
-    if (texto === (lead.observacoes ?? '')) return;
-    const { error } = await supabase.from('leads').update({ observacoes: texto || null }).eq('id', lead.id);
+    if (texto === (lead.notaVendedor ?? '')) return;
+    const { error } = await supabase.from('leads').update({ nota_vendedor: texto || null }).eq('id', lead.id);
     if (error) {
       toast({ variant: 'destructive', title: 'Não foi possível salvar a nota', description: error.message });
       return;
@@ -977,17 +979,27 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
                               className="h-8 w-8 flex-shrink-0 inline-flex items-center justify-center rounded-md border border-border bg-card hover:bg-muted transition-colors relative"
                             >
                               <StickyNote className="h-3.5 w-3.5 text-muted-foreground" />
-                              {lead.observacoes && <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-primary" />}
+                              {lead.notaVendedor && <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-primary" />}
                             </button>
                           </PopoverTrigger>
                           <PopoverContent className="w-72" side="top">
                             <p className="text-xs font-medium mb-1.5">Nota sobre esse lead</p>
                             <Textarea
-                              defaultValue={lead.observacoes ?? ''}
+                              defaultValue={lead.notaVendedor ?? ''}
                               placeholder='Ex: "só compra em dezembro, depois do curso dela"'
                               className="text-xs min-h-20"
                               onBlur={(e) => salvarNota(lead, e.target.value)}
                             />
+                            {lead.observacoes && (
+                              <details className="mt-2 group">
+                                <summary className="text-[10px] text-muted-foreground/70 cursor-pointer select-none list-none hover:text-muted-foreground">
+                                  ▸ origem do lead (UTM)
+                                </summary>
+                                <pre className="mt-1 text-[10px] leading-snug text-muted-foreground/60 whitespace-pre-wrap break-all max-h-32 overflow-y-auto border-t border-border pt-1">
+                                  {lead.observacoes}
+                                </pre>
+                              </details>
+                            )}
                           </PopoverContent>
                         </Popover>
                         <button
@@ -2282,6 +2294,122 @@ const META_RETORNO_BASE_MES: number | null = null;
 const DIAS_SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const MESES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
+// ─── Minhas Vendas (lista nominal por vendedor) ──────────────────────────────
+// Planilha de vendas de cada vendedor(a): nome do aluno, produto e valor.
+// Cobre psicanálise + PNL + pré-matrícula. Sem número de comissão -- isso
+// continua só no painel "Fechamento Comissão" do Pedro. Fonte: RPC
+// time_comercial_minhas_vendas (SECURITY DEFINER, filtra por profiles.nome).
+interface VendaNominal {
+  aluno_id: string;
+  aluno_nome: string;
+  produto: string | null;
+  forma_pagamento: string | null;
+  valor_parcela: number | null;
+  num_parcelas: number | null;
+  valor_total: number | null;
+  status: string | null;
+  origem: string | null;
+  data_venda: string | null;
+  vendedor: string;
+}
+
+const PRODUTO_LABEL_TC: Record<string, string> = {
+  psicanalise: 'Psicanálise',
+  'pnl-practitioner': 'PNL Practitioner',
+  'pnl-master': 'PNL Master',
+  numerologia: 'Numerologia',
+};
+const FORMA_LABEL_TC: Record<string, string> = {
+  avista: 'À vista', cartao: 'Cartão', cartao_parcelado: 'Cartão parcelado',
+  cartao_recorrente: 'Cartão recorrente', boleto: 'Boleto', bolsa: 'Bolsa',
+};
+const STATUS_LABEL_TC: Record<string, string> = {
+  ativo: 'Ativo', pre_matricula: 'Pré-matrícula', inativo: 'Inativo', cancelado: 'Cancelado',
+};
+
+function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
+  const [vendas, setVendas] = useState<VendaNominal[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (supabase as any).rpc('time_comercial_minhas_vendas').then(({ data, error }: any) => {
+      if (error) console.error('[MinhasVendas] erro', error);
+      setVendas((data ?? []) as VendaNominal[]);
+      setLoading(false);
+    });
+  }, []);
+
+  const visiveis = viewAsName ? vendas.filter((v) => v.vendedor === viewAsName) : vendas;
+  const porVendedor = visiveis.reduce<Record<string, VendaNominal[]>>((acc, v) => {
+    (acc[v.vendedor] ??= []).push(v);
+    return acc;
+  }, {});
+  const nomes = Object.keys(porVendedor).sort((a, b) => a.localeCompare(b));
+
+  return (
+    <>
+      <SectionBar
+        title="Minhas Vendas"
+        subtitle={viewAsName
+          ? 'Cada aluno que você fechou — psicanálise, PNL e pré-matrícula — com produto e valor.'
+          : 'Vendas nominais por vendedor (psicanálise + PNL + pré-matrícula).'}
+        icon={GraduationCap}
+      />
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Carregando…</p>
+      ) : visiveis.length === 0 ? (
+        <p className="text-center text-sm text-muted-foreground py-6 border border-dashed border-border rounded-lg">
+          Nenhuma venda registrada ainda.
+        </p>
+      ) : (
+        nomes.map((nome) => {
+          const linhas = porVendedor[nome];
+          return (
+            <div key={nome} className="flex flex-col gap-2">
+              {!viewAsName && (
+                <p className="text-sm font-semibold text-foreground">{nome} · {linhas.length} venda{linhas.length === 1 ? '' : 's'}</p>
+              )}
+              <Card className="p-0 overflow-x-auto">
+                <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
+                  <TableHeader>
+                    <TableRow className={PREMIUM_TABLE_HEADER_ROW}>
+                      <TableHead>Data</TableHead>
+                      <TableHead>Aluno</TableHead>
+                      <TableHead>Produto</TableHead>
+                      <TableHead>Forma</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Valor</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {linhas.map((v, idx) => (
+                      <TableRow key={v.aluno_id} className={premiumZebraRow(idx)}>
+                        <TableCell className="text-xs whitespace-nowrap">
+                          {v.data_venda ? new Date(v.data_venda + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
+                        </TableCell>
+                        <TableCell className="text-sm font-medium text-foreground">{v.aluno_nome}</TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">{v.produto ? (PRODUTO_LABEL_TC[v.produto] ?? v.produto) : '—'}</TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">{v.forma_pagamento ? (FORMA_LABEL_TC[v.forma_pagamento] ?? v.forma_pagamento) : '—'}</TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">{v.status ? (STATUS_LABEL_TC[v.status] ?? v.status) : '—'}</TableCell>
+                        <TableCell className="text-right text-sm whitespace-nowrap">
+                          {v.valor_total != null ? fmt(Number(v.valor_total)) : '—'}
+                          {v.num_parcelas && v.num_parcelas > 1 && v.valor_parcela != null && (
+                            <span className="block text-[10px] text-muted-foreground">{v.num_parcelas}x de {fmt(Number(v.valor_parcela))}</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </Card>
+            </div>
+          );
+        })
+      )}
+    </>
+  );
+}
+
 function DadosTab({ viewAsName }: VendorScopeProps) {
   const [alunosPorVendedor, setAlunosPorVendedor] = useState<AlunoVendedorStat[]>([]);
   const [movimentacao, setMovimentacao] = useState<MovimentacaoDia[]>([]);
@@ -2474,6 +2602,8 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
   return (
     <div className="flex flex-col gap-5">
       <p className="text-sm text-muted-foreground -mt-1">{viewAsName ? 'Seus números reais até agora — não é simulação.' : 'Números reais do time até agora — não é simulação. Onde estamos antes de olhar a meta.'}</p>
+
+      <MinhasVendasSection viewAsName={viewAsName} />
 
       <SectionBar title="Visão geral" subtitle="Apenas leads captados no período. A base de retorno reimportada fica de fora." icon={Users} />
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
