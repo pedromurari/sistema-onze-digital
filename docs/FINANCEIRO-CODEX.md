@@ -129,6 +129,70 @@ projeto e o Raio-X (§ "Divisão de turmas e sócios") pro modelo. Empresa tem 2
 `supabase.from()` — ela já usa `supabase` direto porque o DRE não tem hook (ok manter).
 Vazio (`{}`) tem que continuar funcionando (= default = comportamento atual).
 
+### TAREFA C5 — Taxa de gateway na baixa + silenciar notificações do Asaas (prioridade alta)
+
+**Contexto / bug (achado pelo Claude em 2026-09-10):** ao dar baixa numa parcela paga via
+Asaas, a taxa do gateway vem **R$ 0,00**. Causa:
+
+- `financial-utils.ts::calcTaxaTransacao(valor, produto, forma, canal, taxas)` casa a regra
+  de taxa pelo 4º arg `canal` (= `pagamentos.canal_cobranca`). Esse campo está **`null` em
+  2.527 de 2.529 pagamentos** — ninguém preenche "Canal" na baixa.
+- `Financeiro.tsx` (~linha 2044, no handler que grava `status='pago'`) chama
+  `calcTaxaTransacao(pagamento.valor, pagamento.produto, aluno?.forma_pagamento || 'boleto',
+  pagoInfo.canal_cobranca || '', taxasRates)` — **ignora `pagoInfo.conta`**
+  (`conta_recebimento`), que é o que a pessoa de fato seleciona ("asaas").
+- `payment_method_rates` só tem **uma** regra de Asaas: `produto_slug='nps'`,
+  `forma_pagamento='pix'`, `gateway='Asaas - Link de pagamento'`, `fixo=1.99`. Não há regra
+  de Asaas pra boleto nem genérica → nenhum match → 0.
+- `mesmo` preenchendo "Canal" hoje não bate, porque os `gateway` da tabela são rótulos
+  humanos ("Asaas - Link de pagamento", "Voomp - Recorrência", "Pix - Mercado Pago - Link"),
+  não o enum de conta (`asaas`, `voomp`, `mercado_pago`, `inter`, `c6`, `outro` — ver
+  `src/lib/contas.ts`).
+
+Já corrigido **na mão pelo Claude** (só os dados, não o código): Cleide do Rosário parcela
+6, Jucelia (MASTER PNL) parcelas 1 e 2 → `taxa_valor = 1.99`.
+
+**O que fazer:**
+
+1. **Seed de `payment_method_rates`** — arquivo de migração
+   `AAAAMMDDHHMMSS_payment_method_rates_asaas.sql` (escreve, **não aplica** — Claude aplica):
+   inserir regras por **conta** (não por rótulo), com `gateway` = o enum da conta:
+   - `('*', 'boleto', 'asaas', 0, 1.99, 0, 999999.99, true)`
+   - `('*', 'pix',    'asaas', 0, 1.99, 0, 999999.99, true)`
+   - `('*', 'boleto', 'voomp', 5.90, 0, 0, 999999.99, true)` (espelha a de psi/Voomp)
+   - `('*', 'pix',    'mercado_pago', 0.99, 0, 0, 999999.99, true)`
+   - `('*', 'cartao', 'mercado_pago', 4.98, 0, 0, 999999.99, true)`
+   (colunas: `produto_slug, forma_pagamento, gateway, percentual, fixo_por_transacao,
+   faixa_min, faixa_max, ativo`.) **Não apagar** as regras existentes.
+
+2. **`calcTaxaTransacao`** (em `financial-utils.ts` — território do Claude, handover no log):
+   ganha 6º param opcional `conta = ''`. Na filtragem, casar o gateway por
+   `t.gateway === canal || t.gateway === conta || t.gateway === '*'`. Score de desempate:
+   manter o atual (gateway específico +1). Comportamento com `conta=''` tem que ser
+   **bit-a-bit** igual ao de hoje. `taxaDoPagamento` idem — repassar
+   `p.conta_recebimento` como `conta`.
+
+3. **`Financeiro.tsx`** (handover no log): no handler da baixa, passar `pagoInfo.conta`
+   (conta_recebimento) como o novo 6º arg. Idem no render da coluna "Taxa"
+   (`taxaDoPagamento({ ...p, forma_pagamento: ... })` — incluir `conta_recebimento: p.conta_recebimento`).
+   Nada de recalcular/re-gravar taxa de parcela **já paga** — `taxa_valor` travado continua
+   soberano (a função já respeita isso: `if (p.taxa_valor != null) return p.taxa_valor`).
+
+4. **`scripts/asaas-gerar-aluno.mjs`** (Claude libera — território "edge functions Asaas"):
+   - No `POST /customers`, adicionar `notificationDisabled: true` ao body (o Instituto usa o
+     sistema próprio pra cobrar por WhatsApp; o Asaas não deve mandar e-mail/SMS/WhatsApp).
+   - Script novo `scripts/asaas-silenciar-clientes.mjs`: itera `alunos` com
+     `asaas_customer_id` não nulo e faz `POST /customers/{id}` (update) com
+     `notificationDisabled: true`. Idempotente, com `--dry-run`. Precisa de `ASAAS_API_KEY`
+     no env (mesmo padrão do `asaas-gerar-aluno.mjs`).
+   - Deixar claro no topo do script: a régua global também pode/deve ser desligada no painel
+     do Asaas (Configurações → Notificações) — o script é o reforço pra clientes já criados.
+
+**Não faça:** recalcular taxa de parcelas pagas antigas em massa. Não mexer em
+`calcRepasses`. Não tocar no fluxo de cobrança por WhatsApp do nosso sistema
+(`Cobranca.tsx`, `wpp-enviar`, `enviar-cobranca`) — o pedido é só **calar o Asaas**, não
+mudar a nossa cobrança.
+
 ---
 
 ## O que NÃO fazer
@@ -166,3 +230,5 @@ Comentários em português, densos, explicando o porquê (padrão do repo).
 | 2026-09-10 | Claude→Codex | **HANDOVER pra C4:** `financial-utils.ts` (só a função `calcDrePorSocio` + as constantes de regra), `Socios.tsx` e `BalancoConfigForm.tsx` liberados pro Codex fazer a C4. Claude não toca nesses até a C4 entrar. Migração `..._balanco_config_regras_socio.sql` (coluna `regras_socio`) **já aplicada** pelo Claude. | Codex pega |
 | 2026-09-10 | Codex | C4 `regras-socio.ts`, `calcDrePorSocio`, `Socios.tsx`, `BalancoConfigForm.tsx`, `balanco-config.ts` e testes | concluído; defaults preservados + Google Workspace 100% Rodrygo; 63 testes e build passando; typecheck sem erro novo da C4 (88 globais, 4 acima do baseline por WIP preexistente da `main`) |
 | 2026-09-09 | Codex | `Financeiro.tsx` (paginação isolada da listagem de alunos) | concluído; 50 alunos por página, carga duplicada removida; sem tocar regras financeiras nem persistência |
+| 2026-09-10 | Claude | índice `idx_leads_criado_em_desc` aplicado via MCP (consulta de leads recentes ia a 25-31s num Seq Scan e travava o app em "Carregando..."; caiu pra ~0,2s). Falta commitar o `.sql`. | migração aplicada, arquivo pendente |
+| 2026-09-10 | Claude→Codex | **HANDOVER pra C5:** `financial-utils.ts` (`calcTaxaTransacao`/`taxaDoPagamento`), `Financeiro.tsx` (handler da baixa + coluna Taxa) e `scripts/asaas-gerar-aluno.mjs` liberados pro Codex. Claude não toca nesses até a C5 entrar. Dados da Cleide/Jucelia já corrigidos na mão. | Codex pega |
