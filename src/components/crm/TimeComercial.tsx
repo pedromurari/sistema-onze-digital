@@ -23,7 +23,7 @@ import { useInvalidarDados } from '@/lib/db';
 import { INITIAL_VENDORS, calcVendor, type VendorRow, BONUS_MOTIVO, BONUS_SUPERACAO } from '@/lib/vendedores';
 import {
   MessageCircle, Target, Copy, ExternalLink, Users, TrendingUp, DollarSign, CalendarDays,
-  Video, Rocket, Repeat, GraduationCap, Link2, Wallet, CreditCard, Crown, Kanban, ClipboardList,
+  Video, Repeat, GraduationCap, Link2, Wallet, CreditCard, Crown, Kanban, ClipboardList,
   Search, X, History, Filter, CornerDownRight, Eye, Zap, BookOpen, Layers, Trash2, RotateCcw,
   Activity, Percent, BarChart3, Phone, Trophy, Timer, Info, StickyNote, AlarmClock, Lock,
 } from 'lucide-react';
@@ -1495,96 +1495,6 @@ function proximaSddTurma() {
   return SDD_TURMAS.find((t) => addDays(t.aula1, 2) >= hoje) ?? SDD_TURMAS[SDD_TURMAS.length - 1];
 }
 
-function AquisicaoTab() {
-  const proxima = proximaSddTurma();
-  return (
-    <div className="flex flex-col gap-5">
-      <p className="text-sm text-muted-foreground -mt-1">Como os leads chegam: a Semana do Despertar, o único canal de captação definido até agora.</p>
-      <SectionBar title="Visão geral" icon={Rocket} />
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <StatTile label="Formato" value="3 aulas" hint="ao vivo, YouTube, Ter/Qua/Qui às 20h" icon={Video} />
-        <StatTile label="Próxima turma" value={`#${proxima.n}`} hint={`${fmtData(proxima.aula1)} – ${fmtData(addDays(proxima.aula1, 2))}`} icon={Rocket} />
-        <StatTile label="Cadência" value="Quinzenal" hint="semana sim, semana não — até dez/2026" icon={Repeat} />
-      </div>
-
-      <SectionBar title="Como funciona cada turma" icon={Video} />
-      <Card className="p-4">
-        <h3 className="text-sm font-semibold text-foreground mb-3">As 3 aulas</h3>
-        <div className="flex flex-col gap-2">
-          {[
-            { idx: 1, titulo: 'Aula 01 — "O Despertar" · terça, 20h', desc: 'Teoria do Aparelho, Teoria Estrutural, Portas para o Inconsciente. Só conteúdo — sem oferta.', pill: 'Captação', color: 'bg-primary/10 text-primary' },
-            { idx: 2, titulo: 'Aula 02 — "A Cura" · quarta, 20h', desc: 'Heranças traumáticas, narcisismo, autoestima. Pitch da formação PSI acontece aqui — carrinho abre ao final da aula.', pill: 'Pitch + carrinho abre', color: 'bg-warning/10 text-warning' },
-            { idx: 3, titulo: 'Aula 03 — "A Revelação" · quinta, 20h', desc: 'Pulsão de morte, estresse, atos suicidas. Reforço da oferta e última chamada — carrinho fecha na sequência.', pill: 'Fechamento de carrinho', color: 'bg-destructive/10 text-destructive' },
-          ].map((step) => (
-            <div key={step.idx} className="grid grid-cols-[34px_1fr_auto] items-center gap-3 bg-card border border-border rounded-lg p-3">
-              <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">{step.idx}</div>
-              <div>
-                <h4 className="text-sm font-semibold text-foreground">{step.titulo}</h4>
-                <p className="text-xs text-muted-foreground mt-0.5">{step.desc}</p>
-              </div>
-              <Badge className={`text-xs border-0 ${step.color}`}>{step.pill}</Badge>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      <Card className="p-4">
-        <h3 className="text-sm font-semibold text-foreground mb-3">Ciclo operacional de cada turma</h3>
-        <div className="flex flex-col divide-y divide-border">
-          {SDD_CICLO.map((row) => (
-            <div key={row.fase} className="grid grid-cols-[110px_1fr] gap-3 py-3 first:pt-0">
-              <div className="text-sm font-semibold text-primary">{row.fase}</div>
-              <div className="bg-muted/50 border border-border rounded-md px-3 py-2 text-xs">
-                <p className="font-semibold text-foreground">{row.quando}</p>
-                <p className="text-muted-foreground mt-0.5">{row.desc}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      <SectionBar title="Calendário de turmas" icon={CalendarDays} />
-      <Card className="p-4 overflow-x-auto">
-        <h3 className="text-sm font-semibold text-foreground mb-3">Calendário 2026 — quinzenal (semana sim, semana não)</h3>
-        <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
-          <TableHeader>
-            <TableRow className={PREMIUM_TABLE_HEADER_ROW}>
-              <TableHead>Turma</TableHead>
-              <TableHead>Aula 1 (ter)</TableHead>
-              <TableHead>Aula 2 (qua) — pitch</TableHead>
-              <TableHead>Aula 3 (qui) — fecha</TableHead>
-              <TableHead>Captação abre</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {SDD_TURMAS.map((t, idx) => {
-              const aula2 = addDays(t.aula1, 1);
-              const aula3 = addDays(t.aula1, 2);
-              const captacao = addDays(t.aula1, -18);
-              return (
-                <TableRow key={t.n} className={premiumZebraRow(idx)}>
-                  <TableCell>
-                    <Badge className={`text-xs border-0 ${t.real ? 'bg-primary/10 text-primary' : 'bg-warning/10 text-warning'}`}>
-                      #{t.n} {t.real ? 'confirmada' : 'projetada'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{fmtData(t.aula1)}</TableCell>
-                  <TableCell>{fmtData(aula2)}</TableCell>
-                  <TableCell>{fmtData(aula3)}</TableCell>
-                  <TableCell>{fmtData(captacao)}</TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-        <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 mt-3">
-          #{proxima.n} ({fmtData(proxima.aula1)}–{fmtData(addDays(proxima.aula1, 2))}) é a próxima. #44 a #{44 + SDD_TURMAS_CONFIRMADAS - 1} têm data confirmada com o Pedro — dali em diante o calendário é projeção no mesmo ritmo quinzenal até a última turma de 2026.
-        </p>
-      </Card>
-    </div>
-  );
-}
-
 // -----------------------------------------------------------------------
 // Operação — infos práticas do dia a dia da próxima turma: datas e os links
 // de matrícula individuais (um por vendedor, gerados pelo Igor) pra trackear
@@ -1592,7 +1502,13 @@ function AquisicaoTab() {
 // links chegaram — confirmar se é essa mesma ordem.
 // -----------------------------------------------------------------------
 
-interface OperacaoLink { label: string; url: string; vendedor: string; }
+interface OperacaoLink {
+  label: string;
+  url: string;
+  vendedor: string | null; // null = link geral (sem vendedor fixo)
+  grupo: 'vendedor' | 'campanha' | 'interno';
+  descricao: string;
+}
 
 interface TurmaFormacao { turma: string; data: Date; dataLabel: string; mesAbrev: string; dia: number | null; confirmada: boolean; }
 
@@ -1622,8 +1538,54 @@ function proximaTurmaFormacao() {
 // em ir.idmpsi.com.br/helen e /miguel -- ver App.tsx (rota "/:vendedor") e
 // vercel.json do projeto sistema-onze-digital.
 const LINKS_MATRICULA: OperacaoLink[] = [
-  { label: 'Ficha de Matrícula — Helen Magna', url: 'https://ir.idmpsi.com.br/helen', vendedor: 'Helen Magna' },
-  { label: 'Ficha de Matrícula — Miguel Fogaça', url: 'https://ir.idmpsi.com.br/miguel', vendedor: 'Miguel Fogaça' },
+  // Trackeados por vendedor (a matrícula já entra atribuída a quem mandou o link)
+  {
+    label: 'Ficha de Matrícula — Helen Magna', url: 'https://ir.idmpsi.com.br/helen',
+    vendedor: 'Helen Magna', grupo: 'vendedor',
+    descricao: 'Plano padrão: R$ 1.500 à vista (PIX) ou R$ 150/mês. Aceita PIX, cartão (à vista/parcelado/recorrente), boleto 15x e bolsa. Matrícula entra atribuída à Helen.',
+  },
+  {
+    label: 'Ficha de Matrícula — Miguel Fogaça', url: 'https://ir.idmpsi.com.br/miguel',
+    vendedor: 'Miguel Fogaça', grupo: 'vendedor',
+    descricao: 'Plano padrão: R$ 1.500 à vista (PIX) ou R$ 150/mês. Aceita PIX, cartão (à vista/parcelado/recorrente), boleto 15x e bolsa. Matrícula entra atribuída ao Miguel.',
+  },
+  {
+    label: 'Pré-Matrícula — Helen Magna', url: 'https://ir.idmpsi.com.br/pre-matricula/helen',
+    vendedor: 'Helen Magna', grupo: 'vendedor',
+    descricao: 'Cliente preenche a ficha e assina o contrato agora, mas a 1ª cobrança (entrada) fica programada pra uma data futura que ele escolhe. Só boleto 15x. Bom pra quem fecha mas só pode pagar dias depois.',
+  },
+  {
+    label: 'Pré-Matrícula — Miguel Fogaça', url: 'https://ir.idmpsi.com.br/pre-matricula/miguel',
+    vendedor: 'Miguel Fogaça', grupo: 'vendedor',
+    descricao: 'Cliente preenche a ficha e assina o contrato agora, mas a 1ª cobrança (entrada) fica programada pra uma data futura que ele escolhe. Só boleto 15x. Bom pra quem fecha mas só pode pagar dias depois.',
+  },
+  // Links gerais / de campanha — sem vendedor fixo, todo mundo do time enxerga
+  {
+    label: 'Ficha Direta (sem vendedor)', url: 'https://ir.idmpsi.com.br/direto',
+    vendedor: null, grupo: 'campanha',
+    descricao: 'Mesmo plano padrão, mas a matrícula entra SEM dono — cai como "sem vendedor" pra qualquer um do time reivindicar depois. Use pra indicação/venda sem consultor definido.',
+  },
+  {
+    label: 'Condição Promo (R$ 997 / R$ 110)', url: 'https://ir.idmpsi.com.br/promo',
+    vendedor: null, grupo: 'campanha',
+    descricao: 'Condição promocional: R$ 997 à vista ou R$ 110 nas parcelas (12x cartão / 15x boleto). Todas as formas de pagamento. Sem vendedor atribuído.',
+  },
+  {
+    label: 'Cartão à vista R$ 997 (1x)', url: 'https://ir.idmpsi.com.br/997',
+    vendedor: null, grupo: 'campanha',
+    descricao: 'Oferta pontual: R$ 997 no cartão de crédito em parcela única (1x), sem parcelar, sem PIX/boleto. Sem vendedor atribuído.',
+  },
+  {
+    label: 'Boleto 15x de R$ 50', url: 'https://ir.idmpsi.com.br/15x50',
+    vendedor: null, grupo: 'campanha',
+    descricao: 'Venda pontual (ex-aluna refazendo a turma, meia parcela): só boleto recorrente, 15x de R$ 50. Sem PIX/cartão/bolsa. Sem vendedor atribuído.',
+  },
+  // Interno — não é link pro cliente, é a ferramenta do time
+  {
+    label: 'Registrar venda de PNL + gerar contrato', url: 'https://ir.idmpsi.com.br/pnl-contrato',
+    vendedor: null, grupo: 'interno',
+    descricao: 'PNL Practitioner/Master vendido por fora (preço e parcelas negociados, pagamento cobrado por link avulso). Registra o aluno no sistema e dispara o contrato pra assinatura. Preencher SÓ depois que o pagamento estiver confirmado.',
+  },
 ];
 
 function copyLink(url: string) {
@@ -1904,8 +1866,44 @@ function AlunosAguardandoTurmaCard({ viewAsName }: VendorScopeProps) {
   );
 }
 
+const LINK_GRUPO_LABEL: Record<OperacaoLink['grupo'], { titulo: string; sub: string }> = {
+  vendedor: { titulo: 'Fichas trackeadas — por vendedor', sub: 'A matrícula já entra atribuída a quem mandou o link. Cada um usa só o(s) seu(s).' },
+  campanha: { titulo: 'Links gerais / de campanha', sub: 'Condições especiais e link sem vendedor fixo. Todo o time enxerga.' },
+  interno: { titulo: 'Ferramenta interna', sub: 'Não é link pro cliente — é o time que preenche.' },
+};
+
+function BlocoLinksMatricula({ links }: { links: OperacaoLink[] }) {
+  const grupos: OperacaoLink['grupo'][] = ['vendedor', 'campanha', 'interno'];
+  return (
+    <div className="flex flex-col gap-4">
+      {grupos.map((g) => {
+        const doGrupo = links.filter((l) => l.grupo === g);
+        if (doGrupo.length === 0) return null;
+        return (
+          <div key={g} className="flex flex-col gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">{LINK_GRUPO_LABEL[g].titulo}</h3>
+              <p className="text-xs text-muted-foreground">{LINK_GRUPO_LABEL[g].sub}</p>
+            </div>
+            {doGrupo.map((l) => (
+              <div key={l.url} className="rounded-lg border border-border bg-card/60 p-2.5 flex flex-col gap-1.5">
+                <LinkRow label={l.label} url={l.url} />
+                <p className="text-[11px] leading-snug text-muted-foreground">{l.descricao}</p>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function OperacaoTab({ viewAsName }: VendorScopeProps) {
-  const matriculaLinks = viewAsName ? LINKS_MATRICULA.filter((l) => l.vendedor === viewAsName) : LINKS_MATRICULA;
+  // Vendedor logado: vê só as fichas trackeadas dele + todos os links gerais
+  // e a ferramenta interna. Admin: vê tudo.
+  const matriculaLinks = viewAsName
+    ? LINKS_MATRICULA.filter((l) => l.grupo !== 'vendedor' || l.vendedor === viewAsName)
+    : LINKS_MATRICULA;
   const proximaFormacao = proximaTurmaFormacao();
   const proximaSdd = proximaSddTurma();
   const { links: linksGrupo, loading: loadingGrupos } = useLinksGrupoFormacao();
@@ -1922,8 +1920,18 @@ function OperacaoTab({ viewAsName }: VendorScopeProps) {
         <StatTile label="Matrículas desta turma" value="Via links abaixo" hint="é pra onde as fichas de matrícula apontam" icon={Link2} />
       </div>
       <p className="text-xs text-muted-foreground">
-        Essa é a turma de formação (a classe de verdade) — diferente da turma #{proximaSdd.n} da Semana do Despertar, que é só o lançamento/captação (ver aba Aquisição aqui do lado).
+        Essa é a turma de formação (a classe de verdade) — diferente da turma #{proximaSdd.n} da Semana do Despertar, que é só o lançamento/captação.
       </p>
+
+      <SectionBar title="Links de Matrícula" subtitle="Todas as fichas e condições disponíveis, com a descrição de cada uma." icon={Link2} />
+      <Card className="p-4">
+        <BlocoLinksMatricula links={matriculaLinks} />
+        {!viewAsName && (
+          <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 mt-3">
+            Atribuição das fichas por vendedor: por ordem de chegada dos links (Helen → Miguel).
+          </p>
+        )}
+      </Card>
 
       <SectionBar title="Grupo da turma" subtitle="Convite do grupo de WhatsApp onde o aluno matriculado entra." icon={MessageCircle} />
       <Card className="p-4">
@@ -1967,29 +1975,7 @@ function OperacaoTab({ viewAsName }: VendorScopeProps) {
         </div>
       </Card>
 
-      <SectionBar title="Matrículas" subtitle="Fichas por vendedor e quem já fechou, aguardando turma." icon={Link2} />
-      <Card className="p-4">
-        <h3 className="text-sm font-semibold text-foreground mb-1">Ficha de Matrícula — por vendedor</h3>
-        <p className="text-xs text-muted-foreground mb-3">
-          Link trackeado individual — cada vendedor usa só o próprio, pra matrícula ficar atribuída certinho.
-        </p>
-        <div className="flex flex-col gap-2">
-          {matriculaLinks.map((l) => (
-            <LinkRow key={l.url} label={l.label} url={l.url} />
-          ))}
-        </div>
-        {!viewAsName && (
-          <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 mt-3">
-            Atribuição por ordem de chegada dos links: Helen → Miguel.
-          </p>
-        )}
-      </Card>
-
       <AlunosAguardandoTurmaCard viewAsName={viewAsName} />
-
-      <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 -mt-2">
-        Outros links da turma (landing page da Semana do Despertar, pagamento/checkout) aparecem aqui assim que estiverem disponíveis.
-      </p>
     </div>
   );
 }
@@ -3086,18 +3072,7 @@ export function TimeComercial() {
         </TabsContent>
 
         <TabsContent value="operacao">
-          <Tabs defaultValue="op_turma" className="flex flex-col gap-4">
-            <TabsList className="h-auto bg-transparent p-0 gap-1.5 justify-start flex-wrap">
-              <TabsTrigger value="op_turma" className="rounded-lg px-3 py-1.5 text-xs font-medium bg-card border border-border text-muted-foreground data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-sm">Turma atual</TabsTrigger>
-              <TabsTrigger value="op_aquisicao" className="rounded-lg px-3 py-1.5 text-xs font-medium bg-card border border-border text-muted-foreground data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-sm">Aquisição</TabsTrigger>
-            </TabsList>
-            <TabsContent value="op_turma">
-              <OperacaoTab viewAsName={viewAsName} />
-            </TabsContent>
-            <TabsContent value="op_aquisicao">
-              <AquisicaoTab />
-            </TabsContent>
-          </Tabs>
+          <OperacaoTab viewAsName={viewAsName} />
         </TabsContent>
 
         <TabsContent value="metas_comissao">
