@@ -2666,7 +2666,7 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
           </TableBody>
         </Table>
         <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 mt-3">
-          "Sem forma de pgto." são matrículas reivindicadas mas sem à-vista/cartão/boleto informado ainda na ficha — não entram no faturamento até isso ser preenchido. "Bolsa/cortesia" não geram comissão. O valor de comissão é estimativa (usa o bruto); o número fechado, com o líquido de cada venda, está no painel Fechamento.
+          Inclui as vendas de PNL lançadas no fechamento, mesmo as que não têm matrícula no sistema. "Sem forma de pgto." são matrículas reivindicadas mas sem à-vista/cartão/boleto informado ainda na ficha. "Bolsa/cortesia" não geram comissão. A coluna Comissão é o total já apurado no painel Fechamento (líquido de cada venda).
         </p>
       </Card>
 
