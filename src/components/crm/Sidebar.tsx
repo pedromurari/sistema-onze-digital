@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { ensureDefaultLancamentoKanbanColumns } from '@/components/crm/kanban/useKanbanColunas';
 import { AppView, canAccessLancamento, canAccessView, getDefaultPermissions } from '@/lib/access-control';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -145,9 +144,11 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
           console.error('Erro ao carregar lancamentos:', error);
           return;
         }
-        const launchData = data || [];
-        setLancamentos(launchData);
-        await Promise.allSettled(launchData.map((lancamento) => ensureDefaultLancamentoKanbanColumns(lancamento.id)));
+        setLancamentos(data || []);
+        // A barra lateral só precisa dos nomes. Garantir colunas de Kanban aqui criava
+        // uma consulta extra por lançamento em TODO login (padrão N+1) e ainda podia
+        // disparar escrita durante a abertura do CRM. A garantia já acontece ao criar
+        // e ao abrir o lançamento, que são os únicos momentos em que ela é necessária.
       } catch (error) {
         console.error('Erro ao carregar lancamentos:', error);
       }

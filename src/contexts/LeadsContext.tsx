@@ -131,7 +131,10 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState<CRMConfig>({});
   const [loading, setLoading] = useState(true);
 
-  // Load data from Supabase — 4 queries em paralelo
+  // Carrega somente os catálogos usados pelos modais globais. A lista completa de
+  // `leads` deixou de ser consumida pelo CRM: Pipeline e Time Comercial têm consultas
+  // próprias, paginadas e filtradas. Baixar `select('*')` aqui em todo login ocupava a
+  // rede e fazia o navegador converter centenas de linhas que nenhuma tela lia.
   const loadData = useCallback(async () => {
     if (!user) {
       setLeads([]);
@@ -146,27 +149,14 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
 
     try {
       const [
-        { data: leadsData,  error: leadsError  },
         { data: cursosData, error: cursosError },
         { data: fontesData, error: fontesError },
         { data: configData, error: configError },
       ] = await Promise.all([
-        supabase.from('leads').select('*').order('criado_em', { ascending: false }),
         supabase.from('cursos').select('*').order('nome'),
         supabase.from('fontes').select('*').order('nome'),
         supabase.from('crm_config').select('*').limit(1).maybeSingle(),
       ]);
-
-      // Leads
-      if (leadsError) {
-        console.error('Error loading leads:', leadsError);
-      } else {
-        setLeads((leadsData || []).map(row => {
-          const lead = dbRowToLead(row);
-          lead.etapa = computeAutoStage(row);
-          return lead;
-        }));
-      }
 
       // Cursos
       if (cursosError) {

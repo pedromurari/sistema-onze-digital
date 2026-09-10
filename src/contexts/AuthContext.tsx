@@ -213,11 +213,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setTimeout(async () => {
             const appUser = await getCurrentUser(session.user);
             setUser(appUser);
-            if (!initialised) {
-              await fetchUsers(); // usa cache se disponível — evita 3 queries no reload
-              initialised = true;
-            }
+            // A identidade e as permissões do usuário atual bastam para abrir o CRM.
+            // A lista da equipe alimenta seletores secundários e pode chegar depois;
+            // antes, quatro consultas globais mantinham a tela inteira em "Carregando".
             setLoading(false);
+            if (!initialised) {
+              initialised = true;
+              void fetchUsers(); // usa cache quando disponível e completa em segundo plano
+            }
           }, 0);
         } else {
           setUser(null);

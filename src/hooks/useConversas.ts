@@ -54,7 +54,7 @@ export interface Conversa {
  * numero. Usado pelo Chat do Time Comercial, onde o vendedor so pode ver o que
  * passou pelo WhatsApp dele.
  */
-export function useConversas(instancias?: string | string[], desde?: string) {
+export function useConversas(instancias?: string | string[], desde?: string, enabled = true) {
   const { user } = useAuth();
   const [conversas, setConversas] = useState<Conversa[]>([]);
   const [loading, setLoading] = useState(true);
@@ -215,15 +215,18 @@ export function useConversas(instancias?: string | string[], desde?: string) {
     setLoading(false);
   }, [user, temFiltro, filtroChave, desde]);
 
-  useEffect(() => { carregarConversas(); }, [carregarConversas]);
+  useEffect(() => {
+    if (enabled) carregarConversas();
+  }, [enabled, carregarConversas]);
 
   // Mensagem nova em qualquer conversa reordena a lista lateral.
   useEffect(() => {
+    if (!enabled) return;
     const ch = supabase.channel('whatsapp_mensagens_lista')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'whatsapp_mensagens' }, () => carregarConversas())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [carregarConversas]);
+  }, [enabled, carregarConversas]);
 
   return { conversas, loading };
 }

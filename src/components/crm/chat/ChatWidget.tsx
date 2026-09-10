@@ -36,7 +36,10 @@ export function ChatWidget() {
   const [open, setOpen] = useState(false);
   const [busca, setBusca] = useState('');
   const [telefoneSelecionado, setTelefoneSelecionado] = useState<string | null>(null);
-  const { conversas, loading } = useConversas();
+  // Fechado, o widget é só uma bolha: não deve baixar 1.000 mensagens e executar
+  // vários lotes de resolução de nomes em todo login. A consulta e o realtime entram
+  // apenas quando alguém realmente abre o chat; ao reabrir, o estado já carregado fica.
+  const { conversas, loading } = useConversas(undefined, undefined, open);
   const { thread, loading: loadingThread } = useThread(telefoneSelecionado);
   const fimDaThreadRef = useRef<HTMLDivElement>(null);
 

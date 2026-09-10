@@ -21,7 +21,7 @@ import {
   Plus, DollarSign, Users, AlertCircle, Eye, Trash2,
   TrendingUp, Target, Phone, Pencil, Building2, CheckCircle2,
   Copy, Download, ExternalLink, Upload, FileText, Search,
-  Send, MessageSquare, Shield, ChevronDown, ChevronRight,
+  Send, MessageSquare, Shield, ChevronDown, ChevronLeft, ChevronRight,
   Play, Square, CheckCircle, XCircle, Clock, RefreshCw, History, UserPlus,
 } from 'lucide-react';
 import { format, isSameMonth, parseISO } from 'date-fns';
@@ -196,6 +196,7 @@ const matchesProdutoTab = (produtoReal: string | null | undefined, tab: ProdutoT
 type PaymentFilter = 'todos' | PaymentMethod;
 type DueFilter = 'todos' | 'vencidos' | 'hoje' | 'proximos_7' | 'proximos_30' | 'quitados';
 type DueDayFilter = 'todos' | `dia_${number}`;
+const ALUNOS_POR_PAGINA = 50;
 
 const formatCurrency = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
@@ -988,6 +989,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
   const [dueDayFilter, setDueDayFilter] = useState<DueDayFilter>('todos');
   const [dueFilter, setDueFilter] = useState<DueFilter>('todos');
   const [searchAluno, setSearchAluno] = useState('');
+  const [paginaAlunos, setPaginaAlunos] = useState(1);
   const searchAlunoRef = useRef<HTMLInputElement>(null);
   const [assigningTurma, setAssigningTurma] = useState<Record<string, boolean>>({});
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
@@ -1006,7 +1008,9 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
   const [parcelasLocais, setParcelasLocais] = useState<ParcelaLocal[]>([]);
   const [savingParcelas, setSavingParcelas] = useState(false);
 
-  useEffect(() => { loadData(); }, []);
+  // No primeiro acesso os hooks já estão buscando alunos, pagamentos, turmas e responsáveis.
+  // Invalidá-los aqui disparava uma segunda rodada idêntica justamente durante a abertura.
+  useEffect(() => { loadData(false); }, []);
 
   const deepLinkAbertoRef = useRef(false);
   useEffect(() => {
@@ -1018,27 +1022,34 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
     }
   }, [initialAlunoId, loading, alunos]);
 
-  const loadData = async () => {
+  const loadData = async (invalidarListas = true) => {
     setLoading(true);
     try {
       // Alunos e pagamentos nao sao mais buscados aqui: quem cuida deles e o React Query.
       // `loadData()` e chamado em 16 lugares depois de gravar, entao invalidar aqui faz
       // TODAS essas 16 chamadas passarem a avisar o resto do sistema — o Dashboard aberto
       // noutra aba recarrega junto, sem nenhuma delas precisar saber disso.
-      invalidarDados('alunos');
-      invalidarDados('pagamentos');
+      if (invalidarListas) {
+        invalidarDados('alunos');
+        invalidarDados('pagamentos');
       // Turma e responsavel tambem saem daqui — criar uma turma nova precisa aparecer no
       // Dashboard, no CFO e no Balanco, nao so nesta tela.
-      invalidarDados('turmas');
-      invalidarDados('responsaveis');
+        invalidarDados('turmas');
+        invalidarDados('responsaveis');
+      }
 
-      const lancRes = await supabase.from('lancamentos').select('id, nome, status, data_live, ativo').order('created_at', { ascending: false });
+      // Essas listas são independentes; em paralelo a tela espera apenas a mais lenta,
+      // em vez de somar as duas latências da Supabase.
+      const [lancRes, obsRes] = await Promise.all([
+        supabase.from('lancamentos').select('id, nome, status, data_live, ativo').order('created_at', { ascending: false }),
+        supabase
+          .from('aluno_observacoes')
+          .select('aluno_id, texto')
+          .eq('status', 'pendente')
+          .order('created_at', { ascending: false }),
+      ]);
       if (lancRes.data) setLancamentos(lancRes.data);
-      const { data: obsPendentes } = await supabase
-        .from('aluno_observacoes')
-        .select('aluno_id, texto')
-        .eq('status', 'pendente')
-        .order('created_at', { ascending: false });
+      const obsPendentes = obsRes.data;
       if (obsPendentes) {
         const map: Record<string, string> = {};
         for (const o of obsPendentes) if (!map[o.aluno_id]) map[o.aluno_id] = o.texto;
@@ -1242,9 +1253,26 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
     );
   }, [filteredAlunos, searchAluno]);
 
+  const totalPaginasAlunos = Math.max(1, Math.ceil(alunosVisiveis.length / ALUNOS_POR_PAGINA));
+  const alunosDaPagina = useMemo(() => {
+    const inicio = (paginaAlunos - 1) * ALUNOS_POR_PAGINA;
+    return alunosVisiveis.slice(inicio, inicio + ALUNOS_POR_PAGINA);
+  }, [alunosVisiveis, paginaAlunos]);
+
+  // A listagem completa já passa de cinco mil nós no navegador. Os indicadores continuam
+  // calculados sobre todos os registros, mas a tabela monta só cinquenta alunos por vez;
+  // assim filtros e busca mantêm a semântica financeira sem congelar a interface.
+  useEffect(() => {
+    setPaginaAlunos(1);
+  }, [activeTab, selectedTurmaId, statusFilter, paymentFilter, dueDayFilter, dueFilter, searchAluno]);
+
+  useEffect(() => {
+    if (paginaAlunos > totalPaginasAlunos) setPaginaAlunos(totalPaginasAlunos);
+  }, [paginaAlunos, totalPaginasAlunos]);
+
   const alunosPorTurma = useMemo(() => {
     const groups: Record<string, Aluno[]> = {};
-    alunosVisiveis.forEach(a => {
+    alunosDaPagina.forEach(a => {
       const key = a.turma_id || '__sem_turma__';
       if (!groups[key]) groups[key] = [];
       groups[key].push(a);
@@ -1257,7 +1285,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
       const tb = turmas.find(t => t.id === b)?.nome || '';
       return ta.localeCompare(tb);
     });
-  }, [alunosVisiveis, turmas]);
+  }, [alunosDaPagina, turmas]);
 
   // CRUD turma
   const createTurma = async () => {
@@ -2665,6 +2693,34 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                   </Card>
                 );
               })}
+              {totalPaginasAlunos > 1 && (
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-lg border bg-card px-4 py-3">
+                  <p className="text-sm text-muted-foreground">
+                    Exibindo {(paginaAlunos - 1) * ALUNOS_POR_PAGINA + 1}–{Math.min(paginaAlunos * ALUNOS_POR_PAGINA, alunosVisiveis.length)} de {alunosVisiveis.length} alunos
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={paginaAlunos === 1}
+                      onClick={() => setPaginaAlunos(pagina => Math.max(1, pagina - 1))}
+                    >
+                      <ChevronLeft className="mr-1 h-4 w-4" />Anterior
+                    </Button>
+                    <span className="min-w-20 text-center text-sm font-medium">
+                      {paginaAlunos} de {totalPaginasAlunos}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={paginaAlunos === totalPaginasAlunos}
+                      onClick={() => setPaginaAlunos(pagina => Math.min(totalPaginasAlunos, pagina + 1))}
+                    >
+                      Próxima<ChevronRight className="ml-1 h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </>
