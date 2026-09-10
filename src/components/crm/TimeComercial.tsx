@@ -2382,12 +2382,7 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
                         <TableCell className="text-xs whitespace-nowrap">
                           {v.data_venda ? new Date(v.data_venda + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
                         </TableCell>
-                        <TableCell className="text-sm font-medium text-foreground">
-                          {v.aluno_nome}
-                          {v.origem === 'registro' && (
-                            <span className="ml-1.5 text-[9px] font-normal uppercase tracking-wide text-muted-foreground/60">lançada no fechamento</span>
-                          )}
-                        </TableCell>
+                        <TableCell className="text-sm font-medium text-foreground">{v.aluno_nome}</TableCell>
                         <TableCell className="text-xs whitespace-nowrap">{v.produto ? (PRODUTO_LABEL_TC[v.produto] ?? v.produto) : '—'}</TableCell>
                         <TableCell className="text-xs whitespace-nowrap">{v.forma_pagamento ? (FORMA_LABEL_TC[v.forma_pagamento] ?? v.forma_pagamento) : '—'}</TableCell>
                         <TableCell className="text-xs whitespace-nowrap">{v.status ? (STATUS_LABEL_TC[v.status] ?? v.status) : '—'}</TableCell>
