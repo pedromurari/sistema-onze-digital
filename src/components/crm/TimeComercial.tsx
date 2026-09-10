@@ -1903,10 +1903,13 @@ function BlocoLinksMatricula({ links }: { links: OperacaoLink[] }) {
 }
 
 function OperacaoTab({ viewAsName }: VendorScopeProps) {
-  // Vendedor logado: vê só as fichas trackeadas dele + todos os links gerais
-  // e a ferramenta interna. Admin: vê tudo.
+  // Vendedor logado: vê só as fichas trackeadas dele + a ferramenta interna
+  // (PNL). Os links gerais / de campanha (/direto, /promo, /997, /15x50) são
+  // condições especiais controladas pelo admin -- não aparecem pro vendedor.
+  // Admin: vê tudo.
   const matriculaLinks = viewAsName
-    ? LINKS_MATRICULA.filter((l) => l.grupo !== 'vendedor' || l.vendedor === viewAsName)
+    ? LINKS_MATRICULA.filter((l) =>
+        (l.grupo === 'vendedor' && l.vendedor === viewAsName) || l.grupo === 'interno')
     : LINKS_MATRICULA;
   const proximaFormacao = proximaTurmaFormacao();
   const proximaSdd = proximaSddTurma();
