@@ -7,7 +7,9 @@ import {
   calcInadimplencia,
   calcMRR,
   makeGetOwnerShare,
+  calcDrePorSocio,
 } from './financial-utils';
+import { normalizarRegrasSocio } from './regras-socio';
 
 /**
  * Regras financeiras canônicas.
@@ -245,5 +247,79 @@ describe('makeGetOwnerShare — o split manda, responsavel_id e so o fallback', 
   it('turma sem dono e sem split nao pertence a socio nenhum', () => {
     const share = makeGetOwnerShare('Keila', [{ id: 't9' }], [], responsaveis);
     expect(share('t9')).toBe(0);
+  });
+});
+
+describe('calcDrePorSocio — regras configuráveis', () => {
+  const itens = [
+    { tipo: 'entrada', valor: 100, categoria: 'receita_outra', produto: null, fornecedor: 'Zaffalon Consultoria' },
+    { tipo: 'entrada', valor: 200, categoria: 'receita_outra', produto: null, fornecedor: 'DKSoft' },
+    { tipo: 'entrada', valor: 300, categoria: 'receita_outra', produto: null, fornecedor: 'Life Sorrisos' },
+    { tipo: 'entrada', valor: 400, categoria: 'receita_outra', produto: null, fornecedor: 'PNL Master' },
+    { tipo: 'entrada', valor: 500, categoria: 'receita_outra', produto: null, fornecedor: 'Sem regra' },
+    { tipo: 'saida', valor: 100, categoria: 'taxa_gateway', produto: null, fornecedor: 'Voomp' },
+    { tipo: 'saida', valor: 200, categoria: 'custo_produto', produto: 'idm-pelo-brasil', fornecedor: 'Espaço' },
+    { tipo: 'saida', valor: 300, categoria: 'custo_produto', produto: 'psicanalise', fornecedor: 'Professora' },
+    { tipo: 'saida', valor: 400, categoria: 'software', produto: null, fornecedor: 'Sistema' },
+    { tipo: 'saida', valor: 120, categoria: 'software', produto: null, fornecedor: 'Google Workspace (Meet)' },
+    { tipo: 'saida', valor: 900, categoria: 'pro_labore', produto: null, fornecedor: 'Pedro' },
+  ];
+
+  it('mantém exatamente o resultado legado quando nenhuma regra é informada', () => {
+    const resultado = calcDrePorSocio({
+      nomePedro: 'Pedro',
+      nomeRodrygo: 'Rodrygo',
+      pagamentos: [],
+      turmaResponsaveis: [],
+      responsaveis: [],
+      itens,
+      receitaEventos: 1_000,
+    });
+
+    expect(resultado.pedro).toMatchObject({
+      receitaEventos: 500,
+      receitaOutras: 550,
+      custoCompartilhado: 200,
+      custoProfessoras: 150,
+      custoEventos: 100,
+      custoDedicado: 0,
+      resultado: 600,
+    });
+    expect(resultado.rodrygo).toMatchObject({
+      receitaEventos: 500,
+      receitaOutras: 950,
+      custoCompartilhado: 200,
+      custoProfessoras: 150,
+      custoEventos: 100,
+      custoDedicado: 220,
+      resultado: 780,
+    });
+  });
+
+  it('aplica percentuais e atribuições editadas sem alterar o motor de mensalidades', () => {
+    const regras = normalizarRegrasSocio({
+      eventos_npa_pct_pedro: 80,
+      custo_fixo_pct_pedro: 60,
+      custo_evento_pct_pedro: 25,
+      professoras_por_proporcao_mensalidade: false,
+      receita_outra_default_pct_pedro: 70,
+      receita_outra_por_fornecedor: [{ match: 'zaffalon', pct_pedro: 20 }],
+      custo_dedicado_por_fornecedor: [{ match: 'voomp', socio: 'pedro' }],
+    });
+    const resultado = calcDrePorSocio({
+      nomePedro: 'Pedro', nomeRodrygo: 'Rodrygo', pagamentos: [],
+      turmaResponsaveis: [], responsaveis: [], itens, receitaEventos: 1_000,
+    }, regras);
+
+    expect(resultado.pedro).toMatchObject({
+      receitaEventos: 800,
+      receitaOutras: 1_000,
+      custoCompartilhado: 312,
+      custoProfessoras: 180,
+      custoEventos: 50,
+      custoDedicado: 100,
+      resultado: 1_158,
+    });
+    expect(resultado.rodrygo.resultado).toBe(222);
   });
 });

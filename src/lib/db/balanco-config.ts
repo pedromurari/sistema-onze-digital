@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { chaves } from './keys';
 
 export const COLUNAS_BALANCO_CONFIG =
-  'id, socios, taxas, parametros_cfo, saldo_inicial_contas, inicio_operacao_fiscal, updated_at';
+  'id, socios, taxas, parametros_cfo, saldo_inicial_contas, regras_socio, inicio_operacao_fiscal, updated_at';
 
 /**
  * A configuração é uma linha por empresa e precisa compartilhar o mesmo cache entre o

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import { Loader2, Plus, Save, Settings2, Trash2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useBalancoConfig, useInvalidarDados } from '@/lib/db';
@@ -6,11 +6,16 @@ import { CONTAS, getContaCor, getContaLabel, type Conta } from '@/lib/contas';
 import {
   PARAMETROS_CFO_DEFAULT, type ParametrosCfo, type ProlaboreFrequencia,
 } from '@/lib/financial-utils';
+import {
+  normalizarRegrasSocio,
+  type RegrasSocio,
+} from '@/lib/regras-socio';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { toast } from '@/hooks/use-toast';
 
 export interface SocioConfig {
@@ -48,6 +53,7 @@ interface BalancoConfigRow {
   taxas: unknown;
   parametros_cfo: unknown;
   saldo_inicial_contas: unknown;
+  regras_socio: unknown;
   updated_at: string | null;
 }
 
@@ -151,6 +157,7 @@ function EditorBalancoConfig({ config, onSaved }: EditorProps) {
   const [taxas, setTaxas] = useState(() => normalizarTaxas(config.taxas));
   const [parametros, setParametros] = useState(() => normalizarParametros(config.parametros_cfo));
   const [saldos, setSaldos] = useState(() => normalizarSaldos(config.saldo_inicial_contas));
+  const [regrasSocio, setRegrasSocio] = useState(() => normalizarRegrasSocio(config.regras_socio));
   const [salvando, setSalvando] = useState(false);
 
   const somaSocios = socios.reduce((total, socio) => total + socio.percentual, 0);
@@ -176,6 +183,24 @@ function EditorBalancoConfig({ config, onSaved }: EditorProps) {
       toast({ variant: 'destructive', title: 'Informe a data-base dos saldos iniciais' });
       return;
     }
+    const percentuaisRegras = [
+      regrasSocio.eventos_npa_pct_pedro,
+      regrasSocio.custo_fixo_pct_pedro,
+      regrasSocio.custo_evento_pct_pedro,
+      regrasSocio.receita_outra_default_pct_pedro,
+      ...regrasSocio.receita_outra_por_fornecedor.map((regra) => regra.pct_pedro),
+    ];
+    if (percentuaisRegras.some((valor) => valor < 0 || valor > 100)) {
+      toast({ variant: 'destructive', title: 'Percentuais da divisão devem ficar entre 0% e 100%' });
+      return;
+    }
+    if (
+      regrasSocio.receita_outra_por_fornecedor.some((regra) => !regra.match.trim())
+      || regrasSocio.custo_dedicado_por_fornecedor.some((regra) => !regra.match.trim())
+    ) {
+      toast({ variant: 'destructive', title: 'Preencha o texto de correspondência das regras por fornecedor' });
+      return;
+    }
 
     setSalvando(true);
     const payload = {
@@ -183,10 +208,21 @@ function EditorBalancoConfig({ config, onSaved }: EditorProps) {
       taxas,
       parametros_cfo: parametros,
       saldo_inicial_contas: saldos,
+      regras_socio: {
+        ...regrasSocio,
+        receita_outra_por_fornecedor: regrasSocio.receita_outra_por_fornecedor.map((regra) => ({
+          ...regra,
+          match: regra.match.trim(),
+        })),
+        custo_dedicado_por_fornecedor: regrasSocio.custo_dedicado_por_fornecedor.map((regra) => ({
+          ...regra,
+          match: regra.match.trim(),
+        })),
+      },
       updated_at: new Date().toISOString(),
     };
-    // O tipo gerado só deve ganhar `saldo_inicial_contas` depois que a migration for
-    // aplicada e os tipos forem regenerados; o cast fica localizado nesta fronteira.
+    // O tipo gerado só deve ganhar os JSONBs novos quando os tipos forem regenerados;
+    // o cast fica localizado nesta fronteira de escrita para não contaminar o form.
     const { error } = await supabase
       .from('balanco_config')
       .update(payload as never)
@@ -301,6 +337,65 @@ function EditorBalancoConfig({ config, onSaved }: EditorProps) {
 
       <Card>
         <CardHeader>
+          <CardTitle className="text-base">Divisão entre sócios</CardTitle>
+          <CardDescription>
+            Define a parte do Pedro; o restante fica com o Rodrygo. Mensalidades continuam seguindo a turma e
+            o motor de repasse — estas regras cobrem eventos, receitas avulsas e custos.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <CampoParametro
+              label="Eventos NPA — Pedro"
+              suffix="%"
+              value={regrasSocio.eventos_npa_pct_pedro}
+              onChange={(valor) => setRegrasSocio((atual) => ({ ...atual, eventos_npa_pct_pedro: valor }))}
+            />
+            <CampoParametro
+              label="Custos compartilhados — Pedro"
+              suffix="%"
+              value={regrasSocio.custo_fixo_pct_pedro}
+              onChange={(valor) => setRegrasSocio((atual) => ({ ...atual, custo_fixo_pct_pedro: valor }))}
+            />
+            <CampoParametro
+              label="Custos de evento — Pedro"
+              suffix="%"
+              value={regrasSocio.custo_evento_pct_pedro}
+              onChange={(valor) => setRegrasSocio((atual) => ({ ...atual, custo_evento_pct_pedro: valor }))}
+            />
+            <CampoParametro
+              label="Outras receitas (padrão) — Pedro"
+              suffix="%"
+              value={regrasSocio.receita_outra_default_pct_pedro}
+              onChange={(valor) => setRegrasSocio((atual) => ({ ...atual, receita_outra_default_pct_pedro: valor }))}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-4 rounded-md border p-3">
+            <div>
+              <Label htmlFor="professoras-proporcao">Professoras pela proporção das mensalidades</Label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Ligado: cada sócio absorve o custo conforme sua receita de mensalidades no mês. Desligado: usa
+                o percentual de custos compartilhados acima.
+              </p>
+            </div>
+            <Switch
+              id="professoras-proporcao"
+              checked={regrasSocio.professoras_por_proporcao_mensalidade}
+              onCheckedChange={(checked) => setRegrasSocio((atual) => ({
+                ...atual,
+                professoras_por_proporcao_mensalidade: checked,
+              }))}
+            />
+          </div>
+
+          <EditorReceitasPorFornecedor regras={regrasSocio} onChange={setRegrasSocio} />
+          <EditorCustosDedicados regras={regrasSocio} onChange={setRegrasSocio} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle className="text-base">Taxas por conta e forma de pagamento</CardTitle>
           <CardDescription>Editor consolidado das taxas percentuais e fixas usadas nos cálculos gerenciais.</CardDescription>
         </CardHeader>
@@ -387,6 +482,138 @@ function EditorBalancoConfig({ config, onSaved }: EditorProps) {
           </div>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function EditorReceitasPorFornecedor({ regras, onChange }: {
+  regras: RegrasSocio;
+  onChange: Dispatch<SetStateAction<RegrasSocio>>;
+}) {
+  return (
+    <div className="space-y-3 border-t pt-4">
+      <div>
+        <h3 className="text-sm font-medium">Receitas avulsas por fornecedor</h3>
+        <p className="text-xs text-muted-foreground">
+          O primeiro texto encontrado no nome do fornecedor vence; sem correspondência, vale o percentual padrão.
+        </p>
+      </div>
+      {regras.receita_outra_por_fornecedor.map((regra, indice) => (
+        <div key={indice} className="grid gap-2 sm:grid-cols-[1fr_160px_40px]">
+          <Input
+            aria-label={`Texto do fornecedor de receita ${indice + 1}`}
+            value={regra.match}
+            placeholder="Ex.: zaffalon"
+            onChange={(event) => onChange((atual) => ({
+              ...atual,
+              receita_outra_por_fornecedor: atual.receita_outra_por_fornecedor.map((item, i) =>
+                i === indice ? { ...item, match: event.target.value } : item),
+            }))}
+          />
+          <CampoMonetarioOuPercentual
+            label={`Percentual do Pedro na receita ${indice + 1}`}
+            suffix="%"
+            value={regra.pct_pedro}
+            onChange={(valor) => onChange((atual) => ({
+              ...atual,
+              receita_outra_por_fornecedor: atual.receita_outra_por_fornecedor.map((item, i) =>
+                i === indice ? { ...item, pct_pedro: valor } : item),
+            }))}
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`Remover regra de receita ${indice + 1}`}
+            onClick={() => onChange((atual) => ({
+              ...atual,
+              receita_outra_por_fornecedor: atual.receita_outra_por_fornecedor.filter((_, i) => i !== indice),
+            }))}
+          >
+            <Trash2 className="h-4 w-4 text-destructive" />
+          </Button>
+        </div>
+      ))}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onChange((atual) => ({
+          ...atual,
+          receita_outra_por_fornecedor: [
+            ...atual.receita_outra_por_fornecedor,
+            { match: '', pct_pedro: atual.receita_outra_default_pct_pedro },
+          ],
+        }))}
+      >
+        <Plus className="mr-2 h-4 w-4" /> Adicionar regra de receita
+      </Button>
+    </div>
+  );
+}
+
+function EditorCustosDedicados({ regras, onChange }: {
+  regras: RegrasSocio;
+  onChange: Dispatch<SetStateAction<RegrasSocio>>;
+}) {
+  return (
+    <div className="space-y-3 border-t pt-4">
+      <div>
+        <h3 className="text-sm font-medium">Custos dedicados por fornecedor</h3>
+        <p className="text-xs text-muted-foreground">
+          Se o fornecedor de uma saída contiver o texto abaixo, 100% do custo vai para o sócio escolhido.
+        </p>
+      </div>
+      {regras.custo_dedicado_por_fornecedor.map((regra, indice) => (
+        <div key={indice} className="grid gap-2 sm:grid-cols-[1fr_180px_40px]">
+          <Input
+            aria-label={`Texto do fornecedor de custo ${indice + 1}`}
+            value={regra.match}
+            placeholder="Ex.: voomp"
+            onChange={(event) => onChange((atual) => ({
+              ...atual,
+              custo_dedicado_por_fornecedor: atual.custo_dedicado_por_fornecedor.map((item, i) =>
+                i === indice ? { ...item, match: event.target.value } : item),
+            }))}
+          />
+          <Select
+            value={regra.socio}
+            onValueChange={(socio: 'pedro' | 'rodrygo') => onChange((atual) => ({
+              ...atual,
+              custo_dedicado_por_fornecedor: atual.custo_dedicado_por_fornecedor.map((item, i) =>
+                i === indice ? { ...item, socio } : item),
+            }))}
+          >
+            <SelectTrigger aria-label={`Sócio do custo dedicado ${indice + 1}`}><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pedro">Pedro</SelectItem>
+              <SelectItem value="rodrygo">Rodrygo</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`Remover regra de custo ${indice + 1}`}
+            onClick={() => onChange((atual) => ({
+              ...atual,
+              custo_dedicado_por_fornecedor: atual.custo_dedicado_por_fornecedor.filter((_, i) => i !== indice),
+            }))}
+          >
+            <Trash2 className="h-4 w-4 text-destructive" />
+          </Button>
+        </div>
+      ))}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onChange((atual) => ({
+          ...atual,
+          custo_dedicado_por_fornecedor: [
+            ...atual.custo_dedicado_por_fornecedor,
+            { match: '', socio: 'rodrygo' },
+          ],
+        }))}
+      >
+        <Plus className="mr-2 h-4 w-4" /> Adicionar custo dedicado
+      </Button>
     </div>
   );
 }

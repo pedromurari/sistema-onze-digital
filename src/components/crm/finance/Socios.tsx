@@ -9,6 +9,7 @@ import {
   type TurmaResponsavelRow, type ResponsavelRow,
 } from '@/lib/financial-utils';
 import { getContaLabel, type Conta, CONTAS } from '@/lib/contas';
+import { normalizarRegrasSocio } from '@/lib/regras-socio';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
 import { Card } from '@/components/ui/card';
@@ -30,6 +31,7 @@ import {
  * Fontes:
  *   - Regras ........... balanco_config.socios (nome, %, pró-labore mensal, conta)
  *                        + balanco_config.parametros_cfo (reserva mínima, frequência)
+ *                        + balanco_config.regras_socio (divisão editável do DRE)
  *   - Repasses ......... balanco_itens categoria 'pro_labore' / 'distribuicao_lucro',
  *                        do mês (data_competencia/mes_referencia), com fornecedor = nome
  *   - Resultado ........ dre_fechamentos.resultado do mês (distribuição só libera
@@ -116,6 +118,7 @@ export function Socios() {
   const { data: config, isLoading: loadingConfig } = useBalancoConfig<{
     socios: unknown;
     parametros_cfo: ParametrosCfo | null;
+    regras_socio: unknown;
   }>();
 
   const [repasses, setRepasses] = useState<RepasseRow[]>([]);
@@ -131,6 +134,7 @@ export function Socios() {
   const [dialogSocio, setDialogSocio] = useState<SocioRow | null>(null);
 
   const socios = useMemo(() => normalizarSocios(config?.socios), [config?.socios]);
+  const regrasSocio = useMemo(() => normalizarRegrasSocio(config?.regras_socio), [config?.regras_socio]);
   const params = { ...PARAMETROS_CFO_DEFAULT, ...(config?.parametros_cfo ?? {}) };
   const freq = params.prolabore_frequencia;
   const reservaMin = params.reserva_minima_operacional;
@@ -233,8 +237,8 @@ export function Socios() {
       responsaveis,
       itens: itensMes as DrePorSocioItem[],
       receitaEventos: eventosMes,
-    });
-  }, [pagosMes, itensMes, turmaResp, responsaveis, turmaMens, eventosMes, nomePedro, nomeRodrygo]);
+    }, regrasSocio);
+  }, [pagosMes, itensMes, turmaResp, responsaveis, turmaMens, eventosMes, nomePedro, nomeRodrygo, regrasSocio]);
 
   const dreDoSocio = (nome: string): SocioDreRow | null => {
     const n = nome.trim().toLowerCase();

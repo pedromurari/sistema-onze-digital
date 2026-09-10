@@ -7,6 +7,7 @@ import {
   startOfYear, endOfYear, addDays, addWeeks, addMonths,
   addQuarters, addYears, format,
 } from 'date-fns';
+import { REGRAS_SOCIO_DEFAULT, type RegrasSocio } from './regras-socio';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -838,6 +839,7 @@ export function calcDreResumoMes(
 //            · custo de evento (custo_produto produto=idm-pelo-brasil) → 50/50
 //            · taxa Voomp (taxa_gateway, fornecedor ~ Voomp) → 100% Rodrygo (ele é
 //              dono do resto da turma #02426, onde a Voomp cobra)
+//            · Google Workspace → 100% Rodrygo
 //            · repasse_investidor (Keila) → NÃO entra (já saiu da receita dela)
 //            · pró-labore / distribuição → NÃO entra (é o repasse em si; a tela
 //              Sócios controla contra a cota)
@@ -884,14 +886,21 @@ function zeroSocio(nome: string): SocioDreRow {
   };
 }
 
-// Onde cai a receita "fora do CRM" (balanco_itens entrada), por fornecedor.
-function fracaoPedroReceitaOutra(fornecedor: string): number {
-  const f = fornecedor.toLowerCase();
-  if (f.includes('zaffalon')) return 1;          // consultoria do Pedro (Onze Digital)
-  if (f.includes('dksoft')) return 0;            // coorte legada — Rodrygo
-  if (f.includes('life sorrisos')) return 0;     // palestra do Rodrygo
-  if (f.includes('pnl')) return 0.5;
-  return 0.5;
+// O primeiro match vence. A ordem visível no formulário, portanto, também é a
+// precedência da regra — importante quando um fornecedor contém dois termos.
+function fracaoPedroReceitaOutra(fornecedor: string, regras: RegrasSocio): number {
+  const normalizado = fornecedor.toLowerCase();
+  const regra = regras.receita_outra_por_fornecedor.find((item) =>
+    normalizado.includes(item.match.trim().toLowerCase()),
+  );
+  return (regra?.pct_pedro ?? regras.receita_outra_default_pct_pedro) / 100;
+}
+
+function socioDoCustoDedicado(fornecedor: string, regras: RegrasSocio) {
+  const normalizado = fornecedor.toLowerCase();
+  return regras.custo_dedicado_por_fornecedor.find((item) =>
+    normalizado.includes(item.match.trim().toLowerCase()),
+  )?.socio;
 }
 
 export function calcDrePorSocio(opts: {
@@ -902,7 +911,7 @@ export function calcDrePorSocio(opts: {
   responsaveis: ResponsavelRow[];
   itens: DrePorSocioItem[];
   receitaEventos: number;
-}): DrePorSocio {
+}, regras: RegrasSocio = REGRAS_SOCIO_DEFAULT): DrePorSocio {
   const { nomePedro, nomeRodrygo, pagamentos, turmaResponsaveis, responsaveis, itens, receitaEventos } = opts;
   const pedro = zeroSocio(nomePedro);
   const rodrygo = zeroSocio(nomeRodrygo);
@@ -920,10 +929,11 @@ export function calcDrePorSocio(opts: {
   const baseMens = pedro.receitaMensalidades + rodrygo.receitaMensalidades;
   const fracaoPedroPsi = baseMens > 0 ? pedro.receitaMensalidades / baseMens : 0.5;
 
-  // ── Eventos NPA: 50/50 ──
-  const ev = Math.max(0, receitaEventos) / 2;
-  pedro.receitaEventos = ev;
-  rodrygo.receitaEventos = ev;
+  // ── Eventos NPA: percentual configurável; o default continua 50/50 ──
+  const receitaEventosPositiva = Math.max(0, receitaEventos);
+  const fracaoPedroEventos = regras.eventos_npa_pct_pedro / 100;
+  pedro.receitaEventos = receitaEventosPositiva * fracaoPedroEventos;
+  rodrygo.receitaEventos = receitaEventosPositiva * (1 - fracaoPedroEventos);
 
   // ── balanco_itens do mês ──
   for (const i of itens) {
@@ -934,7 +944,7 @@ export function calcDrePorSocio(opts: {
 
     if (i.tipo === 'entrada') {
       if (!['receita_curso', 'receita_outra', 'matricula', 'outro_entrada'].includes(cat)) continue;
-      const fp = fracaoPedroReceitaOutra(forn);
+      const fp = fracaoPedroReceitaOutra(forn, regras);
       pedro.receitaOutras += v * fp;
       rodrygo.receitaOutras += v * (1 - fp);
       continue;
@@ -944,24 +954,34 @@ export function calcDrePorSocio(opts: {
     // Não entram no rateio dos sócios.
     if (cat === 'repasse_investidor' || cat === 'pro_labore' || cat === 'distribuicao_lucro' || cat === 'estorno') continue;
 
-    if (cat === 'taxa_gateway' && forn.toLowerCase().includes('voomp')) {
-      rodrygo.custoDedicado += v;
+    // A regra é por fornecedor, e não por categoria: além da taxa Voomp há custos
+    // de software (Google Workspace) que pertencem integralmente a um sócio.
+    const socioDedicado = socioDoCustoDedicado(forn, regras);
+    if (socioDedicado) {
+      (socioDedicado === 'pedro' ? pedro : rodrygo).custoDedicado += v;
       continue;
     }
     if (cat === 'custo_produto') {
       if ((i.produto ?? '') === 'idm-pelo-brasil') {
-        pedro.custoEventos += v / 2;
-        rodrygo.custoEventos += v / 2;
+        const fracaoPedroEvento = regras.custo_evento_pct_pedro / 100;
+        pedro.custoEventos += v * fracaoPedroEvento;
+        rodrygo.custoEventos += v * (1 - fracaoPedroEvento);
       } else {
-        pedro.custoProfessoras += v * fracaoPedroPsi;
-        rodrygo.custoProfessoras += v * (1 - fracaoPedroPsi);
+        // Quando a proporção por mensalidade é desligada, professoras passam a
+        // seguir o mesmo rateio configurado para os demais custos compartilhados.
+        const fracaoPedroProfessoras = regras.professoras_por_proporcao_mensalidade
+          ? fracaoPedroPsi
+          : regras.custo_fixo_pct_pedro / 100;
+        pedro.custoProfessoras += v * fracaoPedroProfessoras;
+        rodrygo.custoProfessoras += v * (1 - fracaoPedroProfessoras);
       }
       continue;
     }
     // Resto (ads, software, contabilidade, adm, financeiro, imposto, comissao,
-    // folha, custo_fixo, taxa_gateway não-Voomp) → 50/50.
-    pedro.custoCompartilhado += v / 2;
-    rodrygo.custoCompartilhado += v / 2;
+    // folha, custo_fixo, taxa_gateway sem regra dedicada) segue o rateio comum.
+    const fracaoPedroCustoFixo = regras.custo_fixo_pct_pedro / 100;
+    pedro.custoCompartilhado += v * fracaoPedroCustoFixo;
+    rodrygo.custoCompartilhado += v * (1 - fracaoPedroCustoFixo);
   }
 
   for (const s of [pedro, rodrygo]) {
