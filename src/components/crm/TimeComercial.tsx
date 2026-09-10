@@ -2261,7 +2261,7 @@ function RemuneracaoTab({ viewAsName }: VendorScopeProps) {
 // vamos".
 // -----------------------------------------------------------------------
 
-interface AlunoVendedorStat { vendedor: string; vista_cartao: number; boleto: number; bolsa_cortesia: number; sem_forma: number; total: number; }
+interface AlunoVendedorStat { vendedor: string; vista_cartao: number; boleto: number; bolsa_cortesia: number; sem_forma: number; total: number; faturamento: number; comissao_est: number; }
 interface MovimentacaoDia { vendedor: string; dia: string; tipo: 'movimentacao' | 'contato_whatsapp' | 'contato_ligacao'; eventos: number; }
 interface VendaDiaSemana { dia_semana: number; vendas: number; }
 interface LeadsMes { mes: string; total: number; }
@@ -2405,8 +2405,11 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
   );
 }
 
+interface ResumoVendedor { vendedor: string; leads_trabalhados: number; vendas: number; pre_matriculas: number; }
+
 function DadosTab({ viewAsName }: VendorScopeProps) {
   const [alunosPorVendedor, setAlunosPorVendedor] = useState<AlunoVendedorStat[]>([]);
+  const [resumoVend, setResumoVend] = useState<ResumoVendedor[]>([]);
   const [movimentacao, setMovimentacao] = useState<MovimentacaoDia[]>([]);
   const [contagens, setContagens] = useState<Contagem[]>([]);
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
@@ -2457,8 +2460,9 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
 
   useEffect(() => {
     const fetchData = async () => {
-      const [{ data: alunos }, { data: mov }, { data: cont }, { data: camps }, { data: diaSemana }, { data: lMes }, { data: vMes }, { data: ciclo }, { data: epocaMes }] = await Promise.all([
+      const [{ data: alunos }, { data: resumo }, { data: mov }, { data: cont }, { data: camps }, { data: diaSemana }, { data: lMes }, { data: vMes }, { data: ciclo }, { data: epocaMes }] = await Promise.all([
         (supabase as any).rpc('time_comercial_alunos_vendedor'),
+        (supabase as any).rpc('time_comercial_resumo_vendedor'),
         (supabase as any).rpc('time_comercial_movimentacao_dia', { dias: 7 }),
         (supabase as any).rpc('time_comercial_contagens'),
         (supabase as any).from('time_comercial_campanhas').select('*'),
@@ -2470,6 +2474,7 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
         fetchAtividade(diasCarregados),
       ]);
       if (alunos) setAlunosPorVendedor(alunos as AlunoVendedorStat[]);
+      if (resumo) setResumoVend(resumo as ResumoVendedor[]);
       if (mov) setMovimentacao(mov as MovimentacaoDia[]);
       if (cont) setContagens(cont as Contagem[]);
       if (camps) setCampanhas(camps as Campanha[]);
@@ -2485,25 +2490,32 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
 
   const vendedoresVisiveis = viewAsName ? INITIAL_VENDORS.filter((v) => v.name === viewAsName) : INITIAL_VENDORS;
   const alunosDe = (nome: string) => alunosPorVendedor.find((a) => a.vendedor === nome);
+  const resumoDe = (nome: string) => resumoVend.find((r) => r.vendedor === nome);
 
   // Mesmo critério do Funil: campanha de retorno (base antiga) não conta como
-  // "leads que entraram" — senão o número vem inflado com milhares de leads
-  // frios de anos atrás, que não representam captação de verdade.
+  // "leads que entraram" na visão de admin — senão o número vem inflado com
+  // milhares de leads frios de anos atrás, que não representam captação real.
   const campanhaIdsRetorno = campanhas.filter((c) => c.tipo === 'retorno').map((c) => c.id);
-  const leadsEntraram = contagens
+  const leadsCaptacaoAdmin = contagens
     .filter((c) => !(c.campanha_id && campanhaIdsRetorno.includes(c.campanha_id)))
-    // Vendedor logado: só os leads REALMENTE atribuídos a ele -- não a pilha
-    // de leads sem dono (SDD/frio etc.), que antes entrava aqui via
-    // `!c.vendedor` e inflava o número (era ~630, quase tudo lead solto).
     .filter((c) => !viewAsName || c.vendedor === viewAsName)
     .reduce((soma, c) => soma + Number(c.total), 0);
 
-  const vendasTotais = vendedoresVisiveis.reduce((soma, v) => soma + (alunosDe(v.name)?.total ?? 0), 0);
+  // Visão do vendedor: "leads que entraram" = leads que ele realmente
+  // trabalhou (pegou ou contactou), contando a base de retorno também (é
+  // trabalho dele); "vendas" inclui pré-matrícula. Admin segue na métrica de
+  // captação acima.
+  const resumoLogado = viewAsName ? resumoDe(viewAsName) : undefined;
+  const leadsEntraram = viewAsName ? (resumoLogado?.leads_trabalhados ?? 0) : leadsCaptacaoAdmin;
+  const vendasTotais = viewAsName
+    ? (resumoLogado?.vendas ?? 0)
+    : vendedoresVisiveis.reduce((soma, v) => soma + (alunosDe(v.name)?.total ?? 0), 0);
+  const preMatriculasVend = resumoLogado?.pre_matriculas ?? 0;
   const conversaoPct = leadsEntraram > 0 ? (vendasTotais / leadsEntraram) * 100 : 0;
 
   // Ticket médio — faturamento total / venda com valor real (exclui bolsa,
   // cortesia e as ainda sem forma de pagamento cadastrada).
-  const faturamentoTotal = vendedoresVisiveis.reduce((soma, v) => soma + calcVendor(alunosDe(v.name)?.vista_cartao ?? 0, alunosDe(v.name)?.boleto ?? 0).faturamento, 0);
+  const faturamentoTotal = vendedoresVisiveis.reduce((soma, v) => soma + Number(alunosDe(v.name)?.faturamento ?? 0), 0);
   const vendasComValor = vendedoresVisiveis.reduce((soma, v) => soma + (alunosDe(v.name)?.vista_cartao ?? 0) + (alunosDe(v.name)?.boleto ?? 0), 0);
   const ticketMedio = vendasComValor > 0 ? faturamentoTotal / vendasComValor : 0;
 
@@ -2603,34 +2615,40 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
 
       <MinhasVendasSection viewAsName={viewAsName} />
 
-      <SectionBar title="Visão geral" subtitle="Apenas leads captados no período. A base de retorno reimportada fica de fora." icon={Users} />
+      <SectionBar title="Visão geral" subtitle={viewAsName ? 'Seus números: leads que você trabalhou e o que fechou a partir deles.' : 'Apenas leads captados no período. A base de retorno reimportada fica de fora.'} icon={Users} />
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-        <StatTile label="Leads que entraram" value={leadsEntraram} icon={Users} />
-        <StatTile label="Vendas fechadas" value={vendasTotais} icon={GraduationCap} />
+        <StatTile
+          label={viewAsName ? 'Leads que você trabalhou' : 'Leads que entraram'}
+          value={leadsEntraram}
+          hint={viewAsName ? 'leads que você pegou ou contactou' : undefined}
+          icon={Users}
+        />
+        <StatTile
+          label="Vendas fechadas"
+          value={vendasTotais}
+          hint={viewAsName && preMatriculasVend > 0 ? `inclui ${preMatriculasVend} pré-matrícula` : undefined}
+          icon={GraduationCap}
+        />
         <StatTile label="Taxa de conversão" value={`${conversaoPct.toFixed(1)}%`} hint={leadsEntraram > 0 ? `${vendasTotais} de ${leadsEntraram} leads` : 'Sem leads ainda'} icon={Percent} />
       </div>
 
-      <SectionBar title={viewAsName ? 'Suas vendas por forma de pagamento' : 'Faturamento realizado por vendedor'} subtitle="Matrículas efetivadas (pré-matrícula não conta), creditadas ao vendedor que reivindicou o aluno." icon={DollarSign} />
+      <SectionBar title="Faturamento realizado por vendedor" subtitle="Baseado em matrículas efetivadas (pré-matrícula não conta), creditadas ao vendedor que reivindicou o aluno." icon={DollarSign} />
       <Card className="p-4 overflow-x-auto">
         <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
           <TableHeader>
             <TableRow className={PREMIUM_TABLE_HEADER_ROW}>
               <TableHead>Vendedor</TableHead>
-              <TableHead className="text-right">À vista / cartão</TableHead>
-              <TableHead className="text-right">Boleto (15x)</TableHead>
-              <TableHead className="text-right">Bolsa / cortesia</TableHead>
+              <TableHead className="text-right">À vista/cartão</TableHead>
+              <TableHead className="text-right">Recorrente</TableHead>
+              <TableHead className="text-right">Bolsa/cortesia</TableHead>
               <TableHead className="text-right">Sem forma de pgto.</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              {/* Faturamento e comissão só pro admin -- valor/soma não vai pra
-                  visão do vendedor (mesmo critério do painel Fechamento). */}
-              {!viewAsName && <TableHead className="text-right">Faturamento (est.)</TableHead>}
-              {!viewAsName && <TableHead className="text-right">Comissão (est.)</TableHead>}
+              <TableHead className="text-right">Faturamento</TableHead>
+              <TableHead className="text-right">Comissão</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {vendedoresVisiveis.map((v, idx) => {
               const stat = alunosDe(v.name);
-              const calc = calcVendor(stat?.vista_cartao ?? 0, stat?.boleto ?? 0);
               return (
                 <TableRow key={v.name} className={premiumZebraRow(idx)}>
                   <TableCell>
@@ -2643,17 +2661,15 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
                   <TableCell className="text-right">{stat?.boleto ?? 0}</TableCell>
                   <TableCell className="text-right">{stat?.bolsa_cortesia ?? 0}</TableCell>
                   <TableCell className="text-right">{stat?.sem_forma ?? 0}</TableCell>
-                  <TableCell className="text-right font-semibold">{stat?.total ?? 0}</TableCell>
-                  {!viewAsName && <TableCell className="text-right">{fmt(calc.faturamento)}</TableCell>}
-                  {!viewAsName && <TableCell className="text-right font-semibold text-primary">{fmt(calc.comissao)}</TableCell>}
+                  <TableCell className="text-right">{fmt(Number(stat?.faturamento ?? 0))}</TableCell>
+                  <TableCell className="text-right font-semibold text-primary">{fmt(Number(stat?.comissao_est ?? 0))}</TableCell>
                 </TableRow>
               );
             })}
           </TableBody>
         </Table>
         <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 mt-3">
-          "Sem forma de pgto." são matrículas reivindicadas mas sem à-vista/cartão/boleto informado ainda na ficha.
-          {!viewAsName && ' Faturamento e comissão são estimativa pelo preço padrão de psicanálise — o número real da comissão (inclui PNL e o líquido de cada venda) está no painel Fechamento.'}
+          "Sem forma de pgto." são matrículas reivindicadas mas sem à-vista/cartão/boleto informado ainda na ficha — não entram no faturamento até isso ser preenchido. "Bolsa/cortesia" não geram comissão. O valor de comissão é estimativa (usa o bruto); o número fechado, com o líquido de cada venda, está no painel Fechamento.
         </p>
       </Card>
 
