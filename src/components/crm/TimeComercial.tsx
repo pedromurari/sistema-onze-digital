@@ -2586,8 +2586,10 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
   const resumoPeriodoDe = (nome: string) => {
     const itens = atividadeNoPeriodoDe(nome);
     return {
-      movimentacoes: itens.filter((i) => !['contato_whatsapp', 'contato_ligacao'].includes(i.origem_mudanca)).length,
-      mensagens: itens.filter((i) => i.origem_mudanca === 'contato_whatsapp').length,
+      // só "peguei lead" -- não conta criação do sistema nem arrastar card
+      leadsPegos: itens.filter((i) => i.origem_mudanca === 'atribuicao').length,
+      // clique no botão de WhatsApp do card (abrir conversa), não msg enviada
+      conversasAbertas: itens.filter((i) => i.origem_mudanca === 'contato_whatsapp').length,
       ligacoes: itens.filter((i) => i.origem_mudanca === 'contato_ligacao').length,
     };
   };
@@ -2725,12 +2727,12 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
                 <div className="rounded-md bg-muted/50 p-2">
                   <Activity className="h-3.5 w-3.5 text-muted-foreground mx-auto mb-1" />
                   <p className="text-sm font-bold text-foreground">{movs.hoje}</p>
-                  <p className="text-[10px] text-muted-foreground">leads hoje · {movs.media7dias}/dia méd.</p>
+                  <p className="text-[10px] text-muted-foreground">leads que pegou hoje · {movs.media7dias}/dia méd.</p>
                 </div>
                 <div className="rounded-md bg-muted/50 p-2">
                   <MessageCircle className="h-3.5 w-3.5 text-success mx-auto mb-1" />
                   <p className="text-sm font-bold text-foreground">{msgs.hoje}</p>
-                  <p className="text-[10px] text-muted-foreground">msgs hoje · {msgs.media7dias}/dia méd.</p>
+                  <p className="text-[10px] text-muted-foreground">msgs enviadas hoje · {msgs.media7dias}/dia méd.</p>
                 </div>
                 <div className="rounded-md bg-muted/50 p-2">
                   <Phone className="h-3.5 w-3.5 text-primary mx-auto mb-1" />
@@ -2742,7 +2744,7 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
           );
         })}
       </div>
-      <p className="text-xs text-muted-foreground -mt-2">Mensagens contam quando o vendedor abre o WhatsApp do lead pela tela; ligações são registradas manualmente no botão de telefone do card do lead.</p>
+      <p className="text-xs text-muted-foreground -mt-2">"Leads que pegou" = clicou em pegar o lead. "Msgs enviadas" = mensagens que saíram do número de vendas integrado do vendedor (não conta as respondidas pelo celular pessoal). "Ligações" são registradas manualmente no botão de telefone do card.</p>
 
       <Card className="p-4">
         <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
@@ -2787,8 +2789,8 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
                   <p className="text-sm font-semibold text-foreground">{v.name}</p>
                 </div>
                 <div className="flex gap-2 mb-3">
-                  <Badge className="text-[11px] border-0 bg-muted text-muted-foreground">{resumo.movimentacoes} leads movimentados</Badge>
-                  <Badge className="text-[11px] border-0 bg-success/10 text-success">{resumo.mensagens} msgs</Badge>
+                  <Badge className="text-[11px] border-0 bg-muted text-muted-foreground">{resumo.leadsPegos} leads que pegou</Badge>
+                  <Badge className="text-[11px] border-0 bg-success/10 text-success">{resumo.conversasAbertas} conversas abertas</Badge>
                   <Badge className="text-[11px] border-0 bg-primary/10 text-primary">{resumo.ligacoes} ligações</Badge>
                 </div>
                 {grupos.length === 0 ? (
