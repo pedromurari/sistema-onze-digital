@@ -43,7 +43,7 @@ type GenericStage =
 type SddStage = 'frio' | 'pre_aquecimento' | 'grupo_oferta' | 'primeiro_contato' | 'negociacao' | 'matricula';
 type TimeComercialStage = GenericStage | SddStage;
 
-interface StageInfo { key: TimeComercialStage; label: string; color: string; descricao: string; sql?: boolean; }
+interface StageInfo { key: TimeComercialStage; label: string; color: string; descricao: string; sql?: boolean; manutencao?: boolean; }
 
 // Funil único (2026-08-27, redesenhado com Pedro depois do feedback do Miguel
 // e da Helen) — vale pra todos os canais exceto SDD, que tem funil próprio
@@ -85,8 +85,9 @@ const FUNIL_STAGES: StageInfo[] = [
   },
   {
     key: 'aquecimento_conteudo', label: 'Aquecimento de Conteúdo', color: 'bg-pipeline-aquecimento',
-    descricao: 'Para leads que já passaram por várias tentativas de follow-up sem avançar. Em vez de continuar com abordagem direta, o lead entra numa esteira de conteúdo pra se manter aquecido até estar pronto pra retomar a conversa.',
+    descricao: 'ETAPA EM MANUTENÇÃO. A ideia é: leads que passaram por várias tentativas de follow-up sem avançar entram numa esteira de conteúdo pra se manter aquecidos até estarem prontos pra retomar. Por enquanto a esteira automática ainda não está ligada — mover o lead pra cá só tira ele da fila ativa, o envio de conteúdo é manual.',
     sql: true,
+    manutencao: true,
   },
   {
     key: 'matricula', label: 'Matrícula', color: 'bg-pipeline-matricula',
@@ -886,8 +887,11 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
               ) : (
                 <div className={`rounded-t-lg p-2.5 lg:p-3 ${stage.color}`}>
                   <div className="flex items-center justify-between">
-                    <span className="font-semibold text-primary-foreground text-sm lg:text-base inline-flex items-center gap-1">
+                    <span className="font-semibold text-primary-foreground text-sm lg:text-base inline-flex items-center gap-1 flex-wrap">
                       {stage.label}
+                      {(stage as StageInfo).manutencao && (
+                        <span className="rounded-full bg-primary-foreground/25 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide leading-none">em manutenção</span>
+                      )}
                       {(stage as StageInfo).descricao && (
                         <Popover>
                           <PopoverTrigger asChild>
