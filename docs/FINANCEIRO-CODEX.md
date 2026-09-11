@@ -208,6 +208,18 @@ Pago, independentemente do número de parcelas escolhido no cartão. Gravar
 Contrato: resposta sem link é falha; repetir de forma limitada e reaproveitar documento já
 gravado. Não transformar as parcelas do cartão em mensalidades — é uma única venda.
 
+### TAREFA C7 — Desocupar os workers do pg_cron
+
+**Diagnóstico em produção (somente leitura, 2026-09-10):** 18 jobs ativos, 12 comandos
+com `pg_sleep(0..55)`. Nas 24 horas anteriores houve centenas de falhas `job startup
+timeout`; os sleeps mantêm conexões/workers parados enquanto outros jobs aguardam vaga.
+
+**Implementação:** retirar todo `pg_sleep` dos comandos e escalonar em minutos diferentes
+os jobs que já rodam a cada 3/5/7/15/30 minutos e os dois jobs das 12h. Os seis workers
+de minuto preservam a frequência porque o pg_cron 1.6 só oferece intervalos de 1 a 59
+segundos, sem representar "a cada 60 segundos com offset". Migração deve ser escrita,
+revisada pelo Claude e só então aplicada.
+
 ---
 
 ## O que NÃO fazer
@@ -249,3 +261,4 @@ Comentários em português, densos, explicando o porquê (padrão do repo).
 | 2026-09-10 | Claude→Codex | **HANDOVER pra C5:** `financial-utils.ts` (`calcTaxaTransacao`/`taxaDoPagamento`), `Financeiro.tsx` (handler da baixa + coluna Taxa) e `scripts/asaas-gerar-aluno.mjs` liberados pro Codex. Claude não toca nesses até a C5 entrar. Dados da Cleide/Jucelia já corrigidos na mão. | Codex pega |
 | 2026-09-10 | Codex | C5 `financial-utils.ts`, `Financeiro.tsx`, regras de gateway e scripts Asaas | concluído; conta entra no cálculo, taxa travada preservada, clientes novos silenciados + script idempotente para existentes; migração escrita e não aplicada; 66 testes, typecheck estável em 89 e build passando |
 | 2026-09-10 | Codex | C6 `matricula-pagamento-criar`, `mp-webhook-time-comercial`, `autentique-criar` e unicidade MP | concluído; venda única vira uma linha paga idempotente, taxa real entra no DRE/NFS-e e contrato ausente é reparado com tentativas limitadas; migração escrita e não aplicada; 69 testes, typecheck estável em 89, build e bundle das Edge Functions passando |
+| 2026-09-10 | Codex | C7 cron jobs, migração `20260910270000_cron_sem_pg_sleep_escalonado.sql` | concluído; diagnóstico remoto somente leitura confirmou 12 sleeps e centenas de `job startup timeout`; regex validada contra todos os comandos vivos, offsets definidos e migração não aplicada |
