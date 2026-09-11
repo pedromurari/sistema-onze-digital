@@ -220,6 +220,20 @@ de minuto preservam a frequência porque o pg_cron 1.6 só oferece intervalos de
 segundos, sem representar "a cada 60 segundos com offset". Migração deve ser escrita,
 revisada pelo Claude e só então aplicada.
 
+### TAREFA C8 — Reduzir o payload da publicação Realtime
+
+**Diagnóstico em produção (somente leitura, 2026-09-10):** 16 tabelas publicadas. Quinze
+têm assinatura real no frontend; `aula_secreta_eventos` não tem. `alunos`, `pagamentos`,
+`tarefas`, `turmas`, `responsaveis` e `turma_responsaveis` usam `REPLICA IDENTITY FULL`,
+mas seus consumidores só invalidam cache/recarregam e não consultam `payload.old`. Todas
+possuem PK e RLS.
+
+**Implementação:** voltar essas seis tabelas para `REPLICA IDENTITY DEFAULT`, mantendo
+os eventos com payload anterior reduzido à chave, e retirar apenas
+`aula_secreta_eventos` da publicação. Não retirar tabelas movimentadas que têm consumidor
+real (`lancamento_leads`, `whatsapp_mensagens`, `alunos`, `pagamentos`). Migração escrita,
+não aplicada.
+
 ---
 
 ## O que NÃO fazer
@@ -262,3 +276,4 @@ Comentários em português, densos, explicando o porquê (padrão do repo).
 | 2026-09-10 | Codex | C5 `financial-utils.ts`, `Financeiro.tsx`, regras de gateway e scripts Asaas | concluído; conta entra no cálculo, taxa travada preservada, clientes novos silenciados + script idempotente para existentes; migração escrita e não aplicada; 66 testes, typecheck estável em 89 e build passando |
 | 2026-09-10 | Codex | C6 `matricula-pagamento-criar`, `mp-webhook-time-comercial`, `autentique-criar` e unicidade MP | concluído; venda única vira uma linha paga idempotente, taxa real entra no DRE/NFS-e e contrato ausente é reparado com tentativas limitadas; migração escrita e não aplicada; 69 testes, typecheck estável em 89, build e bundle das Edge Functions passando |
 | 2026-09-10 | Codex | C7 cron jobs, migração `20260910270000_cron_sem_pg_sleep_escalonado.sql` | concluído; diagnóstico remoto somente leitura confirmou 12 sleeps e centenas de `job startup timeout`; regex validada contra todos os comandos vivos, offsets definidos e migração não aplicada |
+| 2026-09-10 | Codex | C8 publicação Realtime, migração `20260910280000_realtime_payload_enxuto.sql` | concluído; consumidores cruzados com 16 tabelas vivas, seis identidades FULL sem uso de `payload.old` voltam a DEFAULT e uma tabela sem assinante sai da publicação; migração não aplicada |
