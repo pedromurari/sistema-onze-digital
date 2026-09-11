@@ -549,7 +549,10 @@ serve(async (req) => {
       });
     }
 
-    // ── Atualizar aluno com dados legais + ativar no Financeiro ──────────────
+    // ── Atualizar dados legais + ativar no Financeiro ───────────────────────
+    // `contrato_enviado` só pode virar true DEPOIS de existir documento e link.
+    // Antes ele era marcado aqui e permanecia verdadeiro até quando a Autentique falhava,
+    // escondendo o aluno das filas de correção.
     await sb.from('alunos').update({
       cpf,
       data_nascimento,
@@ -559,16 +562,22 @@ serve(async (req) => {
       status:              'ativo',           // ← ativa no Financeiro
       forms_respondido:    true,
       forms_respondido_em: new Date().toISOString(),
-      contrato_enviado:    true,
-      contrato_enviado_em: new Date().toISOString(),
-      contrato_link_enviado_em: new Date().toISOString(),
     }).eq('id', aluno_id);
 
     // ── Gerar e enviar contrato na Autentique ─────────────────────────────────
     let linkAssinatura = '';
     let docId = '';
 
-    if (autentiqueToken && aluno.email) {
+    // Reentregas de webhook e polling podem chegar juntas. Se o documento já foi salvo,
+    // reaproveitamos o mesmo link em vez de criar outro contrato na Autentique.
+    if (aluno.autentique_documento_id && aluno.autentique_link_assinatura) {
+      docId = String(aluno.autentique_documento_id);
+      linkAssinatura = String(aluno.autentique_link_assinatura);
+      await sb.from('alunos').update({
+        contrato_enviado: true,
+        contrato_enviado_em: aluno.contrato_enviado_em ?? new Date().toISOString(),
+      }).eq('id', aluno_id);
+    } else if (autentiqueToken && aluno.email) {
       try {
         const html = buildContratoHtml({
           nome:            aluno.nome ?? '',
@@ -601,30 +610,50 @@ serve(async (req) => {
         docId         = result.id;
         linkAssinatura = result.link;
 
-        // Salvar link + doc_id no aluno
-        await sb.from('alunos').update({
+        // Só agora o contrato está de fato pronto para ser enviado.
+        const { error: salvarContratoErro } = await sb.from('alunos').update({
           autentique_documento_id:  docId,
           autentique_link_assinatura: linkAssinatura,
+          contrato_enviado: true,
+          contrato_enviado_em: new Date().toISOString(),
         }).eq('id', aluno_id);
+        if (salvarContratoErro) throw salvarContratoErro;
 
       } catch (e) {
         console.error('Autentique error:', e);
-        // Não falha o request — o administrador pode enviar manualmente depois
       }
+    }
+
+    if (!linkAssinatura) {
+      return new Response(JSON.stringify({ error: 'Contrato não foi gerado; tentativa deve ser repetida' }), {
+        status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     // ── Enviar WPP com link de assinatura ────────────────────────────────────
     if (enviar_wpp !== false && linkAssinatura && aluno.whatsapp) {
-      try {
-        await sb.functions.invoke('wpp-enviar', {
-          body: {
-            numero: aluno.whatsapp,
-            mensagem: `Olá, ${(aluno.nome ?? '').split(' ')[0]}! 📝\n\nSeu contrato está pronto para assinatura:\n\n${linkAssinatura}\n\nAssine agora para confirmar sua matrícula!`,
-          },
-        });
-      } catch (e) {
-        console.error('WPP error:', e);
+      let enviado = false;
+      for (let tentativa = 1; tentativa <= 3 && !enviado; tentativa++) {
+        try {
+          const { error: wppErro } = await sb.functions.invoke('wpp-enviar', {
+            body: {
+              numero: aluno.whatsapp,
+              mensagem: `Olá, ${(aluno.nome ?? '').split(' ')[0]}! 📝\n\nSeu contrato está pronto para assinatura:\n\n${linkAssinatura}\n\nAssine agora para confirmar sua matrícula!`,
+            },
+          });
+          if (wppErro) throw wppErro;
+          enviado = true;
+        } catch (e) {
+          console.error(`WPP contrato tentativa ${tentativa}/3:`, e);
+          if (tentativa < 3) await new Promise(resolve => setTimeout(resolve, tentativa * 500));
+        }
       }
+      if (!enviado) {
+        return new Response(JSON.stringify({ error: 'Contrato gerado, mas o link não foi enviado no WhatsApp', link_assinatura: linkAssinatura }), {
+          status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      await sb.from('alunos').update({ contrato_link_enviado_em: new Date().toISOString() }).eq('id', aluno_id);
     }
 
     return new Response(

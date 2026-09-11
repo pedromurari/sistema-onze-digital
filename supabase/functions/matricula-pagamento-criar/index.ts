@@ -51,6 +51,7 @@
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { registrarPagamentoUnicoMercadoPago } from '../_shared/mp-pagamento-unico.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -123,13 +124,13 @@ async function enviarContrato(
     id: string; cpf: string | null; data_nascimento: string | null;
     endereco: string | null; cep: string | null; cidade_estado: string | null;
   },
-): Promise<void> {
+): Promise<boolean> {
   if (!aluno.cpf || !aluno.data_nascimento || !aluno.endereco || !aluno.cidade_estado) {
     console.error('matricula-pagamento-criar: dados insuficientes pra gerar contrato', aluno.id);
-    return;
+    return false;
   }
   try {
-    await fetch(`${supabaseUrl}/functions/v1/autentique-criar`, {
+    const response = await fetch(`${supabaseUrl}/functions/v1/autentique-criar`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey },
       body: JSON.stringify({
@@ -141,9 +142,88 @@ async function enviarContrato(
         cidade_estado: aluno.cidade_estado,
       }),
     });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result?.link_assinatura) {
+      throw new Error(result?.error || `Autentique respondeu ${response.status} sem link`);
+    }
+    return true;
   } catch (e) {
     console.error('matricula-pagamento-criar: falha ao gerar/enviar contrato', aluno.id, e);
+    return false;
   }
+}
+
+async function garantirContrato(
+  supabase: ReturnType<typeof createClient>,
+  aluno: any,
+): Promise<void> {
+  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+    const { data: atual } = await supabase
+      .from('alunos')
+      .select('autentique_documento_id, autentique_link_assinatura')
+      .eq('id', aluno.id)
+      .maybeSingle();
+    if (atual?.autentique_documento_id && atual?.autentique_link_assinatura) return;
+
+    const ok = await enviarContrato(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      aluno,
+    );
+    if (ok) return;
+    if (tentativa < 3) await new Promise(resolve => setTimeout(resolve, tentativa * 500));
+  }
+  console.error('matricula-pagamento-criar: contrato continua pendente após 3 tentativas', aluno.id);
+}
+
+async function enviarConfirmacoesPagamentoUnico(
+  aluno: { nome: string | null; email: string | null; whatsapp: string | null; cobranca_telefone: string | null },
+  valor: number,
+): Promise<void> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const fnHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey };
+  const nome = aluno.nome || 'aluno(a)';
+  const valorFmt = Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+  const numero = aluno.cobranca_telefone || aluno.whatsapp;
+
+  if (numero) {
+    await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
+      method: 'POST', headers: fnHeaders,
+      body: JSON.stringify({
+        numero,
+        mensagem: `✅ Pagamento confirmado, ${nome}!\n\nRecebemos o valor de *R$ ${valorFmt}* referente à sua matrícula no *Instituto Despertamente*.\n\nQualquer dúvida, é só chamar por aqui.`,
+        instance_name: 'disp3',
+      }),
+    }).catch(e => console.error('matricula-pagamento-criar: falha no WhatsApp de confirmação', e));
+  }
+  if (aluno.email) {
+    await fetch(`${supabaseUrl}/functions/v1/email-enviar`, {
+      method: 'POST', headers: fnHeaders,
+      body: JSON.stringify({
+        to: aluno.email,
+        to_name: nome,
+        subject: 'Pagamento confirmado - Instituto Despertamente',
+        html: `<h2>Pagamento aprovado! 🎉</h2><p>Oi, ${nome}!</p><p>Confirmamos o pagamento de <strong>R$ ${valorFmt}</strong> referente à sua matrícula no Instituto Despertamente.</p>`,
+      }),
+    }).catch(e => console.error('matricula-pagamento-criar: falha no e-mail de confirmação', e));
+  }
+}
+
+async function processarPagamentoUnicoAprovado(
+  supabase: ReturnType<typeof createClient>,
+  payment: Record<string, any>,
+): Promise<void> {
+  const registro = await registrarPagamentoUnicoMercadoPago(supabase, payment);
+  if (!registro.aplicavel || !registro.aluno) return;
+
+  await supabase.from('alunos').update({ mp_status: 'approved' }).eq('id', registro.aluno.id);
+  if (registro.criado) {
+    await enviarConfirmacoesPagamentoUnico(registro.aluno as any, Number(registro.pagamento?.valor || payment.transaction_amount));
+  }
+  // Mesmo numa reentrega, a ausência de documento é reparada. A função de contrato
+  // reaproveita o documento já salvo e a consulta acima impede reenvio desnecessário.
+  await garantirContrato(supabase, registro.aluno);
 }
 
 async function enviarConfirmacoesParcela(
@@ -227,8 +307,7 @@ async function marcarParcelaPaga(supabase: ReturnType<typeof createClient>, paga
     await enviarConfirmacoesParcela(supabaseUrl, serviceKey, aluno as any, Number(pagamento.valor), pagamento.numero_parcela).catch((e) =>
       console.error('matricula-pagamento-criar: falha ao enviar confirmações (polling)', e));
     if (pagamento.numero_parcela === 1) {
-      await enviarContrato(supabaseUrl, serviceKey, { id: pagamento.aluno_id, ...aluno } as any).catch((e) =>
-        console.error('matricula-pagamento-criar: falha ao enviar contrato (polling)', e));
+      await garantirContrato(supabase, { id: pagamento.aluno_id, ...aluno });
     }
   }
 }
@@ -276,7 +355,12 @@ serve(async (req) => {
       }
 
       if (data.external_reference) {
-        await supabase.from('alunos').update({ mp_status: data.status }).eq('id', data.external_reference);
+        if (data.status === 'approved') {
+          await processarPagamentoUnicoAprovado(supabase, data).catch(e =>
+            console.error('matricula-pagamento-criar: falha ao materializar venda única no polling', e));
+        } else {
+          await supabase.from('alunos').update({ mp_status: data.status }).eq('id', data.external_reference);
+        }
       }
 
       return json({ ok: true, status: data.status, statusDetail: data.status_detail });
@@ -344,6 +428,11 @@ serve(async (req) => {
       }
 
       await supabase.from('alunos').update({ mp_status: data.status }).eq('id', alunoId);
+
+      if (data.status === 'approved') {
+        await processarPagamentoUnicoAprovado(supabase, data).catch(e =>
+          console.error('matricula-pagamento-criar: Pix aprovado, mas falhou ao materializar no financeiro', e));
+      }
 
       return json({
         ok: true,
@@ -537,6 +626,11 @@ serve(async (req) => {
       // (chute antes de saber a escolha), corrigido aqui pro relatório/CRM
       // mostrar o número certo de parcelas dessa cobrança.
       await supabase.from('alunos').update({ mp_status: data.status, total_mensalidades: installments }).eq('id', alunoId);
+
+      if (data.status === 'approved') {
+        await processarPagamentoUnicoAprovado(supabase, data).catch(e =>
+          console.error('matricula-pagamento-criar: cartão aprovado, mas falhou ao materializar no financeiro', e));
+      }
 
       return json({
         ok: true,

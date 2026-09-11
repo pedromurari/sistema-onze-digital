@@ -37,19 +37,19 @@
  *         matricula-pagamento-criar), idempotente pelo mp_payment_id da
  *         própria cobrança. Confirma por WhatsApp/e-mail TODO mês (não só
  *         uma vez -- cada cobrança é um pagamento novo de verdade).
- *      b. Outras formas (avista/cartão parcelado/1ª parcela PIX): só
- *         mp_status, confirmação best-effort só na 1ª transição pra
- *         "approved" (pagamento único, não repete).
+ *      b. Outras formas (avista/cartão parcelado): materializa uma única linha
+ *         paga em `pagamentos`, com conta/taxa real do MP. A unicidade de
+ *         mp_payment_id impede duplicação entre webhook e polling.
  *   Confirmação (wpp-enviar/email-enviar) e contrato (autentique-criar) são
  *   best-effort -- nunca derrubam a resposta 200 do webhook em caso de
  *   falha (mesmo princípio de mp-webhook).
  *
- *   Contrato: só na convenção antiga (external_reference = alunos.id) e só
- *   na primeira transição pra "approved" do aluno (mesmo pra recorrente --
- *   o contrato sai uma vez só, na 1ª cobrança aprovada da assinatura).
+ *   Contrato: vendas únicas também reparam um documento ausente em reentregas;
+ *   resposta sem link é falha e passa por tentativas limitadas.
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { registrarPagamentoUnicoMercadoPago } from '../_shared/mp-pagamento-unico.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -99,13 +99,13 @@ async function enviarContrato(
     id: string; cpf: string | null; data_nascimento: string | null;
     endereco: string | null; cep: string | null; cidade_estado: string | null;
   },
-): Promise<void> {
+): Promise<boolean> {
   if (!aluno.cpf || !aluno.data_nascimento || !aluno.endereco || !aluno.cidade_estado) {
     console.error('mp-webhook-time-comercial: dados insuficientes pra gerar contrato', aluno.id);
-    return;
+    return false;
   }
   try {
-    await fetch(`${supabaseUrl}/functions/v1/autentique-criar`, {
+    const response = await fetch(`${supabaseUrl}/functions/v1/autentique-criar`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey },
       body: JSON.stringify({
@@ -117,9 +117,35 @@ async function enviarContrato(
         cidade_estado: aluno.cidade_estado,
       }),
     });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result?.link_assinatura) {
+      throw new Error(result?.error || `Autentique respondeu ${response.status} sem link`);
+    }
+    return true;
   } catch (e) {
     console.error('mp-webhook-time-comercial: falha ao gerar/enviar contrato', aluno.id, e);
+    return false;
   }
+}
+
+async function garantirContrato(supabase: ReturnType<typeof createClient>, aluno: any): Promise<void> {
+  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+    const { data: atual } = await supabase
+      .from('alunos')
+      .select('autentique_documento_id, autentique_link_assinatura')
+      .eq('id', aluno.id)
+      .maybeSingle();
+    if (atual?.autentique_documento_id && atual?.autentique_link_assinatura) return;
+
+    const ok = await enviarContrato(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      aluno,
+    );
+    if (ok) return;
+    if (tentativa < 3) await new Promise(resolve => setTimeout(resolve, tentativa * 500));
+  }
+  console.error('mp-webhook-time-comercial: contrato continua pendente após 3 tentativas', aluno.id);
 }
 
 // ── Confirmações best-effort (WhatsApp + e-mail) ──────────────────────────────
@@ -285,9 +311,22 @@ serve(async (req) => {
         // próprio alunos.id (avista/cartão/1ª parcela PIX) ─────────────────────
         const { data: alunoAntes } = await supabase
           .from('alunos')
-          .select('nome, email, whatsapp, cobranca_telefone, forma_pagamento, cpf, data_nascimento, endereco, cep, cidade_estado')
+          .select('id, nome, email, whatsapp, cobranca_telefone, forma_pagamento, cpf, data_nascimento, endereco, cep, cidade_estado, autentique_documento_id, autentique_link_assinatura')
           .eq('id', externalReference)
           .maybeSingle();
+
+        // PIX à vista e cartão parcelado são uma venda única. Antes este ramo só
+        // atualizava `alunos.mp_status`, deixando o DRE e a fila de notas sem receita.
+        // O helper é compartilhado com o polling e a constraint de mp_payment_id decide
+        // atomicamente qual dos dois ganhou a corrida.
+        let registroUnico: Awaited<ReturnType<typeof registrarPagamentoUnicoMercadoPago>> | null = null;
+        if (data.status === 'approved') {
+          try {
+            registroUnico = await registrarPagamentoUnicoMercadoPago(supabase, data);
+          } catch (e) {
+            console.error('mp-webhook-time-comercial: falha ao materializar venda única', externalReference, id, e);
+          }
+        }
 
         // Mesmo gate atômico do bloco acima: só considera "transição de
         // verdade" quem realmente flipar mp_status de algo != 'approved' pra
@@ -359,17 +398,24 @@ serve(async (req) => {
               console.error('mp-webhook-time-comercial: cobrança recorrente aprovada sem parcela pendente pra consumir', externalReference, id);
             }
           }
+        } else if (registroUnico?.aplicavel) {
+          if (registroUnico.criado && registroUnico.aluno) {
+            const valorPago = Number(registroUnico.pagamento?.valor ?? data.transaction_amount ?? 0);
+            await enviarConfirmacoes(supabaseUrl, serviceKey, registroUnico.aluno as any, valorPago).catch((e) =>
+              console.error('mp-webhook-time-comercial: falha ao enviar confirmações (venda única)', e));
+          }
         } else if (transicionouAprovado && alunoAntes) {
           const valorPago = Number(data.transaction_amount ?? 0);
           await enviarConfirmacoes(supabaseUrl, serviceKey, alunoAntes as any, valorPago).catch((e) =>
             console.error('mp-webhook-time-comercial: falha ao enviar confirmações (aluno)', e));
         }
 
-        // Contrato: sempre só na 1ª transição pra "approved" do aluno, seja
-        // qual for a forma de pagamento (inclusive recorrente).
-        if (transicionouAprovado && alunoAntes) {
-          await enviarContrato(supabaseUrl, serviceKey, { id: externalReference, ...alunoAntes } as any).catch((e) =>
-            console.error('mp-webhook-time-comercial: falha ao enviar contrato', e));
+        // Venda única repara contrato ausente também numa reentrega do webhook; para os
+        // demais fluxos, preserva a regra antiga de executar só na primeira aprovação.
+        if (registroUnico?.aplicavel && registroUnico.aluno) {
+          await garantirContrato(supabase, registroUnico.aluno);
+        } else if (transicionouAprovado && alunoAntes) {
+          await garantirContrato(supabase, { id: externalReference, ...alunoAntes });
         }
       }
 

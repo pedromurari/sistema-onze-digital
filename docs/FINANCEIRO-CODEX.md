@@ -193,6 +193,21 @@ Já corrigido **na mão pelo Claude** (só os dados, não o código): Cleide do 
 (`Cobranca.tsx`, `wpp-enviar`, `enviar-cobranca`) — o pedido é só **calar o Asaas**, não
 mudar a nossa cobrança.
 
+### TAREFA C6 — Pagamentos e contrato das vendas únicas do checkout `/997`
+
+**Problema:** PIX à vista e cartão parcelado/1x usam `alunos.id` como
+`external_reference`. Quando aprovados, o webhook atualiza apenas `alunos.mp_status`; sem
+uma linha em `pagamentos`, a venda não entra no DRE nem na fila de NFS-e. O contrato é
+best-effort e a função de criação pode responder HTTP 200 mesmo sem link.
+
+**Implementação:** criar uma única linha paga pelo valor bruto da transação do Mercado
+Pago, independentemente do número de parcelas escolhido no cartão. Gravar
+`conta_recebimento='mercado_pago'`, forma da venda, `mp_payment_id`, taxa efetiva
+(bruto menos líquido), competência e caixa na data da aprovação. Proteger por unicidade de
+`mp_payment_id` e executar tanto no webhook quanto no polling, sem duplicar confirmação.
+Contrato: resposta sem link é falha; repetir de forma limitada e reaproveitar documento já
+gravado. Não transformar as parcelas do cartão em mensalidades — é uma única venda.
+
 ---
 
 ## O que NÃO fazer
@@ -233,3 +248,4 @@ Comentários em português, densos, explicando o porquê (padrão do repo).
 | 2026-09-10 | Claude | índice `idx_leads_criado_em_desc` aplicado via MCP (consulta de leads recentes ia a 25-31s num Seq Scan e travava o app em "Carregando..."; caiu pra ~0,2s). Falta commitar o `.sql`. | migração aplicada, arquivo pendente |
 | 2026-09-10 | Claude→Codex | **HANDOVER pra C5:** `financial-utils.ts` (`calcTaxaTransacao`/`taxaDoPagamento`), `Financeiro.tsx` (handler da baixa + coluna Taxa) e `scripts/asaas-gerar-aluno.mjs` liberados pro Codex. Claude não toca nesses até a C5 entrar. Dados da Cleide/Jucelia já corrigidos na mão. | Codex pega |
 | 2026-09-10 | Codex | C5 `financial-utils.ts`, `Financeiro.tsx`, regras de gateway e scripts Asaas | concluído; conta entra no cálculo, taxa travada preservada, clientes novos silenciados + script idempotente para existentes; migração escrita e não aplicada; 66 testes, typecheck estável em 89 e build passando |
+| 2026-09-10 | Codex | C6 `matricula-pagamento-criar`, `mp-webhook-time-comercial`, `autentique-criar` e unicidade MP | concluído; venda única vira uma linha paga idempotente, taxa real entra no DRE/NFS-e e contrato ausente é reparado com tentativas limitadas; migração escrita e não aplicada; 69 testes, typecheck estável em 89, build e bundle das Edge Functions passando |
