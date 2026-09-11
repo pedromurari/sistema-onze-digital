@@ -47,6 +47,7 @@ export interface PagamentoComFonte {
   forma_pagamento: string;    // vem do JOIN com alunos via vw_receita_por_fonte
   produto_label: string;      // 'PSI' | 'NPA' | nome do produto
   canal_cobranca?: string | null;  // canal real escolhido na confirmação (vw_receita_por_fonte)
+  conta_recebimento?: string | null; // conta financeira escolhida na baixa (asaas, voomp, mercado_pago...)
   taxa_valor?: number | null;      // taxa travada na confirmação, se houver (vw_receita_por_fonte)
 }
 
@@ -190,9 +191,9 @@ export function mesLabel(mes: string): string {
 //
 // FONTE: tabela payment_method_rates (banco de dados)
 // LÓGICA: Encontra a regra mais específica que case com produto + forma +
-//   canal + valor. canal='' (ainda não escolhido, ex: estimativa antes da
-//   confirmação) só casa com regras de canal curinga ('*') — regras de canal
-//   específico exigem o canal exato.
+//   canal/conta + valor. `conta` foi adicionada porque a baixa registra o enum
+//   financeiro (asaas/voomp/mercado_pago), enquanto os canais antigos guardam
+//   rótulos humanos. Com conta='' a seleção continua idêntica à regra anterior.
 //   Prioridade (score, do mais específico pro menos):
 //     produto exato (+4) + forma exata (+2) + canal exato (+1)
 // RETORNO: valor em R$ da taxa para aquela transação (percentual + fixo)
@@ -201,13 +202,14 @@ export function calcTaxaTransacao(
   produto: string,
   forma: string,
   canal: string,
-  taxas: TaxaDetalhe[]
+  taxas: TaxaDetalhe[],
+  conta = ''
 ): number {
   const candidatos = taxas.filter(t =>
     t.ativo &&
     (t.produto_slug === produto || t.produto_slug === '*') &&
     (t.forma_pagamento === forma   || t.forma_pagamento === '*') &&
-    (t.gateway === canal || t.gateway === '*') &&
+    (t.gateway === canal || t.gateway === conta || t.gateway === '*') &&
     valor >= t.faixa_min &&
     valor <= t.faixa_max
   );
@@ -229,11 +231,18 @@ export function calcTaxaTransacao(
 // quando o pagamento ainda não tem taxa travada (não confirmado, ou
 // confirmado antes desta trava existir).
 export function taxaDoPagamento(
-  p: { valor: number | null; produto: string | null; forma_pagamento: string; canal_cobranca?: string | null; taxa_valor?: number | null },
+  p: { valor: number | null; produto: string | null; forma_pagamento: string; canal_cobranca?: string | null; conta_recebimento?: string | null; taxa_valor?: number | null },
   taxas: TaxaDetalhe[]
 ): number {
   if (p.taxa_valor != null) return p.taxa_valor;
-  return calcTaxaTransacao(p.valor || 0, p.produto || '', p.forma_pagamento, p.canal_cobranca || '', taxas);
+  return calcTaxaTransacao(
+    p.valor || 0,
+    p.produto || '',
+    p.forma_pagamento,
+    p.canal_cobranca || '',
+    taxas,
+    p.conta_recebimento || '',
+  );
 }
 
 // ─── Breakdown de líquido por produto ────────────────────────────────────────

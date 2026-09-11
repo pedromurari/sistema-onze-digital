@@ -8,6 +8,8 @@ import {
   calcMRR,
   makeGetOwnerShare,
   calcDrePorSocio,
+  calcTaxaTransacao,
+  taxaDoPagamento,
 } from './financial-utils';
 import { normalizarRegrasSocio } from './regras-socio';
 
@@ -247,6 +249,34 @@ describe('makeGetOwnerShare — o split manda, responsavel_id e so o fallback', 
   it('turma sem dono e sem split nao pertence a socio nenhum', () => {
     const share = makeGetOwnerShare('Keila', [{ id: 't9' }], [], responsaveis);
     expect(share('t9')).toBe(0);
+  });
+});
+
+describe('taxas de gateway por conta de recebimento', () => {
+  const taxas = [
+    { id: 'asaas', produto_slug: '*', forma_pagamento: 'boleto', gateway: 'asaas', percentual: 0, fixo_por_transacao: 1.99, faixa_min: 0, faixa_max: 999999.99, ativo: true },
+    { id: 'voomp', produto_slug: '*', forma_pagamento: 'boleto', gateway: 'voomp', percentual: 5.9, fixo_por_transacao: 0, faixa_min: 0, faixa_max: 999999.99, ativo: true },
+    { id: 'legado', produto_slug: 'psicanalise', forma_pagamento: 'boleto', gateway: 'Canal legado', percentual: 2, fixo_por_transacao: 0, faixa_min: 0, faixa_max: 999999.99, ativo: true },
+  ];
+
+  it('usa a conta selecionada quando o canal de cobrança está vazio', () => {
+    expect(calcTaxaTransacao(109.9, 'psicanalise', 'boleto', '', taxas, 'asaas')).toBeCloseTo(1.99);
+    expect(calcTaxaTransacao(109.9, 'psicanalise', 'boleto', '', taxas, 'voomp')).toBeCloseTo(6.4841);
+  });
+
+  it('preserva o comportamento legado quando a conta não é informada', () => {
+    expect(calcTaxaTransacao(100, 'psicanalise', 'boleto', 'Canal legado', taxas)).toBe(2);
+    expect(calcTaxaTransacao(100, 'psicanalise', 'boleto', '', taxas)).toBe(0);
+  });
+
+  it('mantém soberana a taxa já travada no pagamento', () => {
+    expect(taxaDoPagamento({
+      valor: 109.9,
+      produto: 'psicanalise',
+      forma_pagamento: 'boleto',
+      conta_recebimento: 'asaas',
+      taxa_valor: 3.21,
+    }, taxas)).toBe(3.21);
   });
 });
 

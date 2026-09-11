@@ -2042,7 +2042,14 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
     const pagamento = pagamentos.find(p => p.id === pagoInfo.pagamentoId);
     const aluno = alunos.find(a => a.id === pagoInfo.alunoId);
     const taxa = pagamento
-      ? calcTaxaTransacao(pagamento.valor, pagamento.produto || '', aluno?.forma_pagamento || 'boleto', pagoInfo.canal_cobranca || '', taxasRates)
+      ? calcTaxaTransacao(
+          pagamento.valor,
+          pagamento.produto || '',
+          aluno?.forma_pagamento || 'boleto',
+          pagoInfo.canal_cobranca || '',
+          taxasRates,
+          pagoInfo.conta || '',
+        )
       : 0;
     const { error } = await supabase.from('pagamentos').update({
       status: 'pago',
@@ -3766,7 +3773,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                                     <td className="py-2 px-2 text-xs text-muted-foreground">{p.canal_cobranca || '—'}</td>
                                     <td className="py-2 px-2 text-xs">
                                       {p.status === 'pago'
-                                        ? <span className="text-red-600">−{formatCurrency(taxaDoPagamento({ ...p, forma_pagamento: alunoDetail?.forma_pagamento || 'boleto' }, taxasRates))}</span>
+                                        ? <span className="text-red-600">−{formatCurrency(taxaDoPagamento({ ...p, forma_pagamento: alunoDetail?.forma_pagamento || 'boleto', conta_recebimento: p.conta_recebimento }, taxasRates))}</span>
                                         : <span className="text-muted-foreground">—</span>}
                                     </td>
                                     <td className="py-2 px-2">

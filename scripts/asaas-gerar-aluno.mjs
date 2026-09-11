@@ -14,6 +14,10 @@
  * `asaas_payment_id` + `link_pagamento_asaas`. Idempotente: parcela que já tem
  * asaas_payment_id é pulada.
  *
+ * IMPORTANTE: desligue também a régua global no painel do Asaas em
+ * Configurações → Notificações. `notificationDisabled` é o reforço por cliente;
+ * a cobrança por WhatsApp continua sendo feita exclusivamente pelo nosso CRM.
+ *
  * USO:
  *   ASAAS_API_KEY=xxx  SUPABASE_URL=https://<ref>.supabase.co  \
  *   SUPABASE_SERVICE_ROLE_KEY=xxx  node scripts/asaas-gerar-aluno.mjs <aluno_id> [--dry-run]
@@ -97,6 +101,7 @@ async function main() {
         address: String(aluno.endereco ?? '').trim() || undefined,
         addressNumber: numero,
         postalCode: String(aluno.cep ?? '').replace(/\D/g, '') || undefined,
+        notificationDisabled: true,
       }),
     });
     if (!ok || !data?.id) { console.error('Falha ao criar cliente Asaas:', data); process.exit(1); }
