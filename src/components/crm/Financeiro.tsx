@@ -180,10 +180,10 @@ interface ParcelaLocal {
   deleted?: boolean;
 }
 
-type ProdutoTab = 'psicanalise' | 'numerologia' | 'pnl';
+type ProdutoTab = 'psicanalise' | 'numerologia' | 'pnl' | 'sociedade-idm';
 // Produto real gravado em turmas/alunos/pagamentos -- 'pnl' na aba/ProdutoTab e um
 // guarda-chuva (mostra Practitioner e Master juntos), nunca um valor de verdade no banco.
-type ProdutoReal = 'psicanalise' | 'numerologia' | 'pnl-practitioner' | 'pnl-master';
+type ProdutoReal = 'psicanalise' | 'numerologia' | 'pnl-practitioner' | 'pnl-master' | 'sociedade-idm';
 type SubView = 'alunos' | 'turmas' | 'responsaveis';
 
 // 'pnl' casa com qualquer produto que comece com 'pnl-' (practitioner ou master);
@@ -1073,8 +1073,8 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
 
   // Tabs visíveis conforme turmas acessíveis
   const visibleTabs = useMemo<ProdutoTab[]>(() => {
-    if (isAdmin) return ['psicanalise', 'numerologia', 'pnl'];
-    const tabs: ProdutoTab[] = (['psicanalise', 'numerologia', 'pnl'] as ProdutoTab[]).filter(tab =>
+    if (isAdmin) return ['psicanalise', 'numerologia', 'pnl', 'sociedade-idm'];
+    const tabs: ProdutoTab[] = (['psicanalise', 'numerologia', 'pnl', 'sociedade-idm'] as ProdutoTab[]).filter(tab =>
       turmas.some(t => matchesProdutoTab(t.tipo || t.produto, tab) && permissions && canAccessFinanceiroTurma(permissions, t.id))
     );
     return tabs.length > 0 ? tabs : ['psicanalise'];
@@ -2997,10 +2997,11 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
         {visibleTabs.length > 1 && (
           <div className="mb-4">
             <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as ProdutoTab); setSubView('alunos'); setSelectedTurmaId('todas'); }}>
-              <TabsList className={`grid w-full max-w-xs`} style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, 1fr)` }}>
+              <TabsList className={`grid w-full ${visibleTabs.length > 3 ? 'max-w-md' : 'max-w-xs'}`} style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, 1fr)` }}>
                 {visibleTabs.includes('psicanalise') && <TabsTrigger value="psicanalise">Psicanalise</TabsTrigger>}
                 {visibleTabs.includes('numerologia') && <TabsTrigger value="numerologia">Numerologia</TabsTrigger>}
                 {visibleTabs.includes('pnl') && <TabsTrigger value="pnl">PNL</TabsTrigger>}
+                {visibleTabs.includes('sociedade-idm') && <TabsTrigger value="sociedade-idm">Sociedade IDM</TabsTrigger>}
               </TabsList>
             </Tabs>
           </div>
@@ -3036,6 +3037,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                   <SelectItem value="numerologia">Numerologia</SelectItem>
                   <SelectItem value="pnl-practitioner">PNL Practitioner</SelectItem>
                   <SelectItem value="pnl-master">PNL Master</SelectItem>
+                  <SelectItem value="sociedade-idm">Sociedade IDM</SelectItem>
                 </SelectContent>
               </Select>
             </div>
