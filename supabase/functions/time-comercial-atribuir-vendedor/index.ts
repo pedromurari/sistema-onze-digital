@@ -23,9 +23,10 @@ const corsHeaders = {
 
 // Mesma ordem/nomes do INITIAL_VENDORS em TimeComercial.tsx -- se o time mudar,
 // atualizar os dois lugares.
+// Miguel saiu do time (set/2026) -- todo lead do canal Direto vai pra Helen
+// por enquanto. Lista de 1 elemento: o rodizio (idx % length) sempre cai em 0.
 const VENDEDORES_DIRETO = [
   { nome: 'Helen Magna', telefone: '5511965781940' },
-  { nome: 'Miguel Fogaça', telefone: '5511932203852' },
 ] as const;
 
 const BodySchema = z.object({
