@@ -132,7 +132,7 @@ export function ComissoesFechamento({ viewAsName }: { viewAsName: string | null 
   };
 
   const adicionarManual = async () => {
-    const vendedor = prompt('Nome do vendedor (exatamente "Helen Magna" ou "Miguel Fogaça", pra agrupar certinho):', 'Helen Magna');
+    const vendedor = prompt('Nome do vendedor (exatamente "Helen Magna", pra agrupar certinho):', 'Helen Magna');
     if (!vendedor?.trim()) return;
     const tipoInput = prompt('Tipo de lançamento: "comissao" (venda), "ajuda_custo" (fixo mensal) ou "outro"?', 'comissao');
     const tipo = (['comissao', 'ajuda_custo', 'outro'].includes(tipoInput ?? '') ? tipoInput : 'comissao') as ComissaoRow['tipo'];

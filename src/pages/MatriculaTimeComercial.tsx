@@ -45,9 +45,11 @@ declare global {
 }
 
 // ─── Vendedores válidos (roster atual do Time Comercial — ver src/lib/vendedores.ts) ──
-// Aline saiu do time; INITIAL_VENDORS hoje tem só Helen e Miguel. Mapeamos slug → nome
-// completo aqui (não importamos INITIAL_VENDORS porque o slug de URL é uma decisão desta
-// página, não do modelo de dados do CRM).
+// Aline saiu do time, depois o Miguel também (2026-09-15) -- INITIAL_VENDORS hoje tem só
+// Helen. Mapeamos slug → nome completo aqui (não importamos INITIAL_VENDORS porque o slug
+// de URL é uma decisão desta página, não do modelo de dados do CRM). Link antigo /miguel
+// agora cai em ScreenLinkInvalido (nomeVendedor undefined) -- de propósito, matrícula não
+// deve mais entrar atribuída a ele.
 //
 // "direto" (2026-09-03): link genérico pra venda sem vendedor definido (ex:
 // campanha direta, indicação). Rótulo só de exibição -- NUNCA vira
@@ -56,7 +58,6 @@ declare global {
 // um vendedor fantasma no faturamento por vendedor.
 const VENDEDORES: Record<string, string> = {
   helen: 'Helen Magna',
-  miguel: 'Miguel Fogaça',
   direto: 'Equipe Instituto Despertamente',
   promo: 'Equipe Instituto Despertamente',
   '997': 'Equipe Instituto Despertamente',
@@ -72,7 +73,6 @@ const SEM_VENDEDOR_ATRIBUIDO = new Set(['direto', 'promo', '997', '15x50']);
 // não tem consultora dona pra assumir a conversa.
 const VENDEDOR_WHATSAPP: Record<string, string> = {
   helen: '5511965781940',
-  miguel: '5511932203852',
   direto: '5511976736081',
   promo: '5511976736081',
   '997': '5511976736081',

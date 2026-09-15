@@ -18,9 +18,12 @@ export interface VendorRow {
   whatsapp?: string; // DDI 55 + DDD + número, só dígitos -- usado em alertas automáticos (ex: follow-up vencido)
 }
 
+// Miguel Fogaça saiu do time em 2026-09-15 -- removido daqui de propósito (mesmo
+// tratamento que a Aline recebeu antes dele). METAS_MESES em TimeComercial.tsx é
+// hardcoded pra 2 vendedores e ainda não foi recalibrada pra 1 só -- avisar o dono
+// do produto antes de mudar os números de meta.
 export const INITIAL_VENDORS: VendorRow[] = [
   { name: 'Helen Magna', role: 'Vendedora', gerente: false, initials: 'HM', cor: '#A93356', meta: 30, vistaCartao: 9, boleto: 21, whatsapp: '5511965781940' },
-  { name: 'Miguel Fogaça', role: 'Vendedor', gerente: false, initials: 'MF', cor: '#4A90E2', meta: 30, vistaCartao: 15, boleto: 35, whatsapp: '5511932203852' },
 ];
 
 export const COM_VISTA_CARTAO = 147;

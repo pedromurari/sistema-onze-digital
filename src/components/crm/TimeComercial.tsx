@@ -1549,18 +1549,8 @@ const LINKS_MATRICULA: OperacaoLink[] = [
     descricao: 'Plano padrão: R$ 1.500 à vista (PIX) ou R$ 150/mês. Aceita PIX, cartão (à vista/parcelado/recorrente), boleto 15x e bolsa. Matrícula entra atribuída à Helen.',
   },
   {
-    label: 'Ficha de Matrícula — Miguel Fogaça', url: 'https://ir.idmpsi.com.br/miguel',
-    vendedor: 'Miguel Fogaça', grupo: 'vendedor',
-    descricao: 'Plano padrão: R$ 1.500 à vista (PIX) ou R$ 150/mês. Aceita PIX, cartão (à vista/parcelado/recorrente), boleto 15x e bolsa. Matrícula entra atribuída ao Miguel.',
-  },
-  {
     label: 'Pré-Matrícula — Helen Magna', url: 'https://ir.idmpsi.com.br/pre-matricula/helen',
     vendedor: 'Helen Magna', grupo: 'vendedor',
-    descricao: 'Cliente preenche a ficha e assina o contrato agora, mas a 1ª cobrança (entrada) fica programada pra uma data futura que ele escolhe. Só boleto 15x. Bom pra quem fecha mas só pode pagar dias depois.',
-  },
-  {
-    label: 'Pré-Matrícula — Miguel Fogaça', url: 'https://ir.idmpsi.com.br/pre-matricula/miguel',
-    vendedor: 'Miguel Fogaça', grupo: 'vendedor',
     descricao: 'Cliente preenche a ficha e assina o contrato agora, mas a 1ª cobrança (entrada) fica programada pra uma data futura que ele escolhe. Só boleto 15x. Bom pra quem fecha mas só pode pagar dias depois.',
   },
   // Links gerais / de campanha — sem vendedor fixo, todo mundo do time enxerga
