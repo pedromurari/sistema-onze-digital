@@ -1288,10 +1288,13 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
 }
 
 // -----------------------------------------------------------------------
-// Metas 2026 — equipe nova (Helen, Miguel). Sem historico do sistema,
-// so a equipe comercial de agora em diante. Numeros e formula portados do
-// protótipo (painel-despertamente.html) calibrado com o dono do negocio,
-// recalibrados pra 2 vendedores após a saída da Aline.
+// Metas 2026 — equipe (Helen). Sem historico do sistema, so a equipe
+// comercial de agora em diante. Numeros e formula portados do protótipo
+// (painel-despertamente.html) calibrado com o dono do negocio, recalibrados
+// pra 2 vendedores após a saída da Aline e agora pra 1 só (Helen) após a
+// saída do Miguel (2026-09-15) -- os valores de equipe são simplesmente os
+// antigos de 2 vendedores divididos por 2 (30/33/38/43), já que a meta da
+// equipe e a da Helen são a mesma coisa agora.
 // -----------------------------------------------------------------------
 
 const fmt = (n: number) => 'R$ ' + Math.round(n).toLocaleString('pt-BR');
@@ -1299,10 +1302,10 @@ const fmt = (n: number) => 'R$ ' + Math.round(n).toLocaleString('pt-BR');
 const FAT_POR_VENDA_MIX = 0.3 * 1485 + 0.7 * 150; // 550,5 — mesmo mix da calculadora de remuneração
 
 const METAS_MESES: { mes: string; vendas: number }[] = [
-  { mes: 'Set/26', vendas: 60 },  // Meta Base da equipe completa (30 × 2 vendedores)
-  { mes: 'Out/26', vendas: 66 },
-  { mes: 'Nov/26', vendas: 76 },
-  { mes: 'Dez/26', vendas: 86 },
+  { mes: 'Set/26', vendas: 30 },  // Meta Base (30 × 1 vendedora -- só a Helen)
+  { mes: 'Out/26', vendas: 33 },
+  { mes: 'Nov/26', vendas: 38 },
+  { mes: 'Dez/26', vendas: 43 },
 ];
 
 function MetasTab({ viewAsName }: VendorScopeProps) {
@@ -1310,13 +1313,13 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
   const vendasTotal = METAS_MESES.reduce((s, x) => s + x.vendas, 0);
   const faturamentoTotal = METAS_MESES.reduce((s, x) => s + x.vendas * FAT_POR_VENDA_MIX, 0);
 
-  // Vendedor(a) comum ve so a fatia dela do plano (meta dividida por 2);
-  // "Todos" continua vendo a meta agregada da equipe.
+  // Com 1 vendedora só, a meta individual e a da equipe são a mesma --
+  // "Todos" e "Helen" mostram os mesmos números (sem dividir por 2 mais).
   if (viewAsName) {
-    const mesesIndividual = METAS_MESES.map((x) => ({ mes: x.mes, vendas: Math.round(x.vendas / 2) }));
-    const maxIndividual = Math.max(...mesesIndividual.map((x) => x.vendas));
-    const vendasTotalIndividual = mesesIndividual.reduce((s, x) => s + x.vendas, 0);
-    const faturamentoTotalIndividual = mesesIndividual.reduce((s, x) => s + x.vendas * FAT_POR_VENDA_MIX, 0);
+    const mesesIndividual = METAS_MESES;
+    const maxIndividual = maxVendas;
+    const vendasTotalIndividual = vendasTotal;
+    const faturamentoTotalIndividual = faturamentoTotal;
 
     return (
       <div className="flex flex-col gap-5">
@@ -1367,7 +1370,7 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
             </TableFooter>
           </Table>
           <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 mt-3">
-            Sua fatia é a meta da equipe dividida por 2. Setembro parte da Meta Base (30 vendas).
+            Você é a única vendedora do time agora — sua meta é a meta da equipe. Setembro parte da Meta Base (30 vendas).
           </p>
         </Card>
       </div>
@@ -1376,11 +1379,11 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
 
   return (
     <div className="flex flex-col gap-5">
-      <p className="text-sm text-muted-foreground -mt-1">Visão consolidada da equipe — quanto os 2 vendedores juntos precisam entregar.</p>
+      <p className="text-sm text-muted-foreground -mt-1">Visão consolidada da equipe — hoje só a Helen, depois da saída do Miguel.</p>
       <SectionBar title="Meta da equipe" />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <StatTile label="Meta Base da equipe" value={<>60 <span className="text-sm font-normal text-muted-foreground">vendas/mês</span></>} hint="30 × 2 vendedores" icon={Target} />
-        <StatTile label="Faturamento na Meta Base" value={<>~R$ 33.030<span className="text-sm font-normal text-muted-foreground">/mês</span></>} hint="mix 30% à vista/cartão + 70% recorrente" icon={DollarSign} />
+        <StatTile label="Meta Base da equipe" value={<>30 <span className="text-sm font-normal text-muted-foreground">vendas/mês</span></>} hint="30 × 1 vendedora (Helen)" icon={Target} />
+        <StatTile label="Faturamento na Meta Base" value={<>~R$ 16.515<span className="text-sm font-normal text-muted-foreground">/mês</span></>} hint="mix 30% à vista/cartão + 70% recorrente" icon={DollarSign} />
         <StatTile label="Meses restantes em 2026" value="Set–Dez" hint="4 meses de ramp-up com a equipe nova" icon={CalendarDays} />
       </div>
 
@@ -1423,7 +1426,7 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
           </TableFooter>
         </Table>
         <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 mt-3">
-          Setembro parte da Meta Base (60 vendas), com um ramp-up gradual até dezembro.
+          Setembro parte da Meta Base (30 vendas), com um ramp-up gradual até dezembro.
         </p>
       </Card>
 
@@ -1446,7 +1449,7 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
         <Card className="p-4">
           <h3 className="text-sm font-semibold text-foreground mb-2">Como a meta cresce</h3>
           <p className="text-sm text-muted-foreground">
-            Setembro é o primeiro mês com a equipe completa, por isso começa na Meta Base. Outubro a dezembro sobem gradualmente conforme a curva de aprendizado avança.
+            Setembro parte da Meta Base da Helen. Outubro a dezembro sobem gradualmente conforme a curva de aprendizado avança.
           </p>
         </Card>
       </div>
