@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Loader2, Pause, Play, RefreshCw, TrendingUp, MousePointerClick, Users, DollarSign, AlertTriangle } from 'lucide-react';
+import { Loader2, Pause, Play, RefreshCw, TrendingUp, MousePointerClick, Users, DollarSign, AlertTriangle, ChevronDown, ChevronUp, ChevronRight } from 'lucide-react';
 
 interface Campanha {
   id: string;
@@ -33,21 +33,44 @@ function cidadeDaCampanha(nome: string): string {
   return 'Outras';
 }
 
-function CampanhaCard({ campanha, onToggle, toggling }: {
+function CampanhaCard({ campanha, onToggle, toggling, expanded, onToggleExpanded }: {
   campanha: Campanha;
   onToggle: (c: Campanha) => void;
   toggling: boolean;
+  expanded: boolean;
+  onToggleExpanded: () => void;
 }) {
   const ativa = campanha.status === 'ACTIVE';
   const cpaAlerta = campanha.custo_por_lead !== null && campanha.custo_por_lead > 30;
 
+  if (!expanded) {
+    return (
+      <div className="rounded-xl border border-gray-100 bg-white p-3 shadow-sm hover:shadow-md transition-shadow">
+        <button
+          onClick={onToggleExpanded}
+          className="w-full flex items-center gap-2 text-left"
+        >
+          <ChevronRight className="h-4 w-4 text-gray-400 shrink-0" />
+          <span className={`shrink-0 w-2 h-2 rounded-full ${ativa ? 'bg-green-500' : 'bg-gray-300'}`} />
+          <p className="text-xs font-bold text-gray-900 truncate flex-1" title={campanha.nome}>{campanha.nome}</p>
+          <span className="shrink-0 text-[11px] text-gray-500">{fmtBRL(campanha.gasto)}</span>
+          <span className="shrink-0 text-[11px] text-green-700 font-semibold">{campanha.compras} compras</span>
+          {cpaAlerta && <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="min-w-0">
-          <p className="text-sm font-bold text-gray-900 truncate" title={campanha.nome}>{campanha.nome}</p>
-          <p className="text-[11px] text-gray-400 mt-0.5">{campanha.objetivo.replace('OUTCOME_', '')}</p>
-        </div>
+        <button onClick={onToggleExpanded} className="flex items-start gap-1.5 min-w-0 text-left">
+          <ChevronDown className="h-4 w-4 text-gray-400 shrink-0 mt-0.5" />
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-gray-900 truncate" title={campanha.nome}>{campanha.nome}</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">{campanha.objetivo.replace('OUTCOME_', '')}</p>
+          </div>
+        </button>
         <span
           className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
             ativa ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'
@@ -104,6 +127,24 @@ export function MetaAdsPanel() {
   const [erro, setErro] = useState<string | null>(null);
   const [dias, setDias] = useState(7);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [gruposColapsados, setGruposColapsados] = useState<Set<string>>(new Set());
+
+  const toggleExpanded = (id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleGrupo = (cidade: string) => {
+    setGruposColapsados(prev => {
+      const next = new Set(prev);
+      if (next.has(cidade)) next.delete(cidade); else next.add(cidade);
+      return next;
+    });
+  };
 
   const carregar = useCallback(async (diasParam = dias) => {
     setLoading(true);
@@ -210,16 +251,40 @@ export function MetaAdsPanel() {
             </div>
           </div>
 
-          {[...grupos.entries()].map(([cidade, lista]) => (
-            <div key={cidade} className="mb-5 last:mb-0">
-              <h3 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-2">{cidade}</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {lista.map(c => (
-                  <CampanhaCard key={c.id} campanha={c} onToggle={toggleCampanha} toggling={togglingId === c.id} />
-                ))}
+          {[...grupos.entries()].map(([cidade, lista]) => {
+            const colapsado = gruposColapsados.has(cidade);
+            return (
+              <div key={cidade} className="mb-5 last:mb-0">
+                <button
+                  onClick={() => toggleGrupo(cidade)}
+                  className="flex items-center gap-1.5 mb-2 group"
+                >
+                  {colapsado ? (
+                    <ChevronRight className="h-3.5 w-3.5 text-gray-400 group-hover:text-gray-600" />
+                  ) : (
+                    <ChevronDown className="h-3.5 w-3.5 text-gray-400 group-hover:text-gray-600" />
+                  )}
+                  <h3 className="text-xs font-bold text-gray-600 uppercase tracking-wide group-hover:text-gray-900">
+                    {cidade} <span className="text-gray-400 font-medium normal-case">({lista.length})</span>
+                  </h3>
+                </button>
+                {!colapsado && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {lista.map(c => (
+                      <CampanhaCard
+                        key={c.id}
+                        campanha={c}
+                        onToggle={toggleCampanha}
+                        toggling={togglingId === c.id}
+                        expanded={expandedIds.has(c.id)}
+                        onToggleExpanded={() => toggleExpanded(c.id)}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </>
       )}
     </div>
