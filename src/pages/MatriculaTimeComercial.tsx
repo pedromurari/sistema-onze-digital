@@ -803,9 +803,15 @@ export default function MatriculaTimeComercial({ preMatricula = false }: { preMa
     form.endereco.trim().length > 0 &&
     form.cidadeEstado.trim().length > 0;
 
+  // Bug real (achado pela Helen, 16/09 ~23h): comparar com toISOString() usa
+  // data em UTC, não em Brasília. De ~21h em diante (horário de Brasília), o
+  // UTC já virou o dia seguinte -- então quem escolhia "amanhã" como entrada
+  // caía comparando "amanhã" > "amanhã" (false), e o botão travava sem
+  // explicar por quê. Precisa ser a data de HOJE em Brasília, não em UTC.
+  const hojeBrasiliaIso = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
   const dataPrimeiraCobrancaOk =
     !preMatricula ||
-    (form.data_primeira_cobranca.length > 0 && form.data_primeira_cobranca > new Date().toISOString().slice(0, 10));
+    (form.data_primeira_cobranca.length > 0 && form.data_primeira_cobranca > hojeBrasiliaIso);
 
   const pagamentoOk =
     formaPagamento !== '' &&
@@ -981,6 +987,7 @@ export default function MatriculaTimeComercial({ preMatricula = false }: { preMa
                 preMatricula={preMatricula}
                 dataPrimeiraCobranca={form.data_primeira_cobranca}
                 onDataPrimeiraCobrancaChange={v => setCampo('data_primeira_cobranca', v)}
+                dataPrimeiraCobrancaValida={dataPrimeiraCobrancaOk}
               />
             )}
 

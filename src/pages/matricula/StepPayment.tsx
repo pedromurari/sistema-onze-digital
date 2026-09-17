@@ -36,6 +36,7 @@ export function StepPayment({
   preMatricula,
   dataPrimeiraCobranca,
   onDataPrimeiraCobrancaChange,
+  dataPrimeiraCobrancaValida,
 }: {
   vencimentoRadio: VencimentoRadio;
   onSelecionar: (v: VencimentoRadio) => void;
@@ -60,6 +61,9 @@ export function StepPayment({
   preMatricula?: boolean;
   dataPrimeiraCobranca?: string;
   onDataPrimeiraCobrancaChange?: (v: string) => void;
+  // true quando a data preenchida é válida (dia seguinte a hoje em diante).
+  // Ausente/undefined = não valida aqui (compat com quem não passar a prop).
+  dataPrimeiraCobrancaValida?: boolean;
 }) {
   const mostra = (forma: FormaPagamentoPermitida) => !formasPermitidas || formasPermitidas.includes(forma);
   const somenteCartaoAVista = plano.cartaoMaxParcelas === 1;
@@ -72,6 +76,9 @@ export function StepPayment({
   // pra mostrar embaixo do botão quando ele estiver travado.
   const faltando: string[] = [];
   if (preMatricula && !dataPrimeiraCobranca) faltando.push('a data em que vai pagar a entrada');
+  else if (preMatricula && dataPrimeiraCobranca && dataPrimeiraCobrancaValida === false) {
+    faltando.push('a data da entrada precisa ser a partir de amanhã (não pode ser hoje nem uma data passada)');
+  }
   if (vencimentoRadio === '') faltando.push(preMatricula ? 'o dia de vencimento das próximas parcelas' : 'a forma de pagamento');
   if (vencimentoRadio === 'outro' && !diaOutro) faltando.push('o dia de vencimento (campo "Outro dia")');
   if (vencimentoRadio === 'cortesia' && !bolsaValidada) faltando.push('validar o código de bolsa');
