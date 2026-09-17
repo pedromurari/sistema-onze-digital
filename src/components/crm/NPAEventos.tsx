@@ -165,7 +165,18 @@ export function NPAEventos({ onOpenEvento }: { onOpenEvento?: (id: string) => vo
         .from('npa_eventos')
         .select('*')
         .order('data_evento', { ascending: true, nullsFirst: false });
-      if (data) setEventos(data as NPAEvento[]);
+      if (data) {
+        // Próximos a acontecer primeiro (mais perto de hoje -> mais longe);
+        // eventos que já passaram vão pro final da fila, na ordem em que passaram.
+        const hojeStr = new Date().toISOString().slice(0, 10);
+        const ordenado = [...(data as NPAEvento[])].sort((a, b) => {
+          const aFuturo = !a.data_evento || a.data_evento >= hojeStr;
+          const bFuturo = !b.data_evento || b.data_evento >= hojeStr;
+          if (aFuturo !== bFuturo) return aFuturo ? -1 : 1;
+          return (a.data_evento ?? '').localeCompare(b.data_evento ?? '');
+        });
+        setEventos(ordenado);
+      }
       setLoading(false);
     };
     load();
