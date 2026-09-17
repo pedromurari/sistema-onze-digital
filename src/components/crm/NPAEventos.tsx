@@ -164,7 +164,7 @@ export function NPAEventos({ onOpenEvento }: { onOpenEvento?: (id: string) => vo
       const { data } = await supabase
         .from('npa_eventos')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('data_evento', { ascending: true, nullsFirst: false });
       if (data) setEventos(data as NPAEvento[]);
       setLoading(false);
     };
