@@ -878,9 +878,21 @@ export default function MatriculaTimeComercial({ preMatricula = false }: { preMa
         // com vencimento futuro, ancoradas em alunos.data_matricula (ver
         // migration matricula_time_comercial_pre_matricula) -- e (2) o envio
         // do contrato pra assinatura na Autentique. Nenhum dos dois bloqueia
-        // a tela de sucesso -- falha aqui não deve travar o cliente; se der
-        // problema, a equipe vê no aluno (sem asaas_payment_id / sem
-        // contrato_enviado) e reenvia manualmente.
+        // a tela de sucesso -- falha aqui não deve travar o cliente. Mas
+        // antes isso era 100% silencioso (o aluno via "confirmada!" mesmo
+        // sem boleto/contrato de verdade, e só se descobria dias depois) --
+        // agora qualquer falha (rede OU resposta {ok:false}) dispara um
+        // alerta de WhatsApp pra equipe na hora (pedido explícito 2026-09-17:
+        // "esses problemas não podem acontecer mais, nenhuma vez" -- isso não
+        // evita a falha, mas garante que ninguém demore dias pra saber dela).
+        const alertarFalha = (etapa: 'boleto' | 'contrato', detalhe: string) => {
+          fetch(`${SUPABASE_FUNCTIONS_URL}/time-comercial-pre-matricula-alerta`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ aluno_id: data.aluno_id, aluno_nome: form.nome.trim(), etapa, detalhe }),
+          }).catch(e => console.error('[MatriculaTimeComercial] falha ao mandar alerta de falha', e));
+        };
+
         fetch(`${SUPABASE_FUNCTIONS_URL}/matricula-pagamento-criar`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -892,7 +904,18 @@ export default function MatriculaTimeComercial({ preMatricula = false }: { preMa
             payerLastName: form.nome.trim().split(/\s+/).slice(1).join(' ') || form.nome.trim(),
             payerCpf: form.cpf.trim(),
           }),
-        }).catch(e => console.error('[MatriculaTimeComercial] pré-matrícula: erro ao gerar parcelas', e));
+        })
+          .then(async (r) => {
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok || j?.ok === false) {
+              console.error('[MatriculaTimeComercial] pré-matrícula: erro ao gerar parcelas', j);
+              alertarFalha('boleto', j?.erro || `HTTP ${r.status}`);
+            }
+          })
+          .catch((e) => {
+            console.error('[MatriculaTimeComercial] pré-matrícula: erro ao gerar parcelas', e);
+            alertarFalha('boleto', String(e?.message || e));
+          });
 
         fetch(`${SUPABASE_FUNCTIONS_URL}/autentique-criar`, {
           method: 'POST',
@@ -906,7 +929,18 @@ export default function MatriculaTimeComercial({ preMatricula = false }: { preMa
             cidade_estado: form.cidadeEstado.trim(),
             enviar_wpp: true,
           }),
-        }).catch(e => console.error('[MatriculaTimeComercial] pré-matrícula: erro ao enviar contrato', e));
+        })
+          .then(async (r) => {
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok || !j?.link_assinatura) {
+              console.error('[MatriculaTimeComercial] pré-matrícula: erro ao enviar contrato', j);
+              alertarFalha('contrato', j?.error || `HTTP ${r.status}`);
+            }
+          })
+          .catch((e) => {
+            console.error('[MatriculaTimeComercial] pré-matrícula: erro ao enviar contrato', e);
+            alertarFalha('contrato', String(e?.message || e));
+          });
 
         setPreMatriculaFeita(true);
       } else {
