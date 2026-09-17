@@ -1010,6 +1010,25 @@ export default function MatriculaTimeComercial({ preMatricula = false }: { preMa
               </button>
             </div>
           )}
+
+          {step < 3 && (step === 1 ? !pessoalOk : !enderecoOk) && (
+            <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginTop: 'calc(var(--space-8) * -1 + 4px)', paddingBottom: 'var(--space-6)' }}>
+              Falta preencher: {(step === 1 ? [
+                !form.nome.trim() && 'nome completo',
+                !form.email.trim() && 'e-mail',
+                !form.whatsapp.trim() && 'telefone/WhatsApp',
+                cpfDigits.length !== 11 && (cpfDigits.length === 0 ? 'CPF' : `CPF (só tem ${cpfDigits.length} dos 11 números — confira se não faltou digitar algum)`),
+                !form.rg.trim() && 'RG',
+                !dataNascimento && 'data de nascimento (dia, mês e ano)',
+                !form.sexo.trim() && 'sexo',
+              ] : [
+                !form.pais.trim() && 'país',
+                !form.cep.trim() && 'CEP',
+                !form.endereco.trim() && 'endereço',
+                !form.cidadeEstado.trim() && 'cidade/estado',
+              ]).filter(Boolean).join(', ')}.
+            </p>
+          )}
         </div>
       </main>
 
