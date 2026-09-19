@@ -167,6 +167,10 @@ interface Pagamento {
   link_pagamento_mp?: string | null;
   asaas_payment_id?: string | null;
   conta_recebimento?: string | null;
+  nf_status?: string | null;
+  nf_numero?: string | null;
+  nf_link?: string | null;
+  nf_emitida_em?: string | null;
 }
 
 interface ParcelaLocal {
@@ -2144,6 +2148,61 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
     loadData();
   };
 
+  // Nota fiscal por parcela -- mesmos campos/fluxo da tela dedicada (finance/NotasFiscais.tsx),
+  // só que visível e editável direto na ficha do aluno, onde o operador já está.
+  const [nfEmitindo, setNfEmitindo] = useState<Pagamento | null>(null);
+  const [nfDispensando, setNfDispensando] = useState<Pagamento | null>(null);
+  const [nfNumero, setNfNumero] = useState('');
+  const [nfLink, setNfLink] = useState('');
+  const [nfMotivoDispensa, setNfMotivoDispensa] = useState('');
+  const [nfSalvandoId, setNfSalvandoId] = useState<string | null>(null);
+
+  const abrirNfEmissao = (p: Pagamento) => {
+    setNfEmitindo(p);
+    setNfNumero(p.nf_numero || '');
+    setNfLink(p.nf_link || '');
+  };
+
+  const linkNfSeguro = (valor: string) => {
+    try {
+      const url = new URL(valor);
+      return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  };
+
+  const salvarNfEmitida = async () => {
+    if (!nfEmitindo || !nfNumero.trim()) return;
+    if (nfLink.trim() && !linkNfSeguro(nfLink.trim())) {
+      toast({ variant: 'destructive', title: 'Link inválido', description: 'Informe uma URL iniciada por http:// ou https://.' });
+      return;
+    }
+    setNfSalvandoId(nfEmitindo.id);
+    const { error } = await supabase.from('pagamentos').update({
+      nf_status: 'emitida', nf_numero: nfNumero.trim(), nf_link: nfLink.trim() || null,
+      nf_emitida_em: new Date().toISOString(),
+    }).eq('id', nfEmitindo.id);
+    setNfSalvandoId(null);
+    if (error) { toast({ variant: 'destructive', title: 'Erro ao marcar nota', description: error.message }); return; }
+    toast({ title: 'Nota fiscal marcada como emitida' });
+    setNfEmitindo(null);
+    loadData();
+  };
+
+  const salvarNfDispensa = async () => {
+    if (!nfDispensando || !nfMotivoDispensa.trim()) return;
+    const registro = `Dispensa de NFS-e: ${nfMotivoDispensa.trim()}`;
+    setNfSalvandoId(nfDispensando.id);
+    const { error } = await supabase.from('pagamentos').update({ nf_status: 'dispensada' }).eq('id', nfDispensando.id);
+    setNfSalvandoId(null);
+    if (error) { toast({ variant: 'destructive', title: 'Erro ao dispensar nota', description: error.message }); return; }
+    toast({ title: 'Emissão dispensada', description: registro });
+    setNfDispensando(null);
+    setNfMotivoDispensa('');
+    loadData();
+  };
+
   // Sub-componente compartilhado para Alunos e Turmas
   const ProdutoContent = () => (
     <div className="space-y-4">
@@ -3753,6 +3812,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                                   <th className="text-left py-2 px-2 font-medium text-xs">Canal</th>
                                   <th className="text-left py-2 px-2 font-medium text-xs">Taxa</th>
                                   <th className="text-left py-2 px-2 font-medium text-xs">Previsão</th>
+                                  <th className="text-left py-2 px-2 font-medium text-xs">NF</th>
                                   <th className="text-left py-2 px-3 font-medium">Acoes</th>
                                 </tr>
                               </thead>
@@ -3786,6 +3846,23 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                                         />
                                       ) : (
                                         <span className="text-xs text-muted-foreground">—</span>
+                                      )}
+                                    </td>
+                                    <td className="py-2 px-2">
+                                      {p.status !== 'pago' ? (
+                                        <span className="text-xs text-muted-foreground">—</span>
+                                      ) : p.nf_status === 'emitida' ? (
+                                        <Button variant="ghost" size="sm" onClick={() => abrirNfEmissao(p)} title={p.nf_numero ? `Nota ${p.nf_numero}` : 'Nota emitida'} className="h-6 px-1.5 text-[10px] text-emerald-600 hover:text-emerald-800 gap-1">
+                                          <CheckCircle2 className="h-3.5 w-3.5" /> {p.nf_numero || 'Emitida'}
+                                        </Button>
+                                      ) : p.nf_status === 'dispensada' ? (
+                                        <Button variant="ghost" size="sm" onClick={() => abrirNfEmissao(p)} title="Emissão dispensada" className="h-6 px-1.5 text-[10px] text-muted-foreground gap-1">
+                                          <XCircle className="h-3.5 w-3.5" /> Dispensada
+                                        </Button>
+                                      ) : (
+                                        <Button variant="ghost" size="sm" onClick={() => abrirNfEmissao(p)} title="Marcar nota fiscal" className="h-6 px-1.5 text-[10px] text-amber-600 hover:text-amber-800 gap-1">
+                                          <FileText className="h-3.5 w-3.5" /> Emitir NF
+                                        </Button>
                                       )}
                                     </td>
                                     <td className="py-2 px-2">
@@ -4057,6 +4134,62 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
             <Button variant="outline" onClick={() => setCobrarParcela(null)} disabled={enviandoCobranca}>Cancelar</Button>
             <Button onClick={enviarCobrancaParcela} disabled={enviandoCobranca} className="bg-blue-600 hover:bg-blue-700 text-white">
               {enviandoCobranca ? 'Enviando…' : 'Enviar cobrança'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Nota Fiscal — marcar emitida ou dispensar, mesmo fluxo de finance/NotasFiscais.tsx */}
+      <Dialog open={!!nfEmitindo} onOpenChange={(o) => !o && setNfEmitindo(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nota fiscal da parcela {nfEmitindo?.numero_parcela}</DialogTitle>
+            <DialogDescription>
+              A emissão é feita no painel da Agilize (Notas de serviço → Emitir nota); aqui você só registra o resultado.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div>
+              <label className="text-sm font-medium">Número da nota *</label>
+              <Input value={nfNumero} onChange={e => setNfNumero(e.target.value)} placeholder="Ex.: 000123" className="mt-1" />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Link da nota</label>
+              <Input type="url" value={nfLink} onChange={e => setNfLink(e.target.value)} placeholder="https://…" className="mt-1" />
+            </div>
+          </div>
+          <DialogFooter className="sm:justify-between">
+            <Button
+              variant="ghost"
+              className="text-muted-foreground"
+              onClick={() => { setNfDispensando(nfEmitindo); setNfEmitindo(null); }}
+            >
+              Dispensar emissão
+            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setNfEmitindo(null)}>Cancelar</Button>
+              <Button onClick={salvarNfEmitida} disabled={!nfNumero.trim() || nfSalvandoId === nfEmitindo?.id}>
+                {nfSalvandoId === nfEmitindo?.id ? 'Salvando…' : 'Confirmar emissão'}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!nfDispensando} onOpenChange={(o) => { if (!o) { setNfDispensando(null); setNfMotivoDispensa(''); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Dispensar emissão</DialogTitle>
+            <DialogDescription>Registre por que esta parcela não exige NFS-e.</DialogDescription>
+          </DialogHeader>
+          <div className="py-1">
+            <label className="text-sm font-medium">Motivo *</label>
+            <Textarea value={nfMotivoDispensa} onChange={e => setNfMotivoDispensa(e.target.value)} placeholder="Descreva o motivo da dispensa" rows={4} className="mt-1" />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setNfDispensando(null); setNfMotivoDispensa(''); }}>Cancelar</Button>
+            <Button onClick={salvarNfDispensa} disabled={!nfMotivoDispensa.trim() || nfSalvandoId === nfDispensando?.id}>
+              {nfSalvandoId === nfDispensando?.id ? 'Salvando…' : 'Confirmar dispensa'}
             </Button>
           </DialogFooter>
         </DialogContent>
