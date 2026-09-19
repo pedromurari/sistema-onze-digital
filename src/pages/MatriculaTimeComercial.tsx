@@ -76,6 +76,14 @@ const TURMA_POR_SLUG: Record<string, string> = {
   curitiba: '25fd6085-c919-4dcc-8511-27918fae18af', // Psicanálise Presencial — Polo Curitiba
 };
 
+// Kanban do evento (operacao-onze-digital, IDM Pelo Brasil) roda num app separado do
+// CRM Educacional, mas na mesma base Supabase -- o lead que comprou ingresso e se
+// matricula aqui precisa mover sozinho pra fase "Matrícula ✅" (npa_evento_leads,
+// casado por telefone dentro do evento). Achado 2026-09-18: "IDM PSI #20 - Curitiba".
+const NPA_EVENTO_POR_SLUG: Record<string, string> = {
+  curitiba: 'be2f9587-d2ce-4bf2-9732-3184c7c3a2c4', // IDM PSI #20 - Curitiba (19/09/2026)
+};
+
 // WhatsApp de cada vendedor (com DDI 55, só dígitos) — usado pra redirecionar
 // o aluno assim que o pagamento é confirmado, com uma mensagem pronta de
 // "finalizei a matrícula", pedido explícito do dono do produto. "direto" e
@@ -897,6 +905,18 @@ export default function MatriculaTimeComercial({ preMatricula = false }: { preMa
           if (turmaErr || !vincResult?.ok) {
             console.error('[MatriculaTimeComercial] falha ao vincular turma do evento', turmaErr || vincResult);
           }
+        });
+      }
+
+      const npaEventoDoSlug = NPA_EVENTO_POR_SLUG[slug!.toLowerCase()];
+      if (npaEventoDoSlug) {
+        (supabase as any).rpc('matricula_marcar_lead_npa', {
+          p_npa_evento_id: npaEventoDoSlug,
+          p_whatsapp: form.whatsapp.trim(),
+        }).then(({ data: leadResult, error: leadErr }: any) => {
+          // "lead_nao_encontrado" é esperado (matriculou sem ter passado pelo
+          // Kanban do evento antes) -- não é falha, só não achou o que mover.
+          if (leadErr) console.error('[MatriculaTimeComercial] falha ao mover lead no Kanban NPA', leadErr);
         });
       }
 
