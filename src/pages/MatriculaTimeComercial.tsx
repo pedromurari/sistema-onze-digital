@@ -62,9 +62,19 @@ const VENDEDORES: Record<string, string> = {
   promo: 'Equipe Instituto Despertamente',
   '997': 'Equipe Instituto Despertamente',
   '15x50': 'Equipe Instituto Despertamente',
+  curitiba: 'Equipe Instituto Despertamente',
 };
 
-const SEM_VENDEDOR_ATRIBUIDO = new Set(['direto', 'promo', '997', '15x50']);
+const SEM_VENDEDOR_ATRIBUIDO = new Set(['direto', 'promo', '997', '15x50', 'curitiba']);
+
+// NPA IDM pelo Brasil — Curitiba (2026-09-19): matrícula presencial da Formação em
+// Psicanálise, mesma oferta/preço do plano "padrao" (por isso não entra em PLANOS,
+// planoDoSlug já cai em 'padrao' pra qualquer slug desconhecido), só que já nasce
+// vinculada à turma presencial em vez de cair "sem turma" pra alguém atribuir depois --
+// evento com venda no local, não pode depender de um passo manual pra funcionar.
+const TURMA_POR_SLUG: Record<string, string> = {
+  curitiba: '25fd6085-c919-4dcc-8511-27918fae18af', // Psicanálise Presencial — Polo Curitiba
+};
 
 // WhatsApp de cada vendedor (com DDI 55, só dígitos) — usado pra redirecionar
 // o aluno assim que o pagamento é confirmado, com uma mensagem pronta de
@@ -77,6 +87,7 @@ const VENDEDOR_WHATSAPP: Record<string, string> = {
   promo: '5511976736081',
   '997': '5511976736081',
   '15x50': '5511976736081',
+  curitiba: '5511976736081',
 };
 
 // ─── Planos de preço por slug ───────────────────────────────────────────────
@@ -868,6 +879,25 @@ export default function MatriculaTimeComercial({ preMatricula = false }: { preMa
         }
         setSubmitting(false);
         return;
+      }
+
+      // Turmas com evento presencial (ex: NPA Curitiba) já nascem vinculadas --
+      // não bloqueia a tela de pagamento nem trava o fluxo em caso de falha
+      // (mesmo princípio dos alertas abaixo: erro aqui não pode impedir a compra).
+      const turmaDoSlug = TURMA_POR_SLUG[slug!.toLowerCase()];
+      if (turmaDoSlug) {
+        // anon não tem policy de UPDATE em alunos (só INSERT) -- por isso via RPC
+        // SECURITY DEFINER (matricula_vincular_turma_evento), não update direto na
+        // tabela (achado real 2026-09-18: update direto falha silencioso, aluno
+        // fica sem turma e ninguém percebe até alguém abrir a ficha dele).
+        (supabase as any).rpc('matricula_vincular_turma_evento', {
+          p_aluno_id: data.aluno_id,
+          p_turma_id: turmaDoSlug,
+        }).then(({ data: vincResult, error: turmaErr }: any) => {
+          if (turmaErr || !vincResult?.ok) {
+            console.error('[MatriculaTimeComercial] falha ao vincular turma do evento', turmaErr || vincResult);
+          }
+        });
       }
 
       if (formaPagamento === 'bolsa') {
