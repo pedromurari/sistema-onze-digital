@@ -275,9 +275,17 @@ const isFutureDate = (value?: string | null) => {
   return !!(d && today && d > today);
 };
 
-const deriveAlunoStatus = (dataMatricula: string | null | undefined, previousStatus?: Aluno['status']): Aluno['status'] => {
+const deriveAlunoStatus = (
+  dataMatricula: string | null | undefined,
+  previousStatus?: Aluno['status'],
+  mensalidadesPagas?: number | null,
+): Aluno['status'] => {
   if (previousStatus === 'cancelado' || previousStatus === 'concluido') return previousStatus;
   if (isFutureDate(dataMatricula)) return 'pre_matricula';
+  // Só vira Ativo quando a 1ª parcela foi paga -- a data chegar sozinha não basta
+  // (2026-09-21: pré-matrículas do time comercial viravam "ativo" sem pagar nada).
+  // Só aplica quando o chamador informa mensalidadesPagas (a listagem informa).
+  if (previousStatus === 'pre_matricula' && mensalidadesPagas != null && mensalidadesPagas < 1) return 'pre_matricula';
   if (previousStatus === 'pre_matricula') return 'ativo';
   return previousStatus || 'ativo';
 };
@@ -289,10 +297,10 @@ const deriveAlunoStatus = (dataMatricula: string | null | undefined, previousSta
 // gravava no banco por dentro. Isso impedia que a lista de alunos virasse um `useMemo`
 // sobre o React Query — em modo estrito o React roda o render duas vezes, e a gravacao
 // escondida sairia duplicada. Agora o calculo e puro e quem persiste e um efeito.
-const calcularStatusCorrigido = <T extends Pick<Aluno, 'id' | 'status' | 'data_matricula'>>(rows: T[]) => {
+const calcularStatusCorrigido = <T extends Pick<Aluno, 'id' | 'status' | 'data_matricula' | 'mensalidades_pagas'>>(rows: T[]) => {
   const aCorrigir: { id: string; status: Aluno['status'] }[] = [];
   const linhas = rows.map(row => {
-    const nextStatus = deriveAlunoStatus(row.data_matricula, row.status);
+    const nextStatus = deriveAlunoStatus(row.data_matricula, row.status, row.mensalidades_pagas ?? 0);
     if (nextStatus !== row.status) aCorrigir.push({ id: row.id, status: nextStatus });
     return nextStatus !== row.status ? { ...row, status: nextStatus } : row;
   });

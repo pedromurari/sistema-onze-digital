@@ -2294,7 +2294,16 @@ interface VendaNominal {
   origem: string | null;
   data_venda: string | null;
   vendedor: string;
+  contrato_assinado: boolean | null;
+  contrato_enviado: boolean | null;
 }
+
+const ContratoBadge = ({ assinado, enviado }: { assinado: boolean | null; enviado: boolean | null }) => {
+  if (assinado === null || assinado === undefined) return <span className="text-muted-foreground">—</span>;
+  if (assinado) return <Badge className="text-[10px] border-0 bg-emerald-100 text-emerald-700">Assinado</Badge>;
+  if (enviado) return <Badge className="text-[10px] border-0 bg-amber-100 text-amber-700">Aguardando</Badge>;
+  return <Badge className="text-[10px] border-0 bg-gray-100 text-gray-600">Não enviado</Badge>;
+};
 
 const PRODUTO_LABEL_TC: Record<string, string> = {
   psicanalise: 'Psicanálise',
@@ -2363,6 +2372,7 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
                       <TableHead>Produto</TableHead>
                       <TableHead>Forma</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Contrato</TableHead>
                       <TableHead className="text-right">Valor</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -2376,6 +2386,7 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
                         <TableCell className="text-xs whitespace-nowrap">{v.produto ? (PRODUTO_LABEL_TC[v.produto] ?? v.produto) : '—'}</TableCell>
                         <TableCell className="text-xs whitespace-nowrap">{v.forma_pagamento ? (FORMA_LABEL_TC[v.forma_pagamento] ?? v.forma_pagamento) : '—'}</TableCell>
                         <TableCell className="text-xs whitespace-nowrap">{v.status ? (STATUS_LABEL_TC[v.status] ?? v.status) : '—'}</TableCell>
+                        <TableCell className="whitespace-nowrap"><ContratoBadge assinado={v.contrato_assinado} enviado={v.contrato_enviado} /></TableCell>
                         <TableCell className="text-right text-sm whitespace-nowrap">
                           {v.valor_total != null ? fmt(Number(v.valor_total)) : '—'}
                           {v.num_parcelas && v.num_parcelas > 1 && v.valor_parcela != null && (
