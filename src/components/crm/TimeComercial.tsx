@@ -476,6 +476,11 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
   // logado, ou admin "vendo como" alguém), então nunca fica órfão sem responsável.
   // Todo campo é opcional (pedido do Pedro 2026-09-28: "só o que ele tiver") --
   // só trava se nome E telefone estiverem os dois vazios, pra não criar lixo.
+  // Canal vem do filtro que a vendedora já tem selecionado (canalAtivo) -- ela
+  // escolhe o canal primeiro, o lead que ela adicionar entra nesse canal. Sem
+  // canal selecionado ("Todos os canais"), cai em "Direto" por padrão.
+  const canalParaNovoLead = canalAtivo !== 'todos' ? canalAtivo : 'Direto';
+
   const criarLeadManual = async () => {
     if ((!novoLeadNome.trim() && !novoLeadTelefone.trim()) || !viewAsName) return;
     setSalvandoNovoLead(true);
@@ -485,7 +490,7 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
       email: novoLeadEmail.trim() || null,
       nota_vendedor: novoLeadNota.trim() || null,
       origem: 'Time Comercial',
-      canal: 'Direto',
+      canal: canalParaNovoLead,
       produto: 'time_comercial',
       interesse_produto: 'Formação em Psicanálise Clínica Integrativa',
       status: novoLeadEtapa,
@@ -898,7 +903,16 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
           )}
         </div>
         {viewAsName && (
-          <Button type="button" size="sm" variant="outline" className="h-9 gap-1.5" onClick={() => setNovoLeadOpen(true)}>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-9 gap-1.5"
+            onClick={() => {
+              setNovoLeadEtapa(canalParaNovoLead === 'SDD' ? 'frio' : 'novo');
+              setNovoLeadOpen(true);
+            }}
+          >
             <UserPlus className="h-3.5 w-3.5" /> Novo lead
           </Button>
         )}
@@ -1134,11 +1148,11 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
-              <UserPlus className="h-4 w-4" /> Novo lead
+              <UserPlus className="h-4 w-4" /> Novo lead — {canalParaNovoLead}
             </DialogTitle>
           </DialogHeader>
           <p className="text-xs text-muted-foreground -mt-2">
-            Pra lead que chegou direto no seu WhatsApp (DM), sem passar pelo funil automático. Preenche só o que você tiver.
+            Pra lead que chegou direto no seu WhatsApp (DM), sem passar pelo funil automático. Entra no canal <strong>{canalParaNovoLead}</strong> — pra mudar, feche aqui e selecione outro canal no filtro antes de adicionar. Preenche só o que você tiver.
           </p>
           <div className="flex flex-col gap-3 py-1">
             <div className="space-y-1.5">
@@ -1158,7 +1172,7 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
               <Select value={novoLeadEtapa} onValueChange={(v) => setNovoLeadEtapa(v as TimeComercialStage)}>
                 <SelectTrigger id="novo-lead-etapa" className="h-9 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent className="bg-card border-border z-[100]">
-                  {FUNIL_STAGES.filter((s) => s.key !== 'followup').map((s) => (
+                  {stagesForCanal(canalParaNovoLead).filter((s) => s.key !== 'followup').map((s) => (
                     <SelectItem key={s.key} value={s.key} className="text-sm">
                       <div className="flex items-center gap-2"><div className={`w-2 h-2 rounded-full ${s.color}`} />{s.label}</div>
                     </SelectItem>
