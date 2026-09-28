@@ -25,7 +25,7 @@ import {
   MessageCircle, Target, Copy, ExternalLink, Users, TrendingUp, DollarSign, CalendarDays,
   Video, Repeat, GraduationCap, Link2, Wallet, CreditCard, Crown, Kanban, ClipboardList,
   Search, X, History, Filter, CornerDownRight, Eye, Zap, BookOpen, Layers, Trash2, RotateCcw,
-  Activity, Percent, BarChart3, Phone, Trophy, Timer, Info, StickyNote, AlarmClock, Lock,
+  Activity, Percent, BarChart3, Phone, Trophy, Timer, Info, StickyNote, AlarmClock, Lock, UserPlus,
 } from 'lucide-react';
 
 // -----------------------------------------------------------------------
@@ -191,6 +191,16 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
   const [novaCampanhaCondicoes, setNovaCampanhaCondicoes] = useState('');
   const [novaCampanhaTipo, setNovaCampanhaTipo] = useState<'novo' | 'retorno'>('novo');
   const [salvandoCampanha, setSalvandoCampanha] = useState(false);
+  // Lead que chega direto no WhatsApp do vendedor (DM), sem passar pelo funil
+  // automático -- pedido do Pedro 2026-09-28, pra Ellen conseguir subir esses
+  // leads na mão em vez de ficarem de fora do pipeline.
+  const [novoLeadOpen, setNovoLeadOpen] = useState(false);
+  const [novoLeadNome, setNovoLeadNome] = useState('');
+  const [novoLeadTelefone, setNovoLeadTelefone] = useState('');
+  const [novoLeadEmail, setNovoLeadEmail] = useState('');
+  const [novoLeadNota, setNovoLeadNota] = useState('');
+  const [novoLeadEtapa, setNovoLeadEtapa] = useState<TimeComercialStage>('novo');
+  const [salvandoNovoLead, setSalvandoNovoLead] = useState(false);
 
   // Campanha de retorno = base antiga reimportada (Base Fria, Grupo Oferta Não
   // Matriculou, NPA Não Matriculou etc.) — conta pro "Total de Leads" só quando
@@ -458,6 +468,43 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
     setNovaCampanhaTipo('novo');
     setNovaCampanhaOpen(false);
     fetchCampanhas();
+  };
+
+  // Sobe um lead que chegou direto no WhatsApp (DM) do vendedor, sem passar pelo
+  // funil automático. Cai na mesma tabela que os demais leads do Time Comercial,
+  // já atribuído a quem cadastrou -- só aparece com viewAsName setado (vendedor
+  // logado, ou admin "vendo como" alguém), então nunca fica órfão sem responsável.
+  // Todo campo é opcional (pedido do Pedro 2026-09-28: "só o que ele tiver") --
+  // só trava se nome E telefone estiverem os dois vazios, pra não criar lixo.
+  const criarLeadManual = async () => {
+    if ((!novoLeadNome.trim() && !novoLeadTelefone.trim()) || !viewAsName) return;
+    setSalvandoNovoLead(true);
+    const { error } = await (supabase as any).from('leads').insert({
+      nome: novoLeadNome.trim() || 'Lead sem nome',
+      telefone: novoLeadTelefone.replace(/\D/g, '') || null,
+      email: novoLeadEmail.trim() || null,
+      nota_vendedor: novoLeadNota.trim() || null,
+      origem: 'Time Comercial',
+      canal: 'Direto',
+      produto: 'time_comercial',
+      interesse_produto: 'Formação em Psicanálise Clínica Integrativa',
+      status: novoLeadEtapa,
+      vendedor: viewAsName,
+    });
+    setSalvandoNovoLead(false);
+    if (error) {
+      toast({ variant: 'destructive', title: 'Não foi possível adicionar o lead', description: error.message });
+      return;
+    }
+    toast({ title: 'Lead adicionado!', description: `${novoLeadNome.trim() || 'Lead'} já está no seu pipeline.` });
+    setNovoLeadNome('');
+    setNovoLeadTelefone('');
+    setNovoLeadEmail('');
+    setNovoLeadNota('');
+    setNovoLeadEtapa('novo');
+    setNovoLeadOpen(false);
+    fetchLeads();
+    fetchContagens();
   };
 
   const handleStageChange = async (lead: LeadComCanal, newStage: TimeComercialStage) => {
@@ -830,23 +877,30 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
       )}
 
       <SectionBar title="Leads" subtitle="A primeira coluna reúne todos os leads; as demais mostram apenas quem está naquela fase." />
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-        <Input
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-          placeholder="Buscar lead por nome ou telefone..."
-          className="pl-9 h-9 text-sm"
-        />
-        {busca && (
-          <button
-            type="button"
-            onClick={() => setBusca('')}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            title="Limpar busca"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative max-w-sm flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <Input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar lead por nome ou telefone..."
+            className="pl-9 h-9 text-sm"
+          />
+          {busca && (
+            <button
+              type="button"
+              onClick={() => setBusca('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              title="Limpar busca"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+        {viewAsName && (
+          <Button type="button" size="sm" variant="outline" className="h-9 gap-1.5" onClick={() => setNovoLeadOpen(true)}>
+            <UserPlus className="h-3.5 w-3.5" /> Novo lead
+          </Button>
         )}
       </div>
       {totalCarregavel > leads.length && (
@@ -1075,6 +1129,56 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
           );
         })}
       </div>
+
+      <Dialog open={novoLeadOpen} onOpenChange={setNovoLeadOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <UserPlus className="h-4 w-4" /> Novo lead
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground -mt-2">
+            Pra lead que chegou direto no seu WhatsApp (DM), sem passar pelo funil automático. Preenche só o que você tiver.
+          </p>
+          <div className="flex flex-col gap-3 py-1">
+            <div className="space-y-1.5">
+              <Label htmlFor="novo-lead-nome">Nome</Label>
+              <Input id="novo-lead-nome" value={novoLeadNome} onChange={(e) => setNovoLeadNome(e.target.value)} placeholder="Nome do lead (opcional)" disabled={salvandoNovoLead} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="novo-lead-telefone">WhatsApp</Label>
+              <Input id="novo-lead-telefone" value={novoLeadTelefone} onChange={(e) => setNovoLeadTelefone(e.target.value)} placeholder="(00) 00000-0000 (opcional)" disabled={salvandoNovoLead} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="novo-lead-email">E-mail</Label>
+              <Input id="novo-lead-email" type="email" value={novoLeadEmail} onChange={(e) => setNovoLeadEmail(e.target.value)} placeholder="email@exemplo.com (opcional)" disabled={salvandoNovoLead} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="novo-lead-etapa">Etapa</Label>
+              <Select value={novoLeadEtapa} onValueChange={(v) => setNovoLeadEtapa(v as TimeComercialStage)}>
+                <SelectTrigger id="novo-lead-etapa" className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent className="bg-card border-border z-[100]">
+                  {FUNIL_STAGES.filter((s) => s.key !== 'followup').map((s) => (
+                    <SelectItem key={s.key} value={s.key} className="text-sm">
+                      <div className="flex items-center gap-2"><div className={`w-2 h-2 rounded-full ${s.color}`} />{s.label}</div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="novo-lead-nota">Anotação</Label>
+              <Textarea id="novo-lead-nota" value={novoLeadNota} onChange={(e) => setNovoLeadNota(e.target.value)} placeholder="Algum contexto sobre esse lead (opcional)" disabled={salvandoNovoLead} rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNovoLeadOpen(false)} disabled={salvandoNovoLead}>Cancelar</Button>
+            <Button onClick={criarLeadManual} disabled={salvandoNovoLead || (!novoLeadNome.trim() && !novoLeadTelefone.trim())}>
+              {salvandoNovoLead ? 'Salvando...' : 'Adicionar lead'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={novaCampanhaOpen} onOpenChange={setNovaCampanhaOpen}>
         <DialogContent className="max-w-sm">
