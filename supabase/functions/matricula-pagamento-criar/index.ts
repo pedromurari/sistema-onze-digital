@@ -597,8 +597,12 @@ serve(async (req) => {
       if (!transactionAmount || transactionAmount <= 0) {
         return json({ ok: false, erro: 'Valor do pagamento ausente ou inválido.' }, 400);
       }
+      // Limite 18 (2026-09-29): antes travava em 12, rejeitando com "Quantidade de
+      // parcelas inválida" qualquer plano com mais parcelas no cartão -- achado real
+      // ao testar o plano "1000x15" (15x fixas), que teria falhado no pagamento de
+      // verdade. 18 é o teto que a própria MP aceita pra cartão de crédito no Brasil.
       const installments = Number(body?.installments);
-      if (!installments || installments < 1 || installments > 12) {
+      if (!installments || installments < 1 || installments > 18) {
         return json({ ok: false, erro: 'Quantidade de parcelas inválida.' }, 400);
       }
 

@@ -898,6 +898,11 @@ export default function MatriculaTimeComercial({ preMatricula = false }: { preMa
         p_valor_parcela: plano.parcela,
         p_plano_slug: planoDoSlug(slug ?? ''),
         p_data_primeiro_pagamento: preMatricula ? form.data_primeira_cobranca || null : null,
+        // Sem isso, a RPC grava total_mensalidades=12 pra QUALQUER forma_pagamento
+        // 'cartao', não importa o plano -- achado real com o plano "1000x15" (15x
+        // fixas): o aluno era gravado com 12, e o contrato (que lê
+        // alunos.total_mensalidades) ia contradizer o que ela realmente pagou.
+        p_num_parcelas: formaPagamento === 'cartao' ? plano.cartaoMaxParcelas : null,
       });
 
       if (error) {
