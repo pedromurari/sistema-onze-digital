@@ -131,7 +131,7 @@ serve(async (req) => {
 
     const { data: aluno } = await sb
       .from('alunos')
-      .select('id, nome, whatsapp, contrato_assinado')
+      .select('id, nome, email, whatsapp, contrato_assinado')
       .eq('autentique_documento_id', documentId)
       .maybeSingle();
 
@@ -144,7 +144,48 @@ serve(async (req) => {
 
     const isCompletionEvent = eventType === 'document.finished' || eventType === 'signature.accepted';
 
+    // O contrato agora também é assinado pela Contratada (automático, na criação)
+    // e, quando houver, pela testemunha. "Contrato assinado" só vale quando quem
+    // assinou foi o ALUNO -- então consulta a Autentique e olha a assinatura dele.
+    let assinaturaAluno: string | null = null; // ISO da assinatura do aluno, se já assinou
+    let alunoAssinou = false;
     if (isCompletionEvent) {
+      const token = Deno.env.get('AUTENTIQUE_TOKEN') ?? '';
+      const emailAluno = String(aluno.email ?? '').trim().toLowerCase();
+      try {
+        if (!token) throw new Error('AUTENTIQUE_TOKEN ausente');
+        const r = await fetch('https://api.autentique.com.br/v2/graphql', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: `query { document(id: "${documentId}") { signatures { email action { name } signed { created_at } } } }`,
+          }),
+        });
+        const j = await r.json();
+        const sigs = j?.data?.document?.signatures;
+        if (!Array.isArray(sigs)) throw new Error('resposta sem signatures: ' + JSON.stringify(j?.errors ?? j));
+        const dele = sigs.find((x: any) =>
+          x?.action?.name === 'SIGN' && String(x?.email ?? '').trim().toLowerCase() === emailAluno);
+        if (dele?.signed?.created_at) {
+          alunoAssinou = true;
+          assinaturaAluno = dele.signed.created_at;
+        }
+      } catch (e) {
+        // Sem conseguir confirmar na API: só aceita o evento se ele mesmo indicar
+        // o e-mail do aluno; documento finalizado significa que todos assinaram.
+        console.error('autentique-webhook: falha ao consultar assinaturas', e);
+        const emailEvento = String((eventData as any)?.email ?? '').trim().toLowerCase();
+        if (eventType === 'document.finished' || (emailEvento && emailEvento === emailAluno)) {
+          alunoAssinou = true;
+          assinaturaAluno = signedAt;
+        }
+      }
+      if (!alunoAssinou) {
+        console.log(`Evento ${eventType} sem assinatura do aluno (assinou Contratada/testemunha) — aluno=${aluno.id}, não marca contrato assinado`);
+      }
+    }
+
+    if (isCompletionEvent && alunoAssinou) {
       // Idempotência: só processa se ainda não estava assinado
       if (aluno.contrato_assinado) {
         console.log(`Contrato já assinado: aluno=${aluno.id} — ignorando duplicata`);
@@ -157,7 +198,7 @@ serve(async (req) => {
         contrato_assinado:    true,
         // Data real informada pela Autentique; se algum evento não trouxer o
         // campo, usa o instante de recebimento do webhook como último recurso
-        contrato_assinado_em: signedAt ?? new Date().toISOString(),
+        contrato_assinado_em: assinaturaAluno ?? signedAt ?? new Date().toISOString(),
       }).eq('id', aluno.id);
 
       console.log(`Contrato assinado: aluno=${aluno.id} (${aluno.nome})`);

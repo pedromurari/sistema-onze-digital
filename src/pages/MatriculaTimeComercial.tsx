@@ -63,9 +63,10 @@ const VENDEDORES: Record<string, string> = {
   '997': 'Equipe Instituto Despertamente',
   '15x50': 'Equipe Instituto Despertamente',
   curitiba: 'Equipe Instituto Despertamente',
+  '1000x15': 'Equipe Instituto Despertamente',
 };
 
-const SEM_VENDEDOR_ATRIBUIDO = new Set(['direto', 'promo', '997', '15x50', 'curitiba']);
+const SEM_VENDEDOR_ATRIBUIDO = new Set(['direto', 'promo', '997', '15x50', 'curitiba', '1000x15']);
 
 // NPA IDM pelo Brasil — Curitiba (2026-09-19): matrícula presencial da Formação em
 // Psicanálise, mesma oferta/preço do plano "padrao" (por isso não entra em PLANOS,
@@ -96,6 +97,7 @@ const VENDEDOR_WHATSAPP: Record<string, string> = {
   '997': '5511976736081',
   '15x50': '5511976736081',
   curitiba: '5511976736081',
+  '1000x15': '5511976736081',
 };
 
 // ─── Planos de preço por slug ───────────────────────────────────────────────
@@ -124,11 +126,20 @@ const VENDEDOR_WHATSAPP: Record<string, string> = {
 // FORMAS_PERMITIDAS do /997. avista/cartaoBase não são usados de verdade
 // (formas ocultas por FORMAS_PERMITIDAS abaixo), mantidos só por
 // consistência de tipo.
-const PLANOS: Record<string, { avista: number; parcela: number; cartaoBase: number; cartaoMaxParcelas: number }> = {
+// "1000x15" (2026-09-29): venda pontual pedida pelo dono -- cartão em 15x
+// FIXAS de R$83,89 (não é um teto "até 15x", é a única opção), sem PIX,
+// boleto, recorrente ou bolsa (FORMAS_PERMITIDAS abaixo). cartaoBase=1000
+// achado do mesmo jeito que "padrao"/"promo": simulador de taxas do próprio
+// Mercado Pago (Cobrar > Link de pagamento), conferido pelo dono -- preço-base
+// R$1.000,00 -> 15x de R$83,89 (R$1.258,30 no cartão do aluno, R$950,20
+// líquido). cartaoMinParcelas = cartaoMaxParcelas trava o Brick em 15x só,
+// sem opção de escolher menos parcelas (ver uso de cartaoMinParcelas abaixo).
+const PLANOS: Record<string, { avista: number; parcela: number; cartaoBase: number; cartaoMaxParcelas: number; cartaoMinParcelas?: number }> = {
   padrao: { avista: 1500, parcela: 150, cartaoBase: 1474.10, cartaoMaxParcelas: 12 },
   promo: { avista: 997, parcela: 110, cartaoBase: 1080, cartaoMaxParcelas: 12 },
   '997': { avista: 997, parcela: 997, cartaoBase: 997, cartaoMaxParcelas: 1 },
   '15x50': { avista: 750, parcela: 50, cartaoBase: 750, cartaoMaxParcelas: 12 },
+  '1000x15': { avista: 1000, parcela: 83.89, cartaoBase: 1000, cartaoMaxParcelas: 15, cartaoMinParcelas: 15 },
 };
 
 const planoDoSlug = (slug: string): keyof typeof PLANOS => {
@@ -143,6 +154,7 @@ const planoDoSlug = (slug: string): keyof typeof PLANOS => {
 const FORMAS_PERMITIDAS: Record<string, FormaPagamentoPermitida[] | undefined> = {
   '997': ['cartao_parcelado'],
   '15x50': ['boleto'],
+  '1000x15': ['cartao_parcelado'],
 };
 
 // Forma aceita pela RPC matricula_time_comercial_criar. Desde 2026-09-03,
@@ -266,7 +278,7 @@ function PagamentoStep({
   cpf: string;
   metodoInicial: MetodoCobravel;
   vendedorWhatsapp: string;
-  plano: { avista: number; parcela: number; cartaoBase: number; cartaoMaxParcelas: number };
+  plano: { avista: number; parcela: number; cartaoBase: number; cartaoMaxParcelas: number; cartaoMinParcelas?: number };
   formasPermitidas?: FormaPagamentoPermitida[];
 }) {
   const [metodo, setMetodo] = useState<MetodoCobravel>(metodoInicial);
@@ -422,9 +434,12 @@ function PagamentoStep({
             // parcelamento com juros. Planos com cartaoMaxParcelas=1 (ex:
             // "997") travam em pagamento unico -- o menu de parcelas so
             // aparece quando existe mais de uma opcao (por isso ficava
-            // invisivel antes, com min=max=12 fixo).
+            // invisivel antes, com min=max=12 fixo). cartaoMinParcelas
+            // (2026-09-29, plano "1000x15"): quando definido e igual ao
+            // maxInstallments, trava o Brick numa quantidade FIXA de
+            // parcelas -- o menu nem aparece, só existe a opção anunciada.
             maxInstallments: metodo === 'cartao_parcelado' ? plano.cartaoMaxParcelas : 1,
-            minInstallments: 1,
+            minInstallments: metodo === 'cartao_parcelado' ? (plano.cartaoMinParcelas ?? 1) : 1,
           },
         },
         callbacks: {
@@ -528,10 +543,16 @@ function PagamentoStep({
     .filter(m => !formasPermitidas || formasPermitidas.includes(m));
 
   // Rótulo do cartão parcelado depende do plano -- "997" trava em 1x, não
-  // faz sentido anunciar "1x a 12x" nesse caso.
+  // faz sentido anunciar "1x a 12x" nesse caso; "1000x15" trava em 15x fixas
+  // (cartaoMinParcelas === cartaoMaxParcelas), idem.
+  const parcelasFixas = plano.cartaoMinParcelas != null && plano.cartaoMinParcelas === plano.cartaoMaxParcelas;
   const labelMetodo: Record<MetodoCobravel, string> = {
     ...LABEL_METODO,
-    cartao_parcelado: plano.cartaoMaxParcelas === 1 ? 'Cartão de crédito (à vista)' : LABEL_METODO.cartao_parcelado,
+    cartao_parcelado: plano.cartaoMaxParcelas === 1
+      ? 'Cartão de crédito (à vista)'
+      : parcelasFixas
+        ? `Cartão de crédito (${plano.cartaoMaxParcelas}x fixas)`
+        : LABEL_METODO.cartao_parcelado,
   };
 
   return (
@@ -645,7 +666,11 @@ function PagamentoStep({
           <div className="pix-amount-badge" style={{ marginBottom: 'var(--space-4)' }}>
             <span className="pix-amount-label">
               {metodo === 'cartao_parcelado'
-                ? (plano.cartaoMaxParcelas === 1 ? 'Valor no cartão (à vista)' : `Valor no cartão (parcele de 1x a ${plano.cartaoMaxParcelas}x abaixo)`)
+                ? (plano.cartaoMaxParcelas === 1
+                    ? 'Valor no cartão (à vista)'
+                    : parcelasFixas
+                      ? `Valor no cartão (${plano.cartaoMaxParcelas}x fixas)`
+                      : `Valor no cartão (parcele de 1x a ${plano.cartaoMaxParcelas}x abaixo)`)
                 : 'Cobrança mensal (assinatura, 15x)'}
             </span>
             <span className="pix-amount-value">
@@ -835,7 +860,11 @@ export default function MatriculaTimeComercial({ preMatricula = false }: { preMa
   const pagamentoOk =
     formaPagamento !== '' &&
     (formaPagamento !== 'boleto' ||
-      (diaVencimentoFinal !== null && diaVencimentoFinal >= 1 && diaVencimentoFinal <= 28)) &&
+      // Os botões 10/20/30 são sempre válidos (dia 30 em fevereiro cai no último dia do
+      // mês, ver dateComDiaTravado em matricula-pagamento-criar). O limite de 28 vale só
+      // pro campo "Outro dia". Antes exigia <= 28 pra tudo, e o botão 30 nunca liberava.
+      (diaVencimentoFinal !== null && diaVencimentoFinal >= 1 &&
+        (diaVencimentoFinal <= 28 || ['10', '20', '30'].includes(form.vencimentoRadio)))) &&
     (formaPagamento !== 'bolsa' || form.codigo_bolsa.trim().length > 0) &&
     dataPrimeiraCobrancaOk;
 

@@ -52,7 +52,7 @@ export function StepPayment({
   podeEnviar: boolean;
   erro: string;
   onVoltar: () => void;
-  plano: { avista: number; parcela: number; cartaoBase: number; cartaoMaxParcelas: number };
+  plano: { avista: number; parcela: number; cartaoBase: number; cartaoMaxParcelas: number; cartaoMinParcelas?: number };
   formasPermitidas?: FormaPagamentoPermitida[];
   // Pré-matrícula (rota /pre-matricula/:vendedor): só boleto, e a 1ª
   // cobrança (entrada) não sai na hora -- fica programada pra uma data
@@ -67,6 +67,9 @@ export function StepPayment({
 }) {
   const mostra = (forma: FormaPagamentoPermitida) => !formasPermitidas || formasPermitidas.includes(forma);
   const somenteCartaoAVista = plano.cartaoMaxParcelas === 1;
+  // "1000x15" (2026-09-29): parcelas fixas, não é um teto "até Nx" -- o
+  // texto do grupo precisa dizer "Nx fixas", não "de 1x a Nx".
+  const parcelasCartaoFixas = plano.cartaoMinParcelas != null && plano.cartaoMinParcelas === plano.cartaoMaxParcelas && plano.cartaoMaxParcelas > 1;
   const [gateMsg, setGateMsg] = useState('');
 
   // O botão de confirmar não avisa por que está desabilitado -- some sem
@@ -132,18 +135,20 @@ export function StepPayment({
                 <div className="venc-grupo-header">
                   <span className="venc-grupo-icon">💳</span>
                   <div>
-                    <div className="venc-grupo-title">{somenteCartaoAVista ? 'Cartão de crédito' : 'Cartão parcelado'}</div>
+                    <div className="venc-grupo-title">{somenteCartaoAVista ? 'Cartão de crédito' : parcelasCartaoFixas ? `Cartão em ${plano.cartaoMaxParcelas}x` : 'Cartão parcelado'}</div>
                     <div className="venc-grupo-desc">
                       {somenteCartaoAVista
                         ? `Pagamento único de R$ ${fmtBRL(plano.cartaoBase)} no cartão de crédito`
-                        : `De 1x a 12x no cartão · R$ ${fmtBRL(plano.cartaoBase)}, ou parcelado com juros`}
+                        : parcelasCartaoFixas
+                          ? `${plano.cartaoMaxParcelas}x fixas de R$ ${fmtBRL(plano.parcela)} no cartão de crédito`
+                          : `De 1x a 12x no cartão · R$ ${fmtBRL(plano.cartaoBase)}, ou parcelado com juros`}
                     </div>
                   </div>
                 </div>
                 <div className="venc-grupo-body">
                   <label className={`venc-option-single${vencimentoRadio === 'cartao_parcelado' ? ' selected' : ''}`}>
                     <input type="radio" name="dia_vencimento" value="cartao_parcelado" checked={vencimentoRadio === 'cartao_parcelado'} onChange={() => onSelecionar('cartao_parcelado')} />
-                    <span className="venc-option-text">{somenteCartaoAVista ? 'Vou pagar no cartão de crédito' : 'Vou pagar no cartão, à vista ou parcelado'}</span>
+                    <span className="venc-option-text">{somenteCartaoAVista ? 'Vou pagar no cartão de crédito' : parcelasCartaoFixas ? `Vou pagar no cartão, em ${plano.cartaoMaxParcelas}x` : 'Vou pagar no cartão, à vista ou parcelado'}</span>
                   </label>
                 </div>
               </div>

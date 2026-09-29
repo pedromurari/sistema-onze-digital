@@ -18,6 +18,20 @@ const corsHeaders = {
 
 const AUTENTIQUE_URL = 'https://api.autentique.com.br/v2/graphql';
 
+// Turmas cujo contrato e o da formacao HIBRIDA presencial (encontros em Curitiba +
+// aulas on-line). Alunos dessas turmas recebem o texto hibrido em vez do online.
+// Definido em 2026-09-23 com o dono do produto (arte "Formacao Hibrida Presencial
+// - Psicanalise Clinica Integrativa - Curitiba"). Nova turma hibrida = incluir o id aqui.
+// Quem assina pelo lado da empresa no bloco de assinaturas do contrato.
+// Contratada = titular do CNPJ; testemunha = Rodrygo (definido em 2026-09-23).
+const REPRESENTANTE_NOME = 'Pedro Henrique Murari Ferreira';
+const REPRESENTANTE_ABREV = 'Pedro H. Murari Ferreira'; // linha de assinatura (curta, cabe em uma linha)
+const TESTEMUNHA_NOME = 'Rodrigo Ferreira Silva'; // nome civil; conferir nome completo com o Rodrygo
+
+const HIBRIDO_TURMA_IDS = new Set<string>([
+  '25fd6085-c919-4dcc-8511-27918fae18af', // Psicanálise Presencial — Polo Curitiba
+]);
+
 function fmt(v: number): string {
   return Number(v).toFixed(2).replace('.', ',');
 }
@@ -51,6 +65,8 @@ function buildContratoHtml(d: Record<string, unknown>): string {
   // 2026-08-26: antes disso, tipo_pagamento==='bolsa' caía incorretamente em
   // isVista (contrato de R$997 à vista) em vez de isBolsa.
   const formaPag = String(d.forma_pagamento || '').toLowerCase();
+  const hibrido = String(d.modalidade || '') === 'hibrido_curitiba';
+  const cursoNome = hibrido ? 'FORMAÇÃO HÍBRIDA PRESENCIAL EM PSICANÁLISE CLÍNICA INTEGRATIVA' : 'FORMAÇÃO EM PSICANÁLISE';
 
   const valorParcelaCustom = d.valor_parcela ? parseFloat(String(d.valor_parcela)) : null;
   const numParcelasCustom  = d.num_parcelas  ? parseInt(String(d.num_parcelas))    : null;
@@ -66,7 +82,15 @@ function buildContratoHtml(d: Record<string, unknown>): string {
   // numParcelas (12 vs 15, via aluno.total_mensalidades) já muda sozinho.
   // Bug real: antes só reconhecia 'cartao' e um aluno recorrente caía na
   // cláusula de boleto por engano.
-  const isCartao = formaPag === 'cartao' || formaPag === 'cartao_recorrente' || diaVenc === 'cartao';
+  const isRecorrente = formaPag === 'cartao_recorrente';
+  const isCartao = formaPag === 'cartao' || isRecorrente || diaVenc === 'cartao';
+  const planoSlug = String(d.plano_slug || '').toLowerCase();
+  // "1000x15" (2026-09-29): plano cujo ÚNICO condição comercial oferecida é
+  // cartão em 15x fixas -- não existiu escolha entre à vista/boleto/recorrente,
+  // então a cláusula 4 não pode listar as 4 alíneas de sempre (contradiria o
+  // que foi de fato ofertado). Ver PLANOS/FORMAS_PERMITIDAS em
+  // src/pages/MatriculaTimeComercial.tsx.
+  const isCartaoFixoUnico = planoSlug === '1000x15';
 
   // Pré-matrícula (rota /pre-matricula/:vendedor): a 1ª parcela (entrada) não
   // é cobrada na hora -- fica programada pra alunos.data_matricula, que nesse
@@ -95,7 +119,7 @@ function buildContratoHtml(d: Record<string, unknown>): string {
     valorParcela  = valorParcelaCustom ?? 997.00;
     valorTotal    = valorParcela;
     formaResumo   = 'Pagamento à vista via PIX';
-    planoSelecionado = `à vista: R$ ${fmt(valorTotal)} (alínea “a”)`;
+    planoSelecionado = `à vista: R$ ${fmtMoeda(valorTotal)} (alínea “a”)`;
     diaVencTexto  = 'N/A';
   } else if (isBolsa) {
     numParcelas   = 0; valorParcela = 0; valorTotal = 0;
@@ -103,11 +127,17 @@ function buildContratoHtml(d: Record<string, unknown>): string {
     planoSelecionado = 'Bolsa de Estudos integral concedida pela CONTRATADA';
     diaVencTexto  = 'N/A';
   } else if (isCartao) {
-    numParcelas   = numParcelasCustom  ?? 12;
+    numParcelas   = numParcelasCustom  ?? (isRecorrente ? 15 : 12);
     valorParcela  = valorParcelaCustom ?? 109.40;
     valorTotal    = numParcelas * valorParcela;
-    formaResumo   = `Cartão de crédito ${numParcelas}x de R$ ${fmt(valorParcela)}`;
-    planoSelecionado = `cartão de crédito em ${numParcelas}x de R$ ${fmt(valorParcela)} (alínea “b”)`;
+    formaResumo   = isRecorrente
+      ? `Cartão de crédito recorrente: ${numParcelas} cobranças mensais de R$ ${fmtMoeda(valorParcela)}`
+      : `Cartão de crédito ${numParcelas}x de R$ ${fmtMoeda(valorParcela)}`;
+    planoSelecionado = isCartaoFixoUnico
+      ? `cartão de crédito em ${numParcelas}x fixas de R$ ${fmtMoeda(valorParcela)}`
+      : isRecorrente
+        ? `cartão de crédito recorrente, com ${numParcelas} cobranças mensais de R$ ${fmtMoeda(valorParcela)} (alínea “d”)`
+        : `cartão de crédito em ${numParcelas}x de R$ ${fmtMoeda(valorParcela)} (alínea “b”)`;
     diaVencTexto  = 'N/A';
   } else {
     numParcelas   = numParcelasCustom  ?? 15;
@@ -123,7 +153,9 @@ function buildContratoHtml(d: Record<string, unknown>): string {
     diaVencTexto  = diaNum;
   }
 
-  const hoje = new Date();
+  // Data/hora do contrato no fuso de Brasilia (o servidor roda em UTC: depois
+  // das 21h de Brasilia o contrato saia com a data do dia seguinte).
+  const hoje = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
   const meses = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
   const dataFmt     = hoje.toLocaleDateString('pt-BR');
   const horaFmt     = hoje.toLocaleTimeString('pt-BR');
@@ -152,7 +184,6 @@ function buildContratoHtml(d: Record<string, unknown>): string {
     '997': { avista: 997, parcela: 110 },
     '15x50': { avista: 750, parcela: 50 },
   };
-  const planoSlug = String(d.plano_slug || '').toLowerCase();
   const planoPorSlug = PLANOS_CONTRATO[planoSlug];
   const isPromoPlano = valorParcelaCustom === 997 || valorParcelaCustom === 110;
   const menuValorAvista = planoPorSlug ? planoPorSlug.avista : (isPromoPlano ? 997 : 1500);
@@ -173,23 +204,54 @@ function buildContratoHtml(d: Record<string, unknown>): string {
 <p class="c"><strong>4.1.</strong> O CONTRATANTE foi contemplado com <strong>Bolsa de Estudos integral</strong> concedida pela CONTRATADA, eximindo-o do pagamento de qualquer valor pela prestação dos serviços educacionais descritos neste contrato.</p>
 <p class="c"><strong>4.2.</strong> A Bolsa de Estudos é intransferível, pessoal e vinculada exclusivamente ao CONTRATANTE, não podendo ser cedida a terceiros.</p>
 <p class="c"><strong>4.3.</strong> O não cumprimento das obrigações acadêmicas ou a desistência imotivada poderão implicar na revogação da bolsa a critério da CONTRATADA.</p>
+` : isCartaoFixoUnico ? `
+<p class="c"><strong>4.1.</strong> O CONTRATANTE declara ter escolhido, no ato da matrícula, a seguinte condição comercial, única oferecida nesta modalidade de matrícula: cartão de crédito, em ${numParcelas} (${numParcelas === 15 ? 'quinze' : numParcelas}) parcelas fixas de R$ ${fmtMoeda(valorParcela)}, totalizando R$ ${fmtMoeda(valorTotal)}, conforme disponibilidade e aprovação da operadora/meio de pagamento.</p>
+<p class="c"><strong>4.2.</strong> O plano efetivamente contratado pelo CONTRATANTE é o <strong>${planoSelecionado}</strong>, conforme registrado no quadro-resumo acima.</p>
 ` : `
 <p class="c"><strong>4.1.</strong> O CONTRATANTE declara ter escolhido, no ato da matrícula, uma das seguintes condições comerciais:</p>
 <p class="c" style="margin-left:16px;">a) pagamento à vista: R$ ${fmtMoeda(menuValorAvista)}${extensoAvista};</p>
 <p class="c" style="margin-left:16px;">b) cartão de crédito: em até 12 (doze) parcelas de R$ ${fmtMoeda(menuValorParcela)}${extensoParcela}, totalizando R$ ${fmtMoeda(menuValorCartaoTotal)}${extensoCartaoTotal}, conforme disponibilidade e aprovação da operadora/meio de pagamento;</p>
-<p class="c" style="margin-left:16px;">c) plano por boleto: 1 (uma) parcela inicial, seguida de 14 (quatorze) parcelas mensais de R$ ${fmtMoeda(menuValorParcela)}${extensoParcela}, totalizando 15 (quinze) pagamentos de R$ ${fmtMoeda(menuValorBoletoTotal)}${extensoBoletoTotal}.</p>
-<p class="c"><strong>4.2.</strong> No plano por boleto, a quantidade de pagamentos constitui a condição comercial contratada e não deve ser confundida com a quantidade de meses da formação, que permanece com duração prevista de 14 meses.</p>
+<p class="c" style="margin-left:16px;">c) plano por boleto: 1 (uma) parcela inicial, seguida de 14 (quatorze) parcelas mensais de R$ ${fmtMoeda(menuValorParcela)}${extensoParcela}, totalizando 15 (quinze) pagamentos de R$ ${fmtMoeda(menuValorBoletoTotal)}${extensoBoletoTotal};</p>
+<p class="c" style="margin-left:16px;">d) cartão de crédito recorrente: 15 (quinze) cobranças mensais de R$ ${fmtMoeda(menuValorParcela)}${extensoParcela}, lançadas automaticamente no cartão do CONTRATANTE a cada mês, totalizando R$ ${fmtMoeda(menuValorBoletoTotal)}${extensoBoletoTotal}, conforme disponibilidade e aprovação da operadora/meio de pagamento.</p>
+<p class="c"><strong>4.2.</strong> Nos planos por boleto e por cartão recorrente, a quantidade de pagamentos constitui a condição comercial contratada e não deve ser confundida com a quantidade de meses da formação, que permanece com duração prevista de 14 meses.</p>
 <p class="c"><strong>4.3.</strong> O plano efetivamente escolhido pelo CONTRATANTE é o <strong>${planoSelecionado}</strong>, conforme registrado no quadro-resumo acima.</p>
 `;
 
   // Cláusula 6 — cancelamento dinâmica
-  const clausula6Extra = isBolsa ? '' : (isVista || isCartao) ? `
-<p class="c"><strong>6.4.</strong> Nas contratações pagas à vista ou por cartão de crédito, após o encerramento do prazo de 7 (sete) dias previsto na Cláusula 6.1, a desistência imotivada por iniciativa do CONTRATANTE não dará direito à devolução ou estorno dos valores pagos. Esta disposição não afasta eventual restituição que seja obrigatória por lei em razão de descumprimento contratual imputável à CONTRATADA ou de outra hipótese legal inderrogável.</p>
+  const clausula6Extra = isBolsa ? '' : (isVista || (isCartao && !isRecorrente)) ? `
+<p class="c"><strong>6.3.</strong> Nas contratações pagas à vista ou por cartão de crédito, após o encerramento do prazo de 7 (sete) dias previsto na Cláusula 6.1, a desistência imotivada por iniciativa do CONTRATANTE não dará direito à devolução ou estorno dos valores pagos. Esta disposição não afasta eventual restituição que seja obrigatória por lei em razão de descumprimento contratual imputável à CONTRATADA ou de outra hipótese legal inderrogável.</p>
 ` : `
-<p class="c"><strong>6.3.</strong> Após o prazo legal de arrependimento, em caso de desistência imotivada pelo CONTRATANTE no plano por boleto, serão devidos:</p>
+<p class="c"><strong>6.3.</strong> Após o prazo legal de arrependimento, em caso de desistência imotivada pelo CONTRATANTE no plano ${isRecorrente ? 'por cartão de crédito recorrente' : 'por boleto'}, serão devidos:</p>
 <p class="c" style="margin-left:16px;">I – os valores vencidos e não pagos até a formalização do cancelamento; e</p>
-<p class="c" style="margin-left:16px;">II – multa rescisória equivalente a 1 (uma) parcela do plano por boleto, atualmente no valor de R$ ${fmt(valorParcela)}.</p>
-<p class="c">Após a efetivação do cancelamento, as parcelas vincendas do plano por boleto deixarão de ser cobradas, ressalvadas obrigações já constituídas.</p>
+<p class="c" style="margin-left:16px;">II – multa rescisória equivalente a 1 (uma) parcela do plano ${isRecorrente ? 'recorrente' : 'por boleto'}, atualmente no valor de R$ ${fmt(valorParcela)}.</p>
+<p class="c">Após a efetivação do cancelamento, as parcelas vincendas do plano ${isRecorrente ? 'recorrente' : 'por boleto'} deixarão de ser cobradas, ressalvadas obrigações já constituídas.</p>
+`;
+
+  const clausula1 = hibrido ? `<div class="clausula-titulo">Cláusula 1 – Do Objeto</div><hr class="div">
+<p class="c"><strong>1.1.</strong> O presente contrato tem por objeto a prestação de serviços educacionais referentes à <strong>Formação Híbrida Presencial em Psicanálise Clínica Integrativa – Polo Curitiba/PR</strong>, com duração prevista de 14 (quatorze) meses e carga horária total de 600 (seiscentas) horas, conforme programa pedagógico, calendário e orientações disponibilizados pela CONTRATADA.</p>
+<p class="c"><strong>1.2.</strong> A formação é ofertada na modalidade híbrida, combinando encontros presenciais em Curitiba/PR e atividades on-line. A cada mês de formação, a CONTRATADA disponibiliza ao CONTRATANTE o seguinte ciclo pedagógico:</p>
+<p class="c" style="margin-left:14px;">a) 1 (um) encontro presencial em Curitiba/PR, com 3 (três) horas de duração, dedicado a conteúdo, práticas, exercícios e integração, realizado em formato de manhã de imersão, com dois blocos de aprendizagem, exercícios, vivências e acompanhamento pedagógico;</p>
+<p class="c" style="margin-left:14px;">b) 1 (uma) aula ao vivo pelo Google Meet, com duração de 1h30 (uma hora e trinta minutos) ou mais, voltada ao aprofundamento e a novo conteúdo;</p>
+<p class="c" style="margin-left:14px;">c) tutoria on-line de 1 (uma) hora, voltada a dúvidas, revisão, orientação e acompanhamento;</p>
+<p class="c" style="margin-left:14px;">d) acesso contínuo à plataforma VOOMP/Anhanguera, com conteúdos EAD, atividades complementares e extensão universitária;</p>
+<p class="c" style="margin-left:14px;">e) mapa da aula: resumo impresso do conteúdo do próprio encontro (mapa mental, síntese e aplicação do conteúdo), entregue em cada encontro presencial e disponibilizado também em versão digital. O mapa da aula não constitui apostila, livro, caderno ou coleção de material didático.</p>
+<p class="c"><strong>1.3.</strong> O primeiro encontro presencial está previsto para o sábado, 31 de outubro de 2026, das 9h30 às 12h30, em Curitiba/PR, no mesmo local das turmas presenciais do IDM Pelo Brasil em Curitiba: R. Vereador Washington Luiz, 509 – Jardim Social, Curitiba/PR. As datas dos demais encontros serão informadas pela CONTRATADA conforme o calendário oficial da turma.</p>
+<p class="c"><strong>1.4.</strong> O cronograma, a ordem dos conteúdos, docentes, datas, local dos encontros presenciais e meios de disponibilização poderão ser ajustados por razões pedagógicas ou operacionais, desde que preservada a essência da formação contratada.</p>
+` : `<div class="clausula-titulo">Cláusula 1 – Do Objeto</div><hr class="div">
+<p class="c"><strong>1.1.</strong> O presente contrato tem por objeto a prestação de serviços educacionais referentes à <strong>Formação em Psicanálise</strong>, com duração prevista de 14 (quatorze) meses e carga horária total de 600 (seiscentas) horas, conforme programa pedagógico, calendário e orientações disponibilizados pela CONTRATADA.</p>
+<p class="c"><strong>1.2.</strong> A formação poderá compreender aulas ao vivo e/ou gravadas, atividades acadêmicas, materiais didáticos e complementares, encontros de acompanhamento, avaliações e demais componentes previstos na proposta pedagógica.</p>
+<p class="c"><strong>1.3.</strong> O cronograma, a ordem dos conteúdos, docentes, datas e meios de disponibilização poderão ser ajustados por razões pedagógicas ou operacionais, desde que preservada a essência da formação contratada.</p>
+`;
+
+  const clausula3 = hibrido ? `<div class="clausula-titulo">Cláusula 3 – Da Vigência, do Calendário e do Local</div><hr class="div">
+<p class="c"><strong>3.1.</strong> A vigência acadêmica prevista é de 14 (quatorze) meses, contados a partir da data de início da turma indicada no quadro-resumo (primeiro encontro presencial).</p>
+<p class="c"><strong>3.2.</strong> Os encontros presenciais ocorrem mensalmente no polo Curitiba/PR, no endereço R. Vereador Washington Luiz, 509 – Jardim Social, Curitiba/PR (o mesmo das turmas presenciais do IDM Pelo Brasil em Curitiba), em datas e horários a serem informados pela CONTRATADA conforme o calendário oficial da turma, com comunicação ao CONTRATANTE pelos canais oficiais.</p>
+<p class="c"><strong>3.3.</strong> Poderão ocorrer alterações justificadas de calendário, inclusive reposições, mudanças de datas, horários, local ou docentes, quando necessárias à continuidade e qualidade da formação.</p>
+<p class="c"><strong>3.4.</strong> Eventuais períodos de acesso a gravações, plataforma ou materiais após o encerramento acadêmico serão aqueles informados pela CONTRATADA e não alteram, por si só, a duração da formação.</p>
+` : `<div class="clausula-titulo">Cláusula 3 – Da Vigência e do Calendário</div><hr class="div">
+<p class="c"><strong>3.1.</strong> A vigência acadêmica prevista é de 14 (quatorze) meses, contados a partir da data de início da turma indicada no quadro-resumo.</p>
+<p class="c"><strong>3.2.</strong> Poderão ocorrer alterações justificadas de calendário, inclusive reposições, mudanças de datas, horários ou docentes, quando necessárias à continuidade e qualidade da formação.</p>
+<p class="c"><strong>3.3.</strong> Eventuais períodos de acesso a gravações, plataforma ou materiais após o encerramento acadêmico serão aqueles informados pela CONTRATADA e não alteram, por si só, a duração da formação.</p>
 `;
 
   return `<!DOCTYPE html>
@@ -256,19 +318,22 @@ p.c { font-size:9.5px; text-align:justify; margin:2px 0; line-height:1.55; }
   </tr>
   <tr>
     <td colspan="2"><span class="fl">Endereço</span><span class="fv">${endereco}, ${cidEst} — CEP ${cep} — ${pais}</span></td>
-    <td><span class="fl">Curso</span><span class="fv">FORMAÇÃO EM PSICANÁLISE</span></td>
+    <td><span class="fl">Curso</span><span class="fv">${cursoNome}</span></td>
   </tr>
   <tr>
     <td><span class="fl">Plano / Forma de Pagamento</span><span class="fv">${formaResumo}</span></td>
-    <td><span class="fl">Valor Total</span><span class="fv">${isBolsa ? 'R$ 0,00 (Bolsa)' : 'R$ ' + fmt(valorTotal)}</span></td>
+    <td><span class="fl">Valor Total</span><span class="fv">${isBolsa ? 'R$ 0,00 (Bolsa)' : 'R$ ' + fmtMoeda(valorTotal)}</span></td>
     <td><span class="fl">Extensão Universitária</span><span class="fv">Faculdade Anhanguera</span></td>
-  </tr>
+  </tr>${hibrido ? `
+  <tr>
+    <td colspan="3"><span class="fl">Modalidade / Polo / Início</span><span class="fv">Híbrida — encontros presenciais em Curitiba/PR + atividades on-line · Início da turma: 1º encontro presencial em 31/10/2026 (sábado), das 9h30 às 12h30</span></td>
+  </tr>` : ''}
 </table>
 
 <!-- IDENTIFICAÇÃO -->
 <div class="identificacao">
   <div class="id-titulo">Identificação das Partes</div>
-  <p style="margin-bottom:4px;"><strong>CONTRATADA:</strong> INSTITUTO DESPERTAMENTE / GRUPO DESPERTAMENTE, inscrita no CNPJ nº 55.184.481/0001-24, com sede na Av. Paulista, 1636, Sala 1105, Subconj 126, Cerqueira César, São Paulo/SP, CEP 01.310-200, neste ato representada na forma de seus atos constitutivos, doravante denominada <strong>CONTRATADA</strong>.</p>
+  <p style="margin-bottom:4px;"><strong>CONTRATADA:</strong> INSTITUTO DESPERTAMENTE / GRUPO DESPERTAMENTE, inscrita no CNPJ nº 55.184.481/0001-24, com sede na Av. Paulista, 1636, Sala 1105, Subconj 126, Cerqueira César, São Paulo/SP, CEP 01.310-200, neste ato representada por seu titular, <strong>${REPRESENTANTE_NOME}</strong>, doravante denominada <strong>CONTRATADA</strong>.</p>
   <p><strong>CONTRATANTE/ALUNO(A):</strong> <strong>${nome}</strong>, CPF nº <strong>${cpf}</strong>, RG nº <strong>${rg}</strong>, data de nascimento <strong>${dataNasc}</strong>, endereço <strong>${endereco}, ${cidEst}, CEP ${cep}, ${pais}</strong>, e-mail <strong>${email}</strong> e telefone/WhatsApp <strong>${telefone}</strong>, doravante denominado(a) <strong>CONTRATANTE</strong>.</p>
 </div>
 
@@ -276,25 +341,19 @@ p.c { font-size:9.5px; text-align:justify; margin:2px 0; line-height:1.55; }
 
 <!-- CLÁUSULAS -->
 
-<div class="clausula-titulo">Cláusula 1 – Do Objeto</div><hr class="div">
-<p class="c"><strong>1.1.</strong> O presente contrato tem por objeto a prestação de serviços educacionais referentes à <strong>Formação em Psicanálise</strong>, com duração prevista de 14 (quatorze) meses e carga horária total de 600 (seiscentas) horas, conforme programa pedagógico, calendário e orientações disponibilizados pela CONTRATADA.</p>
-<p class="c"><strong>1.2.</strong> A formação poderá compreender aulas ao vivo e/ou gravadas, atividades acadêmicas, materiais didáticos e complementares, encontros de acompanhamento, avaliações e demais componentes previstos na proposta pedagógica.</p>
-<p class="c"><strong>1.3.</strong> O cronograma, a ordem dos conteúdos, docentes, datas e meios de disponibilização poderão ser ajustados por razões pedagógicas ou operacionais, desde que preservada a essência da formação contratada.</p>
+${clausula1}
 
 <div class="clausula-titulo">Cláusula 2 – Da Formação e da Extensão Universitária</div><hr class="div">
 <p class="c"><strong>2.1.</strong> A CONTRATADA prestará a Formação em Psicanálise de acordo com sua proposta pedagógica, programa acadêmico e condições informadas ao CONTRATANTE no momento da matrícula.</p>
 <p class="c"><strong>2.2.</strong> A CONTRATADA informa que mantém parceria com a Anhanguera para extensão universitária, observadas as condições acadêmicas, documentais e institucionais aplicáveis à respectiva extensão e à emissão de documentação correspondente. Este contrato não amplia nem modifica, por si só, as condições da parceria ou os requisitos acadêmicos comunicados ao aluno.</p>
 
-<div class="clausula-titulo">Cláusula 3 – Da Vigência e do Calendário</div><hr class="div">
-<p class="c"><strong>3.1.</strong> A vigência acadêmica prevista é de 14 (quatorze) meses, contados a partir da data de início da turma indicada no quadro-resumo.</p>
-<p class="c"><strong>3.2.</strong> Poderão ocorrer alterações justificadas de calendário, inclusive reposições, mudanças de datas, horários ou docentes, quando necessárias à continuidade e qualidade da formação.</p>
-<p class="c"><strong>3.3.</strong> Eventuais períodos de acesso a gravações, plataforma ou materiais após o encerramento acadêmico serão aqueles informados pela CONTRATADA e não alteram, por si só, a duração da formação.</p>
+${clausula3}
 
 <div class="clausula-titulo">Cláusula 4 – Do Investimento e da Forma de Pagamento</div><hr class="div">
 ${clausula4Bolsa}
 
 <div class="clausula-titulo">Cláusula 5 – Da Inadimplência</div><hr class="div">
-<p class="c"><strong>5.1.</strong> O não pagamento de obrigação no vencimento sujeiterá o CONTRATANTE aos encargos previstos em lei e, quando aplicável, aos encargos expressamente informados no documento de cobrança.</p>
+<p class="c"><strong>5.1.</strong> O não pagamento de obrigação no vencimento sujeitará o CONTRATANTE aos encargos previstos em lei e, quando aplicável, aos encargos expressamente informados no documento de cobrança.</p>
 <p class="c"><strong>5.2.</strong> A CONTRATADA poderá realizar cobrança administrativa dos valores vencidos e solicitar a regularização da pendência, respeitados os direitos do consumidor e a legislação aplicável.</p>
 <p class="c"><strong>5.3.</strong> Eventuais medidas relativas ao acesso a serviços em razão de inadimplência serão adotadas somente nos limites permitidos pela legislação aplicável.</p>
 
@@ -302,13 +361,13 @@ ${clausula4Bolsa}
 <p class="c"><strong>6.1.</strong> Quando a contratação estiver sujeita ao direito de arrependimento previsto no art. 49 do Código de Defesa do Consumidor, o CONTRATANTE poderá exercê-lo no prazo legal de 7 (sete) dias, contado na forma da legislação aplicável.</p>
 <p class="c"><strong>6.2.</strong> O pedido de cancelamento deverá ser formalizado pelo CONTRATANTE por canal oficial de atendimento da CONTRATADA, permitindo a identificação do aluno e o registro da solicitação.</p>
 ${clausula6Extra}
-<p class="c"><strong>${(isVista||isCartao) && !isBolsa ? '6.5' : isBolsa ? '6.3' : '6.4'}.</strong> A formalização do cancelamento poderá acarretar o encerramento do acesso às aulas, gravações, materiais, plataforma, grupos, bônus e demais recursos vinculados à matrícula.</p>
-<p class="c"><strong>${(isVista||isCartao) && !isBolsa ? '6.6' : isBolsa ? '6.4' : '6.5'}.</strong> Nenhuma disposição desta cláusula limita direitos inderrogáveis assegurados ao consumidor pela legislação aplicável.</p>
+<p class="c"><strong>${(isVista||isCartao) && !isBolsa ? '6.4' : isBolsa ? '6.3' : '6.4'}.</strong> A formalização do cancelamento poderá acarretar o encerramento do acesso às aulas, gravações, materiais, plataforma, grupos, bônus e demais recursos vinculados à matrícula.</p>
+<p class="c"><strong>${(isVista||isCartao) && !isBolsa ? '6.5' : isBolsa ? '6.4' : '6.5'}.</strong> Nenhuma disposição desta cláusula limita direitos inderrogáveis assegurados ao consumidor pela legislação aplicável.</p>
 
 <div class="clausula-titulo">Cláusula 7 – Das Obrigações da Contratada</div><hr class="div">
 <p class="c"><strong>7.1.</strong> São obrigações da CONTRATADA:</p>
 <p class="c" style="margin-left:14px;">a) disponibilizar a formação conforme a proposta pedagógica e o calendário vigente;</p>
-<p class="c" style="margin-left:14px;">b) disponibilizar os meios necessários para acesso aos conteúdos previstos;</p>
+<p class="c" style="margin-left:14px;">b) disponibilizar os meios necessários para acesso aos conteúdos previstos${hibrido ? ', presenciais e on-line' : ''};</p>
 <p class="c" style="margin-left:14px;">c) comunicar alterações acadêmicas relevantes pelos canais oficiais;</p>
 <p class="c" style="margin-left:14px;">d) manter organização acadêmica compatível com a formação ofertada;</p>
 <p class="c" style="margin-left:14px;">e) emitir o certificado ao aluno que cumprir os requisitos de conclusão previstos neste contrato e nas regras acadêmicas aplicáveis.</p>
@@ -320,7 +379,7 @@ ${clausula6Extra}
 <p class="c" style="margin-left:14px;">c) manter em sigilo suas credenciais de acesso e não compartilhá-las com terceiros;</p>
 <p class="c" style="margin-left:14px;">d) respeitar professores, colaboradores e demais participantes;</p>
 <p class="c" style="margin-left:14px;">e) realizar as atividades acadêmicas obrigatórias;</p>
-<p class="c" style="margin-left:14px;">f) acompanhar as aulas da formação, ao vivo ou por meio das gravações disponibilizadas;</p>
+<p class="c" style="margin-left:14px;">f) ${hibrido ? 'comparecer aos encontros presenciais, participar das aulas ao vivo e das tutorias on-line e acompanhar os conteúdos da plataforma, ou, quando disponibilizadas pela CONTRATADA, as respectivas gravações' : 'acompanhar as aulas da formação, ao vivo ou por meio das gravações disponibilizadas'};</p>
 <p class="c" style="margin-left:14px;">g) observar os prazos, regras acadêmicas e orientações da CONTRATADA;</p>
 <p class="c" style="margin-left:14px;">h) cumprir as obrigações financeiras assumidas.</p>
 
@@ -328,7 +387,7 @@ ${clausula6Extra}
 <p class="c"><strong>9.1.</strong> A emissão do certificado dependerá do cumprimento dos requisitos acadêmicos da formação.</p>
 <p class="c"><strong>9.2.</strong> Para fins de conclusão, o CONTRATANTE deverá, no mínimo:</p>
 <p class="c" style="margin-left:14px;">a) realizar as atividades obrigatórias previstas;</p>
-<p class="c" style="margin-left:14px;">b) acompanhar as aulas, seja ao vivo ou por meio das gravações disponibilizadas;</p>
+<p class="c" style="margin-left:14px;">b) ${hibrido ? 'participar dos encontros presenciais e das aulas ao vivo, ou acompanhar as gravações e demais conteúdos disponibilizados, conforme as regras acadêmicas da turma' : 'acompanhar as aulas, seja ao vivo ou por meio das gravações disponibilizadas'};</p>
 <p class="c" style="margin-left:14px;">c) cumprir os demais componentes acadêmicos obrigatórios comunicados pela CONTRATADA.</p>
 <p class="c"><strong>9.3.</strong> O acompanhamento de conteúdo gravado será considerado para fins acadêmicos quando realizado de acordo com as regras, meios de registro e prazos definidos pela CONTRATADA.</p>
 <p class="c"><strong>9.4.</strong> A matrícula, o pagamento parcial ou o pagamento integral, isoladamente, não conferem direito automático ao certificado sem o cumprimento dos requisitos acadêmicos.</p>
@@ -375,29 +434,29 @@ ${clausula6Extra}
 <div class="clausula-titulo">Cláusula 19 – Do Foro</div><hr class="div">
 <p class="c"><strong>19.1.</strong> Fica assegurado ao CONTRATANTE o exercício de seus direitos perante o foro competente definido pela legislação aplicável, especialmente as normas de proteção ao consumidor, não prevalecendo disposição que imponha limitação indevida ao acesso à Justiça.</p>
 
+<!-- Bloco de assinaturas SEMPRE sozinho na ultima pagina: as posicoes das
+     assinaturas eletronicas (Autentique) sao pagina + coordenada, entao o bloco
+     precisa cair num lugar previsivel. -->
+<div style="break-before:page;page-break-before:always;"></div>
 <p class="c" style="margin-top:12px;">E, por estarem de acordo, as partes formalizam o presente instrumento.</p>
 <p class="c" style="margin-top:6px;"><strong>São Paulo, ${dataExtenso}</strong></p>
 
 <!-- ASSINATURAS -->
-<table class="ass">
+<table class="ass" style="margin-top:40px;">
   <tr>
-    <td style="text-align:center;padding-top:36px;">
+    <td style="text-align:center;padding-top:110px;vertical-align:top;">
       <div class="linha-ass" style="margin:0 auto 3px auto;"></div>
       <strong>${nome}</strong><br>CONTRATANTE
     </td>
-    <td style="text-align:center;padding-top:36px;">
+    <td style="text-align:center;padding-top:110px;vertical-align:top;">
       <div class="linha-ass" style="margin:0 auto 3px auto;"></div>
-      <strong>INSTITUTO DESPERTAMENTE / GRUPO DESPERTAMENTE</strong><br>CONTRATADA
+      <strong>INSTITUTO DESPERTAMENTE / GRUPO DESPERTAMENTE</strong><br>${REPRESENTANTE_ABREV} — Titular<br>CONTRATADA
     </td>
   </tr>
   <tr>
-    <td style="padding-top:28px;">
-      <div class="linha-ass" style="margin-bottom:3px;"></div>
-      Testemunha 1: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; RG:
-    </td>
-    <td style="padding-top:28px;">
-      <div class="linha-ass" style="margin-bottom:3px;"></div>
-      Testemunha 2: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; RG:
+    <td colspan="2" style="text-align:center;padding-top:110px;">
+      <div class="linha-ass" style="margin:0 auto 3px auto;"></div>
+      <strong>${TESTEMUNHA_NOME}</strong><br>TESTEMUNHA
     </td>
   </tr>
 </table>
@@ -428,15 +487,71 @@ async function criarLinkAssinatura(token: string, publicId: string): Promise<str
   return json.data?.createLinkToSignature?.short_link ?? null;
 }
 
+// ─── Assinaturas eletrônicas visíveis no contrato (2026-09-24) ────────────────
+// Pedido do dono: a assinatura de cada pessoa aparece em cima da linha certa do
+// bloco de assinaturas (última página, sempre sozinha -- ver buildContratoHtml)
+// E a Autentique continua anexando a página de auditoria com IP/horários.
+//  - aluno: assina ele mesmo pelo link;
+//  - Contratada (Pedro, dono da conta da Autentique): assinada NA HORA pela API
+//    (signDocument), sem trabalho manual;
+//  - testemunha (Rodrygo): só entra se TESTEMUNHA_EMAIL estiver preenchido; ele
+//    assina depois, quando quiser -- não trava o contrato do aluno.
+// Coordenadas: x/y em % da página (canto superior esquerdo do carimbo), z = página.
+// Calibradas com um documento real de teste (linhas em y≈22% e y≈37%, carimbo
+// ~18% de largura por ~4,5% de altura).
+const AUTENTIQUE_DONO_EMAIL = '11digitalstrategy@gmail.com';
+const TESTEMUNHA_EMAIL = 'contato.rfcompany@gmail.com'; // Rodrygo (nome civil no contrato); assina depois, não trava o aluno
+const POS_ASSINATURAS = {
+  aluno:      { x: '20.5', y: '17' },
+  dono:       { x: '61.5', y: '17' },
+  testemunha: { x: '41',   y: '32' },
+};
+const PAGINA_ASSINATURAS_INICIAL = 5;
+
+async function autentiqueGql(token: string, query: string, variables?: Record<string, unknown>) {
+  const res = await fetch(AUTENTIQUE_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, variables }),
+  });
+  try { return await res.json(); } catch (_) { return null; }
+}
+
+// Conta as páginas do PDF que a Autentique gerou a partir do nosso HTML: as
+// posições das assinaturas dependem do número da última página, que só se sabe
+// depois da conversão (a Autentique aceita qualquer "z", mesmo página inexistente).
+async function paginasDoDocumento(token: string, docId: string): Promise<number | null> {
+  for (let tentativa = 0; tentativa < 4; tentativa++) {
+    if (tentativa > 0) await new Promise(r => setTimeout(r, 1200));
+    const r = await autentiqueGql(token, `query { document(id: "${docId}") { files { original } } }`);
+    const url = r?.data?.document?.files?.original;
+    if (!url) continue;
+    try {
+      const pdf = await fetch(url);
+      if (!pdf.ok) continue;
+      const txt = new TextDecoder('latin1').decode(new Uint8Array(await pdf.arrayBuffer()));
+      const contagens = [...txt.matchAll(/\/Type\s*\/Pages[^>]*?\/Count\s+(\d+)|\/Count\s+(\d+)[^>]*?\/Type\s*\/Pages/g)]
+        .map(m => Number(m[1] ?? m[2])).filter(n => n > 0);
+      if (contagens.length) return Math.max(...contagens);
+    } catch (e) {
+      console.error('paginasDoDocumento: falha ao ler PDF', e);
+    }
+  }
+  return null;
+}
+
 async function criarDocumentoAutentique(
   token: string,
   nome_doc: string,
   html: string,
   signatario_nome: string,
   signatario_email: string,
-): Promise<{ id: string; link: string }> {
+): Promise<{ id: string; link: string; assinadoPelaEmpresa: boolean }> {
   const primNome = signatario_nome.split(' ')[0];
   const fileName = `contrato_${signatario_nome.replace(/\s+/g, '_')}.html`;
+  const emailNorm = signatario_email.trim().toLowerCase();
+  // Se o "aluno" for a própria conta dona (teste), não duplica o signatário.
+  const comEmpresa = emailNorm !== AUTENTIQUE_DONO_EMAIL;
 
   const query = `mutation CreateDocumentMutation($document: DocumentInput!, $signers: [SignerInput!]!, $file: Upload!) {
     createDocument(document: $document, signers: $signers, file: $file) {
@@ -445,34 +560,79 @@ async function criarDocumentoAutentique(
     }
   }`;
 
-  const operations = JSON.stringify({
-    query,
-    variables: {
-      document: {
-        name: nome_doc,
-        message: `Olá ${primNome}, seu contrato de matrícula está pronto para assinatura.`,
+  const pos = (p: { x: string; y: string }, pagina: number) => [{ x: p.x, y: p.y, z: pagina, element: 'SIGNATURE' }];
+
+  async function criar(comPosicoes: boolean, pagina: number) {
+    const signers: Record<string, unknown>[] = [
+      { email: signatario_email, action: 'SIGN', ...(comPosicoes ? { positions: pos(POS_ASSINATURAS.aluno, pagina) } : {}) },
+    ];
+    if (comPosicoes && comEmpresa) {
+      signers.push({ email: AUTENTIQUE_DONO_EMAIL, action: 'SIGN', positions: pos(POS_ASSINATURAS.dono, pagina) });
+      if (TESTEMUNHA_EMAIL && TESTEMUNHA_EMAIL.toLowerCase() !== emailNorm) {
+        signers.push({ email: TESTEMUNHA_EMAIL, action: 'SIGN', positions: pos(POS_ASSINATURAS.testemunha, pagina) });
+      }
+    }
+
+    const operations = JSON.stringify({
+      query,
+      variables: {
+        document: {
+          name: nome_doc,
+          message: `Olá ${primNome}, seu contrato de matrícula está pronto para assinatura.`,
+          show_audit_page: true,
+        },
+        signers,
+        file: null,
       },
-      signers: [{ email: signatario_email, action: 'SIGN' }],
-      file: null,
-    },
-  });
+    });
 
-  const form = new FormData();
-  form.append('operations', operations);
-  form.append('map', '{"file": ["variables.file"]}');
-  form.append('file', new Blob([html], { type: 'text/html; charset=utf-8' }), fileName);
+    const form = new FormData();
+    form.append('operations', operations);
+    form.append('map', '{"file": ["variables.file"]}');
+    form.append('file', new Blob([html], { type: 'text/html; charset=utf-8' }), fileName);
 
-  const res = await fetch(AUTENTIQUE_URL, {
-    method:  'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body:    form,
-  });
+    const res = await fetch(AUTENTIQUE_URL, {
+      method:  'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body:    form,
+    });
+    return await res.json();
+  }
 
-  const json = await res.json();
-  if (json.errors) throw new Error('Autentique: ' + JSON.stringify(json.errors));
+  let comPosicoes = true;
+  let pagina = PAGINA_ASSINATURAS_INICIAL;
+  let json = await criar(true, pagina);
+  if (json?.errors) {
+    // Rede de segurança: se a versão com posições/assinatura da empresa falhar por
+    // qualquer motivo, gera o contrato no formato antigo (só o aluno assina)
+    // em vez de deixar a matrícula sem contrato.
+    console.error('Autentique: createDocument com posições falhou, usando formato simples:', JSON.stringify(json.errors));
+    comPosicoes = false;
+    json = await criar(false, pagina);
+  }
+  if (json?.errors) throw new Error('Autentique: ' + JSON.stringify(json.errors));
 
-  const doc = json.data?.createDocument;
+  let doc = json?.data?.createDocument;
   if (!doc) throw new Error('Autentique sem documento: ' + JSON.stringify(json));
+
+  if (comPosicoes) {
+    const real = await paginasDoDocumento(token, doc.id);
+    if (real && real !== pagina) {
+      // A última página não é a que supusemos: refaz com a página certa (o
+      // documento anterior não foi entregue a ninguém ainda, então é descartado).
+      console.log(`Autentique: PDF tem ${real} páginas (esperado ${pagina}); recriando com a página certa`);
+      await autentiqueGql(token, 'mutation($id: UUID!) { deleteDocument(id: $id) }', { id: doc.id });
+      pagina = real;
+      json = await criar(true, pagina);
+      if (json?.errors) {
+        comPosicoes = false;
+        json = await criar(false, pagina);
+      }
+      if (json?.errors) throw new Error('Autentique: ' + JSON.stringify(json.errors));
+      doc = json?.data?.createDocument;
+      if (!doc) throw new Error('Autentique sem documento: ' + JSON.stringify(json));
+    }
+  }
 
   // A Autentique inclui automaticamente a conta dona do token como uma
   // assinatura extra (sem action) — pegar sempre signatures[0] pegava essa
@@ -480,7 +640,7 @@ async function criarDocumentoAutentique(
   // ele (achado real 2026-09-08, mesmo bug já corrigido em gerar-contrato).
   // Aqui buscamos a assinatura de quem realmente precisa assinar.
   const assinatura = doc.signatures?.find(
-    (s: any) => s?.email === signatario_email && s?.action?.name === 'SIGN'
+    (s: any) => s?.email?.toLowerCase() === emailNorm && s?.action?.name === 'SIGN'
   ) ?? doc.signatures?.find((s: any) => s?.action?.name === 'SIGN');
 
   if (!assinatura?.public_id) {
@@ -498,7 +658,21 @@ async function criarDocumentoAutentique(
     throw new Error('Autentique: não foi possível gerar o link de assinatura');
   }
 
-  return { id: doc.id ?? '', link };
+  // Assina como Contratada (dono da conta) na hora. Falhar aqui não pode
+  // derrubar o contrato do aluno -- só registra e segue (dá pra assinar depois
+  // pelo painel).
+  let assinadoPelaEmpresa = false;
+  if (comPosicoes && comEmpresa) {
+    try {
+      const r = await autentiqueGql(token, 'mutation($id: UUID!) { signDocument(id: $id) }', { id: doc.id });
+      assinadoPelaEmpresa = r?.data?.signDocument === true;
+      if (!assinadoPelaEmpresa) console.error('Autentique: signDocument (Contratada) não confirmou', JSON.stringify(r));
+    } catch (e) {
+      console.error('Autentique: falha ao assinar como Contratada', e);
+    }
+  }
+
+  return { id: doc.id ?? '', link, assinadoPelaEmpresa };
 }
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
@@ -549,6 +723,50 @@ serve(async (req) => {
       });
     }
 
+    // Dados que alimentam o texto do contrato. Aluno de turma hibrida (Curitiba
+    // presencial) recebe o modelo hibrido em vez do online (ver HIBRIDO_TURMA_IDS).
+    const dadosContrato = {
+      nome:            aluno.nome ?? '',
+      email:           aluno.email ?? '',
+      cpf,
+      rg:              aluno.rg ?? '',
+      whatsapp:        aluno.whatsapp ?? '',
+      data_nascimento,
+      endereco,
+      cep:             cep ?? '',
+      cidade_estado,
+      pais:            aluno.pais ?? 'Brasil',
+      dia_vencimento:  aluno.dia_vencimento ?? '',
+      tipo_pagamento:  aluno.tipo_pagamento ?? 'mensalidade',
+      forma_pagamento: aluno.forma_pagamento ?? '',
+      valor_parcela:   aluno.valor_mensalidade ?? null,
+      num_parcelas:    aluno.total_mensalidades ?? null,
+      plano_slug:      aluno.plano_slug ?? null,
+      data_matricula:  aluno.data_matricula ?? null,
+      modalidade:      HIBRIDO_TURMA_IDS.has(String(aluno.turma_id ?? '')) ? 'hibrido_curitiba' : '',
+    };
+
+    // Preview: devolve o HTML do contrato sem gravar nada no aluno nem criar
+    // documento na Autentique (pra conferir o texto antes de enviar de verdade).
+    // Exige o segredo CONTRATO_PREVIEW_TOKEN (header x-preview-token): o HTML
+    // carrega dados pessoais do aluno (RG, e-mail, telefone) e a chave anon e
+    // publica, entao o preview nao pode ficar aberto. Sem o segredo configurado,
+    // o preview fica desligado.
+    if ((body as any).preview === true) {
+      const tokenPreview = Deno.env.get('CONTRATO_PREVIEW_TOKEN') ?? '';
+      if (!tokenPreview || req.headers.get('x-preview-token') !== tokenPreview) {
+        return new Response(JSON.stringify({ error: 'preview nao autorizado' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      // preview_overrides: simula outra combinacao (ex.: a vista na turma hibrida)
+      // sem tocar no cadastro -- so vale no preview, que ja exige o token acima.
+      const overrides = ((body as any).preview_overrides ?? {}) as Record<string, unknown>;
+      return new Response(buildContratoHtml({ ...dadosContrato, ...overrides }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'text/html; charset=utf-8' },
+      });
+    }
+
     // ── Atualizar dados legais + ativar no Financeiro ───────────────────────
     // `contrato_enviado` só pode virar true DEPOIS de existir documento e link.
     // Antes ele era marcado aqui e permanecia verdadeiro até quando a Autentique falhava,
@@ -579,25 +797,7 @@ serve(async (req) => {
       }).eq('id', aluno_id);
     } else if (autentiqueToken && aluno.email) {
       try {
-        const html = buildContratoHtml({
-          nome:            aluno.nome ?? '',
-          email:           aluno.email ?? '',
-          cpf,
-          rg:              aluno.rg ?? '',
-          whatsapp:        aluno.whatsapp ?? '',
-          data_nascimento,
-          endereco,
-          cep:             cep ?? '',
-          cidade_estado,
-          pais:            aluno.pais ?? 'Brasil',
-          dia_vencimento:  aluno.dia_vencimento ?? '',
-          tipo_pagamento:  aluno.tipo_pagamento ?? 'mensalidade',
-          forma_pagamento: aluno.forma_pagamento ?? '',
-          valor_parcela:   aluno.valor_mensalidade ?? null,
-          num_parcelas:    aluno.total_mensalidades ?? null,
-          plano_slug:      aluno.plano_slug ?? null,
-          data_matricula:  aluno.data_matricula ?? null,
-        });
+        const html = buildContratoHtml(dadosContrato);
 
         const result = await criarDocumentoAutentique(
           autentiqueToken,
@@ -635,13 +835,19 @@ serve(async (req) => {
       let enviado = false;
       for (let tentativa = 1; tentativa <= 3 && !enviado; tentativa++) {
         try {
-          const { error: wppErro } = await sb.functions.invoke('wpp-enviar', {
+          // Sai pelo WhatsApp do Financeiro (instância disp3), o mesmo de boletos e
+          // cobranças -- pedido do dono em 2026-09-24 (antes saía pelo número de
+          // avisos, por prioridade automática). A mensagem já pede pra salvar o número.
+          const { data: wppRes, error: wppErro } = await sb.functions.invoke('wpp-enviar', {
             body: {
               numero: aluno.whatsapp,
-              mensagem: `Olá, ${(aluno.nome ?? '').split(' ')[0]}! 📝\n\nSeu contrato está pronto para assinatura:\n\n${linkAssinatura}\n\nAssine agora para confirmar sua matrícula!`,
+              instance_name: 'disp3',
+              mensagem: `Olá, ${(aluno.nome ?? '').split(' ')[0]}! 📝\n\nAqui é o *Financeiro do Instituto Despertamente*. Seu contrato está pronto para assinatura:\n\n${linkAssinatura}\n\nAssine agora para confirmar sua matrícula!\n\n📌 Salve este número na sua agenda como *Financeiro IDM*: é por ele que enviaremos contratos, boletos e avisos de pagamento.`,
             },
           });
           if (wppErro) throw wppErro;
+          // wpp-enviar responde 200 mesmo quando a Evolution falha ({ ok:false })
+          if ((wppRes as any)?.ok === false) throw new Error((wppRes as any)?.error ?? 'wpp-enviar ok:false');
           enviado = true;
         } catch (e) {
           console.error(`WPP contrato tentativa ${tentativa}/3:`, e);

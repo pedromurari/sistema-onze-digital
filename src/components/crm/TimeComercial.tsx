@@ -2414,6 +2414,9 @@ interface VendaNominal {
   vendedor: string;
   contrato_assinado: boolean | null;
   contrato_enviado: boolean | null;
+  // Dia em que a venda/pre-matricula foi de fato feita. data_venda (acima) e a
+  // data programada do pagamento -- na pre-matricula e uma data futura.
+  data_registro: string | null;
 }
 
 const ContratoBadge = ({ assinado, enviado }: { assinado: boolean | null; enviado: boolean | null }) => {
@@ -2485,7 +2488,8 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
                 <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
                   <TableHeader>
                     <TableRow className={PREMIUM_TABLE_HEADER_ROW}>
-                      <TableHead>Data</TableHead>
+                      <TableHead>Pagamento previsto</TableHead>
+                      <TableHead>Data da venda</TableHead>
                       <TableHead>Aluno</TableHead>
                       <TableHead>Produto</TableHead>
                       <TableHead>Forma</TableHead>
@@ -2499,6 +2503,9 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
                       <TableRow key={v.aluno_id} className={premiumZebraRow(idx)}>
                         <TableCell className="text-xs whitespace-nowrap">
                           {v.data_venda ? new Date(v.data_venda + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
+                        </TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">
+                          {v.data_registro ? new Date(v.data_registro + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
                         </TableCell>
                         <TableCell className="text-sm font-medium text-foreground">{v.aluno_nome}</TableCell>
                         <TableCell className="text-xs whitespace-nowrap">{v.produto ? (PRODUTO_LABEL_TC[v.produto] ?? v.produto) : '—'}</TableCell>

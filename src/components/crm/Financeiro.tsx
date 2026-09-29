@@ -1775,7 +1775,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
       const pagas = parcs.filter(p => p.status === 'pago').length;
       const total = parcs.length;
       const abertas = parcs.filter(p => p.status !== 'pago').sort((a, b) => String(a.data_vencimento).localeCompare(String(b.data_vencimento)));
-      const proxVencStr = method !== 'boleto' ? 'Quitado' : abertas[0]?.data_vencimento ? (() => { try { const [y,m,d] = abertas[0].data_vencimento.split('T')[0].split('-'); return `${d}/${m}/${y}`; } catch { return abertas[0].data_vencimento; } })() : 'Sem parcelas';
+      const proxVencStr = method !== 'boleto' ? (aluno.status === 'pre_matricula' && !parcs.some(p => p.status === 'pago') ? 'Aguardando pagamento' : 'Quitado') : abertas[0]?.data_vencimento ? (() => { try { const [y,m,d] = abertas[0].data_vencimento.split('T')[0].split('-'); return `${d}/${m}/${y}`; } catch { return abertas[0].data_vencimento; } })() : 'Sem parcelas';
       const inad = inadimplenciaMap[aluno.id];
       return [aluno.nome, aluno.whatsapp || '', aluno.email || '', turma?.nome || 'Sem turma', method, pagas, total, proxVencStr, inad ? 'inadimplente' : aluno.status, inad ? inad.valorEmAtraso.toFixed(2) : ''];
     });
@@ -2619,6 +2619,11 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                               ? parcelasAluno.filter(p => p.status !== 'pago').sort((a, b) => String(a.data_vencimento).localeCompare(String(b.data_vencimento)))
                               : [];
                             const proximoVencimento = abertas[0]?.data_vencimento;
+                            // Cartão/à vista não é "pago" por definição: uma pré-matrícula que só
+                            // recebeu o link do cartão ainda não pagou nada (antes aparecia como
+                            // "Cartão pago / 1/1 / Quitado" mesmo sem pagamento algum).
+                            const aguardandoPgto = method !== 'boleto' && aluno.status === 'pre_matricula'
+                              && !parcelasAluno.some(p => p.status === 'pago');
                             const pgBadge: Record<PaymentMethod, string> = { boleto: 'bg-zinc-100 text-zinc-700 border border-zinc-200', cartao: 'bg-blue-50 text-blue-600 border border-blue-200', avista: 'bg-emerald-50 text-emerald-700 border border-emerald-200' };
 
                             const inad = inadimplenciaMap[aluno.id];
@@ -2636,7 +2641,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                               if (aluno.status === 'cancelado') return { cls: 'bg-zinc-300', tip: 'Cancelado' };
                               if (aluno.status === 'pre_matricula') return { cls: 'bg-amber-400', tip: 'Pré-matrícula' };
                               if (isInad && method !== 'boleto') return { cls: 'bg-red-600 ring-2 ring-red-200', tip: 'Inadimplente' };
-                              if (method !== 'boleto') return { cls: 'bg-zinc-300', tip: 'Quitado' };
+                              if (method !== 'boleto') return { cls: 'bg-zinc-300', tip: 'Quitado' };  // (pré-matrícula sem pagamento já saiu acima)
                               if (abertas.length === 0) return { cls: 'bg-emerald-500', tip: 'Quitado' };
                               if (!proximoVencimento) return { cls: 'bg-zinc-400', tip: '-' };
                               const v = parseDateOnly(proximoVencimento); if (!v) return { cls: 'bg-zinc-400', tip: '-' };
@@ -2692,10 +2697,10 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                                       ? <Badge className="bg-purple-50 text-purple-700 border border-purple-200">Bolsa</Badge>
                                       : aluno.tipo_pagamento === 'cortesia'
                                         ? <Badge className="bg-orange-50 text-orange-600 border border-orange-200">Cortesia</Badge>
-                                        : <Badge className={pgBadge[method]}>{method === 'boleto' ? paymentLabels[method] : `${paymentLabels[method]} pago`}</Badge>
+                                        : <Badge className={pgBadge[method]}>{method === 'boleto' || aguardandoPgto ? paymentLabels[method] : `${paymentLabels[method]} pago`}</Badge>
                                     }
                                     <span className="text-[10px] text-muted-foreground">
-                                      {aluno.tipo_pagamento && aluno.tipo_pagamento !== 'mensalidade' ? 'Isento' : (method === 'boleto' ? `Dia ${dueDay}` : 'Quitado')}
+                                      {aluno.tipo_pagamento && aluno.tipo_pagamento !== 'mensalidade' ? 'Isento' : (method === 'boleto' ? `Dia ${dueDay}` : aguardandoPgto ? <span className="text-amber-600">Aguardando pagamento</span> : 'Quitado')}
                                     </span>
                                   </div>
                                 </td>
@@ -2708,8 +2713,8 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                                           return (
                                             <div className="flex flex-col gap-0.5">
                                               <div className="flex items-center gap-2">
-                                                <span>1/1</span>
-                                                <Progress value={100} className="w-16 h-1.5" />
+                                                <span>{aguardandoPgto ? '0/1' : '1/1'}</span>
+                                                <Progress value={aguardandoPgto ? 0 : 100} className="w-16 h-1.5" />
                                               </div>
                                               {valorCartao > 0 && <span className="text-[10px] text-muted-foreground font-medium">{formatCurrency(valorCartao)}</span>}
                                             </div>
@@ -2725,7 +2730,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                                   {aluno.tipo_pagamento && aluno.tipo_pagamento !== 'mensalidade'
                                     ? <span className="text-purple-400">—</span>
                                     : method !== 'boleto'
-                                      ? 'Quitado'
+                                      ? (aguardandoPgto ? <span className="text-amber-600">Aguardando</span> : 'Quitado')
                                       : parcelasAluno.length === 0
                                         ? <span className="text-orange-400">Sem parcelas</span>
                                         : proximoVencimento
