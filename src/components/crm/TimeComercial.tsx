@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -2472,6 +2473,36 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
   // o essencial é sempre perguntar antes de reenviar, nunca reenviar sozinho).
   const [perguntaReenvio, setPerguntaReenvio] = useState<{ alunoId: string } | null>(null);
 
+  // Editar a data de "Pagamento previsto" (só pré-matrícula em boleto) --
+  // pedido dele: ela escolhe se muda só o visual ou também o boleto real no Asaas.
+  const [dataEditando, setDataEditando] = useState<{ alunoId: string; alunoNome: string; dataAtual: string } | null>(null);
+  const [novaData, setNovaData] = useState('');
+  const [atualizarBoleto, setAtualizarBoleto] = useState(true);
+  const [salvandoData, setSalvandoData] = useState(false);
+
+  const salvarPagamentoPrevisto = async () => {
+    if (!dataEditando || !novaData) return;
+    setSalvandoData(true);
+    const { data, error } = await supabase.functions.invoke('time-comercial-pagamento-previsto-atualizar', {
+      body: { aluno_id: dataEditando.alunoId, nova_data: novaData, atualizar_boleto: atualizarBoleto },
+    });
+    setSalvandoData(false);
+    const resp = data as { ok?: boolean; erro?: string; boletoAtualizado?: boolean; boletoErro?: string } | null;
+    if (error || !resp?.ok) {
+      toast({ title: 'Não foi possível salvar', description: resp?.erro || error?.message, variant: 'destructive' });
+      return;
+    }
+    if (atualizarBoleto) {
+      toast(resp.boletoAtualizado
+        ? { title: 'Data e boleto atualizados' }
+        : { title: 'Data salva, mas o boleto não pôde ser movido', description: resp.boletoErro, variant: 'destructive' });
+    } else {
+      toast({ title: 'Data salva (só aqui no sistema, o boleto real não mudou)' });
+    }
+    setDataEditando(null);
+    (supabase as any).rpc('time_comercial_minhas_vendas').then(({ data }: any) => setVendas((data ?? []) as VendaNominal[]));
+  };
+
   const abrirFicha = async (alunoId: string) => {
     setFichaOpen(true);
     setFichaCarregando(true);
@@ -2600,7 +2631,18 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
                           {v.data_venda_concretizada ? new Date(v.data_venda_concretizada + 'T12:00:00').toLocaleDateString('pt-BR') : <span className="text-muted-foreground">—</span>}
                         </TableCell>
                         <TableCell className="text-xs whitespace-nowrap">
-                          {v.data_venda ? new Date(v.data_venda + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
+                          {v.origem === 'matricula' && v.status === 'pre_matricula' && v.forma_pagamento === 'boleto' ? (
+                            <button
+                              type="button"
+                              onClick={() => { setDataEditando({ alunoId: v.aluno_id, alunoNome: v.aluno_nome, dataAtual: v.data_venda ?? '' }); setNovaData(v.data_venda ?? ''); setAtualizarBoleto(true); }}
+                              className="underline decoration-dotted underline-offset-2 hover:text-primary transition-colors"
+                              title="Clique para mudar a data de pagamento previsto"
+                            >
+                              {v.data_venda ? new Date(v.data_venda + 'T12:00:00').toLocaleDateString('pt-BR') : 'definir'}
+                            </button>
+                          ) : (
+                            v.data_venda ? new Date(v.data_venda + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
+                          )}
                         </TableCell>
                         <TableCell className="text-sm font-medium text-foreground">{v.aluno_nome}</TableCell>
                         <TableCell className="text-xs whitespace-nowrap">{v.produto ? (PRODUTO_LABEL_TC[v.produto] ?? v.produto) : '—'}</TableCell>
@@ -2728,6 +2770,37 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
             </Button>
             <Button onClick={() => salvarFicha(true)} disabled={fichaSalvando}>
               {fichaSalvando ? 'Enviando...' : 'Sim, reenviar contrato'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Editar "Pagamento previsto" -- só pré-matrícula em boleto. */}
+      <Dialog open={!!dataEditando} onOpenChange={(open) => !open && setDataEditando(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base">Mudar data de pagamento previsto</DialogTitle>
+          </DialogHeader>
+          {dataEditando && (
+            <div className="flex flex-col gap-3 py-1">
+              <p className="text-sm text-muted-foreground">{dataEditando.alunoNome}</p>
+              <div className="space-y-1.5">
+                <Label htmlFor="nova-data-prevista">Nova data</Label>
+                <Input id="nova-data-prevista" type="date" value={novaData} onChange={(e) => setNovaData(e.target.value)} disabled={salvandoData} />
+              </div>
+              <label className="flex items-start gap-2 text-sm cursor-pointer">
+                <Checkbox checked={atualizarBoleto} onCheckedChange={(v) => setAtualizarBoleto(v === true)} disabled={salvandoData} className="mt-0.5" />
+                <span>
+                  Também mover o boleto real no Asaas pra essa data
+                  <span className="block text-xs text-muted-foreground">Desmarcado: muda só o que aparece aqui na tela, o boleto de verdade continua com o vencimento antigo.</span>
+                </span>
+              </label>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDataEditando(null)} disabled={salvandoData}>Cancelar</Button>
+            <Button onClick={salvarPagamentoPrevisto} disabled={salvandoData || !novaData}>
+              {salvandoData ? 'Salvando...' : 'Salvar'}
             </Button>
           </DialogFooter>
         </DialogContent>
