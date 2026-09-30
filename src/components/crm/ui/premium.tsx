@@ -95,24 +95,30 @@ export function StatTile({
  * onde o número vem. Não é lugar para nota de implementação.
  */
 export function SectionBar({
-  title, subtitle, icon: Icon,
+  title, subtitle, icon: Icon, right,
 }: {
   title: string;
   subtitle?: string;
   icon?: React.ElementType;
+  // Controle opcional do lado direito da barra (ex: filtro de mês) -- pedido
+  // real: "coloque lá em cima, do lado do nome... um filtro para as vendas do mês".
+  right?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-2.5">
-      <div className="w-1 h-5 rounded-full bg-primary flex-shrink-0" />
-      {Icon && (
-        <div className="w-6 h-6 rounded-md bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
-          <Icon className="h-3.5 w-3.5" />
+    <div className="flex items-center gap-2.5 flex-wrap justify-between">
+      <div className="flex items-center gap-2.5">
+        <div className="w-1 h-5 rounded-full bg-primary flex-shrink-0" />
+        {Icon && (
+          <div className="w-6 h-6 rounded-md bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
+            <Icon className="h-3.5 w-3.5" />
+          </div>
+        )}
+        <div>
+          <h2 className="text-sm font-bold text-foreground leading-tight">{title}</h2>
+          {subtitle && <p className="text-xs text-muted-foreground leading-tight mt-0.5">{subtitle}</p>}
         </div>
-      )}
-      <div>
-        <h2 className="text-sm font-bold text-foreground leading-tight">{title}</h2>
-        {subtitle && <p className="text-xs text-muted-foreground leading-tight mt-0.5">{subtitle}</p>}
       </div>
+      {right}
     </div>
   );
 }

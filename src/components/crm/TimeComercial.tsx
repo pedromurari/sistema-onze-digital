@@ -2563,12 +2563,40 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
     });
   }, []);
 
+  // Filtro de mês (pela data de "Pré-matrícula feita", ou seja, quando a venda
+  // entrou no sistema) -- sem isso, virando o mês a lista só cresce e mistura
+  // setembro com outubro pra sempre. Default = mês atual (Brasília).
+  const mesAtualISO = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }).slice(0, 7);
+  const [mesFiltro, setMesFiltro] = useState(mesAtualISO);
+
   const visiveis = viewAsName ? vendas.filter((v) => v.vendedor === viewAsName) : vendas;
-  const porVendedor = visiveis.reduce<Record<string, VendaNominal[]>>((acc, v) => {
+
+  const mesesDisponiveis = Array.from(new Set([
+    mesAtualISO,
+    ...visiveis.map((v) => v.data_registro?.slice(0, 7)).filter((m): m is string => !!m),
+  ])).sort((a, b) => b.localeCompare(a));
+
+  const doMes = visiveis.filter((v) => (v.data_registro ?? '').slice(0, 7) === mesFiltro);
+
+  const porVendedor = doMes.reduce<Record<string, VendaNominal[]>>((acc, v) => {
     (acc[v.vendedor] ??= []).push(v);
     return acc;
   }, {});
+  // Pré-matrícula (ainda não virou venda de verdade) sempre no topo, venda
+  // concretizada vai descendo -- pedido dele: "não ficar uma mistura dessa
+  // toda". Dentro de cada grupo, mais recente primeiro.
+  for (const nome of Object.keys(porVendedor)) {
+    porVendedor[nome].sort((a, b) => {
+      const grupoA = a.status === 'pre_matricula' ? 0 : 1;
+      const grupoB = b.status === 'pre_matricula' ? 0 : 1;
+      if (grupoA !== grupoB) return grupoA - grupoB;
+      return (b.data_registro ?? '').localeCompare(a.data_registro ?? '');
+    });
+  }
   const nomes = Object.keys(porVendedor).sort((a, b) => a.localeCompare(b));
+
+  const [ano, mesNum] = mesFiltro.split('-');
+  const nomeMesFiltro = `${MESES_ABREV[Number(mesNum) - 1]}/${ano}`;
 
   return (
     <>
@@ -2578,12 +2606,23 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
           ? 'Cada aluno que você fechou — psicanálise, PNL e pré-matrícula — com produto e valor.'
           : 'Vendas nominais por vendedor (psicanálise + PNL + pré-matrícula).'}
         icon={GraduationCap}
+        right={
+          <Select value={mesFiltro} onValueChange={setMesFiltro}>
+            <SelectTrigger className="w-36 h-8 text-xs"><SelectValue>{nomeMesFiltro}</SelectValue></SelectTrigger>
+            <SelectContent>
+              {mesesDisponiveis.map((m) => {
+                const [a, mm] = m.split('-');
+                return <SelectItem key={m} value={m}>{MESES_ABREV[Number(mm) - 1]}/{a}</SelectItem>;
+              })}
+            </SelectContent>
+          </Select>
+        }
       />
       {loading ? (
         <p className="text-sm text-muted-foreground">Carregando…</p>
-      ) : visiveis.length === 0 ? (
+      ) : doMes.length === 0 ? (
         <p className="text-center text-sm text-muted-foreground py-6 border border-dashed border-border rounded-lg">
-          Nenhuma venda registrada ainda.
+          Nenhuma venda em {nomeMesFiltro}.
         </p>
       ) : (
         nomes.map((nome) => {
