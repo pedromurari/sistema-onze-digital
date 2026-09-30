@@ -902,7 +902,7 @@ export default function MatriculaTimeComercial({ preMatricula = false }: { preMa
         // 'cartao', não importa o plano -- achado real com o plano "1000x15" (15x
         // fixas): o aluno era gravado com 12, e o contrato (que lê
         // alunos.total_mensalidades) ia contradizer o que ela realmente pagou.
-        p_num_parcelas: formaPagamento === 'cartao' ? plano.cartaoMaxParcelas : null,
+        p_num_parcelas: formaPagamento === 'cartao_parcelado' ? plano.cartaoMaxParcelas : null,
       });
 
       if (error) {

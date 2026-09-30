@@ -2414,9 +2414,14 @@ interface VendaNominal {
   vendedor: string;
   contrato_assinado: boolean | null;
   contrato_enviado: boolean | null;
-  // Dia em que a venda/pre-matricula foi de fato feita. data_venda (acima) e a
-  // data programada do pagamento -- na pre-matricula e uma data futura.
+  // Dia em que a venda/pre-matricula foi de fato CRIADA no sistema (created_at).
+  // data_venda (acima) e a data PROGRAMADA do pagamento -- na pre-matricula e
+  // uma data futura, nao quer dizer que o dinheiro ja caiu.
   data_registro: string | null;
+  // Dia em que o pagamento de verdade da 1a parcela caiu (data_pagamento) --
+  // NULL enquanto for so pre-matricula sem nenhum pagamento ainda. E a resposta
+  // pra "essa venda ja aconteceu de fato, ou so foi prometida?".
+  data_venda_concretizada: string | null;
 }
 
 const ContratoBadge = ({ assinado, enviado }: { assinado: boolean | null; enviado: boolean | null }) => {
@@ -2442,9 +2447,82 @@ const STATUS_LABEL_TC: Record<string, string> = {
   pendente: 'Confirmada', reservado: 'Confirmada', pago: 'Confirmada',
 };
 
+// Dados pessoais do aluno vistos/editados pelo "olhinho" da Minhas Vendas --
+// só isso, nunca parcela/pagamento (fica reservado ao Financeiro).
+interface AlunoDadosPessoais {
+  id: string; nome: string; email: string | null; whatsapp: string | null;
+  cpf: string | null; rg: string | null; data_nascimento: string | null;
+  sexo: string | null; pais: string | null; cep: string | null;
+  cidade_estado: string | null; endereco: string | null;
+}
+
 function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
   const [vendas, setVendas] = useState<VendaNominal[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // "Olhinho": abre a ficha (só dados pessoais) do aluno pra vendedora
+  // corrigir sozinha, sem precisar pedir pro dono -- pedido dele 2026-09-30.
+  const [fichaOpen, setFichaOpen] = useState(false);
+  const [fichaCarregando, setFichaCarregando] = useState(false);
+  const [fichaSalvando, setFichaSalvando] = useState(false);
+  const [ficha, setFicha] = useState<AlunoDadosPessoais | null>(null);
+  const [fichaEmailOriginal, setFichaEmailOriginal] = useState('');
+  // Depois de salvar com o e-mail mudado, pergunta se reenvia o contrato --
+  // "ou variações de perguntas possíveis" (o pedido foi flexível na redação,
+  // o essencial é sempre perguntar antes de reenviar, nunca reenviar sozinho).
+  const [perguntaReenvio, setPerguntaReenvio] = useState<{ alunoId: string } | null>(null);
+
+  const abrirFicha = async (alunoId: string) => {
+    setFichaOpen(true);
+    setFichaCarregando(true);
+    setFicha(null);
+    const { data, error } = await (supabase as any).rpc('time_comercial_aluno_dados_pessoais', { p_aluno_id: alunoId });
+    setFichaCarregando(false);
+    if (error || !data?.[0]) {
+      toast({ title: 'Não foi possível abrir a ficha', description: error?.message, variant: 'destructive' });
+      setFichaOpen(false);
+      return;
+    }
+    const d = data[0] as AlunoDadosPessoais;
+    setFicha(d);
+    setFichaEmailOriginal((d.email ?? '').trim().toLowerCase());
+  };
+
+  const salvarFicha = async (reenviarContrato: boolean) => {
+    if (!ficha) return;
+    setFichaSalvando(true);
+    const { data, error } = await supabase.functions.invoke('time-comercial-aluno-atualizar', {
+      body: {
+        aluno_id: ficha.id, nome: ficha.nome, email: ficha.email, whatsapp: ficha.whatsapp,
+        cpf: ficha.cpf, rg: ficha.rg, data_nascimento: ficha.data_nascimento, sexo: ficha.sexo,
+        pais: ficha.pais, cep: ficha.cep, cidade_estado: ficha.cidade_estado, endereco: ficha.endereco,
+        reenviar_contrato: reenviarContrato,
+      },
+    });
+    setFichaSalvando(false);
+    const resp = data as { ok?: boolean; erro?: string; emailMudou?: boolean; contratoReenviado?: boolean; contratoErro?: string } | null;
+    if (error || !resp?.ok) {
+      toast({ title: 'Não foi possível salvar', description: resp?.erro || error?.message, variant: 'destructive' });
+      return;
+    }
+    // Primeira etapa (reenviarContrato ainda não decidido): se o e-mail mudou,
+    // pergunta antes de fechar -- não reenvia contrato sozinho.
+    if (!reenviarContrato && resp.emailMudou && (ficha.email ?? '').trim().toLowerCase() !== fichaEmailOriginal) {
+      setPerguntaReenvio({ alunoId: ficha.id });
+      return;
+    }
+    if (reenviarContrato) {
+      toast(resp.contratoReenviado
+        ? { title: 'Dados salvos e contrato reenviado', description: 'O novo link de assinatura foi enviado pro e-mail/WhatsApp atualizado.' }
+        : { title: 'Dados salvos, mas o contrato não pôde ser reenviado', description: resp.contratoErro, variant: 'destructive' });
+    } else {
+      toast({ title: 'Dados salvos' });
+    }
+    setPerguntaReenvio(null);
+    setFichaOpen(false);
+    setFicha(null);
+    (supabase as any).rpc('time_comercial_minhas_vendas').then(({ data }: any) => setVendas((data ?? []) as VendaNominal[]));
+  };
 
   useEffect(() => {
     (supabase as any).rpc('time_comercial_minhas_vendas').then(({ data, error }: any) => {
@@ -2488,8 +2566,10 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
                 <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
                   <TableHeader>
                     <TableRow className={PREMIUM_TABLE_HEADER_ROW}>
+                      <TableHead className="w-8"></TableHead>
+                      <TableHead>Pré-matrícula feita</TableHead>
+                      <TableHead>Venda concretizada</TableHead>
                       <TableHead>Pagamento previsto</TableHead>
-                      <TableHead>Data da venda</TableHead>
                       <TableHead>Aluno</TableHead>
                       <TableHead>Produto</TableHead>
                       <TableHead>Forma</TableHead>
@@ -2501,11 +2581,26 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
                   <TableBody>
                     {linhas.map((v, idx) => (
                       <TableRow key={v.aluno_id} className={premiumZebraRow(idx)}>
-                        <TableCell className="text-xs whitespace-nowrap">
-                          {v.data_venda ? new Date(v.data_venda + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
+                        <TableCell className="w-8">
+                          {v.origem === 'matricula' && (
+                            <button
+                              type="button"
+                              onClick={() => abrirFicha(v.aluno_id)}
+                              title="Ver/editar dados do aluno"
+                              className="text-muted-foreground hover:text-primary transition-colors"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
+                          )}
                         </TableCell>
                         <TableCell className="text-xs whitespace-nowrap">
                           {v.data_registro ? new Date(v.data_registro + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
+                        </TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">
+                          {v.data_venda_concretizada ? new Date(v.data_venda_concretizada + 'T12:00:00').toLocaleDateString('pt-BR') : <span className="text-muted-foreground">—</span>}
+                        </TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">
+                          {v.data_venda ? new Date(v.data_venda + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
                         </TableCell>
                         <TableCell className="text-sm font-medium text-foreground">{v.aluno_nome}</TableCell>
                         <TableCell className="text-xs whitespace-nowrap">{v.produto ? (PRODUTO_LABEL_TC[v.produto] ?? v.produto) : '—'}</TableCell>
@@ -2513,9 +2608,14 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
                         <TableCell className="text-xs whitespace-nowrap">{v.status ? (STATUS_LABEL_TC[v.status] ?? v.status) : '—'}</TableCell>
                         <TableCell className="whitespace-nowrap"><ContratoBadge assinado={v.contrato_assinado} enviado={v.contrato_enviado} /></TableCell>
                         <TableCell className="text-right text-sm whitespace-nowrap">
+                          {/* Sempre o líquido de verdade já recebido (soma das parcelas pagas, já
+                              descontada a taxa) -- é o valor que entra no cálculo de comissão.
+                              R$0 pra pré-matrícula sem nenhum pagamento ainda é o comportamento
+                              correto, não um bug. */}
                           {v.valor_total != null ? fmt(Number(v.valor_total)) : '—'}
+                          <span className="block text-[10px] text-muted-foreground">líquido recebido</span>
                           {v.num_parcelas && v.num_parcelas > 1 && v.valor_parcela != null && (
-                            <span className="block text-[10px] text-muted-foreground">{v.num_parcelas}x de {fmt(Number(v.valor_parcela))}</span>
+                            <span className="block text-[10px] text-muted-foreground">plano: {v.num_parcelas}x de {fmt(Number(v.valor_parcela))}</span>
                           )}
                         </TableCell>
                       </TableRow>
@@ -2527,6 +2627,111 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
           );
         })
       )}
+
+      {/* Ficha (só dados pessoais -- sem parcela/pagamento nenhum, isso fica só
+          no Financeiro) aberta pelo "olhinho" de cada linha. */}
+      <Dialog open={fichaOpen} onOpenChange={(open) => { if (!open) { setFichaOpen(false); setFicha(null); setPerguntaReenvio(null); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-base">Dados do aluno</DialogTitle>
+          </DialogHeader>
+          {fichaCarregando ? (
+            <p className="text-sm text-muted-foreground py-4">Carregando...</p>
+          ) : !ficha ? null : (
+            <div className="flex flex-col gap-3 py-1 max-h-[70vh] overflow-y-auto">
+              <div className="space-y-1.5">
+                <Label htmlFor="ficha-nome">Nome</Label>
+                <Input id="ficha-nome" value={ficha.nome} onChange={(e) => setFicha({ ...ficha, nome: e.target.value })} disabled={fichaSalvando} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="ficha-whatsapp">WhatsApp</Label>
+                  <Input id="ficha-whatsapp" value={ficha.whatsapp ?? ''} onChange={(e) => setFicha({ ...ficha, whatsapp: e.target.value })} disabled={fichaSalvando} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="ficha-email">E-mail</Label>
+                  <Input id="ficha-email" type="email" value={ficha.email ?? ''} onChange={(e) => setFicha({ ...ficha, email: e.target.value })} disabled={fichaSalvando} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="ficha-cpf">CPF</Label>
+                  <Input id="ficha-cpf" value={ficha.cpf ?? ''} onChange={(e) => setFicha({ ...ficha, cpf: e.target.value })} disabled={fichaSalvando} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="ficha-rg">RG</Label>
+                  <Input id="ficha-rg" value={ficha.rg ?? ''} onChange={(e) => setFicha({ ...ficha, rg: e.target.value })} disabled={fichaSalvando} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="ficha-nasc">Data de nascimento</Label>
+                  <Input id="ficha-nasc" type="date" value={ficha.data_nascimento ?? ''} onChange={(e) => setFicha({ ...ficha, data_nascimento: e.target.value })} disabled={fichaSalvando} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="ficha-sexo">Sexo</Label>
+                  <Select value={ficha.sexo ?? ''} onValueChange={(v) => setFicha({ ...ficha, sexo: v })}>
+                    <SelectTrigger id="ficha-sexo" disabled={fichaSalvando}><SelectValue placeholder="Selecione" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Masculino">Masculino</SelectItem>
+                      <SelectItem value="Feminino">Feminino</SelectItem>
+                      <SelectItem value="Outro">Outro</SelectItem>
+                      <SelectItem value="Prefiro não informar">Prefiro não informar</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="ficha-pais">País</Label>
+                  <Input id="ficha-pais" value={ficha.pais ?? ''} onChange={(e) => setFicha({ ...ficha, pais: e.target.value })} disabled={fichaSalvando} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="ficha-cep">CEP</Label>
+                  <Input id="ficha-cep" value={ficha.cep ?? ''} onChange={(e) => setFicha({ ...ficha, cep: e.target.value })} disabled={fichaSalvando} />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="ficha-cidade">Cidade / Estado</Label>
+                <Input id="ficha-cidade" value={ficha.cidade_estado ?? ''} onChange={(e) => setFicha({ ...ficha, cidade_estado: e.target.value })} disabled={fichaSalvando} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="ficha-endereco">Endereço completo</Label>
+                <Textarea id="ficha-endereco" value={ficha.endereco ?? ''} onChange={(e) => setFicha({ ...ficha, endereco: e.target.value })} disabled={fichaSalvando} rows={2} />
+              </div>
+              <p className="text-xs text-muted-foreground">Só dados pessoais -- parcelas e pagamentos ficam só no Financeiro.</p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setFichaOpen(false); setFicha(null); }} disabled={fichaSalvando}>Cancelar</Button>
+            <Button onClick={() => salvarFicha(false)} disabled={fichaSalvando || fichaCarregando || !ficha?.nome.trim()}>
+              {fichaSalvando ? 'Salvando...' : 'Salvar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* E-mail mudou ao salvar -- pergunta antes de reenviar o contrato, nunca
+          reenvia sozinho. */}
+      <Dialog open={!!perguntaReenvio} onOpenChange={(open) => !open && setPerguntaReenvio(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base">Reenviar o contrato?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            O e-mail do aluno mudou. Os dados já foram salvos. Quer que o sistema cancele o contrato antigo
+            e envie um novo, já com o link de assinatura, pro e-mail/WhatsApp atualizado?
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setPerguntaReenvio(null); setFichaOpen(false); setFicha(null); toast({ title: 'Dados salvos' }); (supabase as any).rpc('time_comercial_minhas_vendas').then(({ data }: any) => setVendas((data ?? []) as VendaNominal[])); }} disabled={fichaSalvando}>
+              Não, só salvar
+            </Button>
+            <Button onClick={() => salvarFicha(true)} disabled={fichaSalvando}>
+              {fichaSalvando ? 'Enviando...' : 'Sim, reenviar contrato'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
