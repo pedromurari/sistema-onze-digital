@@ -271,7 +271,10 @@ serve(async (req) => {
               .from('pagamentos')
               .update({
                 status: 'pago',
-                data_pagamento: new Date().toISOString().slice(0, 10),
+                // UTC, não a data de Brasília -- pagamento das ~21h às 23h59
+                // (horário de Brasília) virava o dia seguinte em UTC. Achado
+                // real 2026-09-30.
+                data_pagamento: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }),
                 mp_payment_id: String(id),
               })
               .eq('id', pagamentoExiste.id)
@@ -373,7 +376,8 @@ serve(async (req) => {
                 .from('pagamentos')
                 .update({
                   status: 'pago',
-                  data_pagamento: new Date().toISOString().slice(0, 10),
+                  // UTC, não a data de Brasília -- mesmo achado de 2026-09-30.
+                  data_pagamento: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }),
                   mp_payment_id: String(id),
                 })
                 .eq('id', proximaParcela.id)

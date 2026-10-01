@@ -65,7 +65,9 @@ serve(async (req) => {
     }
 
     // ── Coletar dados do dia ──────────────────────────────────────────────────
-    const hoje = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    // UTC, não a data de Brasília -- rodando à noite (horário de Brasília)
+    // pegava o dia seguinte (achado real 2026-09-30).
+    const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); // YYYY-MM-DD
 
     const [
       { count: novosLeads },

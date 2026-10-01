@@ -284,7 +284,9 @@ async function enviarConfirmacoesParcela(
 async function marcarParcelaPaga(supabase: ReturnType<typeof createClient>, pagamentoId: string) {
   const { data: pagamento } = await supabase
     .from('pagamentos')
-    .update({ status: 'pago', data_pagamento: new Date().toISOString().slice(0, 10) })
+    // UTC, não a data de Brasília -- pagamento das ~21h às 23h59 (horário de
+    // Brasília) virava o dia seguinte em UTC. Achado real 2026-09-30.
+    .update({ status: 'pago', data_pagamento: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) })
     .eq('id', pagamentoId)
     .neq('status', 'pago')
     .select('id, aluno_id, valor, numero_parcela')

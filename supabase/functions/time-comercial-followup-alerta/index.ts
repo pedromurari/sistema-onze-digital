@@ -56,7 +56,9 @@ serve(async (req) => {
     const isCron = !!cronSecret && cronKeyHeader === cronSecret;
     if (!isCron) return json({ ok: false, erro: 'Unauthorized' }, 401);
 
-    const hojeIso = new Date().toISOString().slice(0, 10);
+    // UTC, não a data de Brasília -- rodando à noite (horário de Brasília)
+    // pegava o dia seguinte (achado real 2026-09-30).
+    const hojeIso = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 
     const { data: leadsVencidos, error } = await supabase
       .from('leads')

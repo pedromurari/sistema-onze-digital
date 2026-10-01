@@ -246,7 +246,10 @@ serve(async (req) => {
       return json({ ok: true, conversa_id: conversa.id, status: "encerrado", skipped: "sem_debito_aberto" });
     }
 
-    const hoje = new Date().toISOString().slice(0, 10);
+    // UTC, não a data de Brasília -- rodando entre ~21h e 23h59 (horário de
+    // Brasília) contava um dia de atraso a menos (achado real 2026-09-30, mesmo
+    // bug do data_pagamento nos webhooks de pagamento).
+    const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
     const comAtraso = pagamentos
       .map((p: any) => ({ ...p, dias_atraso: diffDias(hoje, p.data_vencimento) }))
       .sort((a: any, b: any) => b.dias_atraso - a.dias_atraso);

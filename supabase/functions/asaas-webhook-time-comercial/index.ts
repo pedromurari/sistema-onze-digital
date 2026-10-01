@@ -247,7 +247,10 @@ async function marcarPago(
     .from('pagamentos')
     .update({
       status: 'pago',
-      data_pagamento: new Date().toISOString().slice(0, 10),
+      // UTC, não a data de Brasília -- pagamento das ~21h às 23h59 (horário de
+      // Brasília) virava o dia seguinte (UTC já passou da meia-noite). Achado
+      // real 2026-09-30: venda das ~23h ficou registrada como 01/10.
+      data_pagamento: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }),
       asaas_payment_id: asaasPaymentId,
       conta_recebimento: 'asaas',
       ...(taxaValor != null ? { taxa_valor: taxaValor } : {}),
