@@ -21,6 +21,12 @@ const matriz = (pares: Record<string, boolean>): PermissionMatrix =>
   Object.fromEntries(Object.entries(pares).map(([recurso, ver]) => [recurso, { ver }]));
 
 describe('canAccessView com a matriz do banco', () => {
+  it('nega a antiga tela de franquias mesmo com favorito salvo ou permissão legada', () => {
+    const m = matriz({ franquia_psi: true });
+    const p = permissionsFromMatrix(m, 'admin');
+    expect(canAccessView('franquia_psi', p, true, m)).toBe(false);
+    expect(canAccessView('franquia_psi', p, false, m)).toBe(false);
+  });
   it('nega recurso ausente da matriz — deny-by-default', () => {
     const m = matriz({ dashboard: true });
     const p = permissionsFromMatrix(m);

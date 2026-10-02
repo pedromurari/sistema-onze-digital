@@ -33,7 +33,6 @@ const AquecimentoChips = lazy(() => import('./AquecimentoChips').then(m => ({ de
 const Pessoas = lazy(() => import('./Pessoas').then(m => ({ default: m.Pessoas })));
 const LancamentoKanban = lazy(() => import('./LancamentoKanban').then(m => ({ default: m.LancamentoKanban })));
 const NPAKanban        = lazy(() => import('./NPAKanban'));
-const IDMPsiFranquias   = lazy(() => import('./IDMPsiFranquias').then(m => ({ default: m.IDMPsiFranquias })));
 const Posts             = lazy(() => import('./Posts').then(m => ({ default: m.Posts })));
 const Parceiros         = lazy(() => import('./Parceiros').then(m => ({ default: m.Parceiros })));
 const Equipe11ds        = lazy(() => import('./Equipe11ds').then(m => ({ default: m.Equipe11ds })));
@@ -234,7 +233,6 @@ export function CRMLayout() {
       case 'equipe_11ds': return isAdmin
         ? <Equipe11ds onNavigateToPosts={() => setCurrentView('posts')} onNavigateToAluno={(alunoId) => setCurrentView(`financeiro_aluno_${alunoId}` as View)} />
         : <RestrictedView />;
-      case 'franquia_psi': return <IDMPsiFranquias />;
       default: return <Dashboard />;
     }
   };

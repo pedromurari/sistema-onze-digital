@@ -36,7 +36,6 @@ const BASE_MENU: MenuItem[] = [
   { key: 'time_comercial',             label: 'Time Comercial',      icon: Users },
   // Vendas & Parcerias
   { key: 'parceiros',                  label: 'Parceiros',           icon: Handshake,   adminOnly: true },
-  { key: 'franquia_psi',              label: 'IDM PSI Franquias',    icon: TrendingUp },
   // Conteúdo
   { key: 'posts',                      label: 'Post',                 icon: Image,       adminOnly: true },
   // Eventos

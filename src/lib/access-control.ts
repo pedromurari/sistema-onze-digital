@@ -229,6 +229,9 @@ export function canAccessView(
   isAdmin: boolean,
   matrix?: PermissionMatrix,
 ) {
+  // A operação de venda de franquias foi transferida para o portal próprio.
+  // Um favorito antigo ou crm_last_view não pode reabrir a tela legada.
+  if (view === 'franquia_psi') return false;
   if (isAdmin) return true;
 
   if (view === 'lancamentos_overview') return permissions.canViewLancamentos;
@@ -285,6 +288,5 @@ export function firstAllowedView(permissions: AccessPermissions, isAdmin: boolea
   if (permissions.canViewLancamentos && allowedLaunchIds.length > 0) return `lancamentos_${allowedLaunchIds[0]}` as AppView;
   if (permissions.canViewNpa) return 'npa_overview';
   if (permissions.canViewFinanceiro) return 'financeiro';
-  if (permissions.canViewFranquiaPsi) return 'franquia_psi';
   return 'dashboard';
 }
