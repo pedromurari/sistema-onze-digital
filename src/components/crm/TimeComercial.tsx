@@ -3521,8 +3521,8 @@ export function TimeComercial() {
         <TabsContent value="chat" className="flex flex-col gap-3">
           <p className="text-sm text-muted-foreground">
             {viewAsName
-              ? 'Histórico das conversas que passaram pelo seu WhatsApp, com o nome do lead. Só leitura.'
-              : 'Histórico das conversas dos WhatsApps do time, com o nome do lead. Cada vendedor enxerga só o próprio número.'}
+              ? 'Atenda as conversas que passaram pelo seu WhatsApp sem sair do sistema.'
+              : 'Conversas dos WhatsApps do time. Cada vendedor enxerga e responde somente pelo próprio número.'}
           </p>
           <ChatTimeComercial
             viewAsName={viewAsName}

@@ -22,6 +22,11 @@ verify_jwt = false
 [functions.admin-create-user]
 verify_jwt = true
 
+# Atendimento humano do Time Comercial. O gateway exige sessão e a função ainda
+# valida permissão + vínculo da vendedora com a instância antes de enviar.
+[functions.chat-enviar]
+verify_jwt = true
+
 # A função valida o JWT no próprio código para poder responder com mensagens de
 # confirmação e manter a autenticação uniforme entre painel e chamadas internas.
 [functions.equipe-11ds-chat]

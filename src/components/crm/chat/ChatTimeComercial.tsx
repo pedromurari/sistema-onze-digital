@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import {
-  Search, MessageSquare, Smartphone, ChevronLeft, QrCode, RefreshCw, Loader2, XCircle, CheckCircle2, Settings2,
+  Search, MessageSquare, Smartphone, ChevronLeft, QrCode, RefreshCw, Loader2, XCircle, CheckCircle2, Settings2, Send,
 } from 'lucide-react';
 import { useConversas } from '@/hooks/useConversas';
 import { useThread } from '@/hooks/useThread';
@@ -27,7 +28,7 @@ import {
 
 /**
  * Chat do Time Comercial: o vendedor conecta o proprio WhatsApp por QR code e
- * le o historico das conversas que passaram por ele. Somente leitura.
+ * atende as conversas que passaram por ele dentro do próprio CRM.
  *
  * O escopo e' o NUMERO, nao o dono do lead: o vendedor ve o que o WhatsApp dele
  * trocou, e nada do que outro numero (IDM, disparo, o colega) conversou com o
@@ -386,7 +387,7 @@ function Thread({ telefone, instancias, vendedorPorInstancia }: {
 
   let diaAnterior = '';
   return (
-    <div className="flex flex-col gap-1.5 p-4">
+    <div className="flex flex-col gap-2 p-4 sm:p-5 min-h-full bg-slate-50/60">
       {thread.map(m => {
         const dia = fmtDiaSeparador(m.created_at);
         const mostraDia = dia !== diaAnterior;
@@ -408,8 +409,10 @@ function Thread({ telefone, instancias, vendedorPorInstancia }: {
                 </span>
               )}
               <div className={cn(
-                'max-w-[75%] rounded-lg px-3 py-2',
-                enviada ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground',
+                'max-w-[82%] sm:max-w-[72%] rounded-2xl px-3.5 py-2.5 shadow-sm',
+                enviada
+                  ? 'bg-primary text-primary-foreground rounded-br-md'
+                  : 'bg-background border border-border text-foreground rounded-bl-md',
               )}>
                 {m.tipo !== 'text' ? (
                   <p className="text-sm flex items-center gap-1.5 italic">
@@ -432,8 +435,81 @@ function Thread({ telefone, instancias, vendedorPorInstancia }: {
   );
 }
 
-function CaixaDeEntrada({ instancias, escopoPessoal, vendedorPorInstancia }: {
-  instancias: string[]; escopoPessoal: boolean; vendedorPorInstancia?: Record<string, string>;
+/**
+ * Compositor humano: não contém IA nem automação. O navegador envia apenas o ID
+ * da instância; a chave fica no servidor e `chat-enviar` confere se a pessoa pode
+ * usar aquele número. Enter envia e Shift+Enter cria uma nova linha, igual aos
+ * mensageiros que a equipe já usa no dia a dia.
+ */
+function CompositorMensagem({ telefone, evolutionConfigId }: {
+  telefone: string;
+  evolutionConfigId: string;
+}) {
+  const [mensagem, setMensagem] = useState('');
+  const [enviando, setEnviando] = useState(false);
+
+  async function enviar() {
+    const texto = mensagem.trim();
+    if (!texto || enviando) return;
+    setEnviando(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('chat-enviar', {
+        body: {
+          telefone,
+          mensagem: texto,
+          evolution_config_id: evolutionConfigId,
+        },
+      });
+      if (error || !data?.ok) {
+        throw new Error(data?.error || error?.message || 'A Evolution não confirmou o envio.');
+      }
+      setMensagem('');
+    } catch (error: unknown) {
+      toast.error('Mensagem não enviada', { description: (error as Error).message });
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <div className="border-t border-border bg-background p-3">
+      <div className="flex items-end gap-2 rounded-2xl border border-border bg-muted/25 p-1.5 pl-3 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10 transition">
+        <Textarea
+          value={mensagem}
+          onChange={event => setMensagem(event.target.value)}
+          onKeyDown={event => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
+              void enviar();
+            }
+          }}
+          placeholder="Digite uma mensagem..."
+          rows={1}
+          maxLength={4096}
+          disabled={enviando}
+          className="min-h-10 max-h-32 resize-none border-0 bg-transparent px-0 py-2.5 shadow-none focus-visible:ring-0"
+        />
+        <Button
+          type="button"
+          size="icon"
+          onClick={() => void enviar()}
+          disabled={enviando || !mensagem.trim()}
+          className="h-10 w-10 rounded-xl flex-shrink-0"
+          aria-label="Enviar mensagem"
+        >
+          {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+        </Button>
+      </div>
+      <p className="mt-1.5 px-1 text-[10px] text-muted-foreground">Enter envia · Shift+Enter quebra a linha</p>
+    </div>
+  );
+}
+
+function CaixaDeEntrada({ instancias, escopoPessoal, vendedorPorInstancia, evolutionConfigId }: {
+  instancias: string[];
+  escopoPessoal: boolean;
+  vendedorPorInstancia?: Record<string, string>;
+  evolutionConfigId: string | null;
 }) {
   const { conversas, loading } = useConversas(instancias, HISTORICO_DESDE);
   const [busca, setBusca] = useState('');
@@ -448,17 +524,24 @@ function CaixaDeEntrada({ instancias, escopoPessoal, vendedorPorInstancia }: {
   const conversaAtiva = conversas.find(c => c.telefone === ativo) ?? null;
 
   return (
-    <Card className="overflow-hidden">
-      <div className="flex h-[560px]">
-        <div className={cn('w-full sm:w-72 border-r border-border flex flex-col flex-shrink-0', ativo && 'hidden sm:flex')}>
-          <div className="p-2.5 border-b border-border">
+    <Card className="overflow-hidden rounded-2xl shadow-sm">
+      <div className="flex h-[620px] max-h-[calc(100vh-190px)]">
+        <div className={cn('w-full sm:w-80 border-r border-border flex flex-col flex-shrink-0 bg-background', ativo && 'hidden sm:flex')}>
+          <div className="p-3 border-b border-border">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="h-4 w-4 text-primary" />
+                <p className="text-sm font-semibold text-foreground">Conversas</p>
+              </div>
+              <Badge variant="secondary" className="text-[10px]">{conversas.length}</Badge>
+            </div>
             <div className="relative">
               <Search className="h-3.5 w-3.5 text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2" />
               <Input
                 value={busca}
                 onChange={e => setBusca(e.target.value)}
-                placeholder="Buscar por nome ou telefone"
-                className="h-8 text-xs pl-8"
+                placeholder="Buscar conversa"
+                className="h-9 text-xs pl-8 rounded-xl"
               />
             </div>
             <p className="text-[10px] text-muted-foreground mt-1.5">
@@ -496,7 +579,7 @@ function CaixaDeEntrada({ instancias, escopoPessoal, vendedorPorInstancia }: {
             </div>
           ) : (
             <>
-              <div className="px-3 py-2.5 border-b border-border flex items-center gap-2">
+              <div className="px-4 py-3 border-b border-border flex items-center gap-2 bg-background">
                 <button
                   type="button"
                   onClick={() => setAtivo(null)}
@@ -510,14 +593,23 @@ function CaixaDeEntrada({ instancias, escopoPessoal, vendedorPorInstancia }: {
                     {maskPhone(conversaAtiva.telefone)} · {conversaAtiva.grupoNome}
                   </p>
                 </div>
+                {escopoPessoal && (
+                  <Badge variant="outline" className="hidden md:inline-flex text-[10px] font-normal">
+                    via {instancias[0]}
+                  </Badge>
+                )}
                 <FollowupToggleLead telefone={conversaAtiva.telefone} />
               </div>
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto bg-slate-50/60">
                 <Thread telefone={conversaAtiva.telefone} instancias={instancias} vendedorPorInstancia={vendedorPorInstancia} />
               </div>
-              <p className="text-[10px] text-muted-foreground px-3 py-2 border-t border-border">
-                Somente leitura — responder continua sendo pelo WhatsApp.
-              </p>
+              {evolutionConfigId ? (
+                <CompositorMensagem telefone={conversaAtiva.telefone} evolutionConfigId={evolutionConfigId} />
+              ) : (
+                <p className="text-[10px] text-muted-foreground px-3 py-2.5 border-t border-border bg-background">
+                  Selecione uma vendedora em “Ver como” para responder pelo número correto.
+                </p>
+              )}
             </>
           )}
         </div>
@@ -585,7 +677,12 @@ export function ChatTimeComercial({ viewAsName, vendedores }: { viewAsName: stri
       {meuVendedorId && <FollowupConfig vendedorId={meuVendedorId} />}
 
       {instancias.length > 0 && (
-        <CaixaDeEntrada instancias={instancias} escopoPessoal={!!viewAsName} vendedorPorInstancia={vendedorPorInstancia} />
+        <CaixaDeEntrada
+          instancias={instancias}
+          escopoPessoal={!!viewAsName}
+          vendedorPorInstancia={vendedorPorInstancia}
+          evolutionConfigId={viewAsName ? meuNumero?.id ?? null : null}
+        />
       )}
     </div>
   );
