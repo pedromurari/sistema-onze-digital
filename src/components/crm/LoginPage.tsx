@@ -118,16 +118,15 @@ export function LoginPage() {
       <LoginBackground />
       <div className="relative w-full max-w-md animate-scale-in">
         <div className="bg-card/90 backdrop-blur rounded-2xl shadow-2xl p-8 border border-border">
-          {/* Logo: símbolo do IDM numa placa branca, pra o azul-marinho aparecer no preto */}
+          {/* Logo: símbolo do IDM solto, sem fundo. O brilho suave (drop-shadow) é só
+              pra o azul-marinho não sumir no preto -- não é uma caixa atrás. */}
           <div className="flex justify-center mb-8">
-            {/* Cor inline de propósito: a classe bg-white é remapeada no tema escuro. */}
-            <div className="h-24 w-24 rounded-2xl p-2 shadow-lg" style={{ backgroundColor: '#ffffff' }}>
-              <img
-                alt="Instituto DespertaMENTE (IDM)"
-                className="h-full w-full object-contain"
-                src="/lovable-uploads/idm-simbolo.png"
-              />
-            </div>
+            <img
+              alt="Instituto DespertaMENTE (IDM)"
+              className="h-28 w-auto object-contain"
+              style={{ filter: 'drop-shadow(0 0 14px rgba(255,255,255,0.45))' }}
+              src="/lovable-uploads/idm-simbolo.png"
+            />
           </div>
 
           {/* Title */}

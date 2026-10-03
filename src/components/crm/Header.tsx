@@ -23,9 +23,9 @@ export function Header({ onOpenMobileMenu }: HeaderProps) {
         >
           <Menu className="h-5 w-5 text-foreground/70" />
         </button>
-        {/* Símbolo do IDM (azul-marinho + dourado). No tema escuro o azul some no
-            fundo, por isso a "placa" branca arredondada só nesse tema. */}
-        <img alt="Instituto DespertaMENTE (IDM)" className="h-9 object-contain rounded-md dark:bg-white dark:p-0.5" src="/lovable-uploads/idm-simbolo.png" />
+        {/* Símbolo do IDM (azul-marinho + dourado), sem fundo. No tema escuro o azul
+            some no cabeçalho, então ganha um brilho suave (não uma caixa atrás). */}
+        <img alt="Instituto DespertaMENTE (IDM)" className="h-9 object-contain dark:[filter:drop-shadow(0_0_6px_rgba(255,255,255,0.55))]" src="/lovable-uploads/idm-simbolo.png" />
       </div>
 
       <div className="flex items-center gap-2 lg:gap-3 flex-shrink-0">
