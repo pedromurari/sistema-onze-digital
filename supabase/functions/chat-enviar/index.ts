@@ -119,12 +119,16 @@ serve(async (req) => {
 
     let evolutionResponse: any;
     try {
+      // O histórico interno guarda o telefone sem DDI para conseguir agrupar as
+      // conversas. A Evolution, porém, consulta a existência pelo número E.164;
+      // sem o 55 ela monta `11...@s.whatsapp.net` e responde `exists: false`.
+      const telefoneEvolution = `55${telefone}`;
       const envio = await fetch(
         `${baseEvolution(instancia.api_url)}/message/sendText/${encodeURIComponent(instancia.instance_name)}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', apikey: instancia.api_key },
-          body: JSON.stringify({ number: telefone, text: mensagem, delay: 600 }),
+          body: JSON.stringify({ number: telefoneEvolution, text: mensagem, delay: 600 }),
           signal: AbortSignal.timeout(20_000),
         },
       );
