@@ -22,10 +22,11 @@ verify_jwt = false
 [functions.admin-create-user]
 verify_jwt = true
 
-# Atendimento humano do Time Comercial. O gateway exige sessão e a função ainda
-# valida permissão + vínculo da vendedora com a instância antes de enviar.
+# O gateway fica sem a checagem legada porque o projeto usa tokens de sessão que
+# podem ser incompatíveis com ela. A função não fica pública: valida o Bearer com
+# auth.getUser(), a permissão e o vínculo da vendedora antes de qualquer envio.
 [functions.chat-enviar]
-verify_jwt = true
+verify_jwt = false
 
 # A função valida o JWT no próprio código para poder responder com mensagens de
 # confirmação e manter a autenticação uniforme entre painel e chamadas internas.

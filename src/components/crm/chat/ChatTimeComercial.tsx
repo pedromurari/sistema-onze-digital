@@ -461,7 +461,20 @@ function CompositorMensagem({ telefone, evolutionConfigId }: {
         },
       });
       if (error || !data?.ok) {
-        throw new Error(data?.error || error?.message || 'A Evolution não confirmou o envio.');
+        // `invoke` transforma respostas 4xx/5xx em FunctionsHttpError. O motivo
+        // útil continua no JSON da Response; sem lê-lo a interface mostraria só
+        // "Edge Function returned a non-2xx status code", que não ajuda ninguém.
+        let detalhe = data?.error as string | undefined;
+        const contexto = (error as { context?: Response } | null)?.context;
+        if (!detalhe && contexto) {
+          try {
+            const payload = await contexto.clone().json() as { error?: string };
+            detalhe = payload.error;
+          } catch {
+            // Resposta sem JSON: conserva a mensagem padrão do cliente abaixo.
+          }
+        }
+        throw new Error(detalhe || error?.message || 'A Evolution não confirmou o envio.');
       }
       setMensagem('');
     } catch (error: unknown) {
