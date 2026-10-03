@@ -1,6 +1,7 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { LogOut, User, ChevronDown, Menu } from 'lucide-react';
+import { LogOut, User, ChevronDown, Menu, Sun, Moon } from 'lucide-react';
+import { useTheme } from '@/hooks/useTheme';
 import { NotificationBell } from './NotificationBell';
 
 interface HeaderProps {
@@ -9,10 +10,11 @@ interface HeaderProps {
 
 export function Header({ onOpenMobileMenu }: HeaderProps) {
   const { user, logout } = useAuth();
+  const { theme, toggle } = useTheme();
   const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 
   return (
-    <header className="h-16 bg-white border-b border-border px-3 sm:px-4 lg:px-6 flex items-center justify-between sticky top-0 z-40 shadow-sm">
+    <header className="h-16 bg-card border-b border-border px-3 sm:px-4 lg:px-6 flex items-center justify-between sticky top-0 z-40 shadow-sm">
       <div className="flex items-center gap-2 sm:gap-4 min-w-0">
         <button
           onClick={onOpenMobileMenu}
@@ -21,10 +23,21 @@ export function Header({ onOpenMobileMenu }: HeaderProps) {
         >
           <Menu className="h-5 w-5 text-foreground/70" />
         </button>
-        <img alt="11 Digital Strategy" className="h-8 object-contain" src="/lovable-uploads/11ds-mark-transparent.png" />
+        {/* Símbolo do IDM (azul-marinho + dourado). No tema escuro o azul some no
+            fundo, por isso a "placa" branca arredondada só nesse tema. */}
+        <img alt="Instituto DespertaMENTE (IDM)" className="h-9 object-contain rounded-md dark:bg-white dark:p-0.5" src="/lovable-uploads/idm-simbolo.png" />
       </div>
 
       <div className="flex items-center gap-2 lg:gap-3 flex-shrink-0">
+        <button
+          type="button"
+          onClick={toggle}
+          className="p-2 rounded-md hover:bg-muted transition-colors duration-300"
+          title={theme === 'dark' ? 'Tema claro' : 'Tema escuro'}
+          aria-label={theme === 'dark' ? 'Ativar tema claro' : 'Ativar tema escuro'}
+        >
+          {theme === 'dark' ? <Sun className="h-5 w-5 text-foreground/70" /> : <Moon className="h-5 w-5 text-foreground/70" />}
+        </button>
         <NotificationBell />
 
         <DropdownMenu>
@@ -43,7 +56,7 @@ export function Header({ onOpenMobileMenu }: HeaderProps) {
               <ChevronDown className="h-4 w-4 text-muted-foreground hidden md:block group-hover:text-primary transition-colors duration-300" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56 bg-white border-border shadow-md">
+          <DropdownMenuContent align="end" className="w-56 bg-card border-border shadow-md">
             <div className="px-2 py-1.5 border-b border-border">
               <p className="text-sm font-500">{user?.nome}</p>
               <p className="text-xs text-muted-foreground">{user?.email}</p>

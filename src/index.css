@@ -348,3 +348,44 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ============================================================================
+   Tema escuro do CRM
+   O CRM tem ~300 usos de bg-white e ~700 cores cinza/preto escritas direto nas
+   telas (bg-gray-50, text-gray-500...), que ignoram as variáveis --card/--muted.
+   Em vez de reescrever tela por tela, estas regras remapeiam essas classes
+   SÓ dentro de .dark -- o tema claro continua exatamente como era.
+   Telas novas devem usar os tokens (bg-card, text-muted-foreground, border-border).
+   ============================================================================ */
+.dark .bg-white,
+.dark .hover\:bg-white:hover { background-color: hsl(var(--card)); }
+
+.dark .bg-gray-50,
+.dark .bg-gray-100,
+.dark .bg-slate-50,
+.dark .bg-slate-100,
+.dark .bg-zinc-100,
+.dark .hover\:bg-gray-50:hover { background-color: hsl(var(--muted)); }
+
+.dark .bg-gray-200,
+.dark .hover\:bg-gray-100:hover,
+.dark .hover\:bg-gray-200:hover { background-color: hsl(var(--secondary)); }
+
+.dark .text-black,
+.dark .text-gray-900,
+.dark .text-gray-800,
+.dark .text-gray-700,
+.dark .text-slate-700,
+.dark .hover\:text-gray-700:hover { color: hsl(var(--foreground)); }
+
+.dark .text-gray-600,
+.dark .text-gray-500,
+.dark .text-slate-600,
+.dark .text-slate-500,
+.dark .hover\:text-gray-600:hover { color: hsl(var(--muted-foreground)); }
+
+.dark .border-gray-100,
+.dark .border-gray-200,
+.dark .border-gray-300,
+.dark .border-slate-200,
+.dark .border-zinc-200 { border-color: hsl(var(--border)); }
