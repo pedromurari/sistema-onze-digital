@@ -101,6 +101,18 @@ function fmt(v: number) {
   return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// Data e hora (horário de Brasília) em que o lead entrou na base -- mesmo formato do card do NPA.
+function fmtCadastro(iso: string | null | undefined) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit', month: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+
 // Receita real recebida: soma de pagamentos.valor (status='pago') dos alunos
 // matriculados a partir deste lançamento — diferente de `matriculas × valor
 // padrão` (que é uma estimativa "contratada", não necessariamente recebida).
@@ -2592,6 +2604,11 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
                             <p className="text-xs text-muted-foreground truncate">{lead.whatsapp}</p>
                             {lead.email && (
                               <p className="text-xs text-muted-foreground truncate">{lead.email}</p>
+                            )}
+                            {lead.created_at && (
+                              <p className="text-[10px] text-muted-foreground mt-0.5" title="Data e hora do cadastro">
+                                Cadastro: {fmtCadastro(lead.created_at)}
+                              </p>
                             )}
                             <div className="flex gap-1 mt-2 flex-wrap">
                               {lead.no_grupo && (
