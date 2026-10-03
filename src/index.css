@@ -389,3 +389,11 @@
 .dark .border-gray-300,
 .dark .border-slate-200,
 .dark .border-zinc-200 { border-color: hsl(var(--border)); }
+
+/* Deslocamento bem lento do fundo da tela de login (ver LoginBackground.tsx). */
+@keyframes drift {
+  from { transform: translateX(-4%); }
+  to { transform: translateX(4%); }
+}
+.animate-drift { animation: drift 60s ease-in-out infinite alternate; }
+@media (prefers-reduced-motion: reduce) { .animate-drift { animation: none; } }

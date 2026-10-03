@@ -7,6 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { Mail, Lock, Eye, EyeOff, Loader2, User } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { LoginBackground } from './LoginBackground';
 
 type AuthMode = 'login' | 'signup';
 
@@ -111,16 +112,22 @@ export function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-muted via-background to-muted p-4">
-      <div className="w-full max-w-md animate-scale-in">
-        <div className="bg-card rounded-2xl shadow-xl p-8 border border-border">
-          {/* Logo */}
+    // Tela de marca: sempre escura, independente do tema do CRM. A classe `dark`
+    // aqui só vale pra esta árvore e já faz inputs, textos e botões usarem os tokens escuros.
+    <div className="dark text-foreground relative min-h-screen flex items-center justify-center p-4">
+      <LoginBackground />
+      <div className="relative w-full max-w-md animate-scale-in">
+        <div className="bg-card/90 backdrop-blur rounded-2xl shadow-2xl p-8 border border-border">
+          {/* Logo: símbolo do IDM numa placa branca, pra o azul-marinho aparecer no preto */}
           <div className="flex justify-center mb-8">
-            <img
-              alt="Onze Digital"
-              className="h-20 object-contain"
-              src="/lovable-uploads/0b700a59-143e-4372-b251-e35dcfaa29a6.png"
-            />
+            {/* Cor inline de propósito: a classe bg-white é remapeada no tema escuro. */}
+            <div className="h-24 w-24 rounded-2xl p-2 shadow-lg" style={{ backgroundColor: '#ffffff' }}>
+              <img
+                alt="Instituto DespertaMENTE (IDM)"
+                className="h-full w-full object-contain"
+                src="/lovable-uploads/idm-simbolo.png"
+              />
+            </div>
           </div>
 
           {/* Title */}
