@@ -19,6 +19,7 @@ const NPAEventos       = lazy(() => import('./NPAEventos').then(m => ({ default:
 const LancamentosOverview = lazy(() => import('./LancamentosOverview').then(m => ({ default: m.LancamentosOverview })));
 const Operacoes        = lazy(() => import('./Operacoes').then(m => ({ default: m.Operacoes })));
 const MapaMental       = lazy(() => import('./MapaMental').then(m => ({ default: m.MapaMental })));
+const RH               = lazy(() => import('./RH').then(m => ({ default: m.RH })));
 const Financeiro       = lazy(() => import('./Financeiro').then(m => ({ default: m.Financeiro })));
 const NotasFiscais     = lazy(() => import('./finance/NotasFiscais').then(m => ({ default: m.NotasFiscais })));
 const DreCompetencia   = lazy(() => import('./finance/DreCompetencia').then(m => ({ default: m.DreCompetencia })));
@@ -228,6 +229,7 @@ export function CRMLayout() {
       case 'operacoes_calendario_geral': return <Operacoes currentPage={currentView} />;
       case 'operacoes_calendario_conteudo': return <Operacoes currentPage={currentView} />;
       case 'mapa_mental': return <MapaMental />;
+      case 'rh': return <RH />;
       case 'posts': return isAdmin ? <Posts /> : <RestrictedView />;
       case 'parceiros': return isAdmin ? <Parceiros /> : <RestrictedView />;
       case 'equipe_11ds': return isAdmin
