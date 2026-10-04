@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Kanban, Settings, UserCog,
   Rocket, BarChart3,
   ChevronLeft, ChevronRight, Plus, Brain, Scale, Menu,
-  GripVertical, Pencil, Check, MessageSquare, MessageCircle, TrendingUp, GitBranch, CalendarDays, Radio, Image, Handshake, Bot, Flame, Users, Contact, ReceiptText, Calculator, BriefcaseBusiness,
+  GripVertical, Pencil, Check, MessageSquare, MessageCircle, TrendingUp, GitBranch, CalendarDays, Radio, Image, Handshake, Bot, Flame, Users, Contact, ReceiptText, Calculator, BriefcaseBusiness, FileCheck2,
 } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { LancamentoWizard } from '@/components/crm/LancamentoWizard';
@@ -57,6 +57,7 @@ const BASE_MENU: MenuItem[] = [
   { key: 'cobranca',                 label: 'Cobrança',              icon: MessageSquare },
   // Gestão
   { key: 'rh',                       label: 'RH',                    icon: BriefcaseBusiness },
+  { key: 'provas_trabalhos',         label: 'Provas e Trabalhos',   icon: FileCheck2 },
   { key: 'mapa_mental',              label: 'Mapa Mental',           icon: Brain },
   { key: 'equipe_11ds',              label: 'Equipe 11DS',           icon: Bot,        adminOnly: true },
   // Admin
