@@ -6,8 +6,10 @@ import type { ResponsavelRow, TurmaResponsavelRow } from '@/lib/financial-utils'
 /**
  * Sócios e o split de receita por turma.
  *
- * `turma_responsaveis` responde "quanto dessa turma é de quem" — a regra é investidor 50%
- * e instituto 50%, com o primeiro pagamento (comercial) indo para a 11ds. Dashboard,
+ * `turma_responsaveis` responde "quanto dessa turma é de quem" — a regra padrão é investidor
+ * 50% e instituto 50%, com o primeiro pagamento (comercial) indo para a 11ds. Quando o
+ * cadastro inclui o próprio IDM e fecha 100%, os percentuais são participações finais no
+ * líquido (por exemplo, Sociedade IDM: 60% IDM / 40% Jucimara). Dashboard,
  * Balanço e FinanceiroCFO liam essa tabela com exatamente as mesmas cinco colunas, cada
  * um por conta própria, e o Balanço e o CFO ainda tinham um `reloadTurmaResponsaveis`
  * particular para depois de editar o split — que atualizava só a própria tela.

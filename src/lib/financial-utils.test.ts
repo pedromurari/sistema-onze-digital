@@ -7,6 +7,7 @@ import {
   calcInadimplencia,
   calcMRR,
   makeGetOwnerShare,
+  calcRepassePagamento,
   calcDrePorSocio,
   calcTaxaTransacao,
   taxaDoPagamento,
@@ -249,6 +250,51 @@ describe('makeGetOwnerShare — o split manda, responsavel_id e so o fallback', 
   it('turma sem dono e sem split nao pertence a socio nenhum', () => {
     const share = makeGetOwnerShare('Keila', [{ id: 't9' }], [], responsaveis);
     expect(share('t9')).toBe(0);
+  });
+});
+
+describe('calcRepassePagamento — participacao direta no liquido', () => {
+  const responsaveis = [
+    { id: 'r-idm', nome: 'IDM' },
+    { id: 'r-jucimara', nome: 'Jucimara Anjos' },
+  ];
+
+  it('respeita 60% IDM e 40% Jucimara na Sociedade IDM', () => {
+    // A presença do IDM e o total fechado em 100% tornam o cadastro um split
+    // final. Sem isso, a regra histórica interpretaria 40 como peso dentro da
+    // metade do investidor e pagaria 50% indevidamente.
+    const resultado = calcRepassePagamento(
+      150,
+      'sociedade-idm',
+      1,
+      't-sociedade',
+      [
+        { id: 's-idm', turma_id: 't-sociedade', user_id: 'r-idm', nome_ref: 'IDM', percentual: 60 },
+        { id: 's-jucimara', turma_id: 't-sociedade', user_id: 'r-jucimara', nome_ref: 'Jucimara Anjos', percentual: 40 },
+      ],
+      responsaveis,
+    );
+
+    expect(resultado).toEqual([
+      { responsavel_id: 'r-idm', nome: 'IDM', percentual: 60, valor: 90 },
+      { responsavel_id: 'r-jucimara', nome: 'Jucimara Anjos', percentual: 40, valor: 60 },
+    ]);
+  });
+
+  it('preserva o modelo historico quando existe apenas o investidor', () => {
+    const resultado = calcRepassePagamento(
+      150,
+      'sociedade-idm',
+      2,
+      't-antiga',
+      [{ id: 's-jucimara', turma_id: 't-antiga', user_id: 'r-jucimara', nome_ref: 'Jucimara Anjos', percentual: 40 }],
+      responsaveis,
+    );
+
+    expect(resultado).toEqual([
+      { responsavel_id: 'r-idm', nome: 'IDM', percentual: 50, valor: 75 },
+      { responsavel_id: 'r-jucimara', nome: 'Jucimara Anjos', percentual: 50, valor: 75 },
+    ]);
   });
 });
 

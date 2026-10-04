@@ -492,6 +492,9 @@ export function shiftPeriodo(tipo: PeriodoTipo, ref: Date, direcao: 1 | -1): Dat
 //   • Recorrência (parcela 2+, qualquer produto) → 50% IDM + 50% rateado entre
 //     o(s) investidor(es) da turma (turma_responsaveis). Turma sem investidor
 //     cadastrado: os 50% "do investidor" ficam com o IDM também (100% IDM).
+//     Exceção: quando o split traz o próprio IDM e fecha exatamente 100%, ele
+//     representa participações diretas no líquido (ex.: Sociedade IDM = 60%
+//     IDM + 40% Jucimara), sem forçar a regra padrão de metade/metade.
 //   • Comercial de outros produtos (ex: numerologia) → mesma regra da
 //     recorrência: 50% IDM + 50% investidor(es); sem investidor, 100% IDM.
 // FONTE: turma_responsaveis (turma_id, user_id → responsaveis.id, percentual)
@@ -618,6 +621,30 @@ function metadeComInvestidor(
   return mesclarLinhas(linhas);
 }
 
+// Um split que inclui o IDM e fecha 100% é deliberadamente completo: cada
+// percentual já representa a participação final no líquido, e não um peso
+// dentro dos 50% reservados ao investidor. Exigir as duas condições mantém
+// intactas as turmas antigas, que normalmente possuem apenas a linha do
+// investidor com 50% e dependem da regra padrão 50/50.
+function splitDiretoCompleto(
+  liquido: number,
+  linhasTurma: TurmaResponsavelRow[],
+  responsaveisList: ResponsavelRow[],
+): RepasseCalculado[] | null {
+  const totalPct = linhasTurma.reduce((s, tr) => s + Number(tr.percentual || 0), 0);
+  const incluiIdm = linhasTurma.some(tr => resolveNomeInvestidor(tr, responsaveisList) === NOME_IDM);
+  if (!incluiIdm || Math.abs(totalPct - 100) > 0.001) return null;
+
+  return mesclarLinhas(linhasTurma
+    .filter(tr => tr.percentual > 0)
+    .map(tr => ({
+      responsavel_id: tr.user_id,
+      nome: resolveNomeInvestidor(tr, responsaveisList),
+      percentual: tr.percentual,
+      valor: liquido * (tr.percentual / 100),
+    })));
+}
+
 // Calcula o repasse de UM pagamento — reutilizado tanto no agregado do
 // período quanto na exibição linha-a-linha de cada entrada no Fechamento.
 export function calcRepassePagamento(
@@ -666,6 +693,12 @@ export function calcRepassePagamento(
     for (const l of merged) l.percentual = liquido > 0 ? (l.valor / liquido) * 100 : 0;
     return merged;
   }
+
+  // Contratos com participação diferente do padrão são escritos como um split
+  // completo, incluindo a fatia do IDM. É o caso da Sociedade IDM, cuja
+  // coordenadora recebe 40% do líquido e o IDM conserva os 60% restantes.
+  const splitDireto = splitDiretoCompleto(liquido, investidores, responsaveisList);
+  if (splitDireto) return splitDireto;
 
   // Recorrência (qualquer produto) e comercial de produtos que não sejam PSI
   // (ex: numerologia): 50% IDM + 50% investidor(es); sem investidor, 100% IDM.
