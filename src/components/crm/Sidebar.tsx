@@ -29,7 +29,7 @@ type MenuItem =
 const BASE_MENU: MenuItem[] = [
   // Início
   { key: 'dashboard',                  label: 'Dashboard',           icon: LayoutDashboard },
-  { key: 'operacoes_calendario_geral', label: 'Calendário',          icon: CalendarDays },
+  { key: 'operacoes_calendario_geral', label: 'Operações',           icon: CalendarDays },
   // CRM
   { key: 'pessoas',                    label: 'Pessoas',             icon: Contact },
   // CRM Time Comercial
@@ -490,7 +490,7 @@ export function MobileNav({ currentView, onViewChange, onOpenMore }: MobileNavPr
   const quickItems: { key: View; label: string; icon: React.ElementType }[] = [
     { key: 'dashboard',                  label: 'Início',     icon: LayoutDashboard },
     { key: 'financeiro',                 label: 'Financeiro', icon: BarChart3 },
-    { key: 'operacoes_calendario_geral', label: 'Calendário', icon: CalendarDays },
+    { key: 'operacoes_calendario_geral', label: 'Operações', icon: CalendarDays },
   ];
 
   const visibleItems = quickItems.filter(item => canAccessView(item.key, permissions, Boolean(isAdmin), matrix));

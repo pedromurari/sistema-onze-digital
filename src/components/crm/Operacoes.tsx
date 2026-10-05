@@ -67,9 +67,13 @@ interface Turma {
 interface ConteudoCalendario {
   id: string;
   titulo: string;
-  plataforma: 'instagram' | 'youtube' | 'tiktok' | 'linkedin';
-  data_publicacao: string;
-  status: 'rascunho' | 'agendado' | 'publicado' | 'cancelado';
+  plataforma: string | null;
+  formato?: string | null;
+  data_publicacao: string | null;
+  status: string | null;
+  legenda?: string | null;
+  observacoes?: string | null;
+  link?: string | null;
 }
 
 interface Usuario {
@@ -82,9 +86,11 @@ interface OperacoesProps {
   currentPage?: string;
 }
 
+type OperacoesTab = 'tarefas' | 'calendario_geral' | 'calendario_conteudo';
+
 export function Operacoes({ currentPage }: OperacoesProps) {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<string>(() => {
+  const [activeTab, setActiveTab] = useState<OperacoesTab>(() => {
     // Se vier do sidebar como 'operacoes_calendario_geral', 
     // mapear para 'calendario_geral'
     if (currentPage === 'operacoes_calendario_geral') return 'calendario_geral'
@@ -113,6 +119,7 @@ export function Operacoes({ currentPage }: OperacoesProps) {
   const [showTarefaModal, setShowTarefaModal] = useState(false);
   const [showNovaTarefaModal, setShowNovaTarefaModal] = useState(false);
   const [selectedTarefa, setSelectedTarefa] = useState<Tarefa | null>(null);
+  const [conteudoCreateRequest, setConteudoCreateRequest] = useState(0);
 
   // Carregar dados
   useEffect(() => {
@@ -245,7 +252,7 @@ export function Operacoes({ currentPage }: OperacoesProps) {
             </Button>
           )}
           {activeTab === 'calendario_conteudo' && (
-            <Button className="bg-primary hover:bg-primary/90">
+            <Button className="bg-primary hover:bg-primary/90" onClick={() => setConteudoCreateRequest(value => value + 1)}>
               <Plus className="h-4 w-4 mr-2" />Novo Conteúdo
             </Button>
           )}
@@ -254,7 +261,7 @@ export function Operacoes({ currentPage }: OperacoesProps) {
 
       {/* Abas principais */}
       <div className="px-6 pt-2 pb-0 border-b overflow-x-visible">
-        <Tabs value={activeTab} onValueChange={(value: any) => setActiveTab(value)}>
+        <Tabs value={activeTab} onValueChange={value => setActiveTab(value as OperacoesTab)}>
           <TabsList className="flex h-10 items-center gap-1 rounded-md bg-muted p-1 w-auto">
             <TabsTrigger value="tarefas" className="whitespace-nowrap text-sm px-3">
               ✅ Tarefas
@@ -271,7 +278,7 @@ export function Operacoes({ currentPage }: OperacoesProps) {
 
       {/* Conteúdo da aba ativa — sem margin extra */}
       <div className="flex-1 overflow-auto p-6">
-        <Tabs value={activeTab} onValueChange={(value: any) => setActiveTab(value)} className="h-full">
+        <Tabs value={activeTab} onValueChange={value => setActiveTab(value as OperacoesTab)} className="h-full">
           <TabsContent value="tarefas" className="h-full mt-0">
             <TarefasView
               tarefas={tarefas}
@@ -301,6 +308,7 @@ export function Operacoes({ currentPage }: OperacoesProps) {
             <CalendarioConteudoView
               conteudos={conteudoCalendario}
               onLoadData={loadData}
+              createRequest={conteudoCreateRequest}
             />
           </TabsContent>
         </Tabs>
