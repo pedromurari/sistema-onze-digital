@@ -26,7 +26,7 @@ import {
   MessageCircle, Target, Copy, ExternalLink, Users, TrendingUp, DollarSign, CalendarDays,
   Video, Repeat, GraduationCap, Link2, Wallet, CreditCard, Crown, Kanban, ClipboardList,
   Search, X, History, Filter, CornerDownRight, Eye, Zap, BookOpen, Layers, Trash2, RotateCcw,
-  Activity, Percent, BarChart3, Phone, Trophy, Timer, Info, StickyNote, AlarmClock, Lock, UserPlus,
+  Activity, Percent, BarChart3, Phone, Trophy, Timer, Info, StickyNote, AlarmClock, Clock, Lock, UserPlus,
 } from 'lucide-react';
 
 // -----------------------------------------------------------------------
@@ -385,6 +385,17 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
     if ((lead.etapa as string) === 'retorno') return false;
     const criado = new Date(lead.criadoEm).getTime();
     return !Number.isNaN(criado) && Date.now() - criado < 24 * 60 * 60 * 1000;
+  };
+
+  // Data e hora em que o lead entrou no sistema (campanha, site ou cadastro manual),
+  // sempre no fuso de Brasília -- pedido do Pedro 2026-10-05, pra vendedora ver
+  // há quanto tempo cada lead está esperando.
+  const dataCadastroLead = (lead: LeadComCanal): string | null => {
+    const data = new Date(lead.criadoEm);
+    if (Number.isNaN(data.getTime())) return null;
+    const dia = data.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Sao_Paulo' });
+    const hora = data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+    return `${dia} às ${hora}`;
   };
 
   // Bônus de matrícula rápida (canal Direto, página-ponte /obrigado do site) —
@@ -987,6 +998,11 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
                           <NomePessoa nome={lead.nome} pessoaId={lead.pessoaId} telefone={lead.telefone} />
                         </h3>
                         {lead.telefone && <p className="text-xs text-muted-foreground truncate">{lead.telefone}{lead.cidade ? ` · ${lead.cidade}` : ''}</p>}
+                        {dataCadastroLead(lead) && (
+                          <p className="text-[11px] text-muted-foreground flex items-center gap-1 mt-0.5">
+                            <Clock className="h-3 w-3 flex-shrink-0" />Cadastrado em {dataCadastroLead(lead)}
+                          </p>
+                        )}
                         <div className="flex flex-wrap gap-1 mt-1">
                           {canalAtivo === 'todos' && isLeadRecente(lead) && (
                             <Badge className="text-[10px] bg-success text-success-foreground border-0">● Novo</Badge>
