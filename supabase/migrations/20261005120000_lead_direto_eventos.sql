@@ -20,7 +20,7 @@ create table if not exists public.lead_direto_eventos (
 );
 
 create unique index if not exists lead_direto_eventos_event_id_key
-  on public.lead_direto_eventos (event_id) where event_id is not null;
+  on public.lead_direto_eventos (event_id);
 create index if not exists lead_direto_eventos_evento_criado_idx
   on public.lead_direto_eventos (evento, criado_em desc);
 create index if not exists lead_direto_eventos_criado_idx
