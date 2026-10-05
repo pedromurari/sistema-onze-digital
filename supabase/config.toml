@@ -47,3 +47,6 @@ verify_jwt = false
 # valida o service role key no próprio código (ver comentário no index.ts).
 [functions.cobranca-ia-responder]
 verify_jwt = false
+
+[functions.lead-direto-evento]
+verify_jwt = false
