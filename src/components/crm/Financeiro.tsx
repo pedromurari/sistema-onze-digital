@@ -184,10 +184,13 @@ interface ParcelaLocal {
   deleted?: boolean;
 }
 
-type ProdutoTab = 'psicanalise' | 'numerologia' | 'pnl' | 'sociedade-idm';
+type ProdutoTab = 'psicanalise' | 'numerologia' | 'pnl' | 'sociedade-idm' | 'npa-mentoria';
 // Produto real gravado em turmas/alunos/pagamentos -- 'pnl' na aba/ProdutoTab e um
 // guarda-chuva (mostra Practitioner e Master juntos), nunca um valor de verdade no banco.
-type ProdutoReal = 'psicanalise' | 'numerologia' | 'pnl-practitioner' | 'pnl-master' | 'sociedade-idm';
+// "numerologia" (valor no banco) é exibido como "NPS Mentoria" na UI -- rótulo mudou,
+// dado não (2026-10-07). "npa-mentoria" é produto novo, mesma data: compradores da
+// mentoria vendida nos eventos IDM Pelo Brasil (NPA), importados de npa_evento_leads.
+type ProdutoReal = 'psicanalise' | 'numerologia' | 'pnl-practitioner' | 'pnl-master' | 'sociedade-idm' | 'npa-mentoria';
 type SubView = 'alunos' | 'turmas' | 'responsaveis';
 
 // 'pnl' casa com qualquer produto que comece com 'pnl-' (practitioner ou master);
@@ -1085,8 +1088,8 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
 
   // Tabs visíveis conforme turmas acessíveis
   const visibleTabs = useMemo<ProdutoTab[]>(() => {
-    if (isAdmin) return ['psicanalise', 'numerologia', 'pnl', 'sociedade-idm'];
-    const tabs: ProdutoTab[] = (['psicanalise', 'numerologia', 'pnl', 'sociedade-idm'] as ProdutoTab[]).filter(tab =>
+    if (isAdmin) return ['psicanalise', 'numerologia', 'pnl', 'sociedade-idm', 'npa-mentoria'];
+    const tabs: ProdutoTab[] = (['psicanalise', 'numerologia', 'pnl', 'sociedade-idm', 'npa-mentoria'] as ProdutoTab[]).filter(tab =>
       turmas.some(t => matchesProdutoTab(t.tipo || t.produto, tab) && permissions && canAccessFinanceiroTurma(permissions, t.id))
     );
     return tabs.length > 0 ? tabs : ['psicanalise'];
@@ -3071,9 +3074,10 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
             <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as ProdutoTab); setSubView('alunos'); setSelectedTurmaId('todas'); }}>
               <TabsList className={`grid w-full ${visibleTabs.length > 3 ? 'max-w-md' : 'max-w-xs'}`} style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, 1fr)` }}>
                 {visibleTabs.includes('psicanalise') && <TabsTrigger value="psicanalise">Psicanalise</TabsTrigger>}
-                {visibleTabs.includes('numerologia') && <TabsTrigger value="numerologia">Numerologia</TabsTrigger>}
+                {visibleTabs.includes('numerologia') && <TabsTrigger value="numerologia">NPS Mentoria</TabsTrigger>}
                 {visibleTabs.includes('pnl') && <TabsTrigger value="pnl">PNL</TabsTrigger>}
                 {visibleTabs.includes('sociedade-idm') && <TabsTrigger value="sociedade-idm">Sociedade IDM</TabsTrigger>}
+                {visibleTabs.includes('npa-mentoria') && <TabsTrigger value="npa-mentoria">NPA Mentoria</TabsTrigger>}
               </TabsList>
             </Tabs>
           </div>
@@ -3106,10 +3110,11 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                 <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="psicanalise">Psicanalise</SelectItem>
-                  <SelectItem value="numerologia">Numerologia</SelectItem>
+                  <SelectItem value="numerologia">NPS Mentoria</SelectItem>
                   <SelectItem value="pnl-practitioner">PNL Practitioner</SelectItem>
                   <SelectItem value="pnl-master">PNL Master</SelectItem>
                   <SelectItem value="sociedade-idm">Sociedade IDM</SelectItem>
+                  <SelectItem value="npa-mentoria">NPA Mentoria</SelectItem>
                 </SelectContent>
               </Select>
             </div>
