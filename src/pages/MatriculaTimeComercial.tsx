@@ -651,7 +651,7 @@ function PagamentoStep({
               {pixStatus === 'approved' && (
                 <>
                   <p style={{ fontSize: '0.9375rem', color: 'var(--text)', fontWeight: 600 }}>
-                    Pagamento confirmado!{metodo === 'boleto' ? ' As próximas 14 parcelas serão geradas e enviadas automaticamente por WhatsApp/e-mail, um boleto por mês.' : ''}
+                    Pagamento confirmado!{metodo === 'boleto' ? ` As próximas ${(plano.boletoParcelas ?? 15) - 1} parcelas serão geradas e enviadas automaticamente por WhatsApp/e-mail, um boleto por mês.` : ''}
                   </p>
                   <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
                     Redirecionando para o WhatsApp da sua consultora em instantes...
@@ -663,7 +663,7 @@ function PagamentoStep({
               )}
               {metodo === 'boleto' && pixStatus !== 'approved' && (
                 <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', lineHeight: 1.6, textAlign: 'center', maxWidth: 380 }}>
-                  Esta é a 1ª parcela (ato de matrícula). As próximas 14 parcelas serão geradas e
+                  Esta é a 1ª parcela (ato de matrícula). As próximas {(plano.boletoParcelas ?? 15) - 1} parcelas serão geradas e
                   enviadas automaticamente por WhatsApp/e-mail, um boleto por mês.
                 </p>
               )}
