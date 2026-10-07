@@ -52,7 +52,7 @@ export function StepPayment({
   podeEnviar: boolean;
   erro: string;
   onVoltar: () => void;
-  plano: { avista: number; parcela: number; cartaoBase: number; cartaoMaxParcelas: number; cartaoMinParcelas?: number };
+  plano: { avista: number; parcela: number; cartaoBase: number; cartaoMaxParcelas: number; cartaoMinParcelas?: number; boletoParcelas?: number };
   formasPermitidas?: FormaPagamentoPermitida[];
   // Pré-matrícula (rota /pre-matricula/:vendedor): só boleto, e a 1ª
   // cobrança (entrada) não sai na hora -- fica programada pra uma data
@@ -70,6 +70,10 @@ export function StepPayment({
   // "1000x15" (2026-09-29): parcelas fixas, não é um teto "até Nx" -- o
   // texto do grupo precisa dizer "Nx fixas", não "de 1x a Nx".
   const parcelasCartaoFixas = plano.cartaoMinParcelas != null && plano.cartaoMinParcelas === plano.cartaoMaxParcelas && plano.cartaoMaxParcelas > 1;
+  // "125x18" (2026-10-07): boleto com N != 15 parcelas -- antes o texto do
+  // grupo vinha "15x" fixo pra qualquer plano boleto (achado real: o rótulo
+  // mostrava "15x de R$125,00" numa matrícula de 18x).
+  const boletoParcelas = plano.boletoParcelas ?? 15;
   const [gateMsg, setGateMsg] = useState('');
 
   // O botão de confirmar não avisa por que está desabilitado -- some sem
@@ -180,7 +184,7 @@ export function StepPayment({
                   <span className="venc-grupo-icon">📄</span>
                   <div>
                     <div className="venc-grupo-title">Boleto recorrente</div>
-                    <div className="venc-grupo-desc">15x de R$ {fmtBRL(plano.parcela)} · Escolha o melhor dia de vencimento</div>
+                    <div className="venc-grupo-desc">{boletoParcelas}x de R$ {fmtBRL(plano.parcela)} · Escolha o melhor dia de vencimento</div>
                     <div className="venc-grupo-desc" style={{ marginTop: 2 }}>
                       {preMatricula ? 'Cobrança programada — sem pagamento imediato' : '1ª parcela no PIX, depois boleto mensal'}
                     </div>
