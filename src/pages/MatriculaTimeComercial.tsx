@@ -64,9 +64,10 @@ const VENDEDORES: Record<string, string> = {
   '15x50': 'Equipe Instituto Despertamente',
   curitiba: 'Equipe Instituto Despertamente',
   '1000x15': 'Equipe Instituto Despertamente',
+  '125x18': 'Equipe Instituto Despertamente',
 };
 
-const SEM_VENDEDOR_ATRIBUIDO = new Set(['direto', 'promo', '997', '15x50', 'curitiba', '1000x15']);
+const SEM_VENDEDOR_ATRIBUIDO = new Set(['direto', 'promo', '997', '15x50', 'curitiba', '1000x15', '125x18']);
 
 // NPA IDM pelo Brasil — Curitiba (2026-09-19): matrícula presencial da Formação em
 // Psicanálise, mesma oferta/preço do plano "padrao" (por isso não entra em PLANOS,
@@ -98,6 +99,7 @@ const VENDEDOR_WHATSAPP: Record<string, string> = {
   '15x50': '5511976736081',
   curitiba: '5511976736081',
   '1000x15': '5511976736081',
+  '125x18': '5511976736081',
 };
 
 // ─── Planos de preço por slug ───────────────────────────────────────────────
@@ -134,12 +136,21 @@ const VENDEDOR_WHATSAPP: Record<string, string> = {
 // R$1.000,00 -> 15x de R$83,89 (R$1.258,30 no cartão do aluno, R$950,20
 // líquido). cartaoMinParcelas = cartaoMaxParcelas trava o Brick em 15x só,
 // sem opção de escolher menos parcelas (ver uso de cartaoMinParcelas abaixo).
-const PLANOS: Record<string, { avista: number; parcela: number; cartaoBase: number; cartaoMaxParcelas: number; cartaoMinParcelas?: number }> = {
+// "125x18" (2026-10-07): venda pontual -- boleto Asaas, 1 entrada + 17
+// parcelas mensais de R$125 (18 cobranças no total), sem PIX/cartão/bolsa
+// (FORMAS_PERMITIDAS abaixo). boletoParcelas sobrescreve o padrão de 15x do
+// boleto (ver p_num_parcelas na chamada da RPC e o uso de
+// alunos.total_mensalidades em matricula-pagamento-criar) -- mesmo mecanismo
+// que cartaoMaxParcelas já usava pro cartão, generalizado pro boleto nesse
+// pedido. avista/cartaoBase não são usados de verdade (forma oculta por
+// FORMAS_PERMITIDAS), mantidos só por consistência de tipo.
+const PLANOS: Record<string, { avista: number; parcela: number; cartaoBase: number; cartaoMaxParcelas: number; cartaoMinParcelas?: number; boletoParcelas?: number }> = {
   padrao: { avista: 1500, parcela: 150, cartaoBase: 1474.10, cartaoMaxParcelas: 12 },
   promo: { avista: 997, parcela: 110, cartaoBase: 1080, cartaoMaxParcelas: 12 },
   '997': { avista: 997, parcela: 997, cartaoBase: 997, cartaoMaxParcelas: 1 },
   '15x50': { avista: 750, parcela: 50, cartaoBase: 750, cartaoMaxParcelas: 12 },
   '1000x15': { avista: 1000, parcela: 83.89, cartaoBase: 1000, cartaoMaxParcelas: 15, cartaoMinParcelas: 15 },
+  '125x18': { avista: 125, parcela: 125, cartaoBase: 125, cartaoMaxParcelas: 1, boletoParcelas: 18 },
 };
 
 const planoDoSlug = (slug: string): keyof typeof PLANOS => {
@@ -155,6 +166,7 @@ const FORMAS_PERMITIDAS: Record<string, FormaPagamentoPermitida[] | undefined> =
   '997': ['cartao_parcelado'],
   '15x50': ['boleto'],
   '1000x15': ['cartao_parcelado'],
+  '125x18': ['boleto'],
 };
 
 // Forma aceita pela RPC matricula_time_comercial_criar. Desde 2026-09-03,
@@ -902,7 +914,12 @@ export default function MatriculaTimeComercial({ preMatricula = false }: { preMa
         // 'cartao', não importa o plano -- achado real com o plano "1000x15" (15x
         // fixas): o aluno era gravado com 12, e o contrato (que lê
         // alunos.total_mensalidades) ia contradizer o que ela realmente pagou.
-        p_num_parcelas: formaPagamento === 'cartao_parcelado' ? plano.cartaoMaxParcelas : null,
+        // boletoParcelas (2026-10-07, plano "125x18"): mesmo mecanismo pro boleto,
+        // que antes só sabia gerar 15x fixo -- ver uso de total_mensalidades em
+        // matricula-pagamento-criar.
+        p_num_parcelas: formaPagamento === 'cartao_parcelado'
+          ? plano.cartaoMaxParcelas
+          : (formaPagamento === 'boleto' ? plano.boletoParcelas ?? null : null),
       });
 
       if (error) {

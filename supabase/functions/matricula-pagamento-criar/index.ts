@@ -377,7 +377,7 @@ serve(async (req) => {
 
     const { data: aluno, error: alunoErr } = await supabase
       .from('alunos')
-      .select('id, nome, email, cpf, endereco, cep, cidade_estado, dia_vencimento, data_matricula, asaas_customer_id, valor_mensalidade')
+      .select('id, nome, email, cpf, endereco, cep, cidade_estado, dia_vencimento, data_matricula, asaas_customer_id, valor_mensalidade, total_mensalidades')
       .eq('id', alunoId).maybeSingle();
 
     if (alunoErr || !aluno) {
@@ -480,15 +480,20 @@ serve(async (req) => {
         await supabase.from('alunos').update({ asaas_customer_id: customerId }).eq('id', alunoId);
       }
 
-      // ── Datas de vencimento das 15 parcelas (1ª = hoje/data da matrícula, ──
+      // ── Datas de vencimento das N parcelas (1ª = hoje/data da matrícula, ──
       // as seguintes ancoradas no dia de vencimento escolhido) -- mesma regra
       // de src/lib/parcelasAluno.ts (buildInstallments) pra ficar consistente
-      // com o que o CRM recalcularia se precisasse.
+      // com o que o CRM recalcularia se precisasse. N vem de
+      // alunos.total_mensalidades (gravado pela RPC matricula_time_comercial_criar
+      // via p_num_parcelas) -- default 15 pra planos antigos que não mandam esse
+      // parâmetro. Generalizado em 2026-10-07 pro plano "1+17x125" (18 parcelas),
+      // antes travado em 15 fixo pra qualquer plano boleto.
       const diaVencimento = Number((aluno as any).dia_vencimento) || 10;
       const dataMatriculaStr = (aluno as any).data_matricula as string | null;
       const matricula = dataMatriculaStr ? new Date(`${dataMatriculaStr}T12:00:00`) : new Date();
+      const totalParcelas = Number((aluno as any).total_mensalidades) || 15;
 
-      const parcelas = Array.from({ length: 15 }, (_, index) => {
+      const parcelas = Array.from({ length: totalParcelas }, (_, index) => {
         const numeroParcela = index + 1;
         const dueDate = index === 0
           ? matricula
@@ -531,7 +536,7 @@ serve(async (req) => {
             // "/" sai da description (achado em teste real 2026-09-04: o
             // Asaas engole caracteres especiais nesse campo, "1/15" virava
             // "115") -- "de" no lugar da barra.
-            description: `Matricula PSI (parcela ${row.numero_parcela} de 15) - ${nomeCompleto || alunoId}`,
+            description: `Matricula PSI (parcela ${row.numero_parcela} de ${totalParcelas}) - ${nomeCompleto || alunoId}`,
             externalReference: row.id,
           }),
         });
