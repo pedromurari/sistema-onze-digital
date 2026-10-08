@@ -3072,7 +3072,10 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
         {visibleTabs.length > 1 && (
           <div className="mb-4">
             <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as ProdutoTab); setSubView('alunos'); setSelectedTurmaId('todas'); }}>
-              <TabsList className={`grid w-full ${visibleTabs.length > 3 ? 'max-w-md' : 'max-w-xs'}`} style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, 1fr)` }}>
+              {/* Largura por quantidade de abas -- max-w-md (448px) ficou apertado
+                  demais quando "npa-mentoria" virou a 5ª aba (2026-10-08): rótulos
+                  como "Sociedade IDM" e "NPA Mentoria" vazavam do botão. */}
+              <TabsList className={`grid w-full ${visibleTabs.length >= 5 ? 'max-w-2xl' : visibleTabs.length === 4 ? 'max-w-lg' : 'max-w-xs'}`} style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, 1fr)` }}>
                 {visibleTabs.includes('psicanalise') && <TabsTrigger value="psicanalise">Psicanalise</TabsTrigger>}
                 {visibleTabs.includes('numerologia') && <TabsTrigger value="numerologia">NPS Mentoria</TabsTrigger>}
                 {visibleTabs.includes('pnl') && <TabsTrigger value="pnl">PNL</TabsTrigger>}
