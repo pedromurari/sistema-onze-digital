@@ -111,14 +111,20 @@ async function enviarConfirmacoes(
   aluno: { nome: string | null; email: string | null; whatsapp: string | null; cobranca_telefone: string | null },
   valor: number,
   parcela: number,
+  totalParcelas: number,
 ): Promise<void> {
   const fnHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey };
   const nome = aluno.nome || 'aluno(a)';
   const valorFmt = Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+  // totalParcelas vem de alunos.total_mensalidades -- antes fixo em "/15", errado
+  // pra planos com outra contagem (ex: "125x18", 18 parcelas; "npa-mentoria",
+  // pagamento único = 1). Achado real 2026-10-08, pedido do dono pra confirmação
+  // automática ficar confiável antes de plugar emissão de nota fiscal nela.
+  const refParcela = totalParcelas > 1 ? `a parcela ${parcela}/${totalParcelas}` : 'o pagamento';
 
   const numero = aluno.cobranca_telefone || aluno.whatsapp;
   if (numero) {
-    const mensagem = `✅ Pagamento confirmado, ${nome}!\n\nRecebemos a parcela ${parcela}/15 (*R$ ${valorFmt}*) da sua matrícula no *Instituto Despertamente*.\n\nQualquer dúvida, é só chamar por aqui.`;
+    const mensagem = `✅ Pagamento confirmado, ${nome}!\n\nRecebemos ${refParcela} (*R$ ${valorFmt}*) da sua matrícula no *Instituto Despertamente*.\n\nQualquer dúvida, é só chamar por aqui.`;
     try {
       await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
         method: 'POST', headers: fnHeaders,
@@ -140,7 +146,7 @@ async function enviarConfirmacoes(
           to: aluno.email,
           to_name: nome,
           subject: 'Pagamento confirmado - Instituto Despertamente',
-          html: `<h2>Pagamento aprovado! 🎉</h2><p>Oi, ${nome}!</p><p>Confirmamos o pagamento da parcela ${parcela}/15 (<strong>R$ ${valorFmt}</strong>) da sua matrícula no Instituto Despertamente.</p><p>Qualquer dúvida, é só responder este e-mail.</p>`,
+          html: `<h2>Pagamento aprovado! 🎉</h2><p>Oi, ${nome}!</p><p>Confirmamos ${refParcela} (<strong>R$ ${valorFmt}</strong>) da sua matrícula no Instituto Despertamente.</p><p>Qualquer dúvida, é só responder este e-mail.</p>`,
         }),
       });
     } catch (e) {
@@ -273,11 +279,11 @@ async function marcarPago(
   if (!jaEstavaPago) {
     const { data: aluno } = await supabase
       .from('alunos')
-      .select('nome, email, whatsapp, cobranca_telefone, cpf, data_nascimento, endereco, cep, cidade_estado')
+      .select('nome, email, whatsapp, cobranca_telefone, cpf, data_nascimento, endereco, cep, cidade_estado, total_mensalidades')
       .eq('id', pagamento.aluno_id)
       .maybeSingle();
     if (aluno) {
-      await enviarConfirmacoes(supabaseUrl, serviceKey, aluno as any, Number(pagamento.valor), pagamento.numero_parcela).catch((e) =>
+      await enviarConfirmacoes(supabaseUrl, serviceKey, aluno as any, Number(pagamento.valor), pagamento.numero_parcela, Number((aluno as any).total_mensalidades) || 15).catch((e) =>
         console.error('asaas-webhook-time-comercial: falha ao enviar confirmações', e));
 
       // Contrato só na 1ª parcela do plano boleto (equivalente ao "primeiro

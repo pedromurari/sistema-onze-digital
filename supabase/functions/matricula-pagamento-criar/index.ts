@@ -232,10 +232,15 @@ async function enviarConfirmacoesParcela(
   aluno: { nome: string | null; email: string | null; whatsapp: string | null; cobranca_telefone: string | null },
   valor: number,
   parcela: number,
+  totalParcelas: number,
 ): Promise<void> {
   const fnHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey };
   const nome = aluno.nome || 'aluno(a)';
   const valorFmt = Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+  // totalParcelas vem de alunos.total_mensalidades -- antes fixo em "/15", errado
+  // pra planos com outra contagem (ex: "125x18", 18 parcelas; "npa-mentoria",
+  // pagamento único = 1). Mesmo fix de asaas-webhook-time-comercial (2026-10-08).
+  const refParcela = totalParcelas > 1 ? `a parcela ${parcela}/${totalParcelas}` : 'o pagamento';
 
   const numero = aluno.cobranca_telefone || aluno.whatsapp;
   if (numero) {
@@ -244,7 +249,7 @@ async function enviarConfirmacoesParcela(
         method: 'POST', headers: fnHeaders,
         body: JSON.stringify({
           numero,
-          mensagem: `✅ Pagamento confirmado, ${nome}!\n\nRecebemos a parcela ${parcela}/15 (*R$ ${valorFmt}*) da sua matrícula no *Instituto Despertamente*.\n\nQualquer dúvida, é só chamar por aqui.`,
+          mensagem: `✅ Pagamento confirmado, ${nome}!\n\nRecebemos ${refParcela} (*R$ ${valorFmt}*) da sua matrícula no *Instituto Despertamente*.\n\nQualquer dúvida, é só chamar por aqui.`,
           instance_name: 'disp3',
         }),
       });
@@ -261,7 +266,7 @@ async function enviarConfirmacoesParcela(
           to: aluno.email,
           to_name: nome,
           subject: 'Pagamento confirmado - Instituto Despertamente',
-          html: `<h2>Pagamento aprovado! 🎉</h2><p>Oi, ${nome}!</p><p>Confirmamos o pagamento da parcela ${parcela}/15 (<strong>R$ ${valorFmt}</strong>) da sua matrícula no Instituto Despertamente.</p><p>Qualquer dúvida, é só responder este e-mail.</p>`,
+          html: `<h2>Pagamento aprovado! 🎉</h2><p>Oi, ${nome}!</p><p>Confirmamos ${refParcela} (<strong>R$ ${valorFmt}</strong>) da sua matrícula no Instituto Despertamente.</p><p>Qualquer dúvida, é só responder este e-mail.</p>`,
         }),
       });
     } catch (e) {
@@ -302,11 +307,11 @@ async function marcarParcelaPaga(supabase: ReturnType<typeof createClient>, paga
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const { data: aluno } = await supabase
     .from('alunos')
-    .select('nome, email, whatsapp, cobranca_telefone, cpf, data_nascimento, endereco, cep, cidade_estado')
+    .select('nome, email, whatsapp, cobranca_telefone, cpf, data_nascimento, endereco, cep, cidade_estado, total_mensalidades')
     .eq('id', pagamento.aluno_id)
     .maybeSingle();
   if (aluno) {
-    await enviarConfirmacoesParcela(supabaseUrl, serviceKey, aluno as any, Number(pagamento.valor), pagamento.numero_parcela).catch((e) =>
+    await enviarConfirmacoesParcela(supabaseUrl, serviceKey, aluno as any, Number(pagamento.valor), pagamento.numero_parcela, Number((aluno as any).total_mensalidades) || 15).catch((e) =>
       console.error('matricula-pagamento-criar: falha ao enviar confirmações (polling)', e));
     if (pagamento.numero_parcela === 1) {
       await garantirContrato(supabase, { id: pagamento.aluno_id, ...aluno });
