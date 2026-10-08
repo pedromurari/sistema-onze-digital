@@ -3300,9 +3300,17 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
             <DialogDescription>Edite os dados e gerencie pagamentos</DialogDescription>
           </DialogHeader>
           {alunoDetail && (() => {
-            const parcelas = filteredPagamentos.filter(p => p.aluno_id === alunoDetail.id).sort((a, b) => a.numero_parcela - b.numero_parcela);
+            // pagamentos (não filteredPagamentos) -- esse modal precisa mostrar TODAS as
+            // parcelas do aluno, incluindo isentas (perdoadas em negociação de quitação).
+            // filteredPagamentos tira status='isento' de propósito pras telas de cobrança/
+            // totais (não é dívida em aberto), mas aqui isso fazia a parcela isenta sumir
+            // da lista inteira -- "12/12 pagas" em vez de "12/15 pagas, 3 isentas" (achado
+            // real 2026-10-08, caso Lucélia Mendes Garcia: 3 parcelas perdoadas numa
+            // quitação via cartão desapareciam da ficha dela).
+            const parcelas = pagamentos.filter(p => p.aluno_id === alunoDetail.id).sort((a, b) => a.numero_parcela - b.numero_parcela);
             const pagas = parcelas.filter(p => p.status === 'pago').length;
             const atrasadas = parcelas.filter(p => p.status === 'atrasado').length;
+            const isentas = parcelas.filter(p => p.status === 'isento').length;
             const total = parcelas.length;
             const turmaAtual = turmas.find(t => t.id === (editAlunoForm.turma_id || alunoDetail.turma_id));
             const valorEfetivo = editAlunoForm.valor_mensalidade ?? turmaAtual?.valor_mensalidade ?? 0;
@@ -3772,7 +3780,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                           {parcelasEditMode
                             ? `Parcelas — editando (${totalLocal} total)`
-                            : <>Parcelas — {total > 0 ? `${pagas}/${total} pagas` : 'nenhuma gerada'}{atrasadas > 0 && <span className="ml-2 text-red-600">- {atrasadas} em atraso</span>}</>
+                            : <>Parcelas — {total > 0 ? `${pagas}/${total} pagas` : 'nenhuma gerada'}{atrasadas > 0 && <span className="ml-2 text-red-600">- {atrasadas} em atraso</span>}{isentas > 0 && <span className="ml-2 text-muted-foreground">- {isentas} isenta{isentas > 1 ? 's' : ''}</span>}</>
                           }
                         </p>
                         <div className="flex items-center gap-2">
