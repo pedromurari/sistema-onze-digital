@@ -107,6 +107,7 @@ export function permissionsToToggles(permissions: AccessPermissions): Permission
 
 /** Uma tela pode ser varias views (Operacoes tem tres). Aqui elas viram um recurso so. */
 const RECURSO_POR_VIEW: Record<string, string> = {
+  agenda_aulas: 'rh',
   npa_overview:                  'npa',
   lancamentos_overview:          'lancamentos',
   operacoes_tarefas:             'operacoes',
@@ -126,6 +127,7 @@ const RECURSO_POR_VIEW: Record<string, string> = {
 };
 
 export type AppView =
+  | 'agenda_aulas'
   | 'dashboard' | 'npa_overview' | 'lancamentos_overview' | 'financeiro' | 'financeiro_notas' | 'financeiro_dre' | 'financeiro_conciliacao' | 'financeiro_socios' | 'financeiro_cfo' | 'balanco' | 'rodrygo'
   | 'lancamentos_30' | 'lancamentos_31' | 'lancamentos_32'
   | 'team' | 'settings' | 'cobranca' | 'funil_lancamento' | 'disparos_monitor' | 'chat_conversas'
@@ -240,6 +242,7 @@ export function canAccessView(
   // Um favorito antigo ou crm_last_view não pode reabrir a tela legada.
   if (view === 'franquia_psi') return false;
   if (isAdmin) return true;
+  if (view === 'agenda_aulas') return matrix?.rh?.ver === true;
 
   if (view === 'lancamentos_overview') return permissions.canViewLancamentos;
 

@@ -58,6 +58,7 @@ const BASE_MENU: MenuItem[] = [
   // Gestão
   { key: 'rh',                       label: 'RH',                    icon: BriefcaseBusiness },
   { key: 'provas_trabalhos',         label: 'Provas e Trabalhos',   icon: FileCheck2 },
+  { key: 'agenda_aulas', label: 'Agenda de Aulas', icon: CalendarDays },
   { key: 'mapa_mental',              label: 'Mapa Mental',           icon: Brain },
   { key: 'equipe_11ds',              label: 'Equipe 11DS',           icon: Bot,        adminOnly: true },
   // Admin

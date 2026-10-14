@@ -21,6 +21,14 @@ const matriz = (pares: Record<string, boolean>): PermissionMatrix =>
   Object.fromEntries(Object.entries(pares).map(([recurso, ver]) => [recurso, { ver }]));
 
 describe('canAccessView com a matriz do banco', () => {
+  it('agenda exige rh.ver, sem fallback de permissão legada', () => {
+    const p = getDefaultPermissions('admin');
+    expect(canAccessView('agenda_aulas', p, false)).toBe(false);
+    expect(canAccessView('agenda_aulas', p, false, matriz({ mapa_mental: true }))).toBe(false);
+    expect(canAccessView('agenda_aulas', p, false, matriz({ rh: false }))).toBe(false);
+    expect(canAccessView('agenda_aulas', p, false, matriz({ rh: true }))).toBe(true);
+    expect(canAccessView('agenda_aulas', p, true)).toBe(true);
+  });
   it('nega a antiga tela de franquias mesmo com favorito salvo ou permissão legada', () => {
     const m = matriz({ franquia_psi: true });
     const p = permissionsFromMatrix(m, 'admin');
