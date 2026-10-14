@@ -14,6 +14,90 @@ export type Database = {
   }
   public: {
     Tables: {
+      alma_par_leads: {
+        Row: {
+          archetype_name: string | null
+          archetype_number: number | null
+          auth_user_id: string | null
+          created_at: string
+          data_nascimento: string
+          email: string
+          id: string
+          pago_at: string | null
+          partner_archetype_number: number | null
+          partner_data_nascimento: string | null
+          plano: string | null
+          produto: string
+          purchased_bump: boolean
+          purchased_casal: string | null
+          purchased_perfil_completo: boolean
+          referrer: string | null
+          senha_entregue: boolean
+          status: string
+          target_gender: string
+          updated_at: string
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          utm_term: string | null
+        }
+        Insert: {
+          archetype_name?: string | null
+          archetype_number?: number | null
+          auth_user_id?: string | null
+          created_at?: string
+          data_nascimento: string
+          email: string
+          id?: string
+          pago_at?: string | null
+          partner_archetype_number?: number | null
+          partner_data_nascimento?: string | null
+          plano?: string | null
+          produto?: string
+          purchased_bump?: boolean
+          purchased_casal?: string | null
+          purchased_perfil_completo?: boolean
+          referrer?: string | null
+          senha_entregue?: boolean
+          status?: string
+          target_gender: string
+          updated_at?: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+        }
+        Update: {
+          archetype_name?: string | null
+          archetype_number?: number | null
+          auth_user_id?: string | null
+          created_at?: string
+          data_nascimento?: string
+          email?: string
+          id?: string
+          pago_at?: string | null
+          partner_archetype_number?: number | null
+          partner_data_nascimento?: string | null
+          plano?: string | null
+          produto?: string
+          purchased_bump?: boolean
+          purchased_casal?: string | null
+          purchased_perfil_completo?: boolean
+          referrer?: string | null
+          senha_entregue?: boolean
+          status?: string
+          target_gender?: string
+          updated_at?: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+        }
+        Relationships: []
+      }
       aluno_bonus_eventos: {
         Row: {
           acao: string
@@ -137,6 +221,7 @@ export type Database = {
       }
       alunos: {
         Row: {
+          asaas_customer_id: string | null
           asaas_integrado: boolean | null
           asaas_link: string | null
           autentique_documento_id: string | null
@@ -175,11 +260,15 @@ export type Database = {
           lancamento_id: string | null
           lead_quente_contatado_em: string | null
           mensalidades_pagas: number | null
+          mp_customer_id: string | null
+          mp_preapproval_id: string | null
+          mp_status: string | null
           nome: string
           observacoes: string | null
           origem_lead: string | null
           pais: string | null
           pessoa_id: string | null
+          plano_slug: string | null
           produto: string | null
           rg: string | null
           sexo: string | null
@@ -197,6 +286,7 @@ export type Database = {
           whatsapp: string | null
         }
         Insert: {
+          asaas_customer_id?: string | null
           asaas_integrado?: boolean | null
           asaas_link?: string | null
           autentique_documento_id?: string | null
@@ -235,11 +325,15 @@ export type Database = {
           lancamento_id?: string | null
           lead_quente_contatado_em?: string | null
           mensalidades_pagas?: number | null
+          mp_customer_id?: string | null
+          mp_preapproval_id?: string | null
+          mp_status?: string | null
           nome: string
           observacoes?: string | null
           origem_lead?: string | null
           pais?: string | null
           pessoa_id?: string | null
+          plano_slug?: string | null
           produto?: string | null
           rg?: string | null
           sexo?: string | null
@@ -257,6 +351,7 @@ export type Database = {
           whatsapp?: string | null
         }
         Update: {
+          asaas_customer_id?: string | null
           asaas_integrado?: boolean | null
           asaas_link?: string | null
           autentique_documento_id?: string | null
@@ -295,11 +390,15 @@ export type Database = {
           lancamento_id?: string | null
           lead_quente_contatado_em?: string | null
           mensalidades_pagas?: number | null
+          mp_customer_id?: string | null
+          mp_preapproval_id?: string | null
+          mp_status?: string | null
           nome?: string
           observacoes?: string | null
           origem_lead?: string | null
           pais?: string | null
           pessoa_id?: string | null
+          plano_slug?: string | null
           produto?: string | null
           rg?: string | null
           sexo?: string | null
@@ -922,12 +1021,87 @@ export type Database = {
           },
         ]
       }
+      aulas: {
+        Row: {
+          created_at: string
+          data: string
+          horario_fim: string | null
+          horario_inicio: string | null
+          id: string
+          link_meet: string | null
+          modulo: string | null
+          observacoes: string | null
+          profissional_id: string | null
+          status: string
+          turma_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          data: string
+          horario_fim?: string | null
+          horario_inicio?: string | null
+          id?: string
+          link_meet?: string | null
+          modulo?: string | null
+          observacoes?: string | null
+          profissional_id?: string | null
+          status?: string
+          turma_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          data?: string
+          horario_fim?: string | null
+          horario_inicio?: string | null
+          id?: string
+          link_meet?: string | null
+          modulo?: string | null
+          observacoes?: string | null
+          profissional_id?: string | null
+          status?: string
+          turma_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aulas_profissional_id_fkey"
+            columns: ["profissional_id"]
+            isOneToOne: false
+            referencedRelation: "profissionais"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "aulas_turma_id_fkey"
+            columns: ["turma_id"]
+            isOneToOne: false
+            referencedRelation: "financeiro_resumo"
+            referencedColumns: ["turma_id"]
+          },
+          {
+            foreignKeyName: "aulas_turma_id_fkey"
+            columns: ["turma_id"]
+            isOneToOne: false
+            referencedRelation: "turmas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "aulas_turma_id_fkey"
+            columns: ["turma_id"]
+            isOneToOne: false
+            referencedRelation: "vw_cfo_turmas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       balanco_config: {
         Row: {
           asaas_novos_ativo: boolean
           id: string
           inicio_operacao_fiscal: string
           parametros_cfo: Json
+          regras_socio: Json
           saldo_inicial_contas: Json
           socios: Json
           taxas: Json
@@ -938,6 +1112,7 @@ export type Database = {
           id?: string
           inicio_operacao_fiscal?: string
           parametros_cfo?: Json
+          regras_socio?: Json
           saldo_inicial_contas?: Json
           socios?: Json
           taxas?: Json
@@ -948,6 +1123,7 @@ export type Database = {
           id?: string
           inicio_operacao_fiscal?: string
           parametros_cfo?: Json
+          regras_socio?: Json
           saldo_inicial_contas?: Json
           socios?: Json
           taxas?: Json
@@ -1385,6 +1561,24 @@ export type Database = {
           },
         ]
       }
+      cobranca_ia_config: {
+        Row: {
+          ativo: boolean
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       cobranca_ia_conversas: {
         Row: {
           aluno_id: string
@@ -1704,6 +1898,85 @@ export type Database = {
             columns: ["turma_id"]
             isOneToOne: true
             referencedRelation: "vw_cfo_turmas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      comissoes_vendedores: {
+        Row: {
+          aluno_id: string | null
+          aluno_nome: string
+          created_at: string
+          data_pagamento: string | null
+          data_venda: string
+          forma_pagamento: string | null
+          id: string
+          observacoes: string | null
+          origem: string
+          produto: string | null
+          status: string
+          tipo: string
+          updated_at: string
+          valor_comissao: number
+          valor_venda: number
+          vendedor: string
+        }
+        Insert: {
+          aluno_id?: string | null
+          aluno_nome: string
+          created_at?: string
+          data_pagamento?: string | null
+          data_venda?: string
+          forma_pagamento?: string | null
+          id?: string
+          observacoes?: string | null
+          origem?: string
+          produto?: string | null
+          status?: string
+          tipo?: string
+          updated_at?: string
+          valor_comissao?: number
+          valor_venda?: number
+          vendedor: string
+        }
+        Update: {
+          aluno_id?: string | null
+          aluno_nome?: string
+          created_at?: string
+          data_pagamento?: string | null
+          data_venda?: string
+          forma_pagamento?: string | null
+          id?: string
+          observacoes?: string | null
+          origem?: string
+          produto?: string | null
+          status?: string
+          tipo?: string
+          updated_at?: string
+          valor_comissao?: number
+          valor_venda?: number
+          vendedor?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comissoes_vendedores_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: true
+            referencedRelation: "alunos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissoes_vendedores_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: true
+            referencedRelation: "v_pipeline_contratos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissoes_vendedores_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: true
+            referencedRelation: "vw_alunos_financeiro"
             referencedColumns: ["id"]
           },
         ]
@@ -3304,6 +3577,7 @@ export type Database = {
           api_url: string
           ativo: boolean
           created_at: string
+          escopo: string | null
           id: string
           instance_name: string
           prioridade: number
@@ -3314,6 +3588,7 @@ export type Database = {
           api_url?: string
           ativo?: boolean
           created_at?: string
+          escopo?: string | null
           id?: string
           instance_name?: string
           prioridade?: number
@@ -3324,6 +3599,7 @@ export type Database = {
           api_url?: string
           ativo?: boolean
           created_at?: string
+          escopo?: string | null
           id?: string
           instance_name?: string
           prioridade?: number
@@ -3508,6 +3784,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "npa_kanban"
             referencedColumns: ["npa_evento_id"]
+          },
+          {
+            foreignKeyName: "followup_sequencias_npa_evento_id_fkey"
+            columns: ["npa_evento_id"]
+            isOneToOne: false
+            referencedRelation: "vw_receita_eventos_mes"
+            referencedColumns: ["evento_id"]
           },
         ]
       }
@@ -3885,6 +4168,64 @@ export type Database = {
           },
         ]
       }
+      idm_ads_copy_drafts: {
+        Row: {
+          conteudo: string
+          created_at: string
+          criado_por: string | null
+          id: string
+          npa_evento_id: string | null
+          status: string
+          tipo: string
+          titulo: string | null
+          updated_at: string
+        }
+        Insert: {
+          conteudo: string
+          created_at?: string
+          criado_por?: string | null
+          id?: string
+          npa_evento_id?: string | null
+          status?: string
+          tipo: string
+          titulo?: string | null
+          updated_at?: string
+        }
+        Update: {
+          conteudo?: string
+          created_at?: string
+          criado_por?: string | null
+          id?: string
+          npa_evento_id?: string | null
+          status?: string
+          tipo?: string
+          titulo?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "idm_ads_copy_drafts_npa_evento_id_fkey"
+            columns: ["npa_evento_id"]
+            isOneToOne: false
+            referencedRelation: "npa_eventos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "idm_ads_copy_drafts_npa_evento_id_fkey"
+            columns: ["npa_evento_id"]
+            isOneToOne: false
+            referencedRelation: "npa_kanban"
+            referencedColumns: ["npa_evento_id"]
+          },
+          {
+            foreignKeyName: "idm_ads_copy_drafts_npa_evento_id_fkey"
+            columns: ["npa_evento_id"]
+            isOneToOne: false
+            referencedRelation: "vw_receita_eventos_mes"
+            referencedColumns: ["evento_id"]
+          },
+        ]
+      }
       idm_criativos_log: {
         Row: {
           created_at: string | null
@@ -4081,6 +4422,13 @@ export type Database = {
             referencedRelation: "npa_kanban"
             referencedColumns: ["npa_evento_id"]
           },
+          {
+            foreignKeyName: "kanban_colunas_npa_evento_id_fkey"
+            columns: ["npa_evento_id"]
+            isOneToOne: false
+            referencedRelation: "vw_receita_eventos_mes"
+            referencedColumns: ["evento_id"]
+          },
         ]
       }
       lancamento_campanhas: {
@@ -4160,6 +4508,7 @@ export type Database = {
         Row: {
           bv_enviado: boolean | null
           bv_enviado_em: string | null
+          certificado_gerado: boolean
           cidade: string | null
           created_at: string | null
           crm: boolean | null
@@ -4191,6 +4540,7 @@ export type Database = {
         Insert: {
           bv_enviado?: boolean | null
           bv_enviado_em?: string | null
+          certificado_gerado?: boolean
           cidade?: string | null
           created_at?: string | null
           crm?: boolean | null
@@ -4222,6 +4572,7 @@ export type Database = {
         Update: {
           bv_enviado?: boolean | null
           bv_enviado_em?: string | null
+          certificado_gerado?: boolean
           cidade?: string | null
           created_at?: string | null
           crm?: boolean | null
@@ -4648,6 +4999,63 @@ export type Database = {
           },
         ]
       }
+      lead_direto_eventos: {
+        Row: {
+          criado_em: string
+          detalhe: string | null
+          dispositivo: string | null
+          event_id: string | null
+          evento: string
+          host: string | null
+          id: number
+          is_bot: boolean
+          lead_id: string | null
+          pagina: string | null
+          referrer: string | null
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          visitor_id: string | null
+        }
+        Insert: {
+          criado_em?: string
+          detalhe?: string | null
+          dispositivo?: string | null
+          event_id?: string | null
+          evento: string
+          host?: string | null
+          id?: never
+          is_bot?: boolean
+          lead_id?: string | null
+          pagina?: string | null
+          referrer?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          visitor_id?: string | null
+        }
+        Update: {
+          criado_em?: string
+          detalhe?: string | null
+          dispositivo?: string | null
+          event_id?: string | null
+          evento?: string
+          host?: string | null
+          id?: never
+          is_bot?: boolean
+          lead_id?: string | null
+          pagina?: string | null
+          referrer?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          visitor_id?: string | null
+        }
+        Relationships: []
+      }
       lead_respostas: {
         Row: {
           evolution_instance: string | null
@@ -4707,6 +5115,9 @@ export type Database = {
           criado_em: string | null
           email: string | null
           engajamento: string | null
+          followup_manual_prazo: string | null
+          followup_manual_tentativas: number
+          followup_manual_ultima_em: string | null
           followup_passo_atual: number
           followup_pausado: boolean
           followup_sequencia_id: string | null
@@ -4718,6 +5129,7 @@ export type Database = {
           mensagem_ia: string | null
           mensagem_lead: string | null
           nome: string
+          nota_vendedor: string | null
           objetivo_principal: string | null
           observacoes: string | null
           origem: string | null
@@ -4743,6 +5155,9 @@ export type Database = {
           criado_em?: string | null
           email?: string | null
           engajamento?: string | null
+          followup_manual_prazo?: string | null
+          followup_manual_tentativas?: number
+          followup_manual_ultima_em?: string | null
           followup_passo_atual?: number
           followup_pausado?: boolean
           followup_sequencia_id?: string | null
@@ -4754,6 +5169,7 @@ export type Database = {
           mensagem_ia?: string | null
           mensagem_lead?: string | null
           nome: string
+          nota_vendedor?: string | null
           objetivo_principal?: string | null
           observacoes?: string | null
           origem?: string | null
@@ -4779,6 +5195,9 @@ export type Database = {
           criado_em?: string | null
           email?: string | null
           engajamento?: string | null
+          followup_manual_prazo?: string | null
+          followup_manual_tentativas?: number
+          followup_manual_ultima_em?: string | null
           followup_passo_atual?: number
           followup_pausado?: boolean
           followup_sequencia_id?: string | null
@@ -4790,6 +5209,7 @@ export type Database = {
           mensagem_ia?: string | null
           mensagem_lead?: string | null
           nome?: string
+          nota_vendedor?: string | null
           objetivo_principal?: string | null
           observacoes?: string | null
           origem?: string | null
@@ -5728,8 +6148,10 @@ export type Database = {
       }
       npa_evento_leads: {
         Row: {
+          acesso_material_em: string | null
           acesso_membros_liberado_em: string | null
           acesso_membros_url: string | null
+          acesso_mentoria_em: string | null
           aguardando_dados_convidado: boolean
           bv_enviado: boolean | null
           bv_enviado_em: string | null
@@ -5749,6 +6171,8 @@ export type Database = {
           id: string
           ingresso_pago: boolean | null
           ingressos_comprados: number
+          lembrete_30min_enviado: boolean
+          lembrete_30min_enviado_em: string | null
           material_entregue_em: string | null
           matriculado: boolean | null
           no_grupo: boolean | null
@@ -5771,8 +6195,10 @@ export type Database = {
           whatsapp: string | null
         }
         Insert: {
+          acesso_material_em?: string | null
           acesso_membros_liberado_em?: string | null
           acesso_membros_url?: string | null
+          acesso_mentoria_em?: string | null
           aguardando_dados_convidado?: boolean
           bv_enviado?: boolean | null
           bv_enviado_em?: string | null
@@ -5792,6 +6218,8 @@ export type Database = {
           id?: string
           ingresso_pago?: boolean | null
           ingressos_comprados?: number
+          lembrete_30min_enviado?: boolean
+          lembrete_30min_enviado_em?: string | null
           material_entregue_em?: string | null
           matriculado?: boolean | null
           no_grupo?: boolean | null
@@ -5814,8 +6242,10 @@ export type Database = {
           whatsapp?: string | null
         }
         Update: {
+          acesso_material_em?: string | null
           acesso_membros_liberado_em?: string | null
           acesso_membros_url?: string | null
+          acesso_mentoria_em?: string | null
           aguardando_dados_convidado?: boolean
           bv_enviado?: boolean | null
           bv_enviado_em?: string | null
@@ -5835,6 +6265,8 @@ export type Database = {
           id?: string
           ingresso_pago?: boolean | null
           ingressos_comprados?: number
+          lembrete_30min_enviado?: boolean
+          lembrete_30min_enviado_em?: string | null
           material_entregue_em?: string | null
           matriculado?: boolean | null
           no_grupo?: boolean | null
@@ -5878,6 +6310,13 @@ export type Database = {
             referencedRelation: "npa_kanban"
             referencedColumns: ["npa_evento_id"]
           },
+          {
+            foreignKeyName: "npa_leads_npa_evento_id_fkey"
+            columns: ["npa_evento_id"]
+            isOneToOne: false
+            referencedRelation: "vw_receita_eventos_mes"
+            referencedColumns: ["evento_id"]
+          },
         ]
       }
       npa_eventos: {
@@ -5889,6 +6328,7 @@ export type Database = {
           ebook_url: string | null
           id: string
           local: string | null
+          meta_conversao_url: string | null
           meta_faturamento: number | null
           meta_ingressos: number | null
           meta_matriculas: number | null
@@ -5909,6 +6349,7 @@ export type Database = {
           valor_ingresso: number | null
           valor_material_padrao: number | null
           vega_produto_id: string | null
+          vega_produto_material: string | null
           vega_produto_tarde: string | null
         }
         Insert: {
@@ -5919,6 +6360,7 @@ export type Database = {
           ebook_url?: string | null
           id?: string
           local?: string | null
+          meta_conversao_url?: string | null
           meta_faturamento?: number | null
           meta_ingressos?: number | null
           meta_matriculas?: number | null
@@ -5939,6 +6381,7 @@ export type Database = {
           valor_ingresso?: number | null
           valor_material_padrao?: number | null
           vega_produto_id?: string | null
+          vega_produto_material?: string | null
           vega_produto_tarde?: string | null
         }
         Update: {
@@ -5949,6 +6392,7 @@ export type Database = {
           ebook_url?: string | null
           id?: string
           local?: string | null
+          meta_conversao_url?: string | null
           meta_faturamento?: number | null
           meta_ingressos?: number | null
           meta_matriculas?: number | null
@@ -5969,6 +6413,7 @@ export type Database = {
           valor_ingresso?: number | null
           valor_material_padrao?: number | null
           vega_produto_id?: string | null
+          vega_produto_material?: string | null
           vega_produto_tarde?: string | null
         }
         Relationships: [
@@ -6038,6 +6483,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "npa_kanban"
             referencedColumns: ["npa_evento_id"]
+          },
+          {
+            foreignKeyName: "npa_eventos_log_npa_evento_id_fkey"
+            columns: ["npa_evento_id"]
+            isOneToOne: false
+            referencedRelation: "vw_receita_eventos_mes"
+            referencedColumns: ["evento_id"]
           },
         ]
       }
@@ -7063,6 +7515,75 @@ export type Database = {
           },
         ]
       }
+      presencas: {
+        Row: {
+          aluno_id: string | null
+          assinado_em: string | null
+          aula_id: string
+          created_at: string
+          id: string
+          presente: boolean
+          profissional_id: string | null
+          tipo: string
+        }
+        Insert: {
+          aluno_id?: string | null
+          assinado_em?: string | null
+          aula_id: string
+          created_at?: string
+          id?: string
+          presente?: boolean
+          profissional_id?: string | null
+          tipo: string
+        }
+        Update: {
+          aluno_id?: string | null
+          assinado_em?: string | null
+          aula_id?: string
+          created_at?: string
+          id?: string
+          presente?: boolean
+          profissional_id?: string | null
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "presencas_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "alunos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "presencas_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "v_pipeline_contratos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "presencas_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "vw_alunos_financeiro"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "presencas_aula_id_fkey"
+            columns: ["aula_id"]
+            isOneToOne: false
+            referencedRelation: "aulas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "presencas_profissional_id_fkey"
+            columns: ["profissional_id"]
+            isOneToOne: false
+            referencedRelation: "profissionais"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       produtos: {
         Row: {
           ativo: boolean
@@ -7132,6 +7653,57 @@ export type Database = {
           nome?: string
           role?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      profissionais: {
+        Row: {
+          ativo: boolean
+          contato: string | null
+          created_at: string
+          documento: string | null
+          funcao: string | null
+          id: string
+          modelo_pagamento: string
+          nome: string
+          observacoes: string | null
+          pix: string | null
+          updated_at: string
+          valor_fixo: number | null
+          valor_por_aula: number | null
+          vinculo: string | null
+        }
+        Insert: {
+          ativo?: boolean
+          contato?: string | null
+          created_at?: string
+          documento?: string | null
+          funcao?: string | null
+          id?: string
+          modelo_pagamento?: string
+          nome: string
+          observacoes?: string | null
+          pix?: string | null
+          updated_at?: string
+          valor_fixo?: number | null
+          valor_por_aula?: number | null
+          vinculo?: string | null
+        }
+        Update: {
+          ativo?: boolean
+          contato?: string | null
+          created_at?: string
+          documento?: string | null
+          funcao?: string | null
+          id?: string
+          modelo_pagamento?: string
+          nome?: string
+          observacoes?: string | null
+          pix?: string | null
+          updated_at?: string
+          valor_fixo?: number | null
+          valor_por_aula?: number | null
+          vinculo?: string | null
         }
         Relationships: []
       }
@@ -9664,6 +10236,19 @@ export type Database = {
         }
         Relationships: []
       }
+      vw_lead_direto_funil_diario: {
+        Row: {
+          abriram_modal: number | null
+          cadastros: number | null
+          clicaram_whatsapp: number | null
+          deram_play: number | null
+          dia: string | null
+          pageviews: number | null
+          pagina: string | null
+          visitantes: number | null
+        }
+        Relationships: []
+      }
       vw_receita_eventos_mes: {
         Row: {
           data_evento: string | null
@@ -9773,6 +10358,18 @@ export type Database = {
         }
         Returns: Json
       }
+      comissoes_sincronizar_vendas: {
+        Args: never
+        Returns: {
+          inseridos: number
+        }[]
+      }
+      comissoes_sincronizar_vendas_auto: {
+        Args: never
+        Returns: {
+          inseridos: number
+        }[]
+      }
       definir_permissao: {
         Args: {
           p_acao: string
@@ -9862,6 +10459,78 @@ export type Database = {
       is_admin: { Args: never; Returns: boolean }
       is_gestor: { Args: never; Returns: boolean }
       marcar_pagamentos_atrasados: { Args: never; Returns: undefined }
+      matricula_atualizar_aluno: {
+        Args: { p_dados: Json; p_id: string }
+        Returns: undefined
+      }
+      matricula_atualizar_lead: {
+        Args: { p_dados: Json; p_id: string }
+        Returns: undefined
+      }
+      matricula_checar_existente: {
+        Args: { p_email: string; p_phone9: string }
+        Returns: Json
+      }
+      matricula_marcar_lead_npa: {
+        Args: { p_npa_evento_id: string; p_whatsapp: string }
+        Returns: Json
+      }
+      matricula_time_comercial_criar:
+        | {
+            Args: {
+              p_canal: string
+              p_cep: string
+              p_cidade_estado: string
+              p_codigo_bolsa: string
+              p_cpf: string
+              p_data_nascimento: string
+              p_data_primeiro_pagamento?: string
+              p_dia_vencimento: number
+              p_email: string
+              p_endereco: string
+              p_forma_pagamento: string
+              p_nome: string
+              p_pais: string
+              p_plano_slug?: string
+              p_rg: string
+              p_sexo: string
+              p_valor_avista?: number
+              p_valor_parcela?: number
+              p_vendedor: string
+              p_whatsapp: string
+            }
+            Returns: Json
+          }
+        | {
+            Args: {
+              p_canal: string
+              p_cep: string
+              p_cidade_estado: string
+              p_codigo_bolsa: string
+              p_cpf: string
+              p_data_nascimento: string
+              p_data_primeiro_pagamento?: string
+              p_dia_vencimento: number
+              p_email: string
+              p_endereco: string
+              p_forma_pagamento: string
+              p_nome: string
+              p_num_parcelas?: number
+              p_pais: string
+              p_plano_slug?: string
+              p_rg: string
+              p_sexo: string
+              p_valor_avista?: number
+              p_valor_parcela?: number
+              p_vendedor: string
+              p_whatsapp: string
+            }
+            Returns: Json
+          }
+      matricula_vincular_turma_evento: {
+        Args: { p_aluno_id: string; p_turma_id: string }
+        Returns: Json
+      }
       minhas_permissoes: {
         Args: never
         Returns: {
@@ -9907,6 +10576,28 @@ export type Database = {
           recurso: string
           user_id: string
         }[]
+      }
+      pnl_matricula_criar: {
+        Args: {
+          p_cep: string
+          p_cidade_estado: string
+          p_cpf: string
+          p_data_nascimento: string
+          p_dia_vencimento: number
+          p_email: string
+          p_endereco: string
+          p_forma_pagamento: string
+          p_nome: string
+          p_num_parcelas: number
+          p_pais: string
+          p_produto: string
+          p_rg: string
+          p_sexo: string
+          p_valor_parcela: number
+          p_vendedor: string
+          p_whatsapp: string
+        }
+        Returns: Json
       }
       portal_aluno_por_token: {
         Args: { p_token: string }
@@ -9982,11 +10673,48 @@ export type Database = {
         Args: { p_acao?: string; p_recurso: string }
         Returns: boolean
       }
+      time_comercial_aluno_atualizar_dados_pessoais: {
+        Args: {
+          p_aluno_id: string
+          p_cep: string
+          p_cidade_estado: string
+          p_cpf: string
+          p_data_nascimento: string
+          p_email: string
+          p_endereco: string
+          p_nome: string
+          p_pais: string
+          p_rg: string
+          p_sexo: string
+          p_whatsapp: string
+        }
+        Returns: Json
+      }
+      time_comercial_aluno_dados_pessoais: {
+        Args: { p_aluno_id: string }
+        Returns: {
+          cep: string
+          cidade_estado: string
+          cpf: string
+          data_nascimento: string
+          email: string
+          endereco: string
+          id: string
+          nome: string
+          pais: string
+          rg: string
+          sexo: string
+          vendedor_id: string
+          whatsapp: string
+        }[]
+      }
       time_comercial_alunos_vendedor: {
         Args: never
         Returns: {
           boleto: number
           bolsa_cortesia: number
+          comissao_est: number
+          faturamento: number
           sem_forma: number
           total: number
           vendedor: string
@@ -10006,6 +10734,10 @@ export type Database = {
           resumo: string
           vendedor: string
         }[]
+      }
+      time_comercial_atualizar_pagamento_previsto: {
+        Args: { p_aluno_id: string; p_nova_data: string }
+        Returns: Json
       }
       time_comercial_ciclo_vendas: {
         Args: never
@@ -10041,6 +10773,26 @@ export type Database = {
           turma_nome: string
         }[]
       }
+      time_comercial_minhas_vendas: {
+        Args: never
+        Returns: {
+          aluno_id: string
+          aluno_nome: string
+          contrato_assinado: boolean
+          contrato_enviado: boolean
+          data_registro: string
+          data_venda: string
+          data_venda_concretizada: string
+          forma_pagamento: string
+          num_parcelas: number
+          origem: string
+          produto: string
+          status: string
+          valor_parcela: number
+          valor_total: number
+          vendedor: string
+        }[]
+      }
       time_comercial_movimentacao_dia: {
         Args: { dias?: number }
         Returns: {
@@ -10064,6 +10816,15 @@ export type Database = {
           p_vendedor: string
         }
         Returns: undefined
+      }
+      time_comercial_resumo_vendedor: {
+        Args: never
+        Returns: {
+          leads_trabalhados: number
+          pre_matriculas: number
+          vendas: number
+          vendedor: string
+        }[]
       }
       time_comercial_sem_vendedor_antigo: {
         Args: { dias?: number }
@@ -10124,12 +10885,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -10153,11 +10914,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -10178,11 +10939,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -10203,11 +10964,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -10220,11 +10981,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
