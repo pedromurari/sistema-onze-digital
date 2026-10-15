@@ -40,6 +40,8 @@ const Posts             = lazy(() => import('./Posts').then(m => ({ default: m.P
 const Parceiros         = lazy(() => import('./Parceiros').then(m => ({ default: m.Parceiros })));
 const Equipe11ds        = lazy(() => import('./Equipe11ds').then(m => ({ default: m.Equipe11ds })));
 const TimeComercial      = lazy(() => import('./TimeComercial').then(m => ({ default: m.TimeComercial })));
+const MarketingDiretoria = lazy(() => import('./MarketingDiretoria').then(m => ({ default: m.MarketingDiretoria })));
+const GestorTrafego      = lazy(() => import('./GestorTrafego').then(m => ({ default: m.GestorTrafego })));
 
 function ModuleLoader() {
   return (
@@ -202,6 +204,8 @@ export function CRMLayout() {
       case 'time_comercial': return <TimeComercial />;
       case 'npa_overview': return <NPAEventos onOpenEvento={(id) => setCurrentView(`npa_${id}` as View)} />;
       case 'lancamentos_overview': return <LancamentosOverview onOpenLancamento={(id) => setCurrentView(`lancamentos_${id}` as View)} />;
+      case 'marketing_diretoria': return <MarketingDiretoria />;
+      case 'trafego_gestor': return <GestorTrafego />;
       case 'financeiro': return <Financeiro />;
       case 'financeiro_notas': return <NotasFiscais />;
       case 'financeiro_dre': return <DreCompetencia />;

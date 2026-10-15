@@ -133,7 +133,8 @@ export type AppView =
   | 'team' | 'settings' | 'cobranca' | 'funil_lancamento' | 'disparos_monitor' | 'chat_conversas'
   | 'operacoes_tarefas' | 'operacoes_calendario_geral' | 'operacoes_calendario_conteudo'
   | 'mapa_mental' | 'rh' | 'provas_trabalhos' | 'franquia_psi' | 'posts' | 'parceiros' | 'equipe_11ds'
-  | 'aquecimento_chips' | 'time_comercial' | 'pessoas';
+  | 'aquecimento_chips' | 'time_comercial' | 'pessoas'
+  | 'marketing_diretoria' | 'trafego_gestor';
 
 export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
   canViewDashboard: true,
@@ -289,6 +290,8 @@ export function canAccessView(
     equipe_11ds: false, // admin-only — isAdmin check at top of function already handles it
     franquia_psi: permissions.canViewFranquiaPsi,
     aquecimento_chips: false, // admin-only — isAdmin check at top of function already handles it
+    marketing_diretoria: false, // admin-only — isAdmin check at top of function already handles it
+    trafego_gestor: false, // admin-only — isAdmin check at top of function already handles it
   };
 
   return permissionByView[view as AppView] ?? false; // deny-by-default para views não mapeadas

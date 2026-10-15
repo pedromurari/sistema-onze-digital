@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Kanban, Settings, UserCog,
   Rocket, BarChart3,
   ChevronLeft, ChevronRight, Plus, Brain, Scale, Menu,
-  GripVertical, Pencil, Check, MessageSquare, MessageCircle, TrendingUp, GitBranch, CalendarDays, Radio, Image, Handshake, Bot, Flame, Users, Contact, ReceiptText, Calculator, BriefcaseBusiness, FileCheck2,
+  GripVertical, Pencil, Check, MessageSquare, MessageCircle, TrendingUp, GitBranch, CalendarDays, Radio, Image, Handshake, Bot, Flame, Users, Contact, ReceiptText, Calculator, BriefcaseBusiness, FileCheck2, Megaphone, Target,
 } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { LancamentoWizard } from '@/components/crm/LancamentoWizard';
@@ -46,6 +46,9 @@ const BASE_MENU: MenuItem[] = [
   { key: 'disparos_monitor',          label: 'Central de Disparos',  icon: Radio },
   { key: 'chat_conversas',            label: 'Chat',                 icon: MessageCircle },
   { key: 'aquecimento_chips',         label: 'Aquecimento de Chips', icon: Flame,       adminOnly: true },
+  // Marketing
+  { key: 'marketing_diretoria',       label: 'Diretoria',            icon: Megaphone,   adminOnly: true },
+  { key: 'trafego_gestor',            label: 'Gestor de Tráfego',    icon: Target,      adminOnly: true },
   // Financeiro
   { key: 'financeiro',                label: 'Financeiro',           icon: BarChart3 },
   { key: 'financeiro_notas',          label: 'Notas Fiscais',        icon: ReceiptText },
@@ -108,6 +111,7 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
     posts:              'Conteúdo',
     lancamentos_legado: 'Canais de Aquisição',
     funil_lancamento:   'Funil & Automação',
+    marketing_diretoria: 'Marketing',
     financeiro:         'Financeiro',
     rh:                 'Gestão',
     ...(isAdmin ? { team: 'Admin' } : { settings: 'Admin' }),
