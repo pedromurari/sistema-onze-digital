@@ -28,6 +28,8 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ListaPresenca } from './rh/ListaPresenca';
 
 type Profissional = Database['public']['Tables']['profissionais']['Row'];
 
@@ -80,6 +82,12 @@ const EMPTY_FORM = {
   modelo_pagamento: 'por_aula' as Profissional['modelo_pagamento'],
   valor_fixo: '',
   valor_por_aula: '',
+  comissao_percentual_avista: '',
+  comissao_percentual_boleto: '',
+  comissao_meta1_faturamento: '',
+  comissao_meta1_bonus: '',
+  comissao_meta2_faturamento: '',
+  comissao_meta2_bonus: '',
   observacoes: '',
 };
 
@@ -112,6 +120,12 @@ function ProfissionalDialog({ profissional, fechar }: { profissional: Profission
     modelo_pagamento: profissional.modelo_pagamento,
     valor_fixo: profissional.valor_fixo?.toString() ?? '',
     valor_por_aula: profissional.valor_por_aula?.toString() ?? '',
+    comissao_percentual_avista: profissional.comissao_percentual_avista?.toString() ?? '',
+    comissao_percentual_boleto: profissional.comissao_percentual_boleto?.toString() ?? '',
+    comissao_meta1_faturamento: profissional.comissao_meta1_faturamento?.toString() ?? '',
+    comissao_meta1_bonus: profissional.comissao_meta1_bonus?.toString() ?? '',
+    comissao_meta2_faturamento: profissional.comissao_meta2_faturamento?.toString() ?? '',
+    comissao_meta2_bonus: profissional.comissao_meta2_bonus?.toString() ?? '',
     observacoes: profissional.observacoes ?? '',
   } : EMPTY_FORM);
   const [salvando, setSalvando] = useState(false);
@@ -133,6 +147,12 @@ function ProfissionalDialog({ profissional, fechar }: { profissional: Profission
       modelo_pagamento: form.modelo_pagamento,
       valor_fixo: form.valor_fixo ? Number(form.valor_fixo) : null,
       valor_por_aula: form.valor_por_aula ? Number(form.valor_por_aula) : null,
+      comissao_percentual_avista: form.comissao_percentual_avista ? Number(form.comissao_percentual_avista) : null,
+      comissao_percentual_boleto: form.comissao_percentual_boleto ? Number(form.comissao_percentual_boleto) : null,
+      comissao_meta1_faturamento: form.comissao_meta1_faturamento ? Number(form.comissao_meta1_faturamento) : null,
+      comissao_meta1_bonus: form.comissao_meta1_bonus ? Number(form.comissao_meta1_bonus) : null,
+      comissao_meta2_faturamento: form.comissao_meta2_faturamento ? Number(form.comissao_meta2_faturamento) : null,
+      comissao_meta2_bonus: form.comissao_meta2_bonus ? Number(form.comissao_meta2_bonus) : null,
       observacoes: form.observacoes.trim() || null,
     };
     const resultado = profissional
@@ -205,6 +225,37 @@ function ProfissionalDialog({ profissional, fechar }: { profissional: Profission
                 </div>
               )}
             </div>
+            {(form.modelo_pagamento === 'comissao' || form.modelo_pagamento === 'hibrido') && (
+              <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Comissão (% do líquido, depois da taxa do gateway)</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="prof-com-avista">À vista / cartão (%)</Label>
+                    <Input id="prof-com-avista" inputMode="decimal" value={form.comissao_percentual_avista} onChange={(e) => setForm((f) => ({ ...f, comissao_percentual_avista: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="prof-com-boleto">Boleto, 1ª parcela (%)</Label>
+                    <Input id="prof-com-boleto" inputMode="decimal" value={form.comissao_percentual_boleto} onChange={(e) => setForm((f) => ({ ...f, comissao_percentual_boleto: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="prof-meta1-fat">Meta 1 — faturamento (R$)</Label>
+                    <Input id="prof-meta1-fat" inputMode="decimal" value={form.comissao_meta1_faturamento} onChange={(e) => setForm((f) => ({ ...f, comissao_meta1_faturamento: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="prof-meta1-bonus">Meta 1 — bônus (R$)</Label>
+                    <Input id="prof-meta1-bonus" inputMode="decimal" value={form.comissao_meta1_bonus} onChange={(e) => setForm((f) => ({ ...f, comissao_meta1_bonus: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="prof-meta2-fat">Meta 2 — faturamento (R$)</Label>
+                    <Input id="prof-meta2-fat" inputMode="decimal" value={form.comissao_meta2_faturamento} onChange={(e) => setForm((f) => ({ ...f, comissao_meta2_faturamento: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="prof-meta2-bonus">Meta 2 — bônus (R$)</Label>
+                    <Input id="prof-meta2-bonus" inputMode="decimal" value={form.comissao_meta2_bonus} onChange={(e) => setForm((f) => ({ ...f, comissao_meta2_bonus: e.target.value }))} />
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label htmlFor="prof-observacoes">Observações de pagamento</Label>
               <Textarea id="prof-observacoes" value={form.observacoes} maxLength={2000} onChange={(e) => setForm((f) => ({ ...f, observacoes: e.target.value }))} placeholder="Regras de remuneração e pendências a conferir" />
@@ -257,7 +308,7 @@ export function RH() {
           {[
             { label: 'Profissionais ativos', value: String(ativos.length), detail: `${itens.length} cadastrados no total`, icon: Users, tone: 'text-blue-600 bg-blue-500/10' },
             { label: 'A pagar', value: 'R$ 0,00', detail: 'fechamento de folha ainda não construído', icon: Banknote, tone: 'text-amber-600 bg-amber-500/10' },
-            { label: 'Aulas a aprovar', value: '0', detail: 'lista de presença ainda não construída', icon: BookOpenCheck, tone: 'text-violet-600 bg-violet-500/10' },
+            { label: 'Aulas a aprovar', value: '0', detail: 'cadastre na aba Lista de Presença', icon: BookOpenCheck, tone: 'text-violet-600 bg-violet-500/10' },
             { label: 'Notas pendentes', value: '0', detail: 'nenhum documento anexado', icon: ReceiptText, tone: 'text-emerald-600 bg-emerald-500/10' },
           ].map(({ label, value, detail, icon: Icon, tone }) => (
             <Card key={label} className="border-border/70 shadow-sm">
@@ -275,46 +326,57 @@ export function RH() {
           ))}
         </section>
 
-        <Card className="border-border/70 shadow-sm">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <UserRoundPlus className="h-4 w-4 text-primary" /> Profissionais
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {carregando && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
-            {erro && <p className="text-sm text-destructive">{erro}</p>}
-            {!carregando && itens.length === 0 && <p className="text-sm text-muted-foreground">Nenhum profissional cadastrado ainda.</p>}
-            {itens.length > 0 && (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-xs uppercase text-muted-foreground">
-                      <th className="p-2">Nome</th>
-                      <th className="p-2">Função</th>
-                      <th className="p-2">Vínculo</th>
-                      <th className="p-2">Modelo</th>
-                      <th className="p-2">Ativo</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {itens.map((p) => (
-                      <tr key={p.id} className="border-b last:border-0 hover:bg-muted/30 cursor-pointer" onClick={() => setEditando(p)}>
-                        <td className="p-2 font-medium">{p.nome}</td>
-                        <td className="p-2 text-muted-foreground">{p.funcao || '—'}</td>
-                        <td className="p-2 text-muted-foreground">{p.vinculo ? VINCULO_LABEL[p.vinculo] : '—'}</td>
-                        <td className="p-2 text-muted-foreground">{MODELO_PAGAMENTO_LABEL[p.modelo_pagamento]}</td>
-                        <td className="p-2" onClick={(e) => e.stopPropagation()}>
-                          <Switch checked={p.ativo} onCheckedChange={() => void alternarAtivo(p)} aria-label={`${p.ativo ? 'Desativar' : 'Ativar'} ${p.nome}`} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <Tabs defaultValue="profissionais">
+          <TabsList>
+            <TabsTrigger value="profissionais">Profissionais</TabsTrigger>
+            <TabsTrigger value="presenca">Lista de Presença</TabsTrigger>
+          </TabsList>
+          <TabsContent value="profissionais" className="mt-4">
+            <Card className="border-border/70 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <UserRoundPlus className="h-4 w-4 text-primary" /> Profissionais
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {carregando && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
+                {erro && <p className="text-sm text-destructive">{erro}</p>}
+                {!carregando && itens.length === 0 && <p className="text-sm text-muted-foreground">Nenhum profissional cadastrado ainda.</p>}
+                {itens.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+                          <th className="p-2">Nome</th>
+                          <th className="p-2">Função</th>
+                          <th className="p-2">Vínculo</th>
+                          <th className="p-2">Modelo</th>
+                          <th className="p-2">Ativo</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {itens.map((p) => (
+                          <tr key={p.id} className="border-b last:border-0 hover:bg-muted/30 cursor-pointer" onClick={() => setEditando(p)}>
+                            <td className="p-2 font-medium">{p.nome}</td>
+                            <td className="p-2 text-muted-foreground">{p.funcao || '—'}</td>
+                            <td className="p-2 text-muted-foreground">{p.vinculo ? VINCULO_LABEL[p.vinculo] : '—'}</td>
+                            <td className="p-2 text-muted-foreground">{MODELO_PAGAMENTO_LABEL[p.modelo_pagamento]}</td>
+                            <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                              <Switch checked={p.ativo} onCheckedChange={() => void alternarAtivo(p)} aria-label={`${p.ativo ? 'Desativar' : 'Ativar'} ${p.nome}`} />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="presenca" className="mt-4">
+            <ListaPresenca />
+          </TabsContent>
+        </Tabs>
 
         <Card className="border-border/70 shadow-sm">
           <CardHeader className="pb-3">

@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.4"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       alma_par_leads: {
@@ -7684,6 +7659,12 @@ export type Database = {
       profissionais: {
         Row: {
           ativo: boolean
+          comissao_meta1_bonus: number | null
+          comissao_meta1_faturamento: number | null
+          comissao_meta2_bonus: number | null
+          comissao_meta2_faturamento: number | null
+          comissao_percentual_avista: number | null
+          comissao_percentual_boleto: number | null
           contato: string | null
           created_at: string
           documento: string | null
@@ -7700,6 +7681,12 @@ export type Database = {
         }
         Insert: {
           ativo?: boolean
+          comissao_meta1_bonus?: number | null
+          comissao_meta1_faturamento?: number | null
+          comissao_meta2_bonus?: number | null
+          comissao_meta2_faturamento?: number | null
+          comissao_percentual_avista?: number | null
+          comissao_percentual_boleto?: number | null
           contato?: string | null
           created_at?: string
           documento?: string | null
@@ -7716,6 +7703,12 @@ export type Database = {
         }
         Update: {
           ativo?: boolean
+          comissao_meta1_bonus?: number | null
+          comissao_meta1_faturamento?: number | null
+          comissao_meta2_bonus?: number | null
+          comissao_meta2_faturamento?: number | null
+          comissao_percentual_avista?: number | null
+          comissao_percentual_boleto?: number | null
           contato?: string | null
           created_at?: string
           documento?: string | null
@@ -11097,9 +11090,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       app_role: [
