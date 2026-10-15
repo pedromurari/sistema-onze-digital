@@ -1,0 +1,4 @@
+node_modules
+.scratch-cortes
+dist
+.env.local
