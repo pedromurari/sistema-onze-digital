@@ -10,8 +10,11 @@ interface Campanha {
   status_efetivo: string;
   objetivo: string;
   orcamento_diario: number | null;
+  orcamento_diario_brl: number | null;
   orcamento_total: number | null;
+  orcamento_total_brl: number | null;
   gasto: number;
+  gasto_brl: number | null;
   impressoes: number;
   cliques: number;
   ctr: number;
@@ -20,10 +23,37 @@ interface Campanha {
   leads: number;
   compras: number;
   custo_por_lead: number | null;
+  custo_por_lead_brl: number | null;
+}
+
+interface Conta {
+  id: string;
+  nome: string;
+  moeda: string;
+  ativa?: boolean;
+}
+
+interface Cambio {
+  moeda_origem: string;
+  taxa: number;
+  atualizado_em: string;
 }
 
 const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const fmtNum = (v: number) => v.toLocaleString('pt-BR');
+
+// Valor principal pra exibir: converte pra BRL quando a conta é estrangeira e a
+// cotação do dia veio certa; senão mostra na moeda original da conta (nunca rotula
+// dólar como real).
+function valorPrincipal(nativo: number, brl: number | null, moeda: string) {
+  return moeda === 'BRL' ? nativo : (brl ?? nativo);
+}
+
+function fmtPrincipal(nativo: number, brl: number | null, moeda: string) {
+  if (moeda === 'BRL') return fmtBRL(nativo);
+  if (brl !== null) return fmtBRL(brl);
+  return nativo.toLocaleString('pt-BR', { style: 'currency', currency: moeda });
+}
 
 // Detecta a qual turma/cidade a campanha pertence pelo nome (segue o padrão usado nos nomes das campanhas)
 function cidadeDaCampanha(nome: string): string {
@@ -33,15 +63,19 @@ function cidadeDaCampanha(nome: string): string {
   return 'Outras';
 }
 
-function CampanhaCard({ campanha, onToggle, toggling, expanded, onToggleExpanded }: {
+function CampanhaCard({ campanha, moeda, onToggle, toggling, expanded, onToggleExpanded }: {
   campanha: Campanha;
+  moeda: string;
   onToggle: (c: Campanha) => void;
   toggling: boolean;
   expanded: boolean;
   onToggleExpanded: () => void;
 }) {
   const ativa = campanha.status === 'ACTIVE';
-  const cpaAlerta = campanha.custo_por_lead !== null && campanha.custo_por_lead > 30;
+  const custoPorLeadPrincipal = campanha.custo_por_lead !== null
+    ? valorPrincipal(campanha.custo_por_lead, campanha.custo_por_lead_brl, moeda)
+    : null;
+  const cpaAlerta = custoPorLeadPrincipal !== null && custoPorLeadPrincipal > 30;
 
   if (!expanded) {
     return (
@@ -53,7 +87,7 @@ function CampanhaCard({ campanha, onToggle, toggling, expanded, onToggleExpanded
           <ChevronRight className="h-4 w-4 text-gray-400 shrink-0" />
           <span className={`shrink-0 w-2 h-2 rounded-full ${ativa ? 'bg-green-500' : 'bg-gray-300'}`} />
           <p className="text-xs font-bold text-gray-900 truncate flex-1" title={campanha.nome}>{campanha.nome}</p>
-          <span className="shrink-0 text-[11px] text-gray-500">{fmtBRL(campanha.gasto)}</span>
+          <span className="shrink-0 text-[11px] text-gray-500">{fmtPrincipal(campanha.gasto, campanha.gasto_brl, moeda)}</span>
           <span className="shrink-0 text-[11px] text-green-700 font-semibold">{campanha.compras} compras</span>
           {cpaAlerta && <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
         </button>
@@ -84,7 +118,7 @@ function CampanhaCard({ campanha, onToggle, toggling, expanded, onToggleExpanded
       <div className="grid grid-cols-4 gap-2 mb-3">
         <div className="text-center">
           <p className="text-[10px] text-gray-400 flex items-center justify-center gap-0.5"><DollarSign className="h-3 w-3" />Gasto</p>
-          <p className="text-sm font-bold text-gray-800">{fmtBRL(campanha.gasto)}</p>
+          <p className="text-sm font-bold text-gray-800">{fmtPrincipal(campanha.gasto, campanha.gasto_brl, moeda)}</p>
         </div>
         <div className="text-center">
           <p className="text-[10px] text-gray-400 flex items-center justify-center gap-0.5"><MousePointerClick className="h-3 w-3" />Cliques</p>
@@ -103,7 +137,7 @@ function CampanhaCard({ campanha, onToggle, toggling, expanded, onToggleExpanded
       {cpaAlerta && (
         <div className="flex items-center gap-1.5 text-[11px] text-amber-700 bg-amber-50 rounded-lg px-2 py-1 mb-3">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-          Custo por lead alto: {fmtBRL(campanha.custo_por_lead!)}
+          Custo por lead alto: {fmtPrincipal(campanha.custo_por_lead!, campanha.custo_por_lead_brl, moeda)}
         </div>
       )}
 
@@ -121,14 +155,25 @@ function CampanhaCard({ campanha, onToggle, toggling, expanded, onToggleExpanded
   );
 }
 
-export function MetaAdsPanel() {
+export function MetaAdsPanel({ seletorConta = false }: { seletorConta?: boolean }) {
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
+  const [conta, setConta] = useState<Conta | null>(null);
+  const [cambio, setCambio] = useState<Cambio | null>(null);
+  const [contas, setContas] = useState<Conta[]>([]);
+  const [contaId, setContaId] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [dias, setDias] = useState(7);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [gruposColapsados, setGruposColapsados] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!seletorConta) return;
+    supabase.functions.invoke('meta-ads', { body: { action: 'contas' } }).then(({ data }) => {
+      if (data?.ok) setContas(data.contas);
+    });
+  }, [seletorConta]);
 
   const toggleExpanded = (id: string) => {
     setExpandedIds(prev => {
@@ -150,16 +195,20 @@ export function MetaAdsPanel() {
     setLoading(true);
     setErro(null);
     const { data, error } = await supabase.functions.invoke('meta-ads', {
-      body: { action: 'listar', dias: diasParam },
+      body: { action: 'listar', dias: diasParam, ad_account_id: contaId },
     });
     if (error || !data?.ok) {
       setErro(data?.error || error?.message || 'Erro ao buscar campanhas da Meta');
       setCampanhas([]);
+      setConta(null);
+      setCambio(null);
     } else {
       setCampanhas(data.campanhas);
+      setConta(data.conta ?? null);
+      setCambio(data.cambio ?? null);
     }
     setLoading(false);
-  }, [dias]);
+  }, [dias, contaId]);
 
   useEffect(() => { carregar(); }, [carregar]);
 
@@ -183,9 +232,10 @@ export function MetaAdsPanel() {
     grupos.set(cidade, [...(grupos.get(cidade) ?? []), c]);
   }
 
+  const moeda = conta?.moeda ?? 'BRL';
   const totais = campanhas.reduce(
     (acc, c) => ({
-      gasto: acc.gasto + c.gasto,
+      gasto: acc.gasto + valorPrincipal(c.gasto, c.gasto_brl, moeda),
       cliques: acc.cliques + c.cliques,
       compras: acc.compras + c.compras,
       leads: acc.leads + c.leads,
@@ -198,9 +248,28 @@ export function MetaAdsPanel() {
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div>
           <h2 className="text-base font-black text-gray-900">Campanhas Meta Ads</h2>
-          <p className="text-xs text-gray-400 mt-0.5">Conta: IDM Pelo Brasil · últimos {dias} dias</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Conta: {conta?.nome ?? '...'} · últimos {dias} dias
+            {cambio && (
+              <span className="ml-1">
+                · convertido de {cambio.moeda_origem} (cotação de hoje: 1 {cambio.moeda_origem} = {fmtBRL(cambio.taxa)})
+              </span>
+            )}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {seletorConta && contas.length > 0 && (
+            <select
+              value={contaId ?? ''}
+              onChange={(e) => setContaId(e.target.value || undefined)}
+              className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 text-gray-700 border-none"
+            >
+              <option value="">Conta padrão</option>
+              {contas.map((c) => (
+                <option key={c.id} value={c.id}>{c.nome} ({c.moeda})</option>
+              ))}
+            </select>
+          )}
           {[7, 14, 30].map(d => (
             <button
               key={d}
@@ -233,7 +302,9 @@ export function MetaAdsPanel() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
             <div className="rounded-xl p-3 text-center bg-gray-50 border border-gray-100">
               <p className="text-[11px] font-medium text-gray-500">Gasto total</p>
-              <p className="text-xl font-black mt-1 text-gray-700">{fmtBRL(totais.gasto)}</p>
+              <p className="text-xl font-black mt-1 text-gray-700">
+                {moeda === 'BRL' || cambio ? fmtBRL(totais.gasto) : totais.gasto.toLocaleString('pt-BR', { style: 'currency', currency: moeda })}
+              </p>
             </div>
             <div className="rounded-xl p-3 text-center bg-gray-50 border border-gray-100">
               <p className="text-[11px] font-medium text-gray-500">Cliques</p>
@@ -246,7 +317,11 @@ export function MetaAdsPanel() {
             <div className="rounded-xl p-3 text-center bg-blue-50 border border-blue-100">
               <p className="text-[11px] font-medium text-blue-700">Custo/compra</p>
               <p className="text-xl font-black mt-1 text-blue-700">
-                {totais.compras > 0 ? fmtBRL(totais.gasto / totais.compras) : '—'}
+                {totais.compras > 0
+                  ? (moeda === 'BRL' || cambio
+                      ? fmtBRL(totais.gasto / totais.compras)
+                      : (totais.gasto / totais.compras).toLocaleString('pt-BR', { style: 'currency', currency: moeda }))
+                  : '—'}
               </p>
             </div>
           </div>
@@ -274,6 +349,7 @@ export function MetaAdsPanel() {
                       <CampanhaCard
                         key={c.id}
                         campanha={c}
+                        moeda={moeda}
                         onToggle={toggleCampanha}
                         toggling={togglingId === c.id}
                         expanded={expandedIds.has(c.id)}

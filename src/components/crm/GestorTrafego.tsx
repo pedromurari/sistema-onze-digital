@@ -97,7 +97,7 @@ export function GestorTrafego() {
         )}
       </div>
 
-      <MetaAdsPanel />
+      <MetaAdsPanel seletorConta />
     </div>
   );
 }
