@@ -57,7 +57,7 @@ calcular nada na mão.
 
 ## Pedagógico
 
-### 4. Avaliações e Correção 🟡 — rascunhos internos preparados; conteúdo pendente
+### 4. Avaliações e Correção 🟡 — editor de rascunhos no ar; publicação pendente
 
 **15/10/2026 — Codex (worktree `avaliacoes-pedagogicas`):** migration
 `20261015020000_pedagogico_avaliacoes_base.sql` preparada com avaliações,
@@ -66,8 +66,11 @@ questões, entregas e respostas. Todas as tabelas têm RLS, GRANT para
 `anon` não recebe acesso. O recurso novo é concedido a admin, gestor e
 professora, sem herdar o acesso amplo de Mapa Mental. A tela permite montar
 rascunhos e questões, mas não publica links nem recebe trabalhos de alunos.
-Migration ainda precisa ser aplicada no banco compartilhado antes de usar a
-tela em produção; o código está isolado para não conflitar com o RH em andamento.
+**15/10/2026 (publicação):** migration aplicada somente para este módulo no
+Supabase do CRM e registrada no histórico remoto. Editor publicado em
+**Gestão → Provas e Trabalhos** no `sistema.idmpsi.com.br`. O piloto foi criado
+como rascunho privado no banco e o fluxo autenticado de leitura/edição das
+questões foi conferido. Nenhum link de prova para alunos foi publicado.
 Há também um piloto autoral para o módulo inicial de Fundamentos da Psicanálise:
 5 questões discursivas, 10 pontos, com respostas esperadas e rubricas editáveis.
 Usa a ementa resumida já existente no projeto e conferências introdutórias de
