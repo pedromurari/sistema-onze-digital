@@ -7725,6 +7725,90 @@ export type Database = {
         }
         Relationships: []
       }
+      profissionais_pagamentos: {
+        Row: {
+          aula_id: string | null
+          comprovante_arquivo_nome: string | null
+          comprovante_arquivo_url: string | null
+          created_at: string
+          data_pagamento: string
+          descricao: string | null
+          id: string
+          nota_fiscal_arquivo_nome: string | null
+          nota_fiscal_arquivo_url: string | null
+          profissional_id: string
+          turma_id: string | null
+          updated_at: string
+          valor: number
+        }
+        Insert: {
+          aula_id?: string | null
+          comprovante_arquivo_nome?: string | null
+          comprovante_arquivo_url?: string | null
+          created_at?: string
+          data_pagamento: string
+          descricao?: string | null
+          id?: string
+          nota_fiscal_arquivo_nome?: string | null
+          nota_fiscal_arquivo_url?: string | null
+          profissional_id: string
+          turma_id?: string | null
+          updated_at?: string
+          valor: number
+        }
+        Update: {
+          aula_id?: string | null
+          comprovante_arquivo_nome?: string | null
+          comprovante_arquivo_url?: string | null
+          created_at?: string
+          data_pagamento?: string
+          descricao?: string | null
+          id?: string
+          nota_fiscal_arquivo_nome?: string | null
+          nota_fiscal_arquivo_url?: string | null
+          profissional_id?: string
+          turma_id?: string | null
+          updated_at?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profissionais_pagamentos_aula_id_fkey"
+            columns: ["aula_id"]
+            isOneToOne: false
+            referencedRelation: "aulas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profissionais_pagamentos_profissional_id_fkey"
+            columns: ["profissional_id"]
+            isOneToOne: false
+            referencedRelation: "profissionais"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profissionais_pagamentos_turma_id_fkey"
+            columns: ["turma_id"]
+            isOneToOne: false
+            referencedRelation: "financeiro_resumo"
+            referencedColumns: ["turma_id"]
+          },
+          {
+            foreignKeyName: "profissionais_pagamentos_turma_id_fkey"
+            columns: ["turma_id"]
+            isOneToOne: false
+            referencedRelation: "turmas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profissionais_pagamentos_turma_id_fkey"
+            columns: ["turma_id"]
+            isOneToOne: false
+            referencedRelation: "vw_cfo_turmas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       push_subscriptions: {
         Row: {
           auth: string

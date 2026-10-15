@@ -30,6 +30,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ListaPresenca } from './rh/ListaPresenca';
+import { HistoricoPagamentosDialog } from './rh/HistoricoPagamentos';
 
 type Profissional = Database['public']['Tables']['profissionais']['Row'];
 
@@ -275,6 +276,7 @@ function ProfissionalDialog({ profissional, fechar }: { profissional: Profission
 export function RH() {
   const { itens, carregando, erro, recarregar } = useProfissionais();
   const [editando, setEditando] = useState<Profissional | null | undefined>(undefined);
+  const [verPagamentos, setVerPagamentos] = useState<Profissional | null>(null);
   const ativos = itens.filter((p) => p.ativo);
 
   async function alternarAtivo(p: Profissional) {
@@ -352,6 +354,7 @@ export function RH() {
                           <th className="p-2">Vínculo</th>
                           <th className="p-2">Modelo</th>
                           <th className="p-2">Ativo</th>
+                          <th className="p-2" />
                         </tr>
                       </thead>
                       <tbody>
@@ -363,6 +366,11 @@ export function RH() {
                             <td className="p-2 text-muted-foreground">{MODELO_PAGAMENTO_LABEL[p.modelo_pagamento]}</td>
                             <td className="p-2" onClick={(e) => e.stopPropagation()}>
                               <Switch checked={p.ativo} onCheckedChange={() => void alternarAtivo(p)} aria-label={`${p.ativo ? 'Desativar' : 'Ativar'} ${p.nome}`} />
+                            </td>
+                            <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                              <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setVerPagamentos(p)}>
+                                <ReceiptText className="h-3.5 w-3.5" /> Pagamentos
+                              </Button>
                             </td>
                           </tr>
                         ))}
@@ -413,6 +421,9 @@ export function RH() {
               if (salvou) void recarregar();
             }}
           />
+        )}
+        {verPagamentos && (
+          <HistoricoPagamentosDialog profissional={verPagamentos} fechar={() => setVerPagamentos(null)} />
         )}
       </div>
     </div>
