@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { type Avaliacao, type Questao, pedagogicoDb } from './avaliacoes-db';
+import { MODULO_PILOTO } from './modulo-piloto';
 
 type Turma = { id: string; nome: string };
 
@@ -31,6 +32,7 @@ export function EditorAvaliacoes() {
   const [novaAberta, setNovaAberta] = useState(false);
   const [questaoAberta, setQuestaoAberta] = useState(false);
   const [editandoQuestao, setEditandoQuestao] = useState<Questao | null>(null);
+  const [criandoPiloto, setCriandoPiloto] = useState(false);
 
   async function carregar() {
     setCarregando(true);
@@ -56,6 +58,39 @@ export function EditorAvaliacoes() {
     if (error) toast.error(mensagemErro(error));
   }
 
+  async function criarPiloto() {
+    if (criandoPiloto) return;
+    setCriandoPiloto(true);
+    const { data: criada, error: erroAvaliacao } = await pedagogicoDb.from('ped_avaliacoes').insert({
+      titulo: MODULO_PILOTO.titulo,
+      tipo: 'prova',
+      modulo: MODULO_PILOTO.modulo,
+      instrucoes: MODULO_PILOTO.instrucoes,
+    }).select('*').single();
+    if (erroAvaliacao || !criada) {
+      setCriandoPiloto(false);
+      toast.error(erroAvaliacao ? mensagemErro(erroAvaliacao) : 'Não foi possível criar o piloto.');
+      return;
+    }
+    const { error: erroQuestoes } = await pedagogicoDb.from('ped_questoes').insert(
+      MODULO_PILOTO.questoes.map((questao, indice) => ({
+        ...questao,
+        avaliacao_id: criada.id,
+        ordem: indice + 1,
+        tipo: 'discursiva' as const,
+        pontos: 2,
+      })),
+    );
+    setCriandoPiloto(false);
+    await carregar();
+    await abrirAvaliacao(criada);
+    if (erroQuestoes) {
+      toast.error(`O rascunho foi criado, mas as questões não foram salvas: ${mensagemErro(erroQuestoes)}`);
+      return;
+    }
+    toast.success('Piloto privado criado. Peça revisão pedagógica antes de qualquer publicação.');
+  }
+
   return (
     <Card className="border-border/70 shadow-sm">
       <CardHeader className="pb-3">
@@ -64,10 +99,17 @@ export function EditorAvaliacoes() {
             <CardTitle className="flex items-center gap-2 text-base"><FilePenLine className="h-4 w-4 text-primary" /> Rascunhos internos</CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">Crie a estrutura da avaliação e as questões. Nenhum link é publicado para alunos nesta etapa.</p>
           </div>
-          <Button size="sm" onClick={() => setNovaAberta(true)}><Plus className="mr-1 h-4 w-4" /> Nova avaliação</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => void criarPiloto()} disabled={criandoPiloto || carregando || !!erro}>
+              {criandoPiloto ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Plus className="mr-1 h-4 w-4" />}
+              Criar piloto do módulo 1
+            </Button>
+            <Button size="sm" onClick={() => setNovaAberta(true)}><Plus className="mr-1 h-4 w-4" /> Nova avaliação</Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
+        <p className="mb-3 text-xs text-muted-foreground">Piloto sugerido: 5 questões discursivas, 10 pontos, com gabarito e rubrica. Baseado na ementa interna e nas <a className="underline" href={MODULO_PILOTO.fonte} target="_blank" rel="noreferrer">Conferências introdutórias de Freud</a>. Ainda requer aprovação da Jocimara.</p>
         {carregando && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
         {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
         {!carregando && !erro && avaliacoes.length === 0 && <p className="text-sm text-muted-foreground">Nenhum rascunho salvo ainda.</p>}

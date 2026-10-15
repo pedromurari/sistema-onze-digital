@@ -68,15 +68,20 @@ professora, sem herdar o acesso amplo de Mapa Mental. A tela permite montar
 rascunhos e questões, mas não publica links nem recebe trabalhos de alunos.
 Migration ainda precisa ser aplicada no banco compartilhado antes de usar a
 tela em produção; o código está isolado para não conflitar com o RH em andamento.
+Há também um piloto autoral para o módulo inicial de Fundamentos da Psicanálise:
+5 questões discursivas, 10 pontos, com respostas esperadas e rubricas editáveis.
+Usa a ementa resumida já existente no projeto e conferências introdutórias de
+Freud como referência. É apenas proposta, não conteúdo oficial: Jocimara
+precisa revisar antes de qualquer publicação ou correção automática.
 
 Form próprio do site (não terceiro). Maioria das questões é dissertativa;
 a IA já sabe a resposta esperada de cada módulo, corrige e dá nota; manda
 resumo pra professora só aprovar ou não (não corrige do zero). Tela esboço
 em `ProvasTrabalhos.tsx`.
 
-**Bloqueio real: falta o time pedagógico mandar as perguntas de prova/
-trabalho de cada módulo.** Sem isso não dá pra desenhar o form nem o
-gabarito esperado da IA — não adianta começar a codar antes disso chegar.
+**Bloqueio real: falta o time pedagógico validar o piloto e fornecer as
+perguntas dos demais módulos.** A estrutura e a primeira proposta podem ser
+revisadas agora, mas não liberadas ao aluno como prova oficial.
 
 ### 5. Agenda de Aulas (Google Meet) 🟡 — base e prévia prontas; integração depende de OAuth
 

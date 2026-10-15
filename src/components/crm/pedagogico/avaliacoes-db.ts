@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 // Tipos locais ate a migration ser aplicada e os tipos Supabase regenerados.
 // Mantem o arquivo gerado compartilhado fora deste trabalho paralelo.
-export interface Avaliacao {
+export type Avaliacao = {
   id: string;
   titulo: string;
   tipo: 'prova' | 'trabalho';
@@ -15,9 +15,9 @@ export interface Avaliacao {
   criado_por: string;
   created_at: string;
   updated_at: string;
-}
+};
 
-export interface Questao {
+export type Questao = {
   id: string;
   avaliacao_id: string;
   ordem: number;
@@ -28,7 +28,7 @@ export interface Questao {
   pontos: number;
   created_at: string;
   updated_at: string;
-}
+};
 
 type Table<Row, Insert, Update> = {
   Row: Row;
