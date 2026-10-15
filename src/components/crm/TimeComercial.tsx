@@ -39,61 +39,53 @@ import {
 // -----------------------------------------------------------------------
 
 type GenericStage =
-  | 'retorno' | 'novo' | 'primeiro_contato' | 'aquecimento' | 'qualificado'
-  | 'proposta_enviada' | 'negociacao' | 'followup' | 'aquecimento_conteudo' | 'matricula';
+  | 'retorno' | 'novo' | 'primeiro_contato' | 'interessado'
+  | 'proposta' | 'followup' | 'fechado' | 'perdido';
 type SddStage = 'frio' | 'pre_aquecimento' | 'grupo_oferta' | 'primeiro_contato' | 'negociacao' | 'matricula';
 type TimeComercialStage = GenericStage | SddStage;
 
 interface StageInfo { key: TimeComercialStage; label: string; color: string; descricao: string; sql?: boolean; manutencao?: boolean; }
 
-// Funil único (2026-08-27, redesenhado com Pedro depois do feedback do Miguel
-// e da Helen) — vale pra todos os canais exceto SDD, que tem funil próprio
-// definido pelo dono do negócio. "sql: true" marca a partir de onde o lead
-// vira SQL (Sales Qualified Lead) — antes disso é MQL. A divisória visual
-// MQL/SQL e o selo "SQL" no card usam essa flag.
+// Funil único simplificado (2026-10-15, pedido da Ellen -- 6 etapas + Perdido
+// separado, direto pro Pedro) — vale pra todos os canais exceto SDD, que tem
+// funil próprio definido pelo dono do negócio. Substitui o funil de 9 etapas
+// de 2026-08-27; leads existentes foram remapeados por migration (não é só
+// troca de rótulo): aquecimento+qualificado -> interessado, proposta_enviada
+// -> proposta, negociacao+aquecimento_conteudo -> followup, matricula ->
+// fechado. "sql: true" marca a partir de onde o lead vira SQL (Sales
+// Qualified Lead) — antes disso é MQL.
 const FUNIL_STAGES: StageInfo[] = [
   {
-    key: 'novo', label: 'Novo', color: 'bg-pipeline-novo',
-    descricao: 'Lead recém-chegado ao funil, ainda sem responsável. Fica aqui até alguém pegar e iniciar o atendimento.',
+    key: 'novo', label: 'Novo Lead', color: 'bg-pipeline-novo',
+    descricao: 'Entrou no CRM e ainda não foi trabalhado.',
   },
   {
-    key: 'primeiro_contato', label: 'Primeiro Contato', color: 'bg-pipeline-sdr',
-    descricao: 'Etapa de abordagem inicial. O lead já tem um responsável e o próximo passo é iniciar a conversa — WhatsApp ou ligação — para começar o atendimento.',
+    key: 'primeiro_contato', label: 'Em Contato', color: 'bg-pipeline-sdr',
+    descricao: 'Você já chamou e está tentando conversar.',
   },
   {
-    key: 'aquecimento', label: 'Aquecimento', color: 'bg-pipeline-aquecimento',
-    descricao: 'O lead já respondeu e a conversa está em andamento. Etapa de entender o perfil, a necessidade e o momento da pessoa antes de seguir adiante.',
-  },
-  {
-    key: 'qualificado', label: 'Qualificado', color: 'bg-pipeline-handoff',
-    descricao: 'Marca o momento em que o lead é considerado qualificado: o perfil combina com o que é oferecido e vale a pena seguir negociando. A partir desta etapa o lead passa a ser tratado como SQL (Sales Qualified Lead) — veja a divisória MQL/SQL no funil.',
+    key: 'interessado', label: 'Interessado', color: 'bg-pipeline-aquecimento',
+    descricao: 'A pessoa respondeu, demonstrou interesse e você está entendendo a necessidade.',
     sql: true,
   },
   {
-    key: 'proposta_enviada', label: 'Proposta Enviada', color: 'bg-pipeline-followup1',
-    descricao: 'A oferta e as condições de pagamento já foram apresentadas ao lead.',
-    sql: true,
-  },
-  {
-    key: 'negociacao', label: 'Negociação', color: 'bg-pipeline-followup2',
-    descricao: 'Etapa de ajuste final: tratando dúvidas, objeções e condições comerciais antes do fechamento.',
+    key: 'proposta', label: 'Proposta', color: 'bg-pipeline-followup1',
+    descricao: 'Você apresentou o serviço/valor.',
     sql: true,
   },
   {
     key: 'followup', label: 'Follow-up', color: 'bg-pipeline-closer',
-    descricao: 'Use esta etapa quando o lead pedir um prazo pra decidir (ex.: "só posso comprar depois que terminar meu curso em dezembro"). Ao mover o lead pra cá, o sistema pede a data combinada de retorno e conta automaticamente quantas vezes esse follow-up já foi feito com esse lead (tentativa #1, #2...). Um cronômetro aparece no card lembrando o prazo, e quando a data vence, o sistema avisa automaticamente por WhatsApp. Depois de algumas tentativas sem avanço, o sistema sugere mover o lead pra "Aquecimento de Conteúdo" em vez de continuar insistindo no contato direto.',
+    descricao: 'A pessoa ainda não fechou e precisa ser acompanhada. Ao mover o lead pra cá, o sistema pede a data combinada de retorno e conta automaticamente quantas vezes esse follow-up já foi feito com esse lead (tentativa #1, #2...). Um cronômetro aparece no card lembrando o prazo, e quando a data vence, o sistema avisa automaticamente por WhatsApp. Depois de algumas tentativas sem avanço, o sistema sugere considerar mover o lead pra "Perdido" em vez de continuar insistindo.',
     sql: true,
   },
   {
-    key: 'aquecimento_conteudo', label: 'Aquecimento de Conteúdo', color: 'bg-pipeline-aquecimento',
-    descricao: 'ETAPA EM MANUTENÇÃO. A ideia é: leads que passaram por várias tentativas de follow-up sem avançar entram numa esteira de conteúdo pra se manter aquecidos até estarem prontos pra retomar. Por enquanto a esteira automática ainda não está ligada — mover o lead pra cá só tira ele da fila ativa, o envio de conteúdo é manual.',
+    key: 'fechado', label: 'Fechado', color: 'bg-pipeline-matricula',
+    descricao: 'Virou cliente.',
     sql: true,
-    manutencao: true,
   },
   {
-    key: 'matricula', label: 'Matrícula', color: 'bg-pipeline-matricula',
-    descricao: 'O lead fechou e virou aluno.',
-    sql: true,
+    key: 'perdido', label: 'Perdido', color: 'bg-destructive',
+    descricao: 'Não tem interesse, recusou ou não faz sentido continuar naquele momento.',
   },
 ];
 
@@ -733,7 +725,10 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
   const displayColumns = [LEADS_COLUMN, ...activeStages];
   const totalLeadsPred = (c: Contagem) => (canalAtivo === 'todos' ? !isContagemRetorno(c) : c.canal === canalAtivo && campanhaPred(c));
   const totalLeads = contagemFiltrada(totalLeadsPred);
-  const leadsEmMatricula = contagemFiltrada((c) => totalLeadsPred(c) && c.status === 'matricula');
+  // 'matricula' é a etapa final no funil SDD; 'fechado' é a equivalente nos
+  // demais canais (renomeada 2026-10-15) -- as duas nunca coexistem no mesmo
+  // canal, então somar as duas aqui é seguro.
+  const leadsEmMatricula = contagemFiltrada((c) => totalLeadsPred(c) && (c.status === 'matricula' || c.status === 'fechado'));
   // Denominador da % de matrícula: só os leads que já têm vendedor (foram "pegos" e
   // estão em gestão ativa) — um lead ainda sem vendedor, seja novo ou de campanha de
   // retorno, nunca teve chance real de converter, então não deve diluir a taxa.
@@ -1032,7 +1027,7 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
                         </div>
                         {(lead.etapa as string) === 'followup' && (lead.followupManualTentativas ?? 0) >= FOLLOWUP_SUGESTAO_APOS && (
                           <p className="text-[10px] text-warning mt-1">
-                            Já são {lead.followupManualTentativas} tentativas — considera mover pra "Aquecimento de Conteúdo".
+                            Já são {lead.followupManualTentativas} tentativas — considera mover pra "Perdido".
                           </p>
                         )}
                       </div>
@@ -1406,7 +1401,7 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
             <p className="text-xs text-muted-foreground">
               Essa será a tentativa <strong>#{(leadParaFollowup?.followupManualTentativas ?? 0) + 1}</strong> com esse lead.
               {(leadParaFollowup?.followupManualTentativas ?? 0) + 1 >= FOLLOWUP_SUGESTAO_APOS && (
-                <> Depois dessa, considera mover pra "Aquecimento de Conteúdo" em vez de continuar tentando.</>
+                <> Depois dessa, considera mover pra "Perdido" em vez de continuar tentando.</>
               )}
             </p>
           </div>
