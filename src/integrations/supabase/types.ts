@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.4"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       alma_par_leads: {
@@ -7684,6 +7659,12 @@ export type Database = {
       profissionais: {
         Row: {
           ativo: boolean
+          comissao_meta1_bonus: number | null
+          comissao_meta1_faturamento: number | null
+          comissao_meta2_bonus: number | null
+          comissao_meta2_faturamento: number | null
+          comissao_percentual_avista: number | null
+          comissao_percentual_boleto: number | null
           contato: string | null
           created_at: string
           documento: string | null
@@ -7700,6 +7681,12 @@ export type Database = {
         }
         Insert: {
           ativo?: boolean
+          comissao_meta1_bonus?: number | null
+          comissao_meta1_faturamento?: number | null
+          comissao_meta2_bonus?: number | null
+          comissao_meta2_faturamento?: number | null
+          comissao_percentual_avista?: number | null
+          comissao_percentual_boleto?: number | null
           contato?: string | null
           created_at?: string
           documento?: string | null
@@ -7716,6 +7703,12 @@ export type Database = {
         }
         Update: {
           ativo?: boolean
+          comissao_meta1_bonus?: number | null
+          comissao_meta1_faturamento?: number | null
+          comissao_meta2_bonus?: number | null
+          comissao_meta2_faturamento?: number | null
+          comissao_percentual_avista?: number | null
+          comissao_percentual_boleto?: number | null
           contato?: string | null
           created_at?: string
           documento?: string | null
@@ -7731,6 +7724,90 @@ export type Database = {
           vinculo?: string | null
         }
         Relationships: []
+      }
+      profissionais_pagamentos: {
+        Row: {
+          aula_id: string | null
+          comprovante_arquivo_nome: string | null
+          comprovante_arquivo_url: string | null
+          created_at: string
+          data_pagamento: string
+          descricao: string | null
+          id: string
+          nota_fiscal_arquivo_nome: string | null
+          nota_fiscal_arquivo_url: string | null
+          profissional_id: string
+          turma_id: string | null
+          updated_at: string
+          valor: number
+        }
+        Insert: {
+          aula_id?: string | null
+          comprovante_arquivo_nome?: string | null
+          comprovante_arquivo_url?: string | null
+          created_at?: string
+          data_pagamento: string
+          descricao?: string | null
+          id?: string
+          nota_fiscal_arquivo_nome?: string | null
+          nota_fiscal_arquivo_url?: string | null
+          profissional_id: string
+          turma_id?: string | null
+          updated_at?: string
+          valor: number
+        }
+        Update: {
+          aula_id?: string | null
+          comprovante_arquivo_nome?: string | null
+          comprovante_arquivo_url?: string | null
+          created_at?: string
+          data_pagamento?: string
+          descricao?: string | null
+          id?: string
+          nota_fiscal_arquivo_nome?: string | null
+          nota_fiscal_arquivo_url?: string | null
+          profissional_id?: string
+          turma_id?: string | null
+          updated_at?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profissionais_pagamentos_aula_id_fkey"
+            columns: ["aula_id"]
+            isOneToOne: false
+            referencedRelation: "aulas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profissionais_pagamentos_profissional_id_fkey"
+            columns: ["profissional_id"]
+            isOneToOne: false
+            referencedRelation: "profissionais"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profissionais_pagamentos_turma_id_fkey"
+            columns: ["turma_id"]
+            isOneToOne: false
+            referencedRelation: "financeiro_resumo"
+            referencedColumns: ["turma_id"]
+          },
+          {
+            foreignKeyName: "profissionais_pagamentos_turma_id_fkey"
+            columns: ["turma_id"]
+            isOneToOne: false
+            referencedRelation: "turmas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profissionais_pagamentos_turma_id_fkey"
+            columns: ["turma_id"]
+            isOneToOne: false
+            referencedRelation: "vw_cfo_turmas"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       push_subscriptions: {
         Row: {
@@ -11097,9 +11174,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       app_role: [
