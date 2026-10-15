@@ -335,6 +335,15 @@ export function RH() {
             Fechamento de Folha automático — ver `ROADMAP.md` e o cofre do Obsidian em <code>RH/</code>.
           </p>
         </div>
+        {editando !== undefined && (
+          <ProfissionalDialog
+            profissional={editando}
+            fechar={(salvou) => {
+              setEditando(undefined);
+              if (salvou) void recarregar();
+            }}
+          />
+        )}
       </div>
     </div>
   );
