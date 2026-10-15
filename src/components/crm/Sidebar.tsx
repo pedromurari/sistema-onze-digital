@@ -49,6 +49,7 @@ const BASE_MENU: MenuItem[] = [
   // Marketing
   { key: 'marketing_diretoria',       label: 'Diretoria',            icon: Megaphone },
   { key: 'trafego_gestor',            label: 'Gestor de Tráfego',    icon: Target },
+  { key: 'trafego_regras',            label: 'Regras de Automação',  icon: Settings },
   // Financeiro
   { key: 'financeiro',                label: 'Financeiro',           icon: BarChart3 },
   { key: 'financeiro_notas',          label: 'Notas Fiscais',        icon: ReceiptText },

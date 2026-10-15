@@ -4,8 +4,9 @@
 // nunca chega ao navegador -- fica só aqui, como secret do projeto.
 //
 // Ações suportadas (POST { action, ... }):
-//   - "listar"          -> lista campanhas da conta com insights dos últimos N dias
-//   - "atualizar_status" -> pausa/ativa uma campanha (campaign_id, status: 'ACTIVE' | 'PAUSED')
+//   - "listar"           -> lista campanhas da conta com insights dos últimos N dias
+//   - "listar_conjuntos" -> lista conjuntos (ad sets) de uma campanha com orçamento/insights (campaign_id)
+//   - "atualizar_status" -> pausa/ativa uma campanha OU conjunto (campaign_id = id do objeto, status: 'ACTIVE' | 'PAUSED')
 //   - "targeting"        -> lista conjuntos de anuncios de uma campanha com segmentacao (geo, idade, etc)
 //   - "contas"           -> lista as contas de anúncio que o token de sistema enxerga
 //
@@ -145,6 +146,67 @@ async function listarCampanhas(dias: number, adAccountId: string) {
   };
 }
 
+async function listarConjuntos(campaignId: string, dias: number, adAccountId: string) {
+  if (!campaignId) throw new Error('campaign_id é obrigatório');
+  const since = new Date(Date.now() - dias * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const until = new Date().toISOString().slice(0, 10);
+
+  const conta = await buscarConta(adAccountId);
+  const cambio = await buscarCotacaoParaBRL(conta.moeda);
+  const taxa = cambio?.taxa ?? null;
+  const converter = (v: number | null) => (v === null || taxa === null ? null : Math.round(v * taxa * 100) / 100);
+
+  const fields = [
+    'id',
+    'name',
+    'status',
+    'effective_status',
+    'daily_budget',
+    'lifetime_budget',
+    `insights.time_range({"since":"${since}","until":"${until}"}){spend,impressions,clicks,ctr,actions,cost_per_action_type}`,
+  ].join(',');
+
+  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${campaignId}/adsets` +
+    `?fields=${encodeURIComponent(fields)}&limit=200&access_token=${META_TOKEN}`;
+
+  const res = await fetch(url);
+  const json = await res.json();
+  if (!res.ok) throw new Error(`Meta API error (conjuntos): ${JSON.stringify(json)}`);
+
+  const conjuntos = (json.data ?? []).map((c: any) => {
+    const insight = c.insights?.data?.[0];
+    const actions: Array<{ action_type: string; value: string }> = insight?.actions ?? [];
+    const leads = actions.find((a) => a.action_type === 'lead' || a.action_type === 'onsite_conversion.lead_grouped')?.value;
+    const custoPorAcao: Array<{ action_type: string; value: string }> = insight?.cost_per_action_type ?? [];
+    const custoPorLead = custoPorAcao.find((a) => a.action_type === 'lead' || a.action_type === 'onsite_conversion.lead_grouped')?.value;
+    const orcamentoDiario = c.daily_budget ? Number(c.daily_budget) / 100 : null;
+    const gasto = insight?.spend ? Number(insight.spend) : 0;
+    const custoPorLeadNum = custoPorLead ? Number(custoPorLead) : null;
+
+    return {
+      id: c.id,
+      nome: c.name,
+      status: c.status,
+      status_efetivo: c.effective_status,
+      orcamento_diario: orcamentoDiario,
+      orcamento_diario_brl: converter(orcamentoDiario),
+      orcamento_total: c.lifetime_budget ? Number(c.lifetime_budget) / 100 : null,
+      gasto,
+      gasto_brl: converter(gasto),
+      cliques: insight?.clicks ? Number(insight.clicks) : 0,
+      leads: leads ? Number(leads) : 0,
+      custo_por_lead: custoPorLeadNum,
+      custo_por_lead_brl: converter(custoPorLeadNum),
+    };
+  });
+
+  return {
+    conta,
+    cambio: taxa !== null ? { moeda_origem: conta.moeda, taxa, atualizado_em: cambio!.atualizado_em } : null,
+    conjuntos,
+  };
+}
+
 async function atualizarStatus(campaignId: string, status: 'ACTIVE' | 'PAUSED') {
   if (!campaignId || !['ACTIVE', 'PAUSED'].includes(status)) {
     throw new Error('campaign_id e status (ACTIVE|PAUSED) são obrigatórios');
@@ -206,6 +268,12 @@ Deno.serve(async (req: Request) => {
     if (action === 'listar') {
       const dias = Number(payload.dias) > 0 ? Number(payload.dias) : 7;
       const data = await listarCampanhas(dias, adAccountId);
+      return jsonResponse({ ok: true, ...data });
+    }
+
+    if (action === 'listar_conjuntos') {
+      const dias = Number(payload.dias) > 0 ? Number(payload.dias) : 7;
+      const data = await listarConjuntos(payload.campaign_id, dias, adAccountId);
       return jsonResponse({ ok: true, ...data });
     }
 

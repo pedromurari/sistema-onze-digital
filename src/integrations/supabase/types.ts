@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.4"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       alma_par_leads: {
@@ -9385,6 +9410,83 @@ export type Database = {
         }
         Relationships: []
       }
+      trafego_campanha_produto: {
+        Row: {
+          atualizado_em: string
+          atualizado_por: string | null
+          campanha_id: string
+          conta_id: string
+          produto_id: string | null
+        }
+        Insert: {
+          atualizado_em?: string
+          atualizado_por?: string | null
+          campanha_id: string
+          conta_id: string
+          produto_id?: string | null
+        }
+        Update: {
+          atualizado_em?: string
+          atualizado_por?: string | null
+          campanha_id?: string
+          conta_id?: string
+          produto_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trafego_campanha_produto_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trafego_regras: {
+        Row: {
+          acao: string
+          ativa: boolean
+          atualizado_em: string
+          conta_id: string
+          criado_em: string
+          criado_por: string | null
+          escopo_tipo: string
+          escopo_valor: string | null
+          id: string
+          limite: number
+          metrica: string
+          valor_acao: number | null
+        }
+        Insert: {
+          acao: string
+          ativa?: boolean
+          atualizado_em?: string
+          conta_id: string
+          criado_em?: string
+          criado_por?: string | null
+          escopo_tipo: string
+          escopo_valor?: string | null
+          id?: string
+          limite: number
+          metrica?: string
+          valor_acao?: number | null
+        }
+        Update: {
+          acao?: string
+          ativa?: boolean
+          atualizado_em?: string
+          conta_id?: string
+          criado_em?: string
+          criado_por?: string | null
+          escopo_tipo?: string
+          escopo_valor?: string | null
+          id?: string
+          limite?: number
+          metrica?: string
+          valor_acao?: number | null
+        }
+        Relationships: []
+      }
       turma_disparo_config: {
         Row: {
           created_at: string
@@ -10995,6 +11097,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       app_role: [

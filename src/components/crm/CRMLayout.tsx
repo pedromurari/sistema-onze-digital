@@ -42,6 +42,7 @@ const Equipe11ds        = lazy(() => import('./Equipe11ds').then(m => ({ default
 const TimeComercial      = lazy(() => import('./TimeComercial').then(m => ({ default: m.TimeComercial })));
 const MarketingDiretoria = lazy(() => import('./MarketingDiretoria').then(m => ({ default: m.MarketingDiretoria })));
 const GestorTrafego      = lazy(() => import('./GestorTrafego').then(m => ({ default: m.GestorTrafego })));
+const RegrasAutomacao    = lazy(() => import('./RegrasAutomacao').then(m => ({ default: m.RegrasAutomacao })));
 
 function ModuleLoader() {
   return (
@@ -206,6 +207,7 @@ export function CRMLayout() {
       case 'lancamentos_overview': return <LancamentosOverview onOpenLancamento={(id) => setCurrentView(`lancamentos_${id}` as View)} />;
       case 'marketing_diretoria': return <MarketingDiretoria />;
       case 'trafego_gestor': return <GestorTrafego />;
+      case 'trafego_regras': return <RegrasAutomacao />;
       case 'financeiro': return <Financeiro />;
       case 'financeiro_notas': return <NotasFiscais />;
       case 'financeiro_dre': return <DreCompetencia />;

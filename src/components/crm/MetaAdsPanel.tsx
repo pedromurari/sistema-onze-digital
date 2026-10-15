@@ -55,17 +55,17 @@ function fmtPrincipal(nativo: number, brl: number | null, moeda: string) {
   return nativo.toLocaleString('pt-BR', { style: 'currency', currency: moeda });
 }
 
-// Detecta a qual turma/cidade a campanha pertence pelo nome (segue o padrão usado nos nomes das campanhas)
-function cidadeDaCampanha(nome: string): string {
-  const n = nome.toLowerCase();
-  if (n.includes('curitiba')) return 'Curitiba';
-  if (n.includes('sjc') || n.includes('são josé') || n.includes('sao jose')) return 'São José dos Campos';
-  return 'Outras';
+interface Produto {
+  id: string;
+  nome: string;
 }
 
-function CampanhaCard({ campanha, moeda, onToggle, toggling, expanded, onToggleExpanded }: {
+function CampanhaCard({ campanha, moeda, produtos, produtoId, onProdutoChange, onToggle, toggling, expanded, onToggleExpanded }: {
   campanha: Campanha;
   moeda: string;
+  produtos: Produto[];
+  produtoId: string | null;
+  onProdutoChange: (produtoId: string | null) => void;
   onToggle: (c: Campanha) => void;
   toggling: boolean;
   expanded: boolean;
@@ -141,6 +141,17 @@ function CampanhaCard({ campanha, moeda, onToggle, toggling, expanded, onToggleE
         </div>
       )}
 
+      <select
+        value={produtoId ?? ''}
+        onChange={(e) => onProdutoChange(e.target.value || null)}
+        className="w-full mb-2 px-2 py-1.5 rounded-lg text-xs bg-gray-50 border border-gray-100 text-gray-600"
+      >
+        <option value="">Produto: sem tag</option>
+        {produtos.map((p) => (
+          <option key={p.id} value={p.id}>{p.nome}</option>
+        ))}
+      </select>
+
       <Button
         size="sm"
         variant={ativa ? 'outline' : 'default'}
@@ -166,7 +177,10 @@ export function MetaAdsPanel({ seletorConta = false }: { seletorConta?: boolean 
   const [dias, setDias] = useState(7);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [gruposColapsados, setGruposColapsados] = useState<Set<string>>(new Set());
+  const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [tags, setTags] = useState<Record<string, string | null>>({});
+  const [filtroStatus, setFiltroStatus] = useState<'ativas' | 'pausadas' | 'todas'>('ativas');
+  const [filtroProduto, setFiltroProduto] = useState<string>('todos');
 
   useEffect(() => {
     if (!seletorConta) return;
@@ -175,18 +189,33 @@ export function MetaAdsPanel({ seletorConta = false }: { seletorConta?: boolean 
     });
   }, [seletorConta]);
 
+  useEffect(() => {
+    supabase.from('produtos').select('id, nome').order('nome').then(({ data }) => {
+      if (data) setProdutos(data);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!conta?.id) return;
+    supabase.from('trafego_campanha_produto').select('campanha_id, produto_id').eq('conta_id', conta.id).then(({ data }) => {
+      if (data) setTags(Object.fromEntries(data.map((t) => [t.campanha_id, t.produto_id])));
+    });
+  }, [conta?.id]);
+
+  const definirProduto = async (campanhaId: string, produtoId: string | null) => {
+    setTags((prev) => ({ ...prev, [campanhaId]: produtoId }));
+    await supabase.from('trafego_campanha_produto').upsert({
+      campanha_id: campanhaId,
+      conta_id: conta?.id ?? '',
+      produto_id: produtoId,
+      atualizado_em: new Date().toISOString(),
+    });
+  };
+
   const toggleExpanded = (id: string) => {
     setExpandedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleGrupo = (cidade: string) => {
-    setGruposColapsados(prev => {
-      const next = new Set(prev);
-      if (next.has(cidade)) next.delete(cidade); else next.add(cidade);
       return next;
     });
   };
@@ -226,11 +255,12 @@ export function MetaAdsPanel({ seletorConta = false }: { seletorConta?: boolean 
     setTogglingId(null);
   };
 
-  const grupos = new Map<string, Campanha[]>();
-  for (const c of campanhas) {
-    const cidade = cidadeDaCampanha(c.nome);
-    grupos.set(cidade, [...(grupos.get(cidade) ?? []), c]);
-  }
+  const ativasCount = campanhas.filter((c) => c.status === 'ACTIVE').length;
+  const pausadasCount = campanhas.length - ativasCount;
+  const campanhasFiltradas = campanhas
+    .filter((c) => filtroStatus === 'todas' || (filtroStatus === 'ativas' ? c.status === 'ACTIVE' : c.status !== 'ACTIVE'))
+    .filter((c) => filtroProduto === 'todos' || (filtroProduto === 'sem_tag' ? !tags[c.id] : tags[c.id] === filtroProduto))
+    .sort((a, b) => (a.status === b.status ? b.gasto - a.gasto : a.status === 'ACTIVE' ? -1 : 1));
 
   const moeda = conta?.moeda ?? 'BRL';
   const totais = campanhas.reduce(
@@ -287,6 +317,35 @@ export function MetaAdsPanel({ seletorConta = false }: { seletorConta?: boolean 
         </div>
       </div>
 
+      <div className="flex items-center gap-2 flex-wrap mb-4">
+        {([
+          ['ativas', `Ativas (${ativasCount})`],
+          ['pausadas', `Pausadas (${pausadasCount})`],
+          ['todas', `Todas (${campanhas.length})`],
+        ] as const).map(([valor, label]) => (
+          <button
+            key={valor}
+            onClick={() => setFiltroStatus(valor)}
+            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+              filtroStatus === valor ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+        <select
+          value={filtroProduto}
+          onChange={(e) => setFiltroProduto(e.target.value)}
+          className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 text-gray-700 border-none"
+        >
+          <option value="todos">Produto: todos</option>
+          <option value="sem_tag">Produto: sem tag</option>
+          {produtos.map((p) => (
+            <option key={p.id} value={p.id}>{p.nome}</option>
+          ))}
+        </select>
+      </div>
+
       {erro && (
         <div className="rounded-xl bg-red-50 border border-red-100 text-red-700 text-sm px-3 py-2 mb-4">
           {erro}
@@ -326,41 +385,26 @@ export function MetaAdsPanel({ seletorConta = false }: { seletorConta?: boolean 
             </div>
           </div>
 
-          {[...grupos.entries()].map(([cidade, lista]) => {
-            const colapsado = gruposColapsados.has(cidade);
-            return (
-              <div key={cidade} className="mb-5 last:mb-0">
-                <button
-                  onClick={() => toggleGrupo(cidade)}
-                  className="flex items-center gap-1.5 mb-2 group"
-                >
-                  {colapsado ? (
-                    <ChevronRight className="h-3.5 w-3.5 text-gray-400 group-hover:text-gray-600" />
-                  ) : (
-                    <ChevronDown className="h-3.5 w-3.5 text-gray-400 group-hover:text-gray-600" />
-                  )}
-                  <h3 className="text-xs font-bold text-gray-600 uppercase tracking-wide group-hover:text-gray-900">
-                    {cidade} <span className="text-gray-400 font-medium normal-case">({lista.length})</span>
-                  </h3>
-                </button>
-                {!colapsado && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {lista.map(c => (
-                      <CampanhaCard
-                        key={c.id}
-                        campanha={c}
-                        moeda={moeda}
-                        onToggle={toggleCampanha}
-                        toggling={togglingId === c.id}
-                        expanded={expandedIds.has(c.id)}
-                        onToggleExpanded={() => toggleExpanded(c.id)}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {campanhasFiltradas.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-8">Nenhuma campanha com esse filtro.</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {campanhasFiltradas.map(c => (
+                <CampanhaCard
+                  key={c.id}
+                  campanha={c}
+                  moeda={moeda}
+                  produtos={produtos}
+                  produtoId={tags[c.id] ?? null}
+                  onProdutoChange={(produtoId) => definirProduto(c.id, produtoId)}
+                  onToggle={toggleCampanha}
+                  toggling={togglingId === c.id}
+                  expanded={expandedIds.has(c.id)}
+                  onToggleExpanded={() => toggleExpanded(c.id)}
+                />
+              ))}
+            </div>
+          )}
         </>
       )}
     </div>
