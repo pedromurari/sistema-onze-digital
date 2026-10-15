@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -79,6 +80,7 @@ const EMPTY_FORM = {
   modelo_pagamento: 'por_aula' as Profissional['modelo_pagamento'],
   valor_fixo: '',
   valor_por_aula: '',
+  observacoes: '',
 };
 
 function useProfissionais() {
@@ -110,6 +112,7 @@ function ProfissionalDialog({ profissional, fechar }: { profissional: Profission
     modelo_pagamento: profissional.modelo_pagamento,
     valor_fixo: profissional.valor_fixo?.toString() ?? '',
     valor_por_aula: profissional.valor_por_aula?.toString() ?? '',
+    observacoes: profissional.observacoes ?? '',
   } : EMPTY_FORM);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
@@ -130,6 +133,7 @@ function ProfissionalDialog({ profissional, fechar }: { profissional: Profission
       modelo_pagamento: form.modelo_pagamento,
       valor_fixo: form.valor_fixo ? Number(form.valor_fixo) : null,
       valor_por_aula: form.valor_por_aula ? Number(form.valor_por_aula) : null,
+      observacoes: form.observacoes.trim() || null,
     };
     const resultado = profissional
       ? await supabase.from('profissionais').update(valores).eq('id', profissional.id)
@@ -200,6 +204,10 @@ function ProfissionalDialog({ profissional, fechar }: { profissional: Profission
                   <Input id="prof-valor-aula" inputMode="decimal" value={form.valor_por_aula} onChange={(e) => setForm((f) => ({ ...f, valor_por_aula: e.target.value }))} />
                 </div>
               )}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="prof-observacoes">Observações de pagamento</Label>
+              <Textarea id="prof-observacoes" value={form.observacoes} maxLength={2000} onChange={(e) => setForm((f) => ({ ...f, observacoes: e.target.value }))} placeholder="Regras de remuneração e pendências a conferir" />
             </div>
             {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
             <DialogFooter>

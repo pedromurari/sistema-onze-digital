@@ -18,7 +18,12 @@ Convenção de status: 🟢 pronto · 🟡 parcial/em andamento · ⚪ não inic
 
 ## RH
 
-### 1. Cadastro de Profissional ⚪ — base de tudo, começar por aqui
+### 1. Cadastro de Profissional 🟢 — cadastro disponível no RH
+
+**15/10/2026:** tabela `profissionais` e tela de cadastro/edição no RH em
+produção, com nome, função, contato, Pix, documento, vínculo, modelo de
+pagamento, valores, observações e status ativo/inativo. O cadastro não gera
+contas a pagar nem calcula a folha automaticamente.
 
 Tabela de profissionais (professor, etc.): nome, função, contato, Pix,
 dados fiscais, vínculo, ativo/inativo, modelo de pagamento (fixo, por
@@ -30,7 +35,10 @@ Registrar novo recurso `rh` em `app_recursos` + `role_permissoes` (admin e
 gestor, ver/editar — mesmo padrão de `financeiro`) antes de criar as
 policies das tabelas novas.
 
-### 2. Lista de Presença ⚪ — depende do item 1
+### 2. Lista de Presença 🟡 — base criada, fluxo pendente
+
+As tabelas `aulas` e `presencas` já existem. Ainda falta a tela para lançar
+e assinar presença de professor e alunos e conectar os registros à folha.
 
 Registro de aula (data, turma, professor, horário) + presença assinada do
 professor e de cada aluno. Alimenta o item 3 (RH) e a frequência do aluno
