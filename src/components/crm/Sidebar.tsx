@@ -47,8 +47,8 @@ const BASE_MENU: MenuItem[] = [
   { key: 'chat_conversas',            label: 'Chat',                 icon: MessageCircle },
   { key: 'aquecimento_chips',         label: 'Aquecimento de Chips', icon: Flame,       adminOnly: true },
   // Marketing
-  { key: 'marketing_diretoria',       label: 'Diretoria',            icon: Megaphone,   adminOnly: true },
-  { key: 'trafego_gestor',            label: 'Gestor de Tráfego',    icon: Target,      adminOnly: true },
+  { key: 'marketing_diretoria',       label: 'Diretoria',            icon: Megaphone },
+  { key: 'trafego_gestor',            label: 'Gestor de Tráfego',    icon: Target },
   // Financeiro
   { key: 'financeiro',                label: 'Financeiro',           icon: BarChart3 },
   { key: 'financeiro_notas',          label: 'Notas Fiscais',        icon: ReceiptText },
