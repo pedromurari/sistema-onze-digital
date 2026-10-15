@@ -57,7 +57,17 @@ calcular nada na mão.
 
 ## Pedagógico
 
-### 4. Avaliações e Correção ⚪ — bloqueado, aguardando conteúdo
+### 4. Avaliações e Correção 🟡 — rascunhos internos preparados; conteúdo pendente
+
+**15/10/2026 — Codex (worktree `avaliacoes-pedagogicas`):** migration
+`20261015020000_pedagogico_avaliacoes_base.sql` preparada com avaliações,
+questões, entregas e respostas. Todas as tabelas têm RLS, GRANT para
+`authenticated` e policies com `tem_permissao('pedagogico_avaliacoes', ...)`;
+`anon` não recebe acesso. O recurso novo é concedido a admin, gestor e
+professora, sem herdar o acesso amplo de Mapa Mental. A tela permite montar
+rascunhos e questões, mas não publica links nem recebe trabalhos de alunos.
+Migration ainda precisa ser aplicada no banco compartilhado antes de usar a
+tela em produção; o código está isolado para não conflitar com o RH em andamento.
 
 Form próprio do site (não terceiro). Maioria das questões é dissertativa;
 a IA já sabe a resposta esperada de cada módulo, corrige e dá nota; manda

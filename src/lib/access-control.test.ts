@@ -29,6 +29,13 @@ describe('canAccessView com a matriz do banco', () => {
     expect(canAccessView('agenda_aulas', p, false, matriz({ rh: true }))).toBe(true);
     expect(canAccessView('agenda_aulas', p, true)).toBe(true);
   });
+  it('gabaritos exigem pedagogico_avaliacoes.ver, sem herdar Mapa Mental', () => {
+    const p = getDefaultPermissions('professora');
+    expect(canAccessView('provas_trabalhos', p, false)).toBe(false);
+    expect(canAccessView('provas_trabalhos', p, false, matriz({ mapa_mental: true }))).toBe(false);
+    expect(canAccessView('provas_trabalhos', p, false, matriz({ pedagogico_avaliacoes: false }))).toBe(false);
+    expect(canAccessView('provas_trabalhos', p, false, matriz({ pedagogico_avaliacoes: true }))).toBe(true);
+  });
   it('nega a antiga tela de franquias mesmo com favorito salvo ou permissão legada', () => {
     const m = matriz({ franquia_psi: true });
     const p = permissionsFromMatrix(m, 'admin');

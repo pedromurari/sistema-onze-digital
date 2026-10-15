@@ -121,9 +121,7 @@ const RECURSO_POR_VIEW: Record<string, string> = {
   // Antes de armazenar salários ou notas fiscais, ele ganhará recurso próprio na
   // matriz para separar quem vê processos de quem vê remuneração.
   rh:                            'mapa_mental',
-  // O planejamento acadêmico também fica sob Gestão até existir uma permissão
-  // própria para criação, correção e publicação de avaliações.
-  provas_trabalhos:              'mapa_mental',
+  provas_trabalhos:              'pedagogico_avaliacoes',
 };
 
 export type AppView =
@@ -284,7 +282,8 @@ export function canAccessView(
     operacoes_calendario_conteudo: permissions.canViewOperacoes,
     mapa_mental: permissions.canViewMapaMental,
     rh: permissions.canViewMapaMental,
-    provas_trabalhos: permissions.canViewMapaMental,
+    // A tela com gabaritos nao deve herdar a permissao ampla do Mapa Mental.
+    provas_trabalhos: false,
     posts: false, // admin-only — isAdmin check at top of function already handles it
     parceiros: false, // admin-only — isAdmin check at top of function already handles it
     equipe_11ds: false, // admin-only — isAdmin check at top of function already handles it

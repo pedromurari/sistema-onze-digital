@@ -9,7 +9,6 @@ import {
   LibraryBig,
   ListChecks,
   LockKeyhole,
-  Plus,
   Scale,
   Send,
   ShieldCheck,
@@ -19,12 +18,13 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EditorAvaliacoes } from './pedagogico/EditorAvaliacoes';
 
 // Assim como o primeiro esboço de RH, esta tela documenta o produto antes de
 // existir banco, formulário público ou chamada de IA. Isso deixa a ideia visível
 // para o time sem criar uma falsa impressão de que provas já estão sendo salvas.
 const INDICADORES = [
-  { label: 'Avaliações', value: '0', detail: 'nenhuma prova criada', icon: FilePenLine, tone: 'text-blue-600 bg-blue-500/10' },
+  { label: 'Publicadas', value: '0', detail: 'publicação ainda desativada', icon: FilePenLine, tone: 'text-blue-600 bg-blue-500/10' },
   { label: 'Entregas recebidas', value: '0', detail: 'formulários ainda não publicados', icon: FileUp, tone: 'text-violet-600 bg-violet-500/10' },
   { label: 'Correções pela IA', value: '0', detail: 'integração ainda não ativada', icon: BrainCircuit, tone: 'text-fuchsia-600 bg-fuchsia-500/10' },
   { label: 'Aguardando revisão', value: '0', detail: 'nenhuma nota pendente', icon: UserCheck, tone: 'text-amber-600 bg-amber-500/10' },
@@ -125,18 +125,17 @@ export function ProvasTrabalhos() {
               </div>
               <h1 className="text-2xl font-bold tracking-tight text-foreground">Provas e trabalhos</h1>
               <Badge variant="outline" className="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300">
-                Esboço inicial
+                Rascunhos internos
               </Badge>
             </div>
             <p className="max-w-3xl text-sm text-muted-foreground">
-              Futuro ambiente próprio para criar avaliações, receber trabalhos e usar IA na correção. Esta primeira
-              versão registra o escopo e o plano; ainda não coleta respostas, arquivos ou dados de alunos.
+              Base interna para preparar provas e trabalhos. Os rascunhos e questões ficam salvos com acesso restrito;
+              publicação, envio por alunos e correção por IA ainda não estão ativos.
             </p>
           </div>
-          <Button disabled className="gap-2 self-start" title="Disponível quando o editor de avaliações for implementado">
-            <Plus className="h-4 w-4" /> Nova avaliação
-          </Button>
         </header>
+
+        <EditorAvaliacoes />
 
         <section aria-label="Indicadores planejados" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {INDICADORES.map(({ label, value, detail, icon: Icon, tone }) => (
