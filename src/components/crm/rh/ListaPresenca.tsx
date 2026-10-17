@@ -71,7 +71,7 @@ export function NovaAulaDialog({ turmas, profissionais, fechar }: { turmas: Turm
     event.preventDefault();
     if (salvando) return;
     if (!turmaId) return setErro('Selecione a turma.');
-    if (ehTutoria && horarioFim < '21:30') return setErro('Tutoria começa às 20h e deve durar pelo menos 1h30 (até 21h30).');
+    if (ehTutoria && horarioFim && horarioFim <= '20:00') return setErro('O término da tutoria deve ser depois das 20h.');
     setSalvando(true);
     setErro('');
     const { error } = await supabase.from('aulas').insert({
@@ -122,7 +122,7 @@ export function NovaAulaDialog({ turmas, profissionais, fechar }: { turmas: Turm
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="aula-fim">Fim</Label>
-                <Input id="aula-fim" type="time" min={ehTutoria ? '21:30' : undefined} value={horarioFim} onChange={(e) => setHorarioFim(e.target.value)} />
+                <Input id="aula-fim" type="time" min={ehTutoria ? '20:01' : undefined} value={horarioFim} onChange={(e) => setHorarioFim(e.target.value)} />
               </div>
             </div>
             <div className="space-y-1.5">
@@ -131,11 +131,11 @@ export function NovaAulaDialog({ turmas, profissionais, fechar }: { turmas: Turm
                 const value = e.target.value;
                 if (/^tutoria/i.test(value.trim()) && !/^tutoria/i.test(modulo.trim())) {
                   setHorarioInicio('20:00');
-                  setHorarioFim('21:30');
+                  setHorarioFim('21:00');
                 }
                 setModulo(value);
               }} />
-              {ehTutoria && <p className="text-xs text-muted-foreground">Tutorias: início fixo às 20h (Brasília), término a partir de 21h30.</p>}
+              {ehTutoria && <p className="text-xs text-muted-foreground">Tutorias: início às 20h (Brasília); fim sugerido às 21h, ajustável conforme a duração real.</p>}
             </div>
             {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
             <DialogFooter>
