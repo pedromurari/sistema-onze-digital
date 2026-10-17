@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { CalendarPlus, CheckCircle2, ClipboardCheck, Loader2, UserCheck } from 'lucide-react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { CalendarPlus, CheckCircle2, ClipboardCheck, Link2, Loader2, UserCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import type { Database } from '@/integrations/supabase/types';
@@ -16,7 +16,7 @@ type Aula = Database['public']['Tables']['aulas']['Row'];
 type Turma = Pick<Database['public']['Tables']['turmas']['Row'], 'id' | 'nome'>;
 type Profissional = Pick<Database['public']['Tables']['profissionais']['Row'], 'id' | 'nome' | 'ativo'>;
 type Aluno = Pick<Database['public']['Tables']['alunos']['Row'], 'id' | 'nome'>;
-type Presenca = Database['public']['Tables']['presencas']['Row'];
+type Presenca = Database['public']['Tables']['presencas']['Row'] & { confirmado_via_link: boolean };
 
 const STATUS_LABEL: Record<Aula['status'], { label: string; className: string }> = {
   agendada: { label: 'Agendada', className: 'bg-blue-500/10 text-blue-600 border-blue-500/30' },
@@ -36,7 +36,7 @@ function useListaPresenca() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
 
-  const carregar = async () => {
+  const carregar = useCallback(async () => {
     setCarregando(true);
     const [aulasResp, turmasResp, profResp] = await Promise.all([
       supabase.from('aulas').select('*, turmas(nome), profissionais(nome)').order('data', { ascending: false }),
@@ -48,9 +48,9 @@ function useListaPresenca() {
     setTurmas(turmasResp.data ?? []);
     setProfissionais(profResp.data ?? []);
     setCarregando(false);
-  };
+  }, []);
 
-  useEffect(() => { void carregar(); }, []);
+  useEffect(() => { void carregar(); }, [carregar]);
 
   return { aulas, turmas, profissionais, carregando, erro, recarregar: carregar };
 }
@@ -140,7 +140,8 @@ function NovaAulaDialog({ turmas, profissionais, fechar }: { turmas: Turma[]; pr
 
 function PresencaDialog({ aula, fechar }: { aula: Aula & { turmas: { nome: string } | null; profissionais: { nome: string } | null }; fechar: (salvou: boolean) => void }) {
   const [alunos, setAlunos] = useState<Aluno[]>([]);
-  const [professorPresente, setProfessorPresente] = useState(true);
+  const [existentes, setExistentes] = useState<Presenca[]>([]);
+  const [professorPresente, setProfessorPresente] = useState(false);
   const [presencaAlunos, setPresencaAlunos] = useState<Record<string, boolean>>({});
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
@@ -155,12 +156,13 @@ function PresencaDialog({ aula, fechar }: { aula: Aula & { turmas: { nome: strin
       const listaAlunos = alunosResp.data ?? [];
       setAlunos(listaAlunos);
       const presencasExistentes = (presencasResp.data ?? []) as Presenca[];
+      setExistentes(presencasExistentes);
       const profExistente = presencasExistentes.find((p) => p.tipo === 'professor');
-      setProfessorPresente(profExistente ? profExistente.presente : true);
+      setProfessorPresente(profExistente ? profExistente.presente : false);
       const mapaAlunos: Record<string, boolean> = {};
       for (const aluno of listaAlunos) {
         const existente = presencasExistentes.find((p) => p.tipo === 'aluno' && p.aluno_id === aluno.id);
-        mapaAlunos[aluno.id] = existente ? existente.presente : true;
+        mapaAlunos[aluno.id] = existente ? existente.presente : false;
       }
       setPresencaAlunos(mapaAlunos);
       setCarregando(false);
@@ -171,24 +173,36 @@ function PresencaDialog({ aula, fechar }: { aula: Aula & { turmas: { nome: strin
   async function salvar() {
     if (salvando) return;
     setSalvando(true);
-    // Reescreve do zero em vez de upsert -- evita depender de ON CONFLICT
-    // casando com índice único parcial (professor/aluno), que o PostgREST
-    // não garante suportar bem.
-    const { error: erroDelete } = await supabase.from('presencas').delete().eq('aula_id', aula.id);
-    if (erroDelete) { setSalvando(false); toast.error('Não foi possível salvar a presença.'); return; }
-
-    const agora = new Date().toISOString();
-    const linhas: Database['public']['Tables']['presencas']['Insert'][] = [];
-    if (aula.profissional_id) {
-      linhas.push({ aula_id: aula.id, tipo: 'professor', profissional_id: aula.profissional_id, presente: professorPresente, assinado_em: agora });
+    // Nunca apaga nem sobrescreve uma assinatura feita pelo link público.
+    // Índices únicos são parciais, então cada registro é atualizado/inserido pelo ID.
+    const novos: Database['public']['Tables']['presencas']['Insert'][] = [];
+    const atualizacoes: Promise<{ error: { message: string } | null }>[] = [];
+    const prepararPessoa = (tipo: 'professor' | 'aluno', pessoaId: string, presente: boolean) => {
+      const atual = existentes.find((p) => p.tipo === tipo && (tipo === 'professor' ? p.profissional_id : p.aluno_id) === pessoaId);
+      if (atual?.confirmado_via_link || atual?.presente === presente) return;
+      const dados = { presente, assinado_em: new Date().toISOString() };
+      if (atual) {
+        atualizacoes.push(Promise.resolve(supabase.from('presencas').update(dados).eq('id', atual.id)));
+        return;
+      }
+      novos.push({
+        aula_id: aula.id, tipo, profissional_id: tipo === 'professor' ? pessoaId : null,
+        aluno_id: tipo === 'aluno' ? pessoaId : null, ...dados,
+      });
+    };
+    if (aula.profissional_id) prepararPessoa('professor', aula.profissional_id, professorPresente);
+    for (const aluno of alunos) prepararPessoa('aluno', aluno.id, presencaAlunos[aluno.id] ?? false);
+    const [insercao, updates] = await Promise.all([
+      novos.length ? supabase.from('presencas').insert(novos) : Promise.resolve({ error: null }),
+      Promise.all(atualizacoes),
+    ]);
+    if (insercao.error || updates.some((result) => result.error)) {
+      setSalvando(false);
+      toast.error('Não foi possível salvar todas as presenças. Atualize a lista e tente novamente.');
+      return;
     }
-    for (const aluno of alunos) {
-      linhas.push({ aula_id: aula.id, tipo: 'aluno', aluno_id: aluno.id, presente: presencaAlunos[aluno.id] ?? true, assinado_em: agora });
-    }
-    const { error: erroInsert } = linhas.length > 0 ? await supabase.from('presencas').insert(linhas) : { error: null };
-    if (erroInsert) { setSalvando(false); toast.error('Não foi possível salvar a presença.'); return; }
 
-    await supabase.from('aulas').update({ status: 'realizada' }).eq('id', aula.id);
+    if (professorPresente) await supabase.from('aulas').update({ status: 'realizada' }).eq('id', aula.id);
     setSalvando(false);
     toast.success('Presença registrada.');
     fechar(true);
@@ -205,8 +219,9 @@ function PresencaDialog({ aula, fechar }: { aula: Aula & { turmas: { nome: strin
           <div className="space-y-4">
             {aula.profissional_id && (
               <label className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-muted/20 p-3 cursor-pointer">
-                <Checkbox checked={professorPresente} onCheckedChange={(v) => setProfessorPresente(v === true)} />
+                <Checkbox checked={professorPresente} disabled={existentes.some((p) => p.tipo === 'professor' && p.confirmado_via_link)} onCheckedChange={(v) => setProfessorPresente(v === true)} />
                 <span className="text-sm font-medium">{aula.profissionais?.nome ?? 'Professor'} deu a aula</span>
+                {existentes.some((p) => p.tipo === 'professor' && p.confirmado_via_link) && <Badge variant="secondary">Assinado pelo link</Badge>}
               </label>
             )}
             <div>
@@ -216,10 +231,12 @@ function PresencaDialog({ aula, fechar }: { aula: Aula & { turmas: { nome: strin
                 {alunos.map((aluno) => (
                   <label key={aluno.id} className="flex items-center gap-2.5 rounded-lg border border-border/40 p-2 cursor-pointer hover:bg-muted/20">
                     <Checkbox
-                      checked={presencaAlunos[aluno.id] ?? true}
+                      checked={presencaAlunos[aluno.id] ?? false}
+                      disabled={existentes.some((p) => p.tipo === 'aluno' && p.aluno_id === aluno.id && p.confirmado_via_link)}
                       onCheckedChange={(v) => setPresencaAlunos((prev) => ({ ...prev, [aluno.id]: v === true }))}
                     />
                     <span className="text-sm">{aluno.nome}</span>
+                    {existentes.some((p) => p.tipo === 'aluno' && p.aluno_id === aluno.id && p.confirmado_via_link) && <Badge variant="secondary">Assinado</Badge>}
                   </label>
                 ))}
               </div>
@@ -237,10 +254,46 @@ function PresencaDialog({ aula, fechar }: { aula: Aula & { turmas: { nome: strin
   );
 }
 
+function LinksPresencaDialog({ aula, fechar }: { aula: Aula & { turmas: { nome: string } | null }; fechar: () => void }) {
+  const [links, setLinks] = useState<{ aluno: string; professor: string | null } | null>(null);
+  const [erro, setErro] = useState('');
+  useEffect(() => {
+    let ativo = true;
+    void supabase.functions.invoke('presenca-publica', { body: { acao: 'links', aula_id: aula.id } })
+      .then(async ({ data, error }) => {
+        if (!ativo) return;
+        if (error) {
+          const detalhe = error.context instanceof Response ? await error.context.json().catch(() => null) : null;
+          setErro(detalhe?.erro || 'Não foi possível gerar os links.');
+        } else setLinks(data);
+      });
+    return () => { ativo = false; };
+  }, [aula.id]);
+  async function copiar(link: string) {
+    try { await navigator.clipboard.writeText(link); toast.success('Link copiado.'); }
+    catch { toast.error('Não foi possível copiar. Selecione o endereço exibido.'); }
+  }
+  return <Dialog open onOpenChange={(open) => { if (!open) fechar(); }}>
+    <DialogContent className="sm:max-w-lg"><DialogHeader>
+      <DialogTitle>Links de presença · {aula.turmas?.nome || 'Turma'}</DialogTitle>
+      <DialogDescription>Os links existem desde o cadastro da aula. A assinatura abre no dia marcado e até o dia seguinte.</DialogDescription>
+    </DialogHeader>
+      {!links && !erro && <Loader2 className="h-5 w-5 animate-spin" />}
+      {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
+      {links && <div className="space-y-4 text-sm">
+        <div className="space-y-1"><Label>Para enviar aos alunos</Label><p className="break-all font-mono text-xs">{links.aluno}</p><Button size="sm" variant="outline" onClick={() => void copiar(links.aluno)}>Copiar link dos alunos</Button></div>
+        <div className="space-y-1"><Label>Privado do professor</Label>{links.professor ? <><p className="break-all font-mono text-xs">{links.professor}</p><Button size="sm" variant="outline" onClick={() => void copiar(links.professor!)}>Copiar link do professor</Button></> : <p className="text-muted-foreground">Vincule um professor à aula para gerar este link.</p>}</div>
+        <p className="text-xs text-muted-foreground">O link do professor funciona como uma chave de assinatura: envie somente a ele. A confirmação do aluno exige matrícula ativa e conferência de nome, CPF e nascimento.</p>
+      </div>}
+    </DialogContent>
+  </Dialog>;
+}
+
 export function ListaPresenca() {
   const { aulas, turmas, profissionais, carregando, erro, recarregar } = useListaPresenca();
   const [novaAulaAberta, setNovaAulaAberta] = useState(false);
   const [aulaPresenca, setAulaPresenca] = useState<(typeof aulas)[number] | null>(null);
+  const [aulaLinks, setAulaLinks] = useState<(typeof aulas)[number] | null>(null);
   const [turmaFiltro, setTurmaFiltro] = useState('todas');
   const aulasFiltradas = turmaFiltro === 'todas' ? aulas : aulas.filter((a) => a.turma_id === turmaFiltro);
 
@@ -294,9 +347,10 @@ export function ListaPresenca() {
                       <td className="p-2 text-muted-foreground">{aula.modulo ?? '—'}</td>
                       <td className="p-2"><Badge variant="outline" className={STATUS_LABEL[aula.status].className}>{STATUS_LABEL[aula.status].label}</Badge></td>
                       <td className="p-2">
+                        <div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => setAulaLinks(aula)}><Link2 className="h-3.5 w-3.5 mr-1" /> Links</Button>
                         <Button size="sm" variant="outline" onClick={() => setAulaPresenca(aula)}>
                           <UserCheck className="h-3.5 w-3.5 mr-1" /> Presença
-                        </Button>
+                        </Button></div>
                       </td>
                     </tr>
                   ))}
@@ -313,6 +367,7 @@ export function ListaPresenca() {
       {aulaPresenca && (
         <PresencaDialog aula={aulaPresenca} fechar={(salvou) => { setAulaPresenca(null); if (salvou) void recarregar(); }} />
       )}
+      {aulaLinks && <LinksPresencaDialog aula={aulaLinks} fechar={() => setAulaLinks(null)} />}
     </div>
   );
 }

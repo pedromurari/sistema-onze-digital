@@ -15,6 +15,7 @@ const PnlContrato = React.lazy(() => import("./pages/PnlContrato"));
 const AreaMembros     = React.lazy(() => import("./pages/AreaMembros"));
 const Checkout        = React.lazy(() => import("./pages/Checkout"));
 const LinkRedirect    = React.lazy(() => import("./pages/LinkRedirect"));
+const PresencaPublica = React.lazy(() => import("./pages/PresencaPublica"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -80,6 +81,7 @@ const App = () => (
             <Routes>
               {/* Rotas públicas — sem autenticação */}
               <Route path="/forms/tarefa/:tarefaId" element={<TarefaPublica />} />
+              <Route path="/presenca/:aulaId" element={<PresencaPublica />} />
               <Route path="/formulario/:token"      element={<FormularioAluno />} />
               <Route path="/matricula/:vendedor"    element={<MatriculaTimeComercial />} />
               {/* Pré-matrícula: mesmo formulário, mas só boleto e com a 1ª

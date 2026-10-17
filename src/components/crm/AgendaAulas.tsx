@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { CalendarDays, Video } from 'lucide-react';
+import { CalendarDays, ClipboardCheck, Video } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface Aula {
   id: string;
@@ -30,37 +31,69 @@ function meetUrl(value: string | null): string | null {
   } catch { return null; }
 }
 
-function mesAtual() {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit' }).formatToParts(new Date());
-  return `${parts.find(p => p.type === 'year')?.value}-${parts.find(p => p.type === 'month')?.value}`;
+function hojeBrasil() {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  return `${parts.find(p => p.type === 'year')?.value}-${parts.find(p => p.type === 'month')?.value}-${parts.find(p => p.type === 'day')?.value}`;
 }
 
 export function AgendaAulas() {
   const { user } = useAuth();
   const allowed = user?.tipo === 'admin' || user?.permissionMatrix?.rh?.ver === true;
-  const [month, setMonth] = useState(mesAtual);
+  const [month, setMonth] = useState('');
+  const [turmaId, setTurmaId] = useState('todas');
   const [page, setPage] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const validMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
+  const [linksPresenca, setLinksPresenca] = useState<{ aulaId: string; aluno: string; professor: string | null } | null>(null);
+  const [erroLinks, setErroLinks] = useState('');
+  const today = hojeBrasil();
+  const validMonth = month === '' || /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
   const nextMonth = validMonth ? `${Number(month.slice(0, 4)) + (month.endsWith('-12') ? 1 : 0)}-${String(Number(month.slice(5)) % 12 + 1).padStart(2, '0')}-01` : '';
+  const turmasQuery = useQuery({
+    queryKey: ['agenda-aulas-turmas', user?.id],
+    enabled: Boolean(allowed),
+    queryFn: async ({ signal }) => {
+      const { data, error } = await supabase.from('turmas').select('id,nome').order('nome').abortSignal(signal);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
   const query = useQuery({
-    queryKey: ['agenda-aulas', user?.id, month, page],
+    queryKey: ['agenda-aulas', user?.id, today, month, turmaId, page],
     enabled: Boolean(allowed && validMonth),
     queryFn: async ({ signal }) => {
       // Mesma tabela usada pela Lista de Presença; não duplicar os registros.
-      const { data, error } = await supabase.from('aulas')
+      let request = supabase.from('aulas')
         .select('id,turma_id,profissional_id,data,horario_inicio,horario_fim,modulo,status,link_meet,turma:turmas(nome),professor:profissionais(nome)')
-        .gte('data', `${month}-01`).lt('data', nextMonth)
+        .gte('data', month && `${month}-01` > today ? `${month}-01` : today);
+      if (month) request = request.lt('data', nextMonth);
+      if (turmaId !== 'todas') request = request.eq('turma_id', turmaId);
+      const { data, error } = await request
         .order('data').order('horario_inicio').order('id')
         .range(page * 50, page * 50 + 50).abortSignal(signal).returns<Aula[]>();
       if (error) throw error;
       return data ?? [];
     },
   });
-  useEffect(() => { setSelectedId(null); }, [month, page]);
+  useEffect(() => { setSelectedId(null); }, [month, turmaId, page]);
   const aulas = (query.data ?? []).slice(0, 50);
-  const selected = aulas.find(aula => aula.id === selectedId);
-  const link = meetUrl(selected?.link_meet ?? null);
+  useEffect(() => {
+    let ativo = true;
+    setLinksPresenca(null); setErroLinks('');
+    if (selectedId) void supabase.functions.invoke('presenca-publica', { body: { acao: 'links', aula_id: selectedId } })
+      .then(async ({ data, error }) => {
+        if (!ativo) return;
+        if (error) {
+          const detalhe = error.context instanceof Response ? await error.context.json().catch(() => null) : null;
+          setErroLinks(detalhe?.erro || 'Não foi possível carregar os links de presença.');
+        } else setLinksPresenca({ ...data, aulaId: selectedId });
+      });
+    return () => { ativo = false; };
+  }, [selectedId]);
+
+  async function copiar(value: string) {
+    try { await navigator.clipboard.writeText(value); }
+    catch { setErroLinks('Não foi possível copiar. Selecione o endereço exibido.'); }
+  }
 
   if (!allowed) return <div className="p-6">Acesso restrito à equipe com permissão de RH.</div>;
 
@@ -73,19 +106,50 @@ export function AgendaAulas() {
       <p>Preparação para Google Meet: os links ainda não são gerados automaticamente.</p>
       <p className="text-muted-foreground mt-1">A prévia abaixo mostra onde o professor verá o link. Entrega pelo Telegram e reagendamento pelo bot aguardam integração.</p>
     </div>
-    <div className="flex items-end gap-3">
-      <div><Label htmlFor="agenda-mes">Mês das aulas</Label><Input id="agenda-mes" type="month" value={month} onChange={e => { setMonth(e.target.value); setPage(0); }} /></div>
+    <div className="flex flex-wrap items-end gap-3">
+      <div className="min-w-52"><Label htmlFor="agenda-turma">Turma</Label>
+        <Select value={turmaId} onValueChange={value => { setTurmaId(value); setPage(0); }}>
+          <SelectTrigger id="agenda-turma"><SelectValue placeholder="Todas as turmas" /></SelectTrigger>
+          <SelectContent><SelectItem value="todas">Todas as turmas</SelectItem>{(turmasQuery.data ?? []).map(turma => <SelectItem key={turma.id} value={turma.id}>{turma.nome}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+      <div><Label htmlFor="agenda-mes">Mês (opcional)</Label><Input id="agenda-mes" type="month" value={month} onChange={e => { setMonth(e.target.value); setPage(0); }} /></div>
+      {month && <Button variant="ghost" onClick={() => { setMonth(''); setPage(0); }}>Todos os meses</Button>}
       <Button variant="outline" disabled={!validMonth || query.isFetching} onClick={() => void query.refetch()}>Atualizar</Button>
     </div>
+    {turmasQuery.isError && <p role="alert" className="text-sm text-destructive">Não foi possível carregar as turmas para o filtro.</p>}
     {!validMonth ? <p>Selecione um mês válido.</p> : query.isPending ? <p role="status">Carregando aulas…</p> : query.isError ?
       <p role="alert">Não foi possível carregar a agenda. Verifique seu acesso e tente atualizar.</p> : <>
-        {aulas.length === 0 ? <p>Nenhuma aula neste período. As aulas cadastradas na Lista de Presença aparecerão aqui.</p> :
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{aulas.map(aula => <Card key={aula.id}><CardContent className="p-4 space-y-2">
+        {aulas.length === 0 ? <p>Nenhuma aula futura encontrada para os filtros selecionados. As aulas cadastradas na Lista de Presença aparecerão aqui.</p> :
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{aulas.map(aula => <Card key={aula.id}><CardContent className="p-4 space-y-3">
             <h2 className="font-semibold">{aula.modulo || 'Aula'} · {aula.turma?.nome || 'Turma não disponível'}</h2>
             <p>{aula.data.split('-').reverse().join('/')} · {aula.horario_inicio?.slice(0, 5) || 'Sem horário'} – {aula.horario_fim?.slice(0, 5) || 'Sem horário'}</p>
             <p className="text-sm text-muted-foreground">{aula.professor?.nome || 'Professor não disponível'} · {aula.status}</p>
-            <p className="text-sm">{meetUrl(aula.link_meet) ? 'Link do Meet disponível' : 'Aguardando link do Meet'}</p>
-            <Button variant="outline" onClick={() => setSelectedId(aula.id)}>Prévia para o professor</Button>
+            <div className="border-t pt-3 space-y-2">
+              <p className="text-sm font-medium flex items-center gap-2"><Video className="h-4 w-4" /> Google Meet</p>
+              {meetUrl(aula.link_meet) && aula.status === 'agendada' ? <Button size="sm" variant="outline" asChild>
+                <a href={meetUrl(aula.link_meet)!} target="_blank" rel="noopener noreferrer">Abrir link do Meet</a>
+              </Button> : <p className="text-sm text-muted-foreground">{aula.status !== 'agendada' ? 'Aula não agendada' : 'Aguardando link do Meet'}</p>}
+            </div>
+            <div className="border-t pt-3 space-y-2">
+              <p className="text-sm font-medium flex items-center gap-2"><ClipboardCheck className="h-4 w-4" /> Lista de presença</p>
+              <Button size="sm" variant="outline" aria-expanded={selectedId === aula.id} onClick={() => setSelectedId(current => current === aula.id ? null : aula.id)}>
+                {selectedId === aula.id ? 'Ocultar links' : 'Mostrar links de presença'}
+              </Button>
+              {selectedId === aula.id && <div className="space-y-2 text-sm">
+                {linksPresenca?.aulaId !== aula.id && !erroLinks && <p className="text-muted-foreground">Carregando links...</p>}
+                {erroLinks && <p role="alert" className="text-destructive">{erroLinks}</p>}
+                {linksPresenca?.aulaId === aula.id && <>
+                  <p className="break-all font-mono text-xs">Alunos: {linksPresenca.aluno}</p>
+                  <Button size="sm" variant="outline" onClick={() => void copiar(linksPresenca.aluno)}>Copiar link dos alunos</Button>
+                  {linksPresenca.professor ? <>
+                    <p className="break-all font-mono text-xs">Professor: {linksPresenca.professor}</p>
+                    <Button size="sm" variant="outline" onClick={() => void copiar(linksPresenca.professor!)}>Copiar link privado do professor</Button>
+                  </> : <p className="text-xs text-muted-foreground">Vincule um professor à aula para gerar o link privado.</p>}
+                  <p className="text-xs text-muted-foreground">Assinaturas disponíveis no dia da aula e no dia seguinte. Envie o link do professor somente a ele.</p>
+                </>}
+              </div>}
+            </div>
           </CardContent></Card>)}</div>}
         <div className="flex items-center gap-3">
           <Button variant="outline" disabled={page === 0} onClick={() => setPage(p => p - 1)}>Anterior</Button>
@@ -93,13 +157,5 @@ export function AgendaAulas() {
           <Button variant="outline" disabled={(query.data?.length ?? 0) <= 50} onClick={() => setPage(p => p + 1)}>Próxima</Button>
         </div>
       </>}
-    {selected ? <section className="rounded-xl border border-primary/30 p-5 space-y-3" aria-label="Prévia para o professor">
-      <h2 className="font-semibold">Prévia interna · {selected.professor?.nome || 'Professor'}</h2>
-      <p>{selected.modulo || 'Aula'} — {selected.turma?.nome || 'Turma'}</p>
-      <p>{selected.data.split('-').reverse().join('/')} às {selected.horario_inicio?.slice(0, 5)} (Brasília)</p>
-      {link && selected.status === 'agendada' ? <Button asChild><a href={link} target="_blank" rel="noopener noreferrer"><Video className="h-4 w-4 mr-2" />Entrar no Google Meet</a></Button> :
-        <Button disabled>{selected.status !== 'agendada' ? 'Aula não agendada' : 'Aguardando link do Meet'}</Button>}
-      <p className="text-sm text-muted-foreground">O link de presença será incluído quando o fluxo da Lista de Presença estiver disponível. Esta prévia não envia mensagens.</p>
-    </section> : null}
   </div>;
 }

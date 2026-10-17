@@ -50,3 +50,8 @@ verify_jwt = false
 
 [functions.lead-direto-evento]
 verify_jwt = false
+
+# Formulário público: matrícula e assinatura validadas na Edge Function.
+# O link privado do professor usa assinatura HMAC feita apenas no servidor.
+[functions.presenca-publica]
+verify_jwt = false
