@@ -26,7 +26,8 @@ const STATUS_LABEL: Record<Aula['status'], { label: string; className: string }>
 };
 
 function hojeISO() {
-  return new Date().toISOString().slice(0, 10);
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  return `${parts.find(p => p.type === 'year')?.value}-${parts.find(p => p.type === 'month')?.value}-${parts.find(p => p.type === 'day')?.value}`;
 }
 
 function useListaPresenca() {
@@ -62,6 +63,7 @@ export function NovaAulaDialog({ turmas, profissionais, fechar }: { turmas: Turm
   const [horarioInicio, setHorarioInicio] = useState('');
   const [horarioFim, setHorarioFim] = useState('');
   const [modulo, setModulo] = useState('');
+  const ehTutoria = /^tutoria/i.test(modulo.trim());
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
 
@@ -69,13 +71,14 @@ export function NovaAulaDialog({ turmas, profissionais, fechar }: { turmas: Turm
     event.preventDefault();
     if (salvando) return;
     if (!turmaId) return setErro('Selecione a turma.');
+    if (ehTutoria && horarioFim < '21:30') return setErro('Tutoria começa às 20h e deve durar pelo menos 1h30 (até 21h30).');
     setSalvando(true);
     setErro('');
     const { error } = await supabase.from('aulas').insert({
       turma_id: turmaId,
       profissional_id: profissionalId || null,
       data,
-      horario_inicio: horarioInicio || null,
+      horario_inicio: ehTutoria ? '20:00' : horarioInicio || null,
       horario_fim: horarioFim || null,
       modulo: modulo.trim() || null,
     });
@@ -115,16 +118,24 @@ export function NovaAulaDialog({ turmas, profissionais, fechar }: { turmas: Turm
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="aula-inicio">Início</Label>
-                <Input id="aula-inicio" type="time" value={horarioInicio} onChange={(e) => setHorarioInicio(e.target.value)} />
+                <Input id="aula-inicio" type="time" value={horarioInicio} onChange={(e) => setHorarioInicio(e.target.value)} readOnly={ehTutoria} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="aula-fim">Fim</Label>
-                <Input id="aula-fim" type="time" value={horarioFim} onChange={(e) => setHorarioFim(e.target.value)} />
+                <Input id="aula-fim" type="time" min={ehTutoria ? '21:30' : undefined} value={horarioFim} onChange={(e) => setHorarioFim(e.target.value)} />
               </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="aula-modulo">Módulo (opcional)</Label>
-              <Input id="aula-modulo" value={modulo} maxLength={160} onChange={(e) => setModulo(e.target.value)} />
+              <Input id="aula-modulo" value={modulo} maxLength={160} onChange={(e) => {
+                const value = e.target.value;
+                if (/^tutoria/i.test(value.trim()) && !/^tutoria/i.test(modulo.trim())) {
+                  setHorarioInicio('20:00');
+                  setHorarioFim('21:30');
+                }
+                setModulo(value);
+              }} />
+              {ehTutoria && <p className="text-xs text-muted-foreground">Tutorias: início fixo às 20h (Brasília), término a partir de 21h30.</p>}
             </div>
             {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
             <DialogFooter>
