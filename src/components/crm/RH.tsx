@@ -2,7 +2,6 @@ import { useEffect, useState, type FormEvent } from 'react';
 import {
   BadgeDollarSign,
   Banknote,
-  BookOpenCheck,
   BriefcaseBusiness,
   CalendarClock,
   CheckCircle2,
@@ -28,8 +27,6 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ListaPresenca } from './rh/ListaPresenca';
 import { HistoricoPagamentosDialog } from './rh/HistoricoPagamentos';
 
 type Profissional = Database['public']['Tables']['profissionais']['Row'];
@@ -170,7 +167,7 @@ function ProfissionalDialog({ profissional, fechar }: { profissional: Profission
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{profissional ? 'Editar profissional' : 'Novo profissional'}</DialogTitle>
-          <DialogDescription>Cadastro usado pela Lista de Presença e pelo Fechamento de Folha.</DialogDescription>
+          <DialogDescription>Cadastro usado pela Agenda de aulas e pelo futuro Fechamento de Folha.</DialogDescription>
         </DialogHeader>
         <form onSubmit={(e) => void salvar(e)} className="space-y-3">
           <fieldset disabled={salvando} className="space-y-3">
@@ -297,8 +294,7 @@ export function RH() {
               <h1 className="text-2xl font-bold tracking-tight text-foreground">RH e pagamentos</h1>
             </div>
             <p className="max-w-3xl text-sm text-muted-foreground">
-              Cadastro de profissionais já é real. Aulas/presença, fechamento de folha, comissões e notas fiscais
-              ainda são planejamento — ver cartões abaixo.
+              Cadastro e pagamentos dos profissionais. Aulas e presença ficam em Gestão → Agenda de aulas.
             </p>
           </div>
           <Button className="gap-2 self-start" onClick={() => setEditando(null)}>
@@ -310,7 +306,6 @@ export function RH() {
           {[
             { label: 'Profissionais ativos', value: String(ativos.length), detail: `${itens.length} cadastrados no total`, icon: Users, tone: 'text-blue-600 bg-blue-500/10' },
             { label: 'A pagar', value: 'R$ 0,00', detail: 'fechamento de folha ainda não construído', icon: Banknote, tone: 'text-amber-600 bg-amber-500/10' },
-            { label: 'Aulas a aprovar', value: '0', detail: 'cadastre na aba Lista de Presença', icon: BookOpenCheck, tone: 'text-violet-600 bg-violet-500/10' },
             { label: 'Notas pendentes', value: '0', detail: 'nenhum documento anexado', icon: ReceiptText, tone: 'text-emerald-600 bg-emerald-500/10' },
           ].map(({ label, value, detail, icon: Icon, tone }) => (
             <Card key={label} className="border-border/70 shadow-sm">
@@ -328,12 +323,7 @@ export function RH() {
           ))}
         </section>
 
-        <Tabs defaultValue="profissionais">
-          <TabsList>
-            <TabsTrigger value="profissionais">Profissionais</TabsTrigger>
-            <TabsTrigger value="presenca">Lista de Presença</TabsTrigger>
-          </TabsList>
-          <TabsContent value="profissionais" className="mt-4">
+        <div className="mt-4">
             <Card className="border-border/70 shadow-sm">
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
@@ -380,11 +370,7 @@ export function RH() {
                 )}
               </CardContent>
             </Card>
-          </TabsContent>
-          <TabsContent value="presenca" className="mt-4">
-            <ListaPresenca />
-          </TabsContent>
-        </Tabs>
+        </div>
 
         <Card className="border-border/70 shadow-sm">
           <CardHeader className="pb-3">
@@ -409,8 +395,8 @@ export function RH() {
         <div className="flex items-start gap-3 rounded-xl border border-dashed border-border bg-muted/20 p-4 text-sm text-muted-foreground">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
           <p>
-            Próximo passo real: Lista de Presença (aula por aula, assinatura de professor e aluno) alimentando o
-            Fechamento de Folha automático — ver `ROADMAP.md` e o cofre do Obsidian em <code>RH/</code>.
+            Aulas e assinaturas ficam em Gestão → Agenda de aulas. A conexão com o Fechamento de Folha
+            automático ainda está pendente — ver `ROADMAP.md` e o cofre do Obsidian em <code>RH/</code>.
           </p>
         </div>
         {editando !== undefined && (

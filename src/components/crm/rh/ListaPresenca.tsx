@@ -55,7 +55,7 @@ function useListaPresenca() {
   return { aulas, turmas, profissionais, carregando, erro, recarregar: carregar };
 }
 
-function NovaAulaDialog({ turmas, profissionais, fechar }: { turmas: Turma[]; profissionais: Profissional[]; fechar: (criou: boolean) => void }) {
+export function NovaAulaDialog({ turmas, profissionais, fechar }: { turmas: Turma[]; profissionais: Profissional[]; fechar: (criou: boolean) => void }) {
   const [turmaId, setTurmaId] = useState('');
   const [profissionalId, setProfissionalId] = useState('');
   const [data, setData] = useState(hojeISO());
@@ -138,7 +138,7 @@ function NovaAulaDialog({ turmas, profissionais, fechar }: { turmas: Turma[]; pr
   );
 }
 
-function PresencaDialog({ aula, fechar }: { aula: Aula & { turmas: { nome: string } | null; profissionais: { nome: string } | null }; fechar: (salvou: boolean) => void }) {
+export function PresencaDialog({ aula, fechar }: { aula: Pick<Aula, 'id' | 'turma_id' | 'profissional_id'> & { turmas: { nome: string } | null; profissionais: { nome: string } | null }; fechar: (salvou: boolean) => void }) {
   const [alunos, setAlunos] = useState<Aluno[]>([]);
   const [existentes, setExistentes] = useState<Presenca[]>([]);
   const [professorPresente, setProfessorPresente] = useState(false);

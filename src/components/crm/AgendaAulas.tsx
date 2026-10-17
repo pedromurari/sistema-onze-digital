@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { CalendarDays, ClipboardCheck, Video } from 'lucide-react';
+import { CalendarDays, CalendarPlus, ClipboardCheck, UserCheck, Video } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { NovaAulaDialog, PresencaDialog } from './rh/ListaPresenca';
 
 interface Aula {
   id: string;
@@ -41,11 +42,15 @@ export function AgendaAulas() {
   const allowed = user?.tipo === 'admin' || user?.permissionMatrix?.rh?.ver === true;
   const [month, setMonth] = useState('');
   const [turmaId, setTurmaId] = useState('todas');
+  const [periodo, setPeriodo] = useState<'futuras' | 'historico'>('futuras');
   const [page, setPage] = useState(0);
+  const [novaAulaAberta, setNovaAulaAberta] = useState(false);
+  const [presencaAula, setPresencaAula] = useState<Aula | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [linksPresenca, setLinksPresenca] = useState<{ aulaId: string; aluno: string; professor: string | null } | null>(null);
   const [erroLinks, setErroLinks] = useState('');
   const today = hojeBrasil();
+  const canEdit = user?.tipo === 'admin' || user?.permissionMatrix?.rh?.editar === true;
   const validMonth = month === '' || /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
   const nextMonth = validMonth ? `${Number(month.slice(0, 4)) + (month.endsWith('-12') ? 1 : 0)}-${String(Number(month.slice(5)) % 12 + 1).padStart(2, '0')}-01` : '';
   const turmasQuery = useQuery({
@@ -57,24 +62,37 @@ export function AgendaAulas() {
       return data ?? [];
     },
   });
+  const profissionaisQuery = useQuery({
+    queryKey: ['agenda-aulas-profissionais', user?.id],
+    enabled: Boolean(allowed && canEdit),
+    queryFn: async ({ signal }) => {
+      const { data, error } = await supabase.from('profissionais').select('id,nome,ativo').eq('ativo', true).order('nome').abortSignal(signal);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
   const query = useQuery({
-    queryKey: ['agenda-aulas', user?.id, today, month, turmaId, page],
+    queryKey: ['agenda-aulas', user?.id, today, month, turmaId, periodo, page],
     enabled: Boolean(allowed && validMonth),
     queryFn: async ({ signal }) => {
       // Mesma tabela usada pela Lista de Presença; não duplicar os registros.
       let request = supabase.from('aulas')
-        .select('id,turma_id,profissional_id,data,horario_inicio,horario_fim,modulo,status,link_meet,turma:turmas(nome),professor:profissionais(nome)')
-        .gte('data', month && `${month}-01` > today ? `${month}-01` : today);
+        .select('id,turma_id,profissional_id,data,horario_inicio,horario_fim,modulo,status,link_meet,turma:turmas(nome),professor:profissionais(nome)');
+      request = periodo === 'futuras'
+        ? request.gte('data', month && `${month}-01` > today ? `${month}-01` : today)
+        : request.lt('data', today).gte('data', month ? `${month}-01` : '1900-01-01');
       if (month) request = request.lt('data', nextMonth);
       if (turmaId !== 'todas') request = request.eq('turma_id', turmaId);
       const { data, error } = await request
-        .order('data').order('horario_inicio').order('id')
+        .order('data', { ascending: periodo === 'futuras' })
+        .order('horario_inicio', { ascending: periodo === 'futuras' })
+        .order('id', { ascending: periodo === 'futuras' })
         .range(page * 50, page * 50 + 50).abortSignal(signal).returns<Aula[]>();
       if (error) throw error;
       return data ?? [];
     },
   });
-  useEffect(() => { setSelectedId(null); }, [month, turmaId, page]);
+  useEffect(() => { setSelectedId(null); }, [month, turmaId, periodo, page]);
   const aulas = (query.data ?? []).slice(0, 50);
   useEffect(() => {
     let ativo = true;
@@ -98,15 +116,24 @@ export function AgendaAulas() {
   if (!allowed) return <div className="p-6">Acesso restrito à equipe com permissão de RH.</div>;
 
   return <div className="p-4 md:p-6 space-y-5">
-    <div>
-      <h1 className="text-2xl font-bold flex items-center gap-2"><CalendarDays />Agenda de aulas</h1>
-      <p className="text-muted-foreground">Aulas compartilhadas com a Lista de Presença. Horários de Brasília.</p>
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h1 className="text-2xl font-bold flex items-center gap-2"><CalendarDays />Agenda de aulas</h1>
+        <p className="text-muted-foreground">Aulas, Google Meet e presença no mesmo lugar. Horários de Brasília.</p>
+      </div>
+      {canEdit && <Button onClick={() => setNovaAulaAberta(true)} disabled={!turmasQuery.data?.length || profissionaisQuery.isPending}><CalendarPlus className="h-4 w-4 mr-2" />Nova aula</Button>}
     </div>
     <div className="rounded-lg border p-4 text-sm bg-muted/30">
       <p>Preparação para Google Meet: os links ainda não são gerados automaticamente.</p>
       <p className="text-muted-foreground mt-1">A prévia abaixo mostra onde o professor verá o link. Entrega pelo Telegram e reagendamento pelo bot aguardam integração.</p>
     </div>
     <div className="flex flex-wrap items-end gap-3">
+      <div><Label htmlFor="agenda-periodo">Período</Label>
+        <Select value={periodo} onValueChange={value => { setPeriodo(value as 'futuras' | 'historico'); setPage(0); }}>
+          <SelectTrigger id="agenda-periodo" className="min-w-44"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="futuras">Próximas aulas</SelectItem><SelectItem value="historico">Histórico</SelectItem></SelectContent>
+        </Select>
+      </div>
       <div className="min-w-52"><Label htmlFor="agenda-turma">Turma</Label>
         <Select value={turmaId} onValueChange={value => { setTurmaId(value); setPage(0); }}>
           <SelectTrigger id="agenda-turma"><SelectValue placeholder="Todas as turmas" /></SelectTrigger>
@@ -120,11 +147,12 @@ export function AgendaAulas() {
     {turmasQuery.isError && <p role="alert" className="text-sm text-destructive">Não foi possível carregar as turmas para o filtro.</p>}
     {!validMonth ? <p>Selecione um mês válido.</p> : query.isPending ? <p role="status">Carregando aulas…</p> : query.isError ?
       <p role="alert">Não foi possível carregar a agenda. Verifique seu acesso e tente atualizar.</p> : <>
-        {aulas.length === 0 ? <p>Nenhuma aula futura encontrada para os filtros selecionados. As aulas cadastradas na Lista de Presença aparecerão aqui.</p> :
+        {aulas.length === 0 ? <p>Nenhuma aula encontrada para os filtros selecionados. Cadastre uma aula aqui na Agenda.</p> :
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{aulas.map(aula => <Card key={aula.id}><CardContent className="p-4 space-y-3">
             <h2 className="font-semibold">{aula.modulo || 'Aula'} · {aula.turma?.nome || 'Turma não disponível'}</h2>
             <p>{aula.data.split('-').reverse().join('/')} · {aula.horario_inicio?.slice(0, 5) || 'Sem horário'} – {aula.horario_fim?.slice(0, 5) || 'Sem horário'}</p>
             <p className="text-sm text-muted-foreground">{aula.professor?.nome || 'Professor não disponível'} · {aula.status}</p>
+            {canEdit && <Button size="sm" variant="outline" onClick={() => setPresencaAula(aula)}><UserCheck className="h-4 w-4 mr-2" />Registrar presença</Button>}
             <div className="border-t pt-3 space-y-2">
               <p className="text-sm font-medium flex items-center gap-2"><Video className="h-4 w-4" /> Google Meet</p>
               {meetUrl(aula.link_meet) && aula.status === 'agendada' ? <Button size="sm" variant="outline" asChild>
@@ -157,5 +185,7 @@ export function AgendaAulas() {
           <Button variant="outline" disabled={(query.data?.length ?? 0) <= 50} onClick={() => setPage(p => p + 1)}>Próxima</Button>
         </div>
       </>}
+    {novaAulaAberta && <NovaAulaDialog turmas={turmasQuery.data ?? []} profissionais={profissionaisQuery.data ?? []} fechar={criou => { setNovaAulaAberta(false); if (criou) void query.refetch(); }} />}
+    {presencaAula && <PresencaDialog aula={{ ...presencaAula, turmas: presencaAula.turma, profissionais: presencaAula.professor }} fechar={salvou => { setPresencaAula(null); if (salvou) void query.refetch(); }} />}
   </div>;
 }
