@@ -40,7 +40,7 @@ function hojeBrasil() {
 export function AgendaAulas() {
   const { user } = useAuth();
   const allowed = user?.tipo === 'admin' || user?.permissionMatrix?.rh?.ver === true;
-  const [month, setMonth] = useState('');
+  const [month, setMonth] = useState(() => hojeBrasil().slice(0, 7));
   const [turmaId, setTurmaId] = useState('todas');
   const [periodo, setPeriodo] = useState<'futuras' | 'historico'>('futuras');
   const [page, setPage] = useState(0);
@@ -140,7 +140,7 @@ export function AgendaAulas() {
           <SelectContent><SelectItem value="todas">Todas as turmas</SelectItem>{(turmasQuery.data ?? []).map(turma => <SelectItem key={turma.id} value={turma.id}>{turma.nome}</SelectItem>)}</SelectContent>
         </Select>
       </div>
-      <div><Label htmlFor="agenda-mes">Mês (opcional)</Label><Input id="agenda-mes" type="month" value={month} onChange={e => { setMonth(e.target.value); setPage(0); }} /></div>
+      <div><Label htmlFor="agenda-mes">Mês das aulas</Label><Input id="agenda-mes" type="month" value={month} onChange={e => { setMonth(e.target.value); setPage(0); }} /></div>
       {month && <Button variant="ghost" onClick={() => { setMonth(''); setPage(0); }}>Todos os meses</Button>}
       <Button variant="outline" disabled={!validMonth || query.isFetching} onClick={() => void query.refetch()}>Atualizar</Button>
     </div>
