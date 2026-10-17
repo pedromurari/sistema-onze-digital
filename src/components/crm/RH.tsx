@@ -28,6 +28,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { HistoricoPagamentosDialog } from './rh/HistoricoPagamentos';
+import { PreviaFolha } from './rh/PreviaFolha';
 
 type Profissional = Database['public']['Tables']['profissionais']['Row'];
 
@@ -322,6 +323,8 @@ export function RH() {
             </Card>
           ))}
         </section>
+
+        <PreviaFolha profissionais={itens} />
 
         <div className="mt-4">
             <Card className="border-border/70 shadow-sm">
