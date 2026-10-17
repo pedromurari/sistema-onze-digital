@@ -39,7 +39,7 @@ function useListaPresenca() {
   const carregar = async () => {
     setCarregando(true);
     const [aulasResp, turmasResp, profResp] = await Promise.all([
-      supabase.from('aulas').select('*, turmas(nome), profissionais(nome)').order('data', { ascending: false }).limit(100),
+      supabase.from('aulas').select('*, turmas(nome), profissionais(nome)').order('data', { ascending: true }),
       supabase.from('turmas').select('id, nome').order('nome'),
       supabase.from('profissionais').select('id, nome, ativo').eq('ativo', true).order('nome'),
     ]);
