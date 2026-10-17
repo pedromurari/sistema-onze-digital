@@ -241,6 +241,8 @@ export function ListaPresenca() {
   const { aulas, turmas, profissionais, carregando, erro, recarregar } = useListaPresenca();
   const [novaAulaAberta, setNovaAulaAberta] = useState(false);
   const [aulaPresenca, setAulaPresenca] = useState<(typeof aulas)[number] | null>(null);
+  const [turmaFiltro, setTurmaFiltro] = useState('todas');
+  const aulasFiltradas = turmaFiltro === 'todas' ? aulas : aulas.filter((a) => a.turma_id === turmaFiltro);
 
   return (
     <div className="space-y-4">
@@ -256,12 +258,21 @@ export function ListaPresenca() {
           <CardTitle className="flex items-center gap-2 text-base">
             <ClipboardCheck className="h-4 w-4 text-primary" /> Aulas
           </CardTitle>
+          <div className="pt-2">
+            <Select value={turmaFiltro} onValueChange={setTurmaFiltro}>
+              <SelectTrigger className="w-64"><SelectValue placeholder="Todas as turmas" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todas">Todas as turmas</SelectItem>
+                {turmas.map((t) => <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
         </CardHeader>
         <CardContent>
           {carregando && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
           {erro && <p className="text-sm text-destructive">{erro}</p>}
-          {!carregando && aulas.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma aula cadastrada ainda.</p>}
-          {aulas.length > 0 && (
+          {!carregando && aulasFiltradas.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma aula cadastrada{turmaFiltro !== 'todas' ? ' nesta turma' : ''}.</p>}
+          {aulasFiltradas.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -275,7 +286,7 @@ export function ListaPresenca() {
                   </tr>
                 </thead>
                 <tbody>
-                  {aulas.map((aula) => (
+                  {aulasFiltradas.map((aula) => (
                     <tr key={aula.id} className="border-b last:border-0 hover:bg-muted/30">
                       <td className="p-2 whitespace-nowrap">{new Date(`${aula.data}T12:00:00`).toLocaleDateString('pt-BR')}</td>
                       <td className="p-2 font-medium">{aula.turmas?.nome ?? '—'}</td>
