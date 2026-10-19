@@ -1734,6 +1734,7 @@ export function LancamentoKanban({ lancamentoId }: LancamentoKanbanProps) {
       nome: confirmMatriculaLead.nome,
       whatsapp: confirmMatriculaLead.whatsapp || null,
       email: confirmMatriculaLead.email || null,
+      lancamento_id: lancamento!.id,
       turma_id: confirmMatriculaForm.turma_id || null,
       produto: confirmMatriculaForm.produto,
       valor_mensalidade: Number(confirmMatriculaForm.valor_mensalidade) || null,
