@@ -1023,6 +1023,10 @@ export type Database = {
       }
       aulas: {
         Row: {
+          aviso_enviado_em: string | null
+          aviso_erro: string | null
+          aviso_status: string | null
+          aviso_tentativas: number
           created_at: string
           data: string
           horario_fim: string | null
@@ -1037,6 +1041,10 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          aviso_enviado_em?: string | null
+          aviso_erro?: string | null
+          aviso_status?: string | null
+          aviso_tentativas?: number
           created_at?: string
           data: string
           horario_fim?: string | null
@@ -1051,6 +1059,10 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          aviso_enviado_em?: string | null
+          aviso_erro?: string | null
+          aviso_status?: string | null
+          aviso_tentativas?: number
           created_at?: string
           data?: string
           horario_fim?: string | null
@@ -1094,6 +1106,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      aviso_meet_config: {
+        Row: {
+          antecedencia_minutos: number
+          ativo: boolean
+          id: number
+          instance_name: string | null
+          mensagem_modelo: string
+        }
+        Insert: {
+          antecedencia_minutos?: number
+          ativo?: boolean
+          id?: number
+          instance_name?: string | null
+          mensagem_modelo?: string
+        }
+        Update: {
+          antecedencia_minutos?: number
+          ativo?: boolean
+          id?: number
+          instance_name?: string | null
+          mensagem_modelo?: string
+        }
+        Relationships: []
       }
       balanco_config: {
         Row: {
@@ -2288,6 +2324,21 @@ export type Database = {
           created_at?: string | null
           id?: string
           valor?: string | null
+        }
+        Relationships: []
+      }
+      cron_segredos_internos: {
+        Row: {
+          nome: string
+          valor: string
+        }
+        Insert: {
+          nome: string
+          valor: string
+        }
+        Update: {
+          nome?: string
+          valor?: string
         }
         Relationships: []
       }
@@ -10051,6 +10102,7 @@ export type Database = {
           data_inicio: string | null
           descricao: string | null
           dia_vencimento: number | null
+          grupo_whatsapp_jid: string | null
           id: string
           nome: string
           produto: string | null
@@ -10066,6 +10118,7 @@ export type Database = {
           data_inicio?: string | null
           descricao?: string | null
           dia_vencimento?: number | null
+          grupo_whatsapp_jid?: string | null
           id?: string
           nome: string
           produto?: string | null
@@ -10081,6 +10134,7 @@ export type Database = {
           data_inicio?: string | null
           descricao?: string | null
           dia_vencimento?: number | null
+          grupo_whatsapp_jid?: string | null
           id?: string
           nome?: string
           produto?: string | null
@@ -10964,6 +11018,7 @@ export type Database = {
           valor: number
         }[]
       }
+      get_aviso_meet_cron_secret: { Args: never; Returns: string }
       get_equipe_11ds_composite_config: {
         Args: never
         Returns: {

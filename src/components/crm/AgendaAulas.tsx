@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { CalendarDays, CalendarPlus, ClipboardCheck, UserCheck, Video } from 'lucide-react';
+import { CalendarDays, CalendarPlus, ClipboardCheck, MessageSquare, UserCheck, Video } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { AvisosGrupoDialog, useAvisoConfig } from './rh/AvisosGrupoDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -20,8 +22,19 @@ interface Aula {
   modulo: string | null;
   status: string;
   link_meet: string | null;
-  turma: { nome: string } | null;
+  aviso_status: 'enviado' | 'falhou' | null;
+  aviso_enviado_em: string | null;
+  aviso_erro: string | null;
+  aviso_tentativas: number;
+  turma: { nome: string; grupo_whatsapp_jid: string | null } | null;
   professor: { nome: string } | null;
+}
+
+function avisoPrevisto(aula: Aula, antecedencia: number) {
+  if (!aula.horario_inicio) return '';
+  const [h, m] = aula.horario_inicio.split(':').map(Number);
+  const total = h * 60 + m - antecedencia;
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
 function meetUrl(value: string | null): string | null {
@@ -50,6 +63,8 @@ export function AgendaAulas() {
   const [linksPresenca, setLinksPresenca] = useState<{ aulaId: string; aluno: string; professor: string | null } | null>(null);
   const [erroLinks, setErroLinks] = useState('');
   const [gerandoMeet, setGerandoMeet] = useState(false);
+  const [avisosAberto, setAvisosAberto] = useState(false);
+  const aviso = useAvisoConfig().data;
   const [gerandoMeetMsg, setGerandoMeetMsg] = useState('');
   const today = hojeBrasil();
   const canEdit = user?.tipo === 'admin' || user?.permissionMatrix?.rh?.editar === true;
@@ -79,7 +94,7 @@ export function AgendaAulas() {
     queryFn: async ({ signal }) => {
       // Mesma tabela usada pela Lista de Presença; não duplicar os registros.
       let request = supabase.from('aulas')
-        .select('id,turma_id,profissional_id,data,horario_inicio,horario_fim,modulo,status,link_meet,turma:turmas(nome),professor:profissionais(nome)');
+        .select('id,turma_id,profissional_id,data,horario_inicio,horario_fim,modulo,status,link_meet,aviso_status,aviso_enviado_em,aviso_erro,aviso_tentativas,turma:turmas(nome,grupo_whatsapp_jid),professor:profissionais(nome)');
       request = periodo === 'futuras'
         ? request.gte('data', month && `${month}-01` > today ? `${month}-01` : today)
         : request.lt('data', today).gte('data', month ? `${month}-01` : '1900-01-01');
@@ -144,6 +159,7 @@ export function AgendaAulas() {
         <p className="text-muted-foreground">Aulas, Google Meet e presença no mesmo lugar. Horários de Brasília.</p>
       </div>
       {canEdit && <div className="flex gap-2">
+        <Button variant="outline" onClick={() => setAvisosAberto(true)}><MessageSquare className="h-4 w-4 mr-2" />Avisos no grupo</Button>
         <Button variant="outline" disabled={gerandoMeet} onClick={() => void gerarMeets()}><Video className="h-4 w-4 mr-2" />{gerandoMeet ? 'Gerando...' : 'Gerar links do Meet'}</Button>
         <Button onClick={() => setNovaAulaAberta(true)} disabled={!turmasQuery.data?.length || profissionaisQuery.isPending}><CalendarPlus className="h-4 w-4 mr-2" />Nova aula</Button>
       </div>}
@@ -186,6 +202,16 @@ export function AgendaAulas() {
               </Button> : <p className="text-sm text-muted-foreground">{aula.status !== 'agendada' ? 'Aula não agendada' : 'Aguardando link do Meet'}</p>}
             </div>
             <div className="border-t pt-3 space-y-2">
+              <p className="text-sm font-medium flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Aviso no grupo</p>
+              {aula.aviso_status === 'enviado' && <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">Enviado{aula.aviso_enviado_em ? ` às ${new Date(aula.aviso_enviado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}` : ''}</Badge>}
+              {aula.aviso_status === 'falhou' && <div className="space-y-1">
+                <Badge variant="destructive">Falhou ({aula.aviso_tentativas}/3)</Badge>
+                {aula.aviso_erro && <p className="text-xs text-destructive break-all">{aula.aviso_erro}</p>}
+              </div>}
+              {!aula.aviso_status && aviso?.ativo && aula.turma?.grupo_whatsapp_jid && meetUrl(aula.link_meet) && aula.status === 'agendada' && <Badge variant="outline">Programado para {avisoPrevisto(aula, aviso.antecedencia_minutos)}</Badge>}
+              {!aula.aviso_status && !(aviso?.ativo && aula.turma?.grupo_whatsapp_jid && meetUrl(aula.link_meet) && aula.status === 'agendada') && <p className="text-sm text-muted-foreground">{!aviso?.ativo ? 'Envio automático desligado' : !aula.turma?.grupo_whatsapp_jid ? 'Turma sem grupo vinculado' : 'Aguardando link do Meet'}</p>}
+            </div>
+            <div className="border-t pt-3 space-y-2">
               <p className="text-sm font-medium flex items-center gap-2"><ClipboardCheck className="h-4 w-4" /> Lista de presença</p>
               <Button size="sm" variant="outline" aria-expanded={selectedId === aula.id} onClick={() => setSelectedId(current => current === aula.id ? null : aula.id)}>
                 {selectedId === aula.id ? 'Ocultar links' : 'Mostrar links de presença'}
@@ -211,6 +237,7 @@ export function AgendaAulas() {
           <Button variant="outline" disabled={(query.data?.length ?? 0) <= 50} onClick={() => setPage(p => p + 1)}>Próxima</Button>
         </div>
       </>}
+    {avisosAberto && <AvisosGrupoDialog aberto={avisosAberto} fechar={() => setAvisosAberto(false)} />}
     {novaAulaAberta && <NovaAulaDialog turmas={turmasQuery.data ?? []} profissionais={profissionaisQuery.data ?? []} fechar={criou => { setNovaAulaAberta(false); if (criou) void query.refetch(); }} />}
     {presencaAula && <PresencaDialog aula={{ ...presencaAula, turmas: presencaAula.turma, profissionais: presencaAula.professor }} fechar={salvou => { setPresencaAula(null); if (salvou) void query.refetch(); }} />}
   </div>;
