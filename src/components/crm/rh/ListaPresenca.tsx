@@ -90,7 +90,7 @@ export function NovaAulaDialog({ turmas, profissionais, fechar }: { turmas: Turm
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !salvando) fechar(false); }}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Nova aula</DialogTitle>
           <DialogDescription>Cadastra a aula pra depois registrar a presença de professor e alunos.</DialogDescription>
@@ -221,7 +221,7 @@ export function PresencaDialog({ aula, fechar }: { aula: Pick<Aula, 'id' | 'turm
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !salvando) fechar(false); }}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Presença — {aula.turmas?.nome ?? 'Turma'}</DialogTitle>
           <DialogDescription>{new Date(`${aula.data}T12:00:00`).toLocaleDateString('pt-BR')}{aula.modulo ? ` · ${aula.modulo}` : ''}</DialogDescription>
@@ -285,7 +285,7 @@ function LinksPresencaDialog({ aula, fechar }: { aula: Aula & { turmas: { nome: 
     catch { toast.error('Não foi possível copiar. Selecione o endereço exibido.'); }
   }
   return <Dialog open onOpenChange={(open) => { if (!open) fechar(); }}>
-    <DialogContent className="sm:max-w-lg"><DialogHeader>
+    <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto"><DialogHeader>
       <DialogTitle>Links de presença · {aula.turmas?.nome || 'Turma'}</DialogTitle>
       <DialogDescription>Os links existem desde o cadastro da aula. A assinatura abre no dia marcado e até o dia seguinte.</DialogDescription>
     </DialogHeader>

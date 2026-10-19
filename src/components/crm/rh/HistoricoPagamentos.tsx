@@ -158,7 +158,7 @@ function PagamentoDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !salvando) fechar(false); }}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{pagamento ? 'Editar pagamento' : 'Lançar pagamento'} — {profissional.nome}</DialogTitle>
           <DialogDescription>Comprovante e nota fiscal ficam anexados neste lançamento.</DialogDescription>
@@ -296,7 +296,7 @@ export function HistoricoPagamentosDialog({ profissional, fechar }: { profission
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) fechar(); }}>
-      <DialogContent className="sm:max-w-3xl">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><ReceiptText className="h-4 w-4 text-primary" /> Histórico de pagamentos — {profissional.nome}</DialogTitle>
           <DialogDescription>Comprovante e nota fiscal de cada pagamento, do mais recente pro mais antigo.</DialogDescription>

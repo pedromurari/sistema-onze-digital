@@ -165,7 +165,7 @@ function ProfissionalDialog({ profissional, fechar }: { profissional: Profission
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !salvando) fechar(false); }}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{profissional ? 'Editar profissional' : 'Novo profissional'}</DialogTitle>
           <DialogDescription>Cadastro usado pela Agenda de aulas e pelo futuro Fechamento de Folha.</DialogDescription>
