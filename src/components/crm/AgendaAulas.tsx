@@ -49,6 +49,8 @@ export function AgendaAulas() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [linksPresenca, setLinksPresenca] = useState<{ aulaId: string; aluno: string; professor: string | null } | null>(null);
   const [erroLinks, setErroLinks] = useState('');
+  const [gerandoMeet, setGerandoMeet] = useState(false);
+  const [gerandoMeetMsg, setGerandoMeetMsg] = useState('');
   const today = hojeBrasil();
   const canEdit = user?.tipo === 'admin' || user?.permissionMatrix?.rh?.editar === true;
   const validMonth = month === '' || /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
@@ -108,6 +110,17 @@ export function AgendaAulas() {
     return () => { ativo = false; };
   }, [selectedId]);
 
+  async function gerarMeets() {
+    setGerandoMeet(true);
+    const { data, error } = await supabase.functions.invoke('meet-criar-aulas', { body: {} });
+    setGerandoMeet(false);
+    if (error || !data) return setErroLinks('Não foi possível gerar os links do Meet.');
+    if (data.erro) return setErroLinks(data.erro);
+    setErroLinks('');
+    setGerandoMeetMsg(data.mensagem ?? `${data.criadas} link(s) do Meet criado(s).`);
+    void query.refetch();
+  }
+
   async function copiar(value: string) {
     try { await navigator.clipboard.writeText(value); return; } catch { /* fallback abaixo */ }
     const area = document.createElement('textarea');
@@ -130,8 +143,12 @@ export function AgendaAulas() {
         <h1 className="text-2xl font-bold flex items-center gap-2"><CalendarDays />Agenda de aulas</h1>
         <p className="text-muted-foreground">Aulas, Google Meet e presença no mesmo lugar. Horários de Brasília.</p>
       </div>
-      {canEdit && <Button onClick={() => setNovaAulaAberta(true)} disabled={!turmasQuery.data?.length || profissionaisQuery.isPending}><CalendarPlus className="h-4 w-4 mr-2" />Nova aula</Button>}
+      {canEdit && <div className="flex gap-2">
+        <Button variant="outline" disabled={gerandoMeet} onClick={() => void gerarMeets()}><Video className="h-4 w-4 mr-2" />{gerandoMeet ? 'Gerando...' : 'Gerar links do Meet'}</Button>
+        <Button onClick={() => setNovaAulaAberta(true)} disabled={!turmasQuery.data?.length || profissionaisQuery.isPending}><CalendarPlus className="h-4 w-4 mr-2" />Nova aula</Button>
+      </div>}
     </div>
+    {gerandoMeetMsg && <p role="status" className="text-sm text-emerald-500">{gerandoMeetMsg}</p>}
     <div className="rounded-lg border p-4 text-sm bg-muted/30">
       <p>Preparação para Google Meet: os links ainda não são gerados automaticamente.</p>
       <p className="text-muted-foreground mt-1">A prévia abaixo mostra onde o professor verá o link. Entrega pelo Telegram e reagendamento pelo bot aguardam integração.</p>
