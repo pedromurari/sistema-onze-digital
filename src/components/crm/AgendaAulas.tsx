@@ -109,8 +109,17 @@ export function AgendaAulas() {
   }, [selectedId]);
 
   async function copiar(value: string) {
-    try { await navigator.clipboard.writeText(value); }
-    catch { setErroLinks('Não foi possível copiar. Selecione o endereço exibido.'); }
+    try { await navigator.clipboard.writeText(value); return; } catch { /* fallback abaixo */ }
+    const area = document.createElement('textarea');
+    area.value = value;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(area);
+    if (!ok) setErroLinks('Não foi possível copiar. Selecione o endereço exibido.');
   }
 
   if (!allowed) return <div className="p-6">Acesso restrito à equipe com permissão de RH.</div>;
