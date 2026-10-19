@@ -3,7 +3,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const ORIGINS = new Set(['https://sistema.idmpsi.com.br', 'http://localhost:5173']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const HEX = /^[0-9a-f]{64}$/i;
+const HEX = /^[0-9a-f]{24}$/i;
+const TOKEN_LEN = 24; // 96 bits -- curto o bastante pra caber num link clicavel no WhatsApp/iPhone, forte o bastante pra nao ser adivinhado
 const encoder = new TextEncoder();
 
 function headers(origin: string | null) {
@@ -25,7 +26,7 @@ async function sha256(value: string) {
 async function professorToken(aulaId: string, secret: string) {
   const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const bytes = await crypto.subtle.sign('HMAC', key, encoder.encode(`presenca-professor:${aulaId}`));
-  return Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('').slice(0, TOKEN_LEN);
 }
 function sameToken(a: string, b: string) {
   if (!HEX.test(a) || a.length !== b.length) return false;
