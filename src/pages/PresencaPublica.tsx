@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, Loader2, LockKeyhole } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import logoIdm from '@/assets/logo-idm.png';
@@ -106,7 +106,6 @@ export default function PresencaPublica() {
         </form>}
       </CardContent></Card>}
       <p className="text-center text-xs text-muted-foreground">Problema com seu cadastro? Fale com a secretaria: <a href="https://wa.me/5511930439385" className="underline">+55 11 93043-9385</a>.</p>
-      <Link to="/" className="block text-center text-xs text-muted-foreground underline">Voltar ao início</Link>
     </div>
   </main>;
 }
