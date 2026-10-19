@@ -55,7 +55,7 @@ serve(async (req) => {
     if (agora.minutos < inicio - config.antecedencia_minutos || agora.minutos >= inicio) continue;
 
     const texto = renderizar(config.mensagem_modelo, {
-      turma: turma.nome.replace(/^Turma #/, 'turma '),
+      turma: turma.nome.replace(/^Turma #/, '').split('/')[0],
       modulo: aula.modulo ?? 'aula',
       hora: aula.horario_inicio!.slice(0, 5),
       link_meet: aula.link_meet ?? '',
