@@ -7407,6 +7407,376 @@ export type Database = {
           },
         ]
       }
+      ped_acessos_avaliacao: {
+        Row: {
+          aluno_id: string
+          avaliacao_id: string
+          criado_em: string
+          expira_em: string
+          token_hash: string
+          usado_em: string | null
+        }
+        Insert: {
+          aluno_id: string
+          avaliacao_id: string
+          criado_em?: string
+          expira_em: string
+          token_hash: string
+          usado_em?: string | null
+        }
+        Update: {
+          aluno_id?: string
+          avaliacao_id?: string
+          criado_em?: string
+          expira_em?: string
+          token_hash?: string
+          usado_em?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ped_acessos_avaliacao_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "alunos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ped_acessos_avaliacao_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "v_pipeline_contratos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ped_acessos_avaliacao_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "vw_alunos_financeiro"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ped_acessos_avaliacao_avaliacao_id_fkey"
+            columns: ["avaliacao_id"]
+            isOneToOne: false
+            referencedRelation: "ped_avaliacoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ped_avaliacoes: {
+        Row: {
+          created_at: string
+          criado_por: string
+          id: string
+          instrucoes: string | null
+          modulo: string | null
+          prazo_em: string | null
+          revisao_publica: boolean
+          status: string
+          tipo: string
+          titulo: string
+          turma_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          criado_por?: string
+          id?: string
+          instrucoes?: string | null
+          modulo?: string | null
+          prazo_em?: string | null
+          revisao_publica?: boolean
+          status?: string
+          tipo: string
+          titulo: string
+          turma_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          criado_por?: string
+          id?: string
+          instrucoes?: string | null
+          modulo?: string | null
+          prazo_em?: string | null
+          revisao_publica?: boolean
+          status?: string
+          tipo?: string
+          titulo?: string
+          turma_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ped_avaliacoes_turma_id_fkey"
+            columns: ["turma_id"]
+            isOneToOne: false
+            referencedRelation: "financeiro_resumo"
+            referencedColumns: ["turma_id"]
+          },
+          {
+            foreignKeyName: "ped_avaliacoes_turma_id_fkey"
+            columns: ["turma_id"]
+            isOneToOne: false
+            referencedRelation: "turmas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ped_avaliacoes_turma_id_fkey"
+            columns: ["turma_id"]
+            isOneToOne: false
+            referencedRelation: "vw_cfo_turmas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ped_entregas: {
+        Row: {
+          aluno_id: string
+          avaliacao_id: string
+          created_at: string
+          enviado_em: string
+          id: string
+          liberado_em: string | null
+          nota_final: number | null
+          nota_ia: number | null
+          parecer_ia: string | null
+          revisado_em: string | null
+          revisado_por: string | null
+          status: string
+          tentativa: number
+          updated_at: string
+        }
+        Insert: {
+          aluno_id: string
+          avaliacao_id: string
+          created_at?: string
+          enviado_em?: string
+          id?: string
+          liberado_em?: string | null
+          nota_final?: number | null
+          nota_ia?: number | null
+          parecer_ia?: string | null
+          revisado_em?: string | null
+          revisado_por?: string | null
+          status?: string
+          tentativa?: number
+          updated_at?: string
+        }
+        Update: {
+          aluno_id?: string
+          avaliacao_id?: string
+          created_at?: string
+          enviado_em?: string
+          id?: string
+          liberado_em?: string | null
+          nota_final?: number | null
+          nota_ia?: number | null
+          parecer_ia?: string | null
+          revisado_em?: string | null
+          revisado_por?: string | null
+          status?: string
+          tentativa?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ped_entregas_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "alunos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ped_entregas_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "v_pipeline_contratos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ped_entregas_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "vw_alunos_financeiro"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ped_entregas_avaliacao_id_fkey"
+            columns: ["avaliacao_id"]
+            isOneToOne: false
+            referencedRelation: "ped_avaliacoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ped_questoes: {
+        Row: {
+          avaliacao_id: string
+          created_at: string
+          criterios_correcao: string | null
+          enunciado: string
+          id: string
+          ordem: number
+          pontos: number
+          resposta_esperada: string | null
+          tipo: string
+          updated_at: string
+        }
+        Insert: {
+          avaliacao_id: string
+          created_at?: string
+          criterios_correcao?: string | null
+          enunciado: string
+          id?: string
+          ordem: number
+          pontos?: number
+          resposta_esperada?: string | null
+          tipo: string
+          updated_at?: string
+        }
+        Update: {
+          avaliacao_id?: string
+          created_at?: string
+          criterios_correcao?: string | null
+          enunciado?: string
+          id?: string
+          ordem?: number
+          pontos?: number
+          resposta_esperada?: string | null
+          tipo?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ped_questoes_avaliacao_id_fkey"
+            columns: ["avaliacao_id"]
+            isOneToOne: false
+            referencedRelation: "ped_avaliacoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ped_respostas: {
+        Row: {
+          arquivo_path: string | null
+          avaliacao_id: string
+          created_at: string
+          entrega_id: string
+          feedback_ia: string | null
+          id: string
+          nota_ia: number | null
+          questao_id: string
+          resposta_texto: string | null
+        }
+        Insert: {
+          arquivo_path?: string | null
+          avaliacao_id: string
+          created_at?: string
+          entrega_id: string
+          feedback_ia?: string | null
+          id?: string
+          nota_ia?: number | null
+          questao_id: string
+          resposta_texto?: string | null
+        }
+        Update: {
+          arquivo_path?: string | null
+          avaliacao_id?: string
+          created_at?: string
+          entrega_id?: string
+          feedback_ia?: string | null
+          id?: string
+          nota_ia?: number | null
+          questao_id?: string
+          resposta_texto?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ped_respostas_entrega_id_avaliacao_id_fkey"
+            columns: ["entrega_id", "avaliacao_id"]
+            isOneToOne: false
+            referencedRelation: "ped_entregas"
+            referencedColumns: ["id", "avaliacao_id"]
+          },
+          {
+            foreignKeyName: "ped_respostas_questao_id_avaliacao_id_fkey"
+            columns: ["questao_id", "avaliacao_id"]
+            isOneToOne: false
+            referencedRelation: "ped_questoes"
+            referencedColumns: ["id", "avaliacao_id"]
+          },
+        ]
+      }
+      ped_revisoes: {
+        Row: {
+          autor_nome: string
+          avaliacao_id: string
+          comentario: string
+          criado_em: string
+          id: string
+          questao_id: string | null
+          resolvido_em: string | null
+          resolvido_por: string | null
+          status: string
+        }
+        Insert: {
+          autor_nome: string
+          avaliacao_id: string
+          comentario: string
+          criado_em?: string
+          id?: string
+          questao_id?: string | null
+          resolvido_em?: string | null
+          resolvido_por?: string | null
+          status?: string
+        }
+        Update: {
+          autor_nome?: string
+          avaliacao_id?: string
+          comentario?: string
+          criado_em?: string
+          id?: string
+          questao_id?: string | null
+          resolvido_em?: string | null
+          resolvido_por?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ped_revisoes_avaliacao_id_fkey"
+            columns: ["avaliacao_id"]
+            isOneToOne: false
+            referencedRelation: "ped_avaliacoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ped_revisoes_questao_id_avaliacao_id_fkey"
+            columns: ["questao_id", "avaliacao_id"]
+            isOneToOne: false
+            referencedRelation: "ped_questoes"
+            referencedColumns: ["id", "avaliacao_id"]
+          },
+        ]
+      }
+      ped_tentativas_acesso: {
+        Row: {
+          chave_hash: string
+          criado_em: string
+          id: number
+        }
+        Insert: {
+          chave_hash: string
+          criado_em?: string
+          id?: never
+        }
+        Update: {
+          chave_hash?: string
+          criado_em?: string
+          id?: never
+        }
+        Relationships: []
+      }
       pessoa_identificadores: {
         Row: {
           criado_em: string
@@ -7520,6 +7890,7 @@ export type Database = {
           aluno_id: string | null
           assinado_em: string | null
           aula_id: string
+          confirmado_via_link: boolean
           created_at: string
           id: string
           presente: boolean
@@ -7530,6 +7901,7 @@ export type Database = {
           aluno_id?: string | null
           assinado_em?: string | null
           aula_id: string
+          confirmado_via_link?: boolean
           created_at?: string
           id?: string
           presente?: boolean
@@ -7540,6 +7912,7 @@ export type Database = {
           aluno_id?: string | null
           assinado_em?: string | null
           aula_id?: string
+          confirmado_via_link?: boolean
           created_at?: string
           id?: string
           presente?: boolean
@@ -7665,6 +8038,7 @@ export type Database = {
           comissao_meta2_faturamento: number | null
           comissao_percentual_avista: number | null
           comissao_percentual_boleto: number | null
+          comissoes_vendedor: string | null
           contato: string | null
           created_at: string
           documento: string | null
@@ -7687,6 +8061,7 @@ export type Database = {
           comissao_meta2_faturamento?: number | null
           comissao_percentual_avista?: number | null
           comissao_percentual_boleto?: number | null
+          comissoes_vendedor?: string | null
           contato?: string | null
           created_at?: string
           documento?: string | null
@@ -7709,6 +8084,7 @@ export type Database = {
           comissao_meta2_faturamento?: number | null
           comissao_percentual_avista?: number | null
           comissao_percentual_boleto?: number | null
+          comissoes_vendedor?: string | null
           contato?: string | null
           created_at?: string
           documento?: string | null
@@ -10747,6 +11123,24 @@ export type Database = {
         }
         Returns: string[]
       }
+      ped_buscar_aluno_cpf: {
+        Args: { p_cpf: string }
+        Returns: {
+          data_nascimento: string
+          id: string
+          nome: string
+          status: string
+          turma_id: string
+        }[]
+      }
+      ped_enviar_avaliacao: {
+        Args: { p_respostas: Json; p_token_hash: string }
+        Returns: string
+      }
+      ped_registrar_tentativa: {
+        Args: { p_chave_hash: string; p_limite: number }
+        Returns: boolean
+      }
       permissoes_efetivas: {
         Args: never
         Returns: {
@@ -10823,6 +11217,10 @@ export type Database = {
           status: string
           valor: number
         }[]
+      }
+      registrar_presenca_portal: {
+        Args: { p_aula_id: string; p_pessoa_id: string; p_tipo: string }
+        Returns: string
       }
       resolver_pessoa: {
         Args: {

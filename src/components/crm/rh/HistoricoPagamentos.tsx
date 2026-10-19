@@ -206,6 +206,75 @@ function PagamentoDialog({
   );
 }
 
+type ComissaoResumo = { mes: string; tipo: string; status: string; total: number; qtd: number };
+
+function ComissoesResumo({ vendedor }: { vendedor: string }) {
+  const [linhas, setLinhas] = useState<ComissaoResumo[]>([]);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+
+  useEffect(() => {
+    let ativo = true;
+    void supabase
+      .from('comissoes_vendedores')
+      .select('data_venda, tipo, status, valor_comissao')
+      .eq('vendedor', vendedor)
+      .order('data_venda', { ascending: false })
+      .then(({ data, error }) => {
+        if (!ativo) return;
+        if (error) { setErro(error.message); setCarregando(false); return; }
+        const mapa = new Map<string, ComissaoResumo>();
+        for (const c of data ?? []) {
+          const mes = (c.data_venda ?? '').slice(0, 7);
+          const chave = `${mes}|${c.tipo}|${c.status}`;
+          const atual = mapa.get(chave) ?? { mes, tipo: c.tipo, status: c.status, total: 0, qtd: 0 };
+          atual.total += Number(c.valor_comissao) || 0;
+          atual.qtd += 1;
+          mapa.set(chave, atual);
+        }
+        setLinhas([...mapa.values()].sort((a, b) => b.mes.localeCompare(a.mes)));
+        setCarregando(false);
+      });
+    return () => { ativo = false; };
+  }, [vendedor]);
+
+  const TIPO: Record<string, string> = { comissao: 'Comissão', ajuda_custo: 'Ajuda de custo', outro: 'Outro' };
+  const STATUS: Record<string, string> = { pago: 'Paga', pendente: 'Pendente', reservado: 'Reservada' };
+
+  return (
+    <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-2">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Comissões do time comercial ({vendedor})</p>
+      {carregando && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+      {erro && <p className="text-xs text-destructive">{erro}</p>}
+      {!carregando && !erro && linhas.length === 0 && <p className="text-xs text-muted-foreground">Nenhuma comissão registrada.</p>}
+      {linhas.length > 0 && (
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b text-left uppercase text-muted-foreground">
+              <th className="p-1.5">Mês</th>
+              <th className="p-1.5">Tipo</th>
+              <th className="p-1.5">Situação</th>
+              <th className="p-1.5 text-right">Qtd</th>
+              <th className="p-1.5 text-right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {linhas.map((l) => (
+              <tr key={`${l.mes}-${l.tipo}-${l.status}`} className="border-b last:border-0">
+                <td className="p-1.5">{l.mes.split('-').reverse().join('/')}</td>
+                <td className="p-1.5">{TIPO[l.tipo] ?? l.tipo}</td>
+                <td className="p-1.5">{STATUS[l.status] ?? l.status}</td>
+                <td className="p-1.5 text-right">{l.qtd}</td>
+                <td className="p-1.5 text-right font-medium">{formatReal(l.total)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 export function HistoricoPagamentosDialog({ profissional, fechar }: { profissional: Profissional; fechar: () => void }) {
   const { itens, carregando, erro, recarregar } = usePagamentos(profissional.id);
   const [mesFiltro, setMesFiltro] = useState('');
@@ -306,6 +375,8 @@ export function HistoricoPagamentosDialog({ profissional, fechar }: { profission
             </table>
           </div>
         )}
+
+        {profissional.comissoes_vendedor && <ComissoesResumo vendedor={profissional.comissoes_vendedor} />}
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={fechar}>Fechar</Button>
