@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { CalendarPlus, CheckCircle2, ClipboardCheck, Link2, Loader2, UserCheck } from 'lucide-react';
+import { CalendarPlus, CheckCircle2, ClipboardCheck, Link2, Loader2, UserCheck, Video } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import type { Database } from '@/integrations/supabase/types';
@@ -307,14 +307,30 @@ export function ListaPresenca() {
   const [aulaLinks, setAulaLinks] = useState<(typeof aulas)[number] | null>(null);
   const [turmaFiltro, setTurmaFiltro] = useState('todas');
   const aulasFiltradas = turmaFiltro === 'todas' ? aulas : aulas.filter((a) => a.turma_id === turmaFiltro);
+  const [gerandoMeet, setGerandoMeet] = useState(false);
+
+  async function gerarMeets() {
+    setGerandoMeet(true);
+    const { data, error } = await supabase.functions.invoke('meet-criar-aulas', { body: {} });
+    setGerandoMeet(false);
+    if (error || !data) return toast.error('Não foi possível gerar os links do Meet.');
+    if (data.erro) return toast.error(data.erro);
+    toast.success(data.mensagem ?? `${data.criadas} link(s) do Meet criado(s).`);
+    void recarregar();
+  }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">Cada aula registrada aqui vira a base do Fechamento de Folha (ainda não construído) e da frequência do aluno.</p>
-        <Button size="sm" onClick={() => setNovaAulaAberta(true)} disabled={turmas.length === 0}>
-          <CalendarPlus className="h-4 w-4 mr-1" /> Nova aula
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" disabled={gerandoMeet} onClick={() => void gerarMeets()}>
+            <Video className="h-4 w-4 mr-1" /> {gerandoMeet ? 'Gerando...' : 'Gerar links do Meet'}
+          </Button>
+          <Button size="sm" onClick={() => setNovaAulaAberta(true)} disabled={turmas.length === 0}>
+            <CalendarPlus className="h-4 w-4 mr-1" /> Nova aula
+          </Button>
+        </div>
       </div>
 
       <Card className="border-border/70 shadow-sm">
