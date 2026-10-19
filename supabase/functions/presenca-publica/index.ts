@@ -128,9 +128,29 @@ serve(async req => {
       const { data: alunos, error: alunoError } = await db.rpc('ped_buscar_aluno_cpf', { p_cpf: cpf });
       if (alunoError) throw alunoError;
       const aluno = alunos?.length === 1 ? alunos[0] : null;
-      if (!aluno || aluno.status !== 'ativo' || aluno.turma_id !== aula.turma_id ||
-        aluno.data_nascimento !== nascimento || normalize(aluno.nome) !== normalize(nome))
+      // Tolera 1 dia de diferenca na data de nascimento -- cadastros antigos tem um
+      // desvio de fuso horario que deixa a data gravada um dia antes da real.
+      const nascimentoBate = aluno ? Math.abs(
+        (new Date(`${aluno.data_nascimento}T00:00:00Z`).getTime() - new Date(`${nascimento}T00:00:00Z`).getTime()) / 86400000,
+      ) <= 1 : false;
+      const nomeBate = aluno ? normalize(aluno.nome) === normalize(nome) : false;
+      if (!aluno || aluno.status !== 'ativo' || aluno.turma_id !== aula.turma_id || !nascimentoBate || !nomeBate) {
+        // CPF encontrado mas algo nao bateu -- registra pra revisao manual em vez
+        // de so recusar, pra nao travar a presenca de quem errou so um campo.
+        if (aluno) {
+          await db.from('presencas_pendentes_revisao').insert({
+            aula_id: aulaId, nome_informado: nome, cpf_informado: cpf, nascimento_informado: nascimento,
+            motivo: [
+              aluno.status !== 'ativo' && 'aluno inativo',
+              aluno.turma_id !== aula.turma_id && 'turma diferente',
+              !nascimentoBate && 'nascimento nao bate',
+              !nomeBate && 'nome nao bate',
+            ].filter(Boolean).join(', '),
+          });
+          return reply({ erro: 'Não conseguimos confirmar automaticamente, mas já avisamos a secretaria pra revisar seu cadastro. Sua presença será confirmada em breve.' }, 202, origin);
+        }
         return reply({ erro: 'Não foi possível confirmar sua matrícula nesta turma. Confira os dados ou fale com a secretaria.' }, 403, origin);
+      }
       tipo = 'aluno'; pessoaId = aluno.id;
     } else return reply({ erro: 'Ação inválida.' }, 400, origin);
 
