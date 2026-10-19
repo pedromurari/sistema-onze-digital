@@ -102,7 +102,7 @@ serve(async req => {
     const ip = req.headers.get('cf-connecting-ip') || req.headers.get('x-real-ip') ||
       req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'sem-ip';
     const { data: allowed, error: rateError } = await db.rpc('ped_registrar_tentativa', {
-      p_chave_hash: await sha256(`presenca:${aulaId}:${ip}`), p_limite: 30,
+      p_chave_hash: await sha256(`presenca:${aulaId}:${ip}`), p_limite: 80,
     });
     if (rateError) throw rateError;
     if (!allowed) return reply({ erro: 'Muitas tentativas. Tente novamente mais tarde.' }, 429, origin);
@@ -121,7 +121,7 @@ serve(async req => {
       if (nome.length < 3 || nome.length > 160 || cpf.length !== 11 || !/^\d{4}-\d{2}-\d{2}$/.test(nascimento))
         return reply({ erro: 'Confira nome, CPF e data de nascimento.' }, 400, origin);
       const { data: cpfAllowed, error: cpfRateError } = await db.rpc('ped_registrar_tentativa', {
-        p_chave_hash: await sha256(`presenca-cpf:${aulaId}:${cpf}`), p_limite: 5,
+        p_chave_hash: await sha256(`presenca-cpf:${aulaId}:${cpf}`), p_limite: 8,
       });
       if (cpfRateError) throw cpfRateError;
       if (!cpfAllowed) return reply({ erro: 'Muitas tentativas. Tente novamente mais tarde.' }, 429, origin);
