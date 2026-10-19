@@ -92,7 +92,7 @@ serve(async req => {
     const janelaAberta = ['agendada', 'realizada'].includes(aula.status) &&
       hoje >= aula.data && hoje <= diaSeguinte.toISOString().slice(0, 10);
     if (body.acao === 'info') return reply({
-      turma: turmaResp.data?.nome || 'Turma', professor: professorResp.data?.nome || null,
+      turma: (turmaResp.data?.nome || 'Turma').split('/')[0], professor: professorResp.data?.nome || null,
       data: aula.data, horario_inicio: aula.horario_inicio, horario_fim: aula.horario_fim,
       modulo: aula.modulo, status: aula.status, janela_aberta: janelaAberta,
     }, 200, origin);
