@@ -113,6 +113,7 @@ const RECURSO_POR_VIEW: Record<string, string> = {
   operacoes_tarefas:             'operacoes',
   operacoes_calendario_geral:    'operacoes',
   operacoes_calendario_conteudo: 'operacoes',
+  reels_idm:                     'operacoes',
   financeiro_notas:              'financeiro',
   financeiro_dre:               'financeiro',
   financeiro_conciliacao:       'financeiro',
@@ -131,7 +132,7 @@ export type AppView =
   | 'dashboard' | 'npa_overview' | 'lancamentos_overview' | 'financeiro' | 'financeiro_notas' | 'financeiro_dre' | 'financeiro_conciliacao' | 'financeiro_socios' | 'financeiro_cfo' | 'balanco' | 'rodrygo'
   | 'lancamentos_30' | 'lancamentos_31' | 'lancamentos_32'
   | 'team' | 'settings' | 'cobranca' | 'funil_lancamento' | 'disparos_monitor' | 'chat_conversas'
-  | 'operacoes_tarefas' | 'operacoes_calendario_geral' | 'operacoes_calendario_conteudo'
+  | 'operacoes_tarefas' | 'operacoes_calendario_geral' | 'operacoes_calendario_conteudo' | 'reels_idm'
   | 'mapa_mental' | 'rh' | 'provas_trabalhos' | 'franquia_psi' | 'posts' | 'parceiros' | 'equipe_11ds'
   | 'aquecimento_chips' | 'time_comercial' | 'pessoas'
   | 'marketing_diretoria' | 'trafego_gestor' | 'trafego_regras';
@@ -282,6 +283,7 @@ export function canAccessView(
     operacoes_tarefas: permissions.canViewOperacoes,
     operacoes_calendario_geral: permissions.canViewOperacoes,
     operacoes_calendario_conteudo: permissions.canViewOperacoes,
+    reels_idm: permissions.canViewOperacoes,
     mapa_mental: permissions.canViewMapaMental,
     rh: permissions.canViewMapaMental,
     provas_trabalhos: permissions.canViewMapaMental,

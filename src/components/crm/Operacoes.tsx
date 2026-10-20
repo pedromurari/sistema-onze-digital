@@ -138,7 +138,7 @@ export function Operacoes({ currentPage }: OperacoesProps) {
       if (eventosRes.data) setEventosCalendario(eventosRes.data);
 
       // Carregar conteúdo do calendário
-      const conteudoRes = await supabase.from('conteudo_calendario').select('id, titulo, plataforma, formato, responsavel, status, data_publicacao, legenda, link, observacoes, created_by').limit(200);
+      const conteudoRes = await supabase.from('conteudo_calendario').select('id, titulo, plataforma, formato, responsavel, status, data_publicacao, legenda, link, observacoes, imagem_url, created_by').order('data_publicacao', { ascending: true }).limit(200);
       if (conteudoRes.data) setConteudoCalendario(conteudoRes.data);
 
       // Carregar usuários

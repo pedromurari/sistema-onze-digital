@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Kanban, Settings, UserCog,
   Rocket, BarChart3,
   ChevronLeft, ChevronRight, Plus, Brain, Scale, Menu,
-  GripVertical, Pencil, Check, MessageSquare, MessageCircle, TrendingUp, GitBranch, CalendarDays, Radio, Image, Handshake, Bot, Flame, Users, Contact, ReceiptText, Calculator, BriefcaseBusiness, FileCheck2, Megaphone, Target,
+  GripVertical, Pencil, Check, MessageSquare, MessageCircle, TrendingUp, GitBranch, CalendarDays, Radio, Image, Handshake, Bot, Flame, Users, Contact, ReceiptText, Calculator, BriefcaseBusiness, FileCheck2, Megaphone, Target, Video,
 } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { LancamentoWizard } from '@/components/crm/LancamentoWizard';
@@ -29,7 +29,7 @@ type MenuItem =
 const BASE_MENU: MenuItem[] = [
   // Início
   { key: 'dashboard',                  label: 'Dashboard',           icon: LayoutDashboard },
-  { key: 'operacoes_calendario_geral', label: 'Operações',           icon: CalendarDays },
+  { key: 'operacoes_tarefas',          label: 'Tarefas',              icon: Kanban },
   // CRM
   { key: 'pessoas',                    label: 'Pessoas',             icon: Contact },
   // CRM Time Comercial
@@ -46,9 +46,13 @@ const BASE_MENU: MenuItem[] = [
   { key: 'disparos_monitor',          label: 'Central de Disparos',  icon: Radio },
   { key: 'chat_conversas',            label: 'Chat',                 icon: MessageCircle },
   { key: 'aquecimento_chips',         label: 'Aquecimento de Chips', icon: Flame,       adminOnly: true },
-  // Marketing
-  { key: 'marketing_diretoria',       label: 'Diretoria',            icon: Megaphone },
+  // Marketing — Diretor de Marketing > Gestor de Tráfego > Social Media (hoje uma lista
+  // plana sob a mesma seção; virar um menu de verdade com submenu aninhado é tarefa à
+  // parte, o sidebar hoje só sabe fazer grupo dinâmico tipo lançamento/NPA).
+  { key: 'marketing_diretoria',       label: 'Diretor de Marketing', icon: Megaphone },
   { key: 'trafego_gestor',            label: 'Gestor de Tráfego',    icon: Target },
+  { key: 'operacoes_calendario_conteudo', label: 'Social Media',     icon: Image },
+  { key: 'reels_idm',                 label: 'Reels IDM',            icon: Video },
   { key: 'trafego_regras',            label: 'Regras de Automação',  icon: Settings },
   // Financeiro
   { key: 'financeiro',                label: 'Financeiro',           icon: BarChart3 },
@@ -59,13 +63,14 @@ const BASE_MENU: MenuItem[] = [
   { key: 'financeiro_cfo',           label: 'Análise CFO',           icon: TrendingUp },
   { key: 'balanco',                  label: 'Balanço',               icon: Scale },
   { key: 'cobranca',                 label: 'Cobrança',              icon: MessageSquare },
-  // Gestão
-  { key: 'rh',                       label: 'RH',                    icon: BriefcaseBusiness },
+  // DP RH
+  { key: 'rh',                       label: 'Painel',                icon: BriefcaseBusiness },
+  // Pedagógico
   { key: 'provas_trabalhos',         label: 'Provas e Trabalhos',   icon: FileCheck2 },
   { key: 'agenda_aulas', label: 'Agenda de Aulas', icon: CalendarDays },
+  // Admin
   { key: 'mapa_mental',              label: 'Mapa Mental',           icon: Brain },
   { key: 'equipe_11ds',              label: 'Equipe 11DS',           icon: Bot,        adminOnly: true },
-  // Admin
   { key: 'team',                    label: 'Equipe',                  icon: UserCog, adminOnly: true },
   { key: 'settings',                label: 'Configurações',           icon: Settings },
 ];
@@ -93,7 +98,7 @@ function applyOrder(menu: MenuItem[], order: string[]): MenuItem[] {
 function SectionDivider({ label }: { label: string }) {
   return (
     <div className="px-3 pt-5 pb-1.5">
-      <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40 select-none">{label}</p>
+      <p className="text-[9px] font-bold uppercase tracking-widest text-primary/80 select-none">{label}</p>
     </div>
   );
 }
@@ -114,8 +119,9 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
     funil_lancamento:   'Funil & Automação',
     marketing_diretoria: 'Marketing',
     financeiro:         'Financeiro',
-    rh:                 'Gestão',
-    ...(isAdmin ? { team: 'Admin' } : { settings: 'Admin' }),
+    rh:                 'DP RH',
+    provas_trabalhos:   'Pedagógico',
+    mapa_mental:        'Admin',
   };
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
@@ -496,7 +502,7 @@ export function MobileNav({ currentView, onViewChange, onOpenMore }: MobileNavPr
   const quickItems: { key: View; label: string; icon: React.ElementType }[] = [
     { key: 'dashboard',                  label: 'Início',     icon: LayoutDashboard },
     { key: 'financeiro',                 label: 'Financeiro', icon: BarChart3 },
-    { key: 'operacoes_calendario_geral', label: 'Operações', icon: CalendarDays },
+    { key: 'operacoes_tarefas',          label: 'Tarefas',    icon: Kanban },
   ];
 
   const visibleItems = quickItems.filter(item => canAccessView(item.key, permissions, Boolean(isAdmin), matrix));

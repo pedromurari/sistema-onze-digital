@@ -37,6 +37,7 @@ const Pessoas = lazy(() => import('./Pessoas').then(m => ({ default: m.Pessoas }
 const LancamentoKanban = lazy(() => import('./LancamentoKanban').then(m => ({ default: m.LancamentoKanban })));
 const NPAKanban        = lazy(() => import('./NPAKanban'));
 const Posts             = lazy(() => import('./Posts').then(m => ({ default: m.Posts })));
+const ReelsIDM           = lazy(() => import('./ReelsIDM').then(m => ({ default: m.ReelsIDM })));
 const Parceiros         = lazy(() => import('./Parceiros').then(m => ({ default: m.Parceiros })));
 const Equipe11ds        = lazy(() => import('./Equipe11ds').then(m => ({ default: m.Equipe11ds })));
 const TimeComercial      = lazy(() => import('./TimeComercial').then(m => ({ default: m.TimeComercial })));
@@ -236,6 +237,7 @@ export function CRMLayout() {
       case 'operacoes_tarefas': return <Operacoes currentPage={currentView} />;
       case 'operacoes_calendario_geral': return <Operacoes currentPage={currentView} />;
       case 'operacoes_calendario_conteudo': return <Operacoes currentPage={currentView} />;
+      case 'reels_idm': return <ReelsIDM />;
       case 'mapa_mental': return <MapaMental />;
       case 'rh': return <RH />;
       case 'agenda_aulas': return <AgendaAulas />;

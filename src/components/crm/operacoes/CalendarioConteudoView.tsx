@@ -42,6 +42,7 @@ export interface ConteudoCalendario {
   legenda?: string | null;
   observacoes?: string | null;
   link?: string | null;
+  imagem_url?: string | null;
 }
 
 interface CalendarioConteudoViewProps {
@@ -138,13 +139,13 @@ function ContentCard({
         >
           {STATUS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
         </select>
-        {content.link ? (
-          <a href={content.link} target="_blank" rel="noopener noreferrer" aria-label={`Abrir mídia de ${content.titulo}`}>
+        {content.link || content.imagem_url ? (
+          <a href={content.link ?? content.imagem_url ?? undefined} target="_blank" rel="noopener noreferrer" aria-label={`Abrir mídia de ${content.titulo}`}>
             <ExternalLink className="h-4 w-4 text-primary" />
           </a>
         ) : null}
       </div>
-      {!content.link ? <p className="text-xs text-amber-600">Arquivo/link pendente</p> : null}
+      {!content.link && !content.imagem_url ? <p className="text-xs text-amber-600">Arquivo/link pendente</p> : null}
     </div>
   );
 }
