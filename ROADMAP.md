@@ -25,6 +25,13 @@ produção, com nome, função, contato, Pix, documento, vínculo, modelo de
 pagamento, valores, observações e status ativo/inativo. O cadastro não gera
 contas a pagar nem calcula a folha automaticamente.
 
+**15/10/2026 (tarde):** botão "Pagamentos" por profissional abre histórico —
+tabela `profissionais_pagamentos`, lançamento manual (data, valor, descrição,
+turma opcional) com anexo de comprovante e nota fiscal (bucket privado
+`profissionais-pagamentos`, link via URL assinada). Filtro por mês e total do
+período. Ainda é lançamento manual — não calcula nada sozinho, é só o
+registro/arquivo organizado por profissional (`HistoricoPagamentos.tsx`).
+
 Tabela de profissionais (professor, etc.): nome, função, contato, Pix,
 dados fiscais, vínculo, ativo/inativo, modelo de pagamento (fixo, por
 aula, comissão, ajuda de custo, híbrido). Precisa existir antes dos itens
@@ -35,10 +42,12 @@ Registrar novo recurso `rh` em `app_recursos` + `role_permissoes` (admin e
 gestor, ver/editar — mesmo padrão de `financeiro`) antes de criar as
 policies das tabelas novas.
 
-### 2. Lista de Presença 🟡 — base criada, fluxo pendente
+### 2. Lista de Presença 🟡 — links públicos e assinatura por aula
 
-As tabelas `aulas` e `presencas` já existem. Ainda falta a tela para lançar
-e assinar presença de professor e alunos e conectar os registros à folha.
+As tabelas `aulas` e `presencas` já existem. Cadastro, histórico e marcação
+pela equipe ficam em Gestão → Agenda de aulas. A aba duplicada do RH foi
+removida. Cada aula tem link público do aluno e link privado do professor;
+a Edge Function valida matrícula e assinatura. Falta conectar à folha.
 
 Registro de aula (data, turma, professor, horário) + presença assinada do
 professor e de cada aluno. Alimenta o item 3 (RH) e a frequência do aluno
@@ -46,12 +55,28 @@ professor e de cada aluno. Alimenta o item 3 (RH) e a frequência do aluno
 `Pedagógico/Lista de Presença.md` no cofre (vive conceitualmente nos dois
 departamentos).
 
-### 3. Fechamento de Folha ⚪ — depende dos itens 1 e 2
+### 3. Fechamento de Folha 🟢 — fecha por competência, trava o valor
 
 No dia de pagamento, soma aulas dadas × valor por profissional (usando o
 modelo de pagamento do item 1 e os registros do item 2), manda o total via
 [[Bot da Empresa]] (Telegram) pro Pedro só conferir e transferir — sem
 calcular nada na mão.
+
+**17/10/2026 — Codex:** prévia de consulta no RH por competência: conta apenas
+aulas realizadas com presença positiva do professor e calcula a parcela
+por aula quando há tarifa cadastrada.
+
+**20/10/2026 — Claude:** tela própria `FechamentoFolha.tsx` (DP RH →
+Fechamento de Folha). Soma aulas × valor por aula, valor fixo e comissões
+pendentes (via `comissoes_vendedores`, ligado por
+`profissionais.comissoes_vendedor`), desconta o já pago no mês
+(`profissionais_pagamentos`). Botão "Fechar competência" trava o cálculo em
+`folha_fechamentos`/`folha_fechamentos_itens`; "Reabrir" permite recalcular.
+Quem é comissão sem vendedor vinculado (ex: repasse de sócio por % de
+faturamento de turma) aparece marcado para revisão manual, não calculado
+sozinho. Pagamento continua manual com comprovante — isto só trava o número
+certo do mês. Falta só o envio automático pelo Telegram: a função
+`bot-rh-consulta` já existe no servidor, falta ligar no n8n (ação do Pedro).
 
 ---
 
@@ -74,15 +99,23 @@ gabarito esperado da IA — não adianta começar a codar antes disso chegar.
 Presença, com `turma_id`, `profissional_id`, data/horários, status e
 `link_meet` opcional. Nenhuma tabela ou migration adicional criada.
 RLS, GRANT para `authenticated` e policies com `tem_permissao('rh', ...)`
-conferidos no banco. Menu **Gestão → Agenda de Aulas** consulta por mês e
-mostra uma prévia interna do cartão do professor, com botão do Meet quando
-houver link válido e aula agendada. Acesso restrito à permissão `rh.ver`.
+conferidos no banco. Menu **Gestão → Agenda de Aulas** mostra apenas aulas
+de hoje em diante, da mais próxima à mais distante, com filtro por turma e
+mês atual selecionado por padrão. O modo Histórico dá acesso às aulas passadas. Cada cartão reúne
+o botão do Meet (quando houver link), a marcação manual de presença e os
+links de presença do aluno e do professor (abertos sob demanda). Acesso
+restrito à permissão `rh.ver`.
 
 Ainda pendentes: OAuth/geração de links, vínculo seguro entre identidade
 do professor e profissional, acesso somente às próprias aulas, entrega por
-Telegram, link de presença e reagendamento pelo bot. A prévia não envia
-mensagens, não cadastra aulas e não integra com o Google. Cadastro de aulas
-permanece na trilha da Lista de Presença, evitando trabalho duplicado.
+Telegram e reagendamento pelo bot. A tela não envia
+mensagens nem integra com o Google. As aulas são cadastradas nesta Agenda,
+sem segunda tela de Lista de Presença no RH.
+
+**17/10/2026 — horário das tutorias (corrigido):** início fixo às 20h de Brasília,
+fim sugerido às 21h e ajustável conforme a duração real (geralmente até 21h20).
+Não há duração mínima de 1h30 para tutoria; aulas comuns podem durar 1h30 ou mais.
+Tutorias futuras antes terminando exatamente às 21h30 foram ajustadas para 21h.
 
 Cada aula gera link do Google Meet com o professor como organizador, no
 horário certo. Entrega pro professor via [[Bot da Empresa]] (Telegram,
@@ -92,10 +125,15 @@ reagenda **conversando direto com o bot** — decisão final do Pedro
 sem fase manual antes, mesmo com risco de erro no caminho. Nota completa:
 `Pedagógico/Agenda de Aulas (Google Meet).md`.
 
-**Bloqueio real: precisa do Pedro configurar OAuth do Google (Calendar/
-Meet API)** antes de qualquer código de integração fazer sentido — mesmo
-tipo de passo que ele fez pro bot do Telegram e pra API do Claude (ação
-que só ele consegue fazer, gera credencial).
+**19-20/10/2026 — Claude: OAuth configurado e Meet ao vivo.** Credencial
+criada (`11digitalstrategy@gmail.com` hospeda o projeto, `contato@
+rodrygomurari.com.br` autoriza via OAuth Playground), secrets salvos no
+Supabase, função `meet-criar-aulas` gera o evento/link de verdade. Testado
+em aula real. Aviso automático no grupo de WhatsApp da turma (função
+`aulas-aviso-meet`, cron a cada minuto) também construído, desligado até o
+Pedro ligar de propósito. Bloqueio de OAuth está resolvido; falta convite
+por e-mail do professor (sem e-mails coletados ainda) e reagendamento pelo
+bot a partir de mensagem da Jocimara.
 
 ---
 
