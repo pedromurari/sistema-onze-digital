@@ -29,6 +29,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { HistoricoPagamentosDialog } from './rh/HistoricoPagamentos';
 import { PreviaFolha } from './rh/PreviaFolha';
+import { calcularPreviaFolha, type AulaFolha, type PresencaProfessor } from './rh/folha-preview';
 
 type Profissional = Database['public']['Tables']['profissionais']['Row'];
 
@@ -89,6 +90,49 @@ const EMPTY_FORM = {
   comissao_meta2_bonus: '',
   observacoes: '',
 };
+
+function mesAtualBrasil() {
+  const p = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit' }).formatToParts(new Date());
+  return `${p.find((x) => x.type === 'year')?.value}-${p.find((x) => x.type === 'month')?.value}`;
+}
+
+function useIndicadoresRH(profissionais: Profissional[]) {
+  const [aPagar, setAPagar] = useState<number | null>(null);
+  const [notasPendentes, setNotasPendentes] = useState<number | null>(null);
+
+  useEffect(() => {
+    let ativo = true;
+    void (async () => {
+      const mes = mesAtualBrasil();
+      const primeiroDia = `${mes}-01`;
+      const proximoMes = new Date(`${primeiroDia}T12:00:00Z`);
+      proximoMes.setUTCMonth(proximoMes.getUTCMonth() + 1);
+      const limite = proximoMes.toISOString().slice(0, 10);
+
+      const [aulasResp, notasResp] = await Promise.all([
+        supabase.from('aulas').select('id, profissional_id, data, status').gte('data', primeiroDia).lt('data', limite),
+        supabase.from('profissionais_pagamentos').select('id', { count: 'exact', head: true }).is('nota_fiscal_arquivo_url', null),
+      ]);
+      if (!ativo) return;
+      if (notasResp.count != null) setNotasPendentes(notasResp.count);
+
+      const aulas = (aulasResp.data ?? []) as AulaFolha[];
+      if (aulas.length === 0) { setAPagar(0); return; }
+      const ids = aulas.map((a) => a.id);
+      const { data: presencasData } = await supabase.from('presencas').select('aula_id, profissional_id, presente').eq('tipo', 'professor').in('aula_id', ids);
+      if (!ativo) return;
+      const linhas = calcularPreviaFolha(
+        profissionais.map((p) => ({ id: p.id, nome: p.nome, modelo_pagamento: p.modelo_pagamento, valor_por_aula: p.valor_por_aula })),
+        aulas,
+        (presencasData ?? []) as PresencaProfessor[],
+      );
+      setAPagar(linhas.reduce((soma, l) => soma + (l.valorAulas ?? 0), 0));
+    })();
+    return () => { ativo = false; };
+  }, [profissionais]);
+
+  return { aPagar, notasPendentes };
+}
 
 function useProfissionais() {
   const [itens, setItens] = useState<Profissional[]>([]);
@@ -276,6 +320,7 @@ export function RH() {
   const [editando, setEditando] = useState<Profissional | null | undefined>(undefined);
   const [verPagamentos, setVerPagamentos] = useState<Profissional | null>(null);
   const ativos = itens.filter((p) => p.ativo);
+  const { aPagar, notasPendentes } = useIndicadoresRH(ativos);
 
   async function alternarAtivo(p: Profissional) {
     const { error } = await supabase.from('profissionais').update({ ativo: !p.ativo }).eq('id', p.id);
@@ -306,8 +351,8 @@ export function RH() {
         <section aria-label="Indicadores" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[
             { label: 'Profissionais ativos', value: String(ativos.length), detail: `${itens.length} cadastrados no total`, icon: Users, tone: 'text-blue-600 bg-blue-500/10' },
-            { label: 'A pagar', value: 'R$ 0,00', detail: 'fechamento de folha ainda não construído', icon: Banknote, tone: 'text-amber-600 bg-amber-500/10' },
-            { label: 'Notas pendentes', value: '0', detail: 'nenhum documento anexado', icon: ReceiptText, tone: 'text-emerald-600 bg-emerald-500/10' },
+            { label: 'A pagar (parte por aula, mês atual)', value: aPagar == null ? '—' : aPagar.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), detail: 'não inclui fixo, comissão, ajuda de custo', icon: Banknote, tone: 'text-amber-600 bg-amber-500/10' },
+            { label: 'Notas pendentes', value: notasPendentes == null ? '—' : String(notasPendentes), detail: 'pagamentos sem nota fiscal anexada', icon: ReceiptText, tone: (notasPendentes ?? 0) > 0 ? 'text-amber-600 bg-amber-500/10' : 'text-emerald-600 bg-emerald-500/10' },
           ].map(({ label, value, detail, icon: Icon, tone }) => (
             <Card key={label} className="border-border/70 shadow-sm">
               <CardContent className="flex items-start justify-between p-4">
