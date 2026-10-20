@@ -64,6 +64,7 @@ const BASE_MENU: MenuItem[] = [
   { key: 'balanco',                  label: 'Balanço',               icon: Scale },
   { key: 'cobranca',                 label: 'Cobrança',              icon: MessageSquare },
   // DP RH
+  { key: 'rh_diretoria',             label: 'Diretoria',             icon: Megaphone },
   { key: 'rh',                       label: 'Painel',                icon: BriefcaseBusiness },
   // Pedagógico
   { key: 'provas_trabalhos',         label: 'Provas e Trabalhos',   icon: FileCheck2 },
@@ -119,7 +120,7 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
     funil_lancamento:   'Funil & Automação',
     marketing_diretoria: 'Marketing',
     financeiro:         'Financeiro',
-    rh:                 'DP RH',
+    rh_diretoria:       'DP RH',
     provas_trabalhos:   'Pedagógico',
     mapa_mental:        'Admin',
   };

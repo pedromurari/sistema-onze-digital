@@ -20,6 +20,7 @@ const LancamentosOverview = lazy(() => import('./LancamentosOverview').then(m =>
 const Operacoes        = lazy(() => import('./Operacoes').then(m => ({ default: m.Operacoes })));
 const MapaMental       = lazy(() => import('./MapaMental').then(m => ({ default: m.MapaMental })));
 const RH               = lazy(() => import('./RH').then(m => ({ default: m.RH })));
+const DiretoriaRH       = lazy(() => import('./rh/DiretoriaRH').then(m => ({ default: m.DiretoriaRH })));
 const AgendaAulas = lazy(() => import('./AgendaAulas').then(m => ({ default: m.AgendaAulas })));
 const ProvasTrabalhos  = lazy(() => import('./ProvasTrabalhos').then(m => ({ default: m.ProvasTrabalhos })));
 const Financeiro       = lazy(() => import('./Financeiro').then(m => ({ default: m.Financeiro })));
@@ -239,6 +240,7 @@ export function CRMLayout() {
       case 'operacoes_calendario_conteudo': return <Operacoes currentPage={currentView} />;
       case 'reels_idm': return <ReelsIDM />;
       case 'mapa_mental': return <MapaMental />;
+      case 'rh_diretoria': return <DiretoriaRH />;
       case 'rh': return <RH />;
       case 'agenda_aulas': return <AgendaAulas />;
       case 'provas_trabalhos': return <ProvasTrabalhos />;
