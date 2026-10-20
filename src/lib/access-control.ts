@@ -123,6 +123,7 @@ const RECURSO_POR_VIEW: Record<string, string> = {
   // matriz para separar quem vê processos de quem vê remuneração.
   rh_diretoria:                  'mapa_mental',
   rh:                            'mapa_mental',
+  rh_fechamento_folha:           'mapa_mental',
   // O planejamento acadêmico também fica sob Gestão até existir uma permissão
   // própria para criação, correção e publicação de avaliações.
   provas_trabalhos:              'mapa_mental',
@@ -134,7 +135,7 @@ export type AppView =
   | 'lancamentos_30' | 'lancamentos_31' | 'lancamentos_32'
   | 'team' | 'settings' | 'cobranca' | 'funil_lancamento' | 'disparos_monitor' | 'chat_conversas'
   | 'operacoes_tarefas' | 'operacoes_calendario_geral' | 'operacoes_calendario_conteudo' | 'reels_idm'
-  | 'mapa_mental' | 'rh_diretoria' | 'rh' | 'provas_trabalhos' | 'franquia_psi' | 'posts' | 'parceiros' | 'equipe_11ds'
+  | 'mapa_mental' | 'rh_diretoria' | 'rh' | 'rh_fechamento_folha' | 'provas_trabalhos' | 'franquia_psi' | 'posts' | 'parceiros' | 'equipe_11ds'
   | 'aquecimento_chips' | 'time_comercial' | 'pessoas'
   | 'marketing_diretoria' | 'trafego_gestor' | 'trafego_regras';
 
@@ -288,6 +289,7 @@ export function canAccessView(
     mapa_mental: permissions.canViewMapaMental,
     rh_diretoria: permissions.canViewMapaMental,
     rh: permissions.canViewMapaMental,
+    rh_fechamento_folha: permissions.canViewMapaMental,
     provas_trabalhos: permissions.canViewMapaMental,
     posts: false, // admin-only — isAdmin check at top of function already handles it
     parceiros: false, // admin-only — isAdmin check at top of function already handles it

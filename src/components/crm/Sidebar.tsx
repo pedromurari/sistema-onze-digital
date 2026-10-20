@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Kanban, Settings, UserCog,
   Rocket, BarChart3,
   ChevronLeft, ChevronRight, Plus, Brain, Scale, Menu,
-  GripVertical, Pencil, Check, MessageSquare, MessageCircle, TrendingUp, GitBranch, CalendarDays, Radio, Image, Handshake, Bot, Flame, Users, Contact, ReceiptText, Calculator, BriefcaseBusiness, FileCheck2, Megaphone, Target, Video,
+  GripVertical, Pencil, Check, CheckCircle2, MessageSquare, MessageCircle, TrendingUp, GitBranch, CalendarDays, Radio, Image, Handshake, Bot, Flame, Users, Contact, ReceiptText, Calculator, BriefcaseBusiness, FileCheck2, Megaphone, Target, Video,
 } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { LancamentoWizard } from '@/components/crm/LancamentoWizard';
@@ -66,6 +66,7 @@ const BASE_MENU: MenuItem[] = [
   // DP RH
   { key: 'rh_diretoria',             label: 'Diretoria',             icon: Megaphone },
   { key: 'rh',                       label: 'Painel',                icon: BriefcaseBusiness },
+  { key: 'rh_fechamento_folha',      label: 'Fechamento de Folha',   icon: CheckCircle2 },
   // Pedagógico
   { key: 'provas_trabalhos',         label: 'Provas e Trabalhos',   icon: FileCheck2 },
   { key: 'agenda_aulas', label: 'Agenda de Aulas', icon: CalendarDays },
