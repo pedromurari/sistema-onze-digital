@@ -2861,8 +2861,29 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
 
 interface ResumoVendedor { vendedor: string; leads_trabalhados: number; vendas: number; pre_matriculas: number; }
 
+// Últimos 12 meses (mais recente primeiro) + "Todos os períodos" — mesmo padrão
+// de rótulo (MESES_ABREV) usado no filtro de "Minhas Vendas" logo acima.
+const TODOS_PERIODOS = 'todos';
+function ultimosMeses(qtd: number): string[] {
+  const meses: string[] = [];
+  const ref = new Date();
+  ref.setDate(1);
+  for (let i = 0; i < qtd; i++) {
+    meses.push(ref.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }).slice(0, 7));
+    ref.setMonth(ref.getMonth() - 1);
+  }
+  return meses;
+}
+
 function DadosTab({ viewAsName }: VendorScopeProps) {
   const [alunosPorVendedor, setAlunosPorVendedor] = useState<AlunoVendedorStat[]>([]);
+  // Faturamento por vendedor tem filtro de mês próprio (RPC aceita p_mes) --
+  // separado do alunosPorVendedor acima (sempre geral), que alimenta os cards
+  // de Visão Geral/ticket médio/ranking, pensados pra mostrar o total do time.
+  const mesAtualFaturamento = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }).slice(0, 7);
+  const [mesFaturamento, setMesFaturamento] = useState(mesAtualFaturamento);
+  const [alunosPorVendedorMes, setAlunosPorVendedorMes] = useState<AlunoVendedorStat[]>([]);
+  const [loadingFaturamentoMes, setLoadingFaturamentoMes] = useState(true);
   const [resumoVend, setResumoVend] = useState<ResumoVendedor[]>([]);
   const [movimentacao, setMovimentacao] = useState<MovimentacaoDia[]>([]);
   const [contagens, setContagens] = useState<Contagem[]>([]);
@@ -2942,8 +2963,22 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    let ativo = true;
+    setLoadingFaturamentoMes(true);
+    (supabase as any)
+      .rpc('time_comercial_alunos_vendedor', { p_mes: mesFaturamento === TODOS_PERIODOS ? null : mesFaturamento })
+      .then(({ data }: any) => {
+        if (!ativo) return;
+        setAlunosPorVendedorMes((data ?? []) as AlunoVendedorStat[]);
+        setLoadingFaturamentoMes(false);
+      });
+    return () => { ativo = false; };
+  }, [mesFaturamento]);
+
   const vendedoresVisiveis = viewAsName ? INITIAL_VENDORS.filter((v) => v.name === viewAsName) : INITIAL_VENDORS;
   const alunosDe = (nome: string) => alunosPorVendedor.find((a) => a.vendedor === nome);
+  const alunosDeMes = (nome: string) => alunosPorVendedorMes.find((a) => a.vendedor === nome);
   const resumoDe = (nome: string) => resumoVend.find((r) => r.vendedor === nome);
 
   // Mesmo critério do Funil: campanha de retorno (base antiga) não conta como
@@ -3088,7 +3123,29 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
         <StatTile label="Taxa de conversão" value={`${conversaoPct.toFixed(1)}%`} hint={leadsEntraram > 0 ? `${vendasTotais} de ${leadsEntraram} leads` : 'Sem leads ainda'} icon={Percent} />
       </div>
 
-      <SectionBar title="Faturamento realizado por vendedor" subtitle="Baseado em matrículas efetivadas (pré-matrícula não conta), creditadas ao vendedor que reivindicou o aluno." icon={DollarSign} />
+      <SectionBar
+        title="Faturamento realizado por vendedor"
+        subtitle="Baseado em matrículas efetivadas (pré-matrícula não conta), creditadas ao vendedor que reivindicou o aluno."
+        icon={DollarSign}
+        right={
+          <Select value={mesFaturamento} onValueChange={setMesFaturamento}>
+            <SelectTrigger className="w-40 h-8 text-xs">
+              <SelectValue>
+                {mesFaturamento === TODOS_PERIODOS
+                  ? 'Todos os períodos'
+                  : `${MESES_ABREV[Number(mesFaturamento.split('-')[1]) - 1]}/${mesFaturamento.split('-')[0]}`}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {ultimosMeses(12).map((m) => {
+                const [a, mm] = m.split('-');
+                return <SelectItem key={m} value={m}>{MESES_ABREV[Number(mm) - 1]}/{a}</SelectItem>;
+              })}
+              <SelectItem value={TODOS_PERIODOS}>Todos os períodos</SelectItem>
+            </SelectContent>
+          </Select>
+        }
+      />
       <Card className="p-4 overflow-x-auto">
         <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
           <TableHeader>
@@ -3104,7 +3161,7 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
           </TableHeader>
           <TableBody>
             {vendedoresVisiveis.map((v, idx) => {
-              const stat = alunosDe(v.name);
+              const stat = alunosDeMes(v.name);
               return (
                 <TableRow key={v.name} className={premiumZebraRow(idx)}>
                   <TableCell>
@@ -3113,12 +3170,12 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
                       <div className="text-sm font-medium text-foreground">{v.name}</div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-right">{stat?.vista_cartao ?? 0}</TableCell>
-                  <TableCell className="text-right">{stat?.boleto ?? 0}</TableCell>
-                  <TableCell className="text-right">{stat?.bolsa_cortesia ?? 0}</TableCell>
-                  <TableCell className="text-right">{stat?.sem_forma ?? 0}</TableCell>
-                  <TableCell className="text-right">{fmt(Number(stat?.faturamento ?? 0))}</TableCell>
-                  <TableCell className="text-right font-semibold text-primary">{fmt(Number(stat?.comissao_est ?? 0))}</TableCell>
+                  <TableCell className="text-right">{loadingFaturamentoMes ? '—' : stat?.vista_cartao ?? 0}</TableCell>
+                  <TableCell className="text-right">{loadingFaturamentoMes ? '—' : stat?.boleto ?? 0}</TableCell>
+                  <TableCell className="text-right">{loadingFaturamentoMes ? '—' : stat?.bolsa_cortesia ?? 0}</TableCell>
+                  <TableCell className="text-right">{loadingFaturamentoMes ? '—' : stat?.sem_forma ?? 0}</TableCell>
+                  <TableCell className="text-right">{loadingFaturamentoMes ? '—' : fmt(Number(stat?.faturamento ?? 0))}</TableCell>
+                  <TableCell className="text-right font-semibold text-primary">{loadingFaturamentoMes ? '—' : fmt(Number(stat?.comissao_est ?? 0))}</TableCell>
                 </TableRow>
               );
             })}
