@@ -121,6 +121,9 @@ const RECURSO_POR_VIEW: Record<string, string> = {
   // A Diretoria Comercial compartilha o mesmo recurso de Time Comercial — é a mesma
   // área, só uma visão executiva em cima dela.
   comercial_diretoria:           'time_comercial',
+  // Workshop ainda não tem recurso próprio na matriz (é só placeholder por enquanto) —
+  // reaproveita a mesma visibilidade de NPA, por ser outro canal de aquisição.
+  workshops:                     'npa',
   // O esboço de RH compartilha temporariamente o acesso de Gestão/Mapa Mental.
   // Antes de armazenar salários ou notas fiscais, ele ganhará recurso próprio na
   // matriz para separar quem vê processos de quem vê remuneração.
@@ -139,7 +142,7 @@ export type AppView =
   | 'team' | 'settings' | 'cobranca' | 'funil_lancamento' | 'disparos_monitor' | 'chat_conversas'
   | 'operacoes_tarefas' | 'operacoes_calendario_geral' | 'operacoes_calendario_conteudo' | 'reels_idm'
   | 'mapa_mental' | 'rh_diretoria' | 'rh' | 'rh_fechamento_folha' | 'provas_trabalhos' | 'franquia_psi' | 'posts' | 'parceiros' | 'equipe_11ds'
-  | 'aquecimento_chips' | 'time_comercial' | 'comercial_diretoria' | 'pessoas'
+  | 'aquecimento_chips' | 'time_comercial' | 'comercial_diretoria' | 'pessoas' | 'workshops'
   | 'marketing_diretoria' | 'trafego_gestor' | 'trafego_regras';
 
 export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
@@ -274,6 +277,7 @@ export function canAccessView(
     time_comercial: permissions.canViewTimeComercial,
     comercial_diretoria: permissions.canViewTimeComercial,
     npa_overview: permissions.canViewNpa,
+    workshops: permissions.canViewNpa,
     lancamentos_overview: permissions.canViewLancamentos,
     financeiro: permissions.canViewFinanceiro,
     financeiro_notas: permissions.canViewFinanceiro,

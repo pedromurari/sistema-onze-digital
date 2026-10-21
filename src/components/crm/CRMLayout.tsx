@@ -41,6 +41,7 @@ const NPAKanban        = lazy(() => import('./NPAKanban'));
 const Posts             = lazy(() => import('./Posts').then(m => ({ default: m.Posts })));
 const ReelsIDM           = lazy(() => import('./ReelsIDM').then(m => ({ default: m.ReelsIDM })));
 const Parceiros         = lazy(() => import('./Parceiros').then(m => ({ default: m.Parceiros })));
+const Workshops          = lazy(() => import('./Workshops').then(m => ({ default: m.Workshops })));
 const Equipe11ds        = lazy(() => import('./Equipe11ds').then(m => ({ default: m.Equipe11ds })));
 const TimeComercial      = lazy(() => import('./TimeComercial').then(m => ({ default: m.TimeComercial })));
 const DiretoriaComercial = lazy(() => import('./comercial/DiretoriaComercial').then(m => ({ default: m.DiretoriaComercial })));
@@ -250,6 +251,7 @@ export function CRMLayout() {
       case 'provas_trabalhos': return <ProvasTrabalhos />;
       case 'posts': return isAdmin ? <Posts /> : <RestrictedView />;
       case 'parceiros': return isAdmin ? <Parceiros /> : <RestrictedView />;
+      case 'workshops': return <Workshops />;
       case 'equipe_11ds': return isAdmin
         ? <Equipe11ds onNavigateToPosts={() => setCurrentView('posts')} onNavigateToAluno={(alunoId) => setCurrentView(`financeiro_aluno_${alunoId}` as View)} />
         : <RestrictedView />;
