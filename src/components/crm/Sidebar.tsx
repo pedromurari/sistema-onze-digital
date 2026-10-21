@@ -80,12 +80,16 @@ function getItemId(item: MenuItem) {
   return 'key' in item ? item.key : item.group;
 }
 
+// v2 (21/10/2026): a reorganização de DP Comercial/DP Marketing/Rede de Influência mudou
+// quem pertence a qual seção. Uma ordem arrastada manualmente antes disso (chave v1)
+// ignorava as seções novas e misturava tudo embaixo de "Início" — trocar de chave
+// descarta a customização antiga em vez de tentar remendar por cima dela.
 function loadOrder(): string[] {
-  try { return JSON.parse(localStorage.getItem('sidebar-order') || '[]'); } catch { return []; }
+  try { return JSON.parse(localStorage.getItem('sidebar-order-v2') || '[]'); } catch { return []; }
 }
 
 function saveOrder(order: string[]) {
-  try { localStorage.setItem('sidebar-order', JSON.stringify(order)); } catch {}
+  try { localStorage.setItem('sidebar-order-v2', JSON.stringify(order)); } catch {}
 }
 
 function applyOrder(menu: MenuItem[], order: string[]): MenuItem[] {
