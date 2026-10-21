@@ -29,7 +29,6 @@ type MenuItem =
 const BASE_MENU: MenuItem[] = [
   // Início
   { key: 'dashboard',                  label: 'Dashboard',           icon: LayoutDashboard },
-  { key: 'operacoes_tarefas',          label: 'Tarefas',              icon: Kanban },
   // CRM
   { key: 'pessoas',                    label: 'Pessoas',             icon: Contact },
   // DP Comercial
