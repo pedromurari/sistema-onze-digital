@@ -24,6 +24,7 @@ const DiretoriaRH       = lazy(() => import('./rh/DiretoriaRH').then(m => ({ def
 const FechamentoFolha    = lazy(() => import('./rh/FechamentoFolha').then(m => ({ default: m.FechamentoFolha })));
 const AgendaAulas = lazy(() => import('./AgendaAulas').then(m => ({ default: m.AgendaAulas })));
 const ProvasTrabalhos  = lazy(() => import('./ProvasTrabalhos').then(m => ({ default: m.ProvasTrabalhos })));
+const DiretoriaPedagogico = lazy(() => import('./pedagogico/DiretoriaPedagogico').then(m => ({ default: m.DiretoriaPedagogico })));
 const Financeiro       = lazy(() => import('./Financeiro').then(m => ({ default: m.Financeiro })));
 const NotasFiscais     = lazy(() => import('./finance/NotasFiscais').then(m => ({ default: m.NotasFiscais })));
 const DreCompetencia   = lazy(() => import('./finance/DreCompetencia').then(m => ({ default: m.DreCompetencia })));
@@ -249,6 +250,7 @@ export function CRMLayout() {
       case 'rh_fechamento_folha': return <FechamentoFolha />;
       case 'agenda_aulas': return <AgendaAulas />;
       case 'provas_trabalhos': return <ProvasTrabalhos />;
+      case 'pedagogico_diretoria': return <DiretoriaPedagogico />;
       case 'posts': return isAdmin ? <Posts /> : <RestrictedView />;
       case 'parceiros': return isAdmin ? <Parceiros /> : <RestrictedView />;
       case 'workshops': return <Workshops />;

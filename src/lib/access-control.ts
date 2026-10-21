@@ -133,6 +133,7 @@ const RECURSO_POR_VIEW: Record<string, string> = {
   // O planejamento acadêmico também fica sob Gestão até existir uma permissão
   // própria para criação, correção e publicação de avaliações.
   provas_trabalhos:              'mapa_mental',
+  pedagogico_diretoria:          'mapa_mental',
 };
 
 export type AppView =
@@ -141,7 +142,7 @@ export type AppView =
   | 'lancamentos_30' | 'lancamentos_31' | 'lancamentos_32'
   | 'team' | 'settings' | 'cobranca' | 'funil_lancamento' | 'disparos_monitor' | 'chat_conversas'
   | 'operacoes_tarefas' | 'operacoes_calendario_geral' | 'operacoes_calendario_conteudo' | 'reels_idm'
-  | 'mapa_mental' | 'rh_diretoria' | 'rh' | 'rh_fechamento_folha' | 'provas_trabalhos' | 'franquia_psi' | 'posts' | 'parceiros' | 'equipe_11ds'
+  | 'mapa_mental' | 'rh_diretoria' | 'rh' | 'rh_fechamento_folha' | 'provas_trabalhos' | 'pedagogico_diretoria' | 'franquia_psi' | 'posts' | 'parceiros' | 'equipe_11ds'
   | 'aquecimento_chips' | 'time_comercial' | 'comercial_diretoria' | 'pessoas' | 'workshops'
   | 'marketing_diretoria' | 'trafego_gestor' | 'trafego_regras';
 
@@ -299,6 +300,7 @@ export function canAccessView(
     rh: permissions.canViewMapaMental,
     rh_fechamento_folha: permissions.canViewMapaMental,
     provas_trabalhos: permissions.canViewMapaMental,
+    pedagogico_diretoria: permissions.canViewMapaMental,
     posts: false, // admin-only — isAdmin check at top of function already handles it
     parceiros: false, // admin-only — isAdmin check at top of function already handles it
     equipe_11ds: false, // admin-only — isAdmin check at top of function already handles it
