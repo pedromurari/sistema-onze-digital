@@ -687,7 +687,9 @@ export function Dashboard() {
 
   // ── Team stats ────────────────────────────────────────────────────────────
 
-  const tarefasCriticas = tasks.filter(t => t.status !== 'concluido' && t.prazo && isPast(new Date(t.prazo))).slice(0, 4);
+  // Sem slice aqui: o card "Tarefas atrasadas" usa tarefasCriticas.length como contagem —
+  // cortar em 4 antes fazia o número nunca passar de 4, mesmo com mais tarefas atrasadas.
+  const tarefasCriticas = tasks.filter(t => t.status !== 'concluido' && t.prazo && isPast(new Date(t.prazo)));
 
   // ── Próximas datas ─────────────────────────────────────────────────────────
 
