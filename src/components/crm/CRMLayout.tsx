@@ -43,6 +43,7 @@ const ReelsIDM           = lazy(() => import('./ReelsIDM').then(m => ({ default:
 const Parceiros         = lazy(() => import('./Parceiros').then(m => ({ default: m.Parceiros })));
 const Equipe11ds        = lazy(() => import('./Equipe11ds').then(m => ({ default: m.Equipe11ds })));
 const TimeComercial      = lazy(() => import('./TimeComercial').then(m => ({ default: m.TimeComercial })));
+const DiretoriaComercial = lazy(() => import('./comercial/DiretoriaComercial').then(m => ({ default: m.DiretoriaComercial })));
 const MarketingDiretoria = lazy(() => import('./MarketingDiretoria').then(m => ({ default: m.MarketingDiretoria })));
 const GestorTrafego      = lazy(() => import('./GestorTrafego').then(m => ({ default: m.GestorTrafego })));
 const RegrasAutomacao    = lazy(() => import('./RegrasAutomacao').then(m => ({ default: m.RegrasAutomacao })));
@@ -206,6 +207,7 @@ export function CRMLayout() {
       case 'dashboard': return <Dashboard />;
       case 'pessoas':  return <Pessoas />;
       case 'time_comercial': return <TimeComercial />;
+      case 'comercial_diretoria': return <DiretoriaComercial />;
       case 'npa_overview': return <NPAEventos onOpenEvento={(id) => setCurrentView(`npa_${id}` as View)} />;
       case 'lancamentos_overview': return <LancamentosOverview onOpenLancamento={(id) => setCurrentView(`lancamentos_${id}` as View)} />;
       case 'marketing_diretoria': return <MarketingDiretoria />;

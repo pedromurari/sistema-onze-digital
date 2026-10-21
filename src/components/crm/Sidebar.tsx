@@ -32,28 +32,27 @@ const BASE_MENU: MenuItem[] = [
   { key: 'operacoes_tarefas',          label: 'Tarefas',              icon: Kanban },
   // CRM
   { key: 'pessoas',                    label: 'Pessoas',             icon: Contact },
-  // CRM Time Comercial
+  // DP Comercial
+  { key: 'comercial_diretoria',        label: 'Diretoria',            icon: Megaphone },
   { key: 'time_comercial',             label: 'Time Comercial',      icon: Users },
-  // Vendas & Parcerias
-  { key: 'parceiros',                  label: 'Parceiros',           icon: Handshake,   adminOnly: true },
-  // Conteúdo
-  { key: 'posts',                      label: 'Post',                 icon: Image,       adminOnly: true },
-  // Eventos
+  // Canais de Aquisição
   { group: 'lancamentos_legado',       label: 'Semana do Despertar', icon: Rocket,       children: [] },
   { group: 'npa_dinamico',            label: 'IDM Pelo Brasil',       icon: BarChart3,    children: [] },
+  { key: 'parceiros',                  label: 'Rede de Influência',  icon: Handshake,   adminOnly: true },
   // Funil & Automação
   { key: 'funil_lancamento',          label: 'Funil de Lançamento',  icon: GitBranch },
   { key: 'disparos_monitor',          label: 'Central de Disparos',  icon: Radio },
   { key: 'chat_conversas',            label: 'Chat',                 icon: MessageCircle },
   { key: 'aquecimento_chips',         label: 'Aquecimento de Chips', icon: Flame,       adminOnly: true },
-  // Marketing — Diretor de Marketing > Gestor de Tráfego > Social Media (hoje uma lista
-  // plana sob a mesma seção; virar um menu de verdade com submenu aninhado é tarefa à
-  // parte, o sidebar hoje só sabe fazer grupo dinâmico tipo lançamento/NPA).
-  { key: 'marketing_diretoria',       label: 'Diretor de Marketing', icon: Megaphone },
-  { key: 'trafego_gestor',            label: 'Gestor de Tráfego',    icon: Target },
+  { key: 'trafego_regras',            label: 'Regras de Automação',  icon: Settings },
+  // DP Marketing — Diretor > Post > Social Media > Reels IDM > Gestor de Tráfego (hoje
+  // uma lista plana sob a mesma seção; virar um menu de verdade com submenu aninhado é
+  // tarefa à parte, o sidebar hoje só sabe fazer grupo dinâmico tipo lançamento/NPA).
+  { key: 'marketing_diretoria',       label: 'Diretor',              icon: Megaphone },
+  { key: 'posts',                     label: 'Post',                 icon: Image,       adminOnly: true },
   { key: 'operacoes_calendario_conteudo', label: 'Social Media',     icon: Image },
   { key: 'reels_idm',                 label: 'Reels IDM',            icon: Video },
-  { key: 'trafego_regras',            label: 'Regras de Automação',  icon: Settings },
+  { key: 'trafego_gestor',            label: 'Gestor de Tráfego',    icon: Target },
   // Financeiro
   { key: 'financeiro',                label: 'Financeiro',           icon: BarChart3 },
   { key: 'financeiro_notas',          label: 'Notas Fiscais',        icon: ReceiptText },
@@ -114,12 +113,10 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
 
   const SECTION_BEFORE: Record<string, string> = {
     dashboard:          'Início',
-    time_comercial:     'CRM Time Comercial',
-    parceiros:          'Vendas & Parcerias',
-    posts:              'Conteúdo',
+    comercial_diretoria: 'DP Comercial',
     lancamentos_legado: 'Canais de Aquisição',
     funil_lancamento:   'Funil & Automação',
-    marketing_diretoria: 'Marketing',
+    marketing_diretoria: 'DP Marketing',
     financeiro:         'Financeiro',
     rh_diretoria:       'DP RH',
     provas_trabalhos:   'Pedagógico',
