@@ -58,6 +58,7 @@ declare global {
 // um vendedor fantasma no faturamento por vendedor.
 const VENDEDORES: Record<string, string> = {
   helen: 'Helen Magna',
+  'helen-cartao': 'Helen Magna',
   direto: 'Equipe Instituto Despertamente',
   promo: 'Equipe Instituto Despertamente',
   '997': 'Equipe Instituto Despertamente',
@@ -163,6 +164,12 @@ const planoDoSlug = (slug: string): keyof typeof PLANOS => {
 // crédito (sem PIX, boleto, recorrente ou bolsa). "15x50": só boleto
 // recorrente (sem PIX, cartão ou bolsa).
 const FORMAS_PERMITIDAS: Record<string, FormaPagamentoPermitida[] | undefined> = {
+  // Pedido do Pedro 22/10/2026: link so-cartao pra recuperar venda que travou
+  // na etapa do cartao (ex: Ana Paula Ramos) -- mesmo plano "padrao" (R$150 x
+  // 12, cartaoMaxParcelas herdado dali porque 'helen-cartao' nao esta em
+  // PLANOS e planoDoSlug cai em 'padrao'), so que sem PIX/boleto/recorrente/
+  // bolsa pra nao confundir quem so quer pagar no cartao.
+  'helen-cartao': ['cartao_parcelado'],
   '997': ['cartao_parcelado'],
   '15x50': ['boleto'],
   '1000x15': ['cartao_parcelado'],
