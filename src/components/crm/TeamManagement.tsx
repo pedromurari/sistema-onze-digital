@@ -267,9 +267,10 @@ export function TeamManagement() {
                           <SelectItem value="investidor">Investidor(a)</SelectItem>
                           <SelectItem value="admin">Administrador</SelectItem>
                           <SelectItem value="parceiro">Parceiro(a)</SelectItem>
+                          <SelectItem value="professora">Professora/Diretora Pedagógica</SelectItem>
                         </SelectContent>
                       </Select>
-                      <p className="text-xs text-muted-foreground">Define o conjunto de permissões padrão e o comportamento de login. Gestor(a) opera o negócio inteiro mas não mexe em Configurações, Equipe nem Parceiros. Investidor(a) vê o Financeiro apenas das turmas liberadas abaixo. Parceiro(a) não entra no CRM — cai direto no Portal da Parceira.</p>
+                      <p className="text-xs text-muted-foreground">Define o conjunto de permissões padrão e o comportamento de login. Gestor(a) opera o negócio inteiro mas não mexe em Configurações, Equipe nem Parceiros. Investidor(a) vê o Financeiro apenas das turmas liberadas abaixo. Parceiro(a) não entra no CRM — cai direto no Portal da Parceira. Professora/Diretora Pedagógica só vê o departamento Pedagógico (Diretoria, Provas e Trabalhos, Agenda de Aulas) + Alunos e Pessoas.</p>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="cargo">Cargo / título exibido</Label>

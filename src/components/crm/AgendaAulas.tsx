@@ -52,7 +52,7 @@ function hojeBrasil() {
 
 export function AgendaAulas() {
   const { user } = useAuth();
-  const allowed = user?.tipo === 'admin' || user?.permissionMatrix?.rh?.ver === true;
+  const allowed = user?.tipo === 'admin' || user?.permissionMatrix?.pedagogico?.ver === true;
   const [month, setMonth] = useState(() => hojeBrasil().slice(0, 7));
   const [turmaId, setTurmaId] = useState('todas');
   const [periodo, setPeriodo] = useState<'futuras' | 'historico'>('futuras');
@@ -67,7 +67,7 @@ export function AgendaAulas() {
   const aviso = useAvisoConfig().data;
   const [gerandoMeetMsg, setGerandoMeetMsg] = useState('');
   const today = hojeBrasil();
-  const canEdit = user?.tipo === 'admin' || user?.permissionMatrix?.rh?.editar === true;
+  const canEdit = user?.tipo === 'admin' || user?.permissionMatrix?.pedagogico?.editar === true;
   const validMonth = month === '' || /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
   const nextMonth = validMonth ? `${Number(month.slice(0, 4)) + (month.endsWith('-12') ? 1 : 0)}-${String(Number(month.slice(5)) % 12 + 1).padStart(2, '0')}-01` : '';
   const turmasQuery = useQuery({

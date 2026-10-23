@@ -76,8 +76,11 @@ serve(async (req) => {
     const password = String(body?.password ?? "");
     const nome = String(body?.nome ?? "").trim();
     const tipo = (
-      body?.tipo === "admin" ? "admin" : body?.tipo === "parceiro" ? "parceiro" : "vendedor"
-    ) as "admin" | "vendedor" | "parceiro";
+      body?.tipo === "admin" ? "admin"
+      : body?.tipo === "parceiro" ? "parceiro"
+      : body?.tipo === "professora" ? "professora"
+      : "vendedor"
+    ) as "admin" | "vendedor" | "parceiro" | "professora";
     const cor = String(body?.cor ?? "#A93356");
 
     if (!email || !password || !nome) {

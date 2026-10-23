@@ -107,7 +107,6 @@ export function permissionsToToggles(permissions: AccessPermissions): Permission
 
 /** Uma tela pode ser varias views (Operacoes tem tres). Aqui elas viram um recurso so. */
 const RECURSO_POR_VIEW: Record<string, string> = {
-  agenda_aulas: 'rh',
   npa_overview:                  'npa',
   lancamentos_overview:          'lancamentos',
   operacoes_tarefas:             'operacoes',
@@ -130,10 +129,12 @@ const RECURSO_POR_VIEW: Record<string, string> = {
   rh_diretoria:                  'mapa_mental',
   rh:                            'mapa_mental',
   rh_fechamento_folha:           'mapa_mental',
-  // O planejamento acadêmico também fica sob Gestão até existir uma permissão
-  // própria para criação, correção e publicação de avaliações.
-  provas_trabalhos:              'mapa_mental',
-  pedagogico_diretoria:          'mapa_mental',
+  // Pedagógico tem recurso próprio (21/10/2026) — separado de RH/Mapa Mental, pra
+  // dar acesso só a esse departamento (ex: professora/diretora pedagógica) sem abrir
+  // Painel de RH nem Fechamento de Folha.
+  provas_trabalhos:              'pedagogico',
+  pedagogico_diretoria:          'pedagogico',
+  agenda_aulas:                  'pedagogico',
 };
 
 export type AppView =
@@ -144,7 +145,7 @@ export type AppView =
   | 'operacoes_tarefas' | 'operacoes_calendario_geral' | 'operacoes_calendario_conteudo' | 'reels_idm'
   | 'mapa_mental' | 'rh_diretoria' | 'rh' | 'rh_fechamento_folha' | 'provas_trabalhos' | 'pedagogico_diretoria' | 'franquia_psi' | 'posts' | 'parceiros' | 'equipe_11ds'
   | 'aquecimento_chips' | 'time_comercial' | 'comercial_diretoria' | 'pessoas' | 'workshops'
-  | 'marketing_diretoria' | 'trafego_gestor' | 'trafego_regras';
+  | 'marketing_diretoria' | 'marketing_aniversariantes' | 'trafego_gestor' | 'trafego_regras';
 
 export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
   canViewDashboard: true,
@@ -175,8 +176,36 @@ export const DEFAULT_ADMIN_PERMISSIONS: AccessPermissions = {
   canViewTimeComercial: true,
 };
 
+// Papel 'professora' é deliberadamente restrito ao recurso 'pedagogico' (+ alunos/
+// pessoas) na matriz (role_permissoes) -- tudo false aqui pra criar o usuário não
+// gravar override liberando dashboard/financeiro/mapa_mental/etc. por cima do papel
+// (TeamManagement.tsx aplica este default como override individual ao criar; se
+// viesse com os `true` do não-admin genérico, anularia a restrição do papel).
+export const DEFAULT_PROFESSORA_PERMISSIONS: AccessPermissions = {
+  canViewDashboard: false,
+  canViewLancamentos: false,
+  canViewAllLancamentos: false,
+  allowedLancamentoIds: [],
+  canViewNpa: false,
+  canViewFinanceiro: false,
+  canViewFinanceiroCfo: false,
+  canViewAllFinanceiroTurmas: false,
+  allowedFinanceiroTurmaIds: [],
+  canViewBalanco: false,
+  canViewCobranca: false,
+  canViewOperacoes: false,
+  canViewMapaMental: false,
+  canViewRodrygo: false,
+  canViewTeam: false,
+  canViewSettings: false,
+  canViewTimeComercial: false,
+  canViewFranquiaPsi: false,
+};
+
 export function getDefaultPermissions(role?: string): AccessPermissions {
-  return role === 'admin' ? { ...DEFAULT_ADMIN_PERMISSIONS } : { ...DEFAULT_NON_ADMIN_PERMISSIONS };
+  if (role === 'admin') return { ...DEFAULT_ADMIN_PERMISSIONS };
+  if (role === 'professora') return { ...DEFAULT_PROFESSORA_PERMISSIONS };
+  return { ...DEFAULT_NON_ADMIN_PERMISSIONS };
 }
 
 export function normalizePermissionsRow(row: any, role?: string): AccessPermissions {
@@ -253,7 +282,7 @@ export function canAccessView(
   // Um favorito antigo ou crm_last_view não pode reabrir a tela legada.
   if (view === 'franquia_psi') return false;
   if (isAdmin) return true;
-  if (view === 'agenda_aulas') return matrix?.rh?.ver === true;
+  if (view === 'marketing_aniversariantes') return false;
 
   if (view === 'lancamentos_overview') return permissions.canViewLancamentos;
 
