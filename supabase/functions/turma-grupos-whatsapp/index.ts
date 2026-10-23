@@ -35,8 +35,8 @@ serve(async (req) => {
   const admin = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
   if (acao === 'listar') {
-    const { data: pode } = await userClient.rpc('tem_permissao', { p_recurso: 'rh', p_acao: 'ver' });
-    if (!pode) return reply({ erro: 'Sem permissão de RH.' }, 403, origin);
+    const { data: pode } = await userClient.rpc('tem_permissao', { p_recurso: 'pedagogico', p_acao: 'ver' });
+    if (!pode) return reply({ erro: 'Sem permissão de Pedagógico.' }, 403, origin);
 
     const { data: config } = await admin.from('aviso_meet_config').select('instance_name').eq('id', 1).single();
     if (!config?.instance_name) return reply({ erro: 'Escolha a instância do WhatsApp primeiro.' }, 400, origin);
@@ -55,8 +55,8 @@ serve(async (req) => {
   }
 
   if (acao === 'salvar') {
-    const { data: pode } = await userClient.rpc('tem_permissao', { p_recurso: 'rh', p_acao: 'editar' });
-    if (!pode) return reply({ erro: 'Sem permissão de RH.' }, 403, origin);
+    const { data: pode } = await userClient.rpc('tem_permissao', { p_recurso: 'pedagogico', p_acao: 'editar' });
+    if (!pode) return reply({ erro: 'Sem permissão de Pedagógico.' }, 403, origin);
     const { error } = await admin.from('turmas').update({ grupo_whatsapp_jid: body.grupo_jid ?? null }).eq('id', body.turma_id);
     if (error) return reply({ erro: error.message }, 500, origin);
     return reply({ ok: true }, 200, origin);

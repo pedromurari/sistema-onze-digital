@@ -78,8 +78,8 @@ serve(async (req) => {
   const { data: userData, error: userErr } = await userClient.auth.getUser();
   if (userErr || !userData.user) return reply({ erro: 'Não autorizado.' }, 401, origin);
 
-  const { data: pode } = await userClient.rpc('tem_permissao', { p_recurso: 'rh', p_acao: 'editar' });
-  if (!pode) return reply({ erro: 'Sem permissão de RH.' }, 403, origin);
+  const { data: pode } = await userClient.rpc('tem_permissao', { p_recurso: 'pedagogico', p_acao: 'editar' });
+  if (!pode) return reply({ erro: 'Sem permissão de Pedagógico.' }, 403, origin);
 
   const body = await req.json().catch(() => ({}));
   const admin = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
