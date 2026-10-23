@@ -47,7 +47,10 @@ async function criarMeet(token: string, aula: Aula) {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        summary: `${aula.modulo ?? 'Aula'} · ${aula.turmas?.nome ?? 'Turma'}`,
+        // Nome da turma no banco carrega um sufixo de dono/investidor pra uso interno
+        // (ex: "Turma #02626/OnzeDS") -- o convite do Meet vai pro professor, sem
+        // precisar expor de quem é a turma, só o número.
+        summary: `${aula.modulo ?? 'Aula'} · ${(aula.turmas?.nome ?? 'Turma').split('/')[0].trim()}`,
         start: { dateTime: inicio, timeZone: 'America/Sao_Paulo' },
         end: { dateTime: fim, timeZone: 'America/Sao_Paulo' },
         conferenceData: {

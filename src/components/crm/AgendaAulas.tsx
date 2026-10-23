@@ -12,6 +12,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { NovaAulaDialog, PresencaDialog } from './rh/ListaPresenca';
 
+// Nome da turma no banco carrega um sufixo de dono/investidor pra uso interno
+// (ex: "Turma #02626/OnzeDS", "Turma #02426/Keila") -- quem só acessa o Pedagógico
+// (professora, equipe) não precisa saber de quem é a turma, só o número.
+function turmaNomeCurto(nome: string | null | undefined): string {
+  return nome?.split('/')[0]?.trim() ?? '';
+}
+
 interface Aula {
   id: string;
   turma_id: string;
@@ -179,7 +186,7 @@ export function AgendaAulas() {
       <div className="min-w-52"><Label htmlFor="agenda-turma">Turma</Label>
         <Select value={turmaId} onValueChange={value => { setTurmaId(value); setPage(0); }}>
           <SelectTrigger id="agenda-turma"><SelectValue placeholder="Todas as turmas" /></SelectTrigger>
-          <SelectContent><SelectItem value="todas">Todas as turmas</SelectItem>{(turmasQuery.data ?? []).map(turma => <SelectItem key={turma.id} value={turma.id}>{turma.nome}</SelectItem>)}</SelectContent>
+          <SelectContent><SelectItem value="todas">Todas as turmas</SelectItem>{(turmasQuery.data ?? []).map(turma => <SelectItem key={turma.id} value={turma.id}>{turmaNomeCurto(turma.nome)}</SelectItem>)}</SelectContent>
         </Select>
       </div>
       <div><Label htmlFor="agenda-mes">Mês das aulas</Label><Input id="agenda-mes" type="month" value={month} onChange={e => { setMonth(e.target.value); setPage(0); }} /></div>
@@ -191,7 +198,7 @@ export function AgendaAulas() {
       <p role="alert">Não foi possível carregar a agenda. Verifique seu acesso e tente atualizar.</p> : <>
         {aulas.length === 0 ? <p>Nenhuma aula encontrada para os filtros selecionados. Cadastre uma aula aqui na Agenda.</p> :
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{aulas.map(aula => <Card key={aula.id}><CardContent className="p-4 space-y-3">
-            <h2 className="font-semibold">{aula.modulo || 'Aula'} · {aula.turma?.nome || 'Turma não disponível'}</h2>
+            <h2 className="font-semibold">{aula.modulo || 'Aula'} · {turmaNomeCurto(aula.turma?.nome) || 'Turma não disponível'}</h2>
             <p>{aula.data.split('-').reverse().join('/')} · {aula.horario_inicio?.slice(0, 5) || 'Sem horário'} – {aula.horario_fim?.slice(0, 5) || 'Sem horário'}</p>
             <p className="text-sm text-muted-foreground">{aula.professor?.nome || 'Professor não disponível'} · {aula.status}</p>
             {canEdit && <Button size="sm" variant="outline" onClick={() => setPresencaAula(aula)}><UserCheck className="h-4 w-4 mr-2" />Registrar presença</Button>}
