@@ -165,6 +165,27 @@ Entregável final: sistema + Manual do Financeiro fechado → contratar auxiliar
 ### Fase 4 — Cockpit + entrega
 - [ ] Dashboard financeiro único. Manual fechado. Perfil de acesso da auxiliar (RLS).
 
+### Fase 5 — Diretoria Financeiro (pedido do Pedro, 2026-10-23)
+- [ ] **5.1** Reposicionar **Análise CFO** (`FinanceiroCFO.tsx`, view `financeiro_cfo`) como
+      **primeiro item** da seção Financeiro no menu (hoje fica perto do fim), renomeado pra
+      refletir que é o painel do Diretor Financeiro — mesma ideia das Diretorias de RH/
+      Comercial/Pedagógico (`src/components/crm/rh/DiretoriaRH.tsx`,
+      `comercial/DiretoriaComercial.tsx`, `pedagogico/DiretoriaPedagogico.tsx`: painel de
+      KPI em tempo real + bloco de playbook/decisões no final). `FinanceiroCFO.tsx` já é
+      um dashboard rico (15 abas) mas **não tem playbook** — adicionar esse bloco final com
+      as decisões já travadas da seção 2 deste documento (nada retroativo, regra de
+      repasse, as 6 contas, corte fiscal) em vez de duplicar o texto.
+- [ ] **5.2** Novo KPI na aba de Inadimplência/Parcelas: **cobertura de cobrança
+      automática** — achado em auditoria (2026-10-23): das parcelas em aberto de aluno
+      ativo, **só ~45% têm `link_pagamento_asaas`/`asaas_payment_id` preenchido**; o resto
+      não tem link nenhum pra cobrar automaticamente. Mostrar isso como card
+      ("X% das parcelas em aberto prontas pra cobrança automática") com ênfase nas
+      atrasadas (hoje só 43% das atrasadas têm link).
+- [ ] **5.3** Confirmar com o Pedro se usa o rastreio de resposta que já existe
+      (`cobranca_logs.respondeu_em`/`ultima_resposta` por disparo; `cobranca_ia_conversas`
+      + `cobranca_ia_mensagens.papel` por conversa) como KPI de "taxa de resposta às
+      mensagens de cobrança" na Diretoria — dado já existe, só falta agregar.
+
 ### Paralelo — Asaas (só alunos NOVOS; atuais continuam na Voomp)
 - [x] `matricula-boleto-mensal-gerar` generalizado atrás da trava `balanco_config.asaas_novos_ativo`
       (começa `false`). Quando `true`: cobre qualquer origem, só `data_matricula >= inicio_operacao_fiscal`

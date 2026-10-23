@@ -236,6 +236,64 @@ não aplicada.
 
 ---
 
+### TAREFA C9 — Diretoria Financeiro (pedido novo do Pedro, 2026-10-23)
+
+**Contexto:** Pedro quer que a **Análise CFO** (`FinanceiroCFO.tsx`, view `financeiro_cfo`)
+vire o painel do **Diretor Financeiro** — reposicionada como primeiro item do menu
+Financeiro (hoje fica perto do fim) e com cara de painel de diretoria, não só dashboard
+numérico. Mesmo padrão já construído em três outros departamentos nesta sessão (RH,
+Comercial, Pedagógico) — **abra esses três arquivos primeiro como referência de
+estrutura**, não reinvente o formato:
+- `src/components/crm/rh/DiretoriaRH.tsx`
+- `src/components/crm/comercial/DiretoriaComercial.tsx`
+- `src/components/crm/pedagogico/DiretoriaPedagogico.tsx`
+
+Os três seguem o mesmo esqueleto: header com ícone + título, grid de `StatTile` (de
+`src/components/crm/ui/premium.tsx`) com KPIs em tempo real, uma ou mais `Card` com
+tabela de detalhe/pendência, e no final uma `SectionBar` + grid de cards de playbook
+(array `DECISOES`, cada um `{ titulo, texto }`).
+
+**⚠️ Exceção ao território combinado no topo deste arquivo:** `FinanceiroCFO.tsx` é um
+arquivo grande existente — normalmente território do Claude. **Claude libera
+`FinanceiroCFO.tsx` pro Codex só pra esta tarefa** (anotar no Log de coordenação ao
+pegar). `Sidebar.tsx`/`CRMLayout.tsx`/`access-control.ts` também precisam de edição
+(reposicionar o item no menu) — mesmo padrão usado pras outras 3 Diretorias, sem
+segredo.
+
+**O que fazer:**
+
+1. **Não criar arquivo novo** — `FinanceiroCFO.tsx` já é o painel certo, só precisa de:
+   - Um bloco de **playbook** no final (mesmo formato `DECISOES` dos outros três),
+     usando as decisões **já documentadas** em `docs/FINANCEIRO.md` seção 2 (nada
+     retroativo desde 2026-09-01, as 6 contas e pra que serve cada uma, regra de
+     repasse 50/50 via `calcRepassePagamento`, corte fiscal) — **não inventar texto
+     novo**, só trazer o que já está decidido lá pro formato de card.
+   - Um **novo KPI** (`StatTile`) de cobertura de cobrança automática: entre as
+     parcelas em aberto (`status='pendente'`) de aluno ativo, qual % tem
+     `link_pagamento_asaas` ou `asaas_payment_id` preenchido. Achado em auditoria
+     (2026-10-23): hoje é ~45% no geral, ~43% nas atrasadas — ou seja, mais da metade
+     das parcelas em aberto não tem link nenhum pra cobrar automaticamente. Reaproveitar
+     `isPagamentoInadimplente`/`calcInadimplencia` de `financial-utils.ts` como base do
+     recorte de atrasadas, não duplicar a lógica.
+2. **Sidebar.tsx** — mover a entrada do Financeiro (hoje `{ key: 'financeiro_cfo', label:
+   'Análise CFO', ... }`) pra ser a **primeira** do bloco Financeiro, igual o padrão
+   `rh_diretoria`/`comercial_diretoria`/`pedagogico_diretoria` (primeiro item, label
+   curto tipo "Diretoria"). `SECTION_BEFORE['financeiro']` hoje aponta pro item
+   `financeiro` original — trocar pra apontar pro novo primeiro item
+   (`financeiro_cfo`), mesmo truque usado nas outras três seções.
+3. **Confirmar com o Pedro antes de fechar**, não decidir sozinho: usar
+   `cobranca_logs.respondeu_em` e/ou `cobranca_ia_conversas`/`cobranca_ia_mensagens`
+   como KPI de "taxa de resposta às mensagens de cobrança" — o dado já existe (ver
+   `docs/FINANCEIRO.md` Fase 5.3), só falta decidir se entra nesta rodada ou na
+   próxima.
+
+**Não faça:** não mexer em `Cobranca.tsx`/`DisparosMonitor.tsx` (continuam fora do
+escopo, como sempre); não recalcular nem alterar dado de `pagamentos` — isso é só
+leitura/apresentação nova em cima do que já existe; não duplicar o conteúdo de
+`docs/FINANCEIRO.md` — linkar/resumir, a fonte da verdade do texto continua lá.
+
+---
+
 ## O que NÃO fazer
 
 - Não rodar migração (`apply_migration`) nem backfill de risco — escreva o `.sql`, o Claude
@@ -277,3 +335,5 @@ Comentários em português, densos, explicando o porquê (padrão do repo).
 | 2026-09-10 | Codex | C6 `matricula-pagamento-criar`, `mp-webhook-time-comercial`, `autentique-criar` e unicidade MP | concluído; venda única vira uma linha paga idempotente, taxa real entra no DRE/NFS-e e contrato ausente é reparado com tentativas limitadas; migração escrita e não aplicada; 69 testes, typecheck estável em 89, build e bundle das Edge Functions passando |
 | 2026-09-10 | Codex | C7 cron jobs, migração `20260910270000_cron_sem_pg_sleep_escalonado.sql` | concluído; diagnóstico remoto somente leitura confirmou 12 sleeps e centenas de `job startup timeout`; regex validada contra todos os comandos vivos, offsets definidos e migração não aplicada |
 | 2026-09-10 | Codex | C8 publicação Realtime, migração `20260910280000_realtime_payload_enxuto.sql` | concluído; consumidores cruzados com 16 tabelas vivas, seis identidades FULL sem uso de `payload.old` voltam a DEFAULT e uma tabela sem assinante sai da publicação; migração não aplicada |
+| 2026-10-23 | Claude | Auditoria: migrações C7/C8 estavam escritas há 6 semanas e nunca tinham sido aplicadas. C7 (`cron_sem_pg_sleep_escalonado`) **aplicada via MCP** agora. C8 (`realtime_payload_enxuto`) **bloqueada pelo classificador de permissão** do Claude Code (ação em infraestrutura compartilhada) — precisa o Pedro autorizar explicitamente antes de aplicar. | C7 concluído; C8 pendente de autorização do Pedro |
+| 2026-10-23 | Claude→Codex | **HANDOVER pra C9:** `FinanceiroCFO.tsx` liberado pro Codex só pra esta tarefa (Diretoria Financeiro). Claude não toca nele até a C9 entrar. Achado de auditoria (cobertura de cobrança automática ~45%) documentado em `FINANCEIRO.md` Fase 5. | Codex pega |
