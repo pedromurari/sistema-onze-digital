@@ -175,10 +175,6 @@ export function AgendaAulas() {
       </div>}
     </div>
     {gerandoMeetMsg && <p role="status" className="text-sm text-emerald-500">{gerandoMeetMsg}</p>}
-    <div className="rounded-lg border p-4 text-sm bg-muted/30">
-      <p>Preparação para Google Meet: os links ainda não são gerados automaticamente.</p>
-      <p className="text-muted-foreground mt-1">A prévia abaixo mostra onde o professor verá o link. Entrega pelo Telegram e reagendamento pelo bot aguardam integração.</p>
-    </div>
     <div className="flex flex-wrap items-end gap-3">
       <div><Label htmlFor="agenda-periodo">Período</Label>
         <Select value={periodo} onValueChange={value => { setPeriodo(value as 'futuras' | 'historico'); setPage(0); }}>
