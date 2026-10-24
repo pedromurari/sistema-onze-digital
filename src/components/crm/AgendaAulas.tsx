@@ -34,7 +34,6 @@ interface Aula {
   aviso_erro: string | null;
   aviso_tentativas: number;
   turma: { nome: string; grupo_whatsapp_jid: string | null } | null;
-  professor: { nome: string } | null;
 }
 
 function avisoPrevisto(aula: Aula, antecedencia: number) {
@@ -86,22 +85,26 @@ export function AgendaAulas() {
       return data ?? [];
     },
   });
+  // RLS de `profissionais` é só-RH (guarda pix/valor) -- usa a RPC que expõe só
+  // id+nome+ativo pra quem tem 'pedagogico' ou 'rh', tanto pro seletor de "Nova aula"
+  // quanto pro nome do professor exibido em cada card abaixo.
   const profissionaisQuery = useQuery({
     queryKey: ['agenda-aulas-profissionais', user?.id],
-    enabled: Boolean(allowed && canEdit),
+    enabled: Boolean(allowed),
     queryFn: async ({ signal }) => {
-      const { data, error } = await supabase.from('profissionais').select('id,nome,ativo').eq('ativo', true).order('nome').abortSignal(signal);
+      const { data, error } = await supabase.rpc('pedagogico_profissionais_ativos').abortSignal(signal);
       if (error) throw error;
       return data ?? [];
     },
   });
+  const profissionalNomePorId = new Map((profissionaisQuery.data ?? []).map(p => [p.id, p.nome]));
   const query = useQuery({
     queryKey: ['agenda-aulas', user?.id, today, month, turmaId, periodo, page],
     enabled: Boolean(allowed && validMonth),
     queryFn: async ({ signal }) => {
       // Mesma tabela usada pela Lista de Presença; não duplicar os registros.
       let request = supabase.from('aulas')
-        .select('id,turma_id,profissional_id,data,horario_inicio,horario_fim,modulo,status,link_meet,aviso_status,aviso_enviado_em,aviso_erro,aviso_tentativas,turma:turmas(nome,grupo_whatsapp_jid),professor:profissionais(nome)');
+        .select('id,turma_id,profissional_id,data,horario_inicio,horario_fim,modulo,status,link_meet,aviso_status,aviso_enviado_em,aviso_erro,aviso_tentativas,turma:turmas(nome,grupo_whatsapp_jid)');
       request = periodo === 'futuras'
         ? request.gte('data', month && `${month}-01` > today ? `${month}-01` : today)
         : request.lt('data', today).gte('data', month ? `${month}-01` : '1900-01-01');
@@ -200,7 +203,7 @@ export function AgendaAulas() {
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{aulas.map(aula => <Card key={aula.id}><CardContent className="p-4 space-y-3">
             <h2 className="font-semibold">{aula.modulo || 'Aula'} · {turmaNomeCurto(aula.turma?.nome) || 'Turma não disponível'}</h2>
             <p>{aula.data.split('-').reverse().join('/')} · {aula.horario_inicio?.slice(0, 5) || 'Sem horário'} – {aula.horario_fim?.slice(0, 5) || 'Sem horário'}</p>
-            <p className="text-sm text-muted-foreground">{aula.professor?.nome || 'Professor não disponível'} · {aula.status}</p>
+            <p className="text-sm text-muted-foreground">{(aula.profissional_id && profissionalNomePorId.get(aula.profissional_id)) || 'Professor não disponível'} · {aula.status}</p>
             {canEdit && <Button size="sm" variant="outline" onClick={() => setPresencaAula(aula)}><UserCheck className="h-4 w-4 mr-2" />Registrar presença</Button>}
             <div className="border-t pt-3 space-y-2">
               <p className="text-sm font-medium flex items-center gap-2"><Video className="h-4 w-4" /> Google Meet</p>
@@ -246,6 +249,6 @@ export function AgendaAulas() {
       </>}
     {avisosAberto && <AvisosGrupoDialog aberto={avisosAberto} fechar={() => setAvisosAberto(false)} />}
     {novaAulaAberta && <NovaAulaDialog turmas={turmasQuery.data ?? []} profissionais={profissionaisQuery.data ?? []} fechar={criou => { setNovaAulaAberta(false); if (criou) void query.refetch(); }} />}
-    {presencaAula && <PresencaDialog aula={{ ...presencaAula, turmas: presencaAula.turma, profissionais: presencaAula.professor }} fechar={salvou => { setPresencaAula(null); if (salvou) void query.refetch(); }} />}
+    {presencaAula && <PresencaDialog aula={{ ...presencaAula, turmas: presencaAula.turma, profissionais: presencaAula.profissional_id ? { nome: profissionalNomePorId.get(presencaAula.profissional_id) ?? '' } : null }} fechar={salvou => { setPresencaAula(null); if (salvou) void query.refetch(); }} />}
   </div>;
 }
