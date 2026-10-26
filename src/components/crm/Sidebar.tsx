@@ -5,10 +5,10 @@ import { AppView, canAccessLancamento, canAccessView, getDefaultPermissions } fr
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
-  LayoutDashboard, Kanban, Settings, UserCog,
+  LayoutDashboard, Settings, UserCog,
   Rocket, BarChart3,
   ChevronLeft, ChevronRight, Plus, Brain, Scale, Menu,
-  GripVertical, Pencil, Check, CheckCircle2, MessageSquare, MessageCircle, TrendingUp, GitBranch, CalendarDays, Radio, Image, Handshake, Bot, Flame, Users, Contact, ReceiptText, Calculator, BriefcaseBusiness, FileCheck2, Megaphone, Target, Video, Presentation, GraduationCap,
+  GripVertical, Pencil, Check, CheckCircle2, MessageSquare, MessageCircle, TrendingUp, GitBranch, CalendarDays, Radio, Image, Handshake, Bot, Flame, Users, Contact, ReceiptText, Calculator, BriefcaseBusiness, FileCheck2, Megaphone, Target, Video, Presentation, GraduationCap, Cake, ClipboardList,
 } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { LancamentoWizard } from '@/components/crm/LancamentoWizard';
@@ -31,6 +31,7 @@ const BASE_MENU: MenuItem[] = [
   { key: 'dashboard',                  label: 'Dashboard',           icon: LayoutDashboard },
   // CRM
   { key: 'pessoas',                    label: 'Pessoas',             icon: Contact },
+  { key: 'ceo_rotina',                 label: 'CEO',                  icon: ClipboardList, adminOnly: true },
   // DP Comercial
   { key: 'comercial_diretoria',        label: 'Diretoria',            icon: Megaphone },
   { key: 'time_comercial',             label: 'Time Comercial',      icon: Users },
@@ -38,6 +39,7 @@ const BASE_MENU: MenuItem[] = [
   { group: 'lancamentos_legado',       label: 'Semana do Despertar', icon: Rocket,       children: [] },
   { group: 'npa_dinamico',            label: 'IDM Pelo Brasil',       icon: BarChart3,    children: [] },
   { key: 'workshops',                  label: 'Workshop',            icon: Presentation },
+  { key: 'webinario',                  label: 'Webinário',           icon: Video },
   { key: 'parceiros',                  label: 'Rede de Influência',  icon: Handshake,   adminOnly: true },
   // Funil & Automação
   { key: 'funil_lancamento',          label: 'Funil de Lançamento',  icon: GitBranch },
@@ -51,15 +53,16 @@ const BASE_MENU: MenuItem[] = [
   { key: 'marketing_diretoria',       label: 'Diretor',              icon: Megaphone },
   { key: 'posts',                     label: 'Post',                 icon: Image,       adminOnly: true },
   { key: 'operacoes_calendario_conteudo', label: 'Social Media',     icon: Image },
+  { key: 'marketing_aniversariantes',    label: 'Aniversariantes',  icon: Cake, adminOnly: true },
   { key: 'reels_idm',                 label: 'Reels IDM',            icon: Video },
   { key: 'trafego_gestor',            label: 'Gestor de Tráfego',    icon: Target },
   // Financeiro
+  { key: 'financeiro_cfo',            label: 'Diretoria',             icon: TrendingUp },
   { key: 'financeiro',                label: 'Financeiro',           icon: BarChart3 },
   { key: 'financeiro_notas',          label: 'Notas Fiscais',        icon: ReceiptText },
   { key: 'financeiro_dre',            label: 'DRE',                   icon: Calculator },
   { key: 'financeiro_conciliacao',    label: 'Conciliação',          icon: Scale },
   { key: 'financeiro_socios',         label: 'Sócios',               icon: Users },
-  { key: 'financeiro_cfo',           label: 'Análise CFO',           icon: TrendingUp },
   { key: 'balanco',                  label: 'Balanço',               icon: Scale },
   { key: 'cobranca',                 label: 'Cobrança',              icon: MessageSquare },
   // DP RH
@@ -71,6 +74,7 @@ const BASE_MENU: MenuItem[] = [
   { key: 'provas_trabalhos',         label: 'Provas e Trabalhos',   icon: FileCheck2 },
   { key: 'agenda_aulas', label: 'Agenda de Aulas', icon: CalendarDays },
   // Admin
+  { key: 'operacoes_calendario_geral', label: 'Calendário Geral', icon: CalendarDays },
   { key: 'mapa_mental',              label: 'Mapa Mental',           icon: Brain },
   { key: 'equipe_11ds',              label: 'Equipe 11DS',           icon: Bot,        adminOnly: true },
   { key: 'team',                    label: 'Equipe',                  icon: UserCog, adminOnly: true },
@@ -98,7 +102,16 @@ function applyOrder(menu: MenuItem[], order: string[]): MenuItem[] {
   const map = new Map(menu.map(item => [getItemId(item), item]));
   const sorted = order.map(id => map.get(id)).filter(Boolean) as MenuItem[];
   const rest = menu.filter(item => !order.includes(getItemId(item)));
-  return [...sorted, ...rest];
+  const result = [...sorted, ...rest];
+  // Preserva a organização salva, mas mantém a diretoria abrindo o bloco financeiro.
+  const financeiroIds = new Set(['financeiro', 'financeiro_notas', 'financeiro_dre', 'financeiro_conciliacao', 'financeiro_socios', 'balanco', 'cobranca']);
+  const diretoria = result.find(item => getItemId(item) === 'financeiro_cfo');
+  if (!diretoria) return result;
+  const demais = result.filter(item => item !== diretoria);
+  const inicio = demais.findIndex(item => financeiroIds.has(getItemId(item)));
+  if (inicio < 0) return result;
+  demais.splice(inicio, 0, diretoria);
+  return demais;
 }
 
 function SectionDivider({ label }: { label: string }) {
@@ -122,7 +135,7 @@ export function Sidebar({ currentView, onViewChange, mobileMenuOpen, onMobileMen
     lancamentos_legado: 'Canais de Aquisição',
     funil_lancamento:   'Funil & Automação',
     marketing_diretoria: 'DP Marketing',
-    financeiro:         'Financeiro',
+    financeiro_cfo:     'Financeiro',
     rh_diretoria:       'DP RH',
     pedagogico_diretoria: 'Pedagógico',
     mapa_mental:        'Admin',
@@ -506,7 +519,7 @@ export function MobileNav({ currentView, onViewChange, onOpenMore }: MobileNavPr
   const quickItems: { key: View; label: string; icon: React.ElementType }[] = [
     { key: 'dashboard',                  label: 'Início',     icon: LayoutDashboard },
     { key: 'financeiro',                 label: 'Financeiro', icon: BarChart3 },
-    { key: 'operacoes_tarefas',          label: 'Tarefas',    icon: Kanban },
+    { key: 'operacoes_calendario_conteudo', label: 'Conteúdo', icon: Image },
   ];
 
   const visibleItems = quickItems.filter(item => canAccessView(item.key, permissions, Boolean(isAdmin), matrix));

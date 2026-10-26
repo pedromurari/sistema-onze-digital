@@ -4,6 +4,8 @@ export interface AccessPermissions {
   canViewAllLancamentos: boolean;
   allowedLancamentoIds: string[];
   canViewNpa: boolean;
+  canViewWorkshops: boolean;
+  canViewWebinario: boolean;
   canViewFinanceiro: boolean;
   canViewFinanceiroCfo: boolean;
   canViewAllFinanceiroTurmas: boolean;
@@ -63,6 +65,8 @@ export function permissionsFromMatrix(
     canViewAllLancamentos:       matrix['lancamentos']?.ver_todos ?? d.canViewAllLancamentos,
     allowedLancamentoIds:        escopo?.allowedLancamentoIds     ?? d.allowedLancamentoIds,
     canViewNpa:                  podeVer(matrix, 'npa',            d.canViewNpa),
+    canViewWorkshops:            podeVer(matrix, 'workshops',      d.canViewWorkshops),
+    canViewWebinario:            podeVer(matrix, 'webinario',      d.canViewWebinario),
     canViewFinanceiro:           podeVer(matrix, 'financeiro',     d.canViewFinanceiro),
     canViewFinanceiroCfo:        podeVer(matrix, 'financeiro_cfo', d.canViewFinanceiroCfo),
     canViewAllFinanceiroTurmas:  matrix['financeiro']?.ver_todos  ?? d.canViewAllFinanceiroTurmas,
@@ -86,6 +90,8 @@ export function permissionsToToggles(permissions: AccessPermissions): Permission
     { recurso: 'lancamentos',      acao: 'ver',       permitido: permissions.canViewLancamentos },
     { recurso: 'lancamentos',      acao: 'ver_todos', permitido: permissions.canViewAllLancamentos },
     { recurso: 'npa',              acao: 'ver',       permitido: permissions.canViewNpa },
+    { recurso: 'workshops',        acao: 'ver',       permitido: permissions.canViewWorkshops },
+    { recurso: 'webinario',        acao: 'ver',       permitido: permissions.canViewWebinario },
     { recurso: 'financeiro',       acao: 'ver',       permitido: permissions.canViewFinanceiro },
     { recurso: 'financeiro',       acao: 'ver_todos', permitido: permissions.canViewAllFinanceiroTurmas },
     { recurso: 'financeiro_cfo',   acao: 'ver',       permitido: permissions.canViewFinanceiroCfo },
@@ -120,9 +126,8 @@ const RECURSO_POR_VIEW: Record<string, string> = {
   // A Diretoria Comercial compartilha o mesmo recurso de Time Comercial — é a mesma
   // área, só uma visão executiva em cima dela.
   comercial_diretoria:           'time_comercial',
-  // Workshop ainda não tem recurso próprio na matriz (é só placeholder por enquanto) —
-  // reaproveita a mesma visibilidade de NPA, por ser outro canal de aquisição.
-  workshops:                     'npa',
+  workshops:                     'workshops',
+  webinario:                     'webinario',
   // O esboço de RH compartilha temporariamente o acesso de Gestão/Mapa Mental.
   // Antes de armazenar salários ou notas fiscais, ele ganhará recurso próprio na
   // matriz para separar quem vê processos de quem vê remuneração.
@@ -144,7 +149,7 @@ export type AppView =
   | 'team' | 'settings' | 'cobranca' | 'funil_lancamento' | 'disparos_monitor' | 'chat_conversas'
   | 'operacoes_tarefas' | 'operacoes_calendario_geral' | 'operacoes_calendario_conteudo' | 'reels_idm'
   | 'mapa_mental' | 'rh_diretoria' | 'rh' | 'rh_fechamento_folha' | 'provas_trabalhos' | 'pedagogico_diretoria' | 'franquia_psi' | 'posts' | 'parceiros' | 'equipe_11ds'
-  | 'aquecimento_chips' | 'time_comercial' | 'comercial_diretoria' | 'pessoas' | 'workshops'
+  | 'aquecimento_chips' | 'time_comercial' | 'comercial_diretoria' | 'pessoas' | 'workshops' | 'webinario' | 'ceo_rotina'
   | 'marketing_diretoria' | 'marketing_aniversariantes' | 'trafego_gestor' | 'trafego_regras';
 
 export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
@@ -153,6 +158,8 @@ export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
   canViewAllLancamentos: true,
   allowedLancamentoIds: [],
   canViewNpa: true,
+  canViewWorkshops: false,
+  canViewWebinario: false,
   canViewFinanceiro: true,
   canViewFinanceiroCfo: false,
   canViewAllFinanceiroTurmas: true,
@@ -170,6 +177,8 @@ export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
 
 export const DEFAULT_ADMIN_PERMISSIONS: AccessPermissions = {
   ...DEFAULT_NON_ADMIN_PERMISSIONS,
+  canViewWorkshops: true,
+  canViewWebinario: true,
   canViewCobranca: true,
   canViewTeam: true,
   canViewSettings: true,
@@ -187,6 +196,8 @@ export const DEFAULT_PROFESSORA_PERMISSIONS: AccessPermissions = {
   canViewAllLancamentos: false,
   allowedLancamentoIds: [],
   canViewNpa: false,
+  canViewWorkshops: false,
+  canViewWebinario: false,
   canViewFinanceiro: false,
   canViewFinanceiroCfo: false,
   canViewAllFinanceiroTurmas: false,
@@ -219,6 +230,8 @@ export function normalizePermissionsRow(row: any, role?: string): AccessPermissi
     canViewAllLancamentos: row.can_view_all_lancamentos ?? defaults.canViewAllLancamentos,
     allowedLancamentoIds: Array.isArray(row.allowed_lancamento_ids) ? row.allowed_lancamento_ids.filter(Boolean) : defaults.allowedLancamentoIds,
     canViewNpa: row.can_view_npa ?? defaults.canViewNpa,
+    canViewWorkshops: defaults.canViewWorkshops,
+    canViewWebinario: defaults.canViewWebinario,
     canViewFinanceiro: row.can_view_financeiro ?? defaults.canViewFinanceiro,
     canViewFinanceiroCfo: row.can_view_financeiro_cfo ?? defaults.canViewFinanceiroCfo,
     canViewAllFinanceiroTurmas: row.can_view_all_financeiro_turmas ?? defaults.canViewAllFinanceiroTurmas,
@@ -307,7 +320,8 @@ export function canAccessView(
     time_comercial: permissions.canViewTimeComercial,
     comercial_diretoria: permissions.canViewTimeComercial,
     npa_overview: permissions.canViewNpa,
-    workshops: permissions.canViewNpa,
+    workshops: permissions.canViewWorkshops,
+    webinario: permissions.canViewWebinario,
     lancamentos_overview: permissions.canViewLancamentos,
     financeiro: permissions.canViewFinanceiro,
     financeiro_notas: permissions.canViewFinanceiro,
@@ -332,6 +346,7 @@ export function canAccessView(
     pedagogico_diretoria: permissions.canViewMapaMental,
     posts: false, // admin-only — isAdmin check at top of function already handles it
     parceiros: false, // admin-only — isAdmin check at top of function already handles it
+    ceo_rotina: false, // admin-only — isAdmin check at top of function already handles it
     equipe_11ds: false, // admin-only — isAdmin check at top of function already handles it
     franquia_psi: permissions.canViewFranquiaPsi,
     aquecimento_chips: false, // admin-only — isAdmin check at top of function already handles it

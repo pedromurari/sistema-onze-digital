@@ -42,11 +42,14 @@ const NPAKanban        = lazy(() => import('./NPAKanban'));
 const Posts             = lazy(() => import('./Posts').then(m => ({ default: m.Posts })));
 const ReelsIDM           = lazy(() => import('./ReelsIDM').then(m => ({ default: m.ReelsIDM })));
 const Parceiros         = lazy(() => import('./Parceiros').then(m => ({ default: m.Parceiros })));
+const CeoRotina          = lazy(() => import('./CeoRotina').then(m => ({ default: m.CeoRotina })));
 const Workshops          = lazy(() => import('./Workshops').then(m => ({ default: m.Workshops })));
+const WebinarioPainel    = lazy(() => import('./webinario/WebinarioPainel').then(m => ({ default: m.WebinarioPainel })));
 const Equipe11ds        = lazy(() => import('./Equipe11ds').then(m => ({ default: m.Equipe11ds })));
 const TimeComercial      = lazy(() => import('./TimeComercial').then(m => ({ default: m.TimeComercial })));
 const DiretoriaComercial = lazy(() => import('./comercial/DiretoriaComercial').then(m => ({ default: m.DiretoriaComercial })));
 const MarketingDiretoria = lazy(() => import('./MarketingDiretoria').then(m => ({ default: m.MarketingDiretoria })));
+const Aniversariantes = lazy(() => import('./marketing/Aniversariantes').then(m => ({ default: m.Aniversariantes })));
 const GestorTrafego      = lazy(() => import('./GestorTrafego').then(m => ({ default: m.GestorTrafego })));
 const RegrasAutomacao    = lazy(() => import('./RegrasAutomacao').then(m => ({ default: m.RegrasAutomacao })));
 
@@ -213,6 +216,7 @@ export function CRMLayout() {
       case 'npa_overview': return <NPAEventos onOpenEvento={(id) => setCurrentView(`npa_${id}` as View)} />;
       case 'lancamentos_overview': return <LancamentosOverview onOpenLancamento={(id) => setCurrentView(`lancamentos_${id}` as View)} />;
       case 'marketing_diretoria': return <MarketingDiretoria />;
+      case 'marketing_aniversariantes': return isAdmin ? <Aniversariantes /> : <RestrictedView />;
       case 'trafego_gestor': return <GestorTrafego />;
       case 'trafego_regras': return <RegrasAutomacao />;
       case 'financeiro': return <Financeiro />;
@@ -253,7 +257,9 @@ export function CRMLayout() {
       case 'pedagogico_diretoria': return <DiretoriaPedagogico />;
       case 'posts': return isAdmin ? <Posts /> : <RestrictedView />;
       case 'parceiros': return isAdmin ? <Parceiros /> : <RestrictedView />;
+      case 'ceo_rotina': return isAdmin ? <CeoRotina /> : <RestrictedView />;
       case 'workshops': return <Workshops />;
+      case 'webinario': return <WebinarioPainel />;
       case 'equipe_11ds': return isAdmin
         ? <Equipe11ds onNavigateToPosts={() => setCurrentView('posts')} onNavigateToAluno={(alunoId) => setCurrentView(`financeiro_aluno_${alunoId}` as View)} />
         : <RestrictedView />;
