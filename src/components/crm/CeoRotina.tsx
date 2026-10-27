@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StatTile, SectionBar } from '@/components/crm/ui/premium';
 
-interface ItemRotina { id: string; departamento: string; texto: string; ordem: number; ativo: boolean; }
+interface ItemRotina { id: string; departamento: string; texto: string; ordem: number; ativo: boolean; data_alvo: string | null; }
 
 const DEPARTAMENTOS: { valor: string; label: string }[] = [
   { valor: 'financeiro', label: 'Financeiro' },
@@ -35,7 +35,7 @@ export function CeoRotina() {
   const carregar = async () => {
     setCarregando(true);
     const [itensRes, concluidosRes] = await Promise.all([
-      supabase.from('ceo_rotina_itens').select('*').eq('ativo', true).order('ordem'),
+      supabase.from('ceo_rotina_itens').select('*').eq('ativo', true).or(`data_alvo.is.null,data_alvo.eq.${hoje}`).order('ordem'),
       supabase.from('ceo_rotina_conclusoes').select('item_id').eq('data', hoje),
     ]);
     setItens((itensRes.data as ItemRotina[]) ?? []);
