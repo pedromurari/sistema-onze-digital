@@ -6,6 +6,7 @@ export interface AccessPermissions {
   canViewNpa: boolean;
   canViewWorkshops: boolean;
   canViewWebinario: boolean;
+  canViewDiva: boolean;
   canViewFinanceiro: boolean;
   canViewFinanceiroCfo: boolean;
   canViewAllFinanceiroTurmas: boolean;
@@ -67,6 +68,7 @@ export function permissionsFromMatrix(
     canViewNpa:                  podeVer(matrix, 'npa',            d.canViewNpa),
     canViewWorkshops:            podeVer(matrix, 'workshops',      d.canViewWorkshops),
     canViewWebinario:            podeVer(matrix, 'webinario',      d.canViewWebinario),
+    canViewDiva:                 podeVer(matrix, 'diva',           d.canViewDiva),
     canViewFinanceiro:           podeVer(matrix, 'financeiro',     d.canViewFinanceiro),
     canViewFinanceiroCfo:        podeVer(matrix, 'financeiro_cfo', d.canViewFinanceiroCfo),
     canViewAllFinanceiroTurmas:  matrix['financeiro']?.ver_todos  ?? d.canViewAllFinanceiroTurmas,
@@ -92,6 +94,7 @@ export function permissionsToToggles(permissions: AccessPermissions): Permission
     { recurso: 'npa',              acao: 'ver',       permitido: permissions.canViewNpa },
     { recurso: 'workshops',        acao: 'ver',       permitido: permissions.canViewWorkshops },
     { recurso: 'webinario',        acao: 'ver',       permitido: permissions.canViewWebinario },
+    { recurso: 'diva',             acao: 'ver',       permitido: permissions.canViewDiva },
     { recurso: 'financeiro',       acao: 'ver',       permitido: permissions.canViewFinanceiro },
     { recurso: 'financeiro',       acao: 'ver_todos', permitido: permissions.canViewAllFinanceiroTurmas },
     { recurso: 'financeiro_cfo',   acao: 'ver',       permitido: permissions.canViewFinanceiroCfo },
@@ -128,6 +131,7 @@ const RECURSO_POR_VIEW: Record<string, string> = {
   comercial_diretoria:           'time_comercial',
   workshops:                     'workshops',
   webinario:                     'webinario',
+  diva:                          'diva',
   // O esboço de RH compartilha temporariamente o acesso de Gestão/Mapa Mental.
   // Antes de armazenar salários ou notas fiscais, ele ganhará recurso próprio na
   // matriz para separar quem vê processos de quem vê remuneração.
@@ -149,7 +153,7 @@ export type AppView =
   | 'team' | 'settings' | 'cobranca' | 'funil_lancamento' | 'disparos_monitor' | 'chat_conversas'
   | 'operacoes_tarefas' | 'operacoes_calendario_geral' | 'operacoes_calendario_conteudo' | 'reels_idm'
   | 'mapa_mental' | 'rh_diretoria' | 'rh' | 'rh_fechamento_folha' | 'provas_trabalhos' | 'pedagogico_diretoria' | 'franquia_psi' | 'posts' | 'parceiros' | 'equipe_11ds'
-  | 'aquecimento_chips' | 'time_comercial' | 'comercial_diretoria' | 'pessoas' | 'workshops' | 'webinario' | 'ceo_rotina'
+  | 'aquecimento_chips' | 'time_comercial' | 'comercial_diretoria' | 'pessoas' | 'workshops' | 'webinario' | 'ceo_rotina' | 'diva'
   | 'marketing_diretoria' | 'marketing_aniversariantes' | 'trafego_gestor' | 'trafego_regras';
 
 export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
@@ -160,6 +164,7 @@ export const DEFAULT_NON_ADMIN_PERMISSIONS: AccessPermissions = {
   canViewNpa: true,
   canViewWorkshops: false,
   canViewWebinario: false,
+  canViewDiva: false,
   canViewFinanceiro: true,
   canViewFinanceiroCfo: false,
   canViewAllFinanceiroTurmas: true,
@@ -179,6 +184,7 @@ export const DEFAULT_ADMIN_PERMISSIONS: AccessPermissions = {
   ...DEFAULT_NON_ADMIN_PERMISSIONS,
   canViewWorkshops: true,
   canViewWebinario: true,
+  canViewDiva: true,
   canViewCobranca: true,
   canViewTeam: true,
   canViewSettings: true,
@@ -198,6 +204,7 @@ export const DEFAULT_PROFESSORA_PERMISSIONS: AccessPermissions = {
   canViewNpa: false,
   canViewWorkshops: false,
   canViewWebinario: false,
+  canViewDiva: false,
   canViewFinanceiro: false,
   canViewFinanceiroCfo: false,
   canViewAllFinanceiroTurmas: false,
@@ -232,6 +239,7 @@ export function normalizePermissionsRow(row: any, role?: string): AccessPermissi
     canViewNpa: row.can_view_npa ?? defaults.canViewNpa,
     canViewWorkshops: defaults.canViewWorkshops,
     canViewWebinario: defaults.canViewWebinario,
+    canViewDiva: defaults.canViewDiva,
     canViewFinanceiro: row.can_view_financeiro ?? defaults.canViewFinanceiro,
     canViewFinanceiroCfo: row.can_view_financeiro_cfo ?? defaults.canViewFinanceiroCfo,
     canViewAllFinanceiroTurmas: row.can_view_all_financeiro_turmas ?? defaults.canViewAllFinanceiroTurmas,
@@ -322,6 +330,7 @@ export function canAccessView(
     npa_overview: permissions.canViewNpa,
     workshops: permissions.canViewWorkshops,
     webinario: permissions.canViewWebinario,
+    diva: permissions.canViewDiva,
     lancamentos_overview: permissions.canViewLancamentos,
     financeiro: permissions.canViewFinanceiro,
     financeiro_notas: permissions.canViewFinanceiro,

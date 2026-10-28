@@ -16,6 +16,14 @@ const AreaMembros     = React.lazy(() => import("./pages/AreaMembros"));
 const Checkout        = React.lazy(() => import("./pages/Checkout"));
 const LinkRedirect    = React.lazy(() => import("./pages/LinkRedirect"));
 const PresencaPublica = React.lazy(() => import("./pages/PresencaPublica"));
+const WebinarioCaptura  = React.lazy(() => import("./pages/webinario/WebinarioCaptura"));
+const WebinarioObrigado = React.lazy(() => import("./pages/webinario/WebinarioObrigado"));
+const WebinarioSala     = React.lazy(() => import("./pages/webinario/WebinarioSala"));
+const WebinarioOferta   = React.lazy(() => import("./pages/webinario/WebinarioOferta"));
+const WorkshopCaptura   = React.lazy(() => import("./pages/WorkshopCaptura"));
+const WorkshopConfirmacao = React.lazy(() => import("./pages/WorkshopConfirmacao"));
+const DivaCaptura      = React.lazy(() => import("./pages/DivaCaptura"));
+const DivaConfirmacao  = React.lazy(() => import("./pages/DivaConfirmacao"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -98,6 +106,14 @@ const App = () => (
               <Route path="/assinar/:token"         element={<ContratoPublico />} />
               <Route path="/membros/:token"         element={<AreaMembros />} />
               <Route path="/comprar/:produtoId"     element={<Checkout />} />
+              <Route path="/webinario/:slug"              element={<WebinarioCaptura />} />
+              <Route path="/webinario/obrigado/:slug"     element={<WebinarioObrigado />} />
+              <Route path="/webinario/sala/:sessionId"    element={<WebinarioSala />} />
+              <Route path="/webinario/oferta/:slug"       element={<WebinarioOferta />} />
+              <Route path="/workshop/:slug"               element={<WorkshopCaptura />} />
+              <Route path="/workshop/confirmacao/:inscricaoId" element={<WorkshopConfirmacao />} />
+              <Route path="/diva"                         element={<DivaCaptura />} />
+              <Route path="/diva/confirmacao/:leadId"      element={<DivaConfirmacao />} />
               <Route path="/ir/:slug"               element={<LinkRedirect />} />
               <Route path="/"                       element={<Index />} />
               <Route path="*"                       element={<NotFound />} />
