@@ -43,11 +43,28 @@ serve(async req => {
   try {
     const body = await req.json();
     const alunoId = body?.aluno_id;
-    const chave = typeof body?.chave === 'string' ? body.chave : '';
     if (typeof alunoId !== 'string' || !UUID.test(alunoId)) return reply({ erro: 'Link inválido.' }, 400, origin);
     const url = Deno.env.get('SUPABASE_URL');
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     if (!url || !serviceKey) return reply({ erro: 'Serviço indisponível.' }, 503, origin);
+
+    if (body.acao === 'gerar_link') {
+      const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+      const bearer = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || '';
+      if (!anonKey || !bearer) return reply({ erro: 'Acesso restrito.' }, 403, origin);
+      const userDb = createClient(url, anonKey, {
+        auth: { persistSession: false }, global: { headers: { Authorization: `Bearer ${bearer}` } },
+      });
+      const { data: identity, error: authError } = await userDb.auth.getUser(bearer);
+      if (authError || !identity.user) return reply({ erro: 'Acesso restrito.' }, 403, origin);
+      const { data: pode } = await userDb.rpc('tem_permissao', { p_recurso: 'pedagogico', p_acao: 'editar' });
+      if (!pode) return reply({ erro: 'Sem permissão de Pedagógico.' }, 403, origin);
+      return reply({
+        link: `https://sistema.idmpsi.com.br/atualizar-dados/${alunoId}?chave=${await alunoToken(alunoId, serviceKey)}`,
+      }, 200, origin);
+    }
+
+    const chave = typeof body?.chave === 'string' ? body.chave : '';
     if (!sameToken(chave, await alunoToken(alunoId, serviceKey))) return reply({ erro: 'Link inválido.' }, 403, origin);
 
     const db = createClient(url, serviceKey, { auth: { persistSession: false } });
