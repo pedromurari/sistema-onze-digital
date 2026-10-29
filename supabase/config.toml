@@ -55,3 +55,19 @@ verify_jwt = false
 # O link privado do professor usa assinatura HMAC feita apenas no servidor.
 [functions.presenca-publica]
 verify_jwt = false
+
+# Formulário público: completa só os campos vazios do cadastro, protegido por
+# link HMAC individual (mesmo esquema do link do professor acima).
+[functions.aluno-atualizar-dados]
+verify_jwt = false
+
+# Entrada pública: cada função valida os dados e o webhook consulta o
+# pagamento diretamente no Mercado Pago antes de confirmar a inscrição.
+[functions.workshop-registrar]
+verify_jwt = false
+
+[functions.workshop-status]
+verify_jwt = false
+
+[functions.workshop-pagamento-webhook]
+verify_jwt = false

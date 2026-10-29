@@ -127,7 +127,11 @@ serve(async req => {
       if (!cpfAllowed) return reply({ erro: 'Muitas tentativas. Tente novamente mais tarde.' }, 429, origin);
       const { data: alunos, error: alunoError } = await db.rpc('ped_buscar_aluno_cpf', { p_cpf: cpf });
       if (alunoError) throw alunoError;
-      const aluno = alunos?.length === 1 ? alunos[0] : null;
+      // Alunos matriculados em mais de uma turma aparecem em varias linhas aqui --
+      // prioriza a matricula da turma desta aula; so cai pro length===1 (e no erro
+      // generico de "turma diferente" sem matricula nenhuma bater) quando nao ha.
+      const aluno = alunos?.find((a: { turma_id: string }) => a.turma_id === aula.turma_id)
+        ?? (alunos?.length === 1 ? alunos[0] : null);
       // Tolera 1 dia de diferenca na data de nascimento -- cadastros antigos tem um
       // desvio de fuso horario que deixa a data gravada um dia antes da real.
       const nascimentoBate = aluno ? Math.abs(

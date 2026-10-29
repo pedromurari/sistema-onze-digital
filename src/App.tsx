@@ -16,6 +16,7 @@ const AreaMembros     = React.lazy(() => import("./pages/AreaMembros"));
 const Checkout        = React.lazy(() => import("./pages/Checkout"));
 const LinkRedirect    = React.lazy(() => import("./pages/LinkRedirect"));
 const PresencaPublica = React.lazy(() => import("./pages/PresencaPublica"));
+const AtualizarDados   = React.lazy(() => import("./pages/AtualizarDados"));
 const WebinarioCaptura  = React.lazy(() => import("./pages/webinario/WebinarioCaptura"));
 const WebinarioObrigado = React.lazy(() => import("./pages/webinario/WebinarioObrigado"));
 const WebinarioSala     = React.lazy(() => import("./pages/webinario/WebinarioSala"));
@@ -90,6 +91,7 @@ const App = () => (
               {/* Rotas públicas — sem autenticação */}
               <Route path="/forms/tarefa/:tarefaId" element={<TarefaPublica />} />
               <Route path="/presenca/:aulaId" element={<PresencaPublica />} />
+              <Route path="/atualizar-dados/:alunoId" element={<AtualizarDados />} />
               <Route path="/formulario/:token"      element={<FormularioAluno />} />
               <Route path="/matricula/:vendedor"    element={<MatriculaTimeComercial />} />
               {/* Pré-matrícula: mesmo formulário, mas só boleto e com a 1ª
