@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-type Info = { nome: string; cpf_cadastrado: boolean; nascimento_cadastrado: boolean };
+type Info = { nome: string; cpf_cadastrado: boolean; nascimento_cadastrado: boolean; endereco_cadastrado: boolean };
 
 async function chamar(acao: string, alunoId: string, chave: string, campos: Record<string, unknown> = {}) {
   const { data, error } = await supabase.functions.invoke('aluno-atualizar-dados', {
@@ -32,6 +32,14 @@ export default function AtualizarDados() {
   const [info, setInfo] = useState<Info | null>(null);
   const [cpf, setCpf] = useState('');
   const [nascimento, setNascimento] = useState('');
+  const [cep, setCep] = useState('');
+  const [logradouro, setLogradouro] = useState('');
+  const [numero, setNumero] = useState('');
+  const [complemento, setComplemento] = useState('');
+  const [cidade, setCidade] = useState('');
+  const [uf, setUf] = useState('');
+  const [buscandoCep, setBuscandoCep] = useState(false);
+  const [cepEncontrado, setCepEncontrado] = useState(false);
   const [carregando, setCarregando] = useState(true);
   const [enviando, setEnviando] = useState(false);
   const [enviado, setEnviado] = useState(false);
@@ -47,18 +55,44 @@ export default function AtualizarDados() {
     return () => { ativo = false; };
   }, [alunoId, chave]);
 
+  // Busca a cidade automaticamente assim que o CEP tem 8 dígitos -- menos
+  // chance de nota fiscal rejeitada por cidade/UF escritos errado (achado
+  // 2026-10-29: cidade sem UF ou com erro de digitação trava a emissão).
+  useEffect(() => {
+    const digits = cep.replace(/\D/g, '');
+    if (digits.length !== 8) { setCepEncontrado(false); return; }
+    let ativo = true;
+    setBuscandoCep(true);
+    fetch(`https://viacep.com.br/ws/${digits}/json/`)
+      .then(res => res.json())
+      .then((data: { erro?: boolean; logradouro?: string; localidade?: string; uf?: string }) => {
+        if (!ativo) return;
+        if (data.erro) { setCepEncontrado(false); return; }
+        setLogradouro(data.logradouro || '');
+        setCidade(data.localidade || '');
+        setUf(data.uf || '');
+        setCepEncontrado(true);
+      })
+      .catch(() => { if (ativo) setCepEncontrado(false); })
+      .finally(() => { if (ativo) setBuscandoCep(false); });
+    return () => { ativo = false; };
+  }, [cep]);
+
   async function salvar(event: FormEvent) {
     event.preventDefault();
     if (enviando) return;
     setErro(''); setEnviando(true);
     try {
-      await chamar('salvar', alunoId, chave, { cpf, data_nascimento: nascimento });
+      await chamar('salvar', alunoId, chave, {
+        cpf, data_nascimento: nascimento,
+        cep, logradouro, numero, complemento, cidade, uf,
+      });
       setEnviado(true);
     } catch (error) { setErro(error instanceof Error ? error.message : 'Não foi possível salvar.'); }
     finally { setEnviando(false); }
   }
 
-  const faltaAlgo = info && (!info.cpf_cadastrado || !info.nascimento_cadastrado);
+  const faltaAlgo = info && (!info.cpf_cadastrado || !info.nascimento_cadastrado || !info.endereco_cadastrado);
 
   return <main className="min-h-screen bg-background px-4 py-8 text-foreground sm:py-12">
     <div className="mx-auto max-w-xl space-y-5">
@@ -74,7 +108,7 @@ export default function AtualizarDados() {
       {info && <Card><CardHeader>
         <p className="text-xs font-semibold uppercase tracking-wide text-primary">Olá, {info.nome.split(' ')[0]}</p>
         <CardTitle>Complete seu cadastro</CardTitle>
-        <p className="text-sm text-muted-foreground">Precisamos confirmar seu CPF e data de nascimento pra que a lista de presença das aulas reconheça você automaticamente.</p>
+        <p className="text-sm text-muted-foreground">Precisamos confirmar alguns dados do seu cadastro -- CPF e data de nascimento pra que a lista de presença das aulas reconheça você automaticamente, e endereço pra conseguirmos emitir sua nota fiscal certinha.</p>
       </CardHeader><CardContent className="space-y-4">
         {enviado ? <div role="status" className="space-y-2 text-center">
           <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600" />
@@ -84,6 +118,24 @@ export default function AtualizarDados() {
           <p className="flex gap-2 rounded-lg bg-muted/40 p-3 text-sm"><LockKeyhole className="h-4 w-4 shrink-0" /> Este link é individual. Preenchemos só o que ainda falta no seu cadastro — nada que já está certo será alterado.</p>
           {!info.cpf_cadastrado && <div className="space-y-1.5"><Label htmlFor="atualizar-cpf">CPF</Label><Input id="atualizar-cpf" value={cpf} onChange={event => setCpf(event.target.value)} inputMode="numeric" maxLength={14} autoComplete="off" required /></div>}
           {!info.nascimento_cadastrado && <div className="space-y-1.5"><Label htmlFor="atualizar-nascimento">Data de nascimento</Label><Input id="atualizar-nascimento" type="date" value={nascimento} onChange={event => setNascimento(event.target.value)} required /></div>}
+          {!info.endereco_cadastrado && <div className="space-y-3 rounded-lg border p-3">
+            <p className="text-sm font-medium">Endereço (necessário pra emitir sua nota fiscal)</p>
+            <div className="space-y-1.5">
+              <Label htmlFor="atualizar-cep">CEP</Label>
+              <Input id="atualizar-cep" value={cep} onChange={event => setCep(event.target.value)} inputMode="numeric" maxLength={9} placeholder="00000-000" autoComplete="off" required />
+              {buscandoCep && <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Buscando endereço...</p>}
+              {!buscandoCep && cepEncontrado && cidade && <p className="text-xs text-emerald-600">{cidade}/{uf}</p>}
+            </div>
+            <div className="space-y-1.5"><Label htmlFor="atualizar-logradouro">Rua</Label><Input id="atualizar-logradouro" value={logradouro} onChange={event => setLogradouro(event.target.value)} required /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label htmlFor="atualizar-numero">Número</Label><Input id="atualizar-numero" value={numero} onChange={event => setNumero(event.target.value)} required /></div>
+              <div className="space-y-1.5"><Label htmlFor="atualizar-complemento">Complemento</Label><Input id="atualizar-complemento" value={complemento} onChange={event => setComplemento(event.target.value)} placeholder="opcional" /></div>
+            </div>
+            <div className="grid grid-cols-[1fr_auto] gap-3">
+              <div className="space-y-1.5"><Label htmlFor="atualizar-cidade">Cidade</Label><Input id="atualizar-cidade" value={cidade} onChange={event => setCidade(event.target.value)} required /></div>
+              <div className="space-y-1.5"><Label htmlFor="atualizar-uf">UF</Label><Input id="atualizar-uf" value={uf} onChange={event => setUf(event.target.value.toUpperCase())} maxLength={2} className="w-16" required /></div>
+            </div>
+          </div>}
           <Button type="submit" disabled={enviando}>{enviando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Salvar</Button>
         </form>}
       </CardContent></Card>}

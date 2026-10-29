@@ -69,7 +69,7 @@ serve(async req => {
 
     const db = createClient(url, serviceKey, { auth: { persistSession: false } });
     const { data: aluno, error: alunoError } = await db.from('alunos')
-      .select('id,nome,cpf,data_nascimento,status').eq('id', alunoId).maybeSingle();
+      .select('id,nome,cpf,data_nascimento,endereco,cep,cidade_estado,status').eq('id', alunoId).maybeSingle();
     if (alunoError) throw alunoError;
     if (!aluno || aluno.status !== 'ativo') return reply({ erro: 'Cadastro não encontrado.' }, 404, origin);
 
@@ -81,18 +81,26 @@ serve(async req => {
     if (rateError) throw rateError;
     if (!allowed) return reply({ erro: 'Muitas tentativas. Tente novamente mais tarde.' }, 429, origin);
 
+    // Endereco "incompleto" cobre tanto ausencia quanto o formato livre antigo
+    // que nao tem como virar nota fiscal (cidade_estado sem "/UF" no fim --
+    // achado 2026-10-29 gerando notas na Spedy: cidade sem UF ela rejeita).
+    const enderecoCompleto = !!(aluno.endereco && aluno.cep && aluno.cidade_estado && /\/[A-Za-z]{2}$/.test(aluno.cidade_estado));
+
     if (body.acao === 'info') {
       return reply({
         nome: aluno.nome,
         cpf_cadastrado: !!aluno.cpf,
         nascimento_cadastrado: !!aluno.data_nascimento,
+        endereco_cadastrado: enderecoCompleto,
       }, 200, origin);
     }
 
     if (body.acao === 'salvar') {
       // So valida e preenche o que ainda esta vazio -- nunca sobrescreve um dado
       // ja cadastrado por esse link publico (evita que alguem com o link altere
-      // um cadastro valido).
+      // um cadastro valido). Excecao: endereco -- se esse link pede endereco e
+      // o aluno preencheu, SEMPRE grava, porque a premissa de pedir e que o que
+      // esta la (se tiver algo) esta errado/incompleto.
       const patch: Record<string, string> = {};
       if (!aluno.cpf) {
         const cpf = typeof body.cpf === 'string' ? body.cpf.replace(/\D/g, '') : '';
@@ -103,6 +111,20 @@ serve(async req => {
         const nascimento = typeof body.data_nascimento === 'string' ? body.data_nascimento : '';
         if (!/^\d{4}-\d{2}-\d{2}$/.test(nascimento)) return reply({ erro: 'Confira a data de nascimento.' }, 400, origin);
         patch.data_nascimento = nascimento;
+      }
+      if (!enderecoCompleto) {
+        const cepDigits = typeof body.cep === 'string' ? body.cep.replace(/\D/g, '') : '';
+        const logradouro = typeof body.logradouro === 'string' ? body.logradouro.trim() : '';
+        const numero = typeof body.numero === 'string' ? body.numero.trim() : '';
+        const complemento = typeof body.complemento === 'string' ? body.complemento.trim() : '';
+        const cidade = typeof body.cidade === 'string' ? body.cidade.trim() : '';
+        const uf = typeof body.uf === 'string' ? body.uf.trim().toUpperCase() : '';
+        if (cepDigits.length !== 8) return reply({ erro: 'Confira o CEP.' }, 400, origin);
+        if (!logradouro || !numero) return reply({ erro: 'Confira o endereço e o número.' }, 400, origin);
+        if (!cidade || !/^[A-Z]{2}$/.test(uf)) return reply({ erro: 'Confira a cidade e o estado.' }, 400, origin);
+        patch.cep = `${cepDigits.slice(0, 5)}-${cepDigits.slice(5)}`;
+        patch.endereco = `${logradouro}, ${numero}${complemento ? ` - ${complemento}` : ''}`;
+        patch.cidade_estado = `${cidade}/${uf}`;
       }
       if (Object.keys(patch).length === 0) return reply({ mensagem: 'Cadastro já estava completo.' }, 200, origin);
       const { error: updateError } = await db.from('alunos').update(patch).eq('id', alunoId);
