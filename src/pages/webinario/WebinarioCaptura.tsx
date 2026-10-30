@@ -114,7 +114,7 @@ export default function WebinarioCaptura() {
           <div className="iw-replica-event-box">
             <strong>WEBINÁRIO GRATUITO</strong>
             <span>{tema.titulo}</span>
-            <b>INSCRIÇÃO GRATUITA · SESSÕES ONLINE CONTÍNUAS</b>
+            <b>INSCRIÇÃO GRATUITA · VAGAS LIMITADAS</b>
           </div>
 
           {capturaVideoUrl && (
