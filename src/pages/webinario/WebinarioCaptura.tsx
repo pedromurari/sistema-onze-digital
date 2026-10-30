@@ -27,6 +27,7 @@ export default function WebinarioCaptura() {
   const [whatsapp, setWhatsapp] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [capturaVideoUrl, setCapturaVideoUrl] = useState<string | null>(null);
+  const [opcoesForaHorario, setOpcoesForaHorario] = useState<{ inicioEm: string; periodo: 'manha' | 'tarde' | 'noite' }[] | null>(null);
 
   // Teste A/B de headline: sorteia 50/50 na primeira visita e mantém a mesma
   // variante durante a sessão (não fica trocando a cada reload). A escolha
@@ -54,6 +55,50 @@ export default function WebinarioCaptura() {
     return () => { ativo = false; };
   }, [slug]);
 
+  // Reaproveitado tanto pelo submit normal do formulário quanto pelo clique
+  // num dos horários do popup "fora de horário" (nesse caso, horarioEscolhido
+  // vem preenchido e o backend cria a sessão na hora, se ainda não existir).
+  const registrar = async (horarioEscolhido?: string) => {
+    const digitos = whatsapp.replace(/\D/g, '');
+    const whatsappLimpo = `+55${digitos.startsWith('55') ? digitos.slice(2) : digitos}`;
+    const params = new URLSearchParams(window.location.search);
+    const utms = Object.fromEntries(UTM_KEYS.map((key) => [key, params.get(key) ?? '']));
+    const res = await fetch(`${FUNCTIONS_URL}/webinario-registrar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        webinarioSlug: slug,
+        nome: nome.trim(),
+        email: email.trim() || undefined,
+        whatsapp: whatsappLimpo,
+        device: /Mobi|Android/i.test(navigator.userAgent) ? 'mobile' : 'desktop',
+        variante_headline: variante,
+        ...(horarioEscolhido ? { horarioEscolhido } : {}),
+        ...utms,
+      }),
+    });
+    const data = await res.json();
+
+    if (!data.ok && data.foraDeHorario) {
+      setOpcoesForaHorario(data.opcoes);
+      return;
+    }
+    if (!data.ok) {
+      toast.error(data.erro || 'Não foi possível concluir seu cadastro agora.');
+      return;
+    }
+
+    setOpcoesForaHorario(null);
+    sessionStorage.setItem('webinario_tracking_id', data.trackingId);
+    sessionStorage.setItem('webinario_sessao_id', data.sessaoId);
+    sessionStorage.setItem('webinario_inicio_em', data.inicioEm);
+    sessionStorage.setItem('webinario_nome', nome.trim());
+    sessionStorage.setItem('webinario_email', email.trim());
+    sessionStorage.setItem('webinario_whatsapp', whatsappLimpo);
+    sessionStorage.setItem('webinario_slug', slug);
+    navigate(`/webinario/obrigado/${slug}`);
+  };
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!nome.trim() || !whatsapp.trim()) {
@@ -67,41 +112,29 @@ export default function WebinarioCaptura() {
     }
     setEnviando(true);
     try {
-      const whatsappLimpo = `+55${digitos.startsWith('55') ? digitos.slice(2) : digitos}`;
-      const params = new URLSearchParams(window.location.search);
-      const utms = Object.fromEntries(UTM_KEYS.map((key) => [key, params.get(key) ?? '']));
-      const res = await fetch(`${FUNCTIONS_URL}/webinario-registrar`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          webinarioSlug: slug,
-          nome: nome.trim(),
-          email: email.trim() || undefined,
-          whatsapp: whatsappLimpo,
-          device: /Mobi|Android/i.test(navigator.userAgent) ? 'mobile' : 'desktop',
-          variante_headline: variante,
-          ...utms,
-        }),
-      });
-      const data = await res.json();
-      if (!data.ok) {
-        toast.error(data.erro || 'Não foi possível concluir seu cadastro agora.');
-        return;
-      }
-      sessionStorage.setItem('webinario_tracking_id', data.trackingId);
-      sessionStorage.setItem('webinario_sessao_id', data.sessaoId);
-      sessionStorage.setItem('webinario_inicio_em', data.inicioEm);
-      sessionStorage.setItem('webinario_nome', nome.trim());
-      sessionStorage.setItem('webinario_email', email.trim());
-      sessionStorage.setItem('webinario_whatsapp', whatsappLimpo);
-      sessionStorage.setItem('webinario_slug', slug);
-      navigate(`/webinario/obrigado/${slug}`);
+      await registrar();
     } catch {
       toast.error('Erro de conexão. Tente novamente.');
     } finally {
       setEnviando(false);
     }
   };
+
+  const escolherHorario = async (inicioEm: string) => {
+    setEnviando(true);
+    try {
+      await registrar(inicioEm);
+    } catch {
+      toast.error('Erro de conexão. Tente novamente.');
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const LABEL_PERIODO: Record<'manha' | 'tarde' | 'noite', string> = { manha: 'Manhã ☀️', tarde: 'Tarde 🌤️', noite: 'Noite 🌙' };
+  const formatarHorario = (iso: string) => new Date(iso).toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+  });
 
   return (
     <main className="idm-webinario iw-replica">
@@ -130,7 +163,7 @@ export default function WebinarioCaptura() {
               <label className="sr-only" htmlFor="web-email">E-mail</label>
               <input id="web-email" type="email" autoComplete="email" placeholder="Insira seu melhor e-mail (opcional)" value={email} onChange={(event) => setEmail(event.target.value)} />
               <label className="sr-only" htmlFor="web-whatsapp">WhatsApp</label>
-              <div className="iw-replica-phone"><span>BR +55</span><input id="web-whatsapp" type="tel" inputMode="tel" autoComplete="tel" required placeholder="WhatsApp - (99) 99999-9999" value={whatsapp} onChange={(event) => setWhatsapp(event.target.value)} /></div>
+              <div className="iw-replica-phone"><span>BR +55</span><input id="web-whatsapp" type="tel" inputMode="tel" autoComplete="tel" required maxLength={11} placeholder="WhatsApp - (99) 99999-9999" value={whatsapp} onChange={(event) => setWhatsapp(event.target.value.replace(/\D/g, '').slice(0, 11))} /></div>
               <button type="submit" disabled={enviando}>{enviando ? 'INSCREVENDO...' : 'INSCREVER-SE AGORA!'}</button>
             </form>
             <p>Ao se inscrever, você aceita receber informações sobre esta aula por WhatsApp e e-mail. A inscrição não obriga nenhuma compra.</p>
@@ -208,6 +241,34 @@ export default function WebinarioCaptura() {
         </div>
       </section>
       <footer className="iw-replica-footer">© Instituto Despertamente · Psicanálise Integrativa · Conteúdo educativo, não substitui atendimento clínico.</footer>
+
+      {opcoesForaHorario && (
+        <div className="iw-cta-overlay">
+          <div className="iw-logo">INSTITUTO DESPERTAMENTE</div>
+          <h2 className="iw-h1" style={{ fontSize: '1.5rem' }}>Opa, não tem aula agora</h2>
+          <p className="iw-sub">Mas já separei os próximos horários disponíveis. Escolhe o que funciona melhor pra você — a confirmação chega no seu WhatsApp agora mesmo.</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: 360 }}>
+            {opcoesForaHorario.map((o) => (
+              <button
+                key={o.inicioEm}
+                type="button"
+                className="iw-btn-gold w-full"
+                disabled={enviando}
+                onClick={() => void escolherHorario(o.inicioEm)}
+              >
+                {LABEL_PERIODO[o.periodo]} — {formatarHorario(o.inicioEm)}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setOpcoesForaHorario(null)}
+            style={{ marginTop: 16, background: 'none', border: 'none', color: '#9fb3d6', fontSize: '0.85rem', textDecoration: 'underline', cursor: 'pointer' }}
+          >
+            Voltar
+          </button>
+        </div>
+      )}
     </main>
   );
 }
