@@ -5,8 +5,6 @@ import { supabase } from '@/integrations/supabase/client';
 import './webinario/webinario.css';
 
 const IDM_LOGO = 'https://turma47.semanadodespertar.online/lovable-uploads/1b0d4a56-e01f-4ce0-b2f7-0eecf33da536.png';
-const RODRYGO_FOTO = 'https://turma47.semanadodespertar.online/lovable-uploads/3a4fb99e-e1bb-4d83-843e-f5fe18a7a8b3.png';
-const JOCIMARA_FOTO = 'https://turma47.semanadodespertar.online/lovable-uploads/61fad314-edc1-4a68-84f1-1f53a18d5fc9.png';
 // Placeholder até o Rodrygo gravar o vídeo real do Divã — mesmo princípio usado no Webinário:
 // reaproveita um vídeo que já está no Cloudflare pra página não ficar sem vídeo nenhum.
 const VIDEO_PLACEHOLDER = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/vsl/semana-do-despertar.mp4';
@@ -138,18 +136,8 @@ export default function DivaCaptura() {
         <div className="iw-replica-container">
           <img src={IDM_LOGO} alt="Instituto Despertamente" loading="lazy" />
           <h2>Instituto <em>Despertamente</em></h2>
-          <p>O Instituto Despertamente é uma escola de desenvolvimento humano especializada no ensino da psicanálise. O Divã IDM é o programa de terapia social do Instituto: conecta você a terapeutas credenciados, formados e supervisionados dentro da nossa proposta de Psicanálise Integrativa.</p>
+          <p>O Instituto Despertamente é uma escola de desenvolvimento humano especializada no ensino da psicanálise. O Divã IDM é o programa de terapia social do Instituto: usa a estrutura e a rede de terapeutas associados ao IDM pra oferecer sessões com valores sociais, credenciadas e supervisionadas dentro da nossa proposta de Psicanálise Integrativa.</p>
           <div>Cada processo é único — não prometemos resultado específico, mas oferecemos profissionais credenciados, comprometidos com ética e sigilo.</div>
-        </div>
-      </section>
-
-      <section className="iw-replica-section iw-replica-teachers">
-        <div className="iw-replica-container">
-          <h2>Quem está por trás do <em>Divã IDM</em></h2>
-          <div className="iw-replica-teacher-grid">
-            <article><div className="iw-replica-teacher-photo"><img src={RODRYGO_FOTO} alt="Rodrygo Murari" loading="lazy" /><strong>Rodrygo Murari</strong></div><div className="iw-replica-teacher-body"><h3>Fundador do Instituto Despertamente</h3><p>Rodrygo idealizou o Divã IDM pra tornar a terapia mais acessível, conectando quem precisa de escuta a terapeutas credenciados pelo Instituto.</p></div></article>
-            <article><div className="iw-replica-teacher-photo"><img src={JOCIMARA_FOTO} alt="Jocimara Anjos" loading="lazy" /><strong>Jocimara Anjos</strong></div><div className="iw-replica-teacher-body"><h3>Coordenadora Pedagógica</h3><p>Jocimara supervisiona a formação dos terapeutas credenciados, garantindo ética e qualidade em cada sessão do Divã.</p></div></article>
-          </div>
         </div>
       </section>
 
