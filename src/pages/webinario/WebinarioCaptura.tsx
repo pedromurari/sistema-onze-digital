@@ -11,7 +11,6 @@ const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'ut
 const IDM_LOGO = 'https://turma47.semanadodespertar.online/lovable-uploads/1b0d4a56-e01f-4ce0-b2f7-0eecf33da536.png';
 const RODRYGO_FOTO = 'https://turma47.semanadodespertar.online/lovable-uploads/3a4fb99e-e1bb-4d83-843e-f5fe18a7a8b3.png';
 const JOCIMARA_FOTO = 'https://turma47.semanadodespertar.online/lovable-uploads/61fad314-edc1-4a68-84f1-1f53a18d5fc9.png';
-const VIDEO_DEMONSTRACAO_R2 = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/vsl/semana-do-despertar.mp4';
 
 const DEPOIMENTOS = [
   { titulo: 'Transformei minha vida através da psicanálise', video: 'wDQiV0VoBT4' },
@@ -28,6 +27,21 @@ export default function WebinarioCaptura() {
   const [whatsapp, setWhatsapp] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [capturaVideoUrl, setCapturaVideoUrl] = useState<string | null>(null);
+
+  // Teste A/B de headline: sorteia 50/50 na primeira visita e mantém a mesma
+  // variante durante a sessão (não fica trocando a cada reload). A escolha
+  // é enviada no cadastro (variante_headline) e fica em webinario_tracking
+  // pra comparar taxa de conversão por variante depois.
+  const [variante] = useState<'A' | 'B'>(() => {
+    if (!tema.heroVarianteB) return 'A';
+    const chave = `webinario_variante_${slug}`;
+    const salva = sessionStorage.getItem(chave);
+    if (salva === 'A' || salva === 'B') return salva;
+    const sorteada = Math.random() < 0.5 ? 'A' : 'B';
+    sessionStorage.setItem(chave, sorteada);
+    return sorteada;
+  });
+  const heroTexto = variante === 'B' && tema.heroVarianteB ? tema.heroVarianteB : tema;
 
   useEffect(() => {
     let ativo = true;
@@ -65,6 +79,7 @@ export default function WebinarioCaptura() {
           email: email.trim() || undefined,
           whatsapp: whatsappLimpo,
           device: /Mobi|Android/i.test(navigator.userAgent) ? 'mobile' : 'desktop',
+          variante_headline: variante,
           ...utms,
         }),
       });
@@ -94,18 +109,19 @@ export default function WebinarioCaptura() {
         <div className="iw-replica-orb iw-replica-orb-one" aria-hidden="true" />
         <div className="iw-replica-orb iw-replica-orb-two" aria-hidden="true" />
         <div className="iw-replica-hero-inner">
-          <h1><span>{tema.heroLinhaUm}</span><br /><em>{tema.heroLinhaDois}</em></h1>
-          <h2>{tema.heroSubheadline}</h2>
+          <h1><span>{heroTexto.heroLinhaUm}</span><br /><em>{heroTexto.heroLinhaDois}</em></h1>
+          <h2>{heroTexto.heroSubheadline}</h2>
           <div className="iw-replica-event-box">
             <strong>WEBINÁRIO GRATUITO</strong>
             <span>{tema.titulo}</span>
             <b>INSCRIÇÃO GRATUITA · SESSÕES ONLINE CONTÍNUAS</b>
           </div>
 
-          <div className="iw-replica-media">
-            <video src={capturaVideoUrl || VIDEO_DEMONSTRACAO_R2} controls playsInline preload="metadata" poster="https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/vsl/semana-do-despertar-poster.jpg" aria-label={capturaVideoUrl ? `Vídeo de apresentação: ${tema.titulo}` : 'Vídeo institucional do IDM'} />
-          </div>
-          {!capturaVideoUrl && <p className="iw-replica-video-disclosure">Conheça o Instituto Despertamente neste vídeo institucional.</p>}
+          {capturaVideoUrl && (
+            <div className="iw-replica-media">
+              <video src={capturaVideoUrl} controls playsInline preload="metadata" poster="https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/vsl/semana-do-despertar-poster.jpg" aria-label={`Vídeo de apresentação: ${tema.titulo}`} />
+            </div>
+          )}
 
           <div className="iw-replica-form-card" id="cadastro">
             <form onSubmit={handleSubmit}>
@@ -160,8 +176,8 @@ export default function WebinarioCaptura() {
         <div className="iw-replica-container">
           <h2>Conheça seus <em>Professores</em></h2>
           <div className="iw-replica-teacher-grid">
-            <article><div className="iw-replica-teacher-photo"><img src={RODRYGO_FOTO} alt="Rodrygo Murari" loading="lazy" /><strong>Rodrygo Murari</strong></div><div className="iw-replica-teacher-body"><h3>Fundador e Professor</h3><p>Rodrygo apresenta o tema com exemplos e mostra como esse estudo se conecta à Psicanálise Integrativa no IDM.</p></div></article>
-            <article><div className="iw-replica-teacher-photo"><img src={JOCIMARA_FOTO} alt="Jocimara Anjos" loading="lazy" /><strong>Jocimara Anjos</strong></div><div className="iw-replica-teacher-body"><h3>Coordenadora e Professora</h3><p>Jocimara participa da proposta pedagógica desta aula. A participação final em vídeo depende da gravação.</p></div></article>
+            <article><div className="iw-replica-teacher-photo"><img src={RODRYGO_FOTO} alt="Rodrygo Murari" loading="lazy" /><strong>Rodrygo Murari</strong></div><div className="iw-replica-teacher-body"><h3>Fundador e Professor</h3><p>{tema.professorRodrygo}</p></div></article>
+            <article><div className="iw-replica-teacher-photo"><img src={JOCIMARA_FOTO} alt="Jocimara Anjos" loading="lazy" /><strong>Jocimara Anjos</strong></div><div className="iw-replica-teacher-body"><h3>Coordenadora e Professora</h3><p>{tema.professorJocimara}</p></div></article>
           </div>
         </div>
       </section>

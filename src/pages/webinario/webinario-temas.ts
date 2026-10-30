@@ -17,6 +17,9 @@ export interface TemaWebinario {
   perguntaCentral: string;
   transformacao: string;
   publico: string[];
+  professorRodrygo: string;
+  professorJocimara: string;
+  heroVarianteB?: { heroLinhaUm: string; heroLinhaDois: string; heroSubheadline: string };
 }
 
 export const TEMAS_WEBINARIO: Record<string, TemaWebinario> = {
@@ -24,9 +27,9 @@ export const TEMAS_WEBINARIO: Record<string, TemaWebinario> = {
     slug: 'escuta-psicanalitica',
     titulo: 'A escuta que vai além do conselho',
     headline: 'Você ouve as pessoas. Mas sabe o que significa escutá-las de verdade?',
-    heroLinhaUm: 'Aula Gratuita de',
-    heroLinhaDois: 'Escuta Psicanalítica!',
-    heroSubheadline: 'Uma aula ONLINE e gratuita para descobrir a diferença entre aconselhar e escutar.',
+    heroLinhaUm: 'Ouvir não é o mesmo que',
+    heroLinhaDois: 'escutar — e isso muda tudo',
+    heroSubheadline: 'Numa aula gratuita e ao vivo, Rodrygo Murari e Jocimara Anjos mostram a diferença entre ouvir, aconselhar e escutar — com exemplos reais da prática clínica.',
     fechamento: 'a escuta que vai além do conselho',
     subheadline: 'Nesta aula gratuita, descubra o que muda quando saímos do conselho e começamos a estudar a escuta psicanalítica — com exemplos, ética e um caminho claro para aprofundar sua formação.',
     destaque: 'A escuta clínica não é uma coleção de frases prontas. É estudo, ética e prática supervisionada.',
@@ -46,6 +49,13 @@ export const TEMAS_WEBINARIO: Record<string, TemaWebinario> = {
     perguntaCentral: 'Quando alguém te conta um problema, você tenta encontrar a frase certa — ou consegue abrir espaço para a pessoa escutar a própria história?',
     transformacao: 'Saia desta aula sabendo distinguir uma conversa acolhedora de uma escuta orientada por estudo, limites e responsabilidade. O objetivo não é decorar uma técnica: é descobrir as perguntas que um futuro estudante de psicanálise precisa aprender a fazer.',
     publico: ['Você gosta de ouvir pessoas, mas percebe que aconselhar nem sempre ajuda.', 'Você trabalha com gente e quer conhecer a diferença entre acolhimento e escuta clínica.', 'Você considera estudar psicanálise e quer conhecer a seriedade exigida por esse caminho.'],
+    professorRodrygo: 'Rodrygo conduz a aula ao lado da Jocimara e mostra, com exemplos reais, por que confundir conselho com escuta é um dos erros mais comuns de quem quer ajudar alguém de verdade.',
+    professorJocimara: 'Jocimara, psicanalista clínica integrativa e coordenadora pedagógica do IDM, participa da aula apresentando a diferença entre ouvir, aconselhar e escutar na prática clínica.',
+    heroVarianteB: {
+      heroLinhaUm: 'Você dá conselhos.',
+      heroLinhaDois: 'Mas sabe escutar de verdade?',
+      heroSubheadline: 'Numa aula gratuita e ao vivo, Rodrygo Murari e Jocimara Anjos mostram a diferença entre ouvir, aconselhar e escutar — com exemplos reais da prática clínica.',
+    },
   },
   'padroes-emocionais': {
     slug: 'padroes-emocionais',
@@ -73,6 +83,8 @@ export const TEMAS_WEBINARIO: Record<string, TemaWebinario> = {
     perguntaCentral: 'Muda a pessoa, muda o cenário, mas a sensação de estar vivendo a mesma história continua?',
     transformacao: 'A aula mostra como transformar a pergunta sobre a repetição em uma investigação mais cuidadosa sobre história e relações. Sem diagnóstico à distância e sem prometer mudar a vida de ninguém em uma hora.',
     publico: ['Você se interessa por comportamento humano e pelas histórias que se repetem.', 'Você estuda ou trabalha com pessoas e quer fugir dos rótulos fáceis.', 'Você pensa em uma formação que aprofunde o tema com teoria e prática responsável.'],
+    professorRodrygo: 'Rodrygo conduz exemplos de histórias que parecem se repetir e mostra como a psicanálise olha pra esses padrões sem rotular ninguém.',
+    professorJocimara: 'Jocimara participa da proposta pedagógica desta aula, trazendo a leitura clínica sobre contexto, repetição e os limites de uma análise à distância.',
   },
   'formacao-psicanalise': {
     slug: 'formacao-psicanalise',
@@ -100,6 +112,8 @@ export const TEMAS_WEBINARIO: Record<string, TemaWebinario> = {
     perguntaCentral: 'Um certificado é suficiente para saber escutar, estudar casos e reconhecer os próprios limites?',
     transformacao: 'Você vai sair com critérios para avaliar uma formação: o que se estuda, como se pratica, onde entram ética e supervisão e quais perguntas fazer antes de investir seu tempo e dinheiro.',
     publico: ['Você quer começar a estudar psicanálise, mas encontra ofertas muito diferentes.', 'Você precisa entender a diferença entre uma introdução e um percurso de formação.', 'Você quer conhecer a proposta do IDM antes de decidir se ela faz sentido para você.'],
+    professorRodrygo: 'Rodrygo abre os bastidores da jornada de formação e mostra os critérios pra avaliar um caminho de estudo sério antes de investir tempo e dinheiro.',
+    professorJocimara: 'Jocimara participa da proposta pedagógica desta aula, representando a coordenação pedagógica da Formação em Psicanálise Integrativa do IDM.',
   },
 };
 
@@ -128,4 +142,6 @@ export const temaPorSlug = (slug: string) => TEMAS_WEBINARIO[slug] ?? {
   perguntaCentral: 'O que vale observar antes de iniciar seus estudos em psicanálise?',
   transformacao: 'Conheça fundamentos, limites e caminhos possíveis para aprofundar seu estudo com responsabilidade.',
   publico: ['Pessoas interessadas em comportamento humano.', 'Quem considera estudar psicanálise.', 'Quem quer conhecer a proposta do IDM.'],
+  professorRodrygo: 'Rodrygo apresenta o tema com exemplos e mostra como esse estudo se conecta à Psicanálise Integrativa no IDM.',
+  professorJocimara: 'Jocimara participa da proposta pedagógica desta aula, representando a coordenação pedagógica do Instituto Despertamente.',
 };
