@@ -45,7 +45,7 @@ function useDiretoriaDiva() {
 }
 
 const DECISOES = [
-  { titulo: 'Preço', texto: 'R$80 por sessão avulsa (preço inicial). Split: R$50 pro terapeuta, R$30 pro IDM.' },
+  { titulo: 'Preço', texto: 'Sessão avulsa R$80 (2 sessões R$160, sem desconto). Pacote a partir de 3 sessões sai com desconto: 3 por R$210, 4 por R$280, 5 por R$350. Split sempre proporcional ao valor cobrado: 62,5% pro terapeuta, 37,5% pro IDM (R$50/R$30 na base de R$80). Pacote exige pagamento integral antes da 1ª sessão — mas nem todo cliente pede o desconto do pacote; muitos pagam a quantidade avulsa que quiserem de forma antecipada, registrar como "Outro valor" nesse caso.' },
   { titulo: 'Credenciamento', texto: 'Curadoria manual — Pedro/Rodrygo aprovam cada terapeuta. Ser assinante em dia da Sociedade IDM é pré-requisito, mas não dá acesso automático.' },
   { titulo: 'Pagamento e repasse', texto: 'Manual por enquanto (marcar pago/repassado na aba Sessões). Split automático (Asaas Split) é Fase 2 — os campos já existem na tabela.' },
   { titulo: 'Funil', texto: 'Cliente preenche interesse em /diva → lead criado com produto "diva_idm" → confirmação automática no WhatsApp → vendedor do Divã assume na aba Funil pra negociar pacote ou sessão avulsa.' },
