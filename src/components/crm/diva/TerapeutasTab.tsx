@@ -12,7 +12,8 @@ type StatusTerapeuta = 'em_analise' | 'aprovado' | 'pausado' | 'reprovado';
 
 interface Terapeuta {
   id: string; nome: string; especialidade: string | null; bio: string | null;
-  whatsapp: string | null; email: string | null; status: StatusTerapeuta; aluno_id: string | null;
+  whatsapp: string | null; email: string | null; chave_pix: string | null;
+  status: StatusTerapeuta; aluno_id: string | null;
 }
 
 const STATUS_CONFIG: Record<StatusTerapeuta, { label: string; className: string; icon: typeof CheckCircle2 }> = {
@@ -30,7 +31,10 @@ export function TerapeutasTab() {
   const [bio, setBio] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [email, setEmail] = useState('');
+  const [chavePix, setChavePix] = useState('');
   const [salvando, setSalvando] = useState(false);
+  const [pixEditando, setPixEditando] = useState<string | null>(null);
+  const [pixRascunho, setPixRascunho] = useState('');
 
   const carregar = async () => {
     setCarregando(true);
@@ -50,15 +54,22 @@ export function TerapeutasTab() {
       bio: bio.trim() || null,
       whatsapp: whatsapp.trim() || null,
       email: email.trim() || null,
+      chave_pix: chavePix.trim() || null,
       status: 'em_analise',
     });
-    setNome(''); setEspecialidade(''); setBio(''); setWhatsapp(''); setEmail('');
+    setNome(''); setEspecialidade(''); setBio(''); setWhatsapp(''); setEmail(''); setChavePix('');
     setSalvando(false);
     await carregar();
   };
 
   const mudarStatus = async (id: string, status: StatusTerapeuta) => {
     await supabase.from('diva_terapeutas').update({ status }).eq('id', id);
+    await carregar();
+  };
+
+  const salvarPix = async (id: string) => {
+    await supabase.from('diva_terapeutas').update({ chave_pix: pixRascunho.trim() || null }).eq('id', id);
+    setPixEditando(null);
     await carregar();
   };
 
@@ -85,6 +96,29 @@ export function TerapeutasTab() {
                       <Badge variant="outline" className={cfg.className}>{cfg.label}</Badge>
                     </div>
                     {t.bio && <p className="text-xs text-muted-foreground">{t.bio}</p>}
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                      <span className="text-muted-foreground">Chave PIX:</span>
+                      {pixEditando === t.id ? (
+                        <>
+                          <Input
+                            className="h-7 w-48 text-xs"
+                            value={pixRascunho}
+                            onChange={e => setPixRascunho(e.target.value)}
+                            autoFocus
+                          />
+                          <Button size="sm" className="h-7 px-2" onClick={() => void salvarPix(t.id)}>Salvar</Button>
+                          <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setPixEditando(null)}>Cancelar</Button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="font-medium underline-offset-2 hover:underline"
+                          onClick={() => { setPixEditando(t.id); setPixRascunho(t.chave_pix ?? ''); }}
+                        >
+                          {t.chave_pix || 'definir...'}
+                        </button>
+                      )}
+                    </div>
                     <div className="flex flex-wrap gap-1.5">
                       {t.status !== 'aprovado' && <Button size="sm" variant="outline" onClick={() => void mudarStatus(t.id, 'aprovado')}>Aprovar</Button>}
                       {t.status !== 'pausado' && <Button size="sm" variant="outline" onClick={() => void mudarStatus(t.id, 'pausado')}>Pausar</Button>}
@@ -106,6 +140,7 @@ export function TerapeutasTab() {
             <Input placeholder="Especialidade (ex: Psicanálise)" value={especialidade} onChange={e => setEspecialidade(e.target.value)} />
             <Input placeholder="WhatsApp" value={whatsapp} onChange={e => setWhatsapp(e.target.value)} />
             <Input placeholder="E-mail" value={email} onChange={e => setEmail(e.target.value)} />
+            <Input placeholder="Chave PIX" value={chavePix} onChange={e => setChavePix(e.target.value)} />
           </div>
           <Textarea placeholder="Bio curta (aparece no painel público quando aprovado)" value={bio} onChange={e => setBio(e.target.value)} />
           <Button onClick={() => void adicionar()} disabled={salvando || !nome.trim()}>Cadastrar (entra como "Em análise")</Button>
