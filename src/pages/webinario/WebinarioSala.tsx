@@ -36,6 +36,18 @@ interface MensagemExibida {
   ordem: number; // timestamp (ms) usado só pra ordenar a timeline unificada
 }
 
+// Mensagens roteirizadas podem usar o placeholder {periodo} (ex: "Excelente
+// {periodo}, gente!") -- como o webinário é evergreen, o mesmo segundo do
+// vídeo pode cair de manhã numa sessão e de noite em outra, então o
+// período tem que ser calculado em cima do horário real (America/Sao_Paulo)
+// do momento em que a mensagem apareceria, não um texto fixo no banco.
+function periodoPorHorario(ms: number): 'dia' | 'tarde' | 'noite' {
+  const hora = Number(new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hourCycle: 'h23' }).format(new Date(ms)));
+  if (hora < 12) return 'dia';
+  if (hora < 18) return 'tarde';
+  return 'noite';
+}
+
 async function track(trackingId: string, evento: string, extra?: Record<string, unknown>) {
   try {
     await fetch(`${SUPABASE_FUNCTIONS_URL}/webinario-track`, {
@@ -175,13 +187,16 @@ export default function WebinarioSala() {
   // ordenadas pelo momento real em que apareceriam -- início da sessão +
   // segundo do roteiro, ou o timestamp real de quem mandou.
   const timeline: MensagemExibida[] = [
-    ...roteiroVisivel.map((m, i): MensagemExibida => ({
-      id: `roteiro-${i}`,
-      autor: m.autor_nome,
-      texto: m.texto,
-      real: false,
-      ordem: sessao ? new Date(sessao.inicio_em).getTime() + m.segundo * 1000 : m.segundo,
-    })),
+    ...roteiroVisivel.map((m, i): MensagemExibida => {
+      const ordem = sessao ? new Date(sessao.inicio_em).getTime() + m.segundo * 1000 : m.segundo;
+      return {
+        id: `roteiro-${i}`,
+        autor: m.autor_nome,
+        texto: m.texto.includes('{periodo}') ? m.texto.replace('{periodo}', periodoPorHorario(ordem)) : m.texto,
+        real: false,
+        ordem,
+      };
+    }),
     ...mensagensReais.map((m): MensagemExibida => ({
       id: m.id,
       autor: m.nome,
