@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { TEMAS_WEBINARIO } from './webinario-temas';
+import { supabase } from '@/integrations/supabase/client';
 import './webinario.css';
 
 function diffParts(msRestantes: number) {
@@ -22,6 +23,11 @@ export default function WebinarioObrigado() {
   const inicioEmStr = sessionStorage.getItem('webinario_inicio_em');
   const nome = sessionStorage.getItem('webinario_nome') || '';
 
+  // A aula depende de gravação real -- não dá pra decidir isso por uma
+  // lista fixa de temas (fica desatualizada assim que o vídeo é gravado).
+  // Confere direto no banco se o webinário já tem video_url configurado.
+  const [temVideo, setTemVideo] = useState<boolean | null>(null);
+
   useEffect(() => {
     if (!sessaoId || !inicioEmStr) {
       navigate(`/webinario/${slug}`, { replace: true });
@@ -29,19 +35,24 @@ export default function WebinarioObrigado() {
   }, [sessaoId, inicioEmStr, slug, navigate]);
 
   useEffect(() => {
+    let ativo = true;
+    void supabase.from('webinarios').select('video_url').eq('slug', slug).maybeSingle()
+      .then(({ data }) => { if (ativo) setTemVideo(Boolean((data as { video_url: string | null } | null)?.video_url)); });
+    return () => { ativo = false; };
+  }, [slug]);
+
+  useEffect(() => {
     const id = setInterval(() => setAgora(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
 
-  if (!sessaoId || !inicioEmStr) return null;
+  if (!sessaoId || !inicioEmStr || temVideo === null) return null;
 
-  // Campanhas novas já capturam interesse, mas a aula ainda depende da
-  // gravação real. Não criar contagem regressiva para vídeo inexistente.
-  if (TEMAS_WEBINARIO[slug]) return (
+  if (!temVideo) return (
     <div className="idm-webinario"><div className="iw-wrap iw-wrap-center">
       <div className="iw-logo">INSTITUTO DESPERTAMENTE</div>
       <h1 className="iw-h1">Cadastro recebido{nome ? `, ${nome.split(' ')[0]}` : ''}!</h1>
-      <p className="iw-sub">Seu interesse em “{TEMAS_WEBINARIO[slug].titulo}” foi registrado. Confira as próximas orientações pelo contato informado.</p>
+      <p className="iw-sub">Seu interesse em “{TEMAS_WEBINARIO[slug]?.titulo ?? 'nossa aula'}” foi registrado. Confira as próximas orientações pelo contato informado.</p>
       <div className="iw-card"><p>Esta página é a confirmação do cadastro, não uma sala ao vivo. Você não precisa aguardar um horário agora.</p></div>
     </div></div>
   );

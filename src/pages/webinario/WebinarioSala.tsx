@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import './webinario.css';
@@ -22,10 +22,18 @@ interface Webinario {
   grupo_whatsapp_url: string | null;
 }
 
-interface MensagemChat {
+interface MensagemRoteiro {
   segundo: number;
   autor_nome: string;
   texto: string;
+}
+
+interface MensagemExibida {
+  id: string;
+  autor: string;
+  texto: string;
+  real: boolean;
+  ordem: number; // timestamp (ms) usado só pra ordenar a timeline unificada
 }
 
 async function track(trackingId: string, evento: string, extra?: Record<string, unknown>) {
@@ -42,24 +50,34 @@ async function track(trackingId: string, evento: string, extra?: Record<string, 
 
 export default function WebinarioSala() {
   const { sessionId } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const chatRef = useRef<HTMLDivElement>(null);
 
   const [sessao, setSessao] = useState<Sessao | null>(null);
   const [webinario, setWebinario] = useState<Webinario | null>(null);
-  const [mensagens, setMensagens] = useState<MensagemChat[]>([]);
-  const [mensagensVisiveis, setMensagensVisiveis] = useState<MensagemChat[]>([]);
+  const [mensagensRoteiro, setMensagensRoteiro] = useState<MensagemRoteiro[]>([]);
+  const [roteiroVisivel, setRoteiroVisivel] = useState<MensagemRoteiro[]>([]);
+  const [mensagensReais, setMensagensReais] = useState<{ id: string; nome: string; texto: string; criado_em: string }[]>([]);
+  const [novaMensagem, setNovaMensagem] = useState('');
+  const [enviandoMsg, setEnviandoMsg] = useState(false);
   const [mostrarOferta, setMostrarOferta] = useState(false);
   const [carregando, setCarregando] = useState(true);
+  const [nomeLead, setNomeLead] = useState(sessionStorage.getItem('webinario_nome') || 'Participante');
 
-  const trackingId = sessionStorage.getItem('webinario_tracking_id');
+  // Prioriza o token `t` da URL (link mandado por WhatsApp, funciona em
+  // qualquer aparelho) e cai pro sessionStorage de quem clicou "entrar na
+  // sala" vindo da própria página de obrigado, no mesmo navegador.
+  const trackingId = searchParams.get('t') || sessionStorage.getItem('webinario_tracking_id');
+  const leadIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!sessionId || !trackingId) {
       navigate('/webinario/psicanalise', { replace: true });
       return;
     }
+    sessionStorage.setItem('webinario_tracking_id', trackingId);
 
     (async () => {
       const { data: sessaoData } = await supabase
@@ -86,7 +104,31 @@ export default function WebinarioSala() {
         .select('segundo, autor_nome, texto')
         .eq('webinario_id', sessaoData.webinario_id)
         .order('segundo', { ascending: true });
-      setMensagens((mensagensData as MensagemChat[]) ?? []);
+      setMensagensRoteiro((mensagensData as MensagemRoteiro[]) ?? []);
+
+      const { data: trackingData } = await supabase
+        .from('webinario_tracking')
+        .select('lead_id')
+        .eq('id', trackingId)
+        .maybeSingle();
+      const leadId = (trackingData as { lead_id: string } | null)?.lead_id ?? null;
+      leadIdRef.current = leadId;
+
+      if (leadId) {
+        const { data: leadData } = await supabase.from('leads').select('nome').eq('id', leadId).maybeSingle();
+        const nomeDb = (leadData as { nome: string } | null)?.nome;
+        if (nomeDb) {
+          setNomeLead(nomeDb);
+          sessionStorage.setItem('webinario_nome', nomeDb);
+        }
+      }
+
+      const { data: reaisData } = await supabase
+        .from('webinario_chat_mensagens')
+        .select('id, nome, texto, criado_em')
+        .eq('sessao_id', sessionId)
+        .order('criado_em', { ascending: true });
+      setMensagensReais(reaisData ?? []);
 
       setCarregando(false);
       track(trackingId, 'enter');
@@ -94,14 +136,69 @@ export default function WebinarioSala() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
-  // Heartbeat a cada 15s + libera chat fake e CTA conforme o segundo do vídeo.
+  // Chat ao vivo de verdade: qualquer mensagem inserida por quem está nessa
+  // mesma sessão (sessao_id) chega em tempo real via Realtime do Supabase
+  // pra todo mundo que está assistindo junto.
+  useEffect(() => {
+    if (!sessionId) return;
+    const canal = supabase
+      .channel(`webinario-chat-${sessionId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'webinario_chat_mensagens', filter: `sessao_id=eq.${sessionId}` },
+        (payload) => {
+          const nova = payload.new as { id: string; nome: string; texto: string; criado_em: string };
+          setMensagensReais((prev) => (prev.some((m) => m.id === nova.id) ? prev : [...prev, nova]));
+        },
+      )
+      .subscribe();
+    return () => { void supabase.removeChannel(canal); };
+  }, [sessionId]);
+
+  const enviarMensagem = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const texto = novaMensagem.trim();
+    if (!texto || !sessionId || enviandoMsg) return;
+    setEnviandoMsg(true);
+    const { error } = await supabase.from('webinario_chat_mensagens').insert({
+      sessao_id: sessionId,
+      lead_id: leadIdRef.current,
+      nome: nomeLead,
+      texto: texto.slice(0, 300),
+    });
+    if (!error) setNovaMensagem('');
+    setEnviandoMsg(false);
+  };
+
+  // Timeline unificada: mensagens roteirizadas (reveladas conforme o vídeo
+  // avança) e mensagens reais de outros participantes (chegam ao vivo),
+  // ordenadas pelo momento real em que apareceriam -- início da sessão +
+  // segundo do roteiro, ou o timestamp real de quem mandou.
+  const timeline: MensagemExibida[] = [
+    ...roteiroVisivel.map((m, i): MensagemExibida => ({
+      id: `roteiro-${i}`,
+      autor: m.autor_nome,
+      texto: m.texto,
+      real: false,
+      ordem: sessao ? new Date(sessao.inicio_em).getTime() + m.segundo * 1000 : m.segundo,
+    })),
+    ...mensagensReais.map((m): MensagemExibida => ({
+      id: m.id,
+      autor: m.nome,
+      texto: m.texto,
+      real: true,
+      ordem: new Date(m.criado_em).getTime(),
+    })),
+  ].sort((a, b) => a.ordem - b.ordem);
+
+  // Heartbeat a cada 15s + libera chat roteirizado e CTA conforme o segundo do vídeo.
   const onTimeUpdate = useCallback(() => {
     const video = videoRef.current;
     if (!video || !webinario) return;
     const atual = Math.floor(video.currentTime);
     const total = Math.floor(video.duration || webinario.video_duracao_segundos || 0);
 
-    setMensagensVisiveis(mensagens.filter((m) => m.segundo <= atual));
+    setRoteiroVisivel(mensagensRoteiro.filter((m) => m.segundo <= atual));
 
     if (
       webinario.oferta_offset_segundos != null &&
@@ -111,7 +208,7 @@ export default function WebinarioSala() {
       setMostrarOferta(true);
       if (trackingId) track(trackingId, 'cta');
     }
-  }, [webinario, mensagens, mostrarOferta, trackingId]);
+  }, [webinario, mensagensRoteiro, mostrarOferta, trackingId]);
 
   useEffect(() => {
     if (!trackingId) return;
@@ -128,7 +225,7 @@ export default function WebinarioSala() {
 
   useEffect(() => {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: 'smooth' });
-  }, [mensagensVisiveis]);
+  }, [timeline.length]);
 
   // Entra no segundo certo (elapsed desde o inicio_em da sessao) e nunca
   // deixa voltar/avançar manualmente -- mesma regra do protótipo original
@@ -188,14 +285,28 @@ export default function WebinarioSala() {
             />
           )}
         </div>
-        <div className="iw-chat" ref={chatRef}>
-          <p className="iw-chat-disclosure">Perguntas-guia preparadas pela equipe IDM · não é chat ao vivo</p>
-          {mensagensVisiveis.map((m, i) => (
-            <div key={i} className="iw-chat-msg">
-              <span className="iw-chat-autor">{m.autor_nome}</span>
-              {m.texto}
-            </div>
-          ))}
+        <div className="iw-chat-panel">
+          <div className="iw-chat" ref={chatRef}>
+            <p className="iw-chat-disclosure">Chat ao vivo · mensagens da equipe IDM e de outros participantes</p>
+            {timeline.map((m) => (
+              <div key={m.id} className={`iw-chat-msg ${m.real ? 'iw-chat-msg-real' : ''}`}>
+                <span className="iw-chat-autor">{m.autor}</span>
+                {m.texto}
+              </div>
+            ))}
+          </div>
+          <form className="iw-chat-form" onSubmit={(event) => void enviarMensagem(event)}>
+            <label className="sr-only" htmlFor="sala-chat-input">Digite sua mensagem</label>
+            <input
+              id="sala-chat-input"
+              type="text"
+              placeholder="Digite sua mensagem..."
+              maxLength={300}
+              value={novaMensagem}
+              onChange={(event) => setNovaMensagem(event.target.value)}
+            />
+            <button type="submit" disabled={enviandoMsg || !novaMensagem.trim()}>Enviar</button>
+          </form>
         </div>
       </div>
 
