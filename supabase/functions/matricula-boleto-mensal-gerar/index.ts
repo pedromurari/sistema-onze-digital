@@ -80,6 +80,7 @@ interface PagamentoRow {
   numero_parcela: number;
   data_vencimento: string;
   total_mensalidades: number | null;
+  produto: string | null;
   alunos: {
     nome: string | null;
     email: string | null;
@@ -90,6 +91,7 @@ interface PagamentoRow {
     asaas_customer_id: string | null;
     origem_lead: string | null;
     data_matricula: string | null;
+    total_mensalidades: number | null;
   } | null;
 }
 
@@ -135,10 +137,10 @@ serve(async (req) => {
     let query = supabase
       .from('pagamentos')
       .select(`
-        id, aluno_id, valor, numero_parcela, data_vencimento, total_mensalidades,
+        id, aluno_id, valor, numero_parcela, data_vencimento, total_mensalidades, produto,
         alunos!inner (
           nome, email, cpf, endereco, cep, cidade_estado, asaas_customer_id,
-          origem_lead, forma_pagamento, data_matricula
+          origem_lead, forma_pagamento, data_matricula, total_mensalidades
         )
       `)
       .eq('status', 'pendente')
@@ -162,7 +164,37 @@ serve(async (req) => {
       return json({ ok: false, erro: 'Erro ao buscar parcelas elegíveis.' }, 500);
     }
 
-    const pagamentos = (pagamentosRaw ?? []) as unknown as PagamentoRow[];
+    // Sociedade IDM: produto próprio migrado do Decasoft/DkSoft pro Asaas
+    // aluno por aluno (pedido do Pedro, 31/10/2026) -- fora do fluxo Time
+    // Comercial e do corte asaasNovosAtivo, elegibilidade é só
+    // alunos.cobranca_ativa=true (o mesmo toggle que já liga/desliga a
+    // cobrança automática via WhatsApp). Sem isso, só a primeira parcela
+    // migrada gerava boleto; a seguinte nunca apareceria sozinha.
+    const { data: sociedadeRaw, error: sociedadeErr } = await supabase
+      .from('pagamentos')
+      .select(`
+        id, aluno_id, valor, numero_parcela, data_vencimento, total_mensalidades, produto,
+        alunos!inner (
+          nome, email, cpf, endereco, cep, cidade_estado, asaas_customer_id,
+          origem_lead, forma_pagamento, data_matricula, total_mensalidades
+        )
+      `)
+      .eq('status', 'pendente')
+      .is('asaas_payment_id', null)
+      .lte('data_vencimento', limiteVencimentoStr)
+      .eq('alunos.forma_pagamento', 'boleto')
+      .eq('produto', 'sociedade-idm')
+      .eq('alunos.cobranca_ativa', true);
+
+    if (sociedadeErr) {
+      console.error('matricula-boleto-mensal-gerar: erro ao buscar parcelas da Sociedade IDM', sociedadeErr);
+    }
+
+    const vistos = new Set<string>();
+    const pagamentos = [
+      ...((pagamentosRaw ?? []) as unknown as PagamentoRow[]),
+      ...((sociedadeRaw ?? []) as unknown as PagamentoRow[]),
+    ].filter(p => (vistos.has(p.id) ? false : (vistos.add(p.id), true)));
     const errors: Array<{ pagamentoId: string; erro: string }> = [];
     let generated = 0;
 
@@ -233,7 +265,11 @@ serve(async (req) => {
             dueDate: pagamento.data_vencimento,
             // "/" e acentos saem estranhos na description do Asaas (achado em
             // teste real 2026-09-04, "1/15" virava "115") -- texto simples.
-            description: `Matricula PSI (parcela ${pagamento.numero_parcela} de ${pagamento.total_mensalidades ?? 15}) - ${aluno.nome ?? pagamento.aluno_id}`,
+            // Descrição por produto (achado 31/10/2026: estava fixa em
+            // "Matricula PSI" pra qualquer produto, inclusive Sociedade IDM).
+            description: pagamento.produto === 'sociedade-idm'
+              ? `Sociedade IDM (parcela ${pagamento.numero_parcela} de ${aluno.total_mensalidades ?? pagamento.total_mensalidades ?? '-'}) - ${aluno.nome ?? pagamento.aluno_id}`
+              : `Matricula PSI (parcela ${pagamento.numero_parcela} de ${pagamento.total_mensalidades ?? 15}) - ${aluno.nome ?? pagamento.aluno_id}`,
             externalReference: pagamento.id,
           }),
         });
@@ -251,6 +287,10 @@ serve(async (req) => {
             // invoiceUrl mostra boleto E Pix na mesma página -- prioridade
             // sobre bankSlipUrl, mesmo critério de matricula-pagamento-criar.
             link_pagamento_asaas: data.invoiceUrl ?? data.bankSlipUrl ?? null,
+            // Número da fatura Asaas -- é o que a Spedy devolve em
+            // order.transactionId na nota, usado pelo spedy-webhook pra achar
+            // essa parcela de volta.
+            asaas_invoice_number: data.invoiceNumber ? String(data.invoiceNumber) : null,
           })
           .eq('id', pagamento.id);
 

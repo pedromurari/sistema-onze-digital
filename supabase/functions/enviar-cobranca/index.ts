@@ -463,26 +463,36 @@ function resolveTemplateParaItem(item: any, templates: any[], cfg: any, hoje: st
   // exato dispara um lembrete dedicado em vez da fase que bateria por dias_offset.
   // Passada a data sem pagamento, cai de volta na lógica normal abaixo -- dias_offset
   // continua contado a partir do vencimento original, sem relação com a promessa.
+  // Acha o template de uma categoria, priorizando um específico do produto
+  // do aluno sobre o global (produto IS NULL) -- retrocompatível: enquanto
+  // não existir nenhum template com produto preenchido, o comportamento é
+  // idêntico ao de sempre.
+  const achaPorProduto = (predicate: (t: any) => boolean): any | null => {
+    const doProduto = templates.find((t: any) => predicate(t) && t.produto === item.produto);
+    if (doProduto) return doProduto;
+    return templates.find((t: any) => predicate(t) && !t.produto) ?? null;
+  };
+
   if (item.data_prevista_pagamento) {
     if (item.data_prevista_pagamento > hoje) return null;
     if (item.data_prevista_pagamento === hoje) {
-      return templates.find((t: any) => t.tipo === "promessa_vencida") ?? null;
+      return achaPorProduto((t: any) => t.tipo === "promessa_vencida");
     }
   }
 
   const offset = item.dias_offset;
   if (offset < 0 && cfg.enviar_pre_vencimento) {
-    return templates.find((t: any) => t.tipo === "pre_vencimento" && t.dias_offset === offset) ?? null;
+    return achaPorProduto((t: any) => t.tipo === "pre_vencimento" && t.dias_offset === offset);
   }
   if (offset === 0 && cfg.enviar_no_vencimento) {
-    return templates.find((t: any) => t.tipo === "vencimento" && t.dias_offset === 0) ?? null;
+    return achaPorProduto((t: any) => t.tipo === "vencimento" && t.dias_offset === 0);
   }
   if (offset > 0 && cfg.enviar_pos_vencimento) {
-    return templates.find((t: any) =>
+    return achaPorProduto((t: any) =>
       t.tipo === "pos_vencimento" &&
       offset >= t.dias_offset &&
       (t.dias_offset_fim === null || t.dias_offset_fim === undefined || offset <= t.dias_offset_fim),
-    ) ?? null;
+    );
   }
   return null;
 }
@@ -644,6 +654,43 @@ async function notificarCobrancaPausada(db: any, motivo: string): Promise<void> 
   });
 }
 
+// Mensagens pontuais agendadas manualmente (operador decide "manda isso pra fulana
+// segunda às 14h" fora da automação) -- viram uma linha solta em cobranca_logs com
+// manual=true, status='pendente' e agendado_para no futuro. Roda em toda passada do
+// tique (já chamado a cada minuto pelo pg_cron 'enviar-cobranca-tick'), independente de
+// cfg.ativo/daily_limit/delay -- isso é um envio pontual que o operador decidiu, não faz
+// parte da automação em massa, então não deve ficar preso ao toggle nem disputar o limite
+// diário/delay dela.
+async function processarAgendadosManuais(db: any): Promise<void> {
+  const { data: pendentes } = await db
+    .from("cobranca_logs")
+    .select("id, telefone, mensagem")
+    .eq("manual", true)
+    .eq("status", "pendente")
+    .is("enviado_em", null)
+    .not("agendado_para", "is", null)
+    .lte("agendado_para", new Date().toISOString())
+    .order("agendado_para", { ascending: true })
+    .limit(5);
+
+  if (!pendentes?.length) return;
+
+  const { data: cfg } = await db.from("cobranca_config").select("evolution_config_ids").eq("id", "default").maybeSingle();
+  const allInstances = await resolveInstances(db, cfg ?? {});
+  const connectedIds = await getConnectedInstanceIds(allInstances);
+  const connected = allInstances.filter((i: EvoInstance) => connectedIds.has(i.id));
+  if (!connected.length) return; // sem instância conectada agora -- tenta de novo no próximo tique
+
+  for (const log of pendentes) {
+    const result = await sendViaEvolution(db, connected, log.telefone, log.mensagem);
+    await db.from("cobranca_logs").update({
+      status: result.ok ? "enviado" : "erro",
+      erro_msg: result.ok ? null : result.error,
+      enviado_em: result.ok ? new Date().toISOString() : null,
+    }).eq("id", log.id);
+  }
+}
+
 // Modo tique: chamado a cada poucos minutos por um cron externo. Manda no máximo 1
 // mensagem por chamada, só se estiver dentro do horário seguro, do limite diário, com
 // instância conectada e sem estar em pausa por erro sequencial -- mesmo princípio do
@@ -651,6 +698,8 @@ async function notificarCobrancaPausada(db: any, motivo: string): Promise<void> 
 // sozinho da fila, get_alunos_para_cobranca já é dinâmica).
 async function processarTick(db: any, cors: any) {
   const json = (payload: any) => new Response(JSON.stringify(payload), { headers: { ...cors, "Content-Type": "application/json" } });
+
+  await processarAgendadosManuais(db);
 
   const { data: cfg } = await db.from("cobranca_config").select("*").eq("id", "default").single();
   if (!cfg) return json({ ok: false, error: "cobranca_config não encontrada" });
