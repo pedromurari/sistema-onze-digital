@@ -316,6 +316,17 @@ Comentários em português, densos, explicando o porquê (padrão do repo).
 
 ## Log de coordenação (edite aqui ao pegar/soltar um arquivo)
 
+C9 — publicação em 2026-10-23: `dpl_DwyJMusyWfAt8SKdf9RYMgrnfH8G` promovido para
+`sistema.idmpsi.com.br`; 76 testes e build novamente aprovados. HTTP 200 e marcadores
+de título/cobertura/resposta confirmados no JS de produção. Build Output API
+estático usado após falha `spawn cmd.exe ENOENT` da CLI; snapshot em
+`E:\codex-c9-release-20261023`, base `563389b` + alterações locais da C9 e frontend
+preexistente (menu de Marketing já estava publicado). Novos WIP de Operações/Tráfego
+não incluídos. Typecheck global interrompido sem resultado; navegador autenticado
+não respondeu. Arquivos da C9 liberados; validações pendentes registradas.
+
+C9 — Codex implementou em 2026-10-23: `FinanceiroCFO.tsx`, menu e hook de leitura. Pedro confirmou incluir a taxa de resposta nesta rodada (por envio consolidado do mês). 76 testes e build passando, `git diff --check` limpo nos arquivos da tarefa. Typecheck não concluiu e foi interrompido após longa execução; não foi confirmado o baseline. Disco C: sem espaço (ENOSPC), testes/build executados com temporários no E:. Publicação e verificação autenticada pendentes. Sem alteração de dados ou migrations.
+
 | Quando | Quem | Arquivo(s) | Status |
 |---|---|---|---|
 | 2026-09-08 | Claude | `Financeiro.tsx`, `types.ts`, migração 1.2 | concluído (não commitado) |
@@ -337,3 +348,4 @@ Comentários em português, densos, explicando o porquê (padrão do repo).
 | 2026-09-10 | Codex | C8 publicação Realtime, migração `20260910280000_realtime_payload_enxuto.sql` | concluído; consumidores cruzados com 16 tabelas vivas, seis identidades FULL sem uso de `payload.old` voltam a DEFAULT e uma tabela sem assinante sai da publicação; migração não aplicada |
 | 2026-10-23 | Claude | Auditoria: migrações C7/C8 estavam escritas há 6 semanas e nunca tinham sido aplicadas. C7 (`cron_sem_pg_sleep_escalonado`) **aplicada via MCP** agora. C8 (`realtime_payload_enxuto`) bloqueada pelo classificador de permissão do Claude Code (ação em infraestrutura compartilhada); Pedro autorizou explicitamente e foi **aplicada via MCP** logo em seguida. | C7 e C8 concluídos |
 | 2026-10-23 | Claude→Codex | **HANDOVER pra C9:** `FinanceiroCFO.tsx` liberado pro Codex só pra esta tarefa (Diretoria Financeiro). Claude não toca nele até a C9 entrar. Achado de auditoria (cobertura de cobrança automática ~45%) documentado em `FINANCEIRO.md` Fase 5. | Codex pega |
+| 2026-10-31 | Claude | `enviar-cobranca/index.ts`, `matricula-boleto-mensal-gerar/index.ts`, migração `20261031010000_cobranca_templates_por_produto.sql` | concluído (`e75d7e9`). Pedido do Pedro: migrar os 9 alunos da Sociedade IDM do Decasoft/DkSoft pro Asaas (aluno por aluno, boleto + `cobranca_ativa`) e separar cobrança/lembretes por produto. `cobranca_templates` ganhou coluna `produto` (NULL=global, retrocompatível); `get_alunos_para_cobranca` devolve `produto`; `resolveTemplateParaItem` prioriza template do produto sobre o global; `matricula-boleto-mensal-gerar` passou a cobrir também Sociedade IDM (antes só `origem_lead='time_comercial'`, então só a 1ª parcela migrada ganhava boleto — a seguinte nunca apareceria sozinha). Corrigido de quebra um bug achado no processo: a descrição do boleto no Asaas estava fixa em "Matricula PSI" pra qualquer produto. Turma da Sociedade IDM ativada em `cobranca_turmas_ativas` (sem isso `cobranca_ativa` do aluno não tinha efeito nenhum — pré-requisito que não estava documentado em lugar nenhum). 8/9 migrados; a 9ª (Dolores, Portugal, sem CPF) é exceção manual documentada na ficha dela, paga via Wise, `cobranca_ativa=false`. |
