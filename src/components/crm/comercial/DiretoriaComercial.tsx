@@ -27,6 +27,8 @@ function useDiretoriaComercial() {
   const [leadsMesCount, setLeadsMesCount] = useState(0);
   const [fechadosMesCount, setFechadosMesCount] = useState(0);
   const [followupsVencidosCount, setFollowupsVencidosCount] = useState(0);
+  const [leadsNovosSemDono, setLeadsNovosSemDono] = useState<number | null>(null);
+  const [retornosHoje, setRetornosHoje] = useState<number | null>(null);
   const [comissoesMes, setComissoesMes] = useState<Comissao[]>([]);
   const [comissaoPendente, setComissaoPendente] = useState<Comissao[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -40,24 +42,28 @@ function useDiretoriaComercial() {
       // Contagens via head:true (count exato no banco) — a volumetria real de leads do
       // mês passa de 1000 linhas, o limite padrão de retorno do client; buscar as linhas
       // pra só contar subestimava o total.
-      const [hojeRes, mesRes, fechadosRes, followupRes, comMesRes, comPendRes] = await Promise.all([
+      const [hojeRes, mesRes, fechadosRes, followupRes, comMesRes, comPendRes, semDonoRes, retornosHojeRes] = await Promise.all([
         supabase.from('leads').select('id', { count: 'exact', head: true }).eq('origem', 'Time Comercial').gte('criado_em', `${hoje}T00:00:00`),
         supabase.from('leads').select('id', { count: 'exact', head: true }).eq('origem', 'Time Comercial').gte('criado_em', `${inicioMes}T00:00:00`),
         // Não há data de fechamento própria nesta tabela (matriculado_em não é
         // preenchido pelo fluxo do Time Comercial) — aproxima por "fechado entre os
         // leads criados no mês", mesmo critério usado no resto da Diretoria.
         supabase.from('leads').select('id', { count: 'exact', head: true }).eq('origem', 'Time Comercial').eq('status', 'fechado').gte('criado_em', `${inicioMes}T00:00:00`),
-        supabase.from('leads').select('id', { count: 'exact', head: true }).eq('origem', 'Time Comercial').eq('status', 'followup').lt('followup_manual_prazo', `${hoje}T00:00:00`),
+        supabase.from('leads').select('id', { count: 'exact', head: true }).eq('origem', 'Time Comercial').eq('status', 'followup').lt('followup_manual_prazo', hoje),
         // Comissão real da vendedora: tipo='comissao' (ajuda de custo fica de fora, é
         // valor fixo, não faturamento de venda).
         supabase.from('comissoes_vendedores').select('*').eq('tipo', 'comissao').gte('data_venda', inicioMes),
         supabase.from('comissoes_vendedores').select('*').in('status', ['pendente', 'reservado']).order('data_venda', { ascending: false }),
+        supabase.from('leads').select('id', { count: 'exact', head: true }).eq('origem', 'Time Comercial').eq('status', 'novo').is('vendedor', null).gte('criado_em', `${inicioMes}T00:00:00`),
+        supabase.from('leads').select('id', { count: 'exact', head: true }).eq('origem', 'Time Comercial').eq('status', 'followup').eq('followup_manual_prazo', hoje),
       ]);
       if (!ativo) return;
       setLeadsHojeCount(hojeRes.count ?? 0);
       setLeadsMesCount(mesRes.count ?? 0);
       setFechadosMesCount(fechadosRes.count ?? 0);
       setFollowupsVencidosCount(followupRes.count ?? 0);
+      setLeadsNovosSemDono(semDonoRes.error ? null : semDonoRes.count ?? 0);
+      setRetornosHoje(retornosHojeRes.error ? null : retornosHojeRes.count ?? 0);
       setComissoesMes((comMesRes.data as Comissao[]) ?? []);
       setComissaoPendente((comPendRes.data as Comissao[]) ?? []);
       setCarregando(false);
@@ -65,7 +71,7 @@ function useDiretoriaComercial() {
     return () => { ativo = false; };
   }, []);
 
-  return { leadsHojeCount, leadsMesCount, fechadosMesCount, followupsVencidosCount, comissoesMes, comissaoPendente, carregando };
+  return { leadsHojeCount, leadsMesCount, fechadosMesCount, followupsVencidosCount, leadsNovosSemDono, retornosHoje, comissoesMes, comissaoPendente, carregando };
 }
 
 const DECISOES = [
@@ -78,7 +84,7 @@ const DECISOES = [
 ];
 
 export function DiretoriaComercial() {
-  const { leadsHojeCount, leadsMesCount, fechadosMesCount, followupsVencidosCount, comissoesMes, comissaoPendente, carregando } = useDiretoriaComercial();
+  const { leadsHojeCount, leadsMesCount, fechadosMesCount, followupsVencidosCount, leadsNovosSemDono, retornosHoje, comissoesMes, comissaoPendente, carregando } = useDiretoriaComercial();
 
   const taxaConversao = leadsMesCount > 0 ? (fechadosMesCount / leadsMesCount) * 100 : 0;
 
@@ -113,6 +119,19 @@ export function DiretoriaComercial() {
           <StatTile label="Faturado este mês" value={carregando ? '—' : formatReal(faturamentoMes)} hint={!carregando ? `${comissoesMes.length} venda(s)` : undefined} icon={BadgeDollarSign} tom="bom" />
           <StatTile label="Comissão a pagar" value={carregando ? '—' : formatReal(valorComissaoPendente)} icon={Target} tom={valorComissaoPendente > 0 ? 'atencao' : 'padrao'} />
         </section>
+
+        <Card className="border-primary/30 shadow-sm">
+          <CardContent className="space-y-3 p-4 sm:p-5">
+            <SectionBar title="Gerente Comercial — prioridades de hoje" icon={Target} />
+            <p className="text-xs text-muted-foreground">Prévia de gestão somente leitura. Não altera leads, envia mensagens nem aciona o bot.</p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Retornos atrasados</p><p className="text-xl font-semibold tabular-nums">{carregando ? '—' : followupsVencidosCount}</p><p className="text-xs text-muted-foreground">Conferir acordos de contato vencidos.</p></div>
+              <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Retornos para hoje</p><p className="text-xl font-semibold tabular-nums">{carregando || retornosHoje === null ? '—' : retornosHoje}</p><p className="text-xs text-muted-foreground">Priorizar o contato na data combinada.</p></div>
+              <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Leads novos sem vendedor no mês</p><p className="text-xl font-semibold tabular-nums">{carregando || leadsNovosSemDono === null ? '—' : leadsNovosSemDono}</p><p className="text-xs text-muted-foreground">Distribuir pelo Time Comercial.</p></div>
+            </div>
+            {(retornosHoje === null || leadsNovosSemDono === null) && !carregando && <p className="text-xs text-amber-600">Parte das prioridades não pôde ser consultada. Atualize a página para tentar novamente.</p>}
+          </CardContent>
+        </Card>
 
         {vendedora && (
           <Card className="border-border/70 shadow-sm">
