@@ -116,6 +116,7 @@ export function permissionsToToggles(permissions: AccessPermissions): Permission
 
 /** Uma tela pode ser varias views (Operacoes tem tres). Aqui elas viram um recurso so. */
 const RECURSO_POR_VIEW: Record<string, string> = {
+  disparos_massa:                'disparos_monitor',
   npa_overview:                  'npa',
   lancamentos_overview:          'lancamentos',
   operacoes_tarefas:             'operacoes',
@@ -150,7 +151,7 @@ export type AppView =
   | 'agenda_aulas'
   | 'dashboard' | 'npa_overview' | 'lancamentos_overview' | 'financeiro' | 'financeiro_notas' | 'financeiro_dre' | 'financeiro_conciliacao' | 'financeiro_socios' | 'financeiro_cfo' | 'balanco' | 'rodrygo'
   | 'lancamentos_30' | 'lancamentos_31' | 'lancamentos_32'
-  | 'team' | 'settings' | 'cobranca' | 'funil_lancamento' | 'disparos_monitor' | 'chat_conversas'
+  | 'team' | 'settings' | 'cobranca' | 'funil_lancamento' | 'disparos_monitor' | 'disparos_massa' | 'chat_conversas'
   | 'operacoes_tarefas' | 'operacoes_calendario_geral' | 'operacoes_calendario_conteudo' | 'reels_idm'
   | 'mapa_mental' | 'rh_diretoria' | 'rh' | 'rh_fechamento_folha' | 'provas_trabalhos' | 'pedagogico_diretoria' | 'franquia_psi' | 'posts' | 'parceiros' | 'equipe_11ds'
   | 'aquecimento_chips' | 'time_comercial' | 'comercial_diretoria' | 'pessoas' | 'workshops' | 'webinario' | 'ceo_rotina' | 'diva'
@@ -339,6 +340,7 @@ export function canAccessView(
     cobranca:          permissions.canViewCobranca,
     funil_lancamento:  permissions.canViewCobranca,
     disparos_monitor:  permissions.canViewCobranca,
+    disparos_massa:    permissions.canViewCobranca,
     chat_conversas:    permissions.canViewCobranca,
     rodrygo:          permissions.canViewRodrygo,
     team: permissions.canViewTeam,

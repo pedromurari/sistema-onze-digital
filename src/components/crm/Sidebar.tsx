@@ -45,6 +45,7 @@ const BASE_MENU: MenuItem[] = [
   // Funil & Automação
   { key: 'funil_lancamento',          label: 'Funil de Lançamento',  icon: GitBranch },
   { key: 'disparos_monitor',          label: 'Central de Disparos',  icon: Radio },
+  { key: 'disparos_massa',            label: 'Disparos em Massa',    icon: Megaphone },
   { key: 'chat_conversas',            label: 'Chat',                 icon: MessageCircle },
   { key: 'aquecimento_chips',         label: 'Aquecimento de Chips', icon: Flame,       adminOnly: true },
   { key: 'trafego_regras',            label: 'Regras de Automação',  icon: Settings },

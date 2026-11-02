@@ -35,6 +35,7 @@ const FinanceiroCFO    = lazy(() => import('./FinanceiroCFO').then(m => ({ defau
 const Cobranca         = lazy(() => import('./Cobranca').then(m => ({ default: m.Cobranca })));
 const FunilLancamento  = lazy(() => import('./FunilLancamento').then(m => ({ default: m.FunilLancamento })));
 const DisparosMonitor  = lazy(() => import('./DisparosMonitor').then(m => ({ default: m.DisparosMonitor })));
+const DisparosMassa    = lazy(() => import('./DisparosMassa').then(m => ({ default: m.DisparosMassa })));
 const AquecimentoChips = lazy(() => import('./AquecimentoChips').then(m => ({ default: m.AquecimentoChips })));
 const Pessoas = lazy(() => import('./Pessoas').then(m => ({ default: m.Pessoas })));
 const LancamentoKanban = lazy(() => import('./LancamentoKanban').then(m => ({ default: m.LancamentoKanban })));
@@ -235,6 +236,7 @@ export function CRMLayout() {
             onNavigateToAluno={(alunoId) => setCurrentView(`financeiro_aluno_${alunoId}` as View)}
           />
         : <RestrictedView />;
+      case 'disparos_massa':  return permissions.canViewCobranca || isAdmin ? <DisparosMassa /> : <RestrictedView />;
       case 'chat_conversas':  return permissions.canViewCobranca || isAdmin
         ? <DisparosMonitor
             initialMainTab="chat"
