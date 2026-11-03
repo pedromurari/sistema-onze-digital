@@ -25,6 +25,8 @@ const WorkshopCaptura   = React.lazy(() => import("./pages/WorkshopCaptura"));
 const WorkshopConfirmacao = React.lazy(() => import("./pages/WorkshopConfirmacao"));
 const DivaCaptura      = React.lazy(() => import("./pages/DivaCaptura"));
 const DivaConfirmacao  = React.lazy(() => import("./pages/DivaConfirmacao"));
+const TurmaCaptura     = React.lazy(() => import("./pages/turma/TurmaCaptura"));
+const TurmaObrigado    = React.lazy(() => import("./pages/turma/TurmaObrigado"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -112,6 +114,8 @@ const App = () => (
               <Route path="/webinario/obrigado/:slug"     element={<WebinarioObrigado />} />
               <Route path="/webinario/sala/:sessionId"    element={<WebinarioSala />} />
               <Route path="/webinario/oferta/:slug"       element={<WebinarioOferta />} />
+              <Route path="/turma/:slug"                  element={<TurmaCaptura />} />
+              <Route path="/turma/:slug/obrigado"         element={<TurmaObrigado />} />
               <Route path="/workshop/:slug"               element={<WorkshopCaptura />} />
               <Route path="/workshop/confirmacao/:inscricaoId" element={<WorkshopConfirmacao />} />
               <Route path="/diva"                         element={<DivaCaptura />} />
