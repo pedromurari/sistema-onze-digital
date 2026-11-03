@@ -62,19 +62,19 @@ const TEMPLATES = [
     ],
   },
   {
-    nome: 'Black Friday — Formação em Psicanálise (Ellen)',
+    nome: 'Black Friday — Formação em Psicanálise (Hellen)',
     canal: 'ambos' as Canal,
     fonte: 'lancamento_turma' as Fonte,
-    // Pedido do Pedro (03/11): não é oferta de "marca" — é a consultora Ellen
+    // Pedido do Pedro (03/11): não é oferta de "marca" — é a consultora Hellen
     // abordando pessoalmente. Só a instância dela envia, ritmo de 1:1
     // (20-25/dia), e o CTA do WhatsApp é responder a mensagem, não link.
-    texto_whatsapp: 'Oi, {{nome}}! Tudo bem? Aqui é a Ellen, consultora do IDM. 🖤\n\nQueria te contar em primeira mão: chegou a Black Friday do IDM e abrimos a Turma #029 da Formação em Psicanálise Clínica Integrativa com a condição mais agressiva que a gente já fez — nunca tínhamos feito isso antes, e não sei se vamos repetir.\n\nComo você já esteve com a gente na Semana do Despertar, eu queria garantir uma vaga pra você antes de abrir pro público geral. Vagas limitadas e condição só até o fim da semana.\n\nResponde aqui essa mensagem se tiver interesse em entrar nessa turma com essa condição especial de Black Friday — eu mesma já te dou sequência. 💛',
+    texto_whatsapp: 'Oi, {{nome}}! Tudo bem? Aqui é a Hellen, consultora do IDM. 🖤\n\nQueria te contar em primeira mão: chegou a Black Friday do IDM e abrimos a Turma #029 da Formação em Psicanálise Clínica Integrativa com a condição mais agressiva que a gente já fez — nunca tínhamos feito isso antes, e não sei se vamos repetir.\n\nComo você já esteve com a gente na Semana do Despertar, eu queria garantir uma vaga pra você antes de abrir pro público geral. Vagas limitadas e condição só até o fim da semana.\n\nResponde aqui essa mensagem se tiver interesse em entrar nessa turma com essa condição especial de Black Friday — eu mesma já te dou sequência. 💛',
     link_cta: '',
-    email_assunto: 'Ellen do IDM: a condição mais agressiva de Black Friday que já fizemos',
-    email_corpo: '<p>Oi, {{nome}}! Tudo bem? Aqui é a Ellen, consultora do IDM.</p><p>Queria te contar em primeira mão: chegou a Black Friday do IDM e abrimos a Turma #029 da Formação em Psicanálise Clínica Integrativa com a condição mais agressiva que a gente já fez — nunca tínhamos feito isso antes, e não sei se vamos repetir.</p><p>Como você já esteve com a gente na Semana do Despertar, eu queria garantir uma vaga pra você antes de abrir pro público geral.</p><p><strong>Vagas limitadas e condição só até o fim da semana.</strong></p><p>Clica no botão abaixo e fala comigo agora mesmo no WhatsApp — eu mesma te explico as condições:</p><p><a href="{{link_cta}}">Falar com a Ellen no WhatsApp</a></p>',
+    email_assunto: 'Hellen do IDM: a condição mais agressiva de Black Friday que já fizemos',
+    email_corpo: '<p>Oi, {{nome}}! Tudo bem? Aqui é a Hellen, consultora do IDM.</p><p>Queria te contar em primeira mão: chegou a Black Friday do IDM e abrimos a Turma #029 da Formação em Psicanálise Clínica Integrativa com a condição mais agressiva que a gente já fez — nunca tínhamos feito isso antes, e não sei se vamos repetir.</p><p>Como você já esteve com a gente na Semana do Despertar, eu queria garantir uma vaga pra você antes de abrir pro público geral.</p><p><strong>Vagas limitadas e condição só até o fim da semana.</strong></p><p>Clica no botão abaixo e fala comigo agora mesmo no WhatsApp — eu mesma te explico as condições:</p><p><a href="{{link_cta}}">Falar com a Hellen no WhatsApp</a></p>',
     // Destino real do clique (link "cru" — o clique é rastreado antes de redirecionar pra cá).
-    email_link_cta: 'https://wa.me/5511965781940?text=Oi%2C%20Ellen%21%20Vi%20a%20Black%20Friday%20da%20Forma%C3%A7%C3%A3o%20em%20Psican%C3%A1lise%20e%20quero%20saber%20as%20condi%C3%A7%C3%B5es.',
-    // Só a instância da Ellen (Helen vendas) dispara essa campanha.
+    email_link_cta: 'https://wa.me/5511965781940?text=Oi%2C%20Hellen%21%20Vi%20a%20Black%20Friday%20da%20Forma%C3%A7%C3%A3o%20em%20Psican%C3%A1lise%20e%20quero%20saber%20as%20condi%C3%A7%C3%B5es.',
+    // Só a instância da Hellen (Helen vendas) dispara essa campanha.
     evolution_config_ids: ['8bc6b812-fb70-40e1-9a08-b8f1684cb5ed'],
     daily_limit: 22,
   },
