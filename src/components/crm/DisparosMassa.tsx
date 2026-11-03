@@ -26,6 +26,8 @@ interface Campanha {
   email_corpo: string | null;
   email_link_cta: string | null;
   daily_limit: number | null;
+  delay_min_s: number | null;
+  delay_max_s: number | null;
   total_destinatarios: number;
   total_enviados_email: number;
   total_erro_email: number;
@@ -66,8 +68,13 @@ const TEMPLATES = [
     canal: 'ambos' as Canal,
     fonte: 'lancamento_turma' as Fonte,
     // Pedido do Pedro (03/11): não é oferta de "marca" — é a consultora Hellen
-    // abordando pessoalmente. Só a instância dela envia, ritmo de 1:1
-    // (20-25/dia), e o CTA do WhatsApp é responder a mensagem, não link.
+    // abordando pessoalmente. Só a instância dela envia, ritmo de 1:1,
+    // e o CTA do WhatsApp é responder a mensagem, não link.
+    // Ajustado em 03/11 depois de um susto: essa e a campanha de Matrículas
+    // #029 compartilham a MESMA instância da Hellen e rodam ao mesmo tempo,
+    // então o delay de cada uma isoladamente não é o intervalo real no
+    // número dela — por isso 15/dia aqui (não 30) e delay de 30min, pra
+    // mesmo somando as duas não passar de ~30/dia nem ficar rápido demais.
     texto_whatsapp: 'Oi, {{nome}}! Tudo bem? Aqui é a Hellen, consultora do IDM. 🖤\n\nQueria te contar em primeira mão: chegou a Black Friday do IDM e abrimos a Turma #029 da Formação em Psicanálise Clínica Integrativa com a condição mais agressiva que a gente já fez — nunca tínhamos feito isso antes, e não sei se vamos repetir.\n\nComo você já esteve com a gente na Semana do Despertar, eu queria garantir uma vaga pra você antes de abrir pro público geral. Vagas limitadas e condição só até o fim da semana.\n\nResponde aqui essa mensagem se tiver interesse em entrar nessa turma com essa condição especial de Black Friday — eu mesma já te dou sequência. 💛',
     link_cta: '',
     email_assunto: 'Hellen do IDM: a condição mais agressiva de Black Friday que já fizemos',
@@ -76,7 +83,9 @@ const TEMPLATES = [
     email_link_cta: 'https://wa.me/5511965781940?text=Oi%2C%20Hellen%21%20Vi%20a%20Black%20Friday%20da%20Forma%C3%A7%C3%A3o%20em%20Psican%C3%A1lise%20e%20quero%20saber%20as%20condi%C3%A7%C3%B5es.',
     // Só a instância da Hellen (Helen vendas) dispara essa campanha.
     evolution_config_ids: ['8bc6b812-fb70-40e1-9a08-b8f1684cb5ed'],
-    daily_limit: 22,
+    daily_limit: 15,
+    delay_min_s: 1800,
+    delay_max_s: 1900,
   },
   {
     nome: 'Matrículas abertas — Turma #029 (Hellen)',
@@ -96,7 +105,9 @@ const TEMPLATES = [
     email_corpo: '<p>Oi, {{nome}}! Tudo bem? Aqui é a Hellen, consultora do IDM.</p><p>Queria te contar: as matrículas da Turma #029 da Formação em Psicanálise Clínica Integrativa do IDM acabaram de abrir, e eu lembrei de você.</p><p>Se você já pensou em se formar em psicanálise clínica integrativa, essa é a hora: turma nova, vagas limitadas, início em breve.</p><p>Clica no botão abaixo e fala comigo agora mesmo no WhatsApp — eu mesma te passo as condições:</p><p><a href="{{link_cta}}">Falar com a Hellen no WhatsApp</a></p>',
     email_link_cta: 'https://wa.me/5511965781940?text=Oi%2C%20Hellen%21%20Vi%20que%20abriram%20as%20matr%C3%ADculas%20da%20Turma%20%23029%20e%20quero%20saber%20as%20condi%C3%A7%C3%B5es.',
     evolution_config_ids: ['8bc6b812-fb70-40e1-9a08-b8f1684cb5ed'],
-    daily_limit: 22,
+    daily_limit: 15,
+    delay_min_s: 1800,
+    delay_max_s: 1900,
   },
   {
     nome: 'Novo conteúdo — alunos (YouTube/Instagram)',
@@ -141,6 +152,8 @@ export function DisparosMassa() {
   const [emailCorpo, setEmailCorpo] = useState('');
   const [evolutionConfigIds, setEvolutionConfigIds] = useState<string[] | null>(null);
   const [dailyLimit, setDailyLimit] = useState<number | null>(null);
+  const [delayMinS, setDelayMinS] = useState<number | null>(null);
+  const [delayMaxS, setDelayMaxS] = useState<number | null>(null);
   const [emailLinkCta, setEmailLinkCta] = useState('');
 
   const carregar = async () => {
@@ -166,6 +179,8 @@ export function DisparosMassa() {
     setEmailCorpo('email_corpo' in t ? (t as { email_corpo?: string }).email_corpo ?? '' : '');
     setEvolutionConfigIds('evolution_config_ids' in t ? (t as { evolution_config_ids?: string[] }).evolution_config_ids ?? null : null);
     setDailyLimit('daily_limit' in t ? (t as { daily_limit?: number }).daily_limit ?? null : null);
+    setDelayMinS('delay_min_s' in t ? (t as { delay_min_s?: number }).delay_min_s ?? null : null);
+    setDelayMaxS('delay_max_s' in t ? (t as { delay_max_s?: number }).delay_max_s ?? null : null);
     setEmailLinkCta('email_link_cta' in t ? (t as { email_link_cta?: string }).email_link_cta ?? '' : '');
     setProduto('produto' in t ? (t as { produto?: string }).produto ?? '' : '');
     setCanalLead('canal_lead' in t ? (t as { canal_lead?: string }).canal_lead ?? '' : '');
@@ -196,6 +211,8 @@ export function DisparosMassa() {
       email_link_cta: emailLinkCta || null,
       evolution_config_ids: evolutionConfigIds,
       daily_limit: dailyLimit,
+      delay_min_s: delayMinS,
+      delay_max_s: delayMaxS,
       status: 'pronta',
     }).select('id').single();
     setSalvando(false);
@@ -232,7 +249,7 @@ export function DisparosMassa() {
     setExcluirMatriculados(true); setProduto(''); setCanalLead(''); setAlunoStatus('ativo'); setExcluirDiva(false);
     setExcluirStatusLeadsProduto([]);
     setTextoWhatsapp(''); setLinkCta(''); setEmailAssunto(''); setEmailCorpo('');
-    setEvolutionConfigIds(null); setDailyLimit(null); setEmailLinkCta('');
+    setEvolutionConfigIds(null); setDailyLimit(null); setDelayMinS(null); setDelayMaxS(null); setEmailLinkCta('');
   };
 
   return (
@@ -368,6 +385,9 @@ export function DisparosMassa() {
                   )}
                   {dailyLimit != null && (
                     <p className="text-xs text-amber-600">⚠ Ritmo de envio reduzido: limite de {dailyLimit} mensagens por dia (em vez do padrão de 400).</p>
+                  )}
+                  {delayMinS != null && (
+                    <p className="text-xs text-amber-600">⚠ Intervalo entre envios: {Math.round(delayMinS / 60)}-{Math.round((delayMaxS ?? delayMinS) / 60)} min (em vez do padrão de 3-4 min). Se outra campanha usar a mesma instância ao mesmo tempo, o intervalo real some — confirme que não há sobreposição.</p>
                   )}
                 </div>
               )}

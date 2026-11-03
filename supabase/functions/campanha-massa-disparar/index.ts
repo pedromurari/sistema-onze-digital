@@ -19,6 +19,23 @@
  * quem ja esta num status terminal (ex: 'fechado' -- ja matriculou), pra
  * nao ofertar de novo pra quem ja comprou.
  *
+ * campanha.evolution_config_ids (opcional): restringe o disparo a essas
+ * instancias especificas em vez de rotacionar por todas as ativas --
+ * usado quando uma campanha nao pode sair de certos numeros.
+ *
+ * campanha.daily_limit (opcional): sobrescreve o limite diario padrao
+ * (400) -- usado quando o disparo precisa de ritmo mais pessoal/lento
+ * (ex: vendedor fazendo abordagem 1:1).
+ *
+ * campanha.delay_min_s / delay_max_s (opcional): sobrescreve o intervalo
+ * padrao entre envios (180-240s). Quando duas campanhas usam a MESMA
+ * instancia (evolution_config_ids) ao mesmo tempo, os delays nao se
+ * coordenam entre si -- cada campanha roda seu proprio ritmo
+ * independente, entao o intervalo efetivo no numero compartilhado pode
+ * ser menor que o configurado em cada uma. Pra ritmo pessoal (vendedor
+ * numa instancia so), usar delay alto (ex: 1800s) E dividir o
+ * daily_limit entre as campanhas que compartilham a instancia.
+ *
  * Body: { campanhaId: string, apenasContar?: boolean }
  * Com apenasContar=true, so resolve e deduplica pra devolver o total --
  * nao grava nada, nao dispara nada. Usado na pre-visualizacao antes do
@@ -163,8 +180,8 @@ serve(async (req) => {
           template,
           status: 'ativo',
           leads_total: comTelefone.length,
-          delay_min_s: 20,
-          delay_max_s: 60,
+          delay_min_s: campanha.delay_min_s ?? 180,
+          delay_max_s: campanha.delay_max_s ?? 240,
           daily_limit: campanha.daily_limit ?? 400,
           safe_hour_start: 9,
           safe_hour_end: 20,
