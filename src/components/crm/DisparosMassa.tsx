@@ -24,6 +24,8 @@ interface Campanha {
   link_cta: string | null;
   email_assunto: string | null;
   email_corpo: string | null;
+  email_link_cta: string | null;
+  daily_limit: number | null;
   total_destinatarios: number;
   total_enviados_email: number;
   total_erro_email: number;
@@ -60,13 +62,21 @@ const TEMPLATES = [
     ],
   },
   {
-    nome: 'Black Friday — Formação em Psicanálise',
+    nome: 'Black Friday — Formação em Psicanálise (Ellen)',
     canal: 'ambos' as Canal,
     fonte: 'lancamento_turma' as Fonte,
-    texto_whatsapp: 'Oi, {{nome}}! 🖤\n\nA Black Friday do IDM chegou — e essa é a única vez no ano que eu consigo falar isso: abrimos a Turma #029 da Formação em Psicanálise Clínica Integrativa com a condição mais agressiva que a gente já fez. Nunca repetimos isso antes, e não sei se vamos repetir de novo.\n\nComo você já esteve com a gente na Semana do Despertar, quero te garantir uma vaga antes de abrir pro público geral.\n\nVagas limitadas e condição só até o fim da semana. Clica aqui e garante a sua:',
+    // Pedido do Pedro (03/11): não é oferta de "marca" — é a consultora Ellen
+    // abordando pessoalmente. Só a instância dela envia, ritmo de 1:1
+    // (20-25/dia), e o CTA do WhatsApp é responder a mensagem, não link.
+    texto_whatsapp: 'Oi, {{nome}}! Tudo bem? Aqui é a Ellen, consultora do IDM. 🖤\n\nQueria te contar em primeira mão: chegou a Black Friday do IDM e abrimos a Turma #029 da Formação em Psicanálise Clínica Integrativa com a condição mais agressiva que a gente já fez — nunca tínhamos feito isso antes, e não sei se vamos repetir.\n\nComo você já esteve com a gente na Semana do Despertar, eu queria garantir uma vaga pra você antes de abrir pro público geral. Vagas limitadas e condição só até o fim da semana.\n\nResponde aqui essa mensagem se tiver interesse em entrar nessa turma com essa condição especial de Black Friday — eu mesma já te dou sequência. 💛',
     link_cta: '',
-    email_assunto: 'Black Friday IDM: a condição mais agressiva que já fizemos (vagas limitadas)',
-    email_corpo: '<p>Oi, {{nome}}!</p><p>A Black Friday do IDM chegou — e essa é a única vez no ano que eu consigo falar isso: abrimos a Turma #029 da Formação em Psicanálise Clínica Integrativa com a condição mais agressiva que a gente já fez. Nunca repetimos isso antes, e não sei se vamos repetir de novo.</p><p>Como você já esteve com a gente na Semana do Despertar, quero te garantir uma vaga antes de abrir pro público geral.</p><p><strong>Vagas limitadas e condição só até o fim da semana.</strong></p><p>Clica aqui e garante a sua:</p>',
+    email_assunto: 'Ellen do IDM: a condição mais agressiva de Black Friday que já fizemos',
+    email_corpo: '<p>Oi, {{nome}}! Tudo bem? Aqui é a Ellen, consultora do IDM.</p><p>Queria te contar em primeira mão: chegou a Black Friday do IDM e abrimos a Turma #029 da Formação em Psicanálise Clínica Integrativa com a condição mais agressiva que a gente já fez — nunca tínhamos feito isso antes, e não sei se vamos repetir.</p><p>Como você já esteve com a gente na Semana do Despertar, eu queria garantir uma vaga pra você antes de abrir pro público geral.</p><p><strong>Vagas limitadas e condição só até o fim da semana.</strong></p><p>Clica no botão abaixo e fala comigo agora mesmo no WhatsApp — eu mesma te explico as condições:</p><p><a href="{{link_cta}}">Falar com a Ellen no WhatsApp</a></p>',
+    // Destino real do clique (link "cru" — o clique é rastreado antes de redirecionar pra cá).
+    email_link_cta: 'https://wa.me/5511965781940?text=Oi%2C%20Ellen%21%20Vi%20a%20Black%20Friday%20da%20Forma%C3%A7%C3%A3o%20em%20Psican%C3%A1lise%20e%20quero%20saber%20as%20condi%C3%A7%C3%B5es.',
+    // Só a instância da Ellen (Helen vendas) dispara essa campanha.
+    evolution_config_ids: ['8bc6b812-fb70-40e1-9a08-b8f1684cb5ed'],
+    daily_limit: 22,
   },
   {
     nome: 'Matrículas abertas — Turma #029',
@@ -117,6 +127,8 @@ export function DisparosMassa() {
   const [emailAssunto, setEmailAssunto] = useState('');
   const [emailCorpo, setEmailCorpo] = useState('');
   const [evolutionConfigIds, setEvolutionConfigIds] = useState<string[] | null>(null);
+  const [dailyLimit, setDailyLimit] = useState<number | null>(null);
+  const [emailLinkCta, setEmailLinkCta] = useState('');
 
   const carregar = async () => {
     setCarregando(true);
@@ -140,6 +152,8 @@ export function DisparosMassa() {
     setEmailAssunto('email_assunto' in t ? (t as { email_assunto?: string }).email_assunto ?? '' : '');
     setEmailCorpo('email_corpo' in t ? (t as { email_corpo?: string }).email_corpo ?? '' : '');
     setEvolutionConfigIds('evolution_config_ids' in t ? (t as { evolution_config_ids?: string[] }).evolution_config_ids ?? null : null);
+    setDailyLimit('daily_limit' in t ? (t as { daily_limit?: number }).daily_limit ?? null : null);
+    setEmailLinkCta('email_link_cta' in t ? (t as { email_link_cta?: string }).email_link_cta ?? '' : '');
     setMostrarForm(true);
   };
 
@@ -163,7 +177,9 @@ export function DisparosMassa() {
       link_cta: linkCta || null,
       email_assunto: emailAssunto || null,
       email_corpo: emailCorpo || null,
+      email_link_cta: emailLinkCta || null,
       evolution_config_ids: evolutionConfigIds,
+      daily_limit: dailyLimit,
       status: 'pronta',
     }).select('id').single();
     setSalvando(false);
@@ -199,7 +215,7 @@ export function DisparosMassa() {
     setNome(''); setCanal('whatsapp'); setFonte('lancamento_turma'); setLancamentoIds([]);
     setExcluirMatriculados(true); setProduto(''); setAlunoStatus('ativo'); setExcluirDiva(false);
     setTextoWhatsapp(''); setLinkCta(''); setEmailAssunto(''); setEmailCorpo('');
-    setEvolutionConfigIds(null);
+    setEvolutionConfigIds(null); setDailyLimit(null); setEmailLinkCta('');
   };
 
   return (
@@ -325,7 +341,10 @@ export function DisparosMassa() {
                   <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><MessageSquare className="h-3.5 w-3.5" /> Texto do WhatsApp (use {'{{nome}}'})</label>
                   <Textarea rows={5} value={textoWhatsapp} onChange={(e) => setTextoWhatsapp(e.target.value)} placeholder="Oi, {{nome}}! ..." />
                   {evolutionConfigIds && (
-                    <p className="text-xs text-amber-600">⚠ Instâncias restritas: essa campanha não usa todas as ativas (Helen vendas e financeiro ficam de fora).</p>
+                    <p className="text-xs text-amber-600">⚠ Instâncias restritas: só {evolutionConfigIds.length} {evolutionConfigIds.length === 1 ? 'instância dispara' : 'instâncias disparam'} essa campanha, não todas as ativas.</p>
+                  )}
+                  {dailyLimit != null && (
+                    <p className="text-xs text-amber-600">⚠ Ritmo de envio reduzido: limite de {dailyLimit} mensagens por dia (em vez do padrão de 400).</p>
                   )}
                 </div>
               )}
@@ -337,6 +356,9 @@ export function DisparosMassa() {
                   <Input placeholder="Assunto do e-mail" value={emailAssunto} onChange={(e) => setEmailAssunto(e.target.value)} />
                   <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><Mail className="h-3.5 w-3.5" /> Corpo do e-mail (HTML simples)</label>
                   <Textarea rows={5} value={emailCorpo} onChange={(e) => setEmailCorpo(e.target.value)} placeholder="<p>Oi, {{nome}}! ...</p>" />
+                  {emailLinkCta && (
+                    <p className="text-xs text-emerald-600">✓ Link do e-mail é rastreado — registra quem clicou antes de redirecionar pra: {emailLinkCta}</p>
+                  )}
                 </div>
               )}
 

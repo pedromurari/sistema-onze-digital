@@ -160,7 +160,7 @@ serve(async (req) => {
           leads_total: comTelefone.length,
           delay_min_s: 20,
           delay_max_s: 60,
-          daily_limit: 400,
+          daily_limit: campanha.daily_limit ?? 400,
           safe_hour_start: 9,
           safe_hour_end: 20,
           max_errors_seq: 8,

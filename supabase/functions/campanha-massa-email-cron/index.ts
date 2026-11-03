@@ -5,6 +5,13 @@
  * (usa o provider ativo em email_config -- hoje Resend) e marca o
  * resultado. Atualiza o contador da campanha; quando nao sobra mais
  * pendente nem whatsapp em andamento, marca a campanha como concluida.
+ *
+ * CTA rastreado: se campanha.email_link_cta estiver preenchido, o link
+ * final vira um redirect por campanha-massa-click (registra o clique em
+ * campanhas_massa_destinatarios antes de mandar pro destino real). Usa o
+ * placeholder {{link_cta}} dentro de email_corpo quando presente; senao
+ * acrescenta um paragrafo com o link no fim. Campanhas antigas que so tem
+ * o link_cta "cru" (sem rastreio) continuam funcionando como antes.
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -14,6 +21,11 @@ const LOTE = 25;
 
 function aplicarTemplate(texto: string, nome: string): string {
   return texto.replace(/\{\{\s*nome\s*\}\}/gi, nome.split(' ')[0] || nome);
+}
+
+function linkRastreado(destinatarioId: string, urlDestino: string): string {
+  const base = Deno.env.get('SUPABASE_URL')!;
+  return `${base}/functions/v1/campanha-massa-click?d=${encodeURIComponent(destinatarioId)}&u=${encodeURIComponent(urlDestino)}`;
 }
 
 serve(async (req) => {
@@ -32,7 +44,7 @@ serve(async (req) => {
   if (!pendentes?.length) return new Response(JSON.stringify({ ok: true, enviados: 0 }), { headers: { 'Content-Type': 'application/json' } });
 
   const campanhaIds = [...new Set(pendentes.map((p) => p.campanha_id))];
-  const { data: campanhas } = await supabase.from('campanhas_massa').select('id, nome, email_assunto, email_corpo, link_cta, status').in('id', campanhaIds);
+  const { data: campanhas } = await supabase.from('campanhas_massa').select('id, nome, email_assunto, email_corpo, link_cta, email_link_cta, status').in('id', campanhaIds);
   const campanhaPorId = new Map((campanhas ?? []).map((c) => [c.id, c]));
 
   let enviados = 0;
@@ -47,7 +59,12 @@ serve(async (req) => {
 
     const assunto = aplicarTemplate(campanha.email_assunto ?? '', dest.nome ?? '');
     let corpo = aplicarTemplate(campanha.email_corpo ?? '', dest.nome ?? '');
-    if (campanha.link_cta && !corpo.includes(campanha.link_cta)) {
+    if (campanha.email_link_cta) {
+      const urlRastreada = linkRastreado(dest.id, campanha.email_link_cta);
+      corpo = corpo.includes('{{link_cta}}')
+        ? corpo.replaceAll('{{link_cta}}', urlRastreada)
+        : `${corpo}<p><a href="${urlRastreada}">${campanha.email_link_cta}</a></p>`;
+    } else if (campanha.link_cta && !corpo.includes(campanha.link_cta)) {
       corpo += `<p><a href="${campanha.link_cta}">${campanha.link_cta}</a></p>`;
     }
 
