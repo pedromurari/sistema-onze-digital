@@ -15,6 +15,10 @@
  * quem ja tem um lead com canal='Divã' (ja foi abordado/ja demonstrou
  * interesse), pra focar quem ainda nao foi perguntado.
  *
+ * fonte='leads_produto': filtro.excluir_status (string[], opcional) tira
+ * quem ja esta num status terminal (ex: 'fechado' -- ja matriculou), pra
+ * nao ofertar de novo pra quem ja comprou.
+ *
  * Body: { campanhaId: string, apenasContar?: boolean }
  * Com apenasContar=true, so resolve e deduplica pra devolver o total --
  * nao grava nada, nao dispara nada. Usado na pre-visualizacao antes do
@@ -76,6 +80,7 @@ serve(async (req) => {
       if (filtro.canal) query = query.eq('canal', filtro.canal);
       if (filtro.status) query = query.eq('status', filtro.status);
       if (filtro.desde) query = query.gte('criado_em', filtro.desde);
+      if (filtro.excluir_status?.length) query = query.not('status', 'in', `(${filtro.excluir_status.join(',')})`);
       const { data, error } = await query;
       if (error) return json({ ok: false, erro: error.message }, 500);
       candidatos = (data ?? []).map((r: { pessoa_id: string | null; nome: string; whatsapp: string | null; telefone: string | null; email: string | null }) => ({

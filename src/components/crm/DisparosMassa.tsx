@@ -79,13 +79,23 @@ const TEMPLATES = [
     daily_limit: 22,
   },
   {
-    nome: 'Matrículas abertas — Turma #029',
+    nome: 'Matrículas abertas — Turma #029 (Hellen)',
     canal: 'ambos' as Canal,
-    fonte: 'lancamento_turma' as Fonte,
-    texto_whatsapp: 'Oi, {{nome}}! 👋\n\nAs matrículas da Turma #029 da Formação em Psicanálise Clínica Integrativa do IDM acabaram de abrir — e eu lembrei de você.\n\nSe você já pensou em se formar em psicanálise clínica integrativa, essa é a hora: turma nova, vagas limitadas, início em breve.\n\nQuer saber as condições e garantir sua vaga? Clica aqui:',
+    // Pedido do Pedro (03/11): mesmo esquema da campanha Black Friday —
+    // Hellen abordando pessoalmente, só a instância dela, 20-25/dia,
+    // CTA do WhatsApp é responder a mensagem. Público: leads diretos do
+    // Time Comercial (Kanban "Lead Direto", produto='direto') que ainda
+    // não fecharam.
+    fonte: 'leads_produto' as Fonte,
+    produto: 'direto',
+    excluir_status: ['fechado'],
+    texto_whatsapp: 'Oi, {{nome}}! Tudo bem? Aqui é a Hellen, consultora do IDM. 👋\n\nQueria te contar: as matrículas da Turma #029 da Formação em Psicanálise Clínica Integrativa do IDM acabaram de abrir, e eu lembrei de você.\n\nSe você já pensou em se formar em psicanálise clínica integrativa, essa é a hora: turma nova, vagas limitadas, início em breve.\n\nResponde aqui essa mensagem se tiver interesse nessa nova turma — eu mesma já te passo as condições e dou sequência. 💛',
     link_cta: '',
-    email_assunto: 'Matrículas abertas — Turma #029 da Formação em Psicanálise IDM',
-    email_corpo: '<p>Oi, {{nome}}!</p><p>As matrículas da Turma #029 da Formação em Psicanálise Clínica Integrativa do IDM acabaram de abrir — e eu lembrei de você.</p><p>Se você já pensou em se formar em psicanálise clínica integrativa, essa é a hora: turma nova, vagas limitadas, início em breve.</p><p>Quer saber as condições e garantir sua vaga? Clica aqui:</p>',
+    email_assunto: 'Hellen do IDM: as matrículas da Turma #029 acabaram de abrir',
+    email_corpo: '<p>Oi, {{nome}}! Tudo bem? Aqui é a Hellen, consultora do IDM.</p><p>Queria te contar: as matrículas da Turma #029 da Formação em Psicanálise Clínica Integrativa do IDM acabaram de abrir, e eu lembrei de você.</p><p>Se você já pensou em se formar em psicanálise clínica integrativa, essa é a hora: turma nova, vagas limitadas, início em breve.</p><p>Clica no botão abaixo e fala comigo agora mesmo no WhatsApp — eu mesma te passo as condições:</p><p><a href="{{link_cta}}">Falar com a Hellen no WhatsApp</a></p>',
+    email_link_cta: 'https://wa.me/5511965781940?text=Oi%2C%20Hellen%21%20Vi%20que%20abriram%20as%20matr%C3%ADculas%20da%20Turma%20%23029%20e%20quero%20saber%20as%20condi%C3%A7%C3%B5es.',
+    evolution_config_ids: ['8bc6b812-fb70-40e1-9a08-b8f1684cb5ed'],
+    daily_limit: 22,
   },
   {
     nome: 'Novo conteúdo — alunos (YouTube/Instagram)',
@@ -120,6 +130,7 @@ export function DisparosMassa() {
   const [lancamentoIds, setLancamentoIds] = useState<string[]>([]);
   const [excluirMatriculados, setExcluirMatriculados] = useState(true);
   const [produto, setProduto] = useState('');
+  const [excluirStatusLeadsProduto, setExcluirStatusLeadsProduto] = useState<string[]>([]);
   const [alunoStatus, setAlunoStatus] = useState('ativo');
   const [excluirDiva, setExcluirDiva] = useState(false);
   const [textoWhatsapp, setTextoWhatsapp] = useState('');
@@ -154,12 +165,14 @@ export function DisparosMassa() {
     setEvolutionConfigIds('evolution_config_ids' in t ? (t as { evolution_config_ids?: string[] }).evolution_config_ids ?? null : null);
     setDailyLimit('daily_limit' in t ? (t as { daily_limit?: number }).daily_limit ?? null : null);
     setEmailLinkCta('email_link_cta' in t ? (t as { email_link_cta?: string }).email_link_cta ?? '' : '');
+    setProduto('produto' in t ? (t as { produto?: string }).produto ?? '' : '');
+    setExcluirStatusLeadsProduto('excluir_status' in t ? (t as { excluir_status?: string[] }).excluir_status ?? [] : []);
     setMostrarForm(true);
   };
 
   const montarFonteFiltro = (): Record<string, unknown> => {
     if (fonte === 'lancamento_turma') return { lancamento_ids: lancamentoIds, excluir_matriculados: excluirMatriculados };
-    if (fonte === 'leads_produto') return { produto: produto || undefined };
+    if (fonte === 'leads_produto') return { produto: produto || undefined, excluir_status: excluirStatusLeadsProduto.length ? excluirStatusLeadsProduto : undefined };
     if (fonte === 'alunos') return { status: [alunoStatus], excluir_diva_leads: excluirDiva };
     return {};
   };
@@ -214,6 +227,7 @@ export function DisparosMassa() {
   const resetForm = () => {
     setNome(''); setCanal('whatsapp'); setFonte('lancamento_turma'); setLancamentoIds([]);
     setExcluirMatriculados(true); setProduto(''); setAlunoStatus('ativo'); setExcluirDiva(false);
+    setExcluirStatusLeadsProduto([]);
     setTextoWhatsapp(''); setLinkCta(''); setEmailAssunto(''); setEmailCorpo('');
     setEvolutionConfigIds(null); setDailyLimit(null); setEmailLinkCta('');
   };
@@ -316,6 +330,9 @@ export function DisparosMassa() {
                       <SelectItem value="direto">Direto</SelectItem>
                     </SelectContent>
                   </Select>
+                  {excluirStatusLeadsProduto.length > 0 && (
+                    <p className="text-xs text-muted-foreground mt-2">Excluindo quem já está em: {excluirStatusLeadsProduto.join(', ')}</p>
+                  )}
                 </div>
               )}
 
