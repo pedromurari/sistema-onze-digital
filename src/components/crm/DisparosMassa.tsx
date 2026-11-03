@@ -83,11 +83,12 @@ const TEMPLATES = [
     canal: 'ambos' as Canal,
     // Pedido do Pedro (03/11): mesmo esquema da campanha Black Friday —
     // Hellen abordando pessoalmente, só a instância dela, 20-25/dia,
-    // CTA do WhatsApp é responder a mensagem. Público: leads diretos do
-    // Time Comercial (Kanban "Lead Direto", produto='direto') que ainda
-    // não fecharam.
+    // CTA do WhatsApp é responder a mensagem. Público: leads do canal
+    // "Direto" do Time Comercial (leads.canal='Direto' -- NÃO confundir
+    // com leads.produto='direto', que é um campo legado quase vazio)
+    // que ainda não fecharam.
     fonte: 'leads_produto' as Fonte,
-    produto: 'direto',
+    canal_lead: 'Direto',
     excluir_status: ['fechado'],
     texto_whatsapp: 'Oi, {{nome}}! Tudo bem? Aqui é a Hellen, consultora do IDM. 👋\n\nQueria te contar: as matrículas da Turma #029 da Formação em Psicanálise Clínica Integrativa do IDM acabaram de abrir, e eu lembrei de você.\n\nSe você já pensou em se formar em psicanálise clínica integrativa, essa é a hora: turma nova, vagas limitadas, início em breve.\n\nResponde aqui essa mensagem se tiver interesse nessa nova turma — eu mesma já te passo as condições e dou sequência. 💛',
     link_cta: '',
@@ -130,6 +131,7 @@ export function DisparosMassa() {
   const [lancamentoIds, setLancamentoIds] = useState<string[]>([]);
   const [excluirMatriculados, setExcluirMatriculados] = useState(true);
   const [produto, setProduto] = useState('');
+  const [canalLead, setCanalLead] = useState('');
   const [excluirStatusLeadsProduto, setExcluirStatusLeadsProduto] = useState<string[]>([]);
   const [alunoStatus, setAlunoStatus] = useState('ativo');
   const [excluirDiva, setExcluirDiva] = useState(false);
@@ -166,13 +168,14 @@ export function DisparosMassa() {
     setDailyLimit('daily_limit' in t ? (t as { daily_limit?: number }).daily_limit ?? null : null);
     setEmailLinkCta('email_link_cta' in t ? (t as { email_link_cta?: string }).email_link_cta ?? '' : '');
     setProduto('produto' in t ? (t as { produto?: string }).produto ?? '' : '');
+    setCanalLead('canal_lead' in t ? (t as { canal_lead?: string }).canal_lead ?? '' : '');
     setExcluirStatusLeadsProduto('excluir_status' in t ? (t as { excluir_status?: string[] }).excluir_status ?? [] : []);
     setMostrarForm(true);
   };
 
   const montarFonteFiltro = (): Record<string, unknown> => {
     if (fonte === 'lancamento_turma') return { lancamento_ids: lancamentoIds, excluir_matriculados: excluirMatriculados };
-    if (fonte === 'leads_produto') return { produto: produto || undefined, excluir_status: excluirStatusLeadsProduto.length ? excluirStatusLeadsProduto : undefined };
+    if (fonte === 'leads_produto') return { produto: produto || undefined, canal: canalLead || undefined, excluir_status: excluirStatusLeadsProduto.length ? excluirStatusLeadsProduto : undefined };
     if (fonte === 'alunos') return { status: [alunoStatus], excluir_diva_leads: excluirDiva };
     return {};
   };
@@ -226,7 +229,7 @@ export function DisparosMassa() {
 
   const resetForm = () => {
     setNome(''); setCanal('whatsapp'); setFonte('lancamento_turma'); setLancamentoIds([]);
-    setExcluirMatriculados(true); setProduto(''); setAlunoStatus('ativo'); setExcluirDiva(false);
+    setExcluirMatriculados(true); setProduto(''); setCanalLead(''); setAlunoStatus('ativo'); setExcluirDiva(false);
     setExcluirStatusLeadsProduto([]);
     setTextoWhatsapp(''); setLinkCta(''); setEmailAssunto(''); setEmailCorpo('');
     setEvolutionConfigIds(null); setDailyLimit(null); setEmailLinkCta('');
@@ -330,6 +333,9 @@ export function DisparosMassa() {
                       <SelectItem value="direto">Direto</SelectItem>
                     </SelectContent>
                   </Select>
+                  {canalLead && (
+                    <p className="text-xs text-muted-foreground mt-2">Filtro extra do template: canal = {canalLead}</p>
+                  )}
                   {excluirStatusLeadsProduto.length > 0 && (
                     <p className="text-xs text-muted-foreground mt-2">Excluindo quem já está em: {excluirStatusLeadsProduto.join(', ')}</p>
                   )}
