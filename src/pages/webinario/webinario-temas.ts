@@ -20,6 +20,11 @@ export interface TemaWebinario {
   professorRodrygo: string;
   professorJocimara: string;
   heroVarianteB?: { heroLinhaUm: string; heroLinhaDois: string; heroSubheadline: string };
+  // Teste A/B/C/D/E: lista de variantes de headline pra sortear entre mais
+  // de 2 opções. Quando presente, tem prioridade sobre heroVarianteB. Cada
+  // `id` vai pro campo `variante_headline` em webinario_tracking, pra
+  // comparar taxa de conversão por variante e manter só as melhores depois.
+  heroVariantes?: { id: string; heroLinhaUm: string; heroLinhaDois: string; heroSubheadline: string }[];
 }
 
 export const TEMAS_WEBINARIO: Record<string, TemaWebinario> = {
@@ -51,11 +56,38 @@ export const TEMAS_WEBINARIO: Record<string, TemaWebinario> = {
     publico: ['Você gosta de ouvir pessoas, mas percebe que aconselhar nem sempre ajuda.', 'Você trabalha com gente e quer conhecer a diferença entre acolhimento e escuta clínica.', 'Você considera estudar psicanálise e quer conhecer a seriedade exigida por esse caminho.'],
     professorRodrygo: 'Rodrygo conduz a aula ao lado da Jocimara e mostra, com exemplos reais, por que confundir conselho com escuta é um dos erros mais comuns de quem quer ajudar alguém de verdade.',
     professorJocimara: 'Jocimara, psicanalista clínica integrativa e coordenadora pedagógica do IDM, participa da aula apresentando a diferença entre ouvir, aconselhar e escutar na prática clínica.',
-    heroVarianteB: {
-      heroLinhaUm: 'Você dá conselhos.',
-      heroLinhaDois: 'Mas sabe escutar de verdade?',
-      heroSubheadline: 'Numa aula gratuita e ao vivo, Rodrygo Murari e Jocimara Anjos mostram a diferença entre ouvir, aconselhar e escutar — com exemplos reais da prática clínica.',
-    },
+    heroVariantes: [
+      {
+        id: 'A',
+        heroLinhaUm: 'Ouvir não é o mesmo que',
+        heroLinhaDois: 'escutar — e isso muda tudo',
+        heroSubheadline: 'Numa aula gratuita e ao vivo, Rodrygo Murari e Jocimara Anjos mostram a diferença entre ouvir, aconselhar e escutar — com exemplos reais da prática clínica.',
+      },
+      {
+        id: 'B',
+        heroLinhaUm: 'Você dá conselhos.',
+        heroLinhaDois: 'Mas sabe escutar de verdade?',
+        heroSubheadline: 'Numa aula gratuita e ao vivo, Rodrygo Murari e Jocimara Anjos mostram a diferença entre ouvir, aconselhar e escutar — com exemplos reais da prática clínica.',
+      },
+      {
+        id: 'C',
+        heroLinhaUm: 'Você já ficou exausto(a)',
+        heroLinhaDois: 'de ouvir o problema dos outros?',
+        heroSubheadline: 'Numa aula gratuita e ao vivo, Rodrygo Murari e Jocimara Anjos mostram por que só ouvir cansa — e o que muda quando você aprende a escutar de verdade.',
+      },
+      {
+        id: 'D',
+        heroLinhaUm: 'Todo mundo vem até você',
+        heroLinhaDois: 'contar os problemas. E agora?',
+        heroSubheadline: 'Numa aula gratuita e ao vivo, descubra se essa escuta que você já tem de natureza pode virar uma formação séria em Psicanálise Integrativa.',
+      },
+      {
+        id: 'E',
+        heroLinhaUm: 'Existe uma pergunta que muda',
+        heroLinhaDois: 'qualquer conversa. Você sabe qual?',
+        heroSubheadline: 'Numa aula gratuita e ao vivo, Rodrygo Murari e Jocimara Anjos revelam a diferença entre ouvir, aconselhar e escutar — e por que isso muda tudo.',
+      },
+    ],
   },
   'padroes-emocionais': {
     slug: 'padroes-emocionais',
@@ -117,31 +149,37 @@ export const TEMAS_WEBINARIO: Record<string, TemaWebinario> = {
   },
 };
 
+// Fallback: só entra em cena se algum link cair com um slug que não bate
+// com nenhum tema cadastrado acima (não deveria acontecer em produção --
+// os redirecionamentos internos sempre apontam pro slug real). Mesmo
+// sendo uma rede de segurança, a copy segue o mesmo padrão AIDA dos temas
+// reais (dor → causa → solução → ação), não um texto de manual.
 export const temaPorSlug = (slug: string) => TEMAS_WEBINARIO[slug] ?? {
   slug: 'psicanalise',
   titulo: 'Psicanálise Integrativa',
-  headline: 'Conheça a Psicanálise Integrativa',
-  heroLinhaUm: 'Aula Gratuita de',
-  heroLinhaDois: 'Psicanálise Integrativa!',
-  heroSubheadline: 'Uma aula ONLINE e gratuita sobre escuta, estudo e caminhos de formação.',
-  fechamento: 'o estudo da psicanálise',
-  subheadline: 'Uma aula gratuita sobre escuta, estudo e caminhos de formação.',
-  destaque: 'Conheça fundamentos e tire suas dúvidas antes de decidir seu próximo passo.',
-  aprendizados: ['Fundamentos da escuta', 'Percurso de estudo', 'Próximos passos'],
-  paraQuem: 'Para quem deseja estudar psicanálise com responsabilidade.',
-  chamadaVideo: 'Uma introdução educativa ao percurso de formação do IDM.',
+  headline: 'Você já tentou de tudo pra ajudar — e ainda sente que falta alguma coisa?',
+  heroLinhaUm: 'Você tenta ajudar as pessoas.',
+  heroLinhaDois: 'Mas sente que falta algo mais profundo?',
+  heroSubheadline: 'Numa aula gratuita e ao vivo, o Instituto Despertamente mostra por que ouvir não resolve, aconselhar nem sempre ajuda — e qual é o caminho de estudo pra escutar de verdade.',
+  fechamento: 'o estudo da escuta que transforma',
+  subheadline: 'Nesta aula gratuita, descubra por que a maioria das tentativas de ajudar alguém esbarram no mesmo limite — e qual é o caminho real pra desenvolver uma escuta que muda conversas, relações e vidas.',
+  destaque: 'Ajudar de verdade não é dar a resposta certa. É saber abrir espaço pra pessoa encontrar a dela — e isso se aprende.',
+  aprendizados: ['Por que aconselhar quase nunca resolve o problema de quem você quer ajudar', 'O que muda quando você escuta em vez de só ouvir', 'Qual é o caminho de formação pra desenvolver essa escuta com ética e responsabilidade'],
+  paraQuem: 'Para quem já percebeu que "dar a dica certa" não é suficiente e quer entender, de verdade, o que está por trás de uma escuta que transforma.',
+  chamadaVideo: 'Uma introdução direta ao caminho de formação em Psicanálise Integrativa do IDM — sem enrolação, com exemplos reais.',
   pilares: [
-    { titulo: 'Escuta', descricao: 'Conheça os fundamentos da escuta psicanalítica.' },
-    { titulo: 'Estudo', descricao: 'Entenda a importância da teoria e da ética.' },
-    { titulo: 'Próximos passos', descricao: 'Veja como avaliar um percurso de formação.' },
+    { titulo: 'O limite do conselho', descricao: 'Entenda por que a boa intenção de "resolver o problema do outro" quase sempre esbarra no mesmo erro.' },
+    { titulo: 'A escuta que muda tudo', descricao: 'Veja a diferença prática entre ouvir, aconselhar e escutar de verdade — com exemplos reais.' },
+    { titulo: 'O caminho de formação', descricao: 'Descubra o que estudar pra desenvolver essa escuta com base teórica, ética e responsabilidade.' },
   ],
   perguntas: [
-    { pergunta: 'Preciso de conhecimento prévio?', resposta: 'Não. Esta é uma introdução educativa.' },
+    { pergunta: 'Preciso de conhecimento prévio?', resposta: 'Não. Esta aula foi pensada pra quem está começando a se interessar pelo tema e também pra quem já estuda e quer aprofundar.' },
+    { pergunta: 'A aula me habilita a atender?', resposta: 'Não. É uma introdução educativa, não uma formação nem uma autorização para prática clínica.' },
   ],
-  cta: 'QUERO ASSISTIR À AULA GRATUITA',
-  perguntaCentral: 'O que vale observar antes de iniciar seus estudos em psicanálise?',
-  transformacao: 'Conheça fundamentos, limites e caminhos possíveis para aprofundar seu estudo com responsabilidade.',
-  publico: ['Pessoas interessadas em comportamento humano.', 'Quem considera estudar psicanálise.', 'Quem quer conhecer a proposta do IDM.'],
-  professorRodrygo: 'Rodrygo apresenta o tema com exemplos e mostra como esse estudo se conecta à Psicanálise Integrativa no IDM.',
-  professorJocimara: 'Jocimara participa da proposta pedagógica desta aula, representando a coordenação pedagógica do Instituto Despertamente.',
+  cta: 'QUERO GARANTIR MINHA VAGA GRATUITA',
+  perguntaCentral: 'Quantas vezes você tentou ajudar alguém com a resposta certa — e mesmo assim sentiu que não adiantou?',
+  transformacao: 'Saia desta aula sabendo exatamente por que "ouvir e dar um conselho" não é o mesmo que escutar de verdade — e com um caminho claro de como desenvolver essa escuta com estudo, ética e responsabilidade.',
+  publico: ['Você se pega dando conselho sem perceber e sente que não resolve nada.', 'Você já pensou em estudar psicanálise, mas não sabe por onde começar.', 'Você quer entender pessoas — e a si mesmo — num nível mais profundo.'],
+  professorRodrygo: 'Rodrygo apresenta o tema com exemplos reais e mostra como essa escuta se desenvolve na prática da Psicanálise Integrativa do IDM.',
+  professorJocimara: 'Jocimara, psicanalista clínica integrativa e coordenadora pedagógica do IDM, participa trazendo a experiência da prática clínica real.',
 };

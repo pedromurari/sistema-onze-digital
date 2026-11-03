@@ -87,7 +87,7 @@ export default function WebinarioSala() {
 
   useEffect(() => {
     if (!sessionId || !trackingId) {
-      navigate('/webinario/psicanalise', { replace: true });
+      navigate('/webinario/escuta-psicanalitica', { replace: true });
       return;
     }
     sessionStorage.setItem('webinario_tracking_id', trackingId);
@@ -100,7 +100,7 @@ export default function WebinarioSala() {
         .maybeSingle();
 
       if (!sessaoData) {
-        navigate('/webinario/psicanalise', { replace: true });
+        navigate('/webinario/escuta-psicanalitica', { replace: true });
         return;
       }
       setSessao(sessaoData as Sessao);
@@ -276,7 +276,7 @@ export default function WebinarioSala() {
 
   const irParaOferta = () => {
     if (trackingId) track(trackingId, 'offer');
-    navigate(`/webinario/oferta/${webinario?.slug ?? 'psicanalise'}`);
+    navigate(`/webinario/oferta/${webinario?.slug ?? 'escuta-psicanalitica'}`);
   };
 
   if (carregando) {

@@ -30,20 +30,23 @@ export default function WebinarioCaptura() {
   const [capturaVideoUrl, setCapturaVideoUrl] = useState<string | null>(null);
   const [opcoesForaHorario, setOpcoesForaHorario] = useState<{ inicioEm: string; periodo: 'manha' | 'tarde' | 'noite' }[] | null>(null);
 
-  // Teste A/B de headline: sorteia 50/50 na primeira visita e mantém a mesma
-  // variante durante a sessão (não fica trocando a cada reload). A escolha
-  // é enviada no cadastro (variante_headline) e fica em webinario_tracking
-  // pra comparar taxa de conversão por variante depois.
-  const [variante] = useState<'A' | 'B'>(() => {
-    if (!tema.heroVarianteB) return 'A';
+  // Teste de headline com N variantes: sorteia peso igual entre todas na
+  // primeira visita e mantém a mesma durante a sessão (não troca a cada
+  // reload). A escolha é enviada no cadastro (variante_headline) e fica em
+  // webinario_tracking pra comparar taxa de conversão por variante depois
+  // -- aí é só manter rodando as que convertem mais e tirar as piores.
+  const [varianteId] = useState<string>(() => {
+    if (!tema.heroVariantes?.length) return tema.heroVarianteB ? (Math.random() < 0.5 ? 'A' : 'B') : 'A';
     const chave = `webinario_variante_${slug}`;
     const salva = sessionStorage.getItem(chave);
-    if (salva === 'A' || salva === 'B') return salva;
-    const sorteada = Math.random() < 0.5 ? 'A' : 'B';
+    if (salva && tema.heroVariantes.some((v) => v.id === salva)) return salva;
+    const sorteada = tema.heroVariantes[Math.floor(Math.random() * tema.heroVariantes.length)].id;
     sessionStorage.setItem(chave, sorteada);
     return sorteada;
   });
-  const heroTexto = variante === 'B' && tema.heroVarianteB ? tema.heroVarianteB : tema;
+  const heroTexto =
+    tema.heroVariantes?.find((v) => v.id === varianteId) ??
+    (varianteId === 'B' && tema.heroVarianteB ? tema.heroVarianteB : tema);
 
   useEffect(() => {
     let ativo = true;
@@ -79,7 +82,7 @@ export default function WebinarioCaptura() {
         email: email.trim() || undefined,
         whatsapp: whatsappLimpo,
         device: /Mobi|Android/i.test(navigator.userAgent) ? 'mobile' : 'desktop',
-        variante_headline: variante,
+        variante_headline: varianteId,
         ...(horarioEscolhido ? { horarioEscolhido } : {}),
         ...utms,
       }),
