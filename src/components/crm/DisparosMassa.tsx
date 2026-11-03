@@ -46,8 +46,8 @@ const TEMPLATES = [
     nome: 'Reengajamento — Semana do Despertar',
     canal: 'whatsapp' as Canal,
     fonte: 'lancamento_turma' as Fonte,
-    texto_whatsapp: 'Oi, {{nome}}! Tudo bem?\n\nVocê participou de uma das nossas turmas da Semana do Despertar e eu queria te contar: tem gente nova chegando toda semana, e eu lembrei de você. 💛\n\nTá rolando um conteúdo novo que acho que você vai gostar — dá uma olhada:',
-    link_cta: '',
+    texto_whatsapp: 'Oi, {{nome}}! Tudo bem?\n\nVocê participou de uma das nossas turmas da Semana do Despertar e eu lembrei de você agora.\n\nSaiu um episódio novo do Além do Divã: "A mente Borderline por dentro — vazio, medo e um ciclo que se repete". O Rodrygo Murari e a Jocimara Anjos saem do "borderline é tóxico" raso e explicam de verdade os 5 eixos desse funcionamento — medo do abandono, intensidade emocional, instabilidade nos relacionamentos, a pergunta "quem sou eu" por trás da identidade fragmentada, e o ciclo do abandono.\n\nAssiste aqui:',
+    link_cta: 'https://youtu.be/axU6JM49TdE',
   },
   {
     nome: 'Black Friday — Formação em Psicanálise',
