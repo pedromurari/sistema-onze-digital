@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import '../webinario/webinario.css';
+import { useParams, useSearchParams } from 'react-router-dom';
+import './turma-obrigado.css';
 
 const FUNCTIONS_URL = 'https://usqiyekfmwwnvkmkdlej.supabase.co/functions/v1';
 
@@ -16,14 +16,33 @@ interface TurmaInfo {
   slogan: string | null;
 }
 
-// Grupo VIP: link de convite (chat.whatsapp.com/...) precisa ser colado
-// aqui manualmente depois que o grupo for criado (Wizard de Lançamento,
-// etapa "Grupos WPP") -- o JID salvo em lancamentos.grupo_lancamento_jid
-// não é o link público de convite, é o identificador interno.
+// Mesmo padrão visual já usado nos "obrigado" das turmas anteriores
+// (gratuito-47 e cia): fundo #000a1f, card #13316c, dourado #fab338,
+// botões verdes -- NÃO é o mesmo padrão dourado do webinário evergreen,
+// são identidades visuais diferentes mantidas de propósito.
 const LINK_GRUPO_VIP = '';
+const LINK_EBOOK = 'https://drive.google.com/file/d/1Wk04rk8msKuEV5loMZa8Iilpowsn3BKq/view?usp=sharing';
+
+const MESES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+];
+
+function formatarDatasEvento(aulas: Aula[]): string {
+  if (aulas.length === 0) return '';
+  const datas = aulas.map((a) => new Date(a.inicio_em));
+  const dias = datas.map((d) => d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit' }));
+  const mes = MESES[Number(datas[0].toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', month: 'numeric' })) - 1];
+  if (dias.length === 1) return `${dias[0]} de ${mes}`;
+  return `${dias.slice(0, -1).join(', ')} e ${dias[dias.length - 1]} de ${mes}`;
+}
 
 export default function TurmaObrigado() {
   const { slug = '' } = useParams();
+  const [searchParams] = useSearchParams();
+  const nome = searchParams.get('nome') || '';
+  const primeiroNome = nome.split(' ')[0];
+
   const [turma, setTurma] = useState<TurmaInfo | null>(null);
   const [aulas, setAulas] = useState<Aula[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -45,52 +64,68 @@ export default function TurmaObrigado() {
   }, [slug]);
 
   if (carregando) {
-    return (
-      <div className="idm-webinario">
-        <div className="iw-wrap iw-wrap-center"><p className="iw-sub">Carregando...</p></div>
-      </div>
-    );
+    return <div className="to-page"><div className="to-wrap"><p className="to-sub">Carregando...</p></div></div>;
   }
 
+  const datasTexto = formatarDatasEvento(aulas);
+
   return (
-    <div className="idm-webinario">
-      <div className="iw-wrap iw-wrap-center">
-        <div className="iw-logo">INSTITUTO DESPERTAMENTE</div>
-        <h1 className="iw-h1">🎉 Inscrição confirmada!</h1>
-        <p className="iw-sub">
-          Você garantiu sua vaga na <strong>{turma?.nome ?? 'turma'}</strong>. Anote os horários abaixo e entre no
-          grupo VIP pra não perder nenhuma aula.
+    <div className="to-page">
+      <div className="to-wrap">
+        <h1 className="to-h1">
+          🎉 Parabéns{primeiroNome ? `, ${primeiroNome}` : ''} pelo seu cadastro!
+        </h1>
+        <p className="to-sub">
+          Você garantiu sua vaga no nosso <span className="to-gold">Curso Gratuito!</span>
+          {datasTexto && <> O evento será nos dias <span className="to-gold">{datasTexto}</span>.</>}
         </p>
 
-        <div className="iw-card" style={{ textAlign: 'left', display: 'grid', gap: 14 }}>
-          {aulas.map((aula) => (
-            <div key={aula.numero}>
-              <strong>{aula.titulo}</strong>
-              <div style={{ opacity: 0.8, fontSize: '0.9rem' }}>
-                {new Date(aula.inicio_em).toLocaleString('pt-BR', {
-                  timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
-                })}
-              </div>
-              {aula.youtube_url ? (
-                <a href={aula.youtube_url} target="_blank" rel="noopener noreferrer" className="iw-btn-gold" style={{ display: 'inline-block', marginTop: 8 }}>
-                  Assistir no YouTube
-                </a>
-              ) : (
-                <div style={{ opacity: 0.6, fontSize: '0.85rem', marginTop: 4 }}>Link do YouTube ainda será divulgado</div>
-              )}
-            </div>
-          ))}
+        <div className="to-progress">
+          <div className="to-progress-fill" />
+          <div className="to-progress-label">80% das vagas preenchidas</div>
         </div>
 
-        {LINK_GRUPO_VIP ? (
-          <a href={LINK_GRUPO_VIP} target="_blank" rel="noopener noreferrer" className="iw-btn-gold" style={{ display: 'inline-block', marginTop: 24 }}>
-            Entrar no Grupo VIP do WhatsApp
-          </a>
-        ) : (
-          <p className="iw-sub" style={{ marginTop: 24 }}>
-            O link do grupo VIP do WhatsApp vai chegar no seu WhatsApp em breve.
+        <div className="to-card">
+          <p className="to-card-check">✅ Seu cadastro foi realizado com sucesso!</p>
+          <p className="to-card-text">
+            <strong>Mas atenção:</strong> para concluir seu cadastro e garantir o acesso às aulas, materiais e
+            conteúdos exclusivos, é <strong>obrigatório</strong> clicar no botão abaixo e entrar no grupo do WhatsApp.
           </p>
-        )}
+          {LINK_GRUPO_VIP ? (
+            <a href={LINK_GRUPO_VIP} target="_blank" rel="noopener noreferrer" className="to-btn-green">
+              📲 Entre no Grupo Vip do Curso Gratuito!
+            </a>
+          ) : (
+            <p className="to-card-text" style={{ margin: 0 }}>
+              O link do grupo VIP vai chegar no seu WhatsApp em instantes.
+            </p>
+          )}
+        </div>
+
+        <div className="to-grid">
+          <div className="to-mini-card">
+            <div className="to-mini-icon to-mini-icon-green">✓</div>
+            <p className="to-mini-title">Entre agora no Grupo do Curso</p>
+            <p className="to-mini-text">Toque no botão abaixo para entrar no grupo de WhatsApp do curso e acessar as aulas.</p>
+            {LINK_GRUPO_VIP ? (
+              <a href={LINK_GRUPO_VIP} target="_blank" rel="noopener noreferrer" className="to-btn-green">Acessar Grupo Agora!</a>
+            ) : (
+              <span className="to-btn-green" style={{ opacity: 0.6, cursor: 'default' }}>Em breve</span>
+            )}
+          </div>
+          <div className="to-mini-card">
+            <div className="to-mini-icon to-mini-icon-red">📄</div>
+            <p className="to-mini-title">Seu E-book já está liberado</p>
+            <p className="to-mini-text">Baixe o e-book Desenvolvimento da Personalidade e já comece a estudar antes do curso começar.</p>
+            <a href={LINK_EBOOK} target="_blank" rel="noopener noreferrer" className="to-btn-green">📘 Baixar meu E-book</a>
+          </div>
+        </div>
+
+        <div className="to-footer">
+          <p><strong>Aviso importante:</strong> Este site não é afiliado ao Facebook ou a qualquer entidade do Facebook. Depois que você sair do Facebook, a responsabilidade não é deles e sim do nosso site.</p>
+          <p>Fazemos todos os esforços para indicar claramente e mostrar todas as provas do produto e usamos resultados reais.</p>
+          <p>© {new Date().getFullYear()} Instituto Despertamente. Todos os direitos reservados.</p>
+        </div>
       </div>
     </div>
   );

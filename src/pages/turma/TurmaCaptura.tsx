@@ -81,7 +81,7 @@ export default function TurmaCaptura() {
         setEnviando(false);
         return;
       }
-      navigate(`/turma/${slug}/obrigado`, { replace: true });
+      navigate(`/turma/${slug}/obrigado?nome=${encodeURIComponent(nome.trim())}`, { replace: true });
     } catch {
       toast.error('Erro de conexão. Tente novamente.');
       setEnviando(false);
