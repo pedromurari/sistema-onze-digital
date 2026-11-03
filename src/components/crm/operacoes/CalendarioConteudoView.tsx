@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { format, isSameDay, isSameMonth, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
@@ -15,6 +15,7 @@ import {
   Plus,
   Search,
   Trash2,
+  UploadCloud,
   Youtube,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
@@ -27,6 +28,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import { useCalendario } from './useCalendario';
+import { useGoogleDriveUpload } from '@/hooks/useGoogleDriveUpload';
 
 type ContentView = 'grade' | 'calendario' | 'kanban';
 type ContentStatus = 'ideia' | 'roteiro' | 'gravando' | 'editando' | 'aprovado' | 'agendado' | 'publicado';
@@ -41,6 +43,7 @@ export interface ConteudoCalendario {
   status: string | null;
   legenda?: string | null;
   observacoes?: string | null;
+  texto_peca?: string | null;
   link?: string | null;
   imagem_url?: string | null;
 }
@@ -59,6 +62,7 @@ interface ContentForm {
   data_publicacao: string;
   legenda: string;
   observacoes: string;
+  texto_peca: string;
   link: string;
 }
 
@@ -86,6 +90,14 @@ const FORMAT = [
   { id: 'carrossel', label: 'Carrossel' },
   { id: 'video', label: 'Vídeo' },
   { id: 'short', label: 'Short' },
+  { id: 'anuncio', label: 'Anúncio' },
+] as const;
+
+const CATEGORIAS = [
+  { label: 'Tudo', test: () => true },
+  { label: '🎬 Reels/Shorts/TikTok', test: (c: ConteudoCalendario) => c.formato === 'reels' || c.formato === 'short' },
+  { label: '📢 Anúncios', test: (c: ConteudoCalendario) => c.formato === 'anuncio' },
+  { label: '📺 YouTube Longo', test: (c: ConteudoCalendario) => c.plataforma === 'youtube' && c.formato === 'video' },
 ] as const;
 
 const emptyForm = (date = ''): ContentForm => ({
@@ -96,6 +108,7 @@ const emptyForm = (date = ''): ContentForm => ({
   data_publicacao: date,
   legenda: '',
   observacoes: '',
+  texto_peca: '',
   link: '',
 });
 
@@ -129,6 +142,7 @@ function ContentCard({
       <button type="button" className="w-full text-left" onClick={() => onOpen(content)}>
         <p className="font-semibold text-sm line-clamp-2 text-foreground">{content.titulo}</p>
         <p className="text-xs text-muted-foreground mt-1">{dateLabel(content.data_publicacao)} · {formatMeta(content.formato)}</p>
+        {content.texto_peca ? <p className="mt-1 text-xs text-primary">Roteiro completo no card</p> : null}
       </button>
       <div className="flex items-center gap-2">
         <select
@@ -195,6 +209,10 @@ function ContentFormFields({ form, onChange }: { form: ContentForm; onChange: (n
         <Textarea rows={4} maxLength={5000} value={form.legenda} onChange={event => onChange({ ...form, legenda: event.target.value })} />
       </div>
       <div>
+        <Label htmlFor="conteudo-roteiro">Roteiro completo / falas de gravação</Label>
+        <Textarea id="conteudo-roteiro" rows={16} className="font-mono text-xs" value={form.texto_peca} onChange={event => onChange({ ...form, texto_peca: event.target.value })} placeholder="Cole aqui a copy completa, com falas, cenas e CTA." />
+      </div>
+      <div>
         <Label>Observações internas</Label>
         <Textarea rows={3} maxLength={5000} value={form.observacoes} onChange={event => onChange({ ...form, observacoes: event.target.value })} />
       </div>
@@ -208,10 +226,14 @@ export function CalendarioConteudoView({ conteudos, onLoadData, createRequest = 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('todos');
   const [platformFilter, setPlatformFilter] = useState('todas');
+  const [formatFilter, setFormatFilter] = useState('todos');
+  const [categoria, setCategoria] = useState('Tudo');
   const [editing, setEditing] = useState<ConteudoCalendario | null | undefined>();
   const [form, setForm] = useState<ContentForm>(() => emptyForm());
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { uploadToDrive, getAccessToken, hasAccessToken, uploading, progress, statusMessage } = useGoogleDriveUpload();
 
   useEffect(() => {
     if (createRequest > 0) {
@@ -222,13 +244,16 @@ export function CalendarioConteudoView({ conteudos, onLoadData, createRequest = 
 
   const filtered = useMemo(() => {
     const query = search.toLocaleLowerCase('pt-BR').trim();
+    const categoriaAtiva = CATEGORIAS.find(c => c.label === categoria) ?? CATEGORIAS[0];
     return conteudos.filter(content => {
       const matchesSearch = !query || searchText(content).includes(query);
       const matchesStatus = statusFilter === 'todos' || normalizeStatus(content.status) === statusFilter;
       const matchesPlatform = platformFilter === 'todas' || content.plataforma === platformFilter;
-      return matchesSearch && matchesStatus && matchesPlatform;
+      const matchesFormat = formatFilter === 'todos' || content.formato === formatFilter;
+      const matchesCategoria = categoriaAtiva.test(content);
+      return matchesSearch && matchesStatus && matchesPlatform && matchesFormat && matchesCategoria;
     });
-  }, [conteudos, platformFilter, search, statusFilter]);
+  }, [categoria, conteudos, formatFilter, platformFilter, search, statusFilter]);
 
   const byDate = useMemo(() => {
     const grouped = new Map<string, ConteudoCalendario[]>();
@@ -254,6 +279,7 @@ export function CalendarioConteudoView({ conteudos, onLoadData, createRequest = 
       data_publicacao: content.data_publicacao?.slice(0, 10) ?? '',
       legenda: content.legenda ?? '',
       observacoes: content.observacoes ?? '',
+      texto_peca: content.texto_peca ?? '',
       link: content.link ?? '',
     });
     setEditing(content);
@@ -278,6 +304,7 @@ export function CalendarioConteudoView({ conteudos, onLoadData, createRequest = 
       data_publicacao: form.data_publicacao,
       legenda: form.legenda.trim() || null,
       observacoes: form.observacoes.trim() || null,
+      texto_peca: form.texto_peca.trim() || null,
       link: form.link.trim() || null,
     };
     const result = editing
@@ -317,6 +344,40 @@ export function CalendarioConteudoView({ conteudos, onLoadData, createRequest = 
     toast({ title: 'Conteúdo excluído' });
   };
 
+  const chooseFile = async () => {
+    if (!editing || uploading) return;
+    if (!hasAccessToken()) {
+      try {
+        await getAccessToken();
+        toast({ title: 'Drive autorizado', description: 'Clique em Enviar arquivo novamente para escolher a mídia.' });
+      } catch (error) {
+        toast({ variant: 'destructive', title: 'Não foi possível autorizar o Drive', description: error instanceof Error ? error.message : undefined });
+      }
+      return;
+    }
+    fileInputRef.current?.click();
+  };
+
+  const uploadFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !editing) return;
+    const contentId = editing.id;
+    const partes = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit' }).formatToParts(new Date());
+    const mesAtual = `${partes.find(p => p.type === 'year')?.value}-${partes.find(p => p.type === 'month')?.value}`;
+    const mes = editing.data_publicacao?.slice(0, 7) || mesAtual;
+    try {
+      const url = await uploadToDrive(file, { month: mes, cardId: contentId, publicLink: false });
+      const { error } = await supabase.from('conteudo_calendario').update({ link: url }).eq('id', contentId);
+      if (error) throw error;
+      setForm(current => ({ ...current, link: url }));
+      onLoadData();
+      toast({ title: 'Arquivo enviado para a pasta do conteúdo', description: file.name });
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Falha ao enviar arquivo', description: error instanceof Error ? error.message : 'Tente novamente.' });
+    }
+  };
+
   const weeks = getWeeksInMonth(currentYear, currentMonth);
 
   return (
@@ -335,6 +396,25 @@ export function CalendarioConteudoView({ conteudos, onLoadData, createRequest = 
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        {CATEGORIAS.map(cat => {
+          const count = conteudos.filter(cat.test).length;
+          const active = categoria === cat.label;
+          return (
+            <Button
+              key={cat.label}
+              type="button"
+              size="sm"
+              variant={active ? 'default' : 'outline'}
+              onClick={() => setCategoria(cat.label)}
+              className="gap-1.5"
+            >
+              {cat.label} <span className="opacity-70">({count})</span>
+            </Button>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-56 max-w-sm flex-1">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input aria-label="Buscar conteúdos" className="pl-9" placeholder="Buscar conteúdo..." value={search} onChange={event => setSearch(event.target.value)} />
@@ -346,6 +426,10 @@ export function CalendarioConteudoView({ conteudos, onLoadData, createRequest = 
         <Select value={platformFilter} onValueChange={setPlatformFilter}>
           <SelectTrigger className="w-40"><SelectValue placeholder="Plataforma" /></SelectTrigger>
           <SelectContent><SelectItem value="todas">Todas as redes</SelectItem>{PLATFORM.map(item => <SelectItem key={item.id} value={item.id}>{item.label}</SelectItem>)}</SelectContent>
+        </Select>
+        <Select value={formatFilter} onValueChange={setFormatFilter}>
+          <SelectTrigger className="w-44" aria-label="Filtrar por formato"><SelectValue placeholder="Formato" /></SelectTrigger>
+          <SelectContent><SelectItem value="todos">Todos os formatos</SelectItem>{FORMAT.map(item => <SelectItem key={item.id} value={item.id}>{item.label}</SelectItem>)}</SelectContent>
         </Select>
         <div className="flex rounded-lg border border-border p-1 gap-1">
           {([
@@ -421,7 +505,7 @@ export function CalendarioConteudoView({ conteudos, onLoadData, createRequest = 
 
       {filtered.length === 0 ? <div className="rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">Nenhum conteúdo encontrado. Crie o primeiro pelo botão acima.</div> : null}
 
-      <Dialog open={editing !== undefined} onOpenChange={open => { if (!open) setEditing(undefined); }}>
+      <Dialog open={editing !== undefined} onOpenChange={open => { if (!open && !uploading) setEditing(undefined); }}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{editing ? 'Editar conteúdo' : 'Novo conteúdo'}</DialogTitle>
@@ -429,11 +513,17 @@ export function CalendarioConteudoView({ conteudos, onLoadData, createRequest = 
           </DialogHeader>
           <form onSubmit={save} className="space-y-4">
             <ContentFormFields form={form} onChange={setForm} />
+            {editing && <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-2">
+              <input ref={fileInputRef} type="file" accept="video/*,image/*,application/pdf" className="hidden" onChange={event => void uploadFile(event)} aria-label="Arquivo de mídia do conteúdo" />
+              <Button type="button" variant="outline" disabled={uploading || saving} onClick={() => void chooseFile()}><UploadCloud className="mr-2 h-4 w-4" />{uploading ? `Enviando ${progress}%` : 'Enviar arquivo ao Drive'}</Button>
+              <p className="text-xs text-muted-foreground">Arquivos em Marketing / mês / card. Salve o conteúdo antes do primeiro upload. O link novo substitui o link principal; versões anteriores permanecem na pasta. Acesso conforme permissões do Drive.</p>
+              {uploading && <p role="status" className="text-xs text-muted-foreground">{statusMessage}</p>}
+            </div>}
             <div className="flex justify-between gap-2 pt-2">
-              {editing ? <Button type="button" variant="destructive" disabled={deleting} onClick={remove}><Trash2 className="mr-1 h-4 w-4" />{deleting ? 'Excluindo...' : 'Excluir'}</Button> : <span />}
+              {editing ? <Button type="button" variant="destructive" disabled={deleting || uploading} onClick={remove}><Trash2 className="mr-1 h-4 w-4" />{deleting ? 'Excluindo...' : 'Excluir'}</Button> : <span />}
               <div className="flex gap-2">
-                <Button type="button" variant="outline" onClick={() => setEditing(undefined)}>Cancelar</Button>
-                <Button type="submit" disabled={saving}>{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{saving ? 'Salvando...' : 'Salvar'}</Button>
+                <Button type="button" variant="outline" disabled={uploading} onClick={() => setEditing(undefined)}>Cancelar</Button>
+                <Button type="submit" disabled={saving || uploading}>{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{saving ? 'Salvando...' : 'Salvar'}</Button>
               </div>
             </div>
           </form>
