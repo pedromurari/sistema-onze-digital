@@ -39,7 +39,7 @@ export async function listarTracking(webinarioId: string, desde: string): Promis
   const linhas = await fetchAll<TrackingJoined>((de, ate) => db.from('webinario_tracking')
     .select('id,lead_id,watch_stage,updated_at,leads!inner(id,nome,telefone,whatsapp,email,status,vendedor,criado_em,pessoa_id),webinario_sessoes!inner(webinario_id)')
     .eq('webinario_sessoes.webinario_id', webinarioId)
-    .eq('leads.canal', 'webinario')
+    .eq('leads.canal', 'Webinário')
     .gte('leads.criado_em', desde)
     .order('id').range(de, ate) as PromiseLike<{ data: TrackingJoined[] | null; error: PostgrestError | null }>);
   return consolidarLeads(linhas);
