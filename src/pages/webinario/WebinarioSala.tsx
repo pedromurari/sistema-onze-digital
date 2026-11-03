@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
+import { carregarPixel, trackPixel } from './meta-pixel';
 import './webinario.css';
 
 const SUPABASE_FUNCTIONS_URL = 'https://usqiyekfmwwnvkmkdlej.supabase.co/functions/v1';
@@ -144,6 +145,8 @@ export default function WebinarioSala() {
 
       setCarregando(false);
       track(trackingId, 'enter');
+      carregarPixel();
+      trackPixel('CompleteRegistration', { content_name: 'Entrou na sala do webinário' });
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
@@ -245,18 +248,22 @@ export default function WebinarioSala() {
   // Entra no segundo certo (elapsed desde o inicio_em da sessao) e nunca
   // deixa voltar/avançar manualmente -- mesma regra do protótipo original
   // (sem seek, assistir é "ao vivo" de verdade).
+  const ultimoTempoPermitido = useRef(0);
   const onLoadedMetadata = () => {
     const video = videoRef.current;
     if (!video || !sessao) return;
     const elapsedMs = Date.now() - new Date(sessao.inicio_em).getTime();
     const elapsedS = Math.max(0, Math.floor(elapsedMs / 1000));
     if (elapsedS < video.duration) {
+      // Libera esse salto antes de aplicar -- senão o próprio guard
+      // anti-avanço manual (onSeeking) cancela o reposicionamento pro
+      // ponto "ao vivo" e o vídeo volta pro zero a cada load/reload.
+      ultimoTempoPermitido.current = elapsedS;
       video.currentTime = elapsedS;
     }
     video.play().catch(() => {});
   };
 
-  const ultimoTempoPermitido = useRef(0);
   const onSeeking = () => {
     const video = videoRef.current;
     if (!video) return;
@@ -286,6 +293,7 @@ export default function WebinarioSala() {
     <div className="idm-webinario">
       <div className="iw-sala">
         <div className="iw-video-wrap">
+          <span className="iw-live-badge">AO VIVO</span>
           {webinario?.video_url && (
             <video
               ref={videoRef}
@@ -301,8 +309,8 @@ export default function WebinarioSala() {
           )}
         </div>
         <div className="iw-chat-panel">
+          <p className="iw-chat-disclosure">Chat ao vivo · mensagens da equipe IDM e de outros participantes</p>
           <div className="iw-chat" ref={chatRef}>
-            <p className="iw-chat-disclosure">Chat ao vivo · mensagens da equipe IDM e de outros participantes</p>
             {timeline.map((m) => (
               <div key={m.id} className={`iw-chat-msg ${m.real ? 'iw-chat-msg-real' : ''}`}>
                 <span className="iw-chat-autor">{m.autor}</span>

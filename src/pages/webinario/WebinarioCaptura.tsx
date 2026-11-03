@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { BookOpenCheck, Gift, MonitorPlay } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { temaPorSlug } from './webinario-temas';
+import { carregarPixel, trackPixel } from './meta-pixel';
 import './webinario.css';
 
 const FUNCTIONS_URL = 'https://usqiyekfmwwnvkmkdlej.supabase.co/functions/v1';
@@ -55,6 +56,12 @@ export default function WebinarioCaptura() {
     return () => { ativo = false; };
   }, [slug]);
 
+  useEffect(() => {
+    carregarPixel();
+    trackPixel('ViewContent', { content_name: tema.titulo, content_category: 'Webinario' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug]);
+
   // Reaproveitado tanto pelo submit normal do formulário quanto pelo clique
   // num dos horários do popup "fora de horário" (nesse caso, horarioEscolhido
   // vem preenchido e o backend cria a sessão na hora, se ainda não existir).
@@ -89,6 +96,7 @@ export default function WebinarioCaptura() {
     }
 
     setOpcoesForaHorario(null);
+    trackPixel('Lead', { content_name: tema.titulo, content_category: 'Webinario' });
     sessionStorage.setItem('webinario_tracking_id', data.trackingId);
     sessionStorage.setItem('webinario_sessao_id', data.sessaoId);
     sessionStorage.setItem('webinario_inicio_em', data.inicioEm);

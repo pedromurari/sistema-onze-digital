@@ -136,23 +136,69 @@
 /* ── Sala ao vivo ── */
 
 .iw-sala {
+  height: 100dvh;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .iw-video-wrap {
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 9;
-  background: #000;
+  background: #05070f;
+  overflow: hidden;
+}
+
+.iw-video-wrap::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(212, 175, 55, 0.09) 1.5px, transparent 1.5px);
+  background-size: 28px 28px;
+  pointer-events: none;
 }
 
 .iw-video-wrap video {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: #000;
+  background: transparent;
+}
+
+.iw-live-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #e11d2e;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 4px 10px 4px 8px;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.iw-live-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff;
+  animation: iw-live-pulse 1.4s infinite;
+}
+
+@keyframes iw-live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
 }
 
 .iw-cta-overlay {
@@ -228,10 +274,7 @@
 }
 
 .iw-chat-disclosure {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  margin: -16px -16px 2px;
+  flex-shrink: 0;
   padding: 10px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.15);
   background: var(--iw-card-2);
@@ -261,8 +304,8 @@
   .iw-wrap { max-width: 600px; padding-top: 48px; }
   .iw-h1 { font-size: 2.25rem; }
   .iw-sala { flex-direction: row; }
-  .iw-video-wrap { flex: 1; aspect-ratio: auto; }
-  .iw-chat-panel { width: 360px; }
+  .iw-video-wrap { flex: 1; aspect-ratio: auto; height: 100%; }
+  .iw-chat-panel { width: 360px; height: 100%; }
 }
 .iw-eyebrow { color: #cba54d; font-size: .78rem; font-weight: 800; letter-spacing: .12em; text-align: center; }
 .iw-theme-copy { text-align: left; margin: 1.25rem 0; max-width: 42rem; width: 100%; }

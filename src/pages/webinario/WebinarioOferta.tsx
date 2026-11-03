@@ -1,5 +1,7 @@
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { carregarPixel, trackPixel } from './meta-pixel';
 import './webinario.css';
 
 // Leva o lead pro fluxo de matrícula JÁ EXISTENTE (Asaas/Mercado Pago),
@@ -13,7 +15,13 @@ export default function WebinarioOferta() {
   const email = sessionStorage.getItem('webinario_email') || '';
   const whatsapp = sessionStorage.getItem('webinario_whatsapp') || '';
 
+  useEffect(() => {
+    carregarPixel();
+    trackPixel('ViewContent', { content_name: 'Oferta — Formação em Psicanálise', content_category: 'Webinario' });
+  }, []);
+
   const irParaMatricula = () => {
+    trackPixel('InitiateCheckout', { content_name: 'Formação em Psicanálise Clínica Integrativa' });
     const params = new URLSearchParams();
     if (nome) params.set('nome', nome);
     if (email) params.set('email', email);
