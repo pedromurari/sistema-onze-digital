@@ -48,6 +48,16 @@ const TEMPLATES = [
     fonte: 'lancamento_turma' as Fonte,
     texto_whatsapp: 'Oi, {{nome}}! Tudo bem?\n\nVocê participou de uma das nossas turmas da Semana do Despertar e eu lembrei de você agora.\n\nSaiu um episódio novo do Além do Divã: "A mente Borderline por dentro — vazio, medo e um ciclo que se repete". O Rodrygo Murari e a Jocimara Anjos saem do "borderline é tóxico" raso e explicam de verdade os 5 eixos desse funcionamento — medo do abandono, intensidade emocional, instabilidade nos relacionamentos, a pergunta "quem sou eu" por trás da identidade fragmentada, e o ciclo do abandono.\n\nAssiste aqui:',
     link_cta: 'https://youtu.be/axU6JM49TdE',
+    // Pedido do Pedro (03/11): essa campanha não usa as instâncias da Helen (vendas) nem do financeiro — todas as outras ativas sim.
+    evolution_config_ids: [
+      'fd38f732-33fb-4e0c-95d9-1debaa62f907', // disp3
+      '88af4647-3abc-4195-b8bc-e6bcb8a27e0a', // disp4
+      'ad43112c-757d-4374-9344-7b7473a9fbe0', // Instituto Despertamente
+      'f6c46149-64e9-4c8f-8344-5e57b954e399', // Pedro
+      'd717ee81-f5fd-433e-b097-ee972bcee84d', // PM 02
+      '3ec5a173-99ad-4544-a68d-c645b1793f44', // Rodrygo Murari Avisos
+      '3baa86c5-5576-47a3-840c-1caaecb74997', // Rodrygo Murari IDM
+    ],
   },
   {
     nome: 'Black Friday — Formação em Psicanálise',
@@ -106,6 +116,7 @@ export function DisparosMassa() {
   const [linkCta, setLinkCta] = useState('');
   const [emailAssunto, setEmailAssunto] = useState('');
   const [emailCorpo, setEmailCorpo] = useState('');
+  const [evolutionConfigIds, setEvolutionConfigIds] = useState<string[] | null>(null);
 
   const carregar = async () => {
     setCarregando(true);
@@ -128,6 +139,7 @@ export function DisparosMassa() {
     setLinkCta(t.link_cta ?? '');
     setEmailAssunto('email_assunto' in t ? (t as { email_assunto?: string }).email_assunto ?? '' : '');
     setEmailCorpo('email_corpo' in t ? (t as { email_corpo?: string }).email_corpo ?? '' : '');
+    setEvolutionConfigIds('evolution_config_ids' in t ? (t as { evolution_config_ids?: string[] }).evolution_config_ids ?? null : null);
     setMostrarForm(true);
   };
 
@@ -151,6 +163,7 @@ export function DisparosMassa() {
       link_cta: linkCta || null,
       email_assunto: emailAssunto || null,
       email_corpo: emailCorpo || null,
+      evolution_config_ids: evolutionConfigIds,
       status: 'pronta',
     }).select('id').single();
     setSalvando(false);
@@ -186,6 +199,7 @@ export function DisparosMassa() {
     setNome(''); setCanal('whatsapp'); setFonte('lancamento_turma'); setLancamentoIds([]);
     setExcluirMatriculados(true); setProduto(''); setAlunoStatus('ativo'); setExcluirDiva(false);
     setTextoWhatsapp(''); setLinkCta(''); setEmailAssunto(''); setEmailCorpo('');
+    setEvolutionConfigIds(null);
   };
 
   return (
@@ -310,6 +324,9 @@ export function DisparosMassa() {
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><MessageSquare className="h-3.5 w-3.5" /> Texto do WhatsApp (use {'{{nome}}'})</label>
                   <Textarea rows={5} value={textoWhatsapp} onChange={(e) => setTextoWhatsapp(e.target.value)} placeholder="Oi, {{nome}}! ..." />
+                  {evolutionConfigIds && (
+                    <p className="text-xs text-amber-600">⚠ Instâncias restritas: essa campanha não usa todas as ativas (Helen vendas e financeiro ficam de fora).</p>
+                  )}
                 </div>
               )}
 

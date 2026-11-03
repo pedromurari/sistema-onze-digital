@@ -166,6 +166,7 @@ serve(async (req) => {
           max_errors_seq: 8,
           message_type: 'text',
           next_send_at: new Date().toISOString(),
+          ...(campanha.evolution_config_ids?.length ? { evolution_config_ids: campanha.evolution_config_ids } : {}),
         }).select('id').single();
         if (errDisparoCamp || !disparoCamp) return json({ ok: false, erro: errDisparoCamp?.message ?? 'falha ao criar disparo' }, 500);
         disparoCampanhaId = disparoCamp.id;
