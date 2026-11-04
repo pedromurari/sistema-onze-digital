@@ -112,7 +112,7 @@ async function enviarContrato(
 // no texto genérico de antes (fallback seguro).
 function labelProduto(produto: string | null | undefined): string {
   switch (produto) {
-    case 'psicanalise': return 'matrícula de Psicanálise';
+    case 'psicanalise': return 'Psicanálise';
     case 'sociedade-idm': return 'mensalidade da Sociedade IDM';
     case 'npa-mentoria': return 'mentoria NPA';
     case 'pnl-master': return 'curso de PNL Master';

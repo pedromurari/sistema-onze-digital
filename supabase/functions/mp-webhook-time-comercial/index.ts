@@ -157,7 +157,7 @@ async function garantirContrato(supabase: ReturnType<typeof createClient>, aluno
 // entre edge functions Deno separadas).
 function labelProduto(produto: string | null | undefined): string {
   switch (produto) {
-    case 'psicanalise': return 'matrícula de Psicanálise';
+    case 'psicanalise': return 'Psicanálise';
     case 'sociedade-idm': return 'mensalidade da Sociedade IDM';
     case 'npa-mentoria': return 'mentoria NPA';
     case 'pnl-master': return 'curso de PNL Master';
