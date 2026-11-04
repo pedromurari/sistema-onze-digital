@@ -129,7 +129,12 @@ async function enviarConfirmacoes(
   parcela: number,
   totalParcelas: number,
 ): Promise<void> {
-  const fnHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey };
+  // x-financeiro-key: desde o hardening de 03/11 (incidente de campanha saindo pelo
+  // disp3), wpp-enviar recusa com 403 qualquer pedido de instance_name='disp3' sem essa
+  // chave -- achado real 04/11: confirmação de pagamento ficou muda (403 silencioso, só
+  // logado) até esse header ser adicionado aqui.
+  const financeiroKey = Deno.env.get('FINANCEIRO_INSTANCE_KEY') ?? 'financeiro-only-idm-2026';
+  const fnHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey, 'x-financeiro-key': financeiroKey };
   const nome = aluno.nome || 'aluno(a)';
   const valorFmt = Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
   // totalParcelas vem de alunos.total_mensalidades -- antes fixo em "/15", errado

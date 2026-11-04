@@ -78,6 +78,9 @@ serve(async (req) => {
         if (a.whatsapp) {
           try {
             await sb.functions.invoke('wpp-enviar', {
+              // x-financeiro-key: desde o hardening de 03/11, wpp-enviar recusa com 403
+              // qualquer pedido de instance_name='disp3' sem essa chave.
+              headers: { 'x-financeiro-key': Deno.env.get('FINANCEIRO_INSTANCE_KEY') ?? 'financeiro-only-idm-2026' },
               body: { numero: a.whatsapp, instance_name: 'disp3', mensagem: `Excelente dia, ${(a.nome ?? '').split(' ')[0]}!\n\nAqui e o Financeiro do Instituto Despertamente. Confirmamos que seu contrato foi assinado com sucesso. Seja bem-vindo(a)!` },
             });
           } catch (e) {

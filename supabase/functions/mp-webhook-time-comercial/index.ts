@@ -178,6 +178,13 @@ async function enviarConfirmacoes(
   totalParcelas?: number | null,
 ): Promise<void> {
   const fnHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey };
+  // x-financeiro-key: desde o hardening de 03/11 (incidente de campanha saindo pelo
+  // disp3), wpp-enviar recusa com 403 qualquer pedido de instance_name='disp3' sem essa
+  // chave -- achado real 04/11: confirmação de pagamento ficou muda (403 silencioso, só
+  // logado) até esse header ser adicionado aqui. Só o envio de WhatsApp (disp3) precisa
+  // dela -- o e-mail não passa pelo wpp-enviar.
+  const financeiroKey = Deno.env.get('FINANCEIRO_INSTANCE_KEY') ?? 'financeiro-only-idm-2026';
+  const whatsappHeaders = { ...fnHeaders, 'x-financeiro-key': financeiroKey };
   const nome = aluno.nome || 'aluno(a)';
   const valorFmt = Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
   // Mesma convenção de asaas-webhook-time-comercial: só mostra "parcela X/Y"
@@ -190,7 +197,7 @@ async function enviarConfirmacoes(
     const mensagem = `✅ Pagamento confirmado, ${nome}!\n\nRecebemos ${refParcela} (*R$ ${valorFmt}*) da sua ${refProduto}.\n\nQualquer dúvida, é só chamar por aqui.`;
     try {
       await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
-        method: 'POST', headers: fnHeaders,
+        method: 'POST', headers: whatsappHeaders,
         // instance_name fixo em 'disp3' (WhatsApp "Financeiro IDM") -- pedido
         // explícito do dono do produto pra esse número ser o wpp de
         // financeiro (2026-09-03), em vez de cair no rodízio por prioridade.

@@ -852,6 +852,11 @@ serve(async (req) => {
           // cobranças -- pedido do dono em 2026-09-24 (antes saía pelo número de
           // avisos, por prioridade automática). A mensagem já pede pra salvar o número.
           const { data: wppRes, error: wppErro } = await sb.functions.invoke('wpp-enviar', {
+            // x-financeiro-key: desde o hardening de 03/11, wpp-enviar recusa com 403
+            // qualquer pedido de instance_name='disp3' sem essa chave -- achado real
+            // 04/11: envio de contrato ficou mudo (3 tentativas, todas 403) até esse
+            // header ser adicionado aqui.
+            headers: { 'x-financeiro-key': Deno.env.get('FINANCEIRO_INSTANCE_KEY') ?? 'financeiro-only-idm-2026' },
             body: {
               numero: aluno.whatsapp,
               instance_name: 'disp3',

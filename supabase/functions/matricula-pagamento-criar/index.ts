@@ -183,13 +183,18 @@ async function enviarConfirmacoesPagamentoUnico(
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const fnHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey };
+  // x-financeiro-key: desde o hardening de 03/11, wpp-enviar recusa com 403 qualquer
+  // pedido de instance_name='disp3' sem essa chave -- achado real 04/11: confirmação de
+  // pagamento ficou muda até esse header ser adicionado aqui.
+  const financeiroKey = Deno.env.get('FINANCEIRO_INSTANCE_KEY') ?? 'financeiro-only-idm-2026';
+  const whatsappHeaders = { ...fnHeaders, 'x-financeiro-key': financeiroKey };
   const nome = aluno.nome || 'aluno(a)';
   const valorFmt = Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
   const numero = aluno.cobranca_telefone || aluno.whatsapp;
 
   if (numero) {
     await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
-      method: 'POST', headers: fnHeaders,
+      method: 'POST', headers: whatsappHeaders,
       body: JSON.stringify({
         numero,
         mensagem: `✅ Pagamento confirmado, ${nome}!\n\nRecebemos o valor de *R$ ${valorFmt}* referente à sua matrícula no *Instituto Despertamente*.\n\nQualquer dúvida, é só chamar por aqui.`,
@@ -235,6 +240,11 @@ async function enviarConfirmacoesParcela(
   totalParcelas: number,
 ): Promise<void> {
   const fnHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey };
+  // x-financeiro-key: desde o hardening de 03/11, wpp-enviar recusa com 403 qualquer
+  // pedido de instance_name='disp3' sem essa chave -- achado real 04/11: confirmação de
+  // pagamento ficou muda até esse header ser adicionado aqui.
+  const financeiroKey = Deno.env.get('FINANCEIRO_INSTANCE_KEY') ?? 'financeiro-only-idm-2026';
+  const whatsappHeaders = { ...fnHeaders, 'x-financeiro-key': financeiroKey };
   const nome = aluno.nome || 'aluno(a)';
   const valorFmt = Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
   // totalParcelas vem de alunos.total_mensalidades -- antes fixo em "/15", errado
@@ -246,7 +256,7 @@ async function enviarConfirmacoesParcela(
   if (numero) {
     try {
       await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
-        method: 'POST', headers: fnHeaders,
+        method: 'POST', headers: whatsappHeaders,
         body: JSON.stringify({
           numero,
           mensagem: `✅ Pagamento confirmado, ${nome}!\n\nRecebemos ${refParcela} (*R$ ${valorFmt}*) da sua matrícula no *Instituto Despertamente*.\n\nQualquer dúvida, é só chamar por aqui.`,
