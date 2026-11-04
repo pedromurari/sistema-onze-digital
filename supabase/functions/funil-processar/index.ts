@@ -590,6 +590,10 @@ serve(async (req) => {
             : null;
 
           for (const bv of itens ?? []) {
+            // Um lote pode atravessar as 21h por causa do intervalo entre envios.
+            // Revalidar o horario antes de cada lead impede disparos fora da janela.
+            const horaAtual = saoPauloAgora(new Date()).hour;
+            if (horaAtual < cfgBV.safe_hour_start || horaAtual >= cfgBV.safe_hour_end) break;
             if (enviadosHoje >= cfgBV.daily_limit) break;
             if (errosSeq >= cfgBV.max_errors_seq) break;
 

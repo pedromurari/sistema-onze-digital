@@ -6,6 +6,24 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 8080
+    },
+    {
+      "name": "franqueadora-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "E:/idmpc-franqueadora", "run", "dev"],
+      "port": 8090
+    },
+    {
+      "name": "gratuito-45-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "E:/gratuito-45/curso-gratuito-45-1", "run", "dev", "--", "--port", "8100"],
+      "port": 8100
+    },
+    {
+      "name": "gratuito-47-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "E:/gratuito-47/curso-gratuito-47-1", "run", "dev", "--", "--port", "8101"],
+      "port": 8101
     }
   ]
 }

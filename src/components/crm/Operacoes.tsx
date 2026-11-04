@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -13,12 +12,9 @@ import { toast } from '@/components/ui/use-toast';
 import { Plus } from 'lucide-react';
 
 // Componentes extraídos
-import { OperacoesHeader } from './operacoes/OperacoesHeader';
-import { TarefasView } from './operacoes/TarefasView';
 import { CalendarioGeralView } from './operacoes/CalendarioGeralView';
 import { CalendarioConteudoView } from './operacoes/CalendarioConteudoView';
 import { TarefaModal } from './operacoes/TarefaModal';
-import { NovaTarefaModal } from './operacoes/NovaTarefaModal';
 
 // Interfaces simplificadas
 interface Tarefa {
@@ -86,24 +82,11 @@ interface OperacoesProps {
   currentPage?: string;
 }
 
-type OperacoesTab = 'tarefas' | 'calendario_geral' | 'calendario_conteudo';
+type OperacoesTab = 'calendario_geral' | 'calendario_conteudo';
 
 export function Operacoes({ currentPage }: OperacoesProps) {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<OperacoesTab>(() => {
-    // Se vier do sidebar como 'operacoes_calendario_geral', 
-    // mapear para 'calendario_geral'
-    if (currentPage === 'operacoes_calendario_geral') return 'calendario_geral'
-    if (currentPage === 'operacoes_calendario_conteudo') return 'calendario_conteudo'
-    return 'tarefas'
-  });
-
-  // Sincronizar aba quando currentPage mudar
-  useEffect(() => {
-    if (currentPage === 'operacoes_calendario_geral') setActiveTab('calendario_geral')
-    else if (currentPage === 'operacoes_calendario_conteudo') setActiveTab('calendario_conteudo')
-    else if (currentPage === 'operacoes_tarefas') setActiveTab('tarefas')
-  }, [currentPage]);
+  const activeTab: OperacoesTab = currentPage === 'operacoes_calendario_geral' ? 'calendario_geral' : 'calendario_conteudo';
 
   // Estados principais
   const [tarefas, setTarefas] = useState<Tarefa[]>([]);
@@ -117,7 +100,6 @@ export function Operacoes({ currentPage }: OperacoesProps) {
 
   // Estados dos modais
   const [showTarefaModal, setShowTarefaModal] = useState(false);
-  const [showNovaTarefaModal, setShowNovaTarefaModal] = useState(false);
   const [selectedTarefa, setSelectedTarefa] = useState<Tarefa | null>(null);
   const [conteudoCreateRequest, setConteudoCreateRequest] = useState(0);
 
@@ -138,7 +120,7 @@ export function Operacoes({ currentPage }: OperacoesProps) {
       if (eventosRes.data) setEventosCalendario(eventosRes.data);
 
       // Carregar conteúdo do calendário
-      const conteudoRes = await supabase.from('conteudo_calendario').select('id, titulo, plataforma, formato, responsavel, status, data_publicacao, legenda, link, observacoes, imagem_url, created_by').order('data_publicacao', { ascending: true }).limit(200);
+      const conteudoRes = await supabase.from('conteudo_calendario').select('id, titulo, plataforma, formato, responsavel, status, data_publicacao, legenda, texto_peca, link, observacoes, imagem_url, created_by').order('data_publicacao', { ascending: true }).limit(200);
       if (conteudoRes.data) setConteudoCalendario(conteudoRes.data);
 
       // Carregar usuários
@@ -220,7 +202,6 @@ export function Operacoes({ currentPage }: OperacoesProps) {
   const handleSaveTarefa = () => {
     loadData();
     setShowTarefaModal(false);
-    setShowNovaTarefaModal(false);
     setSelectedTarefa(null);
   };
 
@@ -237,15 +218,10 @@ export function Operacoes({ currentPage }: OperacoesProps) {
       {/* Header: título + botão de ação */}
       <div className="flex justify-between items-center p-6 border-b">
         <div>
-          <h1 className="text-2xl font-bold">Operações</h1>
-          <p className="text-sm text-muted-foreground">Centro de controle de produtividade</p>
+          <h1 className="text-2xl font-bold">{activeTab === 'calendario_geral' ? 'Calendário Geral' : 'Calendário de Conteúdo'}</h1>
+          <p className="text-sm text-muted-foreground">{activeTab === 'calendario_geral' ? 'Eventos, lançamentos, NPA e turmas' : 'Planejamento e produção de conteúdo'}</p>
         </div>
         <div className="flex gap-2">
-          {activeTab === 'tarefas' && (
-            <Button onClick={() => setShowNovaTarefaModal(true)} className="bg-red-600 hover:bg-red-700 text-white">
-              <Plus className="h-4 w-4 mr-2" />Nova Tarefa
-            </Button>
-          )}
           {activeTab === 'calendario_geral' && (
             <Button className="bg-primary hover:bg-primary/90">
               <Plus className="h-4 w-4 mr-2" />Novo Evento
@@ -259,38 +235,9 @@ export function Operacoes({ currentPage }: OperacoesProps) {
         </div>
       </div>
 
-      {/* Abas principais */}
-      <div className="px-6 pt-2 pb-0 border-b overflow-x-visible">
-        <Tabs value={activeTab} onValueChange={value => setActiveTab(value as OperacoesTab)}>
-          <TabsList className="flex h-10 items-center gap-1 rounded-md bg-muted p-1 w-auto">
-            <TabsTrigger value="tarefas" className="whitespace-nowrap text-sm px-3">
-              ✅ Tarefas
-            </TabsTrigger>
-            <TabsTrigger value="calendario_geral" className="whitespace-nowrap text-sm px-3">
-              📅 Calendário Geral
-            </TabsTrigger>
-            <TabsTrigger value="calendario_conteudo" className="whitespace-nowrap text-sm px-3">
-              🗓️ Calendário de Conteúdo
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </div>
-
-      {/* Conteúdo da aba ativa — sem margin extra */}
+      {/* Cada calendário tem seu próprio acesso no menu lateral. */}
       <div className="flex-1 overflow-auto p-6">
-        <Tabs value={activeTab} onValueChange={value => setActiveTab(value as OperacoesTab)} className="h-full">
-          <TabsContent value="tarefas" className="h-full mt-0">
-            <TarefasView
-              tarefas={tarefas}
-              usuarios={usuarios}
-              user={user}
-              getPriorityHexColor={getPriorityHexColor}
-              onOpenTarefaDetail={handleOpenTarefaDetail}
-              onLoadData={loadData}
-            />
-          </TabsContent>
-
-          <TabsContent value="calendario_geral" className="h-full mt-0">
+        {activeTab === 'calendario_geral' ? (
             <CalendarioGeralView
               tarefas={tarefas}
               lancamentos={lancamentos}
@@ -302,16 +249,13 @@ export function Operacoes({ currentPage }: OperacoesProps) {
               onOpenTarefaDetail={handleOpenTarefaDetail}
               onLoadData={loadData}
             />
-          </TabsContent>
-
-          <TabsContent value="calendario_conteudo" className="h-full mt-0">
+        ) : (
             <CalendarioConteudoView
               conteudos={conteudoCalendario}
               onLoadData={loadData}
               createRequest={conteudoCreateRequest}
             />
-          </TabsContent>
-        </Tabs>
+        )}
       </div>
 
       {/* Modais */}
@@ -327,11 +271,6 @@ export function Operacoes({ currentPage }: OperacoesProps) {
         user={user}
       />
 
-      <NovaTarefaModal
-        open={showNovaTarefaModal}
-        onClose={() => setShowNovaTarefaModal(false)}
-        onSuccess={loadData}
-      />
     </div>
   );
 }

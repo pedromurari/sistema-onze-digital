@@ -24,7 +24,7 @@ export {
 } from './alunos';
 
 export {
-  buscarPagamentos, usePagamentos, usePagamentosDoAluno,
+  buscarPagamentos, usePagamentos, usePagamentosDoAluno, useRespostasCobranca,
   COLUNAS_PAGAMENTO_RESUMO, COLUNAS_PAGAMENTO_COMPLETO,
 } from './pagamentos';
 

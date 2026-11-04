@@ -30,6 +30,13 @@ const corsHeaders = {
 // "promo") -- "Financeiro IDM"/disp3.
 const NUMERO_ALERTA = '5511976736081';
 
+// Grupo "VENDAS IDM" do Comercial (Rodrygo diretor + Helen vendedora + Pedro) --
+// pedido do Pedro 22/10/2026 pra alerta de falha de matrícula/pagamento cair
+// ali tambem, nao so no numero pessoal acima. Enviado pelo numero "Instituto
+// Despertamente" porque e' ele quem esta como admin nesse grupo.
+const GRUPO_VENDAS_JID = '120363412322100973@g.us';
+const GRUPO_VENDAS_INSTANCIA = 'Instituto Despertamente';
+
 const ETAPA_LABEL: Record<string, string> = {
   boleto: 'gerar os boletos (Asaas)',
   contrato: 'enviar o contrato (Autentique)',
@@ -73,12 +80,22 @@ serve(async (req) => {
 
     if (wppErr) {
       console.error('time-comercial-pre-matricula-alerta: erro ao enviar wpp', wppErr);
-      return new Response(JSON.stringify({ ok: false, erro: wppErr.message }), {
+    }
+
+    const { error: grupoErr } = await sb.functions.invoke('wpp-enviar', {
+      body: { numero: GRUPO_VENDAS_JID, instance_name: GRUPO_VENDAS_INSTANCIA, mensagem },
+    });
+    if (grupoErr) {
+      console.error('time-comercial-pre-matricula-alerta: erro ao enviar wpp pro grupo de vendas', grupoErr);
+    }
+
+    if (wppErr && grupoErr) {
+      return new Response(JSON.stringify({ ok: false, erro: wppErr.message || grupoErr.message }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    return new Response(JSON.stringify({ ok: true }), {
+    return new Response(JSON.stringify({ ok: true, numeroEnviado: !wppErr, grupoEnviado: !grupoErr }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err: any) {

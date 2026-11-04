@@ -86,7 +86,15 @@ serve(async (req) => {
     let contratoReenviado = false;
     let contratoErro: string | null = null;
 
-    if (reenviar_contrato && emailMudou) {
+    // Nao reusa emailMudou aqui: o front so manda reenviar_contrato=true numa
+    // SEGUNDA chamada, depois que a primeira ja salvou o e-mail novo no banco
+    // (a RPC roda sempre, com ou sem reenviar_contrato). Nessa hora "antes"
+    // (lido no topo desta chamada) ja e' igual ao e-mail novo, entao
+    // `emailMudou` sempre dava false aqui e o reenvio nunca disparava --
+    // confirmado 19/10/2026 com o Conceicao de Maria Dias Sousa (bug real,
+    // sem nenhum erro visivel pro usuario). A decisao de "mudou ou nao" ja foi
+    // tomada pelo front na primeira chamada (e' por isso que o popup apareceu).
+    if (reenviar_contrato) {
       // Documento antigo estava ligado ao e-mail errado -- apaga antes de gerar
       // outro, mesmo passo que o dono vem fazendo manualmente o dia todo
       // (Nathalia, Mariland, Patrícia, Adriana) quando o contrato sai errado.

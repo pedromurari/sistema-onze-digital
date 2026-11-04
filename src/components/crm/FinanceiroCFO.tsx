@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { StatTile, SectionBar } from '@/components/crm/ui/premium';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -34,7 +35,7 @@ import { RepasseTurmasConfig } from './finance/RepasseTurmasConfig';
 import { CfoParametrosConfig } from './finance/CfoParametrosConfig';
 import {
   useAlunos, usePagamentos, useTurmas, useResponsaveis, useTurmaResponsaveis,
-  useInvalidarDados,
+  useInvalidarDados, useRespostasCobranca,
 } from '@/lib/db';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -55,6 +56,7 @@ interface Aluno {
   mensalidades_pagas?: number | null; total_mensalidades?: number | null;
 }
 interface Pagamento {
+  link_pagamento_asaas: string | null; asaas_payment_id: string | null;
   id: string; aluno_id: string | null; turma_id: string | null;
   valor: number | null; status: string | null;
   data_pagamento: string | null; data_vencimento: string | null;
@@ -73,6 +75,16 @@ interface BalancoItem {
 }
 
 type Periodo = 'hoje' | 'semana' | 'mes' | '3m';
+
+// Resumo das decisões existentes; a fonte da verdade continua FINANCEIRO.md §2.
+const DECISOES = [
+  { titulo: 'Nada retroativo · corte fiscal', texto: 'A automação respeita inicio_operacao_fiscal de balanco_config (2026-09-01). O histórico anterior continua visível, sem gerar ou alterar notas, pagamentos ou repasses retroativos.' },
+  { titulo: 'Competência e caixa', texto: 'Competência usa mes_referencia; caixa usa data_pagamento. São visões diferentes do mesmo financeiro.' },
+  { titulo: 'Repasse 50/50', texto: '50% da base para IDM/Onze Digital e 50% para investidores, conforme turma_responsaveis. O cálculo segue calcRepassePagamento.' },
+  { titulo: 'Inter e C6', texto: 'Inter: repasse do Pedro, com pouca cobrança direta. C6: parte do Rodrygo e maior parte dos recebimentos atuais.' },
+  { titulo: 'Mercado Pago e Asaas', texto: 'Mercado Pago: cartão, maquininha, links e ingressos (Vega). Asaas: recorrência NPS/PSI e todas as novas parcelas.' },
+  { titulo: 'Voomp e outras contas', texto: 'Voomp: vínculo da extensão universitária Anhanguera. Outro: Hotmart, contas PF e demais recebimentos.' },
+];
 type GranularidadeFluxo = 'diario' | 'semanal' | 'mensal';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -239,12 +251,12 @@ export function FinanceiroCFO() {
   // justamente pra dar o numero "de verdade", e era a que mais divergia: o comentario que
   // estava no load registrava que a contagem dela vinha menor que a das outras duas.
   const COLUNAS_PAG_CFO =
-    'id, aluno_id, turma_id, valor, status, data_pagamento, data_vencimento, mes_referencia';
+    'id, aluno_id, turma_id, valor, status, data_pagamento, data_vencimento, mes_referencia, link_pagamento_asaas, asaas_payment_id';
   const COLUNAS_ALUNO_CFO =
     'id, nome, turma_id, status, data_matricula, dia_vencimento, valor_mensalidade, mensalidades_pagas, total_mensalidades';
 
-  const { data: alunosQuery, isLoading: carregandoAlunos } = useAlunos<Aluno>(COLUNAS_ALUNO_CFO);
-  const { data: pagamentosQuery, isLoading: carregandoPagamentos } =
+  const { data: alunosQuery, isLoading: carregandoAlunos, isError: erroAlunos } = useAlunos<Aluno>(COLUNAS_ALUNO_CFO);
+  const { data: pagamentosQuery, isLoading: carregandoPagamentos, isError: erroPagamentos } =
     usePagamentos<Pagamento>(COLUNAS_PAG_CFO);
   const alunos     = alunosQuery ?? [];
   const pagamentos = pagamentosQuery ?? [];
@@ -273,6 +285,9 @@ export function FinanceiroCFO() {
   const mesAtual   = useMemo(() => mesStr(0), []);
   const mesAnterior = useMemo(() => mesStr(1), []);
   const hoje       = useMemo(() => todayStr(), []);
+  const inicioRespostas = `${mesAtual}-01T00:00:00-03:00`;
+  const fimRespostas = `${format(new Date(Number(mesAtual.slice(0, 4)), Number(mesAtual.slice(5, 7)), 1), 'yyyy-MM-dd')}T00:00:00-03:00`;
+  const respostasQuery = useRespostasCobranca(inicioRespostas, fimRespostas);
 
   // ── Load ─────────────────────────────────────────────────────────────────
 
@@ -681,6 +696,45 @@ export function FinanceiroCFO() {
     setEditingMeta(false);
   }
 
+  const cobertura = useMemo(() => {
+    const ativos = new Set(alunos.filter(a => a.status === 'ativo').map(a => a.id));
+    const abertas = pagamentos.filter(p => p.status === 'pendente' && p.aluno_id && ativos.has(p.aluno_id) && getOwnerShare(p.turma_id) > 0);
+    const atrasadas = abertas.filter(p => isPagamentoInadimplente(p, parseISO(hoje)));
+    const comLink = (p: Pagamento) => Boolean(p.link_pagamento_asaas?.trim() || p.asaas_payment_id?.trim());
+    return { total: abertas.length, cobertas: abertas.filter(comLink).length, atrasadas: atrasadas.length, atrasadasCobertas: atrasadas.filter(comLink).length };
+  }, [alunos, pagamentos, getOwnerShare, hoje]);
+  const respostas = useMemo(() => {
+    const alunosPorId = new Map(alunos.map(a => [a.id, a]));
+    const envios = (respostasQuery.data ?? []).filter(log => {
+      if (!ownerFilter) return true;
+      const aluno = log.aluno_id ? alunosPorId.get(log.aluno_id) : undefined;
+      return aluno && getOwnerShare(aluno.turma_id) > 0;
+    });
+    // Cobrança consolidada gera uma linha por parcela, não uma por mensagem.
+    const grupos = new Map<string, boolean>();
+    for (const log of envios) {
+      const chave = log.grupo_envio_id ? `grupo:${log.grupo_envio_id}` : `log:${log.id}`;
+      grupos.set(chave, Boolean(grupos.get(chave) || log.respondeu_em));
+    }
+    return { total: grupos.size, respondidos: [...grupos.values()].filter(Boolean).length };
+  }, [respostasQuery.data, alunos, ownerFilter, getOwnerShare]);
+  const percentual = (n: number, total: number) => total ? `${pct(n, total)}%` : '—';
+  const erroCobertura = erroAlunos || erroPagamentos;
+  const indicadoresCobranca = (
+    <div className="space-y-3">
+      <SectionBar title="Cobrança · cobertura e resposta" icon={BarChart3} />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <StatTile label="Cobertura de cobrança automática" value={erroCobertura ? 'Indisponível' : percentual(cobertura.cobertas, cobertura.total)}
+          hint={erroCobertura ? 'Não foi possível carregar alunos/parcelas.' : `${cobertura.cobertas} de ${cobertura.total} parcelas pendentes de alunos ativos com link ou ID Asaas.`} />
+        <StatTile label="Cobertura das atrasadas" value={erroCobertura ? 'Indisponível' : percentual(cobertura.atrasadasCobertas, cobertura.atrasadas)}
+          hint={erroCobertura ? 'Não foi possível carregar alunos/parcelas.' : `${cobertura.atrasadasCobertas} de ${cobertura.atrasadas} parcelas pendentes vencidas com link ou ID Asaas.`} />
+        <StatTile label={`Taxa de resposta · ${mesLabel(mesAtual)}`} value={respostasQuery.isError || erroAlunos ? 'Indisponível' : respostasQuery.isLoading ? 'Carregando…' : percentual(respostas.respondidos, respostas.total)}
+          hint={respostasQuery.isError || erroAlunos ? 'Não foi possível consultar os registros.' : `${respostas.respondidos} de ${respostas.total} disparos enviados no mês com respondeu_em registrado. Atualização a cada minuto.`} />
+      </div>
+      <p className="text-xs text-muted-foreground">Cobertura considera todas as parcelas pendentes, independentemente do período de receita. Link/ID não garante envio: turma habilitada, regras e conexão também são necessários. Resposta é por disparo, não por aluno; ausência de registro não prova ausência de resposta. Os indicadores respeitam o responsável selecionado. Sem base, exibimos —.</p>
+    </div>
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -777,7 +831,7 @@ export function FinanceiroCFO() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Análise CFO</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10"><TrendingUp className="h-5 w-5 text-primary" /></span>Diretor Financeiro</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             {format(new Date(), "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR })} · Visão financeira executiva
           </p>
@@ -1217,6 +1271,7 @@ export function FinanceiroCFO() {
 
         {/* ── Inadimplência (Aging) ─────────────────────────────────────────── */}
         <TabsContent value="aging" className="mt-4 space-y-4">
+          {indicadoresCobranca}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
               { label: '0–30 dias', val: inadimplencia.buckets.b0_30,  cnt: inadimplencia.counts.b0_30,  color: 'amber' },
@@ -1260,7 +1315,8 @@ export function FinanceiroCFO() {
         </TabsContent>
 
         {/* ── Parcelas ──────────────────────────────────────────────────────── */}
-        <TabsContent value="parcelas" className="mt-4">
+        <TabsContent value="parcelas" className="mt-4 space-y-4">
+          {indicadoresCobranca}
           <Card className="border border-border/60 bg-white">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -2048,6 +2104,18 @@ export function FinanceiroCFO() {
         </TabsContent>
 
       </Tabs>
+      <Card className="border-border/70 shadow-sm">
+        <CardContent className="p-4 sm:p-5 space-y-3">
+          <SectionBar title="Playbook e decisões já tomadas" icon={FileText} />
+          <p className="text-xs text-muted-foreground">Fonte: docs/FINANCEIRO.md, seção 2. Resumo das regras vigentes.</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {DECISOES.map(d => <div key={d.titulo} className="rounded-xl border border-border/60 bg-muted/20 p-3">
+              <h3 className="text-sm font-semibold text-foreground">{d.titulo}</h3>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{d.texto}</p>
+            </div>)}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

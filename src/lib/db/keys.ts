@@ -14,6 +14,10 @@
  * alcance as derivadas. `['pagamentos']` invalida `['pagamentos','porAluno', id]`.
  */
 export const chaves = {
+  cobrancaRespostas: {
+    raiz: ['cobranca-respostas'] as const,
+    periodo: (inicio: string, fim: string) => [...chaves.cobrancaRespostas.raiz, inicio, fim] as const,
+  },
   alunos: {
     raiz: ['alunos'] as const,
     lista: () => [...chaves.alunos.raiz, 'lista'] as const,
@@ -79,6 +83,7 @@ export const chaves = {
  * mostrando o aluno como inadimplente depois da baixa.
  */
 export const invalidacaoCruzada: Record<string, readonly (readonly string[])[]> = {
+  cobrancaRespostas: [chaves.cobrancaRespostas.raiz],
   pagamentos: [chaves.pagamentos.raiz, chaves.alunos.raiz, chaves.pessoas.raiz],
   alunos:     [chaves.alunos.raiz, chaves.pagamentos.raiz, chaves.pessoas.raiz],
   turmas:     [chaves.turmas.raiz, chaves.alunos.raiz],

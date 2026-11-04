@@ -690,7 +690,7 @@ serve(async (req) => {
     const sb = createClient(supabaseUrl, serviceKey);
 
     const body = await req.json();
-    const { aluno_id, cpf, data_nascimento, endereco, cep, cidade_estado, enviar_wpp } = body as {
+    const { aluno_id, cpf, data_nascimento, endereco, cep, cidade_estado, enviar_wpp, valor_parcela_override, num_parcelas_override } = body as {
       aluno_id: string;
       cpf: string;
       data_nascimento: string;
@@ -698,6 +698,19 @@ serve(async (req) => {
       cep?: string;
       cidade_estado: string;
       enviar_wpp?: boolean;
+      // Venda única fora do fluxo padrão (cartão avulso, maquininha, link de
+      // checkout) -- aluno.valor_mensalidade/total_mensalidades ficam com o
+      // valor "nominal" de mensalidade (ex: 150x12) mesmo quando o que
+      // realmente aconteceu foi UM pagamento só por um valor diferente (achado
+      // real 2026-10-26: contrato da Ana Paula Ramos saiu dizendo "12x R$150,
+      // R$1.800 total" quando ela pagou uma vez só R$1.474,10 no cartão -- o
+      // mesmo bug já tinha passado batido nos contratos da Nathalia Ayumi Kato
+      // e da Marisa da Silva Lopes Moreira). Esses dois campos deixam o
+      // chamador informar o valor/parcelas REAIS da venda pro texto do
+      // contrato, sem precisar mexer em alunos.valor_mensalidade (que outras
+      // telas podem estar lendo como "mensalidade nominal").
+      valor_parcela_override?: number;
+      num_parcelas_override?: number;
     };
 
     if (!aluno_id || !cpf || !data_nascimento || !endereco || !cidade_estado) {
@@ -739,8 +752,8 @@ serve(async (req) => {
       dia_vencimento:  aluno.dia_vencimento ?? '',
       tipo_pagamento:  aluno.tipo_pagamento ?? 'mensalidade',
       forma_pagamento: aluno.forma_pagamento ?? '',
-      valor_parcela:   aluno.valor_mensalidade ?? null,
-      num_parcelas:    aluno.total_mensalidades ?? null,
+      valor_parcela:   valor_parcela_override ?? aluno.valor_mensalidade ?? null,
+      num_parcelas:    num_parcelas_override ?? aluno.total_mensalidades ?? null,
       plano_slug:      aluno.plano_slug ?? null,
       data_matricula:  aluno.data_matricula ?? null,
       modalidade:      HIBRIDO_TURMA_IDS.has(String(aluno.turma_id ?? '')) ? 'hibrido_curitiba' : '',

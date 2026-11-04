@@ -1487,6 +1487,30 @@ export type Database = {
         }
         Relationships: []
       }
+      certificados_aula_publica: {
+        Row: {
+          email: string
+          nome: string
+          primeiro_acerto_em: string | null
+          telefone: string | null
+          tentativas_acertadas: number
+        }
+        Insert: {
+          email: string
+          nome: string
+          primeiro_acerto_em?: string | null
+          telefone?: string | null
+          tentativas_acertadas?: number
+        }
+        Update: {
+          email?: string
+          nome?: string
+          primeiro_acerto_em?: string | null
+          telefone?: string | null
+          tentativas_acertadas?: number
+        }
+        Relationships: []
+      }
       chat_leituras: {
         Row: {
           lida_em: string
@@ -3739,6 +3763,90 @@ export type Database = {
         }
         Relationships: []
       }
+      folha_fechamentos: {
+        Row: {
+          competencia: string
+          fechado_em: string
+          fechado_por: string | null
+          id: string
+          reaberto_em: string | null
+          total_geral: number
+        }
+        Insert: {
+          competencia: string
+          fechado_em?: string
+          fechado_por?: string | null
+          id?: string
+          reaberto_em?: string | null
+          total_geral?: number
+        }
+        Update: {
+          competencia?: string
+          fechado_em?: string
+          fechado_por?: string | null
+          id?: string
+          reaberto_em?: string | null
+          total_geral?: number
+        }
+        Relationships: []
+      }
+      folha_fechamentos_itens: {
+        Row: {
+          aulas_confirmadas: number
+          comissoes_pendentes: number
+          fechamento_id: string
+          id: string
+          ja_pago_no_mes: number
+          observacao: string | null
+          profissional_id: string
+          requer_revisao: boolean
+          total_sugerido: number
+          valor_aulas: number
+          valor_fixo: number
+        }
+        Insert: {
+          aulas_confirmadas?: number
+          comissoes_pendentes?: number
+          fechamento_id: string
+          id?: string
+          ja_pago_no_mes?: number
+          observacao?: string | null
+          profissional_id: string
+          requer_revisao?: boolean
+          total_sugerido?: number
+          valor_aulas?: number
+          valor_fixo?: number
+        }
+        Update: {
+          aulas_confirmadas?: number
+          comissoes_pendentes?: number
+          fechamento_id?: string
+          id?: string
+          ja_pago_no_mes?: number
+          observacao?: string | null
+          profissional_id?: string
+          requer_revisao?: boolean
+          total_sugerido?: number
+          valor_aulas?: number
+          valor_fixo?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "folha_fechamentos_itens_fechamento_id_fkey"
+            columns: ["fechamento_id"]
+            isOneToOne: false
+            referencedRelation: "folha_fechamentos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "folha_fechamentos_itens_profissional_id_fkey"
+            columns: ["profissional_id"]
+            isOneToOne: false
+            referencedRelation: "profissionais"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       followup_passos: {
         Row: {
           created_at: string
@@ -4406,6 +4514,7 @@ export type Database = {
           ordem: number
           tipo_regra: string | null
           updated_at: string | null
+          webinario_id: string | null
         }
         Insert: {
           aula_secreta_evento_id?: string | null
@@ -4421,6 +4530,7 @@ export type Database = {
           ordem?: number
           tipo_regra?: string | null
           updated_at?: string | null
+          webinario_id?: string | null
         }
         Update: {
           aula_secreta_evento_id?: string | null
@@ -4436,6 +4546,7 @@ export type Database = {
           ordem?: number
           tipo_regra?: string | null
           updated_at?: string | null
+          webinario_id?: string | null
         }
         Relationships: [
           {
@@ -4479,6 +4590,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "vw_receita_eventos_mes"
             referencedColumns: ["evento_id"]
+          },
+          {
+            foreignKeyName: "kanban_colunas_webinario_id_fkey"
+            columns: ["webinario_id"]
+            isOneToOne: false
+            referencedRelation: "webinarios"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -8008,6 +8126,47 @@ export type Database = {
           },
         ]
       }
+      presencas_pendentes_revisao: {
+        Row: {
+          aula_id: string
+          cpf_informado: string
+          created_at: string
+          id: string
+          motivo: string
+          nascimento_informado: string
+          nome_informado: string
+          resolvido: boolean
+        }
+        Insert: {
+          aula_id: string
+          cpf_informado: string
+          created_at?: string
+          id?: string
+          motivo: string
+          nascimento_informado: string
+          nome_informado: string
+          resolvido?: boolean
+        }
+        Update: {
+          aula_id?: string
+          cpf_informado?: string
+          created_at?: string
+          id?: string
+          motivo?: string
+          nascimento_informado?: string
+          nome_informado?: string
+          resolvido?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "presencas_pendentes_revisao_aula_id_fkey"
+            columns: ["aula_id"]
+            isOneToOne: false
+            referencedRelation: "aulas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       produtos: {
         Row: {
           ativo: boolean
@@ -10435,6 +10594,189 @@ export type Database = {
           },
         ]
       }
+      webinario_mensagens_chat: {
+        Row: {
+          autor_nome: string
+          created_at: string
+          id: string
+          segundo: number
+          texto: string
+          webinario_id: string
+        }
+        Insert: {
+          autor_nome: string
+          created_at?: string
+          id?: string
+          segundo: number
+          texto: string
+          webinario_id: string
+        }
+        Update: {
+          autor_nome?: string
+          created_at?: string
+          id?: string
+          segundo?: number
+          texto?: string
+          webinario_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webinario_mensagens_chat_webinario_id_fkey"
+            columns: ["webinario_id"]
+            isOneToOne: false
+            referencedRelation: "webinarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      webinario_sessoes: {
+        Row: {
+          created_at: string
+          id: string
+          inicio_em: string
+          status: string
+          webinario_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          inicio_em: string
+          status?: string
+          webinario_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          inicio_em?: string
+          status?: string
+          webinario_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webinario_sessoes_webinario_id_fkey"
+            columns: ["webinario_id"]
+            isOneToOne: false
+            referencedRelation: "webinarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      webinario_tracking: {
+        Row: {
+          current_second: number | null
+          device: string | null
+          entered_at: string | null
+          id: string
+          lead_id: string
+          sessao_id: string
+          total_seconds: number | null
+          updated_at: string
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          utm_term: string | null
+          watch_stage: string
+        }
+        Insert: {
+          current_second?: number | null
+          device?: string | null
+          entered_at?: string | null
+          id?: string
+          lead_id: string
+          sessao_id: string
+          total_seconds?: number | null
+          updated_at?: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+          watch_stage?: string
+        }
+        Update: {
+          current_second?: number | null
+          device?: string | null
+          entered_at?: string | null
+          id?: string
+          lead_id?: string
+          sessao_id?: string
+          total_seconds?: number | null
+          updated_at?: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+          watch_stage?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webinario_tracking_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "webinario_tracking_sessao_id_fkey"
+            columns: ["sessao_id"]
+            isOneToOne: false
+            referencedRelation: "webinario_sessoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      webinarios: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          grupo_whatsapp_url: string | null
+          id: string
+          nome: string
+          oferta_offset_segundos: number | null
+          produto_id: string | null
+          slug: string
+          updated_at: string
+          video_duracao_segundos: number | null
+          video_url: string | null
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          grupo_whatsapp_url?: string | null
+          id?: string
+          nome: string
+          oferta_offset_segundos?: number | null
+          produto_id?: string | null
+          slug: string
+          updated_at?: string
+          video_duracao_segundos?: number | null
+          video_url?: string | null
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          grupo_whatsapp_url?: string | null
+          id?: string
+          nome?: string
+          oferta_offset_segundos?: number | null
+          produto_id?: string | null
+          slug?: string
+          updated_at?: string
+          video_duracao_segundos?: number | null
+          video_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webinarios_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       whatsapp_mensagens: {
         Row: {
           conteudo: string
@@ -10967,6 +11309,7 @@ export type Database = {
         }
         Returns: Json
       }
+      certificados_sincronizar_kanban: { Args: never; Returns: number }
       comissoes_sincronizar_vendas: {
         Args: never
         Returns: {
@@ -11196,6 +11539,14 @@ export type Database = {
         Args: { p_chave_hash: string; p_limite: number }
         Returns: boolean
       }
+      pedagogico_profissionais_ativos: {
+        Args: never
+        Returns: {
+          ativo: boolean
+          id: string
+          nome: string
+        }[]
+      }
       permissoes_efetivas: {
         Args: never
         Returns: {
@@ -11340,19 +11691,33 @@ export type Database = {
           whatsapp: string
         }[]
       }
-      time_comercial_alunos_vendedor: {
-        Args: never
-        Returns: {
-          boleto: number
-          bolsa_cortesia: number
-          comissao_est: number
-          faturamento: number
-          sem_forma: number
-          total: number
-          vendedor: string
-          vista_cartao: number
-        }[]
-      }
+      time_comercial_alunos_vendedor:
+        | {
+            Args: never
+            Returns: {
+              boleto: number
+              bolsa_cortesia: number
+              comissao_est: number
+              faturamento: number
+              sem_forma: number
+              total: number
+              vendedor: string
+              vista_cartao: number
+            }[]
+          }
+        | {
+            Args: { p_mes?: string }
+            Returns: {
+              boleto: number
+              bolsa_cortesia: number
+              comissao_est: number
+              faturamento: number
+              sem_forma: number
+              total: number
+              vendedor: string
+              vista_cartao: number
+            }[]
+          }
       time_comercial_atividade_vendedor: {
         Args: { p_dias?: number }
         Returns: {

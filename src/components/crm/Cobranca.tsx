@@ -68,6 +68,7 @@ interface Template {
   mensagem: string;
   ativo: boolean;
   ordem: number;
+  produto: string | null;
 }
 
 interface CobrancaLog {
@@ -113,7 +114,8 @@ interface AlunoHistorico {
 
 type EstadoDisparo =
   | 'pausado_manual' | 'pausado_erro' | 'fim_de_semana' | 'fora_horario'
-  | 'limite_diario' | 'sem_templates' | 'sem_elegiveis' | 'aguardando_delay' | 'pronto' | 'sem_config';
+  | 'feriado' | 'calendario_indisponivel' | 'limite_diario' | 'sem_templates'
+  | 'sem_elegiveis' | 'aguardando_delay' | 'pronto' | 'sem_config';
 
 interface StatusDisparo {
   estado: EstadoDisparo;
@@ -167,6 +169,7 @@ interface FilaItem {
   data_prevista_pagamento: string | null;
   cobranca_ia_ativa: boolean;
   cobranca_ativa: boolean;
+  produto: string | null;
 }
 
 // Um aluno com 2+ parcelas em aberto agora vira 1 card, não N linhas -- `parcelas` é
@@ -867,13 +870,14 @@ export function Cobranca() {
   // pos_vencimento casa por faixa de dias (fase), não dia exato -- mesma regra do backend
   // (enviar-cobranca/proximoEnvioElegivel), pra pré-preencher certo mesmo quem está em
   // atraso "de limbo" sem bater um dia fixo.
-  const templateParaOffset = (offset: number): Template | undefined => {
-    if (offset < 0) return templates.find(t => t.tipo === 'pre_vencimento' && t.dias_offset === offset && t.ativo);
-    if (offset === 0) return templates.find(t => t.tipo === 'vencimento' && t.dias_offset === 0 && t.ativo);
-    return templates.find(t =>
-      t.tipo === 'pos_vencimento' && t.ativo &&
-      offset >= t.dias_offset && (t.dias_offset_fim == null || offset <= t.dias_offset_fim),
+  const templateParaOffset = (offset: number, produto?: string | null): Template | undefined => {
+    const fase = (t: Template) => t.ativo && (
+      offset < 0 ? t.tipo === 'pre_vencimento' && t.dias_offset === offset
+        : offset === 0 ? t.tipo === 'vencimento' && t.dias_offset === 0
+          : t.tipo === 'pos_vencimento' && offset >= t.dias_offset && (t.dias_offset_fim == null || offset <= t.dias_offset_fim)
     );
+    return templates.find(t => fase(t) && t.produto === produto)
+      ?? templates.find(t => fase(t) && !t.produto);
   };
 
   // Agrupa a fila por aluno (mesma regra do backend em proximoGrupoElegivel) -- um aluno
@@ -895,7 +899,7 @@ export function Cobranca() {
     const grupos: AlunoGrupo[] = [];
     for (const [alunoId, parcelas] of porAluno) {
       const elegiveis = parcelas.filter(item => {
-        const tpl = templateParaOffset(item.dias_offset);
+        const tpl = templateParaOffset(item.dias_offset, item.produto);
         // Sem template configurado pra esse offset (ex: parcela ainda longe do
         // vencimento, fora das janelas de pré-vencimento) não é "pendente de cobrança
         // agora" -- não tem nem como marcar essa fase como enviada, então nunca fica
@@ -1101,7 +1105,7 @@ export function Cobranca() {
 
   const abrirSendModal = (grupo: AlunoGrupo) => {
     const { critica, vars } = varsParaGrupo(grupo);
-    const tpl = templateParaOffset(critica.dias_offset);
+    const tpl = templateParaOffset(critica.dias_offset, critica.produto);
     if (tpl) {
       setSendTemplate(tpl.id);
       setSendMensagem(renderMensagem(tpl.mensagem, vars));
@@ -1120,7 +1124,7 @@ export function Cobranca() {
     // marcar a fase certa como enviada no índice único, independente de qual template o
     // operador escolheu pro texto final.
     const base = sendModal.elegiveis.length ? sendModal.elegiveis : sendModal.parcelas;
-    const cobertura = base.map(p => ({ pagamento_id: p.pagamento_id, template_id: templateParaOffset(p.dias_offset)?.id ?? null }));
+    const cobertura = base.map(p => ({ pagamento_id: p.pagamento_id, template_id: templateParaOffset(p.dias_offset, p.produto)?.id ?? null }));
     setEnviandoIds(p => new Set([...p, ...cobertura.map(c => c.pagamento_id)]));
 
     const { data: sess } = await supabase.auth.getSession();
@@ -1161,7 +1165,7 @@ export function Cobranca() {
   // contar pro dedupe do automático e alimentar o badge "Cobrado ..." do card.
   const marcarCobradoManual = async (grupo: AlunoGrupo) => {
     const base = grupo.elegiveis.length ? grupo.elegiveis : grupo.parcelas;
-    const cobertura = base.map(p => ({ pagamento_id: p.pagamento_id, template_id: templateParaOffset(p.dias_offset)?.id ?? null }));
+    const cobertura = base.map(p => ({ pagamento_id: p.pagamento_id, template_id: templateParaOffset(p.dias_offset, p.produto)?.id ?? null }));
     setEnviandoIds(p => new Set([...p, ...cobertura.map(c => c.pagamento_id)]));
 
     const { data: sess } = await supabase.auth.getSession();
@@ -1511,7 +1515,13 @@ export function Cobranca() {
                   <span className="text-muted-foreground">Automação desligada — ligue o toggle em Configuração para retomar os envios.</span>
                 )}
                 {statusDisparo.estado === 'fim_de_semana' && (
-                  <span className="text-muted-foreground">Pausado no fim de semana — retoma {typeof statusDisparo.proximo_em_s === 'number' && <>em <strong className="text-foreground">{fmtCountdown(statusDisparo.proximo_em_s)}</strong> ({fmtQuando(statusDisparo.proximo_em_s)})</>}</span>
+                  <span className="text-muted-foreground">Domingo: cobranças automáticas pausadas.</span>
+                )}
+                {statusDisparo.estado === 'feriado' && (
+                  <span className="text-muted-foreground">Feriado: cobranças automáticas pausadas.</span>
+                )}
+                {statusDisparo.estado === 'calendario_indisponivel' && (
+                  <span className="text-muted-foreground">Calendário de feriados indisponível: envio pausado por segurança.</span>
                 )}
                 {statusDisparo.estado === 'fora_horario' && (
                   <span className="text-muted-foreground">Fora do horário de envio — retoma {typeof statusDisparo.proximo_em_s === 'number' && <>em <strong className="text-foreground">{fmtCountdown(statusDisparo.proximo_em_s)}</strong> ({fmtQuando(statusDisparo.proximo_em_s)})</>}</span>
@@ -1716,7 +1726,7 @@ export function Cobranca() {
                 Use: {VARIAVEIS.join(' ')}
               </p>
             </div>
-            <Button size="sm" onClick={() => setTemplateModal({ tipo: 'pos_vencimento', dias_offset: 0, ativo: true })} className="gap-1.5">
+            <Button size="sm" onClick={() => setTemplateModal({ tipo: 'pos_vencimento', dias_offset: 0, ativo: true, produto: 'psicanalise' })} className="gap-1.5">
               <Plus size={14}/> Novo template
             </Button>
           </div>
@@ -1736,6 +1746,7 @@ export function Cobranca() {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
                                 <span className="font-medium text-sm">{tpl.nome}</span>
+                                <Badge variant="outline" className="text-xs">{tpl.produto ?? 'Global/manual'}</Badge>
                                 {tpl.dias_offset !== 0 && (
                                   <Badge variant="outline" className="text-xs">
                                     {tpl.tipo === 'pos_vencimento'
@@ -1921,15 +1932,9 @@ export function Cobranca() {
                   )}
                 </div>
 
-                <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/20">
-                  <div>
-                    <p className="text-sm font-medium">Pausar fins de semana</p>
-                    <p className="text-xs text-muted-foreground">Não enviar sábado e domingo</p>
-                  </div>
-                  <Switch
-                    checked={cobrancaCfg?.pausar_fins_semana ?? true}
-                    onCheckedChange={v => setCobrancaCfg(p => p ? { ...p, pausar_fins_semana: v } : p)}
-                  />
+                <div className="p-3 border rounded-lg bg-muted/20">
+                  <p className="text-sm font-medium">Dias de envio</p>
+                  <p className="text-xs text-muted-foreground">Segunda a sexta no horário configurado; sábado até 15h (Brasília). Domingos e feriados: sem envio automático.</p>
                 </div>
 
                 {/* Anti-ban */}
@@ -2213,7 +2218,7 @@ export function Cobranca() {
                 }}>
                   <SelectTrigger><SelectValue placeholder="Selecione um template ou escreva abaixo"/></SelectTrigger>
                   <SelectContent>
-                    {templates.filter(t => t.ativo).map(t => (
+                    {templates.filter(t => t.ativo && (!t.produto || t.produto === sendModal?.critica.produto)).map(t => (
                       <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>
                     ))}
                   </SelectContent>
@@ -2270,6 +2275,20 @@ export function Cobranca() {
           {templateModal && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Produto</label>
+                  <Select value={templateModal.produto ?? 'global'} onValueChange={v => setTemplateModal(p => p ? { ...p, produto: v === 'global' ? null : v } : p)}>
+                    <SelectTrigger><SelectValue/></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="global">Global (somente manual)</SelectItem>
+                      <SelectItem value="psicanalise">Psicanálise</SelectItem>
+                      <SelectItem value="sociedade-idm">Sociedade IDM</SelectItem>
+                      <SelectItem value="numerologia">NPS / Numerologia</SelectItem>
+                      <SelectItem value="npa-mentoria">NPA Mentoria</SelectItem>
+                      <SelectItem value="pnl-master">PNL Master</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div>
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Nome</label>
                   <Input

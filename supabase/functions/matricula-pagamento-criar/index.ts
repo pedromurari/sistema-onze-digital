@@ -559,6 +559,10 @@ serve(async (req) => {
           // mesma página -- prioridade sobre bankSlipUrl (só o boleto em si)
           // pro aviso de cobrança sempre ter a opção de Pix visível.
           link_pagamento_asaas: r.data.invoiceUrl ?? r.data.bankSlipUrl ?? null,
+          // Número da fatura Asaas -- é o que a Spedy devolve em
+          // order.transactionId na nota, usado pelo spedy-webhook pra achar
+          // essa parcela de volta.
+          asaas_invoice_number: r.data.invoiceNumber ? String(r.data.invoiceNumber) : null,
         }).eq('id', r.row.id);
       }));
 

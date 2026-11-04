@@ -16,6 +16,7 @@
 // GET simples (sem body) == "listar" com padrão de 7 dias.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -69,9 +70,28 @@ async function listarContas() {
   }));
 }
 
-async function listarCampanhas(dias: number, adAccountId: string) {
-  const since = new Date(Date.now() - dias * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const until = new Date().toISOString().slice(0, 10);
+type Periodo = { since: string; until: string };
+
+function resolverPeriodo(payload: Record<string, unknown>): Periodo {
+  const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const formato = /^\d{4}-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/;
+  if (payload.since !== undefined || payload.until !== undefined) {
+    const since = String(payload.since ?? '');
+    const until = String(payload.until ?? '');
+    if (!formato.test(since) || !formato.test(until) || Number.isNaN(Date.parse(since)) || Number.isNaN(Date.parse(until)) || new Date(`${since}T12:00:00Z`).toISOString().slice(0, 10) !== since || new Date(`${until}T12:00:00Z`).toISOString().slice(0, 10) !== until || since > until || until > hoje || Date.parse(until) - Date.parse(since) > 366 * 86400000) {
+      throw new Error('Intervalo de datas inválido (máximo de 366 dias, até hoje).');
+    }
+    return { since, until };
+  }
+  const dias = Number(payload.dias || 7);
+  if (!Number.isInteger(dias) || dias < 1 || dias > 366) throw new Error('Período inválido.');
+  const inicio = new Date(`${hoje}T12:00:00Z`);
+  inicio.setUTCDate(inicio.getUTCDate() - dias + 1);
+  return { since: inicio.toISOString().slice(0, 10), until: hoje };
+}
+
+async function listarCampanhas(periodo: Periodo, adAccountId: string) {
+  const { since, until } = periodo;
 
   const [conta, cambio] = await Promise.all([
     buscarConta(adAccountId),
@@ -139,17 +159,16 @@ async function listarCampanhas(dias: number, adAccountId: string) {
   });
 
   return {
-    periodo: { since, until, dias },
+    periodo,
     conta,
     cambio: taxa !== null ? { moeda_origem: conta.moeda, taxa, atualizado_em: cambio!.atualizado_em } : null,
     campanhas,
   };
 }
 
-async function listarConjuntos(campaignId: string, dias: number, adAccountId: string) {
+async function listarConjuntos(campaignId: string, periodo: Periodo, adAccountId: string) {
   if (!campaignId) throw new Error('campaign_id é obrigatório');
-  const since = new Date(Date.now() - dias * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const until = new Date().toISOString().slice(0, 10);
+  const { since, until } = periodo;
 
   const conta = await buscarConta(adAccountId);
   const cambio = await buscarCotacaoParaBRL(conta.moeda);
@@ -207,9 +226,15 @@ async function listarConjuntos(campaignId: string, dias: number, adAccountId: st
   };
 }
 
-async function atualizarStatus(campaignId: string, status: 'ACTIVE' | 'PAUSED') {
-  if (!campaignId || !['ACTIVE', 'PAUSED'].includes(status)) {
+async function atualizarStatus(campaignId: string, status: 'ACTIVE' | 'PAUSED', adAccountId: string) {
+  if (!/^\d+$/.test(campaignId ?? '') || !['ACTIVE', 'PAUSED'].includes(status)) {
     throw new Error('campaign_id e status (ACTIVE|PAUSED) são obrigatórios');
+  }
+  const conferir = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${campaignId}?fields=id,account_id,status&access_token=${META_TOKEN}`);
+  const atual = await conferir.json();
+  if (!conferir.ok) throw new Error(`Meta API: ${JSON.stringify(atual)}`);
+  if ((String(atual.account_id).startsWith('act_') ? atual.account_id : `act_${atual.account_id}`) !== adAccountId || !['ACTIVE', 'PAUSED'].includes(atual.status)) {
+    throw new Error('Campanha/conjunto não pertence à conta selecionada ou não pode ser alterado.');
   }
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/${campaignId}?access_token=${META_TOKEN}`;
   const res = await fetch(url, {
@@ -222,6 +247,28 @@ async function atualizarStatus(campaignId: string, status: 'ACTIVE' | 'PAUSED') 
     throw new Error(`Meta API error: ${JSON.stringify(json)}`);
   }
   return json;
+}
+
+async function atualizarOrcamento(id: string, tipo: 'campanha' | 'conjunto', adAccountId: string, centavos: number) {
+  if (!/^\d+$/.test(id ?? '') || !['campanha', 'conjunto'].includes(tipo) || !Number.isSafeInteger(centavos) || centavos < 100 || centavos > 10000000) {
+    throw new Error('Orçamento diário inválido (entre 1 e 100.000 na moeda da conta).');
+  }
+  const fields = tipo === 'conjunto' ? 'id,account_id,campaign_id,daily_budget,lifetime_budget' : 'id,account_id,daily_budget,lifetime_budget';
+  const consultar = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${id}?fields=${fields}&access_token=${META_TOKEN}`);
+  const atual = await consultar.json();
+  if (!consultar.ok) throw new Error(`Meta API: ${JSON.stringify(atual)}`);
+  if ((String(atual.account_id).startsWith('act_') ? atual.account_id : `act_${atual.account_id}`) !== adAccountId || (tipo === 'conjunto' && !atual.campaign_id) || (tipo === 'campanha' && atual.campaign_id)) {
+    throw new Error('Campanha/conjunto não pertence à conta selecionada.');
+  }
+  if (!atual.daily_budget) throw new Error('Este orçamento não é diário neste nível. Edite o nível que possui orçamento no Ads Manager.');
+  const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${id}?access_token=${META_TOKEN}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ daily_budget: String(centavos) }),
+  });
+  const result = await res.json();
+  if (!res.ok) throw new Error(`Meta API: ${JSON.stringify(result)}`);
+  return { result, anterior_centavos: Number(atual.daily_budget), novo_centavos: centavos };
 }
 
 async function targeting(campaignId: string) {
@@ -247,6 +294,13 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    const bearer = req.headers.get('authorization') ?? '';
+    if (!bearer.startsWith('Bearer ')) return jsonResponse({ ok: false, error: 'Não autorizado.' }, 401);
+    const userClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: bearer } } });
+    const { data: authData, error: authError } = await userClient.auth.getUser();
+    if (authError || !authData.user) return jsonResponse({ ok: false, error: 'Não autorizado.' }, 401);
+    const { data: podeVer } = await userClient.rpc('tem_permissao', { p_recurso: 'trafego_gestor', p_acao: 'ver' });
+    if (!podeVer) return jsonResponse({ ok: false, error: 'Sem permissão de Gestor de Tráfego.' }, 403);
     let action = 'listar';
     let payload: any = {};
 
@@ -259,6 +313,8 @@ Deno.serve(async (req: Request) => {
       payload.dias = url.searchParams.get('dias');
       payload.campaign_id = url.searchParams.get('campaign_id');
       payload.ad_account_id = url.searchParams.get('ad_account_id');
+      payload.since = url.searchParams.get('since') ?? undefined;
+      payload.until = url.searchParams.get('until') ?? undefined;
     }
 
     const adAccountId = typeof payload.ad_account_id === 'string' && payload.ad_account_id.startsWith('act_')
@@ -266,14 +322,12 @@ Deno.serve(async (req: Request) => {
       : DEFAULT_AD_ACCOUNT_ID;
 
     if (action === 'listar') {
-      const dias = Number(payload.dias) > 0 ? Number(payload.dias) : 7;
-      const data = await listarCampanhas(dias, adAccountId);
+      const data = await listarCampanhas(resolverPeriodo(payload), adAccountId);
       return jsonResponse({ ok: true, ...data });
     }
 
     if (action === 'listar_conjuntos') {
-      const dias = Number(payload.dias) > 0 ? Number(payload.dias) : 7;
-      const data = await listarConjuntos(payload.campaign_id, dias, adAccountId);
+      const data = await listarConjuntos(payload.campaign_id, resolverPeriodo(payload), adAccountId);
       return jsonResponse({ ok: true, ...data });
     }
 
@@ -283,8 +337,19 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === 'atualizar_status') {
-      const result = await atualizarStatus(payload.campaign_id, payload.status);
+      const { data: podeEditar } = await userClient.rpc('tem_permissao', { p_recurso: 'trafego_gestor', p_acao: 'editar' });
+      if (!podeEditar) return jsonResponse({ ok: false, error: 'Sem permissão para alterar campanhas.' }, 403);
+      const result = await atualizarStatus(payload.campaign_id, payload.status, adAccountId);
+      console.info('meta-ads status manual', { usuario: authData.user.id, objeto: payload.campaign_id, status: payload.status });
       return jsonResponse({ ok: true, result });
+    }
+
+    if (action === 'atualizar_orcamento') {
+      const { data: podeEditar } = await userClient.rpc('tem_permissao', { p_recurso: 'trafego_gestor', p_acao: 'editar' });
+      if (!podeEditar) return jsonResponse({ ok: false, error: 'Sem permissão para alterar orçamento.' }, 403);
+      const result = await atualizarOrcamento(payload.id, payload.tipo, adAccountId, payload.centavos);
+      console.info('meta-ads orçamento manual', { usuario: authData.user.id, conta: adAccountId, objeto: payload.id, tipo: payload.tipo, anterior: result.anterior_centavos, novo: result.novo_centavos });
+      return jsonResponse({ ok: true, ...result });
     }
 
     if (action === 'targeting') {

@@ -55,3 +55,6 @@ scripts/funil38.sql
 
 # Estado local do CLI do Supabase.
 supabase/.branches/
+
+# scratch pra producao de video/transcricao (nao commitar)
+.scratch-cortes/

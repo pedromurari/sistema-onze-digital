@@ -10,6 +10,15 @@ hora. Vive no repo, cresce a cada fase entregue.
 
 ## 1. Ponto de partida — o que já existe (não é do zero)
 
+**Atualização 23/10/2026:** o painel ganhou filtros Hoje/Ontem/3/7/14/30
+dias e intervalo personalizado, campanhas em lista vertical, orçamento diário
+na moeda da conta, edição manual de orçamento no nível campanha (CBO) ou
+conjunto (ABO) e ativação/pausa na linha. A Edge Function valida sessão,
+`tem_permissao('trafego_gestor', 'ver'/'editar')` e vínculo do objeto com a
+conta selecionada antes de gravar. A migração
+`20261023030000_trafego_gestor_editar.sql` concede edição a admin/gestor.
+**O motor de regras automáticas continua pendente.**
+
 Antes de desenhar qualquer coisa nova, o que já está em produção:
 
 - **`src/components/crm/MetaAdsPanel.tsx`** — tela dentro do CRM que lista campanhas

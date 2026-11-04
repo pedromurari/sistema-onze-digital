@@ -166,7 +166,7 @@ Entregável final: sistema + Manual do Financeiro fechado → contratar auxiliar
 - [ ] Dashboard financeiro único. Manual fechado. Perfil de acesso da auxiliar (RLS).
 
 ### Fase 5 — Diretoria Financeiro (pedido do Pedro, 2026-10-23)
-- [ ] **5.1** Reposicionar **Análise CFO** (`FinanceiroCFO.tsx`, view `financeiro_cfo`) como
+- [x] **5.1** Reposicionar **Análise CFO** (`FinanceiroCFO.tsx`, view `financeiro_cfo`) como
       **primeiro item** da seção Financeiro no menu (hoje fica perto do fim), renomeado pra
       refletir que é o painel do Diretor Financeiro — mesma ideia das Diretorias de RH/
       Comercial/Pedagógico (`src/components/crm/rh/DiretoriaRH.tsx`,
@@ -175,16 +175,34 @@ Entregável final: sistema + Manual do Financeiro fechado → contratar auxiliar
       um dashboard rico (15 abas) mas **não tem playbook** — adicionar esse bloco final com
       as decisões já travadas da seção 2 deste documento (nada retroativo, regra de
       repasse, as 6 contas, corte fiscal) em vez de duplicar o texto.
-- [ ] **5.2** Novo KPI na aba de Inadimplência/Parcelas: **cobertura de cobrança
+- [x] **5.2** Novo KPI na aba de Inadimplência/Parcelas: **cobertura de cobrança
       automática** — achado em auditoria (2026-10-23): das parcelas em aberto de aluno
       ativo, **só ~45% têm `link_pagamento_asaas`/`asaas_payment_id` preenchido**; o resto
       não tem link nenhum pra cobrar automaticamente. Mostrar isso como card
       ("X% das parcelas em aberto prontas pra cobrança automática") com ênfase nas
       atrasadas (hoje só 43% das atrasadas têm link).
-- [ ] **5.3** Confirmar com o Pedro se usa o rastreio de resposta que já existe
+- [x] **5.3** Confirmar com o Pedro se usa o rastreio de resposta que já existe
       (`cobranca_logs.respondeu_em`/`ultima_resposta` por disparo; `cobranca_ia_conversas`
       + `cobranca_ia_mensagens.papel` por conversa) como KPI de "taxa de resposta às
-      mensagens de cobrança" na Diretoria — dado já existe, só falta agregar.
+      mensagens de cobrança" na Diretoria — incluído com autorização do Pedro em 2026-10-23.
+
+Implementação C9 (2026-10-23, publicada): preserva as 15 abas e permissões;
+menu Diretoria abre o bloco Financeiro, inclusive na ordem personalizada salva.
+Cobertura: parcelas `pendente` de alunos `ativo`, com link/ID Asaas não vazio;
+vencidas usam `isPagamentoInadimplente`. Taxa de resposta: coorte de envios do mês
+atual, limites em Brasília, status `enviado`, agrupados por `grupo_envio_id` (ou id
+avulso); resposta registrada em qualquer linha do envio. Não mede alunos únicos.
+Leitura paginada via `src/lib/db`, atualização a cada minuto, erro e base vazia
+distintos de 0%. Os indicadores respeitam o responsável selecionado. Sem alteração
+de pagamentos, regras de cobrança ou banco.
+
+Deploy: `dpl_DwyJMusyWfAt8SKdf9RYMgrnfH8G`, promovido em 2026-10-23 para
+`sistema.idmpsi.com.br`. 76 testes e build Vite passaram; HTTP 200 e bundle da
+Diretoria confirmados em produção, com cobertura e taxa de resposta. Rotas de
+matrícula e fallback SPA conferidas antes da promoção. Typecheck global não
+concluiu; verificação visual autenticada também pendente (navegador sem resposta).
+Logs Vercel consultados após promoção, sem registros retornados; isso não valida
+erros de navegador. Sem migrations ou deploy de Edge Functions.
 
 ### Paralelo — Asaas (só alunos NOVOS; atuais continuam na Voomp)
 - [x] `matricula-boleto-mensal-gerar` generalizado atrás da trava `balanco_config.asaas_novos_ativo`

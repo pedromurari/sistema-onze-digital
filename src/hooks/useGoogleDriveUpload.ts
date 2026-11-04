@@ -5,9 +5,15 @@ const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const DRIVE_UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,webViewLink,webContentLink';
 const CHUNK_SIZE = 5 * 1024 * 1024;
 
+type UploadDestination = { month: string; cardId: string; publicLink?: boolean };
+
 declare global {
   interface Window {
-    google: any;
+    google?: { accounts?: { oauth2?: { initTokenClient: (config: {
+      client_id: string;
+      scope: string;
+      callback: (response: { error?: string; error_description?: string; access_token?: string }) => void;
+    }) => { requestAccessToken: (options: { prompt: string }) => void } } } };
   }
 }
 
@@ -47,9 +53,13 @@ export function useGoogleDriveUpload() {
       const tokenClient = window.google.accounts.oauth2.initTokenClient({
         client_id: clientId,
         scope: DRIVE_SCOPE,
-        callback: (response: any) => {
+        callback: (response) => {
           if (response.error) {
             finish(() => reject(new Error(response.error_description || response.error)));
+            return;
+          }
+          if (!response.access_token) {
+            finish(() => reject(new Error('O Google não retornou um token de acesso.')));
             return;
           }
 
@@ -64,7 +74,7 @@ export function useGoogleDriveUpload() {
     });
   }, []);
 
-  const uploadToDrive = useCallback(async (file: File): Promise<string> => {
+  const uploadToDrive = useCallback(async (file: File, destination?: UploadDestination): Promise<string> => {
     setUploading(true);
     setProgress(0);
     setStatusMessage('Abrindo autorizacao do Google...');
@@ -74,6 +84,17 @@ export function useGoogleDriveUpload() {
       const token = accessTokenRef.current || await getAccessToken();
       setStatusMessage('Conectando com o Google Drive...');
       setProgress(5);
+
+      let parentId = FOLDER_ID;
+      if (destination) {
+        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(destination.month) || !/^[0-9a-f-]{36}$/i.test(destination.cardId)) {
+          throw new Error('Destino do conteúdo inválido. Confira a data e salve o card novamente.');
+        }
+        setStatusMessage('Organizando pasta do conteúdo...');
+        parentId = await ensureDriveFolder(token, parentId, 'Marketing');
+        parentId = await ensureDriveFolder(token, parentId, destination.month);
+        parentId = await ensureDriveFolder(token, parentId, destination.cardId);
+      }
 
       const initRes = await fetchWithTimeout(DRIVE_UPLOAD_URL, {
         method: 'POST',
@@ -85,7 +106,7 @@ export function useGoogleDriveUpload() {
         },
         body: JSON.stringify({
           name: file.name,
-          parents: [FOLDER_ID],
+          parents: [parentId],
         }),
       }, 45000);
 
@@ -129,19 +150,21 @@ export function useGoogleDriveUpload() {
 
       if (!fileId) throw new Error('ID do arquivo nao retornado pelo Drive.');
 
-      setStatusMessage('Liberando link de acesso...');
-      const permissionRes = await fetchWithTimeout(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ role: 'reader', type: 'anyone' }),
-      }, 45000);
+      if (destination?.publicLink !== false) {
+        setStatusMessage('Liberando link de acesso...');
+        const permissionRes = await fetchWithTimeout(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ role: 'reader', type: 'anyone' }),
+        }, 45000);
 
-      if (!permissionRes.ok) {
-        const err = await permissionRes.json().catch(() => ({}));
-        throw new Error(err?.error?.message || 'Arquivo enviado, mas nao foi possivel liberar o acesso.');
+        if (!permissionRes.ok) {
+          const err = await permissionRes.json().catch(() => ({}));
+          throw new Error(err?.error?.message || 'Arquivo enviado, mas nao foi possivel liberar o acesso.');
+        }
       }
 
       setStatusMessage('Upload concluido.');
@@ -157,14 +180,36 @@ export function useGoogleDriveUpload() {
   return { uploadToDrive, getAccessToken, hasAccessToken, uploading, progress, statusMessage };
 }
 
+async function ensureDriveFolder(token: string, parentId: string, name: string): Promise<string> {
+  const q = `name = '${name.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and '${parentId}' in parents and trashed = false`;
+  const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)&pageSize=10`;
+  const list = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${token}` } }, 45000);
+  if (!list.ok) throw new Error('Não foi possível localizar a pasta no Drive.');
+  const existing = await list.json();
+  if (existing.files?.[0]?.id) return existing.files[0].id;
+
+  const created = await fetchWithTimeout('https://www.googleapis.com/drive/v3/files?fields=id', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] }),
+  }, 45000);
+  if (!created.ok) {
+    const error = await created.json().catch(() => ({}));
+    throw new Error(error?.error?.message || 'Não foi possível criar a pasta do conteúdo no Drive.');
+  }
+  const data = await created.json();
+  if (!data.id) throw new Error('O Drive não confirmou a pasta criada.');
+  return data.id;
+}
+
 async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     return await fetch(input, { ...init, signal: controller.signal });
-  } catch (error: any) {
-    if (error?.name === 'AbortError') {
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === 'AbortError') {
       throw new Error('O Google Drive demorou demais para responder. Tente novamente.');
     }
     throw error;

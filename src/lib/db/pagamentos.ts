@@ -3,6 +3,29 @@ import { supabase } from '@/integrations/supabase/client';
 import { fetchAll } from './fetchAll';
 import { chaves } from './keys';
 
+interface RespostaCobranca {
+  grupo_envio_id: string | null;
+  id: string;
+  aluno_id: string | null;
+  enviado_em: string | null;
+  respondeu_em: string | null;
+}
+
+/** Coorte de envios, não de alunos: cada disparo respondido conta uma vez.
+ * Paginação evita truncar meses movimentados; não traz texto nem telefone. */
+export function useRespostasCobranca(inicio: string, fim: string) {
+  return useQuery({
+    queryKey: chaves.cobrancaRespostas.periodo(inicio, fim),
+    queryFn: () => fetchAll<RespostaCobranca>((de, ate) => supabase
+      .from('cobranca_logs')
+      .select('id, aluno_id, enviado_em, respondeu_em, grupo_envio_id')
+      .eq('status', 'enviado')
+      .gte('enviado_em', inicio).lt('enviado_em', fim)
+      .order('enviado_em').order('id').range(de, ate) as never),
+    refetchInterval: 60_000,
+  });
+}
+
 /**
  * Colunas de `pagamentos`. Dashboard, Financeiro, FinanceiroCFO e Cobrança pediam quatro
  * conjuntos diferentes e cada uma reimplementava o mesmo laço de paginação — o laço já
