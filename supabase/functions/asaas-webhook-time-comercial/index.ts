@@ -105,10 +105,26 @@ async function enviarContrato(
 }
 
 // ── Confirmação por WhatsApp + e-mail -- best-effort, nunca derruba o 200 ────
+// Nome amigável do produto pra mensagem de confirmação não sair genérica
+// ("sua matrícula no Instituto Despertamente") pra quem pagou Sociedade IDM,
+// NPA ou PNL -- achado real 2026-11-02, pedido do dono: a confirmação tem
+// que ser referente ao pagamento de verdade. Produto desconhecido/nulo cai
+// no texto genérico de antes (fallback seguro).
+function labelProduto(produto: string | null | undefined): string {
+  switch (produto) {
+    case 'psicanalise': return 'matrícula de Psicanálise';
+    case 'sociedade-idm': return 'mensalidade da Sociedade IDM';
+    case 'npa-mentoria': return 'mentoria NPA';
+    case 'pnl-master': return 'curso de PNL Master';
+    case 'numerologia': return 'mensalidade de Numerologia (NPS)';
+    default: return 'matrícula no Instituto Despertamente';
+  }
+}
+
 async function enviarConfirmacoes(
   supabaseUrl: string,
   serviceKey: string,
-  aluno: { nome: string | null; email: string | null; whatsapp: string | null; cobranca_telefone: string | null },
+  aluno: { nome: string | null; email: string | null; whatsapp: string | null; cobranca_telefone: string | null; produto?: string | null },
   valor: number,
   parcela: number,
   totalParcelas: number,
@@ -121,10 +137,11 @@ async function enviarConfirmacoes(
   // pagamento único = 1). Achado real 2026-10-08, pedido do dono pra confirmação
   // automática ficar confiável antes de plugar emissão de nota fiscal nela.
   const refParcela = totalParcelas > 1 ? `a parcela ${parcela}/${totalParcelas}` : 'o pagamento';
+  const refProduto = labelProduto(aluno.produto);
 
   const numero = aluno.cobranca_telefone || aluno.whatsapp;
   if (numero) {
-    const mensagem = `✅ Pagamento confirmado, ${nome}!\n\nRecebemos ${refParcela} (*R$ ${valorFmt}*) da sua matrícula no *Instituto Despertamente*.\n\nQualquer dúvida, é só chamar por aqui.`;
+    const mensagem = `✅ Pagamento confirmado, ${nome}!\n\nRecebemos ${refParcela} (*R$ ${valorFmt}*) da sua ${refProduto}.\n\nQualquer dúvida, é só chamar por aqui.`;
     try {
       await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
         method: 'POST', headers: fnHeaders,
@@ -146,7 +163,7 @@ async function enviarConfirmacoes(
           to: aluno.email,
           to_name: nome,
           subject: 'Pagamento confirmado - Instituto Despertamente',
-          html: `<h2>Pagamento aprovado! 🎉</h2><p>Oi, ${nome}!</p><p>Confirmamos ${refParcela} (<strong>R$ ${valorFmt}</strong>) da sua matrícula no Instituto Despertamente.</p><p>Qualquer dúvida, é só responder este e-mail.</p>`,
+          html: `<h2>Pagamento aprovado! 🎉</h2><p>Oi, ${nome}!</p><p>Confirmamos ${refParcela} (<strong>R$ ${valorFmt}</strong>) da sua ${refProduto}.</p><p>Qualquer dúvida, é só responder este e-mail.</p>`,
         }),
       });
     } catch (e) {
@@ -279,7 +296,7 @@ async function marcarPago(
   if (!jaEstavaPago) {
     const { data: aluno } = await supabase
       .from('alunos')
-      .select('nome, email, whatsapp, cobranca_telefone, cpf, data_nascimento, endereco, cep, cidade_estado, total_mensalidades')
+      .select('nome, email, whatsapp, cobranca_telefone, cpf, data_nascimento, endereco, cep, cidade_estado, total_mensalidades, produto')
       .eq('id', pagamento.aluno_id)
       .maybeSingle();
     if (aluno) {

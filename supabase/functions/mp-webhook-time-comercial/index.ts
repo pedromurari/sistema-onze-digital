@@ -148,22 +148,46 @@ async function garantirContrato(supabase: ReturnType<typeof createClient>, aluno
   console.error('mp-webhook-time-comercial: contrato continua pendente após 3 tentativas', aluno.id);
 }
 
+// Nome amigável do produto pra mensagem de confirmação não sair genérica
+// ("sua matrícula no Instituto Despertamente") pra quem pagou Sociedade IDM,
+// NPA ou PNL -- achado real 2026-11-02, pedido do dono: a confirmação tem
+// que ser referente ao pagamento de verdade. Produto desconhecido/nulo cai
+// no texto genérico de antes (fallback seguro). Duplicada de propósito --
+// mesma função em asaas-webhook-time-comercial/index.ts (não dá pra importar
+// entre edge functions Deno separadas).
+function labelProduto(produto: string | null | undefined): string {
+  switch (produto) {
+    case 'psicanalise': return 'matrícula de Psicanálise';
+    case 'sociedade-idm': return 'mensalidade da Sociedade IDM';
+    case 'npa-mentoria': return 'mentoria NPA';
+    case 'pnl-master': return 'curso de PNL Master';
+    case 'numerologia': return 'mensalidade de Numerologia (NPS)';
+    default: return 'matrícula no Instituto Despertamente';
+  }
+}
+
 // ── Confirmações best-effort (WhatsApp + e-mail) ──────────────────────────────
 // Nunca lança -- qualquer falha aqui só vira log, o webhook sempre responde 200
 // pra MP (mesmo princípio de mp-webhook/index.ts).
 async function enviarConfirmacoes(
   supabaseUrl: string,
   serviceKey: string,
-  aluno: { nome: string | null; email: string | null; whatsapp: string | null; cobranca_telefone: string | null },
+  aluno: { nome: string | null; email: string | null; whatsapp: string | null; cobranca_telefone: string | null; produto?: string | null },
   valor: number,
+  parcela?: number | null,
+  totalParcelas?: number | null,
 ): Promise<void> {
   const fnHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey };
   const nome = aluno.nome || 'aluno(a)';
   const valorFmt = Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+  // Mesma convenção de asaas-webhook-time-comercial: só mostra "parcela X/Y"
+  // quando dá pra saber as duas pontas; sem isso, fica no genérico "o pagamento".
+  const refParcela = parcela && totalParcelas && totalParcelas > 1 ? `a parcela ${parcela}/${totalParcelas}` : 'o pagamento';
+  const refProduto = labelProduto(aluno.produto);
 
   const numero = aluno.cobranca_telefone || aluno.whatsapp;
   if (numero) {
-    const mensagem = `✅ Pagamento confirmado, ${nome}!\n\nRecebemos o valor de *R$ ${valorFmt}* referente à sua matrícula no *Instituto Despertamente*.\n\nQualquer dúvida, é só chamar por aqui.`;
+    const mensagem = `✅ Pagamento confirmado, ${nome}!\n\nRecebemos ${refParcela} (*R$ ${valorFmt}*) da sua ${refProduto}.\n\nQualquer dúvida, é só chamar por aqui.`;
     try {
       await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
         method: 'POST', headers: fnHeaders,
@@ -185,7 +209,7 @@ async function enviarConfirmacoes(
           to: aluno.email,
           to_name: nome,
           subject: 'Pagamento confirmado - Instituto Despertamente',
-          html: `<h2>Pagamento aprovado! 🎉</h2><p>Oi, ${nome}!</p><p>Confirmamos o pagamento de <strong>R$ ${valorFmt}</strong> referente à sua matrícula no Instituto Despertamente.</p><p>Qualquer dúvida, é só responder este e-mail.</p>`,
+          html: `<h2>Pagamento aprovado! 🎉</h2><p>Oi, ${nome}!</p><p>Confirmamos ${refParcela} (<strong>R$ ${valorFmt}</strong>) da sua ${refProduto}.</p><p>Qualquer dúvida, é só responder este e-mail.</p>`,
         }),
       });
     } catch (e) {
@@ -257,7 +281,7 @@ serve(async (req) => {
         // external_reference é o id da linha em `pagamentos` ──────────────────
         const { data: pagamentoExiste } = await supabase
           .from('pagamentos')
-          .select('id, aluno_id, valor')
+          .select('id, aluno_id, valor, numero_parcela')
           .eq('id', externalReference)
           .maybeSingle();
 
@@ -295,11 +319,11 @@ serve(async (req) => {
             if (transicionou) {
               const { data: aluno } = await supabase
                 .from('alunos')
-                .select('nome, email, whatsapp, cobranca_telefone')
+                .select('nome, email, whatsapp, cobranca_telefone, produto, total_mensalidades')
                 .eq('id', pagamentoExiste.aluno_id)
                 .maybeSingle();
               if (aluno) {
-                await enviarConfirmacoes(supabaseUrl, serviceKey, aluno as any, Number(pagamentoExiste.valor)).catch((e) =>
+                await enviarConfirmacoes(supabaseUrl, serviceKey, aluno as any, Number(pagamentoExiste.valor), pagamentoExiste.numero_parcela, Number((aluno as any).total_mensalidades) || null).catch((e) =>
                   console.error('mp-webhook-time-comercial: falha ao enviar confirmações (pagamento)', e));
               }
             }
@@ -314,7 +338,7 @@ serve(async (req) => {
         // próprio alunos.id (avista/cartão/1ª parcela PIX) ─────────────────────
         const { data: alunoAntes } = await supabase
           .from('alunos')
-          .select('id, nome, email, whatsapp, cobranca_telefone, forma_pagamento, cpf, data_nascimento, endereco, cep, cidade_estado, autentique_documento_id, autentique_link_assinatura')
+          .select('id, nome, email, whatsapp, cobranca_telefone, forma_pagamento, cpf, data_nascimento, endereco, cep, cidade_estado, autentique_documento_id, autentique_link_assinatura, produto, total_mensalidades')
           .eq('id', externalReference)
           .maybeSingle();
 
@@ -361,7 +385,7 @@ serve(async (req) => {
           if (!jaProcessada) {
             const { data: proximaParcela } = await supabase
               .from('pagamentos')
-              .select('id, valor')
+              .select('id, valor, numero_parcela')
               .eq('aluno_id', externalReference)
               .eq('status', 'pendente')
               .order('numero_parcela', { ascending: true })
@@ -395,7 +419,7 @@ serve(async (req) => {
 
                 // Diferente do resto do fallback: confirma TODO mês, não só na
                 // 1ª vez -- cada cobrança da assinatura é um pagamento de verdade.
-                await enviarConfirmacoes(supabaseUrl, serviceKey, alunoAntes as any, Number(proximaParcela.valor)).catch((e) =>
+                await enviarConfirmacoes(supabaseUrl, serviceKey, alunoAntes as any, Number(proximaParcela.valor), proximaParcela.numero_parcela, Number((alunoAntes as any).total_mensalidades) || null).catch((e) =>
                   console.error('mp-webhook-time-comercial: falha ao enviar confirmações (recorrente)', e));
               }
             } else {
@@ -405,12 +429,12 @@ serve(async (req) => {
         } else if (registroUnico?.aplicavel) {
           if (registroUnico.criado && registroUnico.aluno) {
             const valorPago = Number(registroUnico.pagamento?.valor ?? data.transaction_amount ?? 0);
-            await enviarConfirmacoes(supabaseUrl, serviceKey, registroUnico.aluno as any, valorPago).catch((e) =>
+            await enviarConfirmacoes(supabaseUrl, serviceKey, registroUnico.aluno as any, valorPago, registroUnico.pagamento?.numero_parcela ?? null, null).catch((e) =>
               console.error('mp-webhook-time-comercial: falha ao enviar confirmações (venda única)', e));
           }
         } else if (transicionouAprovado && alunoAntes) {
           const valorPago = Number(data.transaction_amount ?? 0);
-          await enviarConfirmacoes(supabaseUrl, serviceKey, alunoAntes as any, valorPago).catch((e) =>
+          await enviarConfirmacoes(supabaseUrl, serviceKey, alunoAntes as any, valorPago, 1, Number((alunoAntes as any).total_mensalidades) || null).catch((e) =>
             console.error('mp-webhook-time-comercial: falha ao enviar confirmações (aluno)', e));
         }
 

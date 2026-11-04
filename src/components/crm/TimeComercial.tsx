@@ -1429,13 +1429,17 @@ function FunilTimeComercial({ viewAsName }: VendorScopeProps) {
 
 const fmt = (n: number) => 'R$ ' + Math.round(n).toLocaleString('pt-BR');
 
-const FAT_POR_VENDA_MIX = 0.3 * 1485 + 0.7 * 150; // 550,5 — mesmo mix da calculadora de remuneração
+const FAT_POR_VENDA_MIX = (3 * 1485 + 22 * 150) / 25; // 310,2 — mix real de novembro: 3 à vista/cartão + 22 recorrente (pedido do Pedro, 04/11/2026)
+
+// Meta de novembro/2026 (pedido do Pedro, 04/11/2026): 25 vendas no total --
+// 5 de indicação/base + 20 da Helen (sendo 3 à vista/cartão, 17 recorrente).
+// Substitui o ramp-up Set-Dez anterior; só novembro fica visível agora.
+const META_NOV_INDICACAO_BASE = 5;
+const META_NOV_HELEN = 20;
+const META_NOV_HELEN_AVISTA = 3;
 
 const METAS_MESES: { mes: string; vendas: number }[] = [
-  { mes: 'Set/26', vendas: 30 },  // Meta Base (30 × 1 vendedora -- só a Helen)
-  { mes: 'Out/26', vendas: 33 },
-  { mes: 'Nov/26', vendas: 38 },
-  { mes: 'Dez/26', vendas: 43 },
+  { mes: 'Nov/26', vendas: META_NOV_INDICACAO_BASE + META_NOV_HELEN },
 ];
 
 function MetasTab({ viewAsName }: VendorScopeProps) {
@@ -1453,15 +1457,15 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
 
     return (
       <div className="flex flex-col gap-5">
-        <p className="text-sm text-muted-foreground -mt-1">Sua meta do mês e como o seu faturamento cresce até dezembro.</p>
+        <p className="text-sm text-muted-foreground -mt-1">Sua meta de novembro/2026.</p>
         <SectionBar title="Sua meta" />
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <StatTile label="Sua Meta Base" value={<>30 <span className="text-sm font-normal text-muted-foreground">vendas/mês</span></>} hint={viewAsName ?? undefined} icon={Target} />
-          <StatTile label="Seu faturamento na Meta Base" value={<>~R$ 16.515<span className="text-sm font-normal text-muted-foreground">/mês</span></>} hint="mix 30% à vista/cartão + 70% recorrente" icon={DollarSign} />
-          <StatTile label="Meses restantes em 2026" value="Set–Dez" hint="4 meses de ramp-up" icon={CalendarDays} />
+          <StatTile label="Sua Meta — Novembro" value={<>{META_NOV_HELEN} <span className="text-sm font-normal text-muted-foreground">vendas</span></>} hint={`${META_NOV_HELEN_AVISTA} à vista/cartão + ${META_NOV_HELEN - META_NOV_HELEN_AVISTA} recorrente`} icon={Target} />
+          <StatTile label="Seu faturamento estimado" value={<>~{fmt(META_NOV_HELEN_AVISTA * 1485 + (META_NOV_HELEN - META_NOV_HELEN_AVISTA) * 150)}</>} hint="mix real: 3 à vista/cartão + 17 recorrente" icon={DollarSign} />
+          <StatTile label="Mês" value="Nov/26" hint="meta fechada, sem ramp-up" icon={CalendarDays} />
         </div>
 
-        <SectionBar title="Evolução mês a mês" />
+        <SectionBar title="Novembro" />
         <Card className="p-4 overflow-x-auto">
           <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
             <TableHeader>
@@ -1492,7 +1496,7 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
             </TableBody>
             <TableFooter className="bg-primary/10">
               <TableRow>
-                <TableCell className="font-semibold text-primary">Total Set–Dez/2026</TableCell>
+                <TableCell className="font-semibold text-primary">Total Novembro/2026</TableCell>
                 <TableCell className="text-right font-semibold">{vendasTotalIndividual}</TableCell>
                 <TableCell className="text-right font-semibold text-primary">{fmt(faturamentoTotalIndividual)}</TableCell>
                 <TableCell></TableCell>
@@ -1500,7 +1504,8 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
             </TableFooter>
           </Table>
           <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 mt-3">
-            Você é a única vendedora do time agora — sua meta é a meta da equipe. Setembro parte da Meta Base (30 vendas).
+            Você é a única vendedora do time agora. Meta de novembro: {META_NOV_INDICACAO_BASE + META_NOV_HELEN} vendas no total
+            ({META_NOV_INDICACAO_BASE} de indicação/base + {META_NOV_HELEN} suas, sendo {META_NOV_HELEN_AVISTA} à vista/cartão).
           </p>
         </Card>
       </div>
@@ -1509,15 +1514,15 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
 
   return (
     <div className="flex flex-col gap-5">
-      <p className="text-sm text-muted-foreground -mt-1">Visão consolidada da equipe — hoje só a Helen, depois da saída do Miguel.</p>
-      <SectionBar title="Meta da equipe" />
+      <p className="text-sm text-muted-foreground -mt-1">Meta de novembro/2026 — 25 vendas: 5 de indicação/base + 20 da Helen.</p>
+      <SectionBar title="Meta de novembro" />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <StatTile label="Meta Base da equipe" value={<>30 <span className="text-sm font-normal text-muted-foreground">vendas/mês</span></>} hint="30 × 1 vendedora (Helen)" icon={Target} />
-        <StatTile label="Faturamento na Meta Base" value={<>~R$ 16.515<span className="text-sm font-normal text-muted-foreground">/mês</span></>} hint="mix 30% à vista/cartão + 70% recorrente" icon={DollarSign} />
-        <StatTile label="Meses restantes em 2026" value="Set–Dez" hint="4 meses de ramp-up com a equipe nova" icon={CalendarDays} />
+        <StatTile label="Meta Total — Novembro" value={<>{META_NOV_INDICACAO_BASE + META_NOV_HELEN} <span className="text-sm font-normal text-muted-foreground">vendas</span></>} hint={`${META_NOV_INDICACAO_BASE} indicação/base + ${META_NOV_HELEN} Helen`} icon={Target} />
+        <StatTile label="Faturamento estimado" value={<>~{fmt(faturamentoTotal)}</>} hint={`${META_NOV_HELEN_AVISTA} à vista/cartão + ${META_NOV_INDICACAO_BASE + META_NOV_HELEN - META_NOV_HELEN_AVISTA} recorrente`} icon={DollarSign} />
+        <StatTile label="Mês" value="Nov/26" hint="meta fechada, sem ramp-up" icon={CalendarDays} />
       </div>
 
-      <SectionBar title="Evolução mês a mês" />
+      <SectionBar title="Novembro" />
       <Card className="p-4 overflow-x-auto">
         <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
           <TableHeader>
@@ -1548,7 +1553,7 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
           </TableBody>
           <TableFooter className="bg-primary/10">
             <TableRow>
-              <TableCell className="font-semibold text-primary">Total Set–Dez/2026</TableCell>
+              <TableCell className="font-semibold text-primary">Total Novembro/2026</TableCell>
               <TableCell className="text-right font-semibold">{vendasTotal}</TableCell>
               <TableCell className="text-right font-semibold text-primary">{fmt(faturamentoTotal)}</TableCell>
               <TableCell></TableCell>
@@ -1556,30 +1561,32 @@ function MetasTab({ viewAsName }: VendorScopeProps) {
           </TableFooter>
         </Table>
         <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 mt-3">
-          Setembro parte da Meta Base (30 vendas), com um ramp-up gradual até dezembro.
+          25 vendas em novembro: {META_NOV_INDICACAO_BASE} de indicação/base + {META_NOV_HELEN} da Helen (sendo {META_NOV_HELEN_AVISTA} à vista/cartão, {META_NOV_HELEN - META_NOV_HELEN_AVISTA} recorrente).
+          Sem evento IDM Pelo Brasil esse mês — fica pra início de dezembro.
         </p>
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <Card className="p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-3">Mix de pagamento alvo</h3>
+          <h3 className="text-sm font-semibold text-foreground mb-3">Mix de pagamento alvo — novembro</h3>
           <Table>
             <TableBody>
               <TableRow>
                 <TableCell>À vista / Cartão até 12x</TableCell>
-                <TableCell className="text-right">30%</TableCell>
+                <TableCell className="text-right">{META_NOV_HELEN_AVISTA} vendas</TableCell>
               </TableRow>
               <TableRow>
                 <TableCell>Recorrente (cartão/boleto 15x)</TableCell>
-                <TableCell className="text-right">70%</TableCell>
+                <TableCell className="text-right">{META_NOV_INDICACAO_BASE + META_NOV_HELEN - META_NOV_HELEN_AVISTA} vendas</TableCell>
               </TableRow>
             </TableBody>
           </Table>
         </Card>
         <Card className="p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-2">Como a meta cresce</h3>
+          <h3 className="text-sm font-semibold text-foreground mb-2">Como a meta se divide</h3>
           <p className="text-sm text-muted-foreground">
-            Setembro parte da Meta Base da Helen. Outubro a dezembro sobem gradualmente conforme a curva de aprendizado avança.
+            {META_NOV_INDICACAO_BASE} vendas de indicação/base (fora o funil da Helen) + {META_NOV_HELEN} vendas da Helen no comercial,
+            sendo {META_NOV_HELEN_AVISTA} à vista ou no cartão.
           </p>
         </Card>
       </div>
