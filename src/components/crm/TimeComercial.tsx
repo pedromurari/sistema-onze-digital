@@ -2388,7 +2388,7 @@ interface AlunoVendedorStat { vendedor: string; vista_cartao: number; boleto: nu
 interface MovimentacaoDia { vendedor: string; dia: string; tipo: 'movimentacao' | 'contato_whatsapp' | 'contato_ligacao'; eventos: number; }
 interface VendaDiaSemana { dia_semana: number; vendas: number; }
 interface LeadsMes { mes: string; total: number; }
-interface VendaMes { mes: string; vendedor: string; vista_cartao: number; boleto: number; total: number; }
+interface VendaMes { mes: string; vendedor: string; vista_cartao: number; boleto: number; total: number; faturamento: number; }
 interface CicloVendas { dias_medio: number | null; vendas_consideradas: number; }
 interface VendaEpocaMes { dia_do_mes: number; vendas: number; }
 interface AtividadeItem {
@@ -2582,12 +2582,22 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
 
   const visiveis = viewAsName ? vendas.filter((v) => v.vendedor === viewAsName) : vendas;
 
+  // Pedido do Pedro 04/11/2026: pré-matrícula conta pro mês do pagamento
+  // PROGRAMADO (data_venda), não pro mês em que a ficha foi preenchida
+  // (data_registro) -- a conversa pode ter sido num mês, mas o pagamento só
+  // se concretiza no mês seguinte. Assim que o pagamento cai de verdade
+  // (data_venda_concretizada preenchida), passa a reinar essa data real, não
+  // mais a programada. Venda normal (nunca foi pré) mantém data_registro,
+  // que já cai no mesmo dia de data_venda na prática.
+  const mesChave = (v: VendaNominal) =>
+    v.data_venda_concretizada ?? (v.status === 'pre_matricula' ? v.data_venda : v.data_registro) ?? v.data_registro;
+
   const mesesDisponiveis = Array.from(new Set([
     mesAtualISO,
-    ...visiveis.map((v) => v.data_registro?.slice(0, 7)).filter((m): m is string => !!m),
+    ...visiveis.map((v) => mesChave(v)?.slice(0, 7)).filter((m): m is string => !!m),
   ])).sort((a, b) => b.localeCompare(a));
 
-  const doMes = visiveis.filter((v) => (v.data_registro ?? '').slice(0, 7) === mesFiltro);
+  const doMes = visiveis.filter((v) => (mesChave(v) ?? '').slice(0, 7) === mesFiltro);
 
   const porVendedor = doMes.reduce<Record<string, VendaNominal[]>>((acc, v) => {
     (acc[v.vendedor] ??= []).push(v);
@@ -2885,6 +2895,7 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
   const [alunosPorVendedorMes, setAlunosPorVendedorMes] = useState<AlunoVendedorStat[]>([]);
   const [loadingFaturamentoMes, setLoadingFaturamentoMes] = useState(true);
   const [resumoVend, setResumoVend] = useState<ResumoVendedor[]>([]);
+  const [resumoVendMes, setResumoVendMes] = useState<ResumoVendedor[]>([]);
   const [movimentacao, setMovimentacao] = useState<MovimentacaoDia[]>([]);
   const [contagens, setContagens] = useState<Contagem[]>([]);
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
@@ -2966,13 +2977,16 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
   useEffect(() => {
     let ativo = true;
     setLoadingFaturamentoMes(true);
-    (supabase as any)
-      .rpc('time_comercial_alunos_vendedor', { p_mes: mesFaturamento === TODOS_PERIODOS ? null : mesFaturamento })
-      .then(({ data }: any) => {
-        if (!ativo) return;
-        setAlunosPorVendedorMes((data ?? []) as AlunoVendedorStat[]);
-        setLoadingFaturamentoMes(false);
-      });
+    const pMes = mesFaturamento === TODOS_PERIODOS ? null : mesFaturamento;
+    Promise.all([
+      (supabase as any).rpc('time_comercial_alunos_vendedor', { p_mes: pMes }),
+      (supabase as any).rpc('time_comercial_resumo_vendedor', { p_mes: pMes }),
+    ]).then(([{ data: alunos }, { data: resumo }]: any[]) => {
+      if (!ativo) return;
+      setAlunosPorVendedorMes((alunos ?? []) as AlunoVendedorStat[]);
+      setResumoVendMes((resumo ?? []) as ResumoVendedor[]);
+      setLoadingFaturamentoMes(false);
+    });
     return () => { ativo = false; };
   }, [mesFaturamento]);
 
@@ -2980,6 +2994,7 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
   const alunosDe = (nome: string) => alunosPorVendedor.find((a) => a.vendedor === nome);
   const alunosDeMes = (nome: string) => alunosPorVendedorMes.find((a) => a.vendedor === nome);
   const resumoDe = (nome: string) => resumoVend.find((r) => r.vendedor === nome);
+  const resumoDeMes = (nome: string) => resumoVendMes.find((r) => r.vendedor === nome);
 
   // Mesmo critério do Funil: campanha de retorno (base antiga) não conta como
   // "leads que entraram" na visão de admin — senão o número vem inflado com
@@ -2994,7 +3009,7 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
   // trabalhou (pegou ou contactou), contando a base de retorno também (é
   // trabalho dele); "vendas" inclui pré-matrícula. Admin segue na métrica de
   // captação acima.
-  const resumoLogado = viewAsName ? resumoDe(viewAsName) : undefined;
+  const resumoLogado = viewAsName ? resumoDeMes(viewAsName) : undefined;
   const leadsEntraram = viewAsName ? (resumoLogado?.leads_trabalhados ?? 0) : leadsCaptacaoAdmin;
   const vendasTotais = viewAsName
     ? (resumoLogado?.vendas ?? 0)
@@ -3106,7 +3121,31 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
 
       <MinhasVendasSection viewAsName={viewAsName} />
 
-      <SectionBar title="Visão geral" subtitle={viewAsName ? 'Seus números: leads que você trabalhou e o que fechou a partir deles.' : 'Apenas leads captados no período. A base de retorno reimportada fica de fora.'} icon={Users} />
+      <SectionBar
+        title="Visão geral"
+        subtitle={viewAsName ? 'Seus números: leads que você trabalhou e o que fechou a partir deles.' : 'Apenas leads captados no período. A base de retorno reimportada fica de fora.'}
+        icon={Users}
+        right={
+          viewAsName ? (
+            <Select value={mesFaturamento} onValueChange={setMesFaturamento}>
+              <SelectTrigger className="w-40 h-8 text-xs">
+                <SelectValue>
+                  {mesFaturamento === TODOS_PERIODOS
+                    ? 'Todos os períodos'
+                    : `${MESES_ABREV[Number(mesFaturamento.split('-')[1]) - 1]}/${mesFaturamento.split('-')[0]}`}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {ultimosMeses(12).map((m) => {
+                  const [a, mm] = m.split('-');
+                  return <SelectItem key={m} value={m}>{MESES_ABREV[Number(mm) - 1]}/{a}</SelectItem>;
+                })}
+                <SelectItem value={TODOS_PERIODOS}>Todos os períodos</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : undefined
+        }
+      />
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         <StatTile
           label={viewAsName ? 'Leads que você trabalhou' : 'Leads que entraram'}
@@ -3402,7 +3441,7 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
                 const leadsDoMes = leadsPorMes.find((l) => l.mes === mes)?.total ?? 0;
                 const vendasDoMes = vendasPorMes.filter((v) => v.mes === mes && (!viewAsName || v.vendedor === viewAsName));
                 const totalVendasMes = vendasDoMes.reduce((soma, v) => soma + Number(v.total), 0);
-                const faturamentoMes = vendasDoMes.reduce((soma, v) => soma + calcVendor(Number(v.vista_cartao), Number(v.boleto)).faturamento, 0);
+                const faturamentoMes = vendasDoMes.reduce((soma, v) => soma + Number(v.faturamento), 0);
                 return (
                   <TableRow key={mes} className={premiumZebraRow(idx)}>
                     <TableCell className="font-medium">{fmtMes(mes)}</TableCell>
