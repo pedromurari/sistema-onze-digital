@@ -13,15 +13,34 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-financeiro-key',
 };
 
-function normalizeNumber(raw: string): string {
+// disp3 ("Financeiro IDM") é reservado exclusivamente pro enviar-cobranca
+// (cobrança/pagamento/contrato). Incidente 03/11: boas-vindas e campanhas
+// de marketing saíram por engano pelo número do financeiro -- bloqueio
+// duro aqui, no gateway real de envio: no modo auto (sem instance_name)
+// disp3 nunca entra no pool, e pra pedir ela explicitamente é preciso a
+// chave que só o enviar-cobranca tem.
+const FINANCEIRO_KEY = Deno.env.get('FINANCEIRO_INSTANCE_KEY') ?? 'financeiro-only-idm-2026';
+const INSTANCIA_RESERVADA = 'disp3';
+
+// Canonicaliza pro formato 55+DDD+numero reutilizando a mesma função SQL
+// já usada pra dedup de pessoas (public.normalizar_telefone) -- achado real
+// 2026-10-21: números salvos sem o DDI (ex: "11919388556", sem o "55" na
+// frente) faziam a Evolution responder "exists:false" mesmo pra número
+// válido, e o envio falhava silenciosamente. Delega pro banco em vez de
+// duplicar a lógica aqui (9º dígito, DDI já presente, zero de operadora etc.)
+async function normalizeNumber(supabase: ReturnType<typeof createClient>, raw: string): Promise<string> {
   const t = raw.trim();
   if (t.endsWith('@g.us') || t.endsWith('@s.whatsapp.net')) return t;
-  const digits = t.replace(/\D/g, '');
-  // número individual
-  return digits;
+  try {
+    const { data, error } = await supabase.rpc('normalizar_telefone', { p_valor: t });
+    if (!error && typeof data === 'string' && data) return data;
+  } catch {
+    // segue pro fallback abaixo
+  }
+  return t.replace(/\D/g, '');
 }
 
 serve(async (req) => {
@@ -64,13 +83,34 @@ serve(async (req) => {
       });
     }
 
+    // disp3 exige a chave especial mesmo quando pedida explicitamente --
+    // só o enviar-cobranca tem essa chave. Qualquer outro chamador que
+    // peça 'disp3' é recusado aqui, na porta de entrada.
+    if (instance_name === INSTANCIA_RESERVADA) {
+      const chave = req.headers.get('x-financeiro-key');
+      if (chave !== FINANCEIRO_KEY) {
+        return new Response(JSON.stringify({ ok: false, error: `Instância ${INSTANCIA_RESERVADA} é reservada pro financeiro -- não autorizado` }), {
+          status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    // Modo auto (sem instance_name): disp3 nunca entra no pool, mesmo que
+    // esteja ativa -- só sai explicitamente, com a chave acima.
+    const poolAuto = evoRows.filter((r: { instance_name: string }) => r.instance_name !== INSTANCIA_RESERVADA);
+
     // Filtra instância específica se pedida
     const candidates = instance_name
       ? evoRows.filter((r: { instance_name: string }) => r.instance_name === instance_name)
       : [];
-    const instances: typeof evoRows = candidates.length ? candidates : evoRows;
+    if (instance_name && !candidates.length) {
+      return new Response(JSON.stringify({ ok: false, error: `Instância ${instance_name} indisponível` }), {
+        status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
+      });
+    }
+    const instances: typeof evoRows = instance_name ? candidates : poolAuto;
 
-    const number = normalizeNumber(numero);
+    const number = await normalizeNumber(supabase, numero);
 
     let lastErr: Error | null = null;
     let usedInstance = '';

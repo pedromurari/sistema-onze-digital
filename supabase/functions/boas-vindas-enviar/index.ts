@@ -303,9 +303,15 @@ serve(async (req) => {
           .eq('ativo', true)
           .order('prioridade', { ascending: true });
 
-        if (!evoRows?.length) throw new Error('Nenhuma instância Evolution ativa');
+        // disp3 ("Financeiro IDM") é reservado exclusivamente pro enviar-cobranca
+        // (cobrança/pagamento/contrato). Incidente 03/11: boas-vindas saiu por
+        // engano pelo número do financeiro -- bloqueio duro, não importa a
+        // config de wpp_instance_name/instance_ids.
+        const evoRowsSemReservadas = (evoRows ?? []).filter((r) => r.instance_name !== 'disp3');
 
-        const candidateInstances = await resolveInstances(supabase, cfg, evoRows as EvoInstance[]);
+        if (!evoRowsSemReservadas.length) throw new Error('Nenhuma instância Evolution ativa');
+
+        const candidateInstances = await resolveInstances(supabase, cfg, evoRowsSemReservadas as EvoInstance[]);
         // Intercala qual instancia comeca a tentativa quando o funil tem mais de uma
         // configurada (evita sempre cair na mesma primeiro); mantem o failover pras demais.
         if (candidateInstances.length > 1) {

@@ -84,6 +84,34 @@ function addDaysStr(dateStr: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+// Base: feriados nacionais + feriados da sede em São Paulo/SP.
+// Carnaval é ponto facultativo, não feriado. Outros feriados locais entram
+// em cobranca_feriados sem precisar de novo deploy.
+function ehFeriadoNacional(dateStr: string): boolean {
+  const [ano, mes, dia] = dateStr.split('-').map(Number);
+  const fixos = new Set(['01-01', '01-25', '04-21', '05-01', '07-09', '09-07', '10-12', '11-02', '11-15', '11-20', '12-25']);
+  if (fixos.has(dateStr.slice(5))) return true;
+  const a = ano % 19, b = Math.floor(ano / 100), c = ano % 100;
+  const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4;
+  const l = ((32 + 2 * e + 2 * i - h - k) % 7 + 7) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const pascoaMes = Math.floor((h + l - 7 * m + 114) / 31);
+  const pascoaDia = ((h + l - 7 * m + 114) % 31) + 1;
+  const sextaSanta = new Date(Date.UTC(ano, pascoaMes - 1, pascoaDia - 2));
+  const corpusChristi = new Date(Date.UTC(ano, pascoaMes - 1, pascoaDia + 60));
+  return (mes === sextaSanta.getUTCMonth() + 1 && dia === sextaSanta.getUTCDate())
+    || (mes === corpusChristi.getUTCMonth() + 1 && dia === corpusChristi.getUTCDate());
+}
+
+async function ehFeriadoCobranca(db: any, dateStr: string): Promise<boolean> {
+  if (ehFeriadoNacional(dateStr)) return true;
+  const { data, error } = await db.from('cobranca_feriados').select('data').eq('data', dateStr).maybeSingle();
+  if (error) throw new Error(`Calendário de feriados indisponível: ${error.message}`);
+  return Boolean(data);
+}
+
 async function getAllActiveInstances(db: any): Promise<EvoInstance[]> {
   const { data } = await db
     .from("evolution_config")
@@ -93,30 +121,10 @@ async function getAllActiveInstances(db: any): Promise<EvoInstance[]> {
   return data ?? [];
 }
 
-// Resolução do número que atende a cobrança: rodízio fixado na config -> escolha feita
-// na tela (evolution_task_config, task 'cobranca') -> todas as instâncias ativas por
-// prioridade global. Sempre cai pro fallback se a escolha específica vier vazia.
-async function resolveInstances(db: any, cfg: { evolution_config_ids?: string[] | null }): Promise<EvoInstance[]> {
+// Cobrança financeira só sai pela disp3. Nunca usar fallback de outra instância.
+async function resolveInstances(db: any, _cfg: { evolution_config_ids?: string[] | null }): Promise<EvoInstance[]> {
   const all = await getAllActiveInstances(db);
-  const byId = new Map(all.map((i: EvoInstance) => [i.id, i]));
-  const fromIds = (ids: string[]) => ids.map(id => byId.get(id)).filter(Boolean) as EvoInstance[];
-
-  if (cfg.evolution_config_ids?.length) {
-    const scoped = fromIds(cfg.evolution_config_ids);
-    if (scoped.length) return scoped;
-  }
-
-  const { data: taskCfg } = await db
-    .from("evolution_task_config")
-    .select("instance_ids")
-    .eq("task", "cobranca")
-    .maybeSingle();
-  if (taskCfg?.instance_ids?.length) {
-    const scoped = fromIds(taskCfg.instance_ids as string[]);
-    if (scoped.length) return scoped;
-  }
-
-  return all;
+  return all.filter((i: EvoInstance) => i.instance_name === "disp3");
 }
 
 // A Evolution API pode responder 200 mesmo com a sessão do WhatsApp fechada e só falhar
@@ -196,36 +204,31 @@ async function sendViaEvolution(
   }
   let lastError = "";
   for (const cfg of evoInstances) {
-    const baseUrl = cfg.api_url.replace(/\/$/, "");
-    const base = /^https?:\/\//i.test(baseUrl) ? baseUrl : `https://${baseUrl}`;
-    const url = `${base}/message/sendText/${cfg.instance_name}`;
+    if (cfg.instance_name !== 'disp3') continue;
     try {
-      const res = await fetch(url, {
+      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const financeiroKey = Deno.env.get('FINANCEIRO_INSTANCE_KEY') ?? 'financeiro-only-idm-2026';
+      const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/wpp-enviar`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "apikey": cfg.api_key },
-        body: JSON.stringify({ number: formatPhone(phone), text: message, delay: 1000 }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}`, apikey: serviceKey, "x-financeiro-key": financeiroKey },
+        body: JSON.stringify({ numero: formatPhone(phone), mensagem: message, instance_name: 'disp3', typing_delay_ms: 1000 }),
         signal: AbortSignal.timeout(30_000),
       });
-      if (res.ok) {
-        let json: any = {};
-        try { json = await res.json(); } catch { /* resposta sem corpo json */ }
-        const messageId = json?.key?.id ?? json?.data?.key?.id ?? null;
-        await registrarMensagemEnviada(db, phone, message, cfg.instance_name, messageId);
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json?.ok === true && json?.instance === 'disp3') {
+        await registrarMensagemEnviada(db, phone, message, 'disp3', null);
         return { ok: true };
       }
-      const body = await res.text();
-      lastError = `[${cfg.instance_name}] ${res.status}: ${body.slice(0, 200)}`;
-      console.warn(`enviar-cobranca: instância ${cfg.instance_name} falhou (${res.status}), tentando próxima...`);
+      lastError = `[disp3] ${res.status}: ${String(json?.error ?? 'Falha no envio').slice(0, 200)}`;
     } catch (e: any) {
       lastError = `[${cfg.instance_name}] ${e?.message ?? "Erro de conexão"}`;
       if (isAmbiguousError(e)) {
-        console.warn(`enviar-cobranca: ${cfg.instance_name} deu timeout (envio incerto), não tentando outra instância`);
+        console.warn(`enviar-cobranca: ${cfg.instance_name} deu timeout (envio incerto)`);
         return { ok: false, error: lastError, ambiguous: true };
       }
-      console.warn(`enviar-cobranca: instância ${cfg.instance_name} falhou, tentando próxima...`);
     }
   }
-  return { ok: false, error: lastError || "Todas as instâncias Evolution falharam" };
+  return { ok: false, error: lastError || "Financeiro IDM (disp3) indisponível" };
 }
 
 serve(async (req) => {
@@ -463,14 +466,10 @@ function resolveTemplateParaItem(item: any, templates: any[], cfg: any, hoje: st
   // exato dispara um lembrete dedicado em vez da fase que bateria por dias_offset.
   // Passada a data sem pagamento, cai de volta na lógica normal abaixo -- dias_offset
   // continua contado a partir do vencimento original, sem relação com a promessa.
-  // Acha o template de uma categoria, priorizando um específico do produto
-  // do aluno sobre o global (produto IS NULL) -- retrocompatível: enquanto
-  // não existir nenhum template com produto preenchido, o comportamento é
-  // idêntico ao de sempre.
+  // O automático não usa template global: produto novo (ex. NPS) fica parado
+  // até receber sua própria mensagem aprovada.
   const achaPorProduto = (predicate: (t: any) => boolean): any | null => {
-    const doProduto = templates.find((t: any) => predicate(t) && t.produto === item.produto);
-    if (doProduto) return doProduto;
-    return templates.find((t: any) => predicate(t) && !t.produto) ?? null;
+    return templates.find((t: any) => predicate(t) && !!item.produto && t.produto === item.produto) ?? null;
   };
 
   if (item.data_prevista_pagamento) {
@@ -514,6 +513,7 @@ interface GrupoElegivel {
   aluno_nome: string;
   telefone: string;
   mensagem: string;
+  validacao: { pagamento_id: string; asaas_payment_id: string; asaas_customer_id: string; link_pagamento: string; valor: number }[];
   cobertura: { pagamento_id: string; template_id: string; template_nome: string; template_tipo: string }[];
 }
 
@@ -562,13 +562,14 @@ function proximoGrupoElegivel(fila: any[], templates: any[], cfg: any, jaEnviado
       .map(i => {
         const data = new Date(i.data_vencimento).toLocaleDateString("pt-BR");
         const valorFmt = Number(i.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
-        return `• Parcela ${i.parcela}: R$ ${valorFmt}, ${i.dias_offset > 0 ? `venceu em ${data}` : `vence em ${data}`}`;
+        return `• Parcela ${i.parcela}: R$ ${valorFmt}, ${i.dias_offset > 0 ? `venceu em ${data}` : `vence em ${data}`}\n${i.link_pagamento}`;
       })
       .join("\n");
 
     const vencimento = new Date(critica.item.data_vencimento).toLocaleDateString("pt-BR");
     const valor = Number(critica.item.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
     const vars: Record<string, string | number | null> = {
+      saudacao: (() => { const hora = saoPauloParts(new Date()).hour; return `Excelente ${hora < 12 ? "dia" : hora < 18 ? "tarde" : "noite"}`; })(),
       nome: critica.item.aluno_nome, valor, parcela: critica.item.parcela, vencimento,
       dias_atraso: critica.item.dias_offset > 0 ? critica.item.dias_offset : null,
       link_pagamento: critica.item.link_pagamento || null,
@@ -582,8 +583,17 @@ function proximoGrupoElegivel(fila: any[], templates: any[], cfg: any, jaEnviado
       aluno_id: critica.item.aluno_id,
       aluno_nome: critica.item.aluno_nome,
       telefone: critica.item.telefone,
-      mensagem: renderTemplate(critica.template.mensagem, vars),
-      cobertura: elegiveis.map(e => ({
+      mensagem: renderTemplate(critica.template.mensagem, vars)
+        + (outras.length && !critica.template.mensagem.includes('{{lista_parcelas}}')
+          ? `\n\nOutras parcelas em aberto:\n${listaParcelas}` : ''),
+      validacao: consideradas.map(i => ({
+        pagamento_id: i.pagamento_id,
+        asaas_payment_id: i.asaas_payment_id,
+        asaas_customer_id: i.asaas_customer_id,
+        link_pagamento: i.link_pagamento,
+        valor: Number(i.valor),
+      })),
+      cobertura: elegiveis.filter(e => (e.item.dias_offset > 0) === criticaVencida).map(e => ({
         pagamento_id: e.item.pagamento_id,
         template_id: e.template.id,
         template_nome: e.template.nome,
@@ -662,6 +672,16 @@ async function notificarCobrancaPausada(db: any, motivo: string): Promise<void> 
 // parte da automação em massa, então não deve ficar preso ao toggle nem disputar o limite
 // diário/delay dela.
 async function processarAgendadosManuais(db: any): Promise<void> {
+  const sp = saoPauloParts(new Date());
+  if (sp.weekday === 'Sun') return;
+  try { if (await ehFeriadoCobranca(db, sp.dateStr)) return; } catch { return; }
+  const { data: janela } = await db.from('cobranca_config')
+    .select('horario_inicio_envio, horario_fim_envio').eq('id', 'default').maybeSingle();
+  if (!janela) return;
+  const minuto = sp.hour * 60 + sp.minute;
+  const fim = Math.min(toMinutes(janela.horario_fim_envio || '20:00'), sp.weekday === 'Sat' ? 15 * 60 : 24 * 60);
+  if (minuto < toMinutes(janela.horario_inicio_envio || '08:00') || minuto >= fim) return;
+
   const { data: pendentes } = await db
     .from("cobranca_logs")
     .select("id, telefone, mensagem")
@@ -691,6 +711,48 @@ async function processarAgendadosManuais(db: any): Promise<void> {
   }
 }
 
+// Falha fechada: sem confirmação da parcela no próprio Asaas, não há disparo.
+// O link e o customer precisam corresponder exatamente à ficha/parcela.
+async function validarGrupoNoAsaas(grupo: GrupoElegivel): Promise<boolean> {
+  const key = Deno.env.get("ASAAS_API_KEY");
+  if (!key) return false;
+  for (const parcela of grupo.validacao) {
+    if (!parcela.asaas_payment_id || !parcela.asaas_customer_id) return false;
+    try {
+      const res = await fetch(`https://api.asaas.com/v3/payments/${encodeURIComponent(parcela.asaas_payment_id)}`, {
+        headers: { access_token: key }, signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) return false;
+      const remoto = await res.json();
+      if (!['PENDING', 'OVERDUE'].includes(remoto.status) || remoto.paymentDate || remoto.deleted) return false;
+      if (remoto.billingType !== 'BOLETO' || remoto.customer !== parcela.asaas_customer_id) return false;
+      if (remoto.externalReference && remoto.externalReference !== parcela.pagamento_id) return false;
+      if (Math.abs(Number(remoto.value) - parcela.valor) > 0.01) return false;
+      if (![remoto.invoiceUrl, remoto.bankSlipUrl].some((url: string | undefined) =>
+        url && url.replace(/\/$/, '') === parcela.link_pagamento.replace(/\/$/, ''))) return false;
+    } catch (error) {
+      console.warn('enviar-cobranca: falha na validação Asaas:', (error as Error).message);
+      return false;
+    }
+  }
+  return true;
+}
+
+// Resposta do aluno encerra a sequência automática até nova intervenção manual.
+// Também respeita 48h desde qualquer cobrança, inclusive a enviada pelo operador.
+async function contatoRecenteOuRespondido(db: any, grupo: GrupoElegivel, agora: Date): Promise<boolean> {
+  const { data: ultimo, error } = await db.from('cobranca_logs')
+    .select('enviado_em').eq('aluno_id', grupo.aluno_id).eq('status', 'enviado')
+    .not('enviado_em', 'is', null).order('enviado_em', { ascending: false }).limit(1).maybeSingle();
+  if (error) return true;
+  if (!ultimo?.enviado_em) return false;
+  if (agora.getTime() - new Date(ultimo.enviado_em).getTime() < 48 * 60 * 60 * 1000) return true;
+  const { data: respostas, error: respostaErro } = await db.from('whatsapp_mensagens')
+    .select('id').eq('telefone', toOptOutKey(grupo.telefone)).eq('direcao', 'recebida')
+    .gt('created_at', ultimo.enviado_em).limit(1);
+  return Boolean(respostaErro || respostas?.length);
+}
+
 // Modo tique: chamado a cada poucos minutos por um cron externo. Manda no máximo 1
 // mensagem por chamada, só se estiver dentro do horário seguro, do limite diário, com
 // instância conectada e sem estar em pausa por erro sequencial -- mesmo princípio do
@@ -709,13 +771,16 @@ async function processarTick(db: any, cors: any) {
   const now = new Date();
   const sp = saoPauloParts(now);
 
-  if (cfg.pausar_fins_semana && (sp.weekday === "Sat" || sp.weekday === "Sun")) {
-    return json({ ok: true, skipped: "fim_de_semana" });
+  if (sp.weekday === 'Sun') return json({ ok: true, skipped: 'domingo' });
+  try {
+    if (await ehFeriadoCobranca(db, sp.dateStr)) return json({ ok: true, skipped: 'feriado' });
+  } catch (error) {
+    return json({ ok: false, skipped: 'calendario_indisponivel', error: (error as Error).message });
   }
 
   const nowMin    = sp.hour * 60 + sp.minute;
   const inicioMin = toMinutes(cfg.horario_inicio_envio || "09:00");
-  const fimMin    = toMinutes(cfg.horario_fim_envio || "18:00");
+  const fimMin    = Math.min(toMinutes(cfg.horario_fim_envio || "18:00"), sp.weekday === 'Sat' ? 15 * 60 : 24 * 60);
   if (nowMin < inicioMin || nowMin >= fimMin) return json({ ok: true, skipped: "fora_do_horario" });
 
   let enviadosHoje = cfg.enviados_hoje;
@@ -734,11 +799,27 @@ async function processarTick(db: any, cors: any) {
   const { data: templates } = await db.from("cobranca_templates").select("*").eq("ativo", true).order("ordem");
   if (!templates?.length) return json({ ok: true, skipped: "sem_templates" });
 
-  const { data: fila } = await db.rpc("get_alunos_para_cobranca", { p_data: sp.dateStr });
+  const { data: fila, error: filaErro } = await db.rpc("get_alunos_para_cobranca_automatica", { p_data: sp.dateStr });
+  if (filaErro) return json({ ok: false, error: filaErro.message });
   if (!fila?.length) return json({ ok: true, enviados: 0 });
 
   const jaEnviado = await calcularElegibilidade(db, fila, templates, cfg, sp.dateStr);
-  const proximo = proximoGrupoElegivel(fila, templates, cfg, jaEnviado, sp.dateStr);
+  let candidatos = fila;
+  let proximo: GrupoElegivel | null = null;
+  for (let tentativa = 0; tentativa < Math.min(fila.length, 30); tentativa++) {
+    const candidato = proximoGrupoElegivel(candidatos, templates, cfg, jaEnviado, sp.dateStr);
+    if (!candidato) break;
+    if (await contatoRecenteOuRespondido(db, candidato, now)) {
+      candidatos = candidatos.filter((i: any) => i.aluno_id !== candidato.aluno_id);
+      continue;
+    }
+    if (!(await validarGrupoNoAsaas(candidato))) {
+      candidatos = candidatos.filter((i: any) => !candidato.validacao.some(p => p.pagamento_id === i.pagamento_id));
+      continue;
+    }
+    proximo = candidato;
+    break;
+  }
   if (!proximo) return json({ ok: true, enviados: 0 });
 
   const allInstances = await resolveInstances(db, cfg);
@@ -773,6 +854,8 @@ async function processarTick(db: any, cors: any) {
   }).in("id", reserva.logIds);
 
   if (result.ok) {
+    await db.from('pagamentos').update({ cobranca_contatado_em: now.toISOString(), canal_cobranca: 'whatsapp' })
+      .in('id', proximo.cobertura.map(c => c.pagamento_id));
     await db.from("cobranca_config").update({
       enviados_hoje: enviadosHoje + 1, erros_seq: 0, ultimo_envio_em: now.toISOString(),
     }).eq("id", "default");
@@ -815,15 +898,16 @@ async function statusTick(db: any, cors: any) {
 
   if (!cfg.ativo) return json({ estado: cfg.pausado_por_erro ? "pausado_erro" : "pausado_manual", erros_seq: cfg.erros_seq ?? 0 });
 
-  if (cfg.pausar_fins_semana && (sp.weekday === "Sat" || sp.weekday === "Sun")) {
-    const diasAteSegunda = sp.weekday === "Sat" ? 2 : 1;
-    const proxima = saoPauloDateAt(addDaysStr(sp.dateStr, diasAteSegunda), hInicio, mInicio);
-    return json({ estado: "fim_de_semana", proximo_em_s: Math.max(0, (proxima.getTime() - now.getTime()) / 1000) });
+  if (sp.weekday === 'Sun') return json({ estado: 'fim_de_semana' });
+  try {
+    if (await ehFeriadoCobranca(db, sp.dateStr)) return json({ estado: 'feriado' });
+  } catch (error) {
+    return json({ estado: 'calendario_indisponivel', error: (error as Error).message });
   }
 
   const nowMin    = sp.hour * 60 + sp.minute;
   const inicioMin = toMinutes(cfg.horario_inicio_envio || "09:00");
-  const fimMin    = toMinutes(cfg.horario_fim_envio || "18:00");
+  const fimMin    = Math.min(toMinutes(cfg.horario_fim_envio || "18:00"), sp.weekday === 'Sat' ? 15 * 60 : 24 * 60);
   if (nowMin < inicioMin) {
     const proxima = saoPauloDateAt(sp.dateStr, hInicio, mInicio);
     return json({ estado: "fora_horario", proximo_em_s: Math.max(0, (proxima.getTime() - now.getTime()) / 1000) });
@@ -842,7 +926,7 @@ async function statusTick(db: any, cors: any) {
   const { data: templates } = await db.from("cobranca_templates").select("*").eq("ativo", true).order("ordem");
   if (!templates?.length) return json({ estado: "sem_templates" });
 
-  const { data: fila } = await db.rpc("get_alunos_para_cobranca", { p_data: sp.dateStr });
+  const { data: fila } = await db.rpc("get_alunos_para_cobranca_automatica", { p_data: sp.dateStr });
   const alunosNaFila = fila?.length ? new Set(fila.map((f: any) => f.aluno_id)).size : 0;
   const jaEnviado = fila?.length ? await calcularElegibilidade(db, fila, templates, cfg, sp.dateStr) : new Map<string, boolean>();
   const proximo = fila?.length ? proximoGrupoElegivel(fila, templates, cfg, jaEnviado, sp.dateStr) : null;

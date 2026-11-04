@@ -549,6 +549,16 @@ async function checkWhatsappExists(
   }
 }
 
+// disp3 ("Financeiro IDM") é reservado exclusivamente pro enviar-cobranca
+// (cobrança, confirmação de pagamento, link de contrato). Incidente 03/11:
+// essa instância acabou entrando na rotação de campanhas de marketing por
+// engano, mandando boas-vindas/reengajamento pelo número do financeiro.
+// Bloqueio duro aqui pra ser estruturalmente impossível qualquer campanha
+// via disparo-runner usar essa instância, não importa como foi configurada
+// (nem pinned evolution_config_ids escapa, porque o pin é filtrado DENTRO
+// da lista que essa função devolve).
+const INSTANCIAS_RESERVADAS = new Set(['disp3']);
+
 async function getAllInstances(
   db: ReturnType<typeof createClient>,
 ): Promise<Array<{ id: string; api_url: string; api_key: string; instance_name: string }>> {
@@ -557,7 +567,7 @@ async function getAllInstances(
     .select('id, api_url, api_key, instance_name')
     .eq('ativo', true)
     .order('prioridade', { ascending: true });
-  return rows ?? [];
+  return (rows ?? []).filter((r: { instance_name: string }) => !INSTANCIAS_RESERVADAS.has(r.instance_name));
 }
 
 async function getConnectedInstanceIds(
