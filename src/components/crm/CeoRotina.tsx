@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, CheckCircle2, ClipboardList, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, CheckCircle2, ClipboardList, Plus, Target, Trash2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -7,6 +7,44 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StatTile, SectionBar } from '@/components/crm/ui/premium';
+
+// Meta de Novembro/2026 (pedido do Pedro, 04/11/2026) -- R$30k de faturamento,
+// 25 matrículas (20 Ellen + 5 indicação/base), R$4k de tráfego. Constante de
+// propósito -- é a meta DESTE mês; ajustar/apagar quando novembro acabar.
+const META_MES_LABEL = 'Novembro/2026';
+const META_FATURAMENTO = 30000;
+const META_MATRICULAS = 25;
+const META_TRAFEGO = 4000;
+const META_INICIO = '2026-11-01';
+
+function formatReal(v: number) {
+  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function useMetaNovembro() {
+  const [faturamento, setFaturamento] = useState(0);
+  const [matriculas, setMatriculas] = useState(0);
+  const [carregando, setCarregando] = useState(true);
+
+  useEffect(() => {
+    let ativo = true;
+    void (async () => {
+      setCarregando(true);
+      const [pagRes, alunosRes] = await Promise.all([
+        supabase.from('pagamentos').select('valor').eq('status', 'pago').gte('data_pagamento', META_INICIO),
+        supabase.from('alunos').select('id', { count: 'exact', head: true }).gte('data_matricula', META_INICIO),
+      ]);
+      if (!ativo) return;
+      const total = ((pagRes.data as { valor: number }[] | null) ?? []).reduce((s, p) => s + Number(p.valor), 0);
+      setFaturamento(total);
+      setMatriculas(alunosRes.count ?? 0);
+      setCarregando(false);
+    })();
+    return () => { ativo = false; };
+  }, []);
+
+  return { faturamento, matriculas, carregando };
+}
 
 interface ItemRotina { id: string; departamento: string; texto: string; ordem: number; ativo: boolean; data_alvo: string | null; }
 
@@ -98,6 +136,9 @@ export function CeoRotina() {
 
   const totalFeitos = concluidosHoje.size;
   const totalItens = itens.length;
+  const meta = useMetaNovembro();
+  const pctFaturamento = Math.min(Math.round((meta.faturamento / META_FATURAMENTO) * 100), 999);
+  const pctMatriculas = Math.min(Math.round((meta.matriculas / META_MATRICULAS) * 100), 999);
 
   return (
     <div className="min-h-full bg-background p-4 sm:p-6 lg:p-8">
@@ -114,6 +155,42 @@ export function CeoRotina() {
             conforme for fazendo; reseta sozinho a cada dia novo.
           </p>
         </header>
+
+        <Card className="border-primary/40 shadow-sm">
+          <CardContent className="p-4 sm:p-5 space-y-4">
+            <SectionBar title={`Meta de ${META_MES_LABEL}`} icon={Target} />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Faturamento</span>
+                  <span className="font-semibold tabular-nums">
+                    {meta.carregando ? '—' : formatReal(meta.faturamento)} / {formatReal(META_FATURAMENTO)}
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-muted overflow-hidden">
+                  <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${meta.carregando ? 0 : Math.min(pctFaturamento, 100)}%` }} />
+                </div>
+                <p className="text-xs text-muted-foreground">{meta.carregando ? '—' : `${pctFaturamento}% da meta`}</p>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Matrículas</span>
+                  <span className="font-semibold tabular-nums">
+                    {meta.carregando ? '—' : meta.matriculas} / {META_MATRICULAS}
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-muted overflow-hidden">
+                  <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${meta.carregando ? 0 : Math.min(pctMatriculas, 100)}%` }} />
+                </div>
+                <p className="text-xs text-muted-foreground">{meta.carregando ? '—' : `${pctMatriculas}% da meta (20 Ellen + 5 indicação/base)`}</p>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground border-t border-border/60 pt-3">
+              Tráfego: orçamento de {formatReal(META_TRAFEGO)}/mês · Black Friday (Turma 48): 24-26/11 ·
+              Semana do Despertar só nessa edição esse mês · Divã IDM e Sociedade IDM: vender/estruturar.
+            </p>
+          </CardContent>
+        </Card>
 
         <section className="grid gap-3 sm:grid-cols-2">
           <StatTile label="Feitos hoje" value={carregando ? '—' : `${totalFeitos} / ${totalItens}`} icon={CheckCircle2} tom={totalItens > 0 && totalFeitos === totalItens ? 'bom' : 'padrao'} />
