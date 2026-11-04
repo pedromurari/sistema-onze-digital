@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import { carregarPixel, trackPixel } from '../webinario/meta-pixel';
 import '../webinario/webinario.css';
 
 const FUNCTIONS_URL = 'https://usqiyekfmwwnvkmkdlej.supabase.co/functions/v1';
@@ -33,6 +34,10 @@ export default function TurmaCaptura() {
   const [whatsapp, setWhatsapp] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [website, setWebsite] = useState(''); // honeypot
+
+  useEffect(() => {
+    carregarPixel();
+  }, []);
 
   useEffect(() => {
     let ativo = true;
@@ -81,6 +86,7 @@ export default function TurmaCaptura() {
         setEnviando(false);
         return;
       }
+      trackPixel('Lead', { content_name: `Turma ${slug}` });
       navigate(`/turma/${slug}/obrigado?nome=${encodeURIComponent(nome.trim())}`, { replace: true });
     } catch {
       toast.error('Erro de conexão. Tente novamente.');

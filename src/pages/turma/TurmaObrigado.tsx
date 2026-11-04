@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
+import { carregarPixel, trackPixel } from '../webinario/meta-pixel';
 import './turma-obrigado.css';
 
 const FUNCTIONS_URL = 'https://usqiyekfmwwnvkmkdlej.supabase.co/functions/v1';
@@ -46,6 +47,11 @@ export default function TurmaObrigado() {
   const [turma, setTurma] = useState<TurmaInfo | null>(null);
   const [aulas, setAulas] = useState<Aula[]>([]);
   const [carregando, setCarregando] = useState(true);
+
+  useEffect(() => {
+    carregarPixel();
+    trackPixel('CompleteRegistration', { content_name: `Turma ${slug}` });
+  }, [slug]);
 
   useEffect(() => {
     let ativo = true;
