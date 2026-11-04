@@ -1662,10 +1662,9 @@ const TURMAS_FORMACAO: TurmaFormacao[] = [
   { turma: '02726/OnzeDS', data: new Date(2026, 8, 15), dataLabel: '15/09/2026', mesAbrev: 'Set', dia: 15, confirmada: true },
   { turma: '02826/OnzeDS', data: new Date(2026, 8, 30), dataLabel: '30/09/2026', mesAbrev: 'Set', dia: 30, confirmada: true },
   { turma: '02926/OnzeDS', data: new Date(2026, 10, 23), dataLabel: '23/11/2026', mesAbrev: 'Nov', dia: 23, confirmada: true }, // adiada -- corrigido 04/11/2026 a pedido do Pedro
-  { turma: '03026/OnzeDS', data: new Date(2026, 9, 29), dataLabel: '29/10/2026', mesAbrev: 'Out', dia: 29, confirmada: true },
-  { turma: '03126/OnzeDS', data: new Date(2026, 10, 16), dataLabel: '16/11/2026', mesAbrev: 'Nov', dia: 16, confirmada: true },
-  { turma: '03226/OnzeDS', data: new Date(2026, 10, 30), dataLabel: '30/11/2026', mesAbrev: 'Nov', dia: 30, confirmada: true },
-  { turma: '03326/OnzeDS', data: new Date(2026, 11, 14), dataLabel: '14/12/2026', mesAbrev: 'Dez', dia: 14, confirmada: true },
+  // 03026 a 03326 removidas em 04/11/2026 (pedido do Pedro): eram projeção
+  // automática no ritmo quinzenal, nunca foram turmas de verdade. Só a 029
+  // está programada agora -- a próxima real entra aqui quando for fechada.
 ];
 
 // Foco na próxima turma de formação que ainda não começou — o calendário completo
