@@ -21,7 +21,7 @@ interface TurmaInfo {
 // (gratuito-47 e cia): fundo #000a1f, card #13316c, dourado #fab338,
 // botões verdes -- NÃO é o mesmo padrão dourado do webinário evergreen,
 // são identidades visuais diferentes mantidas de propósito.
-const LINK_GRUPO_VIP = '';
+const LINK_GRUPO_VIP = 'https://chat.whatsapp.com/JSTbJocjLY02QmesuH0LfL';
 const LINK_EBOOK = 'https://drive.google.com/file/d/1Wk04rk8msKuEV5loMZa8Iilpowsn3BKq/view?usp=sharing';
 
 const MESES = [
