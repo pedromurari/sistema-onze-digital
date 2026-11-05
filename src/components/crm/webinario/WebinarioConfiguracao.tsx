@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Loader2, Plus, Save, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { Loader2, Plus, Save, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { supabase } from '@/integrations/supabase/client';
 import { excluirMensagem, listarMensagens, salvarMensagem, salvarWebinario, type MensagemChat, type Webinario } from './webinario-data';
 import roteiroEscuta from '../../../../docs/campanhas/WEBINARIO-01-ESCUTA.md?raw';
 import roteiroPadroes from '../../../../docs/campanhas/WEBINARIO-02-PADROES.md?raw';
@@ -46,6 +47,9 @@ export function WebinarioConfiguracao({ webinario, podeEditar, onSaved }: { webi
   const [salvandoMensagem, setSalvandoMensagem] = useState<string | null>(null);
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(true);
+  const [enviandoVideo, setEnviandoVideo] = useState<'completo' | 'captura' | null>(null);
+  const inputCompletoRef = useRef<HTMLInputElement>(null);
+  const inputCapturaRef = useRef<HTMLInputElement>(null);
 
   const recarregarMensagens = useCallback(async () => {
     try { setMensagens(await listarMensagens(webinario.id)); setErro(''); }
@@ -74,6 +78,22 @@ export function WebinarioConfiguracao({ webinario, podeEditar, onSaved }: { webi
       onSaved();
     } catch (error) { setErro(error instanceof Error ? error.message : 'Não foi possível salvar.'); }
     finally { setSalvando(false); }
+  }
+
+  async function enviarVideo(tipo: 'completo' | 'captura', file: File | undefined) {
+    if (!podeEditar || !file) return;
+    setEnviandoVideo(tipo); setErro('');
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('slug', form.slug);
+      formData.append('tipo', tipo);
+      const { data, error } = await supabase.functions.invoke('webinario-video-upload', { body: formData });
+      if (error || !data?.ok) throw new Error(data?.error ?? error?.message ?? 'Falha no upload.');
+      setForm((f) => tipo === 'captura' ? { ...f, captura_video_url: data.url } : { ...f, video_url: data.url });
+      toast.success('Vídeo enviado e salvo.');
+    } catch (error) { setErro(error instanceof Error ? error.message : 'Não foi possível enviar o vídeo.'); }
+    finally { setEnviandoVideo(null); }
   }
 
   async function gravarMensagem(valores: { segundo: number; autor_nome: string; texto: string }, id?: string) {
@@ -106,8 +126,16 @@ export function WebinarioConfiguracao({ webinario, podeEditar, onSaved }: { webi
         <div className="space-y-1 sm:col-span-2"><Label htmlFor="web-nome">Nome</Label><Input id="web-nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required /></div>
         <div className="space-y-1"><Label htmlFor="web-slug">Slug da página</Label><Input id="web-slug" value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} required /><p className="text-xs text-muted-foreground">Alterar o slug quebra links de cadastro já divulgados.</p></div>
         <div className="space-y-1"><Label htmlFor="web-grupo">Link do grupo WhatsApp</Label><Input id="web-grupo" type="url" value={form.grupo_whatsapp_url} onChange={(e) => setForm({ ...form, grupo_whatsapp_url: e.target.value })} placeholder="https://..." /></div>
-        <div className="space-y-1 sm:col-span-2"><Label htmlFor="web-video">URL do vídeo no R2</Label><Input id="web-video" type="url" value={form.video_url} onChange={(e) => setForm({ ...form, video_url: e.target.value })} placeholder="https://..." /><p className="text-xs text-muted-foreground">Use o vídeo real do webinário; o vídeo atual pode ser apenas um placeholder.</p></div>
-        <div className="space-y-1 sm:col-span-2"><Label htmlFor="web-captura-video">URL do vídeo curto da captura</Label><Input id="web-captura-video" type="url" value={form.captura_video_url} onChange={(e) => setForm({ ...form, captura_video_url: e.target.value })} placeholder="https://..." /><p className="text-xs text-muted-foreground">Aparece acima do formulário da página pública quando a gravação curta estiver pronta. Não substitui a aula longa.</p></div>
+        <div className="space-y-1 sm:col-span-2"><Label htmlFor="web-video">URL do vídeo no R2</Label>
+          <div className="flex gap-2"><Input id="web-video" type="url" value={form.video_url} onChange={(e) => setForm({ ...form, video_url: e.target.value })} placeholder="https://..." />
+            <input ref={inputCompletoRef} type="file" accept="video/mp4" className="hidden" onChange={(e) => void enviarVideo('completo', e.target.files?.[0])} />
+            <Button type="button" variant="outline" disabled={!podeEditar || enviandoVideo !== null} onClick={() => inputCompletoRef.current?.click()}>{enviandoVideo === 'completo' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}</Button>
+          </div><p className="text-xs text-muted-foreground">Use o vídeo real do webinário; o vídeo atual pode ser apenas um placeholder. Pode colar a URL ou enviar o arquivo .mp4 direto.</p></div>
+        <div className="space-y-1 sm:col-span-2"><Label htmlFor="web-captura-video">URL do vídeo curto da captura</Label>
+          <div className="flex gap-2"><Input id="web-captura-video" type="url" value={form.captura_video_url} onChange={(e) => setForm({ ...form, captura_video_url: e.target.value })} placeholder="https://..." />
+            <input ref={inputCapturaRef} type="file" accept="video/mp4" className="hidden" onChange={(e) => void enviarVideo('captura', e.target.files?.[0])} />
+            <Button type="button" variant="outline" disabled={!podeEditar || enviandoVideo !== null} onClick={() => inputCapturaRef.current?.click()}>{enviandoVideo === 'captura' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}</Button>
+          </div><p className="text-xs text-muted-foreground">Aparece acima do formulário da página pública quando a gravação curta estiver pronta. Não substitui a aula longa. Pode colar a URL ou enviar o arquivo .mp4 direto.</p></div>
         <div className="space-y-1"><Label htmlFor="web-duracao">Duração do vídeo (segundos)</Label><Input id="web-duracao" type="number" min="1" value={form.video_duracao_segundos} onChange={(e) => setForm({ ...form, video_duracao_segundos: e.target.value })} /></div>
         <div className="space-y-1"><Label htmlFor="web-oferta">Mostrar oferta no segundo</Label><Input id="web-oferta" type="number" min="0" value={form.oferta_offset_segundos} onChange={(e) => setForm({ ...form, oferta_offset_segundos: e.target.value })} /></div>
         <label className="flex min-h-11 items-center gap-3 sm:col-span-2"><Switch checked={form.ativo} onCheckedChange={(valor) => setForm({ ...form, ativo: valor })} /> Ativo para novos cadastros</label>
