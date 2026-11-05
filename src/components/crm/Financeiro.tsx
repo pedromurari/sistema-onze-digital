@@ -3846,7 +3846,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                                 </tr>
                               </thead>
                               <tbody>
-                                {parcelas.map(p => (
+                                {parcelas.filter(p => p.status !== 'isento').map(p => (
                                   <tr key={p.id} className={`border-b border-border/40 transition-colors ${p.status === 'atrasado' ? 'bg-red-50' : p.status === 'pago' ? 'bg-green-50/60' : 'hover:bg-muted/30'}`}>
                                     <td className="py-2 px-2 font-medium text-xs">{p.numero_parcela}/{total}</td>
                                     <td className="py-2 px-2 text-xs">{safeDate(p.data_vencimento)}</td>
