@@ -51,8 +51,11 @@ function useDiretoriaComercial() {
         supabase.from('leads').select('id', { count: 'exact', head: true }).eq('origem', 'Time Comercial').eq('status', 'fechado').gte('criado_em', `${inicioMes}T00:00:00`),
         supabase.from('leads').select('id', { count: 'exact', head: true }).eq('origem', 'Time Comercial').eq('status', 'followup').lt('followup_manual_prazo', hoje),
         // Comissão real da vendedora: tipo='comissao' (ajuda de custo fica de fora, é
-        // valor fixo, não faturamento de venda).
-        supabase.from('comissoes_vendedores').select('*').eq('tipo', 'comissao').gte('data_venda', inicioMes),
+        // valor fixo, não faturamento de venda). Exclui as linhas "Pagamento de
+        // comissões — <mês>" (pix consolidado, pedido do Pedro 06/11/2026) -- são só
+        // um resumo informativo do que já está somado nas vendas individuais acima,
+        // contar as duas dobraria faturamento/comissão do mês.
+        supabase.from('comissoes_vendedores').select('*').eq('tipo', 'comissao').not('aluno_nome', 'like', 'Pagamento de comissões —%').gte('data_venda', inicioMes),
         supabase.from('comissoes_vendedores').select('*').in('status', ['pendente', 'reservado']).order('data_venda', { ascending: false }),
         supabase.from('leads').select('id', { count: 'exact', head: true }).eq('origem', 'Time Comercial').eq('status', 'novo').is('vendedor', null).gte('criado_em', `${inicioMes}T00:00:00`),
         supabase.from('leads').select('id', { count: 'exact', head: true }).eq('origem', 'Time Comercial').eq('status', 'followup').eq('followup_manual_prazo', hoje),
