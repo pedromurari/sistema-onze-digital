@@ -82,16 +82,28 @@ certo do mês. Falta só o envio automático pelo Telegram: a função
 
 ## Pedagógico
 
-### 4. Avaliações e Correção ⚪ — bloqueado, aguardando conteúdo
+### 4. Avaliações e Correção 🟡 — editor pronto; correção por IA e form do aluno bloqueados, aguardando conteúdo
 
-Form próprio do site (não terceiro). Maioria das questões é dissertativa;
-a IA já sabe a resposta esperada de cada módulo, corrige e dá nota; manda
-resumo pra professora só aprovar ou não (não corrige do zero). Tela esboço
-em `ProvasTrabalhos.tsx`.
+**06/11/2026 — Claude:** `ProvasTrabalhos.tsx` deixou de ser esboço visual —
+é editor de verdade agora. Descoberto nesta sessão: `ped_avaliacoes`/
+`ped_questoes` já existiam no banco com um piloto real de 5 questões
+discursivas (Fundamentos da Psicanálise, inserido direto via SQL em
+outubro), mas sem nenhuma tela por trás. Tela nova (Pedagógico → Provas e
+Trabalhos) cria avaliação (título, módulo, turma opcional, prova/trabalho),
+adiciona questão objetiva (opções + gabarito), discursiva (resposta
+esperada + critério de correção) ou envio de trabalho, reordena, edita,
+exclui, muda status rascunho/publicada/encerrada. Migration adicionou
+`opcoes`/`resposta_correta` em `ped_questoes` (só existia campo pra
+discursiva). RLS/GRANT seguem o recurso `pedagogico` já usado em
+aulas/presenças.
 
-**Bloqueio real: falta o time pedagógico mandar as perguntas de prova/
-trabalho de cada módulo.** Sem isso não dá pra desenhar o form nem o
-gabarito esperado da IA — não adianta começar a codar antes disso chegar.
+**Bloqueio real que continua de pé:** falta o time pedagógico mandar as
+perguntas de prova/trabalho de cada módulo pra preencher via essa tela —
+e a correção automática por IA (`ped_entregas`/`ped_respostas`, nota
+sugerida + resumo pra professora aprovar) e o formulário do aluno
+responder ainda não foram construídos. O schema já tem as tabelas prontas
+pra isso (`ped_entregas`, `ped_respostas`, `ped_revisoes`,
+`ped_acessos_avaliacao` com identificação por CPF).
 
 ### 5. Agenda de Aulas (Google Meet) 🟡 — base e prévia prontas; integração depende de OAuth
 
