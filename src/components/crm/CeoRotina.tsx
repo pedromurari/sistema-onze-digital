@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, CheckCircle2, ClipboardList, Plus, Target, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, CheckCircle2, ClipboardList, Loader2, Plus, Send, Target, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StatTile, SectionBar } from '@/components/crm/ui/premium';
+
+// Departamentos com relatório manual pro grupo de WhatsApp (Fase 2 do plano
+// de Rotina do CEO). Financeiro fica de fora -- já tem relatório automático
+// por cron (ceo-relatorio-financeiro), não precisa de botão manual aqui.
+const DEPARTAMENTOS_COM_RELATORIO = new Set(['comercial', 'pedagogico', 'marketing', 'rh']);
 
 // Meta de Novembro/2026 (pedido do Pedro, 04/11/2026) -- R$30k de faturamento,
 // 25 matrículas (20 Ellen + 5 indicação/base), R$4k de tráfego. Constante de
@@ -134,6 +141,38 @@ export function CeoRotina() {
     await carregar();
   };
 
+  const [dialogDep, setDialogDep] = useState<string | null>(null);
+  const [previewTexto, setPreviewTexto] = useState('');
+  const [carregandoPreview, setCarregandoPreview] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+
+  const abrirPreview = async (dep: string) => {
+    setDialogDep(dep);
+    setPreviewTexto('');
+    setCarregandoPreview(true);
+    const { data, error } = await supabase.functions.invoke('ceo-relatorio-departamento', { body: { departamento: dep, preview: true } });
+    setCarregandoPreview(false);
+    if (error || !data?.ok) {
+      toast.error(data?.erro ?? 'Não foi possível montar o relatório.');
+      setDialogDep(null);
+      return;
+    }
+    setPreviewTexto(data.texto);
+  };
+
+  const confirmarEnvio = async () => {
+    if (!dialogDep) return;
+    setEnviando(true);
+    const { data, error } = await supabase.functions.invoke('ceo-relatorio-departamento', { body: { departamento: dialogDep, preview: false } });
+    setEnviando(false);
+    if (error || !data?.ok) {
+      toast.error(data?.erro ?? 'Não foi possível enviar.');
+      return;
+    }
+    toast.success('Enviado pro grupo.');
+    setDialogDep(null);
+  };
+
   const totalFeitos = concluidosHoje.size;
   const totalItens = itens.length;
   const meta = useMetaNovembro();
@@ -199,7 +238,15 @@ export function CeoRotina() {
         {DEPARTAMENTOS.filter(d => porDepartamento.has(d.valor)).map(dep => (
           <Card key={dep.valor} className="border-border/70 shadow-sm">
             <CardContent className="p-4 sm:p-5 space-y-3">
-              <SectionBar title={dep.label} icon={ClipboardList} />
+              <SectionBar
+                title={dep.label}
+                icon={ClipboardList}
+                right={DEPARTAMENTOS_COM_RELATORIO.has(dep.valor) ? (
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void abrirPreview(dep.valor)}>
+                    <Send className="h-3.5 w-3.5" /> Enviar pro grupo
+                  </Button>
+                ) : undefined}
+              />
               <div className="space-y-2">
                 {porDepartamento.get(dep.valor)!.map(item => {
                   const feito = concluidosHoje.has(item.id);
@@ -235,6 +282,27 @@ export function CeoRotina() {
             </div>
           </CardContent>
         </Card>
+
+        <Dialog open={dialogDep !== null} onOpenChange={(open) => { if (!open && !enviando) setDialogDep(null); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Enviar relatório pro grupo</DialogTitle>
+            </DialogHeader>
+            {carregandoPreview ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <pre className="whitespace-pre-wrap rounded-lg border border-border/60 bg-muted/20 p-3 text-sm font-sans">{previewTexto}</pre>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDialogDep(null)} disabled={enviando}>Cancelar</Button>
+              <Button onClick={() => void confirmarEnvio()} disabled={enviando || carregandoPreview || !previewTexto} className="gap-1.5">
+                {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Confirmar envio
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
