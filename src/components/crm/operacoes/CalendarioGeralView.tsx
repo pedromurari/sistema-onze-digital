@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { format, parseISO, isSameDay, isSameMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Plus, Calendar, Rocket, BarChart3, Zap, Trash2, Pencil, X, Check, Loader2, AlertTriangle, GraduationCap } from 'lucide-react';
+import { Plus, Calendar, Rocket, BarChart3, Zap, Trash2, Pencil, X, Check, Loader2, AlertTriangle, GraduationCap, Video } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/components/ui/use-toast';
 import { useCalendario } from './useCalendario';
@@ -19,24 +19,26 @@ interface Tarefa {
 interface Lancamento { id: string; nome: string; data_inicio?: string; data_fim?: string; }
 interface NPAEvento { id: string; nome: string; data_inicio?: string; data_fim?: string; }
 interface Turma { id: string; nome: string; data_inicio?: string; produto?: string; }
+interface Aula { id: string; data: string; horario_inicio?: string | null; modulo?: string | null; status?: string | null; turma?: { nome: string } | null; }
 interface EventoCalendario { id: string; titulo: string; descricao?: string; data_inicio: string; data_fim?: string; cor: string; }
 interface CalendarioGeralViewProps {
   tarefas: Tarefa[];
   lancamentos: Lancamento[];
   npaEventos: NPAEvento[];
   turmas: Turma[];
+  aulas: Aula[];
   eventosCalendario: EventoCalendario[];
   user: any;
   getPriorityHexColor: (prioridade: string) => string;
   onOpenTarefaDetail: (tarefa: Tarefa) => void;
   onLoadData: () => void;
 }
-interface EventoDia { id: string; titulo: string; tipo: 'tarefa' | 'lancamento' | 'npa' | 'turma' | 'evento'; cor: string; data: Date; dados: any; }
+interface EventoDia { id: string; titulo: string; tipo: 'tarefa' | 'lancamento' | 'npa' | 'turma' | 'aula' | 'evento'; cor: string; data: Date; dados: any; }
 
 const CORES_PRESET = ['#3b82f6','#ef4444','#10b981','#f59e0b','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f97316','#6366f1','#14b8a6','#e11d48'];
-const TIPO_LABEL: Record<string, string> = { tarefa: 'Tarefa', lancamento: 'Lançamento', npa: 'NPA', turma: 'Turma', evento: 'Evento' };
+const TIPO_LABEL: Record<string, string> = { tarefa: 'Tarefa', lancamento: 'Lançamento', npa: 'NPA', turma: 'Turma', aula: 'Aula', evento: 'Evento' };
 
-export function CalendarioGeralView({ tarefas, lancamentos, npaEventos, turmas, eventosCalendario, user, getPriorityHexColor, onOpenTarefaDetail, onLoadData }: CalendarioGeralViewProps) {
+export function CalendarioGeralView({ tarefas, lancamentos, npaEventos, turmas, aulas, eventosCalendario, user, getPriorityHexColor, onOpenTarefaDetail, onLoadData }: CalendarioGeralViewProps) {
   const { currentDate, currentMonth, currentYear, getWeeksInMonth, mesAnterior, mesProximo, irParaHoje } = useCalendario();
 
   const [showCreateEvento, setShowCreateEvento] = useState(false);
@@ -111,6 +113,18 @@ export function CalendarioGeralView({ tarefas, lancamentos, npaEventos, turmas, 
       epd[key].push({ id: `turma-${t.id}`, titulo: t.nome, tipo: 'turma', cor: '#4F46E5', data, dados: t });
     });
 
+    // Aulas da Agenda de Aulas -- uma por dia real (diferente de turma, que só
+    // marca o início): mostra módulo + turma, cor própria pra não confundir
+    // com o marcador de início de turma.
+    (aulas ?? []).forEach(a => {
+      if (!a.data) return;
+      const data = parseISO(a.data);
+      const key = format(data, 'yyyy-MM-dd');
+      if (!epd[key]) epd[key] = [];
+      const titulo = `${a.modulo || 'Aula'} · ${a.turma?.nome || 'Turma'}`;
+      epd[key].push({ id: `aula-${a.id}`, titulo, tipo: 'aula', cor: '#0D9488', data, dados: a });
+    });
+
     const dist = distribuirEventosDias(eventosCalendario ?? []);
     Object.entries(dist).forEach(([key, evs]) => {
       if (!epd[key]) epd[key] = [];
@@ -118,10 +132,10 @@ export function CalendarioGeralView({ tarefas, lancamentos, npaEventos, turmas, 
     });
 
     return epd;
-  }, [tarefas, lancamentos, npaEventos, turmas, eventosCalendario, getPriorityHexColor]);
+  }, [tarefas, lancamentos, npaEventos, turmas, aulas, eventosCalendario, getPriorityHexColor]);
 
   const getTipoIcon = (tipo: string, cls = 'h-3 w-3') => {
-    const icons: Record<string, any> = { tarefa: Calendar, lancamento: Rocket, npa: BarChart3, turma: GraduationCap, evento: Zap };
+    const icons: Record<string, any> = { tarefa: Calendar, lancamento: Rocket, npa: BarChart3, turma: GraduationCap, aula: Video, evento: Zap };
     const Icon = icons[tipo] || Calendar;
     return <Icon className={cls} />;
   };
@@ -218,7 +232,7 @@ export function CalendarioGeralView({ tarefas, lancamentos, npaEventos, turmas, 
       {/* Legenda */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <div className="flex flex-wrap gap-4 text-sm">
-          {[['bg-red-500','Tarefas'],['bg-orange-500','Lançamentos'],['bg-purple-500','NPA'],['bg-indigo-600','Turmas'],['bg-blue-500','Eventos']].map(([cor, label]) => (
+          {[['bg-red-500','Tarefas'],['bg-orange-500','Lançamentos'],['bg-purple-500','NPA'],['bg-indigo-600','Turmas'],['bg-teal-600','Aulas'],['bg-blue-500','Eventos']].map(([cor, label]) => (
             <div key={label} className="flex items-center gap-2"><div className={`w-3 h-3 ${cor} rounded`}/><span>{label}</span></div>
           ))}
         </div>
@@ -344,6 +358,12 @@ export function CalendarioGeralView({ tarefas, lancamentos, npaEventos, turmas, 
                   <div className="flex items-center gap-2 text-sm text-gray-500">
                     <Calendar className="h-4 w-4 text-gray-300 flex-shrink-0"/>
                     <span>até {format(new Date(selectedEvento.dados.data_fim), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR })}</span>
+                  </div>
+                )}
+                {selectedEvento?.tipo === 'aula' && (
+                  <div className="p-3 bg-gray-50 rounded-xl text-sm text-gray-700 leading-relaxed space-y-1">
+                    {selectedEvento.dados.horario_inicio && <p>Horário: {String(selectedEvento.dados.horario_inicio).slice(0,5)}</p>}
+                    {selectedEvento.dados.status && <p>Status: {selectedEvento.dados.status}</p>}
                   </div>
                 )}
                 {selectedEvento?.dados?.descricao ? (

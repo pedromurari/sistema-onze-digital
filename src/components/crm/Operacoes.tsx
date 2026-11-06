@@ -60,6 +60,15 @@ interface Turma {
   produto?: string;
 }
 
+interface Aula {
+  id: string;
+  data: string;
+  horario_inicio?: string | null;
+  modulo?: string | null;
+  status?: string | null;
+  turma?: { nome: string } | null;
+}
+
 interface ConteudoCalendario {
   id: string;
   titulo: string;
@@ -93,6 +102,7 @@ export function Operacoes({ currentPage }: OperacoesProps) {
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([]);
   const [npaEventos, setNpaEventos] = useState<NPAEvento[]>([]);
   const [turmas, setTurmas] = useState<Turma[]>([]);
+  const [aulas, setAulas] = useState<Aula[]>([]);
   const [eventosCalendario, setEventosCalendario] = useState<EventoCalendario[]>([]);
   const [conteudoCalendario, setConteudoCalendario] = useState<ConteudoCalendario[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -176,6 +186,16 @@ export function Operacoes({ currentPage }: OperacoesProps) {
       } catch (error) {
         setTurmas([]);
       }
+
+      // Aulas da Agenda de Aulas (Gestão → Agenda de Aulas) -- não apareciam
+      // aqui, só no próprio menu da Agenda; cada aula marcada agora vira um
+      // marcador no dia certo, igual às outras categorias.
+      try {
+        const aulasRes = await supabase.from('aulas').select('id, data, horario_inicio, modulo, status, turma:turmas(nome)').limit(400);
+        if (aulasRes.data) setAulas(aulasRes.data as unknown as Aula[]);
+      } catch (error) {
+        setAulas([]);
+      }
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
       toast({ variant: 'destructive', title: 'Erro', description: 'Falha ao carregar dados' });
@@ -243,6 +263,7 @@ export function Operacoes({ currentPage }: OperacoesProps) {
               lancamentos={lancamentos}
               npaEventos={npaEventos}
               turmas={turmas}
+              aulas={aulas}
               eventosCalendario={eventosCalendario}
               user={user}
               getPriorityHexColor={getPriorityHexColor}
