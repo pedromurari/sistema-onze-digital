@@ -8,23 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { calcularPreviaFolha, type AulaFolha, type PresencaProfessor } from './folha-preview';
+import { calcularFolhaCompleta, type AulaFolha, type LinhaFolhaCompleta, type PresencaProfessor, type ProfissionalFolhaCompleta } from './folha-preview';
 
-type Profissional = {
-  id: string; nome: string; modelo_pagamento: string; valor_fixo: number | null;
-  valor_por_aula: number | null; comissoes_vendedor: string | null;
-};
-
-type Linha = {
-  profissional: Profissional;
-  aulasConfirmadas: number;
-  valorAulas: number;
-  valorFixo: number;
-  comissoesPendentes: number;
-  jaPagoNoMes: number;
-  totalSugerido: number;
-  requerRevisao: boolean;
-};
+type Profissional = ProfissionalFolhaCompleta;
+type Linha = LinhaFolhaCompleta;
 
 type Fechamento = { id: string; competencia: string; fechado_em: string; reaberto_em: string | null; total_geral: number };
 type ItemSalvo = {
@@ -99,25 +86,7 @@ export function FechamentoFolha() {
         for (const c of comData ?? []) comissoesPorVendedor.set(c.vendedor, (comissoesPorVendedor.get(c.vendedor) ?? 0) + Number(c.valor_comissao));
       }
 
-      const previa = calcularPreviaFolha(
-        profissionaisAtivos.map((p) => ({ id: p.id, nome: p.nome, modelo_pagamento: p.modelo_pagamento, valor_por_aula: p.valor_por_aula })),
-        aulas, presencas,
-      );
-      const previaPorId = new Map(previa.map((l) => [l.profissional.id, l]));
-
-      const calculadas: Linha[] = profissionaisAtivos.map((prof) => {
-        const prevLinha = previaPorId.get(prof.id);
-        const aulasConfirmadas = prevLinha?.quantidade ?? 0;
-        const valorAulas = prevLinha?.valorAulas ?? 0;
-        const temFixo = prof.modelo_pagamento === 'fixo' || prof.modelo_pagamento === 'hibrido';
-        const valorFixo = temFixo ? Number(prof.valor_fixo ?? 0) : 0;
-        const comissoesPendentes = prof.comissoes_vendedor ? (comissoesPorVendedor.get(prof.comissoes_vendedor) ?? 0) : 0;
-        const jaPagoNoMes = pagoPorProfissional.get(prof.id) ?? 0;
-        const totalBruto = valorAulas + valorFixo + comissoesPendentes;
-        const totalSugerido = Math.max(0, Math.round((totalBruto - jaPagoNoMes) * 100) / 100);
-        const requerRevisao = prof.modelo_pagamento === 'comissao' && !prof.comissoes_vendedor;
-        return { profissional: prof, aulasConfirmadas, valorAulas, valorFixo, comissoesPendentes, jaPagoNoMes, totalSugerido, requerRevisao };
-      }).filter((l) => l.aulasConfirmadas > 0 || l.valorFixo > 0 || l.comissoesPendentes > 0 || l.jaPagoNoMes > 0 || l.requerRevisao);
+      const calculadas = calcularFolhaCompleta(profissionaisAtivos, aulas, presencas, pagoPorProfissional, comissoesPorVendedor);
 
       setLinhas(calculadas);
     } catch (e) {

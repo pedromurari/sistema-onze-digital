@@ -24,7 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { HistoricoPagamentosDialog } from './rh/HistoricoPagamentos';
 import { PreviaFolha } from './rh/PreviaFolha';
-import { calcularPreviaFolha, type AulaFolha, type PresencaProfessor } from './rh/folha-preview';
+import { calcularFolhaCompleta, calcularPreviaFolha, type AulaFolha, type PresencaProfessor, type ProfissionalFolhaCompleta } from './rh/folha-preview';
 
 type Profissional = Database['public']['Tables']['profissionais']['Row'];
 
@@ -114,6 +114,7 @@ interface ContaAPagar {
   ja_pago_no_mes: number;
   saldo: number;
   requer_revisao: boolean;
+  projecao: boolean;
 }
 
 // "Contas a pagar" era só um card de planejamento ("ainda não construído"),
@@ -124,6 +125,15 @@ interface ContaAPagar {
 // é esse total_sugerido -- o fechamento não se atualiza sozinho quando um
 // pagamento novo é lançado depois; pra zerar, reabra e feche de novo a
 // competência (FechamentoFolha recalcula com o pagamento já registrado).
+//
+// 06/11/2026 -- achado real do Pedro: no começo do mês, antes de alguém
+// fechar a competência atual, essa lista ficava vazia (nada fechado ainda
+// = nada pra mostrar), mesmo já tendo aula dada e dívida se acumulando.
+// Além das competências fechadas, calcula também a projeção do mês
+// corrente ao vivo (mesma conta do Fechamento de Folha, calcularFolhaCompleta)
+// quando ele ainda não foi fechado -- some daqui sozinha quando alguém
+// fechar a competência de verdade (passa a vir da tabela, não mais da
+// projeção).
 function useContasAPagar() {
   const [itens, setItens] = useState<ContaAPagar[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -132,12 +142,22 @@ function useContasAPagar() {
     let ativo = true;
     void (async () => {
       setCarregando(true);
-      const { data } = await supabase
-        .from('folha_fechamentos_itens')
-        .select('id, profissional_id, total_sugerido, ja_pago_no_mes, requer_revisao, fechamento:folha_fechamentos(competencia)')
-        .order('id', { ascending: false });
+      const mes = mesAtualBrasil();
+      const primeiroDia = `${mes}-01`;
+      const proximoMes = new Date(`${primeiroDia}T12:00:00Z`);
+      proximoMes.setUTCMonth(proximoMes.getUTCMonth() + 1);
+      const limite = proximoMes.toISOString().slice(0, 10);
+
+      const [fechadasRes, fechamentoMesRes] = await Promise.all([
+        supabase
+          .from('folha_fechamentos_itens')
+          .select('id, profissional_id, total_sugerido, ja_pago_no_mes, requer_revisao, fechamento:folha_fechamentos(competencia)')
+          .order('id', { ascending: false }),
+        supabase.from('folha_fechamentos').select('id').eq('competencia', mes).is('reaberto_em', null).maybeSingle(),
+      ]);
       if (!ativo) return;
-      const linhas = ((data ?? []) as unknown as Array<{
+
+      const fechadas: ContaAPagar[] = ((fechadasRes.data ?? []) as unknown as Array<{
         id: string; profissional_id: string; total_sugerido: number; ja_pago_no_mes: number;
         requer_revisao: boolean; fechamento: { competencia: string } | null;
       }>)
@@ -149,10 +169,59 @@ function useContasAPagar() {
           ja_pago_no_mes: Number(l.ja_pago_no_mes),
           saldo: Number(l.total_sugerido),
           requer_revisao: l.requer_revisao,
+          projecao: false,
         }))
-        .filter((l) => l.saldo > 0.01)
-        .sort((a, b) => b.competencia.localeCompare(a.competencia));
-      setItens(linhas);
+        .filter((l) => l.saldo > 0.01);
+
+      let projecaoMes: ContaAPagar[] = [];
+      if (!fechamentoMesRes.data) {
+        // Mês corrente ainda não foi fechado -- calcula ao vivo, mesma
+        // lógica do Fechamento de Folha (aulas confirmadas + fixo +
+        // comissão pendente − já pago no mês).
+        const [profRes, aulasRes, pagRes] = await Promise.all([
+          supabase.from('profissionais').select('id, nome, modelo_pagamento, valor_fixo, valor_por_aula, comissoes_vendedor').eq('ativo', true),
+          supabase.from('aulas').select('id, profissional_id, data, status').eq('status', 'realizada').gte('data', primeiroDia).lt('data', limite),
+          supabase.from('profissionais_pagamentos').select('profissional_id, valor').gte('data_pagamento', primeiroDia).lt('data_pagamento', limite),
+        ]);
+        if (!ativo) return;
+        const profissionaisAtivos = (profRes.data ?? []) as ProfissionalFolhaCompleta[];
+        const aulas = (aulasRes.data ?? []) as AulaFolha[];
+        const aulaIds = aulas.map((a) => a.id);
+        const { data: presencasData } = aulaIds.length
+          ? await supabase.from('presencas').select('aula_id, profissional_id, presente').eq('tipo', 'professor').in('aula_id', aulaIds)
+          : { data: [] as PresencaProfessor[] };
+        if (!ativo) return;
+        const presencas = (presencasData ?? []) as PresencaProfessor[];
+
+        const pagoPorProfissional = new Map<string, number>();
+        for (const p of (pagRes.data ?? []) as { profissional_id: string; valor: number }[]) {
+          pagoPorProfissional.set(p.profissional_id, (pagoPorProfissional.get(p.profissional_id) ?? 0) + Number(p.valor));
+        }
+
+        const vendedores = profissionaisAtivos.filter((p) => p.comissoes_vendedor).map((p) => p.comissoes_vendedor as string);
+        const comissoesPorVendedor = new Map<string, number>();
+        if (vendedores.length) {
+          const { data: comData } = await supabase.from('comissoes_vendedores').select('vendedor, valor_comissao, status, data_venda')
+            .in('vendedor', vendedores).in('status', ['pendente', 'reservado']).gte('data_venda', primeiroDia).lt('data_venda', limite);
+          if (!ativo) return;
+          for (const c of comData ?? []) comissoesPorVendedor.set(c.vendedor, (comissoesPorVendedor.get(c.vendedor) ?? 0) + Number(c.valor_comissao));
+        }
+
+        projecaoMes = calcularFolhaCompleta(profissionaisAtivos, aulas, presencas, pagoPorProfissional, comissoesPorVendedor)
+          .filter((l) => l.totalSugerido > 0.01)
+          .map((l) => ({
+            id: `projecao-${l.profissional.id}`,
+            profissional_id: l.profissional.id,
+            competencia: `${mes} (projeção)`,
+            total_sugerido: l.totalSugerido,
+            ja_pago_no_mes: l.jaPagoNoMes,
+            saldo: l.totalSugerido,
+            requer_revisao: l.requerRevisao,
+            projecao: true,
+          }));
+      }
+
+      setItens([...projecaoMes, ...fechadas].sort((a, b) => (a.projecao === b.projecao ? b.competencia.localeCompare(a.competencia) : a.projecao ? -1 : 1)));
       setCarregando(false);
     })();
     return () => { ativo = false; };
@@ -459,16 +528,17 @@ export function RH() {
           </CardHeader>
           <CardContent>
             <p className="mb-3 text-xs text-muted-foreground">
-              Competências já fechadas (aprovadas) com saldo ainda em aberto na data do fechamento.
+              Mês corrente (ainda não fechado) entra como <strong className="text-foreground">projeção ao vivo</strong>,
+              mesma conta do Fechamento de Folha — recalcula a cada carregamento. Competências já fechadas entram com
+              o saldo travado na data do fechamento.
               {!carregandoContas && contasAPagar.length > 0 && (
-                <span className="font-semibold text-foreground"> {totalContasAPagar.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} em aberto.</span>
+                <span className="font-semibold text-foreground"> {totalContasAPagar.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} em aberto no total.</span>
               )}
-              {' '}Depois de pagar, reabra e feche de novo a competência em Fechamento de Folha pra essa linha
-              recalcular e sumir daqui.
+              {' '}Pra uma linha fechada sumir daqui, reabra e feche de novo a competência (recalcula com o pagamento já lançado).
             </p>
             {carregandoContas && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
             {!carregandoContas && contasAPagar.length === 0 && (
-              <p className="text-sm text-muted-foreground">Nenhuma competência fechada com saldo em aberto.</p>
+              <p className="text-sm text-muted-foreground">Nada em aberto — nem projeção do mês corrente, nem competência fechada com saldo.</p>
             )}
             {contasAPagar.length > 0 && (
               <div className="overflow-x-auto">
@@ -477,14 +547,17 @@ export function RH() {
                     <tr className="border-b text-left text-xs uppercase text-muted-foreground">
                       <th className="p-2">Competência</th>
                       <th className="p-2">Profissional</th>
-                      <th className="p-2 text-right">Pago antes do fechamento</th>
+                      <th className="p-2 text-right">Pago no período</th>
                       <th className="p-2 text-right">A pagar</th>
                     </tr>
                   </thead>
                   <tbody>
                     {contasAPagar.map((c) => (
                       <tr key={c.id} className="border-b last:border-0">
-                        <td className="p-2 whitespace-nowrap">{c.competencia}</td>
+                        <td className="p-2 whitespace-nowrap">
+                          {c.competencia}
+                          {c.projecao && <Badge variant="outline" className="ml-2 border-primary/30 bg-primary/10 text-primary text-[10px]">ao vivo</Badge>}
+                        </td>
                         <td className="p-2 font-medium">
                           {nomePorId.get(c.profissional_id) ?? '—'}
                           {c.requer_revisao && <Badge variant="outline" className="ml-2 border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300 text-[10px]">revisar</Badge>}
