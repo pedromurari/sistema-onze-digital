@@ -4,14 +4,9 @@ import {
   Banknote,
   BriefcaseBusiness,
   CalendarClock,
-  CheckCircle2,
-  CircleDashed,
-  FileText,
-  Link2,
   Loader2,
   Plus,
   ReceiptText,
-  ShieldCheck,
   UserRoundPlus,
   Users,
 } from 'lucide-react';
@@ -48,29 +43,6 @@ const VINCULO_LABEL: Record<string, string> = {
   voluntario: 'Voluntário',
   outro: 'Outro',
 };
-
-const ESCOPO = [
-  {
-    title: 'Aulas e serviços realizados',
-    description: 'Link individual para o professor lançar a aula; o gestor aprova antes de gerar a pendência.',
-    icon: Link2,
-  },
-  {
-    title: 'Comissões automáticas',
-    description: 'Vendas confirmadas alimentam a competência da vendedora sem lançamento manual duplicado.',
-    icon: CheckCircle2,
-  },
-  {
-    title: 'Contas a pagar',
-    description: 'Valores previstos, aprovados, vencidos e pagos, separados por profissional e competência.',
-    icon: CalendarClock,
-  },
-  {
-    title: 'Notas fiscais e comprovantes',
-    description: 'Anexo da nota enviada pelo profissional e comprovante do pagamento no mesmo histórico.',
-    icon: FileText,
-  },
-] as const;
 
 const EMPTY_FORM = {
   nome: '',
@@ -132,6 +104,61 @@ function useIndicadoresRH(profissionais: Profissional[]) {
   }, [profissionais]);
 
   return { aPagar, notasPendentes };
+}
+
+interface ContaAPagar {
+  id: string;
+  profissional_id: string;
+  competencia: string;
+  total_sugerido: number;
+  ja_pago_no_mes: number;
+  saldo: number;
+  requer_revisao: boolean;
+}
+
+// "Contas a pagar" era só um card de planejamento ("ainda não construído"),
+// mas o dado pra isso já existe desde o Fechamento de Folha (20/10/2026):
+// toda competência fechada vira uma linha em folha_fechamentos_itens com
+// total_sugerido já líquido do que tinha sido pago ATÉ o momento do
+// fechamento (ja_pago_no_mes é informativo, não soma de novo). Saldo aqui
+// é esse total_sugerido -- o fechamento não se atualiza sozinho quando um
+// pagamento novo é lançado depois; pra zerar, reabra e feche de novo a
+// competência (FechamentoFolha recalcula com o pagamento já registrado).
+function useContasAPagar() {
+  const [itens, setItens] = useState<ContaAPagar[]>([]);
+  const [carregando, setCarregando] = useState(true);
+
+  useEffect(() => {
+    let ativo = true;
+    void (async () => {
+      setCarregando(true);
+      const { data } = await supabase
+        .from('folha_fechamentos_itens')
+        .select('id, profissional_id, total_sugerido, ja_pago_no_mes, requer_revisao, fechamento:folha_fechamentos(competencia)')
+        .order('id', { ascending: false });
+      if (!ativo) return;
+      const linhas = ((data ?? []) as unknown as Array<{
+        id: string; profissional_id: string; total_sugerido: number; ja_pago_no_mes: number;
+        requer_revisao: boolean; fechamento: { competencia: string } | null;
+      }>)
+        .map((l) => ({
+          id: l.id,
+          profissional_id: l.profissional_id,
+          competencia: l.fechamento?.competencia ?? '—',
+          total_sugerido: Number(l.total_sugerido),
+          ja_pago_no_mes: Number(l.ja_pago_no_mes),
+          saldo: Number(l.total_sugerido),
+          requer_revisao: l.requer_revisao,
+        }))
+        .filter((l) => l.saldo > 0.01)
+        .sort((a, b) => b.competencia.localeCompare(a.competencia));
+      setItens(linhas);
+      setCarregando(false);
+    })();
+    return () => { ativo = false; };
+  }, []);
+
+  return { itens, carregando };
 }
 
 function useProfissionais() {
@@ -321,6 +348,9 @@ export function RH() {
   const [verPagamentos, setVerPagamentos] = useState<Profissional | null>(null);
   const ativos = itens.filter((p) => p.ativo);
   const { aPagar, notasPendentes } = useIndicadoresRH(ativos);
+  const { itens: contasAPagar, carregando: carregandoContas } = useContasAPagar();
+  const nomePorId = new Map(itens.map((p) => [p.id, p.nome]));
+  const totalContasAPagar = contasAPagar.reduce((soma, c) => soma + c.saldo, 0);
 
   async function alternarAtivo(p: Profissional) {
     const { error } = await supabase.from('profissionais').update({ ativo: !p.ativo }).eq('id', p.id);
@@ -423,28 +453,59 @@ export function RH() {
         <Card className="border-border/70 shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
-              <BriefcaseBusiness className="h-4 w-4 text-primary" />
-              O que mais este módulo vai controlar (ainda planejamento)
+              <CalendarClock className="h-4 w-4 text-primary" />
+              Contas a pagar
             </CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-3 sm:grid-cols-2">
-            {ESCOPO.map(({ title, description, icon: Icon }) => (
-              <div key={title} className="rounded-xl border border-border/60 bg-muted/20 p-4">
-                <div className="mb-2 flex items-center gap-2">
-                  <Icon className="h-4 w-4 text-primary" />
-                  <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-                </div>
-                <p className="text-xs leading-relaxed text-muted-foreground">{description}</p>
+          <CardContent>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Competências já fechadas (aprovadas) com saldo ainda em aberto na data do fechamento.
+              {!carregandoContas && contasAPagar.length > 0 && (
+                <span className="font-semibold text-foreground"> {totalContasAPagar.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} em aberto.</span>
+              )}
+              {' '}Depois de pagar, reabra e feche de novo a competência em Fechamento de Folha pra essa linha
+              recalcular e sumir daqui.
+            </p>
+            {carregandoContas && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
+            {!carregandoContas && contasAPagar.length === 0 && (
+              <p className="text-sm text-muted-foreground">Nenhuma competência fechada com saldo em aberto.</p>
+            )}
+            {contasAPagar.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+                      <th className="p-2">Competência</th>
+                      <th className="p-2">Profissional</th>
+                      <th className="p-2 text-right">Pago antes do fechamento</th>
+                      <th className="p-2 text-right">A pagar</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {contasAPagar.map((c) => (
+                      <tr key={c.id} className="border-b last:border-0">
+                        <td className="p-2 whitespace-nowrap">{c.competencia}</td>
+                        <td className="p-2 font-medium">
+                          {nomePorId.get(c.profissional_id) ?? '—'}
+                          {c.requer_revisao && <Badge variant="outline" className="ml-2 border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300 text-[10px]">revisar</Badge>}
+                        </td>
+                        <td className="p-2 text-right tabular-nums text-muted-foreground">{c.ja_pago_no_mes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                        <td className="p-2 text-right tabular-nums font-semibold">{c.saldo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            ))}
+            )}
           </CardContent>
         </Card>
 
         <div className="flex items-start gap-3 rounded-xl border border-dashed border-border bg-muted/20 p-4 text-sm text-muted-foreground">
-          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+          <BadgeDollarSign className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
           <p>
-            Aulas e assinaturas ficam em Gestão → Agenda de aulas. A conexão com o Fechamento de Folha
-            automático ainda está pendente — ver `ROADMAP.md` e o cofre do Obsidian em <code>RH/</code>.
+            Aulas e presença ficam em Gestão → Agenda de aulas. O Fechamento de Folha já soma isso
+            automaticamente por competência — lance o pagamento em "Pagamentos" (por profissional, acima)
+            pra abater o saldo aqui.
           </p>
         </div>
         {editando !== undefined && (
