@@ -250,7 +250,13 @@ function TabelaVendedor({
   onAtualizar: (id: string, patch: Partial<ComissaoRow>) => void;
   onExcluir: (id: string) => void;
 }) {
-  const totais = rows.reduce((acc, r) => { acc[r.status] += Number(r.valor_comissao); return acc; }, { pendente: 0, reservado: 0, pago: 0 });
+  // Linhas "Pagamento de comissões — <mês>" são o Pix consolidado que já cobre
+  // outras linhas de comissão (venda por venda) que já estão somadas aqui em
+  // cima -- pedido do Pedro 06/11/2026: manter a linha visível na tabela (ele
+  // quer ver o pagamento consolidado igual já tem o de ajuda de custo), mas
+  // sem contar o valor duas vezes no total Pendente/Reservado/Pago.
+  const ehPagamentoConsolidado = (r: ComissaoRow) => r.aluno_nome.startsWith('Pagamento de comissões —');
+  const totais = rows.filter(r => !ehPagamentoConsolidado(r)).reduce((acc, r) => { acc[r.status] += Number(r.valor_comissao); return acc; }, { pendente: 0, reservado: 0, pago: 0 });
 
   return (
     <div className="flex flex-col gap-2">
