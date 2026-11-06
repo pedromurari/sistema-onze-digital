@@ -50,7 +50,7 @@ function useDiretoriaRH(mesSelecionado: string) {
       const [profRes, pagRes, semNotaRes, pendRes, hojeRes, mesRes] = await Promise.all([
         supabase.from('profissionais').select('*').eq('ativo', true).order('nome'),
         supabase.from('profissionais_pagamentos').select('*').gte('data_pagamento', `${mesSelecionado}-01`).lt('data_pagamento', limite),
-        supabase.from('profissionais_pagamentos').select('*').is('nota_fiscal_arquivo_url', null).order('data_pagamento', { ascending: false }).limit(20),
+        supabase.from('profissionais_pagamentos').select('*').is('nota_fiscal_arquivo_url', null).gte('data_pagamento', `${mesSelecionado}-01`).lt('data_pagamento', limite).order('data_pagamento', { ascending: false }),
         supabase.from('presencas_pendentes_revisao').select('*').eq('resolvido', false).order('created_at', { ascending: false }),
         supabase.from('aulas').select('id', { count: 'exact', head: true }).eq('data', hoje),
         supabase.from('aulas').select('id', { count: 'exact', head: true }).eq('status', 'realizada').gte('data', `${mesSelecionado}-01`).lt('data', limite),
@@ -108,7 +108,7 @@ export function DiretoriaRH() {
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <StatTile label="Profissionais ativos" value={carregando ? '—' : profissionais.length} icon={Users} />
           <StatTile label={mesEhAtual ? 'Pago este mês' : 'Pago no mês selecionado'} value={carregando ? '—' : formatReal(totalPagoMes)} icon={BadgeDollarSign} tom="bom" />
-          <StatTile label="Sem nota fiscal" value={carregando ? '—' : semNota.length} hint={!carregando && semNota.length > 0 ? formatReal(valorPendenteNota) : undefined} icon={FileWarning} tom={semNota.length > 0 ? 'atencao' : 'padrao'} />
+          <StatTile label={mesEhAtual ? 'Sem nota fiscal' : 'Sem nota fiscal no mês'} value={carregando ? '—' : semNota.length} hint={!carregando && semNota.length > 0 ? formatReal(valorPendenteNota) : undefined} icon={FileWarning} tom={semNota.length > 0 ? 'atencao' : 'padrao'} />
           <StatTile label="Presença p/ revisar" value={carregando ? '—' : pendencias.length} icon={ClipboardList} tom={pendencias.length > 0 ? 'atencao' : 'padrao'} />
           <StatTile label="Aulas hoje / realizadas no mês" value={carregando ? '—' : `${aulasHoje} / ${aulasRealizadasMes}`} icon={CalendarCheck2} />
         </section>
@@ -155,7 +155,7 @@ export function DiretoriaRH() {
         {semNota.length > 0 && (
           <Card className="border-amber-300/50 shadow-sm">
             <CardContent className="p-4 sm:p-5 space-y-3">
-              <SectionBar title="Pagamentos sem nota fiscal" icon={FileWarning} />
+              <SectionBar title="Pagamentos sem nota fiscal no mês selecionado" icon={FileWarning} />
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead><tr className="border-b text-left text-xs uppercase text-muted-foreground">
