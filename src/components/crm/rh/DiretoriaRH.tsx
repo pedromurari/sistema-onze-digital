@@ -5,6 +5,7 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import type { Database } from '@/integrations/supabase/types';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { StatTile, SectionBar } from '@/components/crm/ui/premium';
 
 type Profissional = Database['public']['Tables']['profissionais']['Row'];
@@ -20,7 +21,18 @@ function mesAtualBrasil() {
   return `${p.find(x => x.type === 'year')?.value}-${p.find(x => x.type === 'month')?.value}`;
 }
 
-function useDiretoriaRH() {
+function proximoMes(mes: string) {
+  const [ano, m] = mes.split('-').map(Number);
+  const data = new Date(Date.UTC(ano, m, 1)); // m já é o mês seguinte em base 0
+  return `${data.getUTCFullYear()}-${String(data.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+// Mês selecionável -- antes só mostrava o mês corrente em diante (sem limite
+// superior), então um pagamento de competência passada (ex: comissão da
+// Ellen paga dia 1º, referente ao mês anterior) nunca aparecia aqui, só na
+// tabela "sem nota fiscal". Pedido real do Pedro (06/11/2026): poder trocar
+// de mês pra ver o histórico.
+function useDiretoriaRH(mesSelecionado: string) {
   const [profissionais, setProfissionais] = useState<Profissional[]>([]);
   const [pagamentosMes, setPagamentosMes] = useState<Pagamento[]>([]);
   const [semNota, setSemNota] = useState<Pagamento[]>([]);
@@ -31,17 +43,17 @@ function useDiretoriaRH() {
 
   useEffect(() => {
     let ativo = true;
-    const mes = mesAtualBrasil();
     const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+    const limite = `${proximoMes(mesSelecionado)}-01`;
     void (async () => {
       setCarregando(true);
       const [profRes, pagRes, semNotaRes, pendRes, hojeRes, mesRes] = await Promise.all([
         supabase.from('profissionais').select('*').eq('ativo', true).order('nome'),
-        supabase.from('profissionais_pagamentos').select('*').gte('data_pagamento', `${mes}-01`),
+        supabase.from('profissionais_pagamentos').select('*').gte('data_pagamento', `${mesSelecionado}-01`).lt('data_pagamento', limite),
         supabase.from('profissionais_pagamentos').select('*').is('nota_fiscal_arquivo_url', null).order('data_pagamento', { ascending: false }).limit(20),
         supabase.from('presencas_pendentes_revisao').select('*').eq('resolvido', false).order('created_at', { ascending: false }),
         supabase.from('aulas').select('id', { count: 'exact', head: true }).eq('data', hoje),
-        supabase.from('aulas').select('id', { count: 'exact', head: true }).eq('status', 'realizada').gte('data', `${mes}-01`),
+        supabase.from('aulas').select('id', { count: 'exact', head: true }).eq('status', 'realizada').gte('data', `${mesSelecionado}-01`).lt('data', limite),
       ]);
       if (!ativo) return;
       setProfissionais(profRes.data ?? []);
@@ -53,7 +65,7 @@ function useDiretoriaRH() {
       setCarregando(false);
     })();
     return () => { ativo = false; };
-  }, []);
+  }, [mesSelecionado]);
 
   return { profissionais, pagamentosMes, semNota, pendencias, aulasHoje, aulasRealizadasMes, carregando };
 }
@@ -68,7 +80,9 @@ const DECISOES = [
 ];
 
 export function DiretoriaRH() {
-  const { profissionais, pagamentosMes, semNota, pendencias, aulasHoje, aulasRealizadasMes, carregando } = useDiretoriaRH();
+  const [mesSelecionado, setMesSelecionado] = useState(mesAtualBrasil());
+  const { profissionais, pagamentosMes, semNota, pendencias, aulasHoje, aulasRealizadasMes, carregando } = useDiretoriaRH(mesSelecionado);
+  const mesEhAtual = mesSelecionado === mesAtualBrasil();
 
   const totalPagoMes = pagamentosMes.reduce((soma, p) => soma + Number(p.valor), 0);
   const valorPendenteNota = semNota.reduce((soma, p) => soma + Number(p.valor), 0);
@@ -93,7 +107,7 @@ export function DiretoriaRH() {
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <StatTile label="Profissionais ativos" value={carregando ? '—' : profissionais.length} icon={Users} />
-          <StatTile label="Pago este mês" value={carregando ? '—' : formatReal(totalPagoMes)} icon={BadgeDollarSign} tom="bom" />
+          <StatTile label={mesEhAtual ? 'Pago este mês' : 'Pago no mês selecionado'} value={carregando ? '—' : formatReal(totalPagoMes)} icon={BadgeDollarSign} tom="bom" />
           <StatTile label="Sem nota fiscal" value={carregando ? '—' : semNota.length} hint={!carregando && semNota.length > 0 ? formatReal(valorPendenteNota) : undefined} icon={FileWarning} tom={semNota.length > 0 ? 'atencao' : 'padrao'} />
           <StatTile label="Presença p/ revisar" value={carregando ? '—' : pendencias.length} icon={ClipboardList} tom={pendencias.length > 0 ? 'atencao' : 'padrao'} />
           <StatTile label="Aulas hoje / realizadas no mês" value={carregando ? '—' : `${aulasHoje} / ${aulasRealizadasMes}`} icon={CalendarCheck2} />
@@ -101,9 +115,20 @@ export function DiretoriaRH() {
 
         <Card className="border-border/70 shadow-sm">
           <CardContent className="p-4 sm:p-5 space-y-3">
-            <SectionBar title="Pago este mês, por profissional" icon={BadgeDollarSign} />
+            <SectionBar
+              title="Pago por profissional"
+              icon={BadgeDollarSign}
+              right={
+                <Input
+                  type="month"
+                  value={mesSelecionado}
+                  onChange={e => e.target.value && setMesSelecionado(e.target.value)}
+                  className="h-8 w-40 text-sm"
+                />
+              }
+            />
             {carregando ? <p className="text-sm text-muted-foreground">Carregando...</p> : profissionais.filter(p => (porProfissional.get(p.id) ?? 0) > 0).length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nenhum pagamento lançado este mês ainda.</p>
+              <p className="text-sm text-muted-foreground">Nenhum pagamento lançado neste mês.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">

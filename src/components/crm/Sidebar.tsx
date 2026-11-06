@@ -49,10 +49,10 @@ const BASE_MENU: MenuItem[] = [
   { key: 'chat_conversas',            label: 'Chat',                 icon: MessageCircle },
   { key: 'aquecimento_chips',         label: 'Aquecimento de Chips', icon: Flame,       adminOnly: true },
   { key: 'trafego_regras',            label: 'Regras de Automação',  icon: Settings },
-  // DP Marketing — Diretor > Post > Social Media > Reels IDM > Gestor de Tráfego (hoje
+  // DP Marketing — Diretoria > Post > Social Media > Reels IDM > Gestor de Tráfego (hoje
   // uma lista plana sob a mesma seção; virar um menu de verdade com submenu aninhado é
   // tarefa à parte, o sidebar hoje só sabe fazer grupo dinâmico tipo lançamento/NPA).
-  { key: 'marketing_diretoria',       label: 'Diretor',              icon: Megaphone },
+  { key: 'marketing_diretoria',       label: 'Diretoria',            icon: Megaphone },
   { key: 'posts',                     label: 'Post',                 icon: Image,       adminOnly: true },
   { key: 'operacoes_calendario_conteudo', label: 'Social Media',     icon: Image },
   { key: 'marketing_aniversariantes',    label: 'Aniversariantes',  icon: Cake, adminOnly: true },
