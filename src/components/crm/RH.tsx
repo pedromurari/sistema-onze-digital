@@ -24,7 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { HistoricoPagamentosDialog } from './rh/HistoricoPagamentos';
 import { PreviaFolha } from './rh/PreviaFolha';
-import { calcularFolhaCompleta, calcularPreviaFolha, type AulaFolha, type PresencaProfessor, type ProfissionalFolhaCompleta } from './rh/folha-preview';
+import { calcularPreviaFolha, type AulaFolha, type PresencaProfessor } from './rh/folha-preview';
 
 type Profissional = Database['public']['Tables']['profissionais']['Row'];
 
@@ -106,122 +106,54 @@ function useIndicadoresRH(profissionais: Profissional[]) {
   return { aPagar, notasPendentes };
 }
 
-interface ContaAPagar {
+interface ContaEmpresaAPagar {
   id: string;
-  profissional_id: string;
-  competencia: string;
-  total_sugerido: number;
-  ja_pago_no_mes: number;
-  saldo: number;
-  requer_revisao: boolean;
-  projecao: boolean;
+  descricao: string;
+  valor: number;
+  categoria: string;
+  fornecedor: string | null;
+  recorrente: boolean;
+  dia_vencimento: number | null;
+  data_competencia: string | null;
 }
 
-// "Contas a pagar" era só um card de planejamento ("ainda não construído"),
-// mas o dado pra isso já existe desde o Fechamento de Folha (20/10/2026):
-// toda competência fechada vira uma linha em folha_fechamentos_itens com
-// total_sugerido já líquido do que tinha sido pago ATÉ o momento do
-// fechamento (ja_pago_no_mes é informativo, não soma de novo). Saldo aqui
-// é esse total_sugerido -- o fechamento não se atualiza sozinho quando um
-// pagamento novo é lançado depois; pra zerar, reabra e feche de novo a
-// competência (FechamentoFolha recalcula com o pagamento já registrado).
-//
-// 06/11/2026 -- achado real do Pedro: no começo do mês, antes de alguém
-// fechar a competência atual, essa lista ficava vazia (nada fechado ainda
-// = nada pra mostrar), mesmo já tendo aula dada e dívida se acumulando.
-// Além das competências fechadas, calcula também a projeção do mês
-// corrente ao vivo (mesma conta do Fechamento de Folha, calcularFolhaCompleta)
-// quando ele ainda não foi fechado -- some daqui sozinha quando alguém
-// fechar a competência de verdade (passa a vir da tabela, não mais da
-// projeção).
-function useContasAPagar() {
-  const [itens, setItens] = useState<ContaAPagar[]>([]);
+const CATEGORIA_LABEL: Record<string, string> = {
+  adm: 'Administrativo', ads: 'Tráfego/Ads', comissao: 'Comissão', contabilidade: 'Contabilidade',
+  custo_fixo: 'Custo fixo', custo_produto: 'Custo de produto', financeiro: 'Financeiro', folha: 'Folha',
+  imposto: 'Imposto', pro_labore: 'Pró-labore', repasse_investidor: 'Repasse investidor', software: 'Software',
+  taxa_gateway: 'Taxa de gateway',
+};
+
+// Contas a pagar da EMPRESA (assinaturas, contabilidade, software -- ex:
+// Claude, Spedy) -- não confundir com pagamento de profissional, que já
+// tem sua própria prévia acima ("Prévia do fechamento de folha"). Pedido
+// explícito do Pedro (06/11/2026): esse card tinha virado pagamento de
+// profissional por engano; reaproveita balanco_itens (Financeiro →
+// Balanço), que já é onde esses gastos são lançados -- data_caixa nulo
+// é o mesmo critério que o Balanço usa pra "ainda não conciliado/pago".
+function useContasAPagarEmpresa() {
+  const [itens, setItens] = useState<ContaEmpresaAPagar[]>([]);
   const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
     let ativo = true;
     void (async () => {
       setCarregando(true);
-      const mes = mesAtualBrasil();
-      const primeiroDia = `${mes}-01`;
-      const proximoMes = new Date(`${primeiroDia}T12:00:00Z`);
-      proximoMes.setUTCMonth(proximoMes.getUTCMonth() + 1);
-      const limite = proximoMes.toISOString().slice(0, 10);
-
-      const [fechadasRes, fechamentoMesRes] = await Promise.all([
-        supabase
-          .from('folha_fechamentos_itens')
-          .select('id, profissional_id, total_sugerido, ja_pago_no_mes, requer_revisao, fechamento:folha_fechamentos(competencia)')
-          .order('id', { ascending: false }),
-        supabase.from('folha_fechamentos').select('id').eq('competencia', mes).is('reaberto_em', null).maybeSingle(),
-      ]);
+      const { data } = await supabase
+        .from('balanco_itens')
+        .select('id, descricao, valor, categoria, fornecedor, recorrente, dia_vencimento, data_competencia')
+        .eq('tipo', 'saida')
+        .is('data_caixa', null)
+        .order('dia_vencimento', { ascending: true, nullsFirst: false });
       if (!ativo) return;
-
-      const fechadas: ContaAPagar[] = ((fechadasRes.data ?? []) as unknown as Array<{
-        id: string; profissional_id: string; total_sugerido: number; ja_pago_no_mes: number;
-        requer_revisao: boolean; fechamento: { competencia: string } | null;
-      }>)
-        .map((l) => ({
-          id: l.id,
-          profissional_id: l.profissional_id,
-          competencia: l.fechamento?.competencia ?? '—',
-          total_sugerido: Number(l.total_sugerido),
-          ja_pago_no_mes: Number(l.ja_pago_no_mes),
-          saldo: Number(l.total_sugerido),
-          requer_revisao: l.requer_revisao,
-          projecao: false,
-        }))
-        .filter((l) => l.saldo > 0.01);
-
-      let projecaoMes: ContaAPagar[] = [];
-      if (!fechamentoMesRes.data) {
-        // Mês corrente ainda não foi fechado -- calcula ao vivo, mesma
-        // lógica do Fechamento de Folha (aulas confirmadas + fixo +
-        // comissão pendente − já pago no mês).
-        const [profRes, aulasRes, pagRes] = await Promise.all([
-          supabase.from('profissionais').select('id, nome, modelo_pagamento, valor_fixo, valor_por_aula, comissoes_vendedor').eq('ativo', true),
-          supabase.from('aulas').select('id, profissional_id, data, status').eq('status', 'realizada').gte('data', primeiroDia).lt('data', limite),
-          supabase.from('profissionais_pagamentos').select('profissional_id, valor').gte('data_pagamento', primeiroDia).lt('data_pagamento', limite),
-        ]);
-        if (!ativo) return;
-        const profissionaisAtivos = (profRes.data ?? []) as ProfissionalFolhaCompleta[];
-        const aulas = (aulasRes.data ?? []) as AulaFolha[];
-        const aulaIds = aulas.map((a) => a.id);
-        const { data: presencasData } = aulaIds.length
-          ? await supabase.from('presencas').select('aula_id, profissional_id, presente').eq('tipo', 'professor').in('aula_id', aulaIds)
-          : { data: [] as PresencaProfessor[] };
-        if (!ativo) return;
-        const presencas = (presencasData ?? []) as PresencaProfessor[];
-
-        const pagoPorProfissional = new Map<string, number>();
-        for (const p of (pagRes.data ?? []) as { profissional_id: string; valor: number }[]) {
-          pagoPorProfissional.set(p.profissional_id, (pagoPorProfissional.get(p.profissional_id) ?? 0) + Number(p.valor));
-        }
-
-        const vendedores = profissionaisAtivos.filter((p) => p.comissoes_vendedor).map((p) => p.comissoes_vendedor as string);
-        const comissoesPorVendedor = new Map<string, number>();
-        if (vendedores.length) {
-          const { data: comData } = await supabase.from('comissoes_vendedores').select('vendedor, valor_comissao, status, data_venda')
-            .in('vendedor', vendedores).in('status', ['pendente', 'reservado']).gte('data_venda', primeiroDia).lt('data_venda', limite);
-          if (!ativo) return;
-          for (const c of comData ?? []) comissoesPorVendedor.set(c.vendedor, (comissoesPorVendedor.get(c.vendedor) ?? 0) + Number(c.valor_comissao));
-        }
-
-        projecaoMes = calcularFolhaCompleta(profissionaisAtivos, aulas, presencas, pagoPorProfissional, comissoesPorVendedor)
-          .filter((l) => l.totalSugerido > 0.01)
-          .map((l) => ({
-            id: `projecao-${l.profissional.id}`,
-            profissional_id: l.profissional.id,
-            competencia: `${mes} (projeção)`,
-            total_sugerido: l.totalSugerido,
-            ja_pago_no_mes: l.jaPagoNoMes,
-            saldo: l.totalSugerido,
-            requer_revisao: l.requerRevisao,
-            projecao: true,
-          }));
-      }
-
-      setItens([...projecaoMes, ...fechadas].sort((a, b) => (a.projecao === b.projecao ? b.competencia.localeCompare(a.competencia) : a.projecao ? -1 : 1)));
+      const linhas = ((data ?? []) as ContaEmpresaAPagar[]).map((l) => ({ ...l, valor: Number(l.valor) }));
+      linhas.sort((a, b) => {
+        if (a.dia_vencimento != null && b.dia_vencimento != null) return a.dia_vencimento - b.dia_vencimento;
+        if (a.dia_vencimento != null) return -1;
+        if (b.dia_vencimento != null) return 1;
+        return (a.data_competencia ?? '').localeCompare(b.data_competencia ?? '');
+      });
+      setItens(linhas);
       setCarregando(false);
     })();
     return () => { ativo = false; };
@@ -417,9 +349,8 @@ export function RH() {
   const [verPagamentos, setVerPagamentos] = useState<Profissional | null>(null);
   const ativos = itens.filter((p) => p.ativo);
   const { aPagar, notasPendentes } = useIndicadoresRH(ativos);
-  const { itens: contasAPagar, carregando: carregandoContas } = useContasAPagar();
-  const nomePorId = new Map(itens.map((p) => [p.id, p.nome]));
-  const totalContasAPagar = contasAPagar.reduce((soma, c) => soma + c.saldo, 0);
+  const { itens: contasAPagar, carregando: carregandoContas } = useContasAPagarEmpresa();
+  const totalContasAPagar = contasAPagar.reduce((soma, c) => soma + c.valor, 0);
 
   async function alternarAtivo(p: Profissional) {
     const { error } = await supabase.from('profissionais').update({ ativo: !p.ativo }).eq('id', p.id);
@@ -528,42 +459,39 @@ export function RH() {
           </CardHeader>
           <CardContent>
             <p className="mb-3 text-xs text-muted-foreground">
-              Mês corrente (ainda não fechado) entra como <strong className="text-foreground">projeção ao vivo</strong>,
-              mesma conta do Fechamento de Folha — recalcula a cada carregamento. Competências já fechadas entram com
-              o saldo travado na data do fechamento.
+              Despesas da empresa lançadas no Financeiro → Balanço e ainda não conciliadas/pagas (assinaturas,
+              contabilidade, software — não é pagamento de profissional, isso fica na prévia acima).
               {!carregandoContas && contasAPagar.length > 0 && (
                 <span className="font-semibold text-foreground"> {totalContasAPagar.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} em aberto no total.</span>
               )}
-              {' '}Pra uma linha fechada sumir daqui, reabra e feche de novo a competência (recalcula com o pagamento já lançado).
             </p>
             {carregandoContas && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
             {!carregandoContas && contasAPagar.length === 0 && (
-              <p className="text-sm text-muted-foreground">Nada em aberto — nem projeção do mês corrente, nem competência fechada com saldo.</p>
+              <p className="text-sm text-muted-foreground">Nenhuma despesa em aberto lançada no Balanço.</p>
             )}
             {contasAPagar.length > 0 && (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b text-left text-xs uppercase text-muted-foreground">
-                      <th className="p-2">Competência</th>
-                      <th className="p-2">Profissional</th>
-                      <th className="p-2 text-right">Pago no período</th>
-                      <th className="p-2 text-right">A pagar</th>
+                      <th className="p-2">Descrição</th>
+                      <th className="p-2">Categoria</th>
+                      <th className="p-2">Fornecedor</th>
+                      <th className="p-2">Vencimento</th>
+                      <th className="p-2 text-right">Valor</th>
                     </tr>
                   </thead>
                   <tbody>
                     {contasAPagar.map((c) => (
                       <tr key={c.id} className="border-b last:border-0">
-                        <td className="p-2 whitespace-nowrap">
-                          {c.competencia}
-                          {c.projecao && <Badge variant="outline" className="ml-2 border-primary/30 bg-primary/10 text-primary text-[10px]">ao vivo</Badge>}
+                        <td className="p-2 font-medium">{c.descricao}</td>
+                        <td className="p-2 text-muted-foreground">{CATEGORIA_LABEL[c.categoria] ?? c.categoria}</td>
+                        <td className="p-2 text-muted-foreground">{c.fornecedor || '—'}</td>
+                        <td className="p-2 text-muted-foreground whitespace-nowrap">
+                          {c.dia_vencimento ? `Dia ${c.dia_vencimento}` : c.data_competencia ? new Date(`${c.data_competencia}T12:00:00`).toLocaleDateString('pt-BR') : '—'}
+                          {c.recorrente && <Badge variant="outline" className="ml-2 text-[10px]">recorrente</Badge>}
                         </td>
-                        <td className="p-2 font-medium">
-                          {nomePorId.get(c.profissional_id) ?? '—'}
-                          {c.requer_revisao && <Badge variant="outline" className="ml-2 border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300 text-[10px]">revisar</Badge>}
-                        </td>
-                        <td className="p-2 text-right tabular-nums text-muted-foreground">{c.ja_pago_no_mes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                        <td className="p-2 text-right tabular-nums font-semibold">{c.saldo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                        <td className="p-2 text-right tabular-nums font-semibold">{c.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                       </tr>
                     ))}
                   </tbody>
