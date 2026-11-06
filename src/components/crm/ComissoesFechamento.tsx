@@ -71,11 +71,18 @@ const STATUS_LABEL: Record<ComissaoRow['status'], string> = {
 
 const fmtBRL = (v: number) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const MESES_LABEL = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+const labelMes = (chave: string) => {
+  const [ano, mes] = chave.split('-');
+  return `${MESES_LABEL[Number(mes) - 1]}/${ano}`;
+};
+
 export function ComissoesFechamento({ viewAsName }: { viewAsName: string | null }) {
   const [rows, setRows] = useState<ComissaoRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [sincronizando, setSincronizando] = useState(false);
   const [salvandoId, setSalvandoId] = useState<string | null>(null);
+  const [mesFiltro, setMesFiltro] = useState<string>('todos');
 
   const carregar = async () => {
     setLoading(true);
@@ -157,7 +164,16 @@ export function ComissoesFechamento({ viewAsName }: { viewAsName: string | null 
   // Respeita o seletor "Ver como" do topo da página (Todos/Helen/Miguel) --
   // sem isso, o admin trocando o filtro em qualquer outra aba não via efeito
   // nenhum aqui e continuava vendo todo mundo junto.
-  const rowsFiltradas = viewAsName ? rows.filter(r => r.vendedor === viewAsName) : rows;
+  const rowsPorVendedor = viewAsName ? rows.filter(r => r.vendedor === viewAsName) : rows;
+
+  // Filtro por mês (pedido do Pedro 06/11/2026: a tabela tava mostrando tudo
+  // que já foi vendido/pago pra vendedora de uma vez só, difícil de achar um
+  // mês específico). mesesDisponiveis sempre inclui o mês atual, mesmo sem
+  // lançamento ainda, pra não começar filtrando pro mês errado.
+  const mesAtualISO = new Date().toISOString().slice(0, 7);
+  const mesesDisponiveis = Array.from(new Set([mesAtualISO, ...rowsPorVendedor.map(r => r.data_venda?.slice(0, 7)).filter((m): m is string => !!m)]))
+    .sort((a, b) => b.localeCompare(a));
+  const rowsFiltradas = mesFiltro === 'todos' ? rowsPorVendedor : rowsPorVendedor.filter(r => r.data_venda?.slice(0, 7) === mesFiltro);
 
   const porVendedor = rowsFiltradas.reduce<Record<string, ComissaoRow[]>>((acc, r) => {
     (acc[r.vendedor] ??= []).push(r);
@@ -182,6 +198,17 @@ export function ComissoesFechamento({ viewAsName }: { viewAsName: string | null 
           da venda, quando aplicável) antes de marcar como paga.
         </p>
         <div className="flex gap-2">
+          <Select value={mesFiltro} onValueChange={setMesFiltro}>
+            <SelectTrigger className="h-8 w-[160px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos" className="text-xs">Todos os meses</SelectItem>
+              {mesesDisponiveis.map(m => (
+                <SelectItem key={m} value={m} className="text-xs">{labelMes(m)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button variant="outline" size="sm" onClick={adicionarManual}>
             + Linha manual
           </Button>
