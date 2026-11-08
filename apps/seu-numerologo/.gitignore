@@ -1,0 +1,7 @@
+.vercel
+/outreach/
+.claude/
+supabase/.temp/
+node_modules/
+test-results/
+/qa-*.png

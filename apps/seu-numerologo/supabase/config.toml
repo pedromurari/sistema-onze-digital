@@ -1,0 +1,7 @@
+project_id = "usqiyekfmwwnvkmkdlej"
+
+[functions.vega-webhook]
+verify_jwt = false
+
+[functions.lead-event]
+verify_jwt = false
