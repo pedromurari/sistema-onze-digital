@@ -134,11 +134,17 @@ serve(async (req) => {
         continue;
       }
 
+      // Campanha com instância(s) fixada(s) (evolution_config_ids) NUNCA cai pra
+      // "todas as ativas" -- nem se a instância fixada estiver desativada ou
+      // desconectada no momento. Incidente 03/11 veio exatamente de um fallback
+      // assim escapando o pin; se a instância pinada sumir, campInstances fica
+      // vazio e o lead erra "sem instância conectada" em vez de vazar pra outro
+      // número. Só campanha SEM nenhum pin (pinnedIds vazio) usa todas as ativas.
       const pinnedIds: string[] = (camp.evolution_config_ids?.length ? camp.evolution_config_ids : camp.evolution_config_id ? [camp.evolution_config_id] : []);
-      const scoped = pinnedIds.length
+      const campInstances = (pinnedIds.length
         ? allInstances.filter((r: { id: string }) => pinnedIds.includes(r.id))
-        : allInstances;
-      const campInstances = (scoped.length ? scoped : allInstances).filter((r: { id: string }) => connectedIds.has(r.id));
+        : allInstances
+      ).filter((r: { id: string }) => connectedIds.has(r.id));
 
       if (!campInstances.length) {
         // Nenhuma instância elegível está com sessão de WhatsApp aberta --
