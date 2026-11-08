@@ -1,0 +1,5 @@
+-- Admin passa direto no check_member_access (a página /mentoria-npa já libera admin,
+-- mas a verificação do Mapa 7 Esferas exigia matrícula e bloqueava o próprio admin).
+-- Corpo completo da função: ver migration aplicada "check_member_access_admin_bypass".
+-- Mudança: logo após resolver o user_id, retorna has_access=true/reason='admin'
+-- se public.profiles.role = 'admin'.

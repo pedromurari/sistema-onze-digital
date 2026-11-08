@@ -1,0 +1,280 @@
+import type { Profile, Product, ModuleWithLessons, CourseProgress } from '@/types'
+
+export const DEMO_PROFILE: Profile = {
+  id: 'demo-admin',
+  full_name: 'Igor Souza',
+  avatar_url: null,
+  bio: 'Administrador da plataforma IDM Tools.',
+  role: 'admin',
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+}
+
+/* Banners principais (estilo iFood) */
+export const DEMO_BANNERS = [
+  {
+    id: 'b1',
+    title: 'Psicanálise Prática',
+    subtitle: 'Do zero ao avançado — 40 aulas',
+    cta: 'Continuar curso',
+    gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    emoji: '🧠',
+    slug: 'psicanalise-pratica',
+    badge: 'Em andamento',
+    badgeColor: '#FFA902',
+  },
+  {
+    id: 'b2',
+    title: 'Semana da Numerologia',
+    subtitle: 'Aula ao vivo — Sáb. 14h',
+    cta: 'Reservar lugar',
+    gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+    emoji: '✨',
+    slug: 'numerologia-despertamente',
+    badge: 'Ao vivo',
+    badgeColor: '#f5576c',
+  },
+  {
+    id: 'b3',
+    title: 'PNL na Prática',
+    subtitle: 'Novo módulo disponível',
+    cta: 'Ver agora',
+    gradient: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+    emoji: '🎯',
+    slug: 'pnl-transformacao',
+    badge: 'Novo',
+    badgeColor: '#00B4D8',
+  },
+  {
+    id: 'b4',
+    title: 'Meditação Guiada',
+    subtitle: '21 dias de transformação',
+    cta: 'Começar agora',
+    gradient: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+    emoji: '🌿',
+    slug: 'meditacao-guiada',
+    badge: 'Gratuito',
+    badgeColor: '#43e97b',
+  },
+]
+
+const PRODUCT_DEFAULTS = {
+  short_description: null,
+  is_featured: false,
+  price: null,
+  original_price: null,
+  currency: 'BRL',
+  payment_type: 'free' as const,
+  cta_label: null,
+  highlights: null,
+  badge_label: null,
+  checkout_url: null,
+}
+
+/* Produtos com acesso (matriculado) */
+export const DEMO_PRODUCTS: Product[] = [
+  {
+    ...PRODUCT_DEFAULTS,
+    id: 'prod-1',
+    slug: 'psicanalise-pratica',
+    title: 'Psicanálise Prática',
+    description: 'Fundamentos e aplicações da psicanálise no dia a dia.',
+    thumbnail_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/Sigmund_Freud%2C_by_Max_Halberstadt_%281921%29.jpg/600px-Sigmund_Freud%2C_by_Max_Halberstadt_%281921%29.jpg',
+    product_type: 'course',
+    is_published: true,
+    sort_order: 0,
+    created_by: 'demo-admin',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    ...PRODUCT_DEFAULTS,
+    id: 'prod-2',
+    slug: 'numerologia-despertamente',
+    title: 'Numerologia — Mapa de Vida',
+    description: 'Desvende os números que guiam sua jornada.',
+    thumbnail_url: 'https://images.unsplash.com/photo-1509228468518-180dd4864904?w=600&q=80',
+    product_type: 'course',
+    is_published: true,
+    sort_order: 1,
+    created_by: 'demo-admin',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    ...PRODUCT_DEFAULTS,
+    id: 'prod-3',
+    slug: 'pnl-transformacao',
+    title: 'PNL — Programação Neurolinguística',
+    description: 'Técnicas para reprogramar seus padrões mentais.',
+    thumbnail_url: 'https://images.unsplash.com/photo-1559757175-5700dde675bc?w=600&q=80',
+    product_type: 'course',
+    is_published: true,
+    sort_order: 2,
+    created_by: 'demo-admin',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    ...PRODUCT_DEFAULTS,
+    id: 'prod-4',
+    slug: 'npa-2-0',
+    title: 'NPA 2.0 — Núcleo de Padrões Ancestrais',
+    short_description: 'Desbloqueie padrões inconscientes herdados e reconecte-se com sua essência mais profunda.',
+    description: 'Uma metodologia exclusiva para identificar e transformar padrões emocionais e comportamentais que vêm de gerações anteriores.',
+    thumbnail_url: 'https://images.unsplash.com/photo-1518241353330-0f7941c2d9b5?w=600&q=80',
+    highlights: ['Metodologia exclusiva NPA', 'Padrões ancestrais e transgeneracionais', 'Liberação de bloqueios profundos'],
+    badge_label: 'Mais vendido',
+    payment_type: 'one_time' as const,
+    price: 497,
+    cta_label: 'Quero desbloquear',
+    is_featured: true,
+    is_published: true,
+    sort_order: 3,
+    product_type: 'course' as const,
+    currency: 'BRL',
+    original_price: null,
+    checkout_url: null,
+    created_by: 'demo-admin',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    ...PRODUCT_DEFAULTS,
+    id: 'prod-5',
+    slug: 'practitioner-pnl',
+    title: 'Practitioner em PNL',
+    short_description: 'Certificação internacional em Programação Neurolinguística para transformar sua comunicação e resultados.',
+    description: 'Domine as ferramentas mais poderosas da PNL e conquiste a certificação reconhecida internacionalmente.',
+    thumbnail_url: 'https://images.unsplash.com/photo-1573497620053-ea5300f94f21?w=600&q=80',
+    highlights: ['Certificação reconhecida internacionalmente', 'Rapport avançado e persuasão', 'Ancoragem e reprogramação de crenças'],
+    badge_label: 'Certificação',
+    payment_type: 'one_time' as const,
+    price: 897,
+    original_price: 1297,
+    cta_label: 'Quero me certificar',
+    is_featured: false,
+    is_published: true,
+    sort_order: 4,
+    product_type: 'course' as const,
+    currency: 'BRL',
+    checkout_url: null,
+    created_by: 'demo-admin',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+]
+
+/* Produtos BLOQUEADOS mantidos para compatibilidade */
+export const DEMO_LOCKED_PRODUCTS = [
+  {
+    id: 'lock-1',
+    slug: 'espiritualidade-avancada',
+    title: 'Espiritualidade Avançada',
+    description: 'Conexão com o sagrado e práticas de expansão de consciência.',
+    thumbnail_url: 'https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=600&q=80',
+    product_type: 'course',
+    category: 'Espiritualidade',
+    lessons: 28,
+  },
+  {
+    id: 'lock-2',
+    slug: 'jornada-interior',
+    title: 'Jornada Interior',
+    description: 'Um mergulho profundo no autoconhecimento com técnicas integradas.',
+    thumbnail_url: 'https://images.unsplash.com/photo-1508672019048-805c876b67e2?w=600&q=80',
+    product_type: 'course',
+    category: 'Autoconhecimento',
+    lessons: 35,
+  },
+  {
+    id: 'lock-3',
+    slug: 'relacionamentos-conscientes',
+    title: 'Relacionamentos Conscientes',
+    description: 'Construa vínculos saudáveis baseados em consciência e respeito.',
+    thumbnail_url: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=400&q=80',
+    product_type: 'course',
+    category: 'Relacionamentos',
+    lessons: 22,
+  },
+  {
+    id: 'lock-4',
+    slug: 'rituais-e-praticas',
+    title: 'Rituais e Práticas Diárias',
+    description: 'Desenvolva uma rotina de crescimento pessoal consistente.',
+    thumbnail_url: 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400&q=80',
+    product_type: 'ebook',
+    category: 'Bem-estar',
+    lessons: 15,
+  },
+]
+
+const yt = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+const ts = new Date().toISOString()
+const mkLesson = (id: string, mid: string, title: string, order: number, free = false) => ({
+  id, module_id: mid, title, description: null, lesson_type: 'video' as const,
+  video_url: yt, video_duration: 1200 + order * 300, content: null, file_url: null,
+  is_free_preview: free, sort_order: order, created_at: ts, updated_at: ts,
+})
+
+export const DEMO_MODULES: ModuleWithLessons[] = [
+  {
+    id: 'mod-1', product_id: 'prod-1', title: 'Módulo 1 — Fundamentos', description: null, sort_order: 0,
+    created_at: ts, updated_at: ts,
+    lessons: [
+      mkLesson('les-1', 'mod-1', 'O que é Psicanálise?', 0, true),
+      mkLesson('les-2', 'mod-1', 'Freud e o Inconsciente', 1),
+      mkLesson('les-3', 'mod-1', 'O Método Psicanalítico', 2),
+    ],
+  },
+  {
+    id: 'mod-2', product_id: 'prod-1', title: 'Módulo 2 — Estruturas Psíquicas', description: null, sort_order: 1,
+    created_at: ts, updated_at: ts,
+    lessons: [
+      mkLesson('les-4', 'mod-2', 'Id, Ego e Superego', 0),
+      mkLesson('les-5', 'mod-2', 'Mecanismos de Defesa', 1),
+    ],
+  },
+  {
+    id: 'mod-4', product_id: 'prod-4', title: 'Módulo 1 — Introdução ao NPA', description: null, sort_order: 0,
+    created_at: ts, updated_at: ts,
+    lessons: [
+      mkLesson('les-n1', 'mod-4', 'O que são Padrões Ancestrais?', 0, true),
+      mkLesson('les-n2', 'mod-4', 'Mapeando sua Árvore Geracional', 1),
+      mkLesson('les-n3', 'mod-4', 'Técnica de Reconhecimento NPA', 2),
+    ],
+  },
+  {
+    id: 'mod-5', product_id: 'prod-4', title: 'Módulo 2 — Liberação Profunda', description: null, sort_order: 1,
+    created_at: ts, updated_at: ts,
+    lessons: [
+      mkLesson('les-n4', 'mod-5', 'Protocolo de Liberação', 0),
+      mkLesson('les-n5', 'mod-5', 'Integração e Cura', 1),
+    ],
+  },
+  {
+    id: 'mod-6', product_id: 'prod-5', title: 'Módulo 1 — Fundamentos da PNL', description: null, sort_order: 0,
+    created_at: ts, updated_at: ts,
+    lessons: [
+      mkLesson('les-p1', 'mod-6', 'História e Pressupostos da PNL', 0, true),
+      mkLesson('les-p2', 'mod-6', 'Rapport e Calibração', 1),
+      mkLesson('les-p3', 'mod-6', 'Sistemas Representacionais', 2),
+    ],
+  },
+  {
+    id: 'mod-7', product_id: 'prod-5', title: 'Módulo 2 — Técnicas Avançadas', description: null, sort_order: 1,
+    created_at: ts, updated_at: ts,
+    lessons: [
+      mkLesson('les-p4', 'mod-7', 'Âncoras e Estado de Recurso', 0),
+      mkLesson('les-p5', 'mod-7', 'Reframing e Metamodelo', 1),
+    ],
+  },
+]
+
+export const DEMO_PROGRESS: CourseProgress[] = [
+  { user_id: 'demo-admin', product_id: 'prod-1', total_lessons: 5,  completed_lessons: 2, percent_complete: 40  },
+  { user_id: 'demo-admin', product_id: 'prod-2', total_lessons: 8,  completed_lessons: 8, percent_complete: 100 },
+  { user_id: 'demo-admin', product_id: 'prod-3', total_lessons: 6,  completed_lessons: 0, percent_complete: 0   },
+  { user_id: 'demo-admin', product_id: 'prod-4', total_lessons: 10, completed_lessons: 3, percent_complete: 35  },
+  { user_id: 'demo-admin', product_id: 'prod-5', total_lessons: 12, completed_lessons: 0, percent_complete: 0   },
+]

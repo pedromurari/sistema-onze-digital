@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light only">
+<title>Vamos redefinir sua senha</title>
+</head>
+<body style="margin:0;padding:0;background-color:#0D1638;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">Clique para criar uma nova senha de acesso à área de membros.&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#0D1638" style="background-color:#0D1638;">
+  <tr>
+    <td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
+        <tr>
+          <td align="center" style="padding:8px 0 24px 0;">
+            <img src="https://www.idmpsi.com.br/despertamente-simbolo-branco.png" width="64" alt="Instituto Despertamente" style="display:block;border:0;height:auto;width:64px;">
+            <div style="font-family:Georgia,'Times New Roman',serif;font-size:13px;letter-spacing:3px;text-transform:uppercase;color:#FFB800;margin-top:14px;">Instituto Despertamente</div>
+          </td>
+        </tr>
+        <tr>
+          <td bgcolor="#F6F0E6" style="background-color:#F6F0E6;border-radius:20px;padding:40px 36px;font-family:Arial,Helvetica,sans-serif;">
+            <div style="font-size:12px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;color:#B8860B;margin:0 0 12px 0;">Recuperação de acesso</div>
+            <h1 style="margin:0 0 20px 0;font-family:Georgia,'Times New Roman',serif;font-size:30px;line-height:36px;color:#0D1638;font-weight:bold;">Vamos redefinir sua senha</h1>
+              <p style="margin:0 0 16px 0;font-size:16px;line-height:26px;color:#3d4457;">Recebemos um pedido para redefinir a senha da sua conta na área de membros do Instituto Despertamente.</p>
+              <p style="margin:0 0 16px 0;font-size:16px;line-height:26px;color:#3d4457;">Clique no botão abaixo para escolher uma nova senha. Por segurança, o link expira em pouco tempo.</p>
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:28px 0 24px 0;">
+              <tr>
+                <td align="center" bgcolor="#FFB800" style="background-color:#FFB800;border-radius:12px;">
+                  <a href="{{ .SiteURL }}/api/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/reset-password" target="_blank" style="display:inline-block;padding:16px 34px;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;color:#0D1638;text-decoration:none;border-radius:12px;">Criar nova senha</a>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:0 0 8px 0;font-size:13px;line-height:20px;color:#6b7280;">Se o botão não funcionar, copie e cole este link no navegador:</p>
+            <p style="margin:0 0 24px 0;font-size:12px;line-height:18px;color:#6b7280;word-break:break-all;"><a href="{{ .SiteURL }}/api/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/reset-password" style="color:#6b7280;">{{ .SiteURL }}/api/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/reset-password</a></p>
+            <div style="border-top:1px solid #e3d9c6;padding-top:18px;font-size:13px;line-height:20px;color:#6b7280;">Não foi você que pediu? Pode ignorar este e-mail com tranquilidade — sua senha atual continua a mesma e nada será alterado.</div>
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:28px 12px 8px 12px;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0 0 6px 0;font-size:13px;line-height:20px;color:#aab1c8;">Precisa de ajuda? Responda este e-mail ou fale com a nossa equipe.</p>
+            <p style="margin:0 0 6px 0;font-size:12px;line-height:18px;color:#7f88a8;">Este e-mail foi enviado para {{ .Email }}.</p>
+            <p style="margin:0;font-size:12px;line-height:18px;color:#7f88a8;">&copy; 2026 Instituto Despertamente &middot; <a href="https://www.idmpsi.com.br" style="color:#FFB800;text-decoration:none;">idmpsi.com.br</a></p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>

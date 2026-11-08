@@ -1,0 +1,1586 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ficha de Assinatura Oficial | NPS — Instituto Despertamente</title>
+  <meta name="description" content="Formulário oficial de assinatura do NPS — Numerologia Pitagórica Sistêmica — do Instituto Despertamente." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── TOKENS ─────────────────────────────────────── */
+    :root {
+      --navy:         #1C2B4A;
+      --navy-dark:    #111C30;
+      --navy-deeper:  #0A1020;
+      --surface:      #FAFAF7;
+      --surface-alt:  #F0EFE9;
+      --text:         #1C1C1A;
+      --text-muted:   #6B6B5F;
+      --gold:         #B8960C;
+      --gold-light:   #D4A817;
+      --gold-pale:    #F5ECC8;
+      --border:       rgba(28,43,74,0.12);
+      --border-gold:  rgba(184,150,12,0.3);
+      --error:        #8B1A1A;
+      --font-heading: 'Poppins', system-ui, sans-serif;
+      --font-body:    'Poppins', system-ui, sans-serif;
+      --ease-expo:    cubic-bezier(0.16, 1, 0.3, 1);
+      --space-1: 4px; --space-2: 8px; --space-3: 12px;
+      --space-4: 16px; --space-5: 20px; --space-6: 24px;
+      --space-8: 32px; --space-10: 40px; --space-12: 48px;
+      --space-16: 64px; --space-24: 96px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--surface);
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 1rem;
+      line-height: 1.6;
+      font-weight: 400;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
+
+    /* ── LOADING ──────────────────────────────────── */
+    #loading-screen {
+      position: fixed; inset: 0; z-index: 200;
+      background: var(--navy-deeper);
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: var(--space-6);
+      transition: opacity 0.6s var(--ease-expo);
+    }
+    #loading-screen.out { opacity: 0; pointer-events: none; }
+
+    .loading-seal {
+      width: 64px; height: 64px;
+      border: 1px solid rgba(184,150,12,0.4);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      animation: rotateSeal 8s linear infinite;
+    }
+    @keyframes rotateSeal {
+      to { transform: rotate(360deg); }
+    }
+    .loading-seal-inner {
+      font-family: var(--font-heading);
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--gold-light);
+      letter-spacing: 0.05em;
+      animation: rotateSeal 8s linear infinite reverse;
+    }
+    .loading-wordmark {
+      font-family: var(--font-heading);
+      font-size: 14px;
+      font-weight: 400;
+      letter-spacing: 0.35em;
+      text-transform: uppercase;
+      color: rgba(245,240,228,0.5);
+    }
+
+    /* ── SUCCESS SCREEN ───────────────────────────── */
+    #success-screen {
+      display: none;
+      position: fixed; inset: 0; z-index: 100;
+      background: var(--navy-deeper);
+      overflow-y: auto;
+    }
+    #success-screen.show { display: block; animation: fadeIn 0.7s var(--ease-expo); }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
+
+    .obrigado-wrap {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: var(--space-12) var(--space-6);
+      text-align: center;
+      position: relative;
+    }
+
+    /* estrelas decorativas */
+    .obrigado-wrap::before {
+      content: '✦';
+      position: absolute; top: 48px; left: 50%;
+      transform: translateX(-50%);
+      font-size: 10px;
+      color: var(--gold);
+      letter-spacing: 24px;
+      opacity: 0.5;
+    }
+
+    .obrigado-seal {
+      width: 88px; height: 88px;
+      border: 1px solid var(--gold);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto var(--space-8);
+      position: relative;
+      animation: glowSeal 3s ease-in-out infinite;
+    }
+    @keyframes glowSeal {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(184,150,12,0); }
+      50%       { box-shadow: 0 0 24px 4px rgba(184,150,12,0.18); }
+    }
+    .obrigado-seal::before {
+      content: '';
+      position: absolute; inset: 6px;
+      border: 1px solid rgba(184,150,12,0.25);
+      border-radius: 50%;
+    }
+    .obrigado-check {
+      font-size: 32px; color: var(--gold); line-height: 1;
+    }
+
+    .obrigado-eyebrow {
+      font-size: 0.6875rem;
+      font-weight: 700;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: var(--space-4);
+    }
+
+    .obrigado-title {
+      font-family: var(--font-heading);
+      font-size: clamp(2rem, 6vw, 3.75rem);
+      font-weight: 700;
+      color: #F5F0E4;
+      line-height: 1.1;
+      margin-bottom: var(--space-3);
+      letter-spacing: -0.02em;
+    }
+
+    .obrigado-instituto {
+      font-family: var(--font-heading);
+      font-size: clamp(1.1rem, 3vw, 1.6rem);
+      font-weight: 400;
+      color: var(--gold-light);
+      margin-bottom: var(--space-8);
+      letter-spacing: 0.02em;
+    }
+
+    .obrigado-rule {
+      width: 48px; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--gold), transparent);
+      margin: 0 auto var(--space-8);
+    }
+
+    .obrigado-card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(184,150,12,0.2);
+      padding: var(--space-6) var(--space-8);
+      max-width: 440px;
+      margin: 0 auto var(--space-8);
+    }
+    .obrigado-card p {
+      font-size: 0.9375rem;
+      color: rgba(245,240,228,0.7);
+      line-height: 1.75;
+    }
+    .obrigado-card strong {
+      color: #F5F0E4;
+      font-weight: 600;
+    }
+
+    .obrigado-wpp {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-3);
+      background: #1A5C2A;
+      color: #fff;
+      padding: var(--space-4) var(--space-8);
+      font-family: var(--font-body);
+      font-size: 0.875rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-decoration: none;
+      transition: background 0.15s;
+      margin-top: var(--space-4);
+    }
+    .obrigado-wpp:hover { background: #144822; }
+
+    .obrigado-footer-note {
+      margin-top: var(--space-10);
+      font-size: 0.75rem;
+      color: rgba(245,240,228,0.2);
+      letter-spacing: 0.08em;
+    }
+
+    /* ── HEADER ───────────────────────────────────── */
+    .site-header {
+      background: var(--navy-deeper);
+      position: relative;
+      overflow: hidden;
+    }
+    .site-header::after {
+      content: '';
+      position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent 0%, var(--gold) 30%, var(--gold-light) 50%, var(--gold) 70%, transparent 100%);
+    }
+
+    /* Deco grid lines */
+    .header-deco {
+      position: absolute; inset: 0; pointer-events: none; overflow: hidden;
+    }
+    .header-deco::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 50%; transform: translateX(-50%);
+      width: 600px; height: 600px;
+      border: 1px solid rgba(184,150,12,0.06);
+      border-radius: 50%;
+      top: -200px;
+    }
+    .header-deco::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 50%; transform: translateX(-50%);
+      width: 400px; height: 400px;
+      border: 1px solid rgba(184,150,12,0.05);
+      border-radius: 50%;
+      top: -120px;
+    }
+
+    .header-inner {
+      position: relative; z-index: 1;
+      max-width: 720px;
+      margin: 0 auto;
+      padding: var(--space-16) var(--space-6) var(--space-12);
+      text-align: center;
+    }
+
+    .header-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-3);
+      margin-bottom: var(--space-8);
+    }
+    .badge-line {
+      width: 32px; height: 1px;
+      background: rgba(184,150,12,0.5);
+    }
+    .badge-text {
+      font-family: var(--font-body);
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold);
+    }
+
+    .header-seal {
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto var(--space-6);
+    }
+    .header-seal-letters {
+      font-family: var(--font-heading);
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      color: var(--gold-light);
+    }
+
+    .header-kicker {
+      font-family: var(--font-body);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: rgba(245,240,228,0.5);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: var(--space-4);
+    }
+
+    .header-title {
+      font-family: var(--font-heading);
+      font-size: clamp(2.2rem, 6vw, 4rem);
+      font-weight: 700;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      color: #F5F0E4;
+      margin-bottom: var(--space-5);
+    }
+    .header-title em {
+      display: block;
+      font-style: normal;
+      font-weight: 700;
+      color: var(--gold-light);
+    }
+
+    .header-meta {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-6);
+      flex-wrap: wrap;
+    }
+    .meta-item {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      font-size: 0.75rem;
+      color: rgba(245,240,228,0.35);
+      letter-spacing: 0.05em;
+    }
+    .meta-dot {
+      width: 3px; height: 3px;
+      background: rgba(184,150,12,0.5);
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ── PROGRESS STEPS ───────────────────────────── */
+    .steps-bar {
+      background: var(--navy);
+      border-bottom: 1px solid rgba(28,43,74,0.3);
+    }
+    .steps-inner {
+      max-width: 720px; margin: 0 auto;
+      padding: var(--space-4) var(--space-6);
+      display: flex; align-items: center; gap: 0;
+    }
+    .step-item {
+      display: flex; align-items: center; gap: var(--space-2);
+      flex: 1;
+    }
+    .step-circle {
+      width: 24px; height: 24px; border-radius: 50%;
+      border: 1px solid rgba(184,150,12,0.3);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.625rem; font-weight: 600;
+      color: rgba(184,150,12,0.5);
+      flex-shrink: 0;
+      transition: all 0.3s;
+    }
+    .step-circle.active {
+      border-color: var(--gold);
+      background: var(--gold);
+      color: var(--navy-deeper);
+    }
+    .step-circle.done {
+      border-color: var(--gold);
+      background: transparent;
+      color: var(--gold);
+    }
+    .step-label {
+      font-size: 0.6875rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(245,240,228,0.3);
+    }
+    .step-label.active { color: rgba(245,240,228,0.7); }
+    .step-connector {
+      flex: 1;
+      height: 1px;
+      background: rgba(184,150,12,0.15);
+      margin: 0 var(--space-3);
+    }
+
+    /* ── PROGRESS BAR ─────────────────────────────── */
+    .progress-track {
+      height: 2px;
+      background: rgba(28,43,74,0.08);
+      position: sticky; top: 0; z-index: 10;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--gold), var(--gold-light));
+      transition: width 0.4s var(--ease-expo);
+      width: 0%;
+    }
+
+    /* ── MAIN FORM ────────────────────────────────── */
+    .form-shell {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 0 var(--space-6) var(--space-24);
+    }
+
+    /* ── SECTION ──────────────────────────────────── */
+    .form-section {
+      padding-top: var(--space-12);
+    }
+
+    .section-header {
+      margin-bottom: var(--space-8);
+    }
+
+    .section-num {
+      font-family: var(--font-heading);
+      font-size: clamp(4.5rem, 12vw, 8rem);
+      font-weight: 700;
+      line-height: 0.85;
+      color: var(--navy);
+      opacity: 0.04;
+      position: absolute;
+      right: 0;
+      top: -16px;
+      pointer-events: none;
+      user-select: none;
+      letter-spacing: -0.04em;
+    }
+
+    .section-eyebrow {
+      font-family: var(--font-body);
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: var(--space-2);
+      display: flex; align-items: center; gap: var(--space-3);
+    }
+    .section-eyebrow::before {
+      content: '';
+      width: 20px; height: 1px;
+      background: var(--gold);
+      opacity: 0.6;
+    }
+
+    .section-title {
+      font-family: var(--font-heading);
+      font-size: clamp(1.3rem, 3vw, 1.75rem);
+      font-weight: 700;
+      line-height: 1.15;
+      color: var(--navy);
+      letter-spacing: -0.02em;
+    }
+
+    .section-rule {
+      height: 1px;
+      background: var(--border);
+      margin-bottom: var(--space-8);
+    }
+
+    /* ── FIELD GRID ───────────────────────────────── */
+    .field-grid {
+      display: grid;
+      gap: var(--space-6);
+    }
+    .field-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+    .field-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+    @media (max-width: 560px) {
+      .field-grid.cols-2,
+      .field-grid.cols-3 { grid-template-columns: 1fr; }
+    }
+
+    /* ── FIELD ────────────────────────────────────── */
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+    .field.span-full { grid-column: 1 / -1; }
+
+    .field-label {
+      font-family: var(--font-body);
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--navy);
+      display: flex; align-items: center; gap: 4px;
+    }
+    .field-required { color: var(--gold); margin-left: 1px; }
+
+    .field-control {
+      position: relative;
+    }
+
+    /* ── DATE PICKER CUSTOM ─────────────────────── */
+    .date-selects {
+      display: grid;
+      grid-template-columns: 1fr 2fr 1fr;
+      gap: var(--space-2);
+    }
+    .date-selects select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%231C2B4A' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      padding-right: 32px;
+      cursor: pointer;
+    }
+    .date-selects select:focus { border-color: var(--navy); }
+
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"],
+    textarea,
+    select {
+      width: 100%;
+      background: #fff;
+      border: 1.5px solid var(--border);
+      border-radius: 0;
+      padding: 11px 14px;
+      font-family: var(--font-body);
+      font-size: 1rem;
+      font-weight: 300;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+
+    input::placeholder, textarea::placeholder { color: #C0BAA8; }
+    textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
+
+    input:focus, textarea:focus, select:focus {
+      border-color: var(--navy);
+      box-shadow: 0 0 0 3px rgba(28,43,74,0.06);
+    }
+
+    input.has-error, textarea.has-error {
+      border-color: var(--error);
+      box-shadow: 0 0 0 3px rgba(139,26,26,0.05);
+    }
+
+    .field-hint {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-style: italic;
+      line-height: 1.4;
+    }
+
+    .field-error-msg {
+      font-size: 0.75rem;
+      color: var(--error);
+      display: none;
+      align-items: center;
+      gap: 4px;
+    }
+    .field-error-msg.show { display: flex; }
+    .field-error-msg::before {
+      content: '—';
+      opacity: 0.5;
+    }
+
+    /* ── PLANOS DE ASSINATURA ─────────────────────── */
+    .venc-grupos {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-4);
+    }
+
+    .venc-grupo {
+      border: 1.5px solid var(--border);
+      background: #fff;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .venc-grupo.has-selection { border-color: var(--navy); }
+
+    .venc-grupo-header {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      padding: var(--space-4) var(--space-5);
+      background: var(--surface-alt);
+      border-bottom: 1px solid var(--border);
+    }
+    .venc-grupo.has-selection .venc-grupo-header {
+      background: var(--navy);
+    }
+    .venc-grupo-icon {
+      font-size: 18px;
+      line-height: 1;
+    }
+    .venc-grupo-title {
+      font-size: 0.875rem;
+      font-weight: 700;
+      color: var(--navy);
+      flex: 1;
+    }
+    .venc-grupo.has-selection .venc-grupo-title { color: #F5F0E4; }
+    .venc-grupo-desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    .venc-grupo.has-selection .venc-grupo-desc { color: rgba(245,240,228,0.5); }
+
+    .venc-grupo-body {
+      padding: var(--space-3) var(--space-5) var(--space-4);
+    }
+
+    /* Sub-opções (planos) */
+    .venc-sub-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: var(--space-2);
+    }
+    @media (max-width: 560px) {
+      .venc-sub-grid { grid-template-columns: 1fr; }
+    }
+
+    .venc-option {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: var(--space-3) var(--space-3);
+      border: 1.5px solid var(--border);
+      background: #fff;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+      user-select: none;
+    }
+    .venc-option:hover { border-color: rgba(28,43,74,0.3); background: #FAFAF7; }
+    .venc-option.selected { border-color: var(--navy); background: rgba(28,43,74,0.04); }
+    .venc-option.selected::after {
+      content: '';
+      position: absolute; left: 0; top: 0; bottom: 0;
+      width: 2px; background: var(--gold);
+    }
+    .venc-option input[type="radio"] {
+      width: 14px; height: 14px;
+      accent-color: var(--navy);
+      cursor: pointer; flex-shrink: 0;
+    }
+    .venc-option-text {
+      font-size: 0.875rem;
+      font-weight: 400;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .venc-option-text .plano-titulo { font-weight: 600; }
+    .venc-option-text .plano-sub { font-size: 0.75rem; color: var(--text-muted); }
+    .venc-option.selected .venc-option-text { font-weight: 600; color: var(--navy); }
+    .venc-option.selected .venc-option-text .plano-sub { color: var(--navy); opacity: 0.7; }
+
+    /* ── BENEFÍCIOS DA ASSINATURA ─────────────────── */
+    .beneficios-box {
+      background: var(--surface-alt);
+      border: 1px solid var(--border-gold);
+      border-left: 3px solid var(--gold);
+      padding: var(--space-5) var(--space-6);
+      margin-top: var(--space-6);
+    }
+    .beneficios-title {
+      font-size: 0.8125rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--navy);
+      margin-bottom: var(--space-3);
+    }
+    .beneficios-list {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+    .beneficios-item {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--space-3);
+      font-size: 0.875rem;
+      color: var(--text);
+      line-height: 1.55;
+    }
+    .beneficios-item strong { color: var(--navy); }
+    .beneficios-dot {
+      width: 6px; height: 6px;
+      background: var(--gold);
+      border-radius: 50%;
+      flex-shrink: 0;
+      margin-top: 7px;
+    }
+    .beneficios-nota {
+      margin-top: var(--space-3);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-style: italic;
+      line-height: 1.5;
+    }
+
+    /* ── DIVIDER STATEMENT ────────────────────────── */
+    .statement-divider {
+      background: var(--navy);
+      margin: var(--space-16) calc(-1 * var(--space-6));
+      padding: var(--space-8) var(--space-6) var(--space-8) calc(var(--space-6) + 16px);
+      display: flex;
+      align-items: center;
+      gap: var(--space-6);
+      position: relative;
+      border-top: 1px solid rgba(184,150,12,0.2);
+      border-bottom: 1px solid rgba(184,150,12,0.2);
+    }
+    .statement-divider::before {
+      content: '';
+      position: absolute; left: 0; top: 0; bottom: 0;
+      width: 4px;
+      background: var(--gold);
+    }
+    .statement-tag {
+      flex-shrink: 0;
+      background: rgba(184,150,12,0.15);
+      border: 1px solid rgba(184,150,12,0.3);
+      padding: 4px 10px;
+      font-family: var(--font-body);
+      font-size: 0.625rem;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--gold-light);
+      white-space: nowrap;
+    }
+    .statement-text {
+      font-family: var(--font-body);
+      font-size: 0.9375rem;
+      font-weight: 400;
+      color: rgba(245,240,228,0.75);
+      line-height: 1.55;
+      max-width: 65ch;
+    }
+    .statement-text strong {
+      font-weight: 700;
+      color: #F5F0E4;
+    }
+
+    /* ── SUBMIT ZONE ──────────────────────────────── */
+    .submit-zone {
+      padding-top: var(--space-12);
+      border-top: 1px solid var(--border);
+      margin-top: var(--space-12);
+    }
+
+    .submit-declaration {
+      background: var(--surface-alt);
+      border-left: 3px solid var(--border-gold);
+      padding: var(--space-4) var(--space-5);
+      margin-bottom: var(--space-8);
+    }
+    .submit-declaration p {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      line-height: 1.65;
+      max-width: 65ch;
+    }
+
+    .btn-submit {
+      width: 100%;
+      padding: 18px var(--space-8);
+      background: var(--navy);
+      color: #F5F0E4;
+      border: none;
+      font-family: var(--font-body);
+      font-size: 0.8125rem;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: background 0.2s, transform 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-3);
+      min-height: 56px;
+    }
+    .btn-submit::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--gold), var(--gold-light), var(--gold), transparent);
+    }
+    .btn-submit:hover { background: var(--navy-dark); transform: translateY(-1px); }
+    .btn-submit:active { transform: translateY(0); }
+    .btn-submit:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
+    .btn-submit .btn-icon { font-size: 16px; opacity: 0.7; }
+    .btn-spinner {
+      display: none;
+      width: 16px; height: 16px;
+      border: 2px solid rgba(245,240,228,0.3);
+      border-top-color: #F5F0E4;
+      border-radius: 50%;
+      animation: spin 0.65s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .btn-submit.loading .btn-text { display: none; }
+    .btn-submit.loading .btn-icon { display: none; }
+    .btn-submit.loading .btn-spinner { display: block; }
+
+    .submit-subtext {
+      margin-top: var(--space-4);
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-2);
+    }
+    .lock-icon { font-size: 10px; opacity: 0.6; }
+
+    .global-error {
+      display: none;
+      margin-top: var(--space-4);
+      padding: var(--space-4) var(--space-5);
+      background: #FFF5F5;
+      border-left: 3px solid var(--error);
+      font-size: 0.875rem;
+      color: var(--error);
+      line-height: 1.5;
+    }
+    .global-error.show { display: block; }
+
+    /* ── FOOTER ───────────────────────────────────── */
+    .site-footer {
+      background: var(--navy-deeper);
+      padding: var(--space-8) var(--space-6);
+      text-align: center;
+    }
+    .footer-logo {
+      font-family: var(--font-heading);
+      font-size: 0.875rem;
+      font-weight: 300;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: rgba(245,240,228,0.25);
+    }
+    .footer-rule {
+      width: 30px; height: 1px;
+      background: rgba(184,150,12,0.25);
+      margin: var(--space-4) auto;
+    }
+    .footer-note {
+      font-size: 0.6875rem;
+      color: rgba(245,240,228,0.18);
+      letter-spacing: 0.06em;
+    }
+
+    /* ── AOS ──────────────────────────────────────── */
+    .aos {
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.65s var(--ease-expo), transform 0.65s var(--ease-expo);
+    }
+    .aos.in { opacity: 1; transform: none; }
+  </style>
+</head>
+<body>
+
+<!-- ── LOADING ── -->
+<div id="loading-screen">
+  <div class="loading-seal">
+    <span class="loading-seal-inner">NPS</span>
+  </div>
+  <div class="loading-wordmark">Carregando</div>
+</div>
+
+<!-- ── SUCCESS / OBRIGADO ── -->
+<div id="success-screen">
+  <div class="obrigado-wrap">
+
+    <div class="obrigado-seal">
+      <span class="obrigado-check">✓</span>
+    </div>
+
+    <p class="obrigado-eyebrow">Assinatura confirmada</p>
+
+    <h2 class="obrigado-title">Obrigado!</h2>
+    <p class="obrigado-instituto">Seja muito bem-vindo(a) ao<br>NPS — Numerologia Pitagórica Sistêmica</p>
+
+    <div class="obrigado-rule"></div>
+
+    <div class="obrigado-card">
+      <p>
+        Sua assinatura foi registrada com sucesso.<br><br>
+        Seu contrato será gerado e enviado <strong>para assinatura eletrônica no seu
+        e-mail</strong>, e você receberá as informações de acesso aos encontros,
+        ao grupo e à ferramenta de geração de mapa pelo WhatsApp.<br><br>
+        Para concluir, finalize o pagamento da sua assinatura no botão abaixo. 🌟
+      </p>
+    </div>
+
+    <a id="obrigado-pagamento-link" class="obrigado-wpp" href="#" target="_blank" rel="noopener">
+      Finalizar pagamento →
+    </a>
+
+    <p style="font-size:0.8125rem;color:rgba(245,240,228,0.4);margin-top:var(--space-2);">
+      Dúvidas? Entre em contato com nossa equipe
+    </p>
+
+    <div class="obrigado-footer-note">Instituto Despertamente · NPS · Todos os direitos reservados</div>
+
+  </div>
+</div>
+
+<!-- ── HEADER ── -->
+<header class="site-header">
+  <div class="header-deco"></div>
+  <div class="header-inner">
+
+    <div class="header-badge">
+      <span class="badge-line"></span>
+      <span class="badge-text">Instituto Despertamente</span>
+      <span class="badge-line"></span>
+    </div>
+
+    <div class="header-seal">
+      <img src="/logo-idm.png" alt="Logo IDM" style="width:80px;height:80px;object-fit:contain;" onerror="this.style.display='none';document.getElementById('header-seal-fallback').style.display='flex';" />
+      <span class="header-seal-letters" id="header-seal-fallback" style="display:none;">NPS</span>
+    </div>
+
+    <p class="header-kicker">Numerologia Pitagórica Sistêmica (NPS)</p>
+
+    <h1 class="header-title">
+      Ficha de<br><em>Assinatura Oficial</em>
+    </h1>
+
+    <div class="header-meta">
+      <span class="meta-item"><span class="meta-dot"></span>Documento oficial</span>
+      <span class="meta-item"><span class="meta-dot"></span>Dados protegidos</span>
+      <span class="meta-item"><span class="meta-dot"></span>Preenchimento obrigatório</span>
+    </div>
+
+  </div>
+</header>
+
+<!-- ── STEP BAR ── -->
+<nav class="steps-bar" aria-label="Etapas do formulário">
+  <div class="steps-inner">
+    <div class="step-item">
+      <div class="step-circle active" id="step-1-circle">1</div>
+      <span class="step-label active" id="step-1-label">Pessoal</span>
+    </div>
+    <div class="step-connector"></div>
+    <div class="step-item">
+      <div class="step-circle" id="step-2-circle">2</div>
+      <span class="step-label" id="step-2-label">Endereço</span>
+    </div>
+    <div class="step-connector"></div>
+    <div class="step-item">
+      <div class="step-circle" id="step-3-circle">3</div>
+      <span class="step-label" id="step-3-label">Plano</span>
+    </div>
+  </div>
+</nav>
+
+<!-- ── PROGRESS ── -->
+<div class="progress-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+  <div class="progress-fill" id="progress-fill"></div>
+</div>
+
+<!-- ── FORM ── -->
+<main>
+  <div class="form-shell">
+    <form id="matricula-form" novalidate>
+
+      <!-- §1 DADOS PESSOAIS -->
+      <section class="form-section aos" id="section-personal">
+        <div class="section-header" style="position:relative;">
+          <div class="section-num" aria-hidden="true">01</div>
+          <p class="section-eyebrow">Seção 01</p>
+          <h2 class="section-title">Dados Pessoais</h2>
+        </div>
+        <div class="section-rule"></div>
+
+        <div class="field-grid cols-2">
+
+          <div class="field span-full">
+            <label class="field-label" for="nome">Nome completo <span class="field-required">*</span></label>
+            <div class="field-control">
+              <input type="text" id="nome" name="nome" placeholder="Conforme documento de identidade" autocomplete="name" />
+            </div>
+            <span class="field-error-msg" id="err-nome">Informe nome e sobrenome.</span>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="email">E-mail <span class="field-required">*</span></label>
+            <div class="field-control">
+              <input type="email" id="email" name="email" placeholder="seu@email.com" autocomplete="email" />
+            </div>
+            <span class="field-error-msg" id="err-email">E-mail inválido.</span>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="telefone">Telefone / WhatsApp <span class="field-required">*</span></label>
+            <div class="field-control">
+              <input type="tel" id="telefone" name="telefone" placeholder="+55 (11) 9 0000-0000" autocomplete="tel" />
+            </div>
+            <span class="field-error-msg" id="err-telefone">Telefone inválido.</span>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="cpf">CPF <span class="field-required">*</span></label>
+            <div class="field-control">
+              <input type="text" id="cpf" name="cpf" placeholder="000.000.000-00" maxlength="14" inputmode="numeric" />
+            </div>
+            <span class="field-error-msg" id="err-cpf">CPF inválido.</span>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Data de nascimento <span class="field-required">*</span></label>
+            <div class="field-control">
+              <div class="date-selects" id="date-nascimento-wrap">
+                <select id="nasc-dia" aria-label="Dia">
+                  <option value="">Dia</option>
+                </select>
+                <select id="nasc-mes" aria-label="Mês">
+                  <option value="">Mês</option>
+                  <option value="01">Janeiro</option><option value="02">Fevereiro</option>
+                  <option value="03">Março</option><option value="04">Abril</option>
+                  <option value="05">Maio</option><option value="06">Junho</option>
+                  <option value="07">Julho</option><option value="08">Agosto</option>
+                  <option value="09">Setembro</option><option value="10">Outubro</option>
+                  <option value="11">Novembro</option><option value="12">Dezembro</option>
+                </select>
+                <select id="nasc-ano" aria-label="Ano">
+                  <option value="">Ano</option>
+                </select>
+              </div>
+              <input type="hidden" id="data_nascimento" name="data_nascimento" />
+            </div>
+            <span class="field-error-msg" id="err-data_nascimento">Informe a data de nascimento.</span>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="rg">RG <span class="field-required">*</span></label>
+            <div class="field-control">
+              <input type="text" id="rg" name="rg" placeholder="Número do RG" maxlength="20" />
+            </div>
+            <span class="field-error-msg" id="err-rg">Informe o RG.</span>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="sexo">Sexo <span class="field-required">*</span></label>
+            <div class="field-control">
+              <select id="sexo" name="sexo">
+                <option value="">Selecione</option>
+                <option value="Masculino">Masculino</option>
+                <option value="Feminino">Feminino</option>
+                <option value="Outro">Outro</option>
+                <option value="Prefiro não informar">Prefiro não informar</option>
+              </select>
+            </div>
+            <span class="field-error-msg" id="err-sexo">Selecione o sexo.</span>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- STATEMENT -->
+      <div class="statement-divider aos">
+        <span class="statement-tag">Seção 02</span>
+        <p class="statement-text">
+          Preencha seu endereço <strong>exatamente como constará</strong> no contrato de assinatura.
+        </p>
+      </div>
+
+      <!-- §2 ENDEREÇO -->
+      <section class="form-section aos" id="section-address">
+        <div class="section-header" style="position:relative;">
+          <div class="section-num" aria-hidden="true">02</div>
+          <p class="section-eyebrow">Seção 02</p>
+          <h2 class="section-title">Endereço</h2>
+        </div>
+        <div class="section-rule"></div>
+
+        <div class="field-grid cols-2">
+
+          <div class="field">
+            <label class="field-label" for="pais">País <span class="field-required">*</span></label>
+            <div class="field-control">
+              <input type="text" id="pais" name="pais" placeholder="Brasil" value="Brasil" />
+            </div>
+            <span class="field-error-msg" id="err-pais">Informe o país.</span>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="cep">CEP <span class="field-required">*</span></label>
+            <div class="field-control">
+              <input type="text" id="cep" name="cep" placeholder="00000-000" maxlength="9" inputmode="numeric" />
+            </div>
+            <span class="field-error-msg" id="err-cep">CEP inválido.</span>
+          </div>
+
+          <div class="field span-full">
+            <label class="field-label" for="endereco">Endereço completo com número <span class="field-required">*</span></label>
+            <div class="field-control">
+              <textarea id="endereco" name="endereco" placeholder="Rua / Avenida, número, complemento, bairro" rows="3"></textarea>
+            </div>
+            <span class="field-error-msg" id="err-endereco">Informe o endereço completo.</span>
+          </div>
+
+          <div class="field span-full">
+            <label class="field-label" for="cidade_estado">Cidade / Estado <span class="field-required">*</span></label>
+            <div class="field-control">
+              <input type="text" id="cidade_estado" name="cidade_estado" placeholder="São Paulo / SP" />
+            </div>
+            <span class="field-error-msg" id="err-cidade_estado">Informe cidade e estado.</span>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- STATEMENT -->
+      <div class="statement-divider aos">
+        <span class="statement-tag">Seção 03</span>
+        <p class="statement-text">
+          Escolha a <strong>duração da sua assinatura</strong> — a parcela mensal é sempre R$100,00, independentemente do plano. Ao final do período, a assinatura <strong>renova automaticamente</strong> pelo mesmo período, salvo pedido de cancelamento.
+        </p>
+      </div>
+
+      <!-- §3 PLANO DE ASSINATURA -->
+      <section class="form-section aos" id="section-plano">
+        <div class="section-header" style="position:relative;">
+          <div class="section-num" aria-hidden="true">03</div>
+          <p class="section-eyebrow">Seção 03</p>
+          <h2 class="section-title">Plano de Assinatura</h2>
+        </div>
+        <div class="section-rule"></div>
+
+        <div class="field">
+          <label class="field-label">Qual plano você deseja assinar? <span class="field-required">*</span></label>
+
+          <div class="venc-grupos" id="venc-grid">
+
+            <div class="venc-grupo" id="grupo-plano">
+              <div class="venc-grupo-header">
+                <span class="venc-grupo-icon">✦</span>
+                <div>
+                  <div class="venc-grupo-title">Planos NPS</div>
+                  <div class="venc-grupo-desc">Parcela fixa de R$100,00/mês em todos os planos</div>
+                </div>
+              </div>
+              <div class="venc-grupo-body">
+                <div class="venc-sub-grid">
+                  <label class="venc-option" id="vopt-6">
+                    <input type="radio" name="plano_meses" value="6" />
+                    <span class="venc-option-text">
+                      <span class="plano-titulo">6 meses</span>
+                      <span class="plano-sub">6x R$100 — total R$600</span>
+                    </span>
+                  </label>
+                  <label class="venc-option" id="vopt-12">
+                    <input type="radio" name="plano_meses" value="12" />
+                    <span class="venc-option-text">
+                      <span class="plano-titulo">12 meses</span>
+                      <span class="plano-sub">12x R$100 — total R$1.200</span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+          </div><!-- /venc-grupos -->
+
+          <span class="field-error-msg" id="err-plano">Selecione um plano de assinatura.</span>
+
+          <div class="beneficios-box">
+            <div class="beneficios-title">O que está incluso enquanto sua assinatura estiver ativa</div>
+            <div class="beneficios-list">
+              <div class="beneficios-item"><div class="beneficios-dot"></div><span><strong>Encontros:</strong> participação nos encontros ao vivo do NPS.</span></div>
+              <div class="beneficios-item"><div class="beneficios-dot"></div><span><strong>Grupo:</strong> acesso ao grupo de acompanhamento e comunidade.</span></div>
+              <div class="beneficios-item"><div class="beneficios-dot"></div><span><strong>Ferramenta de geração de mapa:</strong> acesso à ferramenta exclusiva de geração de mapa, disponível somente para assinantes ativos.</span></div>
+            </div>
+            <p class="beneficios-nota">O acesso à ferramenta de geração de mapa, aos encontros e ao grupo é vinculado à assinatura ativa e é interrompido automaticamente caso a assinatura seja cancelada ou encerrada.</p>
+            <p class="beneficios-nota">Ao final do período escolhido, a assinatura se renova automaticamente pelo mesmo período e pela mesma parcela, salvo solicitação de cancelamento pelo assinante antes do término do plano vigente.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── SUBMIT ── -->
+      <div class="submit-zone aos">
+
+        <div class="submit-declaration">
+          <p>
+            Ao enviar esta ficha, declaro que as informações prestadas são verdadeiras e autorizo o
+            Instituto Despertamente — IDM a utilizá-las para fins de assinatura do NPS e emissão do contrato correspondente.
+            Estou ciente de que, ao final do período escolhido, a assinatura se renova automaticamente pelo mesmo período,
+            salvo solicitação de cancelamento por minha parte antes do término do plano vigente.
+          </p>
+        </div>
+
+        <button type="submit" class="btn-submit" id="btn-submit" aria-label="Confirmar assinatura">
+          <span class="btn-text">Confirmar minha assinatura</span>
+          <span class="btn-icon" aria-hidden="true">→</span>
+          <span class="btn-spinner" aria-hidden="true"></span>
+        </button>
+
+        <p class="submit-subtext">
+          <span class="lock-icon">🔒</span>
+          Seus dados são criptografados e protegidos
+        </p>
+
+        <div class="global-error" id="global-error" role="alert"></div>
+
+      </div>
+
+    </form>
+  </div>
+</main>
+
+<!-- ── FOOTER ── -->
+<footer class="site-footer">
+  <p class="footer-logo">IDM — Instituto Despertamente</p>
+  <div class="footer-rule"></div>
+  <p class="footer-note">Documento oficial de assinatura · Todas as informações são confidenciais</p>
+</footer>
+
+<script>
+/* ── DATE SELECTS INIT ───────────────────────────── */
+(function () {
+  // Preencher dias 1-31
+  const diaEl = document.getElementById('nasc-dia');
+  for (let d = 1; d <= 31; d++) {
+    const o = document.createElement('option');
+    o.value = String(d).padStart(2, '0');
+    o.textContent = String(d).padStart(2, '0');
+    diaEl.appendChild(o);
+  }
+  // Preencher anos (100 anos atrás até hoje)
+  const anoEl = document.getElementById('nasc-ano');
+  const anoAtual = new Date().getFullYear();
+  for (let a = anoAtual - 10; a >= anoAtual - 100; a--) {
+    const o = document.createElement('option');
+    o.value = a;
+    o.textContent = a;
+    anoEl.appendChild(o);
+  }
+
+  function syncHidden() {
+    const d = diaEl.value;
+    const m = document.getElementById('nasc-mes').value;
+    const a = anoEl.value;
+    document.getElementById('data_nascimento').value = (d && m && a) ? `${a}-${m}-${d}` : '';
+    updateSteps && updateSteps();
+  }
+
+  ['nasc-dia','nasc-mes','nasc-ano'].forEach(id => {
+    document.getElementById(id).addEventListener('change', syncHidden);
+  });
+})();
+
+/* ── CONFIGURAÇÃO ────────────────────────────────── */
+const EDGE_GERAR_CONTRATO = 'https://usqiyekfmwwnvkmkdlej.supabase.co/functions/v1/gerar-contrato-nps';
+
+const LINKS_PAGAMENTO = {
+  6:  'https://www.asaas.com/c/y61ofveckamv4ziz',
+  12: 'https://www.asaas.com/c/bt6r12juahcvqhpa',
+};
+
+/* ── CONFIG SUPABASE ─────────────────────────────── */
+const SUPABASE_URL = 'https://usqiyekfmwwnvkmkdlej.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzcWl5ZWtmbXd3bnZrbWtkbGVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1NTM5MTIsImV4cCI6MjA5MDEyOTkxMn0.HImguQINgMUvuetgIfDL3sr7KwhSWGoXvaNMKldxYmQ';
+
+const SB_HEADERS = {
+  'apikey': SUPABASE_KEY,
+  'Authorization': `Bearer ${SUPABASE_KEY}`,
+  'Content-Type': 'application/json',
+  'Prefer': 'return=representation'
+};
+
+async function sb(path, opts = {}) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    headers: { ...SB_HEADERS, ...(opts.headers || {}) },
+    ...opts
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(e.message || e.details || `Erro HTTP ${res.status}`);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+/* ── INIT ────────────────────────────────────────── */
+function init() {
+  const loadEl = document.getElementById('loading-screen');
+  setTimeout(() => {
+    loadEl.classList.add('out');
+    setTimeout(() => loadEl.style.display = 'none', 600);
+  }, 700);
+}
+
+init();
+
+/* ── AOS ─────────────────────────────────────────── */
+const obsAOS = new IntersectionObserver(
+  entries => entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); obsAOS.unobserve(e.target); } }),
+  { threshold: 0.08, rootMargin: '0px 0px -30px 0px' }
+);
+document.querySelectorAll('.aos').forEach(el => obsAOS.observe(el));
+
+/* ── MASKS ───────────────────────────────────────── */
+document.getElementById('rg').addEventListener('input', function () {
+  this.value = this.value.replace(/[^0-9A-Za-z.\-\/]/g, '').slice(0, 20);
+});
+
+document.getElementById('cpf').addEventListener('input', function () {
+  let v = this.value.replace(/\D/g, '').slice(0, 11);
+  if (v.length > 9)      v = v.replace(/(\d{3})(\d{3})(\d{3})(\d{0,2})/, '$1.$2.$3-$4');
+  else if (v.length > 6) v = v.replace(/(\d{3})(\d{3})(\d{0,3})/, '$1.$2.$3');
+  else if (v.length > 3) v = v.replace(/(\d{3})(\d{0,3})/, '$1.$2');
+  this.value = v;
+});
+
+document.getElementById('cep').addEventListener('input', function () {
+  let v = this.value.replace(/\D/g, '').slice(0, 8);
+  if (v.length > 5) v = v.replace(/(\d{5})(\d{0,3})/, '$1-$2');
+  this.value = v;
+});
+
+/* ── RADIO PLANO ──────────────────────────────────── */
+document.querySelectorAll('input[name="plano_meses"]').forEach(radio => {
+  radio.addEventListener('change', () => {
+    document.querySelectorAll('.venc-option').forEach(o => o.classList.remove('selected'));
+    document.querySelectorAll('.venc-grupo').forEach(g => g.classList.remove('has-selection'));
+
+    const optEl = radio.closest('.venc-option');
+    if (optEl) optEl.classList.add('selected');
+
+    const grupoEl = radio.closest('.venc-grupo');
+    if (grupoEl) grupoEl.classList.add('has-selection');
+
+    updateSteps();
+  });
+});
+
+/* ── STEP INDICATOR ──────────────────────────────── */
+const STEP_FIELDS = [
+  ['nome', 'email', 'telefone', 'cpf', 'data_nascimento'],  // step 1
+  ['pais', 'cep', 'endereco', 'cidade_estado'],              // step 2
+  []                                                          // step 3 = plano radio
+];
+
+function updateSteps() {
+  const s1Done = STEP_FIELDS[0].every(id => document.getElementById(id)?.value?.trim());
+  const s2Done = STEP_FIELDS[1].every(id => document.getElementById(id)?.value?.trim());
+  const s3Done = !!document.querySelector('input[name="plano_meses"]:checked');
+
+  const mark = (n, done, active) => {
+    const c = document.getElementById(`step-${n}-circle`);
+    const l = document.getElementById(`step-${n}-label`);
+    c.classList.toggle('done', done && !active);
+    c.classList.toggle('active', active);
+    c.textContent = done && !active ? '✓' : n;
+    l.classList.toggle('active', active || done);
+  };
+
+  mark(1, s1Done, !s1Done);
+  mark(2, s2Done, s1Done && !s2Done);
+  mark(3, s3Done, s1Done && s2Done && !s3Done);
+
+  // progress
+  let filled = 0;
+  const all = ['nome','email','telefone','cpf','data_nascimento','pais','cep','endereco','cidade_estado'];
+  all.forEach(id => { if (document.getElementById(id)?.value?.trim()) filled++; });
+  if (s3Done) filled++;
+  const pct = Math.round((filled / (all.length + 1)) * 100);
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.querySelector('.progress-track').setAttribute('aria-valuenow', pct);
+}
+
+document.querySelectorAll('input, textarea').forEach(el => {
+  el.addEventListener('input', updateSteps);
+  el.addEventListener('change', updateSteps);
+});
+
+/* ── VALIDATION ──────────────────────────────────── */
+function validarCPF(cpf) {
+  const c = cpf.replace(/\D/g, '');
+  if (c.length !== 11 || /^(\d)\1+$/.test(c)) return false;
+  let s = 0;
+  for (let i = 0; i < 9; i++) s += +c[i] * (10 - i);
+  let r = (s * 10) % 11; if (r >= 10) r = 0;
+  if (r !== +c[9]) return false;
+  s = 0;
+  for (let i = 0; i < 10; i++) s += +c[i] * (11 - i);
+  r = (s * 10) % 11; if (r >= 10) r = 0;
+  return r === +c[10];
+}
+
+function clearErrors() {
+  document.querySelectorAll('.field-error-msg.show').forEach(e => e.classList.remove('show'));
+  document.querySelectorAll('.has-error').forEach(e => e.classList.remove('has-error'));
+}
+
+function fieldError(errId, inputId) {
+  document.getElementById(errId)?.classList.add('show');
+  const el = document.getElementById(inputId);
+  if (el) el.classList.add('has-error');
+}
+
+function validate(d) {
+  let ok = true;
+  if (!d.nome || d.nome.trim().split(/\s+/).length < 2) { fieldError('err-nome','nome'); ok = false; }
+  if (!d.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)) { fieldError('err-email','email'); ok = false; }
+  if (!d.telefone || d.telefone.replace(/\D/g,'').length < 10) { fieldError('err-telefone','telefone'); ok = false; }
+  if (!validarCPF(d.cpf)) { fieldError('err-cpf','cpf'); ok = false; }
+  if (!d.data_nascimento) { fieldError('err-data_nascimento','data_nascimento'); ok = false; }
+  if (!d.rg || d.rg.trim().length < 4) { fieldError('err-rg','rg'); ok = false; }
+  if (!d.sexo) { fieldError('err-sexo','sexo'); ok = false; }
+  if (!d.pais) { fieldError('err-pais','pais'); ok = false; }
+  if (!d.cep || d.cep.replace(/\D/g,'').length < 8) { fieldError('err-cep','cep'); ok = false; }
+  if (!d.endereco) { fieldError('err-endereco','endereco'); ok = false; }
+  if (!d.cidade_estado) { fieldError('err-cidade_estado','cidade_estado'); ok = false; }
+  if (!d.plano_meses) { fieldError('err-plano','venc-grid'); ok = false; }
+  return ok;
+}
+
+/* ── SUBMIT ──────────────────────────────────────── */
+document.getElementById('matricula-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearErrors();
+
+  const radioPlano = document.querySelector('input[name="plano_meses"]:checked');
+  const planoVal = radioPlano ? radioPlano.value : '';
+
+  const data = {
+    nome:            document.getElementById('nome').value.trim(),
+    email:           document.getElementById('email').value.trim().toLowerCase(),
+    telefone:        document.getElementById('telefone').value.trim(),
+    cpf:             document.getElementById('cpf').value.trim(),
+    rg:              document.getElementById('rg').value.trim(),
+    sexo:            document.getElementById('sexo').value,
+    data_nascimento: (() => { const d=document.getElementById('nasc-dia').value, m=document.getElementById('nasc-mes').value, a=document.getElementById('nasc-ano').value; return (d&&m&&a)?`${a}-${m}-${d}`:''; })(),
+    pais:            document.getElementById('pais').value.trim(),
+    cep:             document.getElementById('cep').value.trim(),
+    endereco:        document.getElementById('endereco').value.trim(),
+    cidade_estado:   document.getElementById('cidade_estado').value.trim(),
+    plano_meses:     planoVal,
+  };
+
+  if (!validate(data)) {
+    const firstErr = document.querySelector('.field-error-msg.show');
+    if (firstErr) firstErr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+
+  const btn = document.getElementById('btn-submit');
+  const gErr = document.getElementById('global-error');
+  btn.classList.add('loading');
+  btn.disabled = true;
+  gErr.classList.remove('show');
+
+  try {
+    const phone9 = data.telefone.replace(/\D/g, '').slice(-9);
+    const planoMesesNum = parseInt(data.plano_meses, 10);
+
+    // 1. Buscar lead existente
+    const [byEmail, byPhone] = await Promise.all([
+      sb(`leads?email=eq.${encodeURIComponent(data.email)}&select=id`),
+      sb(`leads?whatsapp=ilike.*${phone9}*&select=id`)
+    ]);
+
+    const existing = [...(byEmail || []), ...(byPhone || [])];
+    const lead = existing[0] || null;
+
+    const leadPayload = {
+      nome:             data.nome,
+      email:            data.email,
+      whatsapp:         data.telefone,
+      telefone:         data.telefone,
+      status:           'Matriculado',
+      origem:           'nps',
+      produto:          'nps',
+      ultima_atividade: new Date().toISOString(),
+    };
+
+    let leadId;
+    if (lead) {
+      await sb(`leads?id=eq.${lead.id}`, { method: 'PATCH', body: JSON.stringify(leadPayload) });
+      leadId = lead.id;
+    } else {
+      const newLead = await sb('leads', { method: 'POST', body: JSON.stringify({ ...leadPayload, criado_em: new Date().toISOString() }) });
+      leadId = newLead?.[0]?.id;
+    }
+
+    // 2. Criar/atualizar aluno (assinante)
+    const alunoPayload = {
+      nome:                    data.nome,
+      email:                   data.email,
+      whatsapp:                data.telefone,
+      cpf:                     data.cpf,
+      rg:                      data.rg,
+      sexo:                    data.sexo,
+      data_nascimento:         data.data_nascimento,
+      pais:                    data.pais,
+      cep:                     data.cep,
+      endereco:                data.endereco,
+      cidade_estado:           data.cidade_estado,
+      dia_vencimento_contrato: `${planoMesesNum} meses`,
+      status:                  'ativo',
+      origem_lead:             'nps',
+      produto:                 'nps',
+      tipo_pagamento:          'assinatura',
+      valor_mensalidade:       100,
+      total_mensalidades:      planoMesesNum,
+      forms_respondido:        true,
+      forms_respondido_em:     new Date().toISOString(),
+      data_matricula:          new Date().toISOString().split('T')[0],
+    };
+
+    const existingAluno = await sb(`alunos?email=eq.${encodeURIComponent(data.email)}&select=id`);
+    if (existingAluno?.length > 0) {
+      await sb(`alunos?id=eq.${existingAluno[0].id}`, { method: 'PATCH', body: JSON.stringify(alunoPayload) });
+    } else {
+      await sb('alunos', { method: 'POST', body: JSON.stringify(alunoPayload) });
+    }
+
+    // Registro ok → tela de sucesso
+    showSuccess(planoMesesNum);
+
+    // Gerar e enviar contrato via Autentique (em background, não bloqueia o fluxo)
+    fetch(EDGE_GERAR_CONTRATO, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nome:              data.nome,
+        email:             data.email,
+        whatsapp:          data.telefone,
+        telefone:          data.telefone,
+        cpf:               data.cpf,
+        rg:                data.rg,
+        sexo:              data.sexo,
+        data_nascimento:   data.data_nascimento,
+        endereco:          data.endereco,
+        cep:               data.cep,
+        cidade_estado:     data.cidade_estado,
+        pais:              data.pais,
+        plano_meses:       planoMesesNum,
+        valor_mensalidade: 100,
+      }),
+    }).catch(e => console.warn('Contrato Autentique (background):', e.message));
+
+  } catch (err) {
+    console.error(err);
+    gErr.textContent = `Ocorreu um erro ao registrar sua assinatura. Por favor, tente novamente. (${err.message})`;
+    gErr.classList.add('show');
+    btn.classList.remove('loading');
+    btn.disabled = false;
+  }
+});
+
+/* ── TELA DE SUCESSO FINAL ───────────────────────── */
+function showSuccess(planoMeses) {
+  const link = LINKS_PAGAMENTO[planoMeses] || LINKS_PAGAMENTO[6];
+  document.getElementById('obrigado-pagamento-link').href = link;
+  document.getElementById('success-screen').classList.add('show');
+  document.body.style.overflow = 'hidden';
+  window.scrollTo(0, 0);
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IDM Tools — Índice do Projeto</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0a0a0a;
+      color: #f0f0f0;
+      min-height: 100vh;
+      padding: 40px 24px;
+    }
+
+    .container { max-width: 900px; margin: 0 auto; }
+
+    /* HEADER */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 48px;
+    }
+
+    .logo {
+      width: 52px; height: 52px;
+      background: #FFA902;
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px;
+      box-shadow: 0 0 24px rgba(255,169,2,0.3);
+      flex-shrink: 0;
+    }
+
+    .header-text h1 { font-size: 22px; font-weight: 700; color: #fff; }
+    .header-text p { font-size: 13px; color: #888; margin-top: 2px; }
+
+    .badge {
+      display: inline-block;
+      background: rgba(255,169,2,0.15);
+      color: #FFA902;
+      border: 1px solid rgba(255,169,2,0.3);
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      letter-spacing: 0.05em;
+      margin-left: 10px;
+    }
+
+    /* STATUS BAR */
+    .status-bar {
+      background: #111;
+      border: 1px solid #1a1a1a;
+      border-radius: 12px;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 36px;
+    }
+
+    .status-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #888; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .dot.green { background: #22c55e; box-shadow: 0 0 8px rgba(34,197,94,0.5); }
+    .dot.yellow { background: #FFA902; }
+
+    /* GRID DE SEÇÕES */
+    .sections { display: grid; gap: 24px; }
+
+    .section {
+      background: #111;
+      border: 1px solid #1a1a1a;
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    .section-header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 14px 18px;
+      border-bottom: 1px solid #1a1a1a;
+      background: #0d0d0d;
+    }
+
+    .section-icon {
+      width: 28px; height: 28px; border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; flex-shrink: 0;
+    }
+
+    .section-title { font-size: 13px; font-weight: 600; color: #fff; }
+    .section-desc { font-size: 11px; color: #555; margin-top: 1px; }
+
+    .links { padding: 6px 0; }
+
+    .link-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 18px;
+      text-decoration: none;
+      transition: background 0.15s;
+      border-left: 2px solid transparent;
+    }
+
+    .link-item:hover {
+      background: rgba(255,255,255,0.03);
+      border-left-color: #FFA902;
+    }
+
+    .link-icon { font-size: 14px; width: 20px; text-align: center; flex-shrink: 0; }
+
+    .link-info { flex: 1; min-width: 0; }
+    .link-title { font-size: 13px; color: #e0e0e0; font-weight: 500; }
+    .link-path { font-size: 11px; color: #444; margin-top: 1px; font-family: monospace; }
+
+    .link-tag {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+
+    .tag-auth { background: rgba(59,130,246,0.15); color: #60a5fa; }
+    .tag-member { background: rgba(255,169,2,0.12); color: #FFA902; }
+    .tag-admin { background: rgba(168,85,247,0.15); color: #c084fc; }
+    .tag-api { background: rgba(34,197,94,0.12); color: #4ade80; }
+    .tag-sql { background: rgba(239,68,68,0.12); color: #f87171; }
+
+    /* STACK */
+    .stack-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 8px;
+      padding: 14px 18px;
+    }
+
+    .stack-item {
+      background: #0a0a0a;
+      border: 1px solid #1a1a1a;
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+
+    .stack-name { font-size: 12px; font-weight: 600; color: #e0e0e0; }
+    .stack-version { font-size: 10px; color: #444; margin-top: 2px; font-family: monospace; }
+
+    /* SETUP */
+    .setup { padding: 18px; }
+    .step {
+      display: flex; gap: 12px;
+      margin-bottom: 16px;
+    }
+    .step:last-child { margin-bottom: 0; }
+    .step-num {
+      width: 24px; height: 24px; border-radius: 50%;
+      background: rgba(255,169,2,0.15);
+      color: #FFA902;
+      font-size: 11px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; margin-top: 1px;
+    }
+    .step-content h4 { font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 4px; }
+    .step-content p { font-size: 12px; color: #777; line-height: 1.5; }
+    .step-content code {
+      background: #1a1a1a;
+      color: #FFA902;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 11px;
+    }
+
+    .divider { height: 1px; background: #1a1a1a; margin: 6px 18px; }
+
+    /* FOOTER */
+    .footer { text-align: center; margin-top: 40px; color: #333; font-size: 12px; }
+
+    a { color: inherit; }
+
+    @media (max-width: 600px) {
+      .status-bar { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- HEADER -->
+    <div class="header">
+      <div class="logo">✦</div>
+      <div class="header-text">
+        <h1>Instituto Despertamente <span class="badge">IDM TOOLS</span></h1>
+        <p>Área de Membros — Next.js 16 + Supabase · Mapa do projeto</p>
+      </div>
+    </div>
+
+    <!-- STATUS -->
+    <div class="status-bar">
+      <div class="status-item">
+        <div class="dot green"></div>
+        Servidor: <strong style="color:#fff">http://localhost:3000</strong>
+      </div>
+      <div class="status-item">
+        <div class="dot yellow"></div>
+        Supabase: configure o <code style="background:#1a1a1a;padding:2px 6px;border-radius:4px;font-size:11px;color:#FFA902">.env.local</code> para ativar
+      </div>
+      <div class="status-item">
+        <span style="color:#22c55e; font-weight:600;">✓ 0 erros TypeScript</span>
+      </div>
+    </div>
+
+    <div class="sections">
+
+      <!-- ROTAS PÚBLICAS -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-icon" style="background:rgba(59,130,246,0.15);">🔐</div>
+          <div>
+            <div class="section-title">Autenticação</div>
+            <div class="section-desc">Páginas públicas — sem necessidade de login</div>
+          </div>
+        </div>
+        <div class="links">
+          <a class="link-item" href="http://localhost:3000/login" target="_blank">
+            <span class="link-icon">🔑</span>
+            <div class="link-info">
+              <div class="link-title">Login</div>
+              <div class="link-path">/login</div>
+            </div>
+            <span class="link-tag tag-auth">AUTH</span>
+          </a>
+          <div class="divider"></div>
+          <a class="link-item" href="http://localhost:3000/register" target="_blank">
+            <span class="link-icon">📝</span>
+            <div class="link-info">
+              <div class="link-title">Criar conta</div>
+              <div class="link-path">/register</div>
+            </div>
+            <span class="link-tag tag-auth">AUTH</span>
+          </a>
+          <div class="divider"></div>
+          <a class="link-item" href="http://localhost:3000/forgot-password" target="_blank">
+            <span class="link-icon">📩</span>
+            <div class="link-info">
+              <div class="link-title">Esqueci a senha</div>
+              <div class="link-path">/forgot-password</div>
+            </div>
+            <span class="link-tag tag-auth">AUTH</span>
+          </a>
+          <div class="divider"></div>
+          <a class="link-item" href="http://localhost:3000/reset-password" target="_blank">
+            <span class="link-icon">🔄</span>
+            <div class="link-info">
+              <div class="link-title">Redefinir senha</div>
+              <div class="link-path">/reset-password</div>
+            </div>
+            <span class="link-tag tag-auth">AUTH</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- ÁREA DO ALUNO -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-icon" style="background:rgba(255,169,2,0.15);">🎓</div>
+          <div>
+            <div class="section-title">Área do Aluno</div>
+            <div class="section-desc">Requer login — sidebar IDM dourada</div>
+          </div>
+        </div>
+        <div class="links">
+          <a class="link-item" href="http://localhost:3000/dashboard" target="_blank">
+            <span class="link-icon">🏠</span>
+            <div class="link-info">
+              <div class="link-title">Dashboard</div>
+              <div class="link-path">/dashboard</div>
+            </div>
+            <span class="link-tag tag-member">ALUNO</span>
+          </a>
+          <div class="divider"></div>
+          <a class="link-item" href="http://localhost:3000/cursos" target="_blank">
+            <span class="link-icon">📚</span>
+            <div class="link-info">
+              <div class="link-title">Meus Cursos</div>
+              <div class="link-path">/cursos</div>
+            </div>
+            <span class="link-tag tag-member">ALUNO</span>
+          </a>
+          <div class="divider"></div>
+          <a class="link-item" href="http://localhost:3000/cursos/[slug]" target="_blank">
+            <span class="link-icon">🎯</span>
+            <div class="link-info">
+              <div class="link-title">Detalhe do Curso</div>
+              <div class="link-path">/cursos/[slug]</div>
+            </div>
+            <span class="link-tag tag-member">ALUNO</span>
+          </a>
+          <div class="divider"></div>
+          <a class="link-item" href="http://localhost:3000/cursos/[slug]/aulas/[id]" target="_blank">
+            <span class="link-icon">▶️</span>
+            <div class="link-info">
+              <div class="link-title">Player de Aula (YouTube)</div>
+              <div class="link-path">/cursos/[slug]/aulas/[lessonId]</div>
+            </div>
+            <span class="link-tag tag-member">ALUNO</span>
+          </a>
+          <div class="divider"></div>
+          <a class="link-item" href="http://localhost:3000/perfil" target="_blank">
+            <span class="link-icon">👤</span>
+            <div class="link-info">
+              <div class="link-title">Perfil</div>
+              <div class="link-path">/perfil</div>
+            </div>
+            <span class="link-tag tag-member">ALUNO</span>
+          </a>
+          <div class="divider"></div>
+          <a class="link-item" href="http://localhost:3000/certificados" target="_blank">
+            <span class="link-icon">🏆</span>
+            <div class="link-info">
+              <div class="link-title">Certificados</div>
+              <div class="link-path">/certificados</div>
+            </div>
+            <span class="link-tag tag-member">ALUNO</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- ADMIN -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-icon" style="background:rgba(168,85,247,0.15);">⚙️</div>
+          <div>
+            <div class="section-title">Painel Admin</div>
+            <div class="section-desc">Requer role = 'admin' no banco</div>
+          </div>
+        </div>
+        <div class="links">
+          <a class="link-item" href="http://localhost:3000/admin" target="_blank">
+            <span class="link-icon">📊</span>
+            <div class="link-info">
+              <div class="link-title">Dashboard Admin</div>
+              <div class="link-path">/admin</div>
+            </div>
+            <span class="link-tag tag-admin">ADMIN</span>
+          </a>
+          <div class="divider"></div>
+          <a class="link-item" href="http://localhost:3000/admin/produtos" target="_blank">
+            <span class="link-icon">📦</span>
+            <div class="link-info">
+              <div class="link-title">Gerenciar Produtos</div>
+              <div class="link-path">/admin/produtos · a construir na Fase 3</div>
+            </div>
+            <span class="link-tag tag-admin">ADMIN</span>
+          </a>
+          <div class="divider"></div>
+          <a class="link-item" href="http://localhost:3000/admin/alunos" target="_blank">
+            <span class="link-icon">👥</span>
+            <div class="link-info">
+              <div class="link-title">Gerenciar Alunos</div>
+              <div class="link-path">/admin/alunos · a construir na Fase 3</div>
+            </div>
+            <span class="link-tag tag-admin">ADMIN</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- BANCO DE DADOS -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-icon" style="background:rgba(239,68,68,0.15);">🗄️</div>
+          <div>
+            <div class="section-title">Migrations SQL</div>
+            <div class="section-desc">Rodar no SQL Editor do Supabase (em ordem)</div>
+          </div>
+        </div>
+        <div class="links">
+          <a class="link-item" href="supabase/migrations/0001_schema.sql" target="_blank">
+            <span class="link-icon">①</span>
+            <div class="link-info">
+              <div class="link-title">Schema Principal</div>
+              <div class="link-path">profiles, products, modules, lessons, enrollments, progress, view course_progress</div>
+            </div>
+            <span class="link-tag tag-sql">SQL</span>
+          </a>
+          <div class="divider"></div>
+          <a class="link-item" href="supabase/migrations/0002_rls.sql" target="_blank">
+            <span class="link-icon">②</span>
+            <div class="link-info">
+              <div class="link-title">Row Level Security</div>
+              <div class="link-path">Políticas de acesso por role e matrícula</div>
+            </div>
+            <span class="link-tag tag-sql">SQL</span>
+          </a>
+          <div class="divider"></div>
+          <a class="link-item" href="supabase/migrations/0003_storage.sql" target="_blank">
+            <span class="link-icon">③</span>
+            <div class="link-info">
+              <div class="link-title">Storage Buckets</div>
+              <div class="link-path">avatars (público), course-thumbnails (público), course-materials (privado)</div>
+            </div>
+            <span class="link-tag tag-sql">SQL</span>
+          </a>
+          <div class="divider"></div>
+          <a class="link-item" href="supabase/migrations/0004_triggers.sql" target="_blank">
+            <span class="link-icon">④</span>
+            <div class="link-info">
+              <div class="link-title">Triggers</div>
+              <div class="link-path">Auto-criar profile no cadastro, auto-updated_at</div>
+            </div>
+            <span class="link-tag tag-sql">SQL</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- STACK -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-icon" style="background:rgba(34,197,94,0.15);">🛠</div>
+          <div>
+            <div class="section-title">Stack Tecnológica</div>
+            <div class="section-desc">Dependências principais instaladas</div>
+          </div>
+        </div>
+        <div class="stack-grid">
+          <div class="stack-item"><div class="stack-name">Next.js</div><div class="stack-version">v16.2.6</div></div>
+          <div class="stack-item"><div class="stack-name">React</div><div class="stack-version">v19.2.4</div></div>
+          <div class="stack-item"><div class="stack-name">TypeScript</div><div class="stack-version">v5.x</div></div>
+          <div class="stack-item"><div class="stack-name">Tailwind CSS</div><div class="stack-version">v4</div></div>
+          <div class="stack-item"><div class="stack-name">shadcn/ui</div><div class="stack-version">Radix</div></div>
+          <div class="stack-item"><div class="stack-name">@supabase/ssr</div><div class="stack-version">v0.10.3</div></div>
+          <div class="stack-item"><div class="stack-name">supabase-js</div><div class="stack-version">v2.106</div></div>
+          <div class="stack-item"><div class="stack-name">react-player</div><div class="stack-version">v3.4.0</div></div>
+          <div class="stack-item"><div class="stack-name">framer-motion</div><div class="stack-version">v12.x</div></div>
+          <div class="stack-item"><div class="stack-name">react-hook-form</div><div class="stack-version">v7.x</div></div>
+          <div class="stack-item"><div class="stack-name">zod</div><div class="stack-version">v4.x</div></div>
+          <div class="stack-item"><div class="stack-name">@dnd-kit</div><div class="stack-version">sortable</div></div>
+          <div class="stack-item"><div class="stack-name">lucide-react</div><div class="stack-version">v1.x</div></div>
+          <div class="stack-item"><div class="stack-name">next-themes</div><div class="stack-version">v0.4.x</div></div>
+          <div class="stack-item"><div class="stack-name">date-fns</div><div class="stack-version">v4.x</div></div>
+          <div class="stack-item"><div class="stack-name">slugify</div><div class="stack-version">v1.6</div></div>
+        </div>
+      </div>
+
+      <!-- SETUP -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-icon" style="background:rgba(255,169,2,0.15);">🚀</div>
+          <div>
+            <div class="section-title">Como Ativar o Projeto</div>
+            <div class="section-desc">Passos para conectar ao Supabase e rodar em produção</div>
+          </div>
+        </div>
+        <div class="setup">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-content">
+              <h4>Criar projeto Supabase</h4>
+              <p>Acesse <strong style="color:#FFA902">supabase.com</strong> → New Project. Anote a URL e a Anon Key em Settings → API.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-content">
+              <h4>Preencher <code>.env.local</code></h4>
+              <p>Edite o arquivo <code>.env.local</code> na raiz do projeto com sua URL e chave.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-content">
+              <h4>Rodar as migrations SQL</h4>
+              <p>No painel Supabase → SQL Editor → cole e execute os 4 arquivos da pasta <code>supabase/migrations/</code> em ordem (0001 → 0004).</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">4</div>
+            <div class="step-content">
+              <h4>Iniciar o servidor de desenvolvimento</h4>
+              <p>Na pasta do projeto, execute: <code>npm run dev</code> — depois acesse <strong style="color:#FFA902">http://localhost:3000</strong></p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">5</div>
+            <div class="step-content">
+              <h4>Tornar-se admin</h4>
+              <p>Registre sua conta, depois no Supabase → Table Editor → profiles → altere seu <code>role</code> de <code>student</code> para <code>admin</code>.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="footer">
+      Instituto Despertamente — IDM Tools · Next.js 16 + Supabase · v1.0.0
+    </div>
+
+  </div>
+</body>
+</html>
