@@ -19,12 +19,25 @@ export default function DivaCaptura() {
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState('');
   const [videoCapturaUrl, setVideoCapturaUrl] = useState<string | null>(null);
+  const [whatsappContato, setWhatsappContato] = useState('5511930439385');
+  const [redesSociais, setRedesSociais] = useState<{ label: string; url: string }[]>([]);
+  const [depoimentos, setDepoimentos] = useState<{ nome: string; texto: string; video_url: string }[]>([]);
 
   useEffect(() => {
     let ativo = true;
-    void supabase.from('diva_config' as never).select('video_captura_url').eq('id', true).maybeSingle()
+    void supabase.from('diva_config' as never)
+      .select('video_captura_url, whatsapp_contato, redes_sociais, depoimentos').eq('id', true).maybeSingle()
       .then(({ data }) => {
-        if (ativo) setVideoCapturaUrl((data as { video_captura_url: string | null } | null)?.video_captura_url ?? null);
+        if (!ativo || !data) return;
+        const config = data as {
+          video_captura_url: string | null; whatsapp_contato: string | null;
+          redes_sociais: { label: string; url: string }[] | null;
+          depoimentos: { nome: string; texto: string; video_url: string }[] | null;
+        };
+        setVideoCapturaUrl(config.video_captura_url ?? null);
+        if (config.whatsapp_contato) setWhatsappContato(config.whatsapp_contato);
+        setRedesSociais(config.redes_sociais ?? []);
+        setDepoimentos(config.depoimentos ?? []);
       });
     return () => { ativo = false; };
   }, []);
@@ -111,6 +124,55 @@ export default function DivaCaptura() {
         </div>
       </section>
 
+      <section className="iw-replica-section iw-replica-pillars">
+        <div className="iw-replica-container">
+          <h2>COMO FUNCIONA, <em>NA PRÁTICA</em>:</h2>
+          <div className="iw-replica-pillar-grid">
+            <article>
+              <div className="iw-replica-pillar-top"><span aria-hidden="true">①</span><h3>Você se cadastra aqui</h3></div>
+              <div className="iw-replica-pillar-bottom"><p>Leva menos de um minuto. Só nome e WhatsApp — nenhum pagamento nessa etapa.</p></div>
+            </article>
+            <article>
+              <div className="iw-replica-pillar-top"><span aria-hidden="true">②</span><h3>Conversa rápida com nosso time</h3></div>
+              <div className="iw-replica-pillar-bottom"><p>Entendemos o que você está buscando — ansiedade, relacionamento, autoconhecimento, um momento difícil — e indicamos o terapeuta credenciado com mais afinidade pro seu caso.</p></div>
+            </article>
+            <article>
+              <div className="iw-replica-pillar-top"><span aria-hidden="true">③</span><h3>Primeira sessão, 100% online</h3></div>
+              <div className="iw-replica-pillar-bottom"><p>Por videochamada, no seu horário. É aqui que o processo de verdade começa: um espaço de escuta só seu, sem pressa.</p></div>
+            </article>
+            <article>
+              <div className="iw-replica-pillar-top"><span aria-hidden="true">④</span><h3>Acompanhamento contínuo</h3></div>
+              <div className="iw-replica-pillar-bottom"><p>Terapia é processo, não evento único. Sessões semanais (ou no ritmo que fizer sentido pra você) com o mesmo terapeuta, construindo confiança ao longo do tempo.</p></div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      {depoimentos.length > 0 && (
+        <section className="iw-replica-section iw-replica-testimonials">
+          <div className="iw-replica-container">
+            <h2>Quem já fez, <em>conta como foi</em></h2>
+            <div className="iw-replica-pillar-grid">
+              {depoimentos.map((dep, i) => (
+                <article key={i}>
+                  {dep.video_url ? (
+                    <div className="iw-replica-media" style={{ marginBottom: '0.75rem' }}>
+                      <video src={dep.video_url} controls playsInline preload="metadata" aria-label={`Depoimento de ${dep.nome}`} />
+                    </div>
+                  ) : (
+                    <div className="iw-replica-pillar-top"><span aria-hidden="true">❝</span><h3>{dep.nome}</h3></div>
+                  )}
+                  <div className="iw-replica-pillar-bottom">
+                    {dep.video_url && <h3 style={{ marginBottom: '0.35rem' }}>{dep.nome}</h3>}
+                    <p>{dep.texto}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       <section className="iw-replica-section iw-replica-testimonials">
         <div className="iw-replica-container">
           <h2>Achando que terapia <em>não é pra você</em>?</h2>
@@ -151,7 +213,7 @@ export default function DivaCaptura() {
             <details><summary>Existe pacote de sessões?</summary><p>Sim. Pacotes a partir de 3 sessões saem com desconto. Nosso time te explica as opções depois do cadastro.</p></details>
             <details><summary>Terapia realmente funciona?</summary><p>Cada processo é único. Terapia é um espaço de escuta e cuidado contínuo — não prometemos resultado específico, mas oferecemos profissionais credenciados e comprometidos com ética.</p></details>
           </div>
-          <a href="https://wa.me/5511930439385" target="_blank" rel="noopener noreferrer" className="iw-replica-help">Ainda tem dúvidas? Entre em contato conosco!</a>
+          <a href={`https://wa.me/${whatsappContato}`} target="_blank" rel="noopener noreferrer" className="iw-replica-help">Ainda tem dúvidas? Entre em contato conosco!</a>
         </div>
       </section>
 
@@ -172,7 +234,16 @@ export default function DivaCaptura() {
         </div>
       </section>
       <footer className="iw-replica-footer">
-        © Instituto Despertamente · Divã IDM · Conteúdo educativo e terapêutico, não substitui emergência psiquiátrica. Em crise ou risco, ligue 188 (CVV) ou procure uma emergência.
+        <p>© Instituto Despertamente · Divã IDM · Conteúdo educativo e terapêutico, não substitui emergência psiquiátrica. Em crise ou risco, ligue 188 (CVV) ou procure uma emergência.</p>
+        <p style={{ marginTop: '0.5rem' }}>
+          <a href={`https://wa.me/${whatsappContato}`} target="_blank" rel="noopener noreferrer">WhatsApp</a>
+          {redesSociais.map((rede, i) => (
+            <span key={i}>
+              {' · '}
+              <a href={rede.url} target="_blank" rel="noopener noreferrer">{rede.label}</a>
+            </span>
+          ))}
+        </p>
       </footer>
     </main>
   );
