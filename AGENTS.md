@@ -64,6 +64,18 @@ Vite da raiz, tem seu próprio `package.json`, e deploy próprio no Vercel
 lá — convenções e a integração de dados com este CRM (em construção,
 ver `ROADMAP.md`/plano ativo) estão documentadas lá, não aqui.
 
+## `apps/seu-numerologo/` — produto Seu Numerólogo (monorepo, outro app)
+
+Desde 08/11/2026 este repositório também contém, em `apps/seu-numerologo/`,
+o funil de venda + a ferramenta Mapa 7 Esferas do produto Seu Numerólogo
+(`mapa.seunumerologo.com.br`) — trazido via `git subtree` do antigo repo
+`pedromurari/seu-numerologo`, histórico preservado. **Site estático
+(HTML/JS puro, sem framework)**, mas já usa o **mesmo Supabase deste CRM**
+("Plataforma 11ds") — diferente de `apps/membros`, que tem banco próprio.
+Deploy próprio no Vercel ("seu-numerologo-igeo"), domínio dedicado fora da
+reorganização institutodespertamente.com.br/idmpsi.com.br. Leia
+`apps/seu-numerologo/AGENTS.md` antes de mexer lá.
+
 ## Segurança — convenções deste projeto
 
 - RLS em toda tabela nova, e a tabela também precisa de `GRANT` pro papel

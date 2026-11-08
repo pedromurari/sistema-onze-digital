@@ -72,11 +72,13 @@ serve(async (req) => {
     auth: { persistSession: false },
   });
 
+  // 'produto' da turma NPS é gravado como 'numerologia' (categoria da turma),
+  // não 'nps' — confirmado em public.turmas (achado em sessão de QA, 17/10/2026).
   const { data: alunos } = await db
     .from('alunos')
     .select('id')
     .ilike('email', email)
-    .ilike('produto', 'nps')
+    .ilike('produto', 'numerologia')
     .not('status', 'in', '(cancelado,concluido)');
 
   const ids = (alunos ?? []).map((a: { id: string }) => a.id);
