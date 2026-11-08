@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { CheckCircle, Circle, Clock, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react'
+import { CheckCircle, Circle, Clock, ChevronLeft, ChevronRight, ArrowLeft, FileText, Download } from 'lucide-react'
 import { formatDuration } from '@/lib/utils'
 import { YouTubePlayer } from '@/components/player/YouTubePlayer'
 import { CinemaModeWrapper } from '@/components/player/CinemaModeWrapper'
@@ -116,31 +116,27 @@ export default async function LessonPage({ params }: { params: Promise<{ slug: s
         <span className="text-[#a0a0a0] truncate max-w-[160px]">{lesson.title}</span>
       </div>
 
-      <div className="grid lg:grid-cols-[1fr_280px] gap-5 max-w-[1200px]">
+      <div className="grid lg:grid-cols-[1fr_340px] gap-6 max-w-[1800px]">
 
         {/* Coluna principal */}
         <div className="space-y-5">
 
-          {/* Player com CinemaModeWrapper */}
-          <CinemaModeWrapper
-            lessonTitle={lesson.title}
-            prevHref={prevHref}
-            nextHref={nextHref}
-            moduleList={moduleListEl}
-          >
-            {lesson.video_url ? (
+          {/* Player com CinemaModeWrapper — só aparece quando a aula tem vídeo de verdade */}
+          {lesson.video_url && (
+            <CinemaModeWrapper
+              lessonTitle={lesson.title}
+              prevHref={prevHref}
+              nextHref={nextHref}
+              moduleList={moduleListEl}
+            >
               <YouTubePlayer
                 videoUrl={lesson.video_url}
                 lessonId={lesson.id}
                 productSlug={slug}
                 initialCompleted={currentProgress?.completed}
               />
-            ) : (
-              <div className="aspect-video rounded-xl flex items-center justify-center bg-[#0A1232] border border-white/[0.08]">
-                <p className="text-sm text-white/40">Sem vídeo para esta aula.</p>
-              </div>
-            )}
-          </CinemaModeWrapper>
+            </CinemaModeWrapper>
+          )}
 
           {/* Info da aula */}
           <div className="space-y-2">
@@ -149,6 +145,33 @@ export default async function LessonPage({ params }: { params: Promise<{ slug: s
               <p className="text-sm text-[#a0a0a0] leading-relaxed">{lesson.description}</p>
             )}
           </div>
+
+          {/* Material da aula — PDF/arquivo pra baixar. Sozinho quando a aula é
+              só material (sem o grandão de vídeo vazio); junto do player quando
+              a aula tem vídeo + apoio em PDF. */}
+          {lesson.file_url && (
+            <div
+              className="flex items-center gap-4 rounded-xl p-4 border"
+              style={{ background: '#0A1232', borderColor: 'rgba(255,255,255,0.08)' }}
+            >
+              <div className="h-11 w-11 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(255,184,0,0.12)' }}>
+                <FileText className="h-5 w-5" style={{ color: '#FFB800' }} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-[#f0f0f0]">Material de apoio (PDF)</p>
+                <p className="text-xs text-white/40">Abra no navegador ou baixe pra consultar depois.</p>
+              </div>
+              <a
+                href={lesson.file_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold shrink-0 transition-colors"
+                style={{ background: '#FFB800', color: '#0D1638' }}
+              >
+                <Download className="h-4 w-4" /> Abrir PDF
+              </a>
+            </div>
+          )}
 
           {/* Navegação */}
           <div className="flex items-center gap-3">
@@ -179,11 +202,11 @@ export default async function LessonPage({ params }: { params: Promise<{ slug: s
         </div>
 
         {/* Sidebar de aulas — desktop */}
-        <div className="hidden lg:block rounded-xl bg-[#0A1232] border border-white/[0.08] h-fit max-h-[80vh] overflow-hidden">
-          <div className="px-4 py-3 border-b border-white/[0.06]">
-            <p className="text-xs font-semibold text-white/70">Conteúdo do curso</p>
+        <div className="hidden lg:block rounded-xl bg-[#0A1232] border border-white/[0.08] h-fit sticky top-6 max-h-[calc(100vh-48px)] overflow-hidden">
+          <div className="px-4 py-3.5 border-b border-white/[0.06]">
+            <p className="text-sm font-semibold text-white/80">Conteúdo do curso</p>
           </div>
-          <div className="overflow-y-auto max-h-[calc(80vh-44px)]">
+          <div className="overflow-y-auto max-h-[calc(100vh-110px)]">
             {moduleListEl}
           </div>
         </div>
