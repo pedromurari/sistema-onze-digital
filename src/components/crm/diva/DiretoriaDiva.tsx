@@ -1,8 +1,23 @@
 import { useEffect, useState } from 'react';
-import { HeartHandshake, Users, UserPlus, BadgeDollarSign } from 'lucide-react';
+import { HeartHandshake, Users, UserPlus, BadgeDollarSign, Link as LinkIcon } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { StatTile, SectionBar } from '@/components/crm/ui/premium';
+
+interface PlanoPagamento {
+  id: string; nome: string; quantidade_sessoes: number; valor: number;
+  link_pix_boleto: string | null; link_cartao: string | null;
+}
+
+function usePlanosDiva() {
+  const [planos, setPlanos] = useState<PlanoPagamento[]>([]);
+  useEffect(() => {
+    void supabase.from('diva_planos' as never).select('*').order('quantidade_sessoes')
+      .then(({ data }) => setPlanos((data as PlanoPagamento[]) ?? []));
+  }, []);
+  return planos;
+}
 
 function formatReal(valor: number) {
   return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -49,11 +64,14 @@ const DECISOES = [
   { titulo: 'Credenciamento', texto: 'Curadoria manual — Pedro/Rodrygo aprovam cada terapeuta. Ser assinante em dia da Sociedade IDM é pré-requisito, mas não dá acesso automático.' },
   { titulo: 'Pagamento e repasse', texto: 'Manual por enquanto (marcar pago/repassado na aba Sessões). Split automático (Asaas Split) é Fase 2 — os campos já existem na tabela.' },
   { titulo: 'Funil', texto: 'Cliente preenche interesse em /diva → lead criado com produto "diva_idm" → confirmação automática no WhatsApp → vendedor do Divã assume na aba Funil pra negociar pacote ou sessão avulsa.' },
-  { titulo: 'Vendedor', texto: 'Ainda a contratar. Quando chegar, cadastrar em src/lib/divaVendedores.ts (DIVA_VENDORS) — meta e comissão reaproveitam o mesmo padrão do Time Comercial.' },
+  { titulo: 'Vendedor', texto: 'Camila Murari — já atende a base comercial, assumiu o Divã também (08/11/2026). Atende pelo WhatsApp "Divã IDM" conectado no computador dela.' },
+  { titulo: 'Como vender — passo a passo', texto: 'Lead chega em /diva → recebe boas-vindas automática no WhatsApp. Você assume na aba Funil ("Pegar lead"). Conversa, entende a necessidade, confere a aba Agenda pra ver qual terapeuta tem horário livre. Fechou? Manda o link de pagamento certo (tabela abaixo — PIX/boleto ou cartão) e registra a venda na aba Sessões (mesmo antes de confirmar o pagamento, pra não esquecer). Quando o cliente pagar, marca "Pago" na aba Sessões. O repasse pro terapeuta (a chave PIX dele está na aba Terapeutas) você marca como "Repassado" depois de transferir.' },
+  { titulo: 'Links de pagamento por plano', texto: '1 sessão R$80 · 2 sessões R$160 · Pacote 3 R$210 · Pacote 4 R$280 · Pacote 5 R$350. Cada plano tem 2 links — PIX/boleto (Asaas) e cartão (Mercado Pago). Ainda não tem split automático (depende de conversa com o Asaas), o dinheiro cai na conta principal do IDM e o repasse é manual.' },
 ];
 
 export function DiretoriaDiva() {
   const { terapeutasAprovados, leadsMes, sessoesFechadasMes, faturamentoMes, carregando } = useDiretoriaDiva();
+  const planos = usePlanosDiva();
 
   return (
     <div className="min-h-full bg-background p-4 sm:p-6 lg:p-8">
@@ -89,6 +107,44 @@ export function DiretoriaDiva() {
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/70 shadow-sm">
+          <CardContent className="p-4 sm:p-5 space-y-3">
+            <SectionBar title="Links de pagamento por plano" icon={LinkIcon} />
+            <p className="text-xs text-muted-foreground">
+              Sem split automático ainda — o valor cai na conta principal do IDM, repasse ao terapeuta é manual (aba Sessões).
+            </p>
+            {planos.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Carregando...</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b text-left text-xs uppercase text-muted-foreground">
+                    <th className="p-2">Plano</th><th className="p-2 text-right">Valor</th><th className="p-2">PIX / Boleto</th><th className="p-2">Cartão</th>
+                  </tr></thead>
+                  <tbody>
+                    {planos.map(p => (
+                      <tr key={p.id} className="border-b last:border-0">
+                        <td className="p-2 font-medium">{p.nome}</td>
+                        <td className="p-2 text-right tabular-nums">{formatReal(Number(p.valor))}</td>
+                        <td className="p-2">
+                          {p.link_pix_boleto
+                            ? <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { void navigator.clipboard.writeText(p.link_pix_boleto!); }}>Copiar link</Button>
+                            : <span className="text-xs text-muted-foreground">—</span>}
+                        </td>
+                        <td className="p-2">
+                          {p.link_cartao
+                            ? <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { void navigator.clipboard.writeText(p.link_cartao!); }}>Copiar link</Button>
+                            : <span className="text-xs text-muted-foreground">—</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
