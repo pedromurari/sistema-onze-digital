@@ -3,17 +3,19 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { criarAcessoMembro } from '@/lib/memberAccess'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Chamado pelo financeiro (Supabase da 11ds) quando um pagamento é confirmado:
-// cria a conta (se não existir), matricula no produto e define até quando o
-// acesso vale. Também revoga (acao: 'revogar'). Autenticado por bearer key
-// (env LIBERAR_ACESSO_KEY — mesma chave que o financeiro guarda em
-// AREA_MEMBROS_API_KEY).
+// Chamado pelo financeiro/CRM (Supabase da 11ds) quando um pagamento é
+// confirmado ou um aluno fica elegível: cria a conta (se não existir),
+// matricula no produto e define até quando o acesso vale. Também revoga
+// (acao: 'revogar'). Autenticado por bearer key -- a variável configurada na
+// Vercel hoje é CRIAR_USUARIO_API_KEY (precisa bater com AREA_MEMBROS_API_KEY
+// guardado nas functions do CRM); LIBERAR_ACESSO_KEY é um nome alternativo
+// aceito se um dia a env for renomeada.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const LIMPA_INVISIVEIS = /[﻿​-‍]/g
 
 export async function POST(request: NextRequest) {
-  const esperada = process.env.LIBERAR_ACESSO_KEY?.replace(LIMPA_INVISIVEIS, '').trim()
+  const esperada = (process.env.CRIAR_USUARIO_API_KEY ?? process.env.LIBERAR_ACESSO_KEY)?.replace(LIMPA_INVISIVEIS, '').trim()
   const recebida = request.headers.get('authorization')?.replace(LIMPA_INVISIVEIS, '').trim()
   if (!esperada || recebida !== `Bearer ${esperada}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
