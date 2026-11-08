@@ -52,6 +52,18 @@ naquele projeto.
 Vite + React + TypeScript + Tailwind + shadcn/ui + Supabase (auth +
 Postgres com RLS). SPA sem framework de SSR.
 
+## `apps/membros/` — site institucional + área de membros (monorepo, outro app)
+
+Desde 08/11/2026 este repositório também contém, em `apps/membros/`, o
+site institucional + área de membros (www.idmpsi.com.br) — trazido via
+`git subtree` do antigo repo `pedromurari/members-onze-digital`, histórico
+preservado. **É um projeto Next.js separado, com Supabase próprio**
+(projeto "IDM Members", diferente deste CRM) — não faz parte do build
+Vite da raiz, tem seu próprio `package.json`, e deploy próprio no Vercel
+("members-onze-digital"). Leia `apps/membros/AGENTS.md` antes de mexer
+lá — convenções e a integração de dados com este CRM (em construção,
+ver `ROADMAP.md`/plano ativo) estão documentadas lá, não aqui.
+
 ## Segurança — convenções deste projeto
 
 - RLS em toda tabela nova, e a tabela também precisa de `GRANT` pro papel
