@@ -1,12 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { X, Loader2 } from 'lucide-react'
-
-// URL do checkout hospedado pelo SyncPay pro Cicatrizes que Curam.
-// syncpay.link foi descontinuado pela SyncPay (DNS caiu em 2026-07-28) --
-// novo dominio de link curto deles e link.syncpayments.com.br.
-const SYNCPAY_CHECKOUT_URL = 'https://link.syncpayments.com.br/FX5FYc'
 
 function maskPhone(v: string) {
   const d = v.replace(/\D/g, '').slice(0, 11)
@@ -14,6 +10,7 @@ function maskPhone(v: string) {
 }
 
 export function LeadFormModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const router = useRouter()
   const [nome, setNome] = useState('')
   const [email, setEmail] = useState('')
   const [whatsapp, setWhatsapp] = useState('')
@@ -45,14 +42,7 @@ export function LeadFormModal({ open, onClose }: { open: boolean; onClose: () =>
         return
       }
 
-      if (!SYNCPAY_CHECKOUT_URL) {
-        setErro('Checkout ainda não configurado — avise o time.')
-        setEnviando(false)
-        return
-      }
-
-      const params = new URLSearchParams({ name: nome, email, phone: whatsapp.replace(/\D/g, '') })
-      window.location.href = `${SYNCPAY_CHECKOUT_URL}?${params.toString()}`
+      router.push('/cicatrizes/obrigado')
     } catch {
       setErro('Erro ao conectar. Tente novamente.')
       setEnviando(false)
@@ -72,7 +62,7 @@ export function LeadFormModal({ open, onClose }: { open: boolean; onClose: () =>
             <p style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="text-2xl font-bold text-white">
               Quero garantir meu ingresso
             </p>
-            <p className="text-sm text-white/45 mt-1">Preencha seus dados pra ir direto pro checkout</p>
+            <p className="text-sm text-white/45 mt-1">Preencha seus dados pra garantir sua vaga</p>
           </div>
           <div className="space-y-3">
             <input
@@ -100,7 +90,7 @@ export function LeadFormModal({ open, onClose }: { open: boolean; onClose: () =>
             className="w-full py-3.5 rounded-xl bg-[#FFB800] text-[#0D1638] font-bold text-sm hover:bg-[#FFC933] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
           >
             {enviando && <Loader2 className="h-4 w-4 animate-spin" />}
-            {enviando ? 'Enviando...' : 'Ir para o checkout'}
+            {enviando ? 'Enviando...' : 'Garantir minha vaga'}
           </button>
           <p className="text-[11px] text-white/30 text-center">
             Você também recebe um e-mail e uma mensagem da Jocimara no WhatsApp com todos os detalhes.

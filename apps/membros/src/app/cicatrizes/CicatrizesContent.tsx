@@ -18,7 +18,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion'
-import { useCheckoutModal } from '@/components/checkout/CheckoutModal'
+import { useModalState } from '@/lib/useModalState'
 import { LeadFormModal } from './LeadFormModal'
 import { VideoPlayer } from './VideoPlayer'
 import { SiteFooter } from '@/components/marketing/SiteFooter'
@@ -250,7 +250,7 @@ function StickyCTACicatrizes({ onAbrir }: { onAbrir: () => void }) {
 }
 
 export function CicatrizesContent() {
-  const lead = useCheckoutModal()
+  const lead = useModalState()
   const dataProximaTurma = proximaTurma()
   const heroRef = useRef<HTMLDivElement>(null)
   const { scrollYProgress: heroProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] })

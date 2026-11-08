@@ -14,7 +14,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion'
-import { useCheckoutModal } from '@/components/checkout/CheckoutModal'
+import { useModalState } from '@/lib/useModalState'
 import { LeadFormModal } from './LeadFormModal'
 import { SiteFooter } from '@/components/marketing/SiteFooter'
 
@@ -164,7 +164,7 @@ function StickyCTADependencia({ onAbrir }: { onAbrir: () => void }) {
 }
 
 export function DependenciaContent() {
-  const lead = useCheckoutModal()
+  const lead = useModalState()
 
   return (
     <>

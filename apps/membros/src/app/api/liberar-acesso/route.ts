@@ -25,6 +25,11 @@ export async function POST(request: NextRequest) {
   const whatsapp = body?.whatsapp ? String(body.whatsapp) : undefined
   const produtoSlug = String(body?.produtoSlug ?? '').trim()
   const acao = body?.acao === 'revogar' ? 'revogar' : 'liberar'
+  // turmaCrmId/crmPessoaId só vêm do provisionamento real a partir do CRM
+  // (membros-provisionar-acesso) -- o fluxo antigo de lead (NPA) não manda.
+  const turmaCrmId = body?.turmaCrmId ? String(body.turmaCrmId) : undefined
+  const turmaCrmNome = body?.turmaCrmNome ? String(body.turmaCrmNome) : undefined
+  const crmPessoaId = body?.crmPessoaId ? String(body.crmPessoaId) : undefined
 
   if (!email || !produtoSlug) {
     return NextResponse.json({ error: 'email e produtoSlug são obrigatórios' }, { status: 400 })
@@ -61,12 +66,44 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, revogado: true })
     }
 
+    let turmaId: string | undefined
+    if (turmaCrmId) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: turmaExistente } = await (admin.from('turmas') as any)
+        .select('id')
+        .eq('source_turma_id', turmaCrmId)
+        .maybeSingle()
+
+      if (turmaExistente) {
+        turmaId = turmaExistente.id
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: turmaNova, error: turmaError } = await (admin.from('turmas') as any)
+          .insert({
+            product_id: produto.id,
+            code: turmaCrmNome || turmaCrmId.slice(0, 8),
+            name: turmaCrmNome || `Turma ${turmaCrmId.slice(0, 8)}`,
+            is_active: true,
+            source_turma_id: turmaCrmId,
+          })
+          .select('id')
+          .single()
+        if (turmaError) {
+          console.error('[liberar-acesso] falha ao criar turma local:', turmaError.message)
+        } else {
+          turmaId = turmaNova?.id
+        }
+      }
+    }
+
     const { userId, loginUrl } = await criarAcessoMembro({
       email,
       nome,
       whatsapp,
       produtoId: produto.id,
       expiraEm,
+      turmaId,
+      crmPessoaId,
     })
     return NextResponse.json({ ok: true, userId, loginUrl, expiraEm: expiraEm?.toISOString() ?? null })
   } catch (err) {
