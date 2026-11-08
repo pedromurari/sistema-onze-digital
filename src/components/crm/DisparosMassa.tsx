@@ -53,9 +53,9 @@ const TEMPLATES = [
     texto_whatsapp: 'Oi, {{nome}}! Tudo bem?\n\nVocê participou de uma das nossas turmas da Semana do Despertar e eu lembrei de você agora.\n\nSaiu um episódio novo do Além do Divã: "A mente Borderline por dentro — vazio, medo e um ciclo que se repete". O Rodrygo Murari e a Jocimara Anjos saem do "borderline é tóxico" raso e explicam de verdade os 5 eixos desse funcionamento — medo do abandono, intensidade emocional, instabilidade nos relacionamentos, a pergunta "quem sou eu" por trás da identidade fragmentada, e o ciclo do abandono.\n\nAssiste aqui:',
     link_cta: 'https://youtu.be/axU6JM49TdE',
     // Pedido do Pedro (03/11): essa campanha não usa as instâncias da Helen (vendas) nem do financeiro — todas as outras ativas sim.
+    // disp4 retirado em 08/11 -- dedicado exclusivamente ao Divã IDM a partir de agora.
     evolution_config_ids: [
       'fd38f732-33fb-4e0c-95d9-1debaa62f907', // disp3
-      '88af4647-3abc-4195-b8bc-e6bcb8a27e0a', // disp4
       'ad43112c-757d-4374-9344-7b7473a9fbe0', // Instituto Despertamente
       'f6c46149-64e9-4c8f-8344-5e57b954e399', // Pedro
       'd717ee81-f5fd-433e-b097-ee972bcee84d', // PM 02
@@ -121,7 +121,9 @@ const TEMPLATES = [
     canal: 'whatsapp' as Canal,
     fonte: 'alunos' as Fonte,
     texto_whatsapp: 'Oi, {{nome}}! Tudo bem?\n\nUma pergunta rápida: você já pensou em fazer terapia, ou já está fazendo? A gente tem o Divã IDM, nosso programa de terapia social com terapeutas credenciados, sessões a partir de R$80.\n\nSe tiver interesse, é só se cadastrar aqui que nosso time já entra em contato:',
-    link_cta: 'https://sistema.idmpsi.com.br/diva',
+    link_cta: 'https://ir.idmpsi.com.br/diva',
+    // Única campanha de venda do Divã IDM -- só a instância dedicada (disp4) dispara.
+    evolution_config_ids: ['88af4647-3abc-4195-b8bc-e6bcb8a27e0a'], // disp4
   },
 ];
 

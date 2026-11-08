@@ -73,6 +73,9 @@ serve(async (req) => {
         body: JSON.stringify({
           numero: whatsapp,
           mensagem: `Oi, ${nome.split(' ')[0]}! 💙\n\nRecebemos seu pedido de sessão no Divã IDM${terapeutaNome ? ` com ${terapeutaNome}` : ''}. Nosso time vai entrar em contato em breve pra combinar tudo com você.`,
+          // Número dedicado ao Divã IDM (pedido do Pedro, 08/11/2026) -- leads
+          // e negociação do vendedor sempre por aqui, nunca pelo pool automático.
+          instance_name: 'disp4',
         }),
       });
     } catch (e) {
