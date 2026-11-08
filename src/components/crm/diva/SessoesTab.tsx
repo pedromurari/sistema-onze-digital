@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CalendarPlus } from 'lucide-react';
+import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { SectionBar } from '@/components/crm/ui/premium';
 
 interface Terapeuta { id: string; nome: string; }
+interface LeadDiva { id: string; nome: string; whatsapp: string | null; }
 interface Sessao {
   id: string; cliente_nome: string; cliente_whatsapp: string | null; tipo: string;
   valor_total: number; valor_terapeuta: number; valor_idm: number; quantidade_sessoes: number;
@@ -35,10 +37,12 @@ const OPCOES_PACOTE = [
 export function SessoesTab() {
   const [sessoes, setSessoes] = useState<Sessao[]>([]);
   const [terapeutas, setTerapeutas] = useState<Terapeuta[]>([]);
+  const [leads, setLeads] = useState<LeadDiva[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [clienteNome, setClienteNome] = useState('');
   const [clienteWhatsapp, setClienteWhatsapp] = useState('');
   const [terapeutaId, setTerapeutaId] = useState('');
+  const [leadId, setLeadId] = useState('');
   const [pacoteLabel, setPacoteLabel] = useState<string>(OPCOES_PACOTE[0].label);
   const [valorTotal, setValorTotal] = useState('80');
   const [quantidadeSessoes, setQuantidadeSessoes] = useState('1');
@@ -57,12 +61,14 @@ export function SessoesTab() {
 
   const carregar = async () => {
     setCarregando(true);
-    const [sessoesRes, terapeutasRes] = await Promise.all([
+    const [sessoesRes, terapeutasRes, leadsRes] = await Promise.all([
       supabase.from('diva_sessoes').select('*').order('created_at', { ascending: false }),
       supabase.from('diva_terapeutas').select('id,nome').eq('status', 'aprovado'),
+      supabase.from('leads').select('id,nome,whatsapp').eq('produto', 'diva_idm').neq('status', 'perdido').order('criado_em', { ascending: false }).limit(100),
     ]);
     setSessoes((sessoesRes.data as Sessao[]) ?? []);
     setTerapeutas((terapeutasRes.data as Terapeuta[]) ?? []);
+    setLeads((leadsRes.data as LeadDiva[]) ?? []);
     setCarregando(false);
   };
 
@@ -73,19 +79,26 @@ export function SessoesTab() {
     setSalvando(true);
     const total = Number(valorTotal) || 80;
     const quantidade = Number(quantidadeSessoes) || 1;
-    await supabase.from('diva_sessoes').insert({
+    // diva_sessoes.tipo só aceita 'avulsa'/'pacote' no banco -- as opções do
+    // select (pacote_3/4/5, personalizado) são só pra UX escolher valor e
+    // quantidade rápido; quem decide o tipo real gravado é a quantidade.
+    const tipoBanco = quantidade >= 3 ? 'pacote' : 'avulsa';
+    const { error } = await supabase.from('diva_sessoes').insert({
       cliente_nome: clienteNome.trim(),
       cliente_whatsapp: clienteWhatsapp.trim() || null,
       terapeuta_id: terapeutaId || null,
-      tipo: tipoSelecionado,
+      lead_id: leadId || null,
+      tipo: tipoBanco,
       quantidade_sessoes: quantidade,
       valor_total: total,
       valor_terapeuta: Math.round(total * (50 / 80) * 100) / 100,
       valor_idm: Math.round(total * (30 / 80) * 100) / 100,
     });
-    setClienteNome(''); setClienteWhatsapp(''); setTerapeutaId('');
-    escolherPacote(OPCOES_PACOTE[0].label);
     setSalvando(false);
+    if (error) { toast.error('Não foi possível registrar a sessão: ' + error.message); return; }
+    toast.success('Sessão registrada.');
+    setClienteNome(''); setClienteWhatsapp(''); setTerapeutaId(''); setLeadId('');
+    escolherPacote(OPCOES_PACOTE[0].label);
     await carregar();
   };
 
@@ -156,6 +169,12 @@ export function SessoesTab() {
               <SelectTrigger><SelectValue placeholder="Terapeuta" /></SelectTrigger>
               <SelectContent>
                 {terapeutas.map(t => <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={leadId} onValueChange={setLeadId}>
+              <SelectTrigger><SelectValue placeholder="Lead do funil (opcional)" /></SelectTrigger>
+              <SelectContent>
+                {leads.map(l => <SelectItem key={l.id} value={l.id}>{l.nome}{l.whatsapp ? ` — ${l.whatsapp}` : ''}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={pacoteLabel} onValueChange={escolherPacote}>

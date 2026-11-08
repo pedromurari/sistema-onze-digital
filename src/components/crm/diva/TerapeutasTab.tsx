@@ -13,7 +13,7 @@ type StatusTerapeuta = 'em_analise' | 'aprovado' | 'pausado' | 'reprovado';
 interface Terapeuta {
   id: string; nome: string; especialidade: string | null; bio: string | null;
   whatsapp: string | null; email: string | null; chave_pix: string | null;
-  status: StatusTerapeuta; aluno_id: string | null;
+  foto_url: string | null; status: StatusTerapeuta; aluno_id: string | null;
 }
 
 const STATUS_CONFIG: Record<StatusTerapeuta, { label: string; className: string; icon: typeof CheckCircle2 }> = {
@@ -32,9 +32,12 @@ export function TerapeutasTab() {
   const [whatsapp, setWhatsapp] = useState('');
   const [email, setEmail] = useState('');
   const [chavePix, setChavePix] = useState('');
+  const [fotoUrl, setFotoUrl] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [pixEditando, setPixEditando] = useState<string | null>(null);
   const [pixRascunho, setPixRascunho] = useState('');
+  const [fotoEditando, setFotoEditando] = useState<string | null>(null);
+  const [fotoRascunho, setFotoRascunho] = useState('');
 
   const carregar = async () => {
     setCarregando(true);
@@ -55,9 +58,10 @@ export function TerapeutasTab() {
       whatsapp: whatsapp.trim() || null,
       email: email.trim() || null,
       chave_pix: chavePix.trim() || null,
+      foto_url: fotoUrl.trim() || null,
       status: 'em_analise',
     });
-    setNome(''); setEspecialidade(''); setBio(''); setWhatsapp(''); setEmail(''); setChavePix('');
+    setNome(''); setEspecialidade(''); setBio(''); setWhatsapp(''); setEmail(''); setChavePix(''); setFotoUrl('');
     setSalvando(false);
     await carregar();
   };
@@ -70,6 +74,12 @@ export function TerapeutasTab() {
   const salvarPix = async (id: string) => {
     await supabase.from('diva_terapeutas').update({ chave_pix: pixRascunho.trim() || null }).eq('id', id);
     setPixEditando(null);
+    await carregar();
+  };
+
+  const salvarFoto = async (id: string) => {
+    await supabase.from('diva_terapeutas').update({ foto_url: fotoRascunho.trim() || null }).eq('id', id);
+    setFotoEditando(null);
     await carregar();
   };
 
@@ -89,9 +99,18 @@ export function TerapeutasTab() {
                 return (
                   <div key={t.id} className="rounded-lg border border-border/60 p-3 space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <span className="font-medium text-sm">{t.nome}</span>
-                        {t.especialidade && <span className="text-xs text-muted-foreground"> — {t.especialidade}</span>}
+                      <div className="flex items-center gap-2">
+                        {t.foto_url ? (
+                          <img src={t.foto_url} alt={t.nome} className="h-9 w-9 rounded-full object-cover border border-border/60" />
+                        ) : (
+                          <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center text-xs text-muted-foreground">
+                            {t.nome.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <div>
+                          <span className="font-medium text-sm">{t.nome}</span>
+                          {t.especialidade && <span className="text-xs text-muted-foreground"> — {t.especialidade}</span>}
+                        </div>
                       </div>
                       <Badge variant="outline" className={cfg.className}>{cfg.label}</Badge>
                     </div>
@@ -119,6 +138,30 @@ export function TerapeutasTab() {
                         </button>
                       )}
                     </div>
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                      <span className="text-muted-foreground">Foto:</span>
+                      {fotoEditando === t.id ? (
+                        <>
+                          <Input
+                            className="h-7 w-64 text-xs"
+                            placeholder="URL da foto"
+                            value={fotoRascunho}
+                            onChange={e => setFotoRascunho(e.target.value)}
+                            autoFocus
+                          />
+                          <Button size="sm" className="h-7 px-2" onClick={() => void salvarFoto(t.id)}>Salvar</Button>
+                          <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setFotoEditando(null)}>Cancelar</Button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="font-medium underline-offset-2 hover:underline"
+                          onClick={() => { setFotoEditando(t.id); setFotoRascunho(t.foto_url ?? ''); }}
+                        >
+                          {t.foto_url ? 'trocar...' : 'definir...'}
+                        </button>
+                      )}
+                    </div>
                     <div className="flex flex-wrap gap-1.5">
                       {t.status !== 'aprovado' && <Button size="sm" variant="outline" onClick={() => void mudarStatus(t.id, 'aprovado')}>Aprovar</Button>}
                       {t.status !== 'pausado' && <Button size="sm" variant="outline" onClick={() => void mudarStatus(t.id, 'pausado')}>Pausar</Button>}
@@ -141,6 +184,7 @@ export function TerapeutasTab() {
             <Input placeholder="WhatsApp" value={whatsapp} onChange={e => setWhatsapp(e.target.value)} />
             <Input placeholder="E-mail" value={email} onChange={e => setEmail(e.target.value)} />
             <Input placeholder="Chave PIX" value={chavePix} onChange={e => setChavePix(e.target.value)} />
+            <Input placeholder="URL da foto (opcional)" value={fotoUrl} onChange={e => setFotoUrl(e.target.value)} />
           </div>
           <Textarea placeholder="Bio curta (aparece no painel público quando aprovado)" value={bio} onChange={e => setBio(e.target.value)} />
           <Button onClick={() => void adicionar()} disabled={salvando || !nome.trim()}>Cadastrar (entra como "Em análise")</Button>
