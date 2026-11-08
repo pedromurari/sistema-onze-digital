@@ -233,16 +233,18 @@ export default function DivaCaptura() {
           <p className="iw-replica-final-line">✓ Sessões 100% online &nbsp; ✓ A partir de R$80 &nbsp; ✓ Terapeutas credenciados pelo IDM</p>
         </div>
       </section>
-      <footer className="iw-replica-footer">
-        <p>© Instituto Despertamente · Divã IDM · Conteúdo educativo e terapêutico, não substitui emergência psiquiátrica. Em crise ou risco, ligue 188 (CVV) ou procure uma emergência.</p>
-        <p style={{ marginTop: '0.5rem' }}>
-          <a href={`https://wa.me/${whatsappContato}`} target="_blank" rel="noopener noreferrer">WhatsApp</a>
-          {redesSociais.map((rede, i) => (
-            <span key={i}>
-              {' · '}
-              <a href={rede.url} target="_blank" rel="noopener noreferrer">{rede.label}</a>
-            </span>
-          ))}
+      <footer className="iw-replica-footer-full">
+        <div className="iw-replica-container iw-replica-footer-top">
+          <img src={IDM_LOGO} alt="Instituto Despertamente" loading="lazy" />
+          <div className="iw-replica-footer-links">
+            <a href={`https://wa.me/${whatsappContato}`} target="_blank" rel="noopener noreferrer">WhatsApp</a>
+            {redesSociais.map((rede, i) => (
+              <a key={i} href={rede.url} target="_blank" rel="noopener noreferrer">{rede.label}</a>
+            ))}
+          </div>
+        </div>
+        <p className="iw-replica-footer-legal">
+          © Instituto Despertamente · Divã IDM · Conteúdo educativo e terapêutico, não substitui emergência psiquiátrica. Em crise ou risco, ligue 188 (CVV) ou procure uma emergência.
         </p>
       </footer>
     </main>

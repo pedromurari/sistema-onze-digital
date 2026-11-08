@@ -482,6 +482,13 @@
 .iw-replica-final-card div { color: #d3d7de; font-size: .9rem; }
 .iw-replica-final-line { margin: 26px 0 0; color: #d3d7de; }
 .iw-replica-footer { padding: 28px 16px; color: #aeb9c8; background: #000a1f; text-align: center; font-size: .78rem; line-height: 1.6; }
+.iw-replica-footer-full { padding: 48px 16px 28px; background: #000a1f; border-top: 1px solid rgba(248,183,62,.15); text-align: center; }
+.iw-replica-footer-top { display: flex; flex-direction: column; align-items: center; gap: 22px; padding-bottom: 28px; }
+.iw-replica-footer-top img { width: 64px; height: 64px; object-fit: contain; }
+.iw-replica-footer-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+.iw-replica-footer-links a { padding: 10px 22px; border: 1px solid rgba(248,183,62,.35); border-radius: 999px; color: #fafafa; background: #1d2331; font-weight: 700; font-size: .9rem; text-decoration: none; transition: border-color .15s ease; }
+.iw-replica-footer-links a:hover { border-color: var(--iw-primary); color: var(--iw-primary); }
+.iw-replica-footer-legal { max-width: 720px; margin: 0 auto; padding-top: 24px; border-top: 1px solid rgba(255,255,255,.08); color: #aeb9c8; font-size: .78rem; line-height: 1.6; }
 @media (max-width: 767px) {
   .iw-replica-section { padding: 60px 0; }
   .iw-replica-hero { padding: 40px 16px; }
