@@ -21,9 +21,15 @@ export function YouTubePlayer({ videoUrl, lessonId, productSlug, initialComplete
   const [ready, setReady] = useState(false)
   const completedRef = useRef(false)
 
-  const handleProgress = useCallback(
-    async (state: { played: number }) => {
-      if (state.played >= 0.9 && !completedRef.current) {
+  // react-player v3 é reescrita total da v2 (virou wrapper de <video> nativo):
+  // prop de URL mudou de `url` pra `src`, e não existe mais `onProgress` com
+  // {played} -- usa os eventos nativos do <video> (onTimeUpdate) agora.
+  const handleTimeUpdate = useCallback(
+    async (event: React.SyntheticEvent<HTMLVideoElement>) => {
+      const video = event.currentTarget
+      if (!video.duration) return
+      const played = video.currentTime / video.duration
+      if (played >= 0.9 && !completedRef.current) {
         completedRef.current = true
         setMarking(true)
         await markLessonComplete(lessonId, productSlug)
@@ -48,17 +54,11 @@ export function YouTubePlayer({ videoUrl, lessonId, productSlug, initialComplete
         )}
         <div className="absolute inset-0">
           <ReactPlayer
-            url={videoUrl}
-            width="100%"
-            height="100%"
+            src={videoUrl}
+            style={{ width: '100%', height: '100%' }}
             controls
             onReady={() => setReady(true)}
-            onProgress={handleProgress}
-            config={{
-              youtube: {
-                playerVars: { rel: 0, modestbranding: 1 },
-              },
-            }}
+            onTimeUpdate={handleTimeUpdate}
           />
         </div>
       </div>
