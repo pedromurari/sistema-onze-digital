@@ -15,6 +15,13 @@ const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 const texto = (value: unknown, max: number) => typeof value === 'string' ? value.trim().slice(0, max) : '';
 
+// Mesmo padrão de saudação usado em enviar-cobranca -- "Excelente dia/tarde/
+// noite" de acordo com o horário real de São Paulo no momento do cadastro.
+function saudacao(): string {
+  const hora = Number(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false }).format(new Date()));
+  return `Excelente ${hora < 12 ? 'dia' : hora < 18 ? 'tarde' : 'noite'}`;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return json({ ok: false, erro: 'Método inválido.' }, 405);
@@ -72,7 +79,11 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           numero: whatsapp,
-          mensagem: `Oi, ${nome.split(' ')[0]}! 💙\n\nRecebemos seu pedido de sessão no Divã IDM${terapeutaNome ? ` com ${terapeutaNome}` : ''}. Nosso time vai entrar em contato em breve pra combinar tudo com você.`,
+          // Boas-vindas + pergunta de abertura (pedido do Pedro, 08/11/2026) --
+          // depois que o lead responde essa pergunta, quem continua a conversa
+          // é a vendedora (Camila), manualmente. Sem mais automação depois
+          // disso.
+          mensagem: `${saudacao()}, ${nome.split(' ')[0]}! 💙\n\nQue alegria ter você aqui no Divã IDM! É um prazer receber seu cadastro — vamos fazer de tudo pra você ter o melhor atendimento e a melhor experiência de terapia com a gente.\n\nPra já ir te indicando o terapeuta certo${terapeutaNome ? ` (vi que seu interesse foi por ${terapeutaNome})` : ''}: me conta um pouco mais — qual é a sua maior questão hoje? Você já tem ideia do tipo de profissional ou especialização que está buscando, ou ainda não faz ideia? Pode escrever com suas palavras, sem pressa 🙂`,
           // Número dedicado ao Divã IDM (pedido do Pedro, 08/11/2026) -- leads
           // e negociação do vendedor sempre por aqui, nunca pelo pool automático.
           // Renomeada de 'disp4' pra 'Divã IDM' no mesmo dia (reconexão na Evolution).
