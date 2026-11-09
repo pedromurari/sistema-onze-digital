@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { HeartHandshake, Users, UserPlus, BadgeDollarSign, Link as LinkIcon } from 'lucide-react';
+import { HeartHandshake, Users, UserPlus, BadgeDollarSign, Link as LinkIcon, Send } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,33 @@ function usePlanosDiva() {
       .then(({ data }) => setPlanos((data as PlanoPagamento[]) ?? []));
   }, []);
   return planos;
+}
+
+interface ProgressoCampanha { nome: string; enviados: number; total: number; }
+
+// Campanhas de ativação (09/11/2026) -- não passam pela tela "Disparos em
+// Massa" (fila própria, mais simples, ver AGENTS do Divã) -- esse card é
+// a única visão de progresso delas pro Pedro.
+function useCampanhasDiva() {
+  const [campanhas, setCampanhas] = useState<ProgressoCampanha[]>([]);
+  useEffect(() => {
+    void (async () => {
+      const [analise, despertar] = await Promise.all([
+        supabase.from('diva_campanha_analise_leads' as never).select('enviado_em'),
+        supabase.from('diva_campanha_despertar_leads' as never).select('enviado_em'),
+      ]);
+      const contar = (rows: { enviado_em: string | null }[] | null) => {
+        const total = rows?.length ?? 0;
+        const enviados = rows?.filter(r => r.enviado_em).length ?? 0;
+        return { enviados, total };
+      };
+      setCampanhas([
+        { nome: 'Psicanálise em dia (tripé da análise)', ...contar(analise.data as { enviado_em: string | null }[] | null) },
+        { nome: 'Semana do Despertar (público frio)', ...contar(despertar.data as { enviado_em: string | null }[] | null) },
+      ]);
+    })();
+  }, []);
+  return campanhas;
 }
 
 function formatReal(valor: number) {
@@ -72,6 +99,7 @@ const DECISOES = [
 export function DiretoriaDiva() {
   const { terapeutasAprovados, leadsMes, sessoesFechadasMes, faturamentoMes, carregando } = useDiretoriaDiva();
   const planos = usePlanosDiva();
+  const campanhas = useCampanhasDiva();
 
   return (
     <div className="min-h-full bg-background p-4 sm:p-6 lg:p-8">
@@ -95,6 +123,30 @@ export function DiretoriaDiva() {
           <StatTile label="Sessões fechadas (mês)" value={carregando ? '—' : sessoesFechadasMes} icon={HeartHandshake} tom={sessoesFechadasMes > 0 ? 'bom' : 'padrao'} />
           <StatTile label="Faturamento (mês)" value={carregando ? '—' : formatReal(faturamentoMes)} icon={BadgeDollarSign} tom="bom" />
         </section>
+
+        {campanhas.length > 0 && (
+          <Card className="border-border/70 shadow-sm">
+            <CardContent className="p-4 sm:p-5 space-y-3">
+              <SectionBar title="Campanhas de ativação em andamento" icon={Send} />
+              <p className="text-xs text-muted-foreground">
+                Throttled, horário comercial (8h-18h, seg-sex) — não passam pela tela de Disparos em Massa.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {campanhas.map(c => (
+                  <div key={c.nome} className="rounded-xl border border-border/60 bg-muted/20 p-3 space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium text-foreground">{c.nome}</span>
+                      <span className="tabular-nums text-muted-foreground">{c.enviados}/{c.total}</span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                      <div className="h-full bg-primary transition-all" style={{ width: `${c.total > 0 ? (c.enviados / c.total) * 100 : 0}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="border-border/70 shadow-sm">
           <CardContent className="p-4 sm:p-5 space-y-3">
