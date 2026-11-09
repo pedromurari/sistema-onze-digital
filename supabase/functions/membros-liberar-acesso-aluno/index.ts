@@ -115,7 +115,14 @@ async function notificarAcessoMembros(
 
   try {
     const mensagem = `Oi${primeiroNome ? ', ' + primeiroNome : ''}! 💛\n\nSeu acesso à *${produtoNome}* já está liberado. Te mandamos um e-mail em *${email}* com o link direto pra entrar na área de membros — é só clicar, não precisa de senha.\n\nNão achou o e-mail? Olha também a caixa de spam/promoções. Login direto: ${siteUrl}/login`;
-    const { data, error } = await supabase.functions.invoke('wpp-enviar', { body: { numero: whatsapp, mensagem } });
+    // Pedido do Pedro (09/11/2026): aviso de acesso liberado sai pelo
+    // número do financeiro, igual cobrança/pagamento/contrato -- não pelo
+    // pool genérico. Mesmo padrão de supabase/functions/enviar-cobranca.
+    const financeiroKey = Deno.env.get('FINANCEIRO_INSTANCE_KEY') ?? 'financeiro-only-idm-2026';
+    const { data, error } = await supabase.functions.invoke('wpp-enviar', {
+      body: { numero: whatsapp, mensagem, instance_name: 'Financeiro IDM', typing_delay_ms: 1000 },
+      headers: { 'x-financeiro-key': financeiroKey },
+    });
     const erro = error?.message ?? (data as { ok?: boolean; error?: string } | null)?.error;
     resultado.whatsapp = (!data?.ok && erro) ? { ok: false, erro, pulado: undefined } : { ok: true, erro: undefined, pulado: undefined };
   } catch (e) {
@@ -151,9 +158,13 @@ serve(async (req) => {
       return respond(500, { error: 'Integração com a Área de Membros não configurada (faltam secrets AREA_MEMBROS_URL/AREA_MEMBROS_API_KEY)' });
     }
 
+    // Nota (09/11/2026): o email/whatsapp/nome que valem pra área de membros
+    // são os da própria linha de `alunos` (o que a tela de Financeiro edita
+    // e mostra) -- `pessoas.email` pode estar vazio mesmo com o aluno tendo
+    // email cadastrado há tempos; não ler de lá.
     const { data: aluno, error: alunoError } = await supabase
       .from('alunos')
-      .select('id, pessoa_id, produto, turma_id, status, acesso_membros_liberado_em, pessoas:pessoa_id (nome, email, telefone), turmas:turma_id (nome)')
+      .select('id, pessoa_id, produto, turma_id, status, acesso_membros_liberado_em, nome, email, whatsapp, turmas:turma_id (nome)')
       .eq('id', alunoId)
       .maybeSingle();
 
@@ -161,22 +172,23 @@ serve(async (req) => {
     if (!aluno) return respond(404, { error: 'Aluno não encontrado' });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pessoa = aluno.pessoas as any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const turma = aluno.turmas as any;
     const produtoSlug = PRODUTO_PARA_SLUG[aluno.produto as string];
+    const nome = aluno.nome as string;
+    const email = aluno.email as string | null;
+    const whatsapp = aluno.whatsapp as string | null;
 
     if (!produtoSlug) return respond(422, { error: `Produto '${aluno.produto}' não tem Área de Membros mapeada ainda` });
-    if (!pessoa?.email) return respond(422, { error: 'Aluno sem email cadastrado — preencha o email antes de liberar o acesso' });
+    if (!email) return respond(422, { error: 'Aluno sem email cadastrado — preencha o email antes de liberar o acesso' });
 
     const base = areaMembrosUrl.replace(/\/$/, '');
     const resp = await fetch(`${base}/api/liberar-acesso`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${areaMembrosKey}` },
       body: JSON.stringify({
-        email: pessoa.email,
-        nome: pessoa.nome,
-        whatsapp: pessoa.telefone ?? undefined,
+        email,
+        nome,
+        whatsapp: whatsapp ?? undefined,
         produtoSlug,
         turmaCrmId: aluno.turma_id ?? undefined,
         turmaCrmNome: turma?.nome ?? undefined,
@@ -198,15 +210,15 @@ serve(async (req) => {
     if (updateError) return respond(500, { error: `Acesso liberado, mas falhou ao salvar: ${updateError.message}` });
 
     const notificacao = await notificarAcessoMembros(supabase, {
-      email: pessoa.email,
-      nome: pessoa.nome,
-      whatsapp: pessoa.telefone,
+      email,
+      nome,
+      whatsapp,
       loginUrl,
       produtoNome: PRODUTO_NOME[aluno.produto as string] ?? 'Área de Membros',
     });
 
     return respond(200, {
-      aluno: { id: aluno.id, nome: pessoa.nome, email: pessoa.email, produto: aluno.produto },
+      aluno: { id: aluno.id, nome, email, produto: aluno.produto },
       loginUrl,
       notificacao,
     });
