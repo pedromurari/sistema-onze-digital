@@ -3203,6 +3203,15 @@ var _accessInfo = null;
     var mix=[rgb[0]+(g-rgb[0])*.55,rgb[1]+(g-rgb[1])*.55,rgb[2]+(g-rgb[2])*.55];
     return mix.map(function(v){return Math.max(8,Math.round(v*0.4));});
   }
+  /* Escurece uma cor de esfera o suficiente pra ficar legível quando o texto
+     é desenhado direto no fundo branco da página (fora de um painel escuro) —
+     sem isso, cores claras da paleta (amarelo, dourado, cinza-claro) somem. */
+  function inkColor(rgb){
+    var max=Math.max(rgb[0],rgb[1],rgb[2]);
+    if(max<=140)return rgb;
+    var scale=140/max;
+    return rgb.map(function(v){return Math.round(v*scale);});
+  }
   function pageFrame(pdfDoc,pw,ph){
     pdfDoc.setDrawColor(58,48,28);pdfDoc.setLineWidth(0.25);
     pdfDoc.rect(1.3,1.3,pw-2.6,ph-2.6);
@@ -3253,11 +3262,11 @@ var _accessInfo = null;
 
       /* ── COVER PAGE ── */
       var G=[212,176,106];
-      pdf.setFillColor(4,4,12); pdf.rect(0,0,pageW,pageH,'F');
+      pdf.setFillColor(255,255,255); pdf.rect(0,0,pageW,pageH,'F');
       pdf.setFillColor(G[0],G[1],G[2]);
       pdf.rect(0,0,pageW,2.5,'F'); pdf.rect(0,pageH-2.5,pageW,2.5,'F');
       pdf.rect(0,0,2,pageH,'F'); pdf.rect(pageW-2,0,2,pageH,'F');
-      pdf.setDrawColor(20,16,8); pdf.setLineWidth(0.15);
+      pdf.setDrawColor(234,227,210); pdf.setLineWidth(0.15);
       for(var gy=8;gy<pageH-8;gy+=4){pdf.line(2,gy,pageW-2,gy);}
 
       pdf.setFontSize(7); pdf.setTextColor(G[0],G[1],G[2]); pdf.setFont('helvetica','normal');
@@ -3301,11 +3310,11 @@ var _accessInfo = null;
       pdf.text(mainT,scx,scy+sr2+13,{align:'center'});
 
       var nameBaseY=scy+sr1+26;
-      pdf.setFontSize(15); pdf.setTextColor(235,225,205); pdf.setFont('helvetica','bold');
+      pdf.setFontSize(15); pdf.setTextColor(35,28,18); pdf.setFont('helvetica','bold');
       pdf.text(sanitizePdf(nome),pageW/2,nameBaseY,{align:'center'});
       pdf.setFont('helvetica','normal');
       if(_nums&&_nums.dateRaw){
-        pdf.setFontSize(9); pdf.setTextColor(130,105,65);
+        pdf.setFontSize(9); pdf.setTextColor(95,76,45);
         pdf.text(_nums.dateRaw,pageW/2,nameBaseY+7,{align:'center'});
       }
 
@@ -3362,7 +3371,7 @@ var _accessInfo = null;
         pdf.addPage();pageCount++;
         rgb=rgb||lastRgb;
         var muted=muteColor(rgb);
-        pdf.setFillColor(5,5,13);pdf.rect(0,0,pageW,pageH,'F');
+        pdf.setFillColor(255,255,255);pdf.rect(0,0,pageW,pageH,'F');
         pdf.setFillColor(muted[0],muted[1],muted[2]);
         pdf.rect(0,0,2,pageH,'F');
         pdf.setFillColor(rgb[0],rgb[1],rgb[2]);
@@ -3410,7 +3419,7 @@ var _accessInfo = null;
 
         pdf.addPage();pageCount++;
         var mutedE=muteColor(rgb);
-        pdf.setFillColor(5,5,13);pdf.rect(0,0,pageW,pageH,'F');
+        pdf.setFillColor(255,255,255);pdf.rect(0,0,pageW,pageH,'F');
         pdf.setFillColor(mutedE[0],mutedE[1],mutedE[2]);
         pdf.rect(0,0,2,pageH,'F');
         pdf.setFillColor(rgb[0],rgb[1],rgb[2]);
@@ -3447,7 +3456,7 @@ var _accessInfo = null;
         cY=64;
 
         var introEl=el.querySelector('.v2-esfera-intro');
-        if(introEl){wText((introEl.innerText||introEl.textContent),8.5,190,190,190,false,0,label);cY+=4;}
+        if(introEl){wText((introEl.innerText||introEl.textContent),8.5,60,60,60,false,0,label);cY+=4;}
 
         var rdg=el.querySelector('.v2-reading');
         if(rdg){
@@ -3458,7 +3467,8 @@ var _accessInfo = null;
             ensY(10,rgb,label);
             pdf.setFillColor(rgb[0],rgb[1],rgb[2]);
             pdf.rect(margin+3,cY-3,1.5,8,'F');
-            wText((stmt.innerText||stmt.textContent),9,rgb[0],rgb[1],rgb[2],false,4,label);
+            var stmtInk=inkColor(rgb);
+            wText((stmt.innerText||stmt.textContent),9,stmtInk[0],stmtInk[1],stmtInk[2],false,4,label);
             cY+=3;
           }
           rdg.querySelectorAll('.reading-section').forEach(function(sec){
@@ -3479,13 +3489,14 @@ var _accessInfo = null;
                 stmtConsumed=true;
               }
               var bodyTxt=bodyParas.map(function(p){return(p.innerText||p.textContent).trim();}).filter(Boolean).join('\n');
-              if(bodyTxt){wText(bodyTxt,8.5,215,215,215,false,0,label);cY+=2;}
+              if(bodyTxt){wText(bodyTxt,8.5,45,45,45,false,0,label);cY+=2;}
             }
           });
           var aff=rdg.querySelector('.reading-affirm');
           if(aff){
             cY+=2;ensY(12,rgb,label);
-            wText((aff.innerText||aff.textContent),8.5,rgb[0],rgb[1],rgb[2],false,2,label);cY+=2;
+            var affInk=inkColor(rgb);
+            wText((aff.innerText||aff.textContent),8.5,affInk[0],affInk[1],affInk[2],false,2,label);cY+=2;
           }
         }
 
