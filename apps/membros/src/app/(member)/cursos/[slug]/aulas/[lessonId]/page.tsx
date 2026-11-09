@@ -17,7 +17,7 @@ async function getData(slug: string, lessonId: string) {
     const allLessons = modules.flatMap((m) => [...m.lessons].sort((a, b) => a.sort_order - b.sort_order))
     const lesson = allLessons.find((l) => l.id === lessonId)
     if (!lesson) return null
-    return { product: { id: product.id, slug: product.slug, title: product.title }, lesson, modules, allLessons, progressMap: {} as Record<string, Progress> }
+    return { product: { id: product.id, slug: product.slug, title: product.title }, lesson, materiais: [] as { id: string; titulo: string | null; url: string }[], modules, allLessons, progressMap: {} as Record<string, Progress> }
   }
 
   const { redirect } = await import('next/navigation')
@@ -33,20 +33,26 @@ async function getData(slug: string, lessonId: string) {
   const { data: lessonRaw } = await sb.from('lessons').select('*').eq('id', lessonId).single()
   const lesson = lessonRaw as Lesson | null
   if (!lesson) return null
+  const { data: materiaisRaw } = await sb
+    .from('lesson_materiais')
+    .select('id,titulo,url')
+    .eq('lesson_id', lessonId)
+    .order('sort_order', { ascending: true })
+  const materiais = (materiaisRaw ?? []) as { id: string; titulo: string | null; url: string }[]
   const { data: modulesRaw } = await sb.from('modules').select('*, lessons (*)').eq('product_id', product.id).order('sort_order')
   const modules = (modulesRaw ?? []) as ModuleWithLessons[]
   const allLessons = modules.flatMap((m) => [...m.lessons].sort((a, b) => a.sort_order - b.sort_order))
   const allLessonIds = allLessons.map((l) => l.id)
   const { data: progressRaw } = await sb.from('progress').select('*').eq('user_id', user!.id).in('lesson_id', allLessonIds)
   const progressMap: Record<string, Progress> = Object.fromEntries(((progressRaw ?? []) as Progress[]).map((p) => [p.lesson_id, p]))
-  return { product, lesson, modules, allLessons, progressMap }
+  return { product, lesson, materiais, modules, allLessons, progressMap }
 }
 
 export default async function LessonPage({ params }: { params: Promise<{ slug: string; lessonId: string }> }) {
   const { slug, lessonId } = await params
   const data = await getData(slug, lessonId)
   if (!data) notFound()
-  const { product, lesson, modules, allLessons, progressMap } = data
+  const { product, lesson, materiais, modules, allLessons, progressMap } = data
 
   const currentIndex = allLessons.findIndex((l) => l.id === lessonId)
   const prevLesson = currentIndex > 0 ? allLessons[currentIndex - 1] : null
@@ -170,6 +176,36 @@ export default async function LessonPage({ params }: { params: Promise<{ slug: s
               >
                 <Download className="h-4 w-4" /> Abrir PDF
               </a>
+            </div>
+          )}
+
+          {/* Materiais extras em PDF anexados à aula (pode ter vários) */}
+          {materiais.length > 0 && (
+            <div className="space-y-2">
+              {materiais.map((m) => (
+                <div
+                  key={m.id}
+                  className="flex items-center gap-4 rounded-xl p-4 border"
+                  style={{ background: '#0A1232', borderColor: 'rgba(255,255,255,0.08)' }}
+                >
+                  <div className="h-11 w-11 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(255,184,0,0.12)' }}>
+                    <FileText className="h-5 w-5" style={{ color: '#FFB800' }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-[#f0f0f0] truncate">{m.titulo || 'Material de apoio (PDF)'}</p>
+                    <p className="text-xs text-white/40">Abra no navegador ou baixe pra consultar depois.</p>
+                  </div>
+                  <a
+                    href={m.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold shrink-0 transition-colors"
+                    style={{ background: '#FFB800', color: '#0D1638' }}
+                  >
+                    <Download className="h-4 w-4" /> Abrir PDF
+                  </a>
+                </div>
+              ))}
             </div>
           )}
 

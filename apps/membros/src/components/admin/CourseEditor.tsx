@@ -6,12 +6,15 @@ import {
   updateCourse,
   createModule, updateModule, deleteModule,
   createLesson, updateLesson, deleteLesson,
-  type AdminCourse, type AdminModule, type AdminLesson,
+  addLessonMaterial, deleteLessonMaterial,
+  type AdminCourse, type AdminModule, type AdminLesson, type AdminLessonMaterial,
 } from '@/lib/actions/admin-courses'
 import {
   Check, ChevronDown, ChevronRight, Eye, EyeOff, Loader2,
-  Pencil, Plus, Trash2, Video, FileText, Paperclip, X,
+  Pencil, Plus, Trash2, Video, FileText, Paperclip, X, Upload,
 } from 'lucide-react'
+import { slugify } from '@/lib/utils'
+import { uploadToR2 } from '@/lib/uploadToR2'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -29,16 +32,147 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 const LESSON_ICONS = { video: Video, text: FileText, file: Paperclip }
 
+// ─── Upload de arquivo pro R2 (vídeo ou PDF) ──────────────────────────────────
+
+function UploadField({
+  label, accept, pasta, value, onChange,
+}: { label: string; accept: string; pasta: string; value: string; onChange: (url: string) => void }) {
+  const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setErr(null)
+    setUploading(true)
+    setProgress(0)
+    try {
+      const url = await uploadToR2(file, pasta, setProgress)
+      onChange(url)
+    } catch (uploadErr) {
+      setErr((uploadErr as Error).message)
+    } finally {
+      setUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  return (
+    <Field label={label}>
+      <div className="space-y-2">
+        {value && !uploading && (
+          <a href={value} target="_blank" rel="noopener noreferrer" className="block truncate text-xs" style={{ color: '#FFA902' }}>
+            {decodeURIComponent(value.split('/').pop() ?? value)}
+          </a>
+        )}
+        <label
+          className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm cursor-pointer"
+          style={{ ...inputStyle, color: uploading ? '#FFA902' : '#aaa' }}
+        >
+          {uploading
+            ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Enviando... {progress}%</>
+            : <><Upload className="w-3.5 h-3.5" /> {value ? 'Trocar arquivo' : 'Escolher arquivo'}</>}
+          <input type="file" accept={accept} onChange={handleFile} disabled={uploading} className="hidden" />
+        </label>
+        {err && <p className="text-xs" style={{ color: '#f87171' }}>{err}</p>}
+      </div>
+    </Field>
+  )
+}
+
+// ─── Materiais extras em PDF de uma aula (quantos quiser) ─────────────────────
+
+function LessonMaterials({ lessonId, pasta, materiais }: { lessonId: string; pasta: string; materiais: AdminLessonMaterial[] }) {
+  const router = useRouter()
+  const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setErr(null)
+    setUploading(true)
+    setProgress(0)
+    try {
+      const url = await uploadToR2(file, pasta, setProgress)
+      const res = await addLessonMaterial({
+        lesson_id: lessonId,
+        titulo: file.name.replace(/\.pdf$/i, ''),
+        url,
+        sort_order: materiais.length,
+      })
+      if (res.error) throw new Error(res.error)
+      router.refresh()
+    } catch (uploadErr) {
+      setErr((uploadErr as Error).message)
+    } finally {
+      setUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  async function handleDelete(id: string) {
+    setDeletingId(id)
+    await deleteLessonMaterial(id)
+    router.refresh()
+    setDeletingId(null)
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold" style={{ color: '#aaa' }}>Materiais em PDF (opcional — pode subir quantos quiser)</p>
+
+      {materiais.length > 0 && (
+        <div className="space-y-1.5">
+          {materiais.map(m => (
+            <div key={m.id} className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: '#0d0d0d', border: '1px solid #2a2a2a' }}>
+              <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: '#FFA902' }} />
+              <a href={m.url} target="_blank" rel="noopener noreferrer" className="flex-1 min-w-0 truncate text-xs text-white hover:underline">
+                {m.titulo || decodeURIComponent(m.url.split('/').pop() ?? m.url)}
+              </a>
+              <button
+                onClick={() => handleDelete(m.id)}
+                disabled={deletingId === m.id}
+                className="w-5 h-5 rounded flex items-center justify-center shrink-0 disabled:opacity-40"
+                style={{ color: '#666' }}
+              >
+                {deletingId === m.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <label
+        className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs cursor-pointer"
+        style={{ ...inputStyle, color: uploading ? '#FFA902' : '#888' }}
+      >
+        {uploading
+          ? <><Loader2 className="w-3 h-3 animate-spin" /> Enviando... {progress}%</>
+          : <><Plus className="w-3 h-3" /> Adicionar PDF</>}
+        <input type="file" accept=".pdf,application/pdf" onChange={handleFile} disabled={uploading} className="hidden" />
+      </label>
+      {err && <p className="text-xs" style={{ color: '#f87171' }}>{err}</p>}
+    </div>
+  )
+}
+
 // ─── Inline editable lesson row ───────────────────────────────────────────────
 
-function LessonRow({ lesson, onDelete }: { lesson: AdminLesson; onDelete: () => void }) {
+function LessonRow({ lesson, courseSlug, moduleTitle, onDelete }: { lesson: AdminLesson; courseSlug: string; moduleTitle: string; onDelete: () => void }) {
   const [editing, setEditing] = useState(false)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
+  const pasta = `${courseSlug}/${slugify(moduleTitle)}`
+
   const [title, setTitle] = useState(lesson.title)
   const [type, setType] = useState(lesson.lesson_type)
   const [videoUrl, setVideoUrl] = useState(lesson.video_url ?? '')
+  const [fileUrl, setFileUrl] = useState(lesson.file_url ?? '')
   const [duration, setDuration] = useState(lesson.video_duration?.toString() ?? '')
   const [isFree, setIsFree] = useState(lesson.is_free_preview)
   const [err, setErr] = useState<string | null>(null)
@@ -53,6 +187,7 @@ function LessonRow({ lesson, onDelete }: { lesson: AdminLesson; onDelete: () => 
         title: title.trim(),
         lesson_type: type,
         video_url: videoUrl.trim() || null,
+        file_url: fileUrl.trim() || null,
         video_duration: duration ? parseInt(duration) : null,
         is_free_preview: isFree,
       })
@@ -115,16 +250,21 @@ function LessonRow({ lesson, onDelete }: { lesson: AdminLesson; onDelete: () => 
       </div>
 
       {type === 'video' && (
-        <div className="grid grid-cols-3 gap-3">
-          <div className="col-span-2">
-            <Field label="URL do vídeo (YouTube)">
-              <input type="url" value={videoUrl} onChange={e => setVideoUrl(e.target.value)} placeholder="https://youtube.com/..." className={inputCls} style={inputStyle} />
+        <>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="col-span-2">
+              <UploadField label="Vídeo" accept="video/*" pasta={pasta} value={videoUrl} onChange={setVideoUrl} />
+            </div>
+            <Field label="Duração (seg)">
+              <input type="number" value={duration} onChange={e => setDuration(e.target.value)} placeholder="3600" className={inputCls} style={inputStyle} />
             </Field>
           </div>
-          <Field label="Duração (seg)">
-            <input type="number" value={duration} onChange={e => setDuration(e.target.value)} placeholder="3600" className={inputCls} style={inputStyle} />
-          </Field>
-        </div>
+          <LessonMaterials lessonId={lesson.id} pasta={pasta} materiais={lesson.materiais} />
+        </>
+      )}
+
+      {type === 'file' && (
+        <UploadField label="Material (PDF)" accept=".pdf,application/pdf" pasta={pasta} value={fileUrl} onChange={setFileUrl} />
       )}
 
       <label className="flex items-center gap-2 cursor-pointer">
@@ -157,9 +297,11 @@ function LessonRow({ lesson, onDelete }: { lesson: AdminLesson; onDelete: () => 
 
 function ModulePanel({
   mod,
+  courseSlug,
   onDeleted,
 }: {
   mod: AdminModule
+  courseSlug: string
   onDeleted: () => void
 }) {
   const [open, setOpen] = useState(true)
@@ -170,7 +312,9 @@ function ModulePanel({
   const [newLessonTitle, setNewLessonTitle] = useState('')
   const [newLessonType, setNewLessonType] = useState<'video' | 'text' | 'file'>('video')
   const [newLessonUrl, setNewLessonUrl] = useState('')
+  const [newLessonFileUrl, setNewLessonFileUrl] = useState('')
   const router = useRouter()
+  const pasta = `${courseSlug}/${slugify(mod.title)}`
 
   function saveTitle() {
     if (!title.trim()) return
@@ -198,10 +342,12 @@ function ModulePanel({
         title: newLessonTitle.trim(),
         lesson_type: newLessonType,
         video_url: newLessonUrl.trim() || null,
+        file_url: newLessonFileUrl.trim() || null,
         sort_order: mod.lessons.length,
       })
       setNewLessonTitle('')
       setNewLessonUrl('')
+      setNewLessonFileUrl('')
       setAddingLesson(false)
       router.refresh()
     })
@@ -247,6 +393,8 @@ function ModulePanel({
             <LessonRow
               key={lesson.id}
               lesson={lesson}
+              courseSlug={courseSlug}
+              moduleTitle={mod.title}
               onDelete={() => router.refresh()}
             />
           ))}
@@ -274,14 +422,13 @@ function ModulePanel({
                 </select>
               </div>
               {newLessonType === 'video' && (
-                <input
-                  type="url"
-                  value={newLessonUrl}
-                  onChange={e => setNewLessonUrl(e.target.value)}
-                  placeholder="URL do YouTube"
-                  className={inputCls}
-                  style={inputStyle}
-                />
+                <div className="space-y-1">
+                  <UploadField label="Vídeo" accept="video/*" pasta={pasta} value={newLessonUrl} onChange={setNewLessonUrl} />
+                  <p className="text-[11px]" style={{ color: '#555' }}>PDFs de apoio podem ser adicionados depois, editando a aula.</p>
+                </div>
+              )}
+              {newLessonType === 'file' && (
+                <UploadField label="Material (PDF)" accept=".pdf,application/pdf" pasta={pasta} value={newLessonFileUrl} onChange={setNewLessonFileUrl} />
               )}
               <div className="flex gap-2">
                 <button
@@ -461,6 +608,7 @@ export function CourseEditor({ course }: { course: AdminCourse }) {
             <ModulePanel
               key={mod.id}
               mod={mod}
+              courseSlug={course.slug}
               onDeleted={() => router.refresh()}
             />
           ))}

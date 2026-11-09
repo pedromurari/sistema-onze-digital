@@ -24,6 +24,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "E:/gratuito-47/curso-gratuito-47-1", "run", "dev", "--", "--port", "8101"],
       "port": 8101
+    },
+    {
+      "name": "membros-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "E:/onze-digital-main/apps/membros", "run", "dev", "--", "--port", "8110"],
+      "port": 8110
     }
   ]
 }

@@ -6,6 +6,14 @@ import { slugify } from '@/lib/utils'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+export type AdminLessonMaterial = {
+  id: string
+  lesson_id: string
+  titulo: string | null
+  url: string
+  sort_order: number
+}
+
 export type AdminLesson = {
   id: string
   module_id: string
@@ -18,6 +26,7 @@ export type AdminLesson = {
   file_url: string | null
   is_free_preview: boolean
   sort_order: number
+  materiais: AdminLessonMaterial[]
 }
 
 export type AdminModule = {
@@ -80,7 +89,22 @@ export async function getAdminCourseBySlug(slug: string): Promise<AdminCourse | 
       .select('id,module_id,title,description,lesson_type,video_url,video_duration,content,file_url,is_free_preview,sort_order')
       .eq('module_id', mod.id)
       .order('sort_order', { ascending: true })
-    moduleList.push({ ...mod, lessons: lessons ?? [] })
+
+    const lessonIds = (lessons ?? []).map((l: AdminLesson) => l.id)
+    const materiaisByLesson: Record<string, AdminLessonMaterial[]> = {}
+    if (lessonIds.length) {
+      const { data: materiaisRaw } = await sb
+        .from('lesson_materiais')
+        .select('id,lesson_id,titulo,url,sort_order')
+        .in('lesson_id', lessonIds)
+        .order('sort_order', { ascending: true })
+      for (const m of (materiaisRaw ?? []) as AdminLessonMaterial[]) {
+        (materiaisByLesson[m.lesson_id] ??= []).push(m)
+      }
+    }
+
+    const lessonsWithMateriais = (lessons ?? []).map((l: AdminLesson) => ({ ...l, materiais: materiaisByLesson[l.id] ?? [] }))
+    moduleList.push({ ...mod, lessons: lessonsWithMateriais })
   }
 
   return { ...product, modules: moduleList }
@@ -230,6 +254,34 @@ export async function deleteLesson(id: string): Promise<{ error?: string }> {
   const supabase = await createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase.from('lessons') as any).delete().eq('id', id)
+  if (error) return { error: error.message }
+  revalidatePath('/admin/cursos')
+  return {}
+}
+
+// ─── Materiais extras (PDF) de uma aula ───────────────────────────────────────
+
+export async function addLessonMaterial(data: {
+  lesson_id: string
+  titulo?: string | null
+  url: string
+  sort_order?: number
+}): Promise<{ id?: string; error?: string }> {
+  const supabase = await createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: created, error } = await (supabase.from('lesson_materiais') as any)
+    .insert(data)
+    .select('id')
+    .single()
+  if (error) return { error: error.message }
+  revalidatePath('/admin/cursos')
+  return { id: created.id }
+}
+
+export async function deleteLessonMaterial(id: string): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase.from('lesson_materiais') as any).delete().eq('id', id)
   if (error) return { error: error.message }
   revalidatePath('/admin/cursos')
   return {}
