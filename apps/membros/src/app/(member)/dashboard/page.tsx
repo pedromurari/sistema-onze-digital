@@ -90,8 +90,12 @@ export default async function DashboardPage() {
   const completed = enrolled.filter(e => progressMap[e.product_id]?.percent_complete === 100)
 
   const enrolledIds = enrolled.map(e => e.product_id)
+  // Aluno só matriculado na Mentoria NPS não vê vitrine de "em breve" de outros
+  // produtos (Formação, NPA 2.0, Practitioner PNL etc) — pedido do Pedro
+  // 2026-11-09: a vitrine ainda não tem página de venda real, só confunde.
+  const isNpsOnly = enrolled.length > 0 && enrolled.every(e => e.products?.slug === 'mentoria-nps')
   const [upsellProducts, featuredProduct, herobannerSlides, promoSlides] = await Promise.all([
-    isDemo ? Promise.resolve([]) : getUpsellProducts(enrolledIds),
+    (isDemo || isNpsOnly) ? Promise.resolve([]) : getUpsellProducts(enrolledIds),
     isDemo ? Promise.resolve(null) : getFeaturedProduct(),
     isDemo ? Promise.resolve([]) : getBannerSlides('hero'),
     isDemo ? Promise.resolve([]) : getBannerSlides('promo'),
@@ -129,8 +133,13 @@ export default async function DashboardPage() {
   const finalHeroSlides = isDemo ? demoHeroSlides : heroSlides
 
   const firstName = (profile?.full_name ?? '').split(' ')[0] || 'Bem-vindo'
-  const hour = new Date().getHours()
-  const greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite'
+  // Calculado no fuso de Brasília explicitamente — o servidor (Vercel) roda em
+  // UTC, então `new Date().getHours()` sem timezone ficava errado quase o dia
+  // inteiro (defasagem de 3h fazia "Bom dia" aparecer de noite, por exemplo).
+  const hour = Number(
+    new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hourCycle: 'h23' }).format(new Date())
+  )
+  const greeting = hour < 12 ? 'Excelente dia' : hour < 18 ? 'Excelente tarde' : 'Excelente noite'
 
   const hasContent = enrolled.length > 0
 
