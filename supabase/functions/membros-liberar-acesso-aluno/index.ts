@@ -129,16 +129,16 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-    );
-
-    const chaveEsperada = await supabase.rpc('get_equipe_11ds_cron_secret').then((r: { data: string | null }) => r.data);
+    const chaveEsperada = Deno.env.get('MEMBROS_LIBERAR_KEY');
     const chaveRecebida = req.headers.get('x-cron-key');
     if (!chaveEsperada || chaveRecebida !== chaveEsperada) {
       return respond(401, { error: 'Unauthorized' });
     }
+
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    );
 
     const { alunoId } = await req.json();
     if (!alunoId || typeof alunoId !== 'string') {
