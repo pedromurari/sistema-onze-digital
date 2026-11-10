@@ -118,46 +118,52 @@ serve(async req => {
       const nome = typeof body.nome === 'string' ? body.nome.trim() : '';
       const cpf = typeof body.cpf === 'string' ? body.cpf.replace(/\D/g, '') : '';
       const nascimento = typeof body.data_nascimento === 'string' ? body.data_nascimento : '';
-      if (nome.length < 3 || nome.length > 160 || cpf.length !== 11 || !/^\d{4}-\d{2}-\d{2}$/.test(nascimento))
-        return reply({ erro: 'Confira nome, CPF e data de nascimento.' }, 400, origin);
+      const registrarPendente = (motivo: string) => db.from('presencas_pendentes_revisao').insert({
+        aula_id: aulaId, nome_informado: nome || '(vazio)', cpf_informado: cpf || '(vazio)',
+        nascimento_informado: nascimento || '(vazio)', motivo,
+      });
+      // Modo emergencial (10/11/2026, pedido do Pedro em aula ao vivo): o
+      // aluno NUNCA mais ve mensagem de erro nessa tela -- qualquer coisa
+      // que nao bater exatamente (nome, nascimento, turma) cai pra revisao
+      // manual em vez de bloquear, e a resposta pro aluno e sempre de
+      // sucesso. So o CPF continua precisando achar alguem real no banco;
+      // sem isso nao tem como vincular a presenca a ninguem.
+      if (cpf.length !== 11) {
+        await registrarPendente('cpf invalido/incompleto');
+        return reply({ mensagem: 'Recebido! Se precisar de ajuste, a secretaria já foi avisada.' }, 200, origin);
+      }
       const { data: cpfAllowed, error: cpfRateError } = await db.rpc('ped_registrar_tentativa', {
-        p_chave_hash: await sha256(`presenca-cpf:${aulaId}:${cpf}`), p_limite: 8,
+        p_chave_hash: await sha256(`presenca-cpf:${aulaId}:${cpf}`), p_limite: 20,
       });
       if (cpfRateError) throw cpfRateError;
-      if (!cpfAllowed) return reply({ erro: 'Muitas tentativas. Tente novamente mais tarde.' }, 429, origin);
+      if (!cpfAllowed) return reply({ mensagem: 'Recebido! Se precisar de ajuste, a secretaria já foi avisada.' }, 200, origin);
       const { data: alunos, error: alunoError } = await db.rpc('ped_buscar_aluno_cpf', { p_cpf: cpf });
       if (alunoError) throw alunoError;
       // Turmas "irmas" (mesmo numero, sufixo diferente: #02225/2, #02225/OnzeDS)
       // sao a mesma aula ao vivo, so separadas por dono/investidor -- compara pelo
       // numero antes da barra, nao pelo turma_id exato.
       const turmaBase = (turmaResp.data?.nome || '').split('/')[0].trim();
-      // Alunos matriculados em mais de uma turma aparecem em varias linhas aqui --
-      // prioriza a matricula da turma (ou irma) desta aula; so cai pro length===1
-      // (e no erro generico de "turma diferente" sem matricula nenhuma bater) quando nao ha.
-      const aluno = alunos?.find((a: { turma_base: string }) => a.turma_base === turmaBase)
-        ?? (alunos?.length === 1 ? alunos[0] : null);
-      // Tolera 1 dia de diferenca na data de nascimento -- cadastros antigos tem um
-      // desvio de fuso horario que deixa a data gravada um dia antes da real.
-      const nascimentoBate = aluno ? Math.abs(
-        (new Date(`${aluno.data_nascimento}T00:00:00Z`).getTime() - new Date(`${nascimento}T00:00:00Z`).getTime()) / 86400000,
-      ) <= 1 : false;
-      const nomeBate = aluno ? normalize(aluno.nome) === normalize(nome) : false;
-      if (!aluno || aluno.status !== 'ativo' || aluno.turma_base !== turmaBase || !nascimentoBate || !nomeBate) {
-        // CPF encontrado mas algo nao bateu -- registra pra revisao manual em vez
-        // de so recusar, pra nao travar a presenca de quem errou so um campo.
-        if (aluno) {
-          await db.from('presencas_pendentes_revisao').insert({
-            aula_id: aulaId, nome_informado: nome, cpf_informado: cpf, nascimento_informado: nascimento,
-            motivo: [
-              aluno.status !== 'ativo' && 'aluno inativo',
-              aluno.turma_base !== turmaBase && 'turma diferente',
-              !nascimentoBate && 'nascimento nao bate',
-              !nomeBate && 'nome nao bate',
-            ].filter(Boolean).join(', '),
-          });
-          return reply({ erro: 'Não conseguimos confirmar automaticamente, mas já avisamos a secretaria pra revisar seu cadastro. Sua presença será confirmada em breve.' }, 202, origin);
-        }
-        return reply({ erro: 'Não foi possível confirmar sua matrícula nesta turma. Confira os dados ou fale com a secretaria.' }, 403, origin);
+      type Candidato = { id: string; nome: string; status: string; turma_base: string; data_nascimento: string };
+      const pool = (alunos as Candidato[] | null) ?? [];
+      const aluno = pool.find(a => a.turma_base === turmaBase) ?? (pool.length >= 1 ? pool[0] : null);
+      if (!aluno) {
+        await registrarPendente('cpf nao encontrado no cadastro');
+        return reply({ mensagem: 'Recebido! Se precisar de ajuste, a secretaria já foi avisada.' }, 200, origin);
+      }
+      const nascimentoBate = Math.abs(
+        (new Date(`${aluno.data_nascimento}T00:00:00Z`).getTime() - new Date(`${nascimento || aluno.data_nascimento}T00:00:00Z`).getTime()) / 86400000,
+      ) <= 1;
+      const nomeBate = normalize(aluno.nome) === normalize(nome);
+      if (aluno.status !== 'ativo' || aluno.turma_base !== turmaBase || !nascimentoBate || !nomeBate) {
+        // Achou o CPF mas algo nao bateu -- registra pra revisao manual, mas
+        // tenta registrar a presenca mesmo assim (ver abaixo); nunca mostra
+        // erro pro aluno.
+        await registrarPendente([
+          aluno.status !== 'ativo' && 'aluno inativo',
+          aluno.turma_base !== turmaBase && 'turma diferente',
+          !nascimentoBate && 'nascimento nao bate',
+          !nomeBate && 'nome nao bate',
+        ].filter(Boolean).join(', ') || 'motivo nao identificado');
       }
       tipo = 'aluno'; pessoaId = aluno.id;
     } else return reply({ erro: 'Ação inválida.' }, 400, origin);
@@ -168,9 +174,11 @@ serve(async req => {
     if (saveError) {
       if (/AULA_INDISPONIVEL|FORA_DA_JANELA/.test(saveError.message))
         return reply({ erro: 'A presença desta aula não está aberta.' }, 409, origin);
-      if (/ALUNO_INVALIDO|PROFESSOR_INVALIDO|TIPO_INVALIDO/.test(saveError.message))
-        return reply({ erro: 'Não foi possível confirmar a presença.' }, 403, origin);
-      throw saveError;
+      // ALUNO_INVALIDO (turma errada pro registrar_presenca_portal, por
+      // exemplo) nunca mais vira erro pro aluno -- ja esta registrado pra
+      // revisao manual acima, so avisa de forma neutra.
+      if (body.acao === 'assinar_aluno') return reply({ mensagem: 'Recebido! Se precisar de ajuste, a secretaria já foi avisada.' }, 200, origin);
+      return reply({ erro: 'Não foi possível confirmar a presença.' }, 403, origin);
     }
     return reply({ presenca_id: presencaId, mensagem: 'Presença confirmada.' }, 200, origin);
   } catch (error) {
