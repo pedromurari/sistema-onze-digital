@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { marcarAcessoNoCrm } from '@/lib/sistema11'
 
 // Só aceita caminhos internos (evita open redirect via ?next=https://...)
 function safeNext(next: FormDataEntryValue | null): string {
@@ -17,6 +18,8 @@ export async function signIn(formData: FormData) {
 
   const { error } = await supabase.auth.signInWithPassword({ email, password })
   if (error) return { error: 'E-mail ou senha inválidos.' }
+
+  await marcarAcessoNoCrm(email)
 
   // Volta pra onde a pessoa estava indo — admins acessam /admin pelo menu quando quiserem
   redirect(safeNext(formData.get('next')))

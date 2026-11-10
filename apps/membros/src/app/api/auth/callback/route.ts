@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse, type NextRequest } from 'next/server'
+import { marcarAcessoNoCrm } from '@/lib/sistema11'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
@@ -29,6 +30,8 @@ export async function GET(request: NextRequest) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: profile } = await (supabase.from('profiles') as any)
         .select('role').eq('id', data.user.id).single()
+
+      if (data.user.email) await marcarAcessoNoCrm(data.user.email)
 
       const destination = next === '/reset-password' ? next : profile?.role === 'admin' ? '/admin' : next
       return NextResponse.redirect(`${origin}${destination}`)

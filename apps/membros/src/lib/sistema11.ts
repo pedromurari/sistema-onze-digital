@@ -45,3 +45,20 @@ export async function buscarElegibilidadeCrm(pessoaId: string): Promise<Elegibil
 
   return data ?? []
 }
+
+// Carimba no CRM que esta pessoa realmente entrou na área de membros --
+// pedido do Pedro (09/11/2026): a ficha do Financeiro mostra não só "mandei
+// o acesso" (acesso_membros_liberado_em) mas "ela realmente entrou"
+// (acesso_membros_acessado_em). Chamar depois de todo login bem-sucedido
+// (magic link ou e-mail+senha). Best effort: nunca deve derrubar o login.
+export async function marcarAcessoNoCrm(email: string) {
+  try {
+    const sistema11 = createSistema11Client()
+    await sistema11
+      .from('alunos')
+      .update({ acesso_membros_acessado_em: new Date().toISOString() })
+      .ilike('email', email)
+  } catch (e) {
+    console.warn('[sistema11] falha ao marcar acesso no CRM:', e)
+  }
+}

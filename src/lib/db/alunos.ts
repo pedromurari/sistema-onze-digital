@@ -28,7 +28,7 @@ export const COLUNAS_ALUNO_COMPLETO =
   'grupo_turma_id, forms_respondido, forms_respondido_em, contrato_enviado, contrato_enviado_em, ' +
   'contrato_assinado, contrato_assinado_em, autentique_documento_id, autentique_link_assinatura, ' +
   'contrato_baixado, contrato_arquivo_url, contrato_arquivo_nome, asaas_integrado, asaas_link, ' +
-  'voomp_integrado, voomp_link, contrato_token, created_at';
+  'voomp_integrado, voomp_link, contrato_token, acesso_membros_liberado_em, acesso_membros_acessado_em, created_at';
 
 /**
  * Genérico no tipo de linha: cada tela já tem a sua interface `Aluno` (com o subconjunto

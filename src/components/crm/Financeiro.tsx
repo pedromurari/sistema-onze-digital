@@ -145,6 +145,8 @@ interface Aluno {
   token_acesso?: string;
   link_grupo_whatsapp?: string;
   lancamento_id?: string;
+  acesso_membros_liberado_em?: string | null;
+  acesso_membros_acessado_em?: string | null;
   created_at: string;
 }
 
@@ -3544,7 +3546,25 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
 
                 {/* Dados pessoais */}
                 <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Dados Pessoais</p>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Dados Pessoais</p>
+                    {alunoDetail && (
+                      <div className="flex items-center gap-1.5">
+                        <Badge
+                          className={alunoDetail.acesso_membros_liberado_em ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-zinc-100 text-zinc-500 border border-zinc-200'}
+                          title={alunoDetail.acesso_membros_liberado_em ? `Enviado em ${safeDate(alunoDetail.acesso_membros_liberado_em)}` : 'Acesso à área de membros ainda não enviado'}
+                        >
+                          {alunoDetail.acesso_membros_liberado_em ? '✓ Acesso enviado' : 'Acesso não enviado'}
+                        </Badge>
+                        <Badge
+                          className={alunoDetail.acesso_membros_acessado_em ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-zinc-100 text-zinc-500 border border-zinc-200'}
+                          title={alunoDetail.acesso_membros_acessado_em ? `Último acesso em ${safeDate(alunoDetail.acesso_membros_acessado_em)}` : 'Ainda não acessou a área de membros'}
+                        >
+                          {alunoDetail.acesso_membros_acessado_em ? '✓ Já acessou' : 'Ainda não acessou'}
+                        </Badge>
+                      </div>
+                    )}
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div><label className="text-xs text-muted-foreground">Nome</label><Input value={editAlunoForm.nome || ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, nome: e.target.value })} className="mt-1 h-8 text-sm" /></div>
                     <div><label className="text-xs text-muted-foreground">WhatsApp</label><Input value={editAlunoForm.whatsapp || ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, whatsapp: e.target.value })} className="mt-1 h-8 text-sm" /></div>
