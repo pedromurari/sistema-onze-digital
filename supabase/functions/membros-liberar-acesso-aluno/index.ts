@@ -86,26 +86,35 @@ function emailAcessoHtml(nome: string, email: string, loginUrl: string, produtoN
 async function notificarAcessoMembros(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
-  params: { email: string; nome: string; whatsapp?: string | null; loginUrl: string; produtoNome: string },
+  params: { email: string; nome: string; whatsapp?: string | null; loginUrl: string; produtoNome: string; enviarEmail: boolean; enviarWhatsapp: boolean },
 ) {
-  const { email, nome, whatsapp, loginUrl, produtoNome } = params;
+  const { email, nome, whatsapp, loginUrl, produtoNome, enviarEmail, enviarWhatsapp } = params;
   const siteUrl = 'https://www.idmpsi.com.br';
   const primeiroNome = (nome || '').trim().split(/\s+/)[0] || '';
-  const resultado = { email: { ok: false as boolean, erro: undefined as string | undefined }, whatsapp: { ok: false as boolean, erro: undefined as string | undefined, pulado: undefined as boolean | undefined } };
+  const resultado = { email: { ok: false as boolean, erro: undefined as string | undefined, pulado: undefined as boolean | undefined }, whatsapp: { ok: false as boolean, erro: undefined as string | undefined, pulado: undefined as boolean | undefined } };
 
-  try {
-    const { data, error } = await supabase.functions.invoke('email-enviar', {
-      body: {
-        to: email,
-        to_name: nome || undefined,
-        subject: `Seu acesso à ${produtoNome} chegou — Instituto Despertamente`,
-        html: emailAcessoHtml(nome, email, loginUrl, produtoNome),
-      },
-    });
-    const erro = error?.message ?? (data as { error?: string } | null)?.error;
-    resultado.email = erro ? { ok: false, erro, pulado: undefined } : { ok: true, erro: undefined, pulado: undefined };
-  } catch (e) {
-    resultado.email = { ok: false, erro: e instanceof Error ? e.message : 'erro inesperado', pulado: undefined };
+  if (!enviarEmail) {
+    resultado.email = { ok: false, erro: undefined, pulado: true };
+  } else {
+    try {
+      const { data, error } = await supabase.functions.invoke('email-enviar', {
+        body: {
+          to: email,
+          to_name: nome || undefined,
+          subject: `Seu acesso à ${produtoNome} chegou — Instituto Despertamente`,
+          html: emailAcessoHtml(nome, email, loginUrl, produtoNome),
+        },
+      });
+      const erro = error?.message ?? (data as { error?: string } | null)?.error;
+      resultado.email = erro ? { ok: false, erro, pulado: undefined } : { ok: true, erro: undefined, pulado: undefined };
+    } catch (e) {
+      resultado.email = { ok: false, erro: e instanceof Error ? e.message : 'erro inesperado', pulado: undefined };
+    }
+  }
+
+  if (!enviarWhatsapp) {
+    resultado.whatsapp = { ok: false, erro: undefined, pulado: true };
+    return resultado;
   }
 
   if (!whatsapp) {
@@ -147,7 +156,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    const { alunoId } = await req.json();
+    const { alunoId, enviarEmail = true, enviarWhatsapp = true } = await req.json();
     if (!alunoId || typeof alunoId !== 'string') {
       return respond(400, { error: 'alunoId é obrigatório' });
     }
@@ -215,6 +224,8 @@ serve(async (req) => {
       whatsapp,
       loginUrl,
       produtoNome: PRODUTO_NOME[aluno.produto as string] ?? 'Área de Membros',
+      enviarEmail: enviarEmail !== false,
+      enviarWhatsapp: enviarWhatsapp !== false,
     });
 
     return respond(200, {
