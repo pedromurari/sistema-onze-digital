@@ -61,6 +61,11 @@ verify_jwt = false
 [functions.aluno-atualizar-dados]
 verify_jwt = false
 
+# Link público de revisão de prova/trabalho (time pedagógico confirma se as
+# questões e o gabarito estão certos antes de publicar pros alunos).
+[functions.avaliacao-revisao-publica]
+verify_jwt = false
+
 # Entrada pública: cada função valida os dados e o webhook consulta o
 # pagamento diretamente no Mercado Pago antes de confirmar a inscrição.
 [functions.workshop-registrar]
