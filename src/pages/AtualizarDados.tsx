@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import logoIdm from '@/assets/logo-idm.png';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { DataNascimentoSelect } from '@/components/DataNascimentoSelect';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
@@ -81,6 +82,7 @@ export default function AtualizarDados() {
   async function salvar(event: FormEvent) {
     event.preventDefault();
     if (enviando) return;
+    if (!info?.nascimento_cadastrado && !nascimento) { setErro('Preencha sua data de nascimento.'); return; }
     setErro(''); setEnviando(true);
     try {
       await chamar('salvar', alunoId, chave, {
@@ -117,7 +119,7 @@ export default function AtualizarDados() {
         </div> : !faltaAlgo ? <p className="rounded-lg bg-muted p-3 text-sm">Seu cadastro já está completo, não é necessário fazer nada.</p> : <form onSubmit={(event) => void salvar(event)} className="space-y-4">
           <p className="flex gap-2 rounded-lg bg-muted/40 p-3 text-sm"><LockKeyhole className="h-4 w-4 shrink-0" /> Este link é individual. Preenchemos só o que ainda falta no seu cadastro — nada que já está certo será alterado.</p>
           {!info.cpf_cadastrado && <div className="space-y-1.5"><Label htmlFor="atualizar-cpf">CPF</Label><Input id="atualizar-cpf" value={cpf} onChange={event => setCpf(event.target.value)} inputMode="numeric" maxLength={14} autoComplete="off" required /></div>}
-          {!info.nascimento_cadastrado && <div className="space-y-1.5"><Label htmlFor="atualizar-nascimento">Data de nascimento</Label><Input id="atualizar-nascimento" type="date" value={nascimento} onChange={event => setNascimento(event.target.value)} required /></div>}
+          {!info.nascimento_cadastrado && <div className="space-y-1.5"><Label htmlFor="atualizar-nascimento-dia">Data de nascimento</Label><DataNascimentoSelect idPrefix="atualizar-nascimento" value={nascimento} onChange={setNascimento} /></div>}
           {!info.endereco_cadastrado && <div className="space-y-3 rounded-lg border p-3">
             <p className="text-sm font-medium">Endereço (necessário pra emitir sua nota fiscal)</p>
             <div className="space-y-1.5">

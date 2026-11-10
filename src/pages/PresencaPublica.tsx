@@ -6,6 +6,7 @@ import logoIdm from '@/assets/logo-idm.png';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { DataNascimentoSelect } from '@/components/DataNascimentoSelect';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
@@ -101,8 +102,8 @@ export default function PresencaPublica() {
           <p className="flex gap-2 rounded-lg bg-muted/40 p-3 text-sm"><LockKeyhole className="h-4 w-4 shrink-0" /> Informe os dados do seu cadastro. O sistema confere sua matrícula nesta turma antes de registrar a presença.</p>
           <div className="space-y-1.5"><Label htmlFor="presenca-nome">Nome completo</Label><Input id="presenca-nome" value={nome} onChange={event => setNome(event.target.value)} minLength={3} maxLength={160} autoComplete="name" required /></div>
           <div className="space-y-1.5"><Label htmlFor="presenca-cpf">CPF</Label><Input id="presenca-cpf" value={cpf} onChange={event => setCpf(event.target.value)} inputMode="numeric" maxLength={14} autoComplete="off" required /></div>
-          <div className="space-y-1.5"><Label htmlFor="presenca-nascimento">Data de nascimento</Label><Input id="presenca-nascimento" type="date" value={nascimento} onChange={event => setNascimento(event.target.value)} required /></div>
-          <Button type="submit" disabled={enviando}>{enviando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Confirmar presença</Button>
+          <div className="space-y-1.5"><Label htmlFor="presenca-nascimento-dia">Data de nascimento</Label><DataNascimentoSelect idPrefix="presenca-nascimento" value={nascimento} onChange={setNascimento} /></div>
+          <Button type="submit" disabled={enviando || !nascimento}>{enviando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Confirmar presença</Button>
         </form>}
       </CardContent></Card>}
       <p className="text-center text-xs text-muted-foreground">Problema com seu cadastro? Fale com a secretaria: <a href="https://wa.me/5511930439385" className="underline">+55 11 93043-9385</a>.</p>
