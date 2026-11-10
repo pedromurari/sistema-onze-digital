@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { CheckCircle2, Loader2, LockKeyhole } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import logoIdm from '@/assets/logo-idm.png';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
@@ -15,13 +16,12 @@ type Questao = {
 };
 
 type Info = {
-  aluno: string | null; titulo: string; tipo: string; modulo: string | null;
-  instrucoes: string | null; ja_enviada: boolean; questoes: Questao[];
+  titulo: string; tipo: string; modulo: string | null; instrucoes: string | null; questoes: Questao[];
 };
 
-async function chamar(acao: string, avaliacaoId: string, token: string, campos: Record<string, unknown> = {}) {
+async function chamar(acao: string, avaliacaoId: string, campos: Record<string, unknown> = {}) {
   const { data, error } = await supabase.functions.invoke('ped-avaliacao-aluno', {
-    body: { acao, avaliacao_id: avaliacaoId, token, ...campos },
+    body: { acao, avaliacao_id: avaliacaoId, ...campos },
   });
   if (error) {
     if (error.context instanceof Response) {
@@ -36,10 +36,11 @@ async function chamar(acao: string, avaliacaoId: string, token: string, campos: 
 
 export default function AvaliacaoPublica() {
   const { avaliacaoId = '' } = useParams();
-  const [params] = useSearchParams();
-  const token = params.get('token') || '';
   const [info, setInfo] = useState<Info | null>(null);
   const [respostas, setRespostas] = useState<Record<string, string>>({});
+  const [nome, setNome] = useState('');
+  const [cpf, setCpf] = useState('');
+  const [nascimento, setNascimento] = useState('');
   const [carregando, setCarregando] = useState(true);
   const [enviando, setEnviando] = useState(false);
   const [enviada, setEnviada] = useState(false);
@@ -48,12 +49,12 @@ export default function AvaliacaoPublica() {
   useEffect(() => {
     let ativo = true;
     setCarregando(true);
-    void chamar('info', avaliacaoId, token).then((data: Info) => {
+    void chamar('info', avaliacaoId).then((data: Info) => {
       if (ativo) { setInfo(data); setErro(''); }
     }).catch((error: Error) => { if (ativo) setErro(error.message); })
       .finally(() => { if (ativo) setCarregando(false); });
     return () => { ativo = false; };
-  }, [avaliacaoId, token]);
+  }, [avaliacaoId]);
 
   async function enviar(event: FormEvent) {
     event.preventDefault();
@@ -62,7 +63,7 @@ export default function AvaliacaoPublica() {
     if (faltando.length > 0) { setErro(`Responda todas as questões antes de enviar (falta ${faltando.length}).`); return; }
     setErro(''); setEnviando(true);
     try {
-      await chamar('responder', avaliacaoId, token, { respostas });
+      await chamar('responder', avaliacaoId, { nome: nome.trim(), cpf, data_nascimento: nascimento, respostas });
       setEnviada(true);
     } catch (error) { setErro(error instanceof Error ? error.message : 'Não foi possível enviar.'); }
     finally { setEnviando(false); }
@@ -82,16 +83,22 @@ export default function AvaliacaoPublica() {
       {erro && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{erro}</p>}
 
       {info && <Card><CardHeader>
-        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-primary"><LockKeyhole className="h-3.5 w-3.5" /> {info.aluno}</p>
         <CardTitle>{info.titulo}</CardTitle>
         {info.modulo && <p className="text-sm text-muted-foreground">{info.modulo}</p>}
         {info.instrucoes && <p className="text-sm text-muted-foreground">{info.instrucoes}</p>}
       </CardHeader><CardContent className="space-y-5">
-        {enviada || info.ja_enviada ? <div role="status" className="space-y-2 text-center py-6">
+        {enviada ? <div role="status" className="space-y-2 text-center py-6">
           <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600" />
           <h2 className="text-lg font-semibold">Respostas enviadas</h2>
           <p className="text-sm text-muted-foreground">Recebemos sua prova. A correção sai depois que a professora revisar suas respostas.</p>
         </div> : <form onSubmit={(event) => void enviar(event)} className="space-y-5">
+          <div className="space-y-3 rounded-lg border p-4">
+            <p className="flex gap-2 text-sm text-muted-foreground"><LockKeyhole className="h-4 w-4 shrink-0" /> Informe seus dados de matrícula pra identificarmos sua prova.</p>
+            <div className="space-y-1.5"><Label htmlFor="prova-nome">Nome completo</Label><Input id="prova-nome" value={nome} onChange={event => setNome(event.target.value)} minLength={3} maxLength={160} autoComplete="name" required /></div>
+            <div className="space-y-1.5"><Label htmlFor="prova-cpf">CPF</Label><Input id="prova-cpf" value={cpf} onChange={event => setCpf(event.target.value)} inputMode="numeric" maxLength={14} autoComplete="off" required /></div>
+            <div className="space-y-1.5"><Label htmlFor="prova-nascimento">Data de nascimento</Label><Input id="prova-nascimento" type="date" value={nascimento} onChange={event => setNascimento(event.target.value)} required /></div>
+          </div>
+
           {info.questoes.map((questao, index) => <div key={questao.id} className="space-y-2 rounded-lg border p-4">
             <p className="text-sm font-medium"><span className="text-muted-foreground">{index + 1}.</span> {questao.enunciado}</p>
             {questao.tipo === 'objetiva' && questao.opcoes && <RadioGroup value={respostas[questao.id] || ''} onValueChange={value => setRespostas(prev => ({ ...prev, [questao.id]: value }))} className="space-y-1.5">
@@ -105,7 +112,7 @@ export default function AvaliacaoPublica() {
           <Button type="submit" disabled={enviando}>{enviando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Enviar respostas</Button>
         </form>}
       </CardContent></Card>}
-      <p className="text-center text-xs text-muted-foreground">Problema com o link? Fale com a secretaria: <a href="https://wa.me/5511930439385" className="underline">+55 11 93043-9385</a>.</p>
+      <p className="text-center text-xs text-muted-foreground">Problema com seu cadastro? Fale com a secretaria: <a href="https://wa.me/5511930439385" className="underline">+55 11 93043-9385</a>.</p>
     </div>
   </main>;
 }
