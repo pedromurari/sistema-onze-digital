@@ -66,6 +66,11 @@ verify_jwt = false
 [functions.avaliacao-revisao-publica]
 verify_jwt = false
 
+# Formulário do aluno responder prova/trabalho (link individual via token em
+# ped_acessos_avaliacao) + geração do link pelo admin (bearer próprio).
+[functions.ped-avaliacao-aluno]
+verify_jwt = false
+
 # Entrada pública: cada função valida os dados e o webhook consulta o
 # pagamento diretamente no Mercado Pago antes de confirmar a inscrição.
 [functions.workshop-registrar]
