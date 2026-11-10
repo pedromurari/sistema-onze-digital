@@ -4,14 +4,13 @@
  * Fluxo: admin gera um link individual (ação `gerar_link`, autenticada),
  * o aluno abre o link público (`info` + `responder`, sem login — token
  * em `ped_acessos_avaliacao`, mesmo padrão de um-uso de outros links
- * públicos deste projeto). Objetivas corrigem sozinhas na hora; discursivas
- * passam pela IA (mesma chave ANTHROPIC_API_KEY já usada em
- * corrigir-tarefa) e ficam com status 'avaliada_ia', aguardando a
- * professora revisar e liberar a nota final (tela de revisão ainda não
- * construída -- escopo separado).
+ * públicos deste projeto). A resposta só é gravada crua em
+ * `ped_entregas`/`ped_respostas` (status 'recebida') — sem nota nem
+ * correção automática: quem aprova/corrige cada resposta é o pedagógico,
+ * numa tela que ainda não existe (próximo passo, escopo separado).
  *
  * IMPORTANTE: construída mas NÃO liberar links reais pra aluno nenhum
- * ainda -- aguardando ok explícito do Pedro (pedido em 10/11/2026).
+ * ainda — aguardando ok explícito do Pedro (pedido em 10/11/2026).
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -19,7 +18,6 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const ORIGINS = new Set(['https://sistema.idmpsi.com.br', 'http://localhost:5173']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const encoder = new TextEncoder();
-const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY') ?? '';
 
 function headers(origin: string | null) {
   return {
@@ -39,40 +37,6 @@ async function sha256(value: string) {
 }
 function gerarToken() {
   return Array.from(crypto.getRandomValues(new Uint8Array(24)), b => b.toString(16).padStart(2, '0')).join('');
-}
-
-type Questao = {
-  id: string; ordem: number; tipo: 'objetiva' | 'discursiva' | 'envio_trabalho';
-  enunciado: string; opcoes: string[] | null; resposta_correta: string | null;
-  resposta_esperada: string | null; criterios_correcao: string | null; pontos: number;
-};
-
-async function corrigirDiscursivaIA(questao: Questao, respostaAluno: string) {
-  if (!ANTHROPIC_KEY || !respostaAluno.trim()) return { nota: 0, feedback: 'Sem resposta do aluno para avaliar.' };
-  const prompt = `Você é um corretor pedagógico de um curso de Psicanálise. Avalie a resposta do aluno com critério justo, pontuação de 0 a ${questao.pontos}, e feedback construtivo e breve.
-
-QUESTÃO: ${questao.enunciado}
-${questao.resposta_esperada ? `RESPOSTA ESPERADA (referência): ${questao.resposta_esperada}\n` : ''}${questao.criterios_correcao ? `CRITÉRIOS DE CORREÇÃO: ${questao.criterios_correcao}\n` : ''}
-RESPOSTA DO ALUNO:
-${respostaAluno}
-
-Retorne APENAS um JSON válido (sem markdown, sem texto fora do JSON), no formato:
-{"nota": <número de 0 a ${questao.pontos}>, "feedback": "<feedback específico de 2-3 frases>"}`;
-  try {
-    const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 512, messages: [{ role: 'user', content: prompt }] }),
-    });
-    const aiJson = await aiRes.json();
-    const rawText = aiJson?.content?.[0]?.text ?? '{}';
-    const parsed = JSON.parse(rawText);
-    const nota = Math.max(0, Math.min(questao.pontos, Number(parsed.nota) || 0));
-    return { nota, feedback: String(parsed.feedback || '') };
-  } catch (error) {
-    console.error('corrigirDiscursivaIA:', error instanceof Error ? error.message : 'erro');
-    return { nota: 0, feedback: 'Não foi possível corrigir automaticamente; aguarda revisão da professora.' };
-  }
 }
 
 serve(async req => {
@@ -155,47 +119,25 @@ serve(async req => {
       if (!respostas || typeof respostas !== 'object') return reply({ erro: 'Respostas inválidas.' }, 400, origin);
 
       const { data: questoes, error: questoesError } = await db.from('ped_questoes')
-        .select('id,ordem,tipo,enunciado,opcoes,resposta_correta,resposta_esperada,criterios_correcao,pontos')
-        .eq('avaliacao_id', avaliacaoId).order('ordem', { ascending: true });
+        .select('id,ordem,tipo').eq('avaliacao_id', avaliacaoId).order('ordem', { ascending: true });
       if (questoesError) throw questoesError;
       if (!questoes || questoes.length === 0) return reply({ erro: 'Avaliação sem questões.' }, 409, origin);
 
+      // Grava a resposta crua, sem nota nem correção automática -- quem
+      // aprova cada resposta é o pedagógico/diretoria, numa tela de revisão
+      // que ainda não existe.
       const { data: entrega, error: entregaError } = await db.from('ped_entregas')
         .insert({ avaliacao_id: avaliacaoId, aluno_id: acesso.aluno_id, status: 'recebida' })
         .select('id').single();
       if (entregaError) throw entregaError;
 
-      let notaTotal = 0;
-      const pareceres: string[] = [];
-      for (const questao of questoes as Questao[]) {
-        const respostaAluno = typeof respostas[questao.id] === 'string' ? respostas[questao.id].trim() : '';
-        if (questao.tipo === 'objetiva') {
-          const acertou = Boolean(respostaAluno) && respostaAluno === questao.resposta_correta;
-          const notaQuestao = acertou ? questao.pontos : 0;
-          notaTotal += notaQuestao;
-          await db.from('ped_respostas').insert({
-            avaliacao_id: avaliacaoId, entrega_id: entrega.id, questao_id: questao.id,
-            resposta_texto: respostaAluno || null, nota_ia: notaQuestao,
-          });
-        } else if (questao.tipo === 'discursiva') {
-          const correcao = await corrigirDiscursivaIA(questao, respostaAluno);
-          notaTotal += correcao.nota;
-          pareceres.push(`Q${questao.ordem}: ${correcao.feedback}`);
-          await db.from('ped_respostas').insert({
-            avaliacao_id: avaliacaoId, entrega_id: entrega.id, questao_id: questao.id,
-            resposta_texto: respostaAluno || null, nota_ia: correcao.nota, feedback_ia: correcao.feedback,
-          });
-        } else {
-          await db.from('ped_respostas').insert({
-            avaliacao_id: avaliacaoId, entrega_id: entrega.id, questao_id: questao.id,
-            resposta_texto: respostaAluno || null,
-          });
-        }
-      }
+      const linhas = questoes.map(questao => ({
+        avaliacao_id: avaliacaoId, entrega_id: entrega.id, questao_id: questao.id,
+        resposta_texto: typeof respostas[questao.id] === 'string' ? respostas[questao.id].trim() || null : null,
+      }));
+      const { error: respostasError } = await db.from('ped_respostas').insert(linhas);
+      if (respostasError) throw respostasError;
 
-      await db.from('ped_entregas').update({
-        status: 'avaliada_ia', nota_ia: notaTotal, parecer_ia: pareceres.join(' | ') || null,
-      }).eq('id', entrega.id);
       await db.from('ped_acessos_avaliacao').update({ usado_em: new Date().toISOString() }).eq('token_hash', tokenHash);
 
       return reply({ ok: true, entrega_id: entrega.id }, 200, origin);

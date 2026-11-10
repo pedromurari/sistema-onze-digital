@@ -90,7 +90,7 @@ export default function AvaliacaoPublica() {
         {enviada || info.ja_enviada ? <div role="status" className="space-y-2 text-center py-6">
           <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600" />
           <h2 className="text-lg font-semibold">Respostas enviadas</h2>
-          <p className="text-sm text-muted-foreground">Recebemos sua prova. A correção final sai depois da revisão da professora.</p>
+          <p className="text-sm text-muted-foreground">Recebemos sua prova. A correção sai depois que a professora revisar suas respostas.</p>
         </div> : <form onSubmit={(event) => void enviar(event)} className="space-y-5">
           {info.questoes.map((questao, index) => <div key={questao.id} className="space-y-2 rounded-lg border p-4">
             <p className="text-sm font-medium"><span className="text-muted-foreground">{index + 1}.</span> {questao.enunciado}</p>
