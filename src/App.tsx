@@ -2,9 +2,19 @@ import React, { Component, ErrorInfo, Suspense } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
+
+// Turmas do Curso Gratuito que ganham domínio próprio (ex: turma48.semanadodespertar.online)
+// apontam pra raiz do mesmo deploy -- sem isso, a raiz cairia no login do
+// sistema em vez da página de captura. Genérico pra não precisar editar
+// isto de novo a cada turma nova com subdomínio.
+function RaizPorDominio() {
+  const match = window.location.hostname.match(/^turma(\d+)\.semanadodespertar\.online$/);
+  if (match) return <Navigate to={`/turma/${match[1]}`} replace />;
+  return <Index />;
+}
 
 // Code splitting: páginas públicas carregadas apenas quando acessadas
 const TarefaPublica   = React.lazy(() => import("./pages/TarefaPublica"));
@@ -125,7 +135,7 @@ const App = () => (
               <Route path="/diva"                         element={<DivaCaptura />} />
               <Route path="/diva/confirmacao/:leadId"      element={<DivaConfirmacao />} />
               <Route path="/ir/:slug"               element={<LinkRedirect />} />
-              <Route path="/"                       element={<Index />} />
+              <Route path="/"                       element={<RaizPorDominio />} />
               <Route path="*"                       element={<NotFound />} />
             </Routes>
           </Suspense>
