@@ -75,5 +75,12 @@ export async function updatePassword(formData: FormData) {
   const password = formData.get('password') as string
   const { error } = await supabase.auth.updateUser({ password })
   if (error) return { error: error.message }
+
+  // Mesma marcacao do signIn/callback -- quem cai aqui via "esqueci a senha"
+  // (link magico expirado, por ex.) tambem estava completando o primeiro
+  // acesso de verdade, e esse caminho nao passava por nenhum dos outros dois.
+  const { data } = await supabase.auth.getUser()
+  if (data.user?.email) await marcarAcessoNoCrm(data.user.email)
+
   redirect('/dashboard')
 }
