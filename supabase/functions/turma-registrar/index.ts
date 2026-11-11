@@ -66,6 +66,7 @@ serve(async (req) => {
   const nome = limpar(entrada.nome, 120);
   const whatsapp = limpar(entrada.whatsapp, 30);
   const email = limpar(entrada.email, 200);
+  const cidade = limpar(entrada.cidade, 120);
 
   if (!slug || !nome || !whatsapp) {
     return json({ ok: false, erro: 'slug, nome e whatsapp sao obrigatorios' }, 400);
@@ -96,6 +97,7 @@ serve(async (req) => {
       nome,
       whatsapp,
       email,
+      cidade,
       canal: 'Lançamento',
       origem: 'Time Comercial',
       status: 'novo',
