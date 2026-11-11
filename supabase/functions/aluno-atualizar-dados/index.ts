@@ -69,7 +69,7 @@ serve(async req => {
 
     const db = createClient(url, serviceKey, { auth: { persistSession: false } });
     const { data: aluno, error: alunoError } = await db.from('alunos')
-      .select('id,nome,cpf,data_nascimento,endereco,cep,cidade_estado,status').eq('id', alunoId).maybeSingle();
+      .select('id,nome,email,cpf,data_nascimento,endereco,cep,cidade_estado,status').eq('id', alunoId).maybeSingle();
     if (alunoError) throw alunoError;
     if (!aluno || aluno.status !== 'ativo') return reply({ erro: 'Cadastro não encontrado.' }, 404, origin);
 
@@ -89,6 +89,7 @@ serve(async req => {
     if (body.acao === 'info') {
       return reply({
         nome: aluno.nome,
+        email_cadastrado: !!aluno.email,
         cpf_cadastrado: !!aluno.cpf,
         nascimento_cadastrado: !!aluno.data_nascimento,
         endereco_cadastrado: enderecoCompleto,
@@ -102,6 +103,11 @@ serve(async req => {
       // o aluno preencheu, SEMPRE grava, porque a premissa de pedir e que o que
       // esta la (se tiver algo) esta errado/incompleto.
       const patch: Record<string, string> = {};
+      if (!aluno.email) {
+        const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return reply({ erro: 'Confira o e-mail.' }, 400, origin);
+        patch.email = email;
+      }
       if (!aluno.cpf) {
         const cpf = typeof body.cpf === 'string' ? body.cpf.replace(/\D/g, '') : '';
         if (cpf.length !== 11) return reply({ erro: 'Confira o CPF.' }, 400, origin);

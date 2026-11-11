@@ -3562,6 +3562,25 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                         >
                           {alunoDetail.acesso_membros_acessado_em ? '✓ Já acessou' : 'Ainda não acessou'}
                         </Badge>
+                        {(!alunoDetail.email || !alunoDetail.cpf || !alunoDetail.data_nascimento || !alunoDetail.endereco) && (
+                          <Button
+                            size="sm" variant="outline" className="h-6 gap-1 text-[10px] px-2"
+                            title="Gera um link individual para o aluno preencher o que falta (e-mail, CPF, nascimento, endereço)"
+                            onClick={async () => {
+                              const { data, error } = await supabase.functions.invoke('aluno-atualizar-dados', {
+                                body: { acao: 'gerar_link', aluno_id: alunoDetail.id },
+                              });
+                              if (error || !data?.link) {
+                                toast({ variant: 'destructive', title: 'Erro ao gerar link', description: error?.message || 'Sem permissão de Pedagógico.' });
+                                return;
+                              }
+                              navigator.clipboard.writeText(data.link);
+                              toast({ title: 'Link copiado!', description: 'Link de completar cadastro' });
+                            }}
+                          >
+                            <Copy className="h-3 w-3" /> Link de cadastro
+                          </Button>
+                        )}
                       </div>
                     )}
                   </div>
