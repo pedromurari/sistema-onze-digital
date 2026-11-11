@@ -17,6 +17,7 @@ interface Aula {
 interface TurmaInfo {
   nome: string;
   slogan: string | null;
+  descricao: string | null;
 }
 
 // Página de captura das turmas do Curso Gratuito (Semana do Despertar),
@@ -122,6 +123,7 @@ export default function TurmaCaptura() {
         <div className="iw-replica-hero-inner">
           <h1><span>{turma.nome}</span></h1>
           {turma.slogan && <h2>{turma.slogan}</h2>}
+          {turma.descricao && <p className="iw-sub" style={{ margin: '12px 0' }}>{turma.descricao}</p>}
           <div className="iw-replica-event-box">
             <strong>EVENTO GRATUITO</strong>
             <span>3 aulas ao vivo</span>

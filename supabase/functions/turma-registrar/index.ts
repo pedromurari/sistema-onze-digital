@@ -40,7 +40,7 @@ serve(async (req) => {
     if (!slugQuery) return json({ ok: false, erro: 'slug obrigatorio' }, 400);
     const { data: lanc } = await supabaseBase
       .from('lancamentos')
-      .select('id, nome, slogan')
+      .select('id, nome, slogan, descricao')
       .eq('slug', slugQuery)
       .eq('ativo', true)
       .maybeSingle();
@@ -50,7 +50,7 @@ serve(async (req) => {
       .select('numero, titulo, inicio_em, youtube_url')
       .eq('lancamento_id', lanc.id)
       .order('numero');
-    return json({ ok: true, lancamento: { nome: lanc.nome, slogan: lanc.slogan }, aulas: aulasGet ?? [] });
+    return json({ ok: true, lancamento: { nome: lanc.nome, slogan: lanc.slogan, descricao: lanc.descricao }, aulas: aulasGet ?? [] });
   }
 
   if (req.method !== 'POST') return json({ ok: false, erro: 'use GET ou POST' }, 405);
@@ -75,7 +75,7 @@ serve(async (req) => {
 
   const { data: lancamento, error: errLanc } = await supabase
     .from('lancamentos')
-    .select('id, nome, slogan, grupo_lancamento_jid')
+    .select('id, nome, slogan, descricao, grupo_lancamento_jid')
     .eq('slug', slug)
     .eq('ativo', true)
     .maybeSingle();
@@ -113,7 +113,7 @@ serve(async (req) => {
   return json({
     ok: true,
     leadId: lead.id,
-    lancamento: { nome: lancamento.nome, slogan: lancamento.slogan },
+    lancamento: { nome: lancamento.nome, slogan: lancamento.slogan, descricao: lancamento.descricao },
     aulas: aulas ?? [],
   });
 });
