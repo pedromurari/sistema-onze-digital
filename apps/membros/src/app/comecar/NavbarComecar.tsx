@@ -8,29 +8,35 @@ import { Menu, X, ChevronDown, User } from 'lucide-react'
 type DropdownItem = { label: string; href: string }
 type NavItem = { label: string; href: string; dropdown?: DropdownItem[] }
 
+// Âncoras sempre apontam pra /comecar explicitamente -- antes eram "#sobre"
+// etc. direto, o que só funcionava se você já estivesse na home. Clicar
+// nesses itens de dentro de uma página de programa (que reusa esta mesma
+// navbar) não levava a lugar nenhum, só empilhava o fragmento na URL atual.
 const NAV_ITEMS: NavItem[] = [
-  { label: 'Início', href: '/' },
+  { label: 'Início', href: '/comecar' },
   {
     label: 'A IDM',
-    href: '#sobre',
+    href: '/comecar#sobre',
     dropdown: [
-      { label: 'Sobre o Instituto', href: '#sobre' },
-      { label: 'Nossa Metodologia', href: '#metodologia' },
-      { label: 'Resultados', href: '#depoimentos' },
+      { label: 'Sobre o Instituto', href: '/comecar#sobre' },
+      { label: 'Nossa Metodologia', href: '/comecar#metodologia' },
+      { label: 'Resultados', href: '/comecar#depoimentos' },
     ],
   },
   {
     label: 'Programas',
-    href: '#programas',
+    href: '/comecar#programas',
     dropdown: [
       { label: 'Psicanálise Integrativa', href: '/programas/psicanalise-integrativa' },
+      { label: 'Mentoria NPS', href: '/programas/mentoria-nps' },
+      { label: 'Mentoria NPA', href: '/programas/mentoria-npa' },
+      { label: 'Practitioner em PNL', href: '/programas/practitioner-pnl' },
       { label: 'IDM Pelo Brasil', href: '/programas/idm-pelo-brasil' },
-      { label: 'NPA 2.0', href: '/loja' },
       { label: 'Ver todos os programas', href: '/loja' },
     ],
   },
-  { label: 'Blog', href: '#blog' },
-  { label: 'Contato', href: '#contato' },
+  { label: 'Blog', href: '/comecar#blog' },
+  { label: 'Contato', href: '/comecar#contato' },
 ]
 
 function DropdownPanel({ items }: { items: DropdownItem[] }) {

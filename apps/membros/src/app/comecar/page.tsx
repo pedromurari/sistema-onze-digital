@@ -10,12 +10,12 @@ import { CookieBanner } from './CookieBanner'
 import { SiteFooter } from '@/components/marketing/SiteFooter'
 
 export const metadata = {
-  title: 'Instituto Despertamente — Transformação Real',
-  description: 'Não é mais um curso. É o método que vai mudar como você se vê, se relaciona e age no mundo. Baseado em neurociência, psicanálise e PNL.',
+  title: 'Instituto Despertamente — Método Despertamente',
+  description: 'Desperte a mente que decide por você. Uma metodologia própria, construída em 9 anos de prática, que une neurociência, psicanálise e PNL.',
   openGraph: {
-    title: 'Instituto Despertamente — Transformação Real',
-    description: 'Não é mais um curso. É o método que vai mudar como você se vê.',
-    images: [{ url: 'https://images.unsplash.com/photo-1559757175-5700dde675bc?w=1200&q=80' }],
+    title: 'Instituto Despertamente — Método Despertamente',
+    description: 'Desperte a mente que decide por você. Neurociência, psicanálise e PNL numa metodologia própria.',
+    images: [{ url: '/despertamente-simbolo.png' }],
   },
 }
 

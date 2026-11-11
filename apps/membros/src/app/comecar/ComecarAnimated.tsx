@@ -49,27 +49,33 @@ function FadeIn({ children, delay = 0, direction = 'up' as Dir, className = '' }
 // ═══════════════════════════════════════════════════════════════════
 function HeroSection() {
   return (
-    <section className="bg-[#0D1638] pt-[72px] min-h-screen flex items-center overflow-hidden">
-      <div className="max-w-7xl mx-auto px-6 sm:px-10 lg:px-16 w-full py-20">
+    <section
+      className="relative bg-[#0D1638] pt-[72px] min-h-screen flex items-center overflow-hidden"
+      style={{
+        backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.025) 1px, transparent 0)',
+        backgroundSize: '48px 48px',
+      }}
+    >
+      <div className="max-w-7xl mx-auto px-6 sm:px-10 lg:px-16 w-full py-20 relative">
         <div className="lg:grid lg:grid-cols-[1fr_44%] lg:gap-16 items-center">
 
           {/* Texto — esquerda */}
           <div className="space-y-8">
             <FadeIn delay={0}>
               <span className="inline-block text-xs font-semibold uppercase tracking-[0.2em] text-[#FFB800] bg-[#FFB800]/10 rounded-full px-3 py-1.5">
-                Transformação Real
+                Método Despertamente
               </span>
             </FadeIn>
             <FadeIn delay={80}>
               <h1 className="font-display text-[clamp(2.8rem,6vw,5.5rem)] font-bold text-white leading-[0.93] tracking-tight">
-                Sua vida,<br />no próximo<br />nível.
+                Desperte a mente<br />que decide<br />por você.
               </h1>
             </FadeIn>
             <FadeIn delay={160}>
               <p className="text-white/55 text-lg leading-relaxed max-w-md">
-                Desenvolvemos consciência, técnica e prática em uma metodologia que
-                transforma como você se vê, se relaciona e age no mundo.
-                Baseada em neurociência, psicanálise e PNL.
+                Uma metodologia própria, construída em 9 anos de prática, que une
+                neurociência, psicanálise e PNL pra você enxergar — e mudar — os
+                padrões que comandam sua vida sem você perceber.
               </p>
             </FadeIn>
             <FadeIn delay={240}>
@@ -90,19 +96,21 @@ function HeroSection() {
             </FadeIn>
           </div>
 
-          {/* Imagem/persona — direita */}
+          {/* Símbolo da marca — direita. Antes era uma foto de banco de imagem
+              (mulher genérica num escritório, sem nenhuma relação com o IDM);
+              trocado pelo símbolo real do Instituto, a única peça visual que
+              é de fato nossa. */}
           <FadeIn direction="right" delay={200} className="hidden lg:block">
-            <div className="relative">
-              <div className="absolute -inset-6 bg-[#FFB800]/8 rounded-[2.5rem] blur-3xl" />
+            <div className="relative flex items-center justify-center">
+              <div className="absolute inset-0 bg-[#FFB800]/10 rounded-full blur-[120px]" />
               <img
-                src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=800&q=85"
-                alt="Transformação IDM"
-                className="relative w-full rounded-2xl object-cover object-top"
-                style={{ aspectRatio: '4/5', maxHeight: 580 }}
+                src="/despertamente-simbolo.png"
+                alt="Símbolo do Instituto Despertamente"
+                className="relative w-full max-w-[420px] drop-shadow-[0_0_60px_rgba(255,184,0,0.15)]"
                 loading="eager"
               />
               {/* Badge flutuante */}
-              <div className="absolute -bottom-5 -left-5 bg-[#09122C] border border-white/10 rounded-2xl px-5 py-4 shadow-xl">
+              <div className="absolute bottom-2 left-0 bg-[#09122C] border border-white/10 rounded-2xl px-5 py-4 shadow-xl">
                 <p className="text-[#FFB800] text-2xl font-bold font-display">12.000+</p>
                 <p className="text-white/45 text-xs mt-0.5">Vidas transformadas</p>
               </div>
