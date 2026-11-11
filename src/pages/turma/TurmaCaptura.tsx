@@ -268,7 +268,7 @@ export default function TurmaCaptura() {
         <div className="relative grid lg:grid-cols-[1.05fr_0.95fr] gap-10 lg:gap-16 items-start">
           {/* Coluna texto */}
           <div className="text-center lg:text-left">
-            <img src={LOGO} alt="Instituto DespertaMente" className="h-14 w-14 object-contain mx-auto lg:mx-0 mb-5 rounded-full ring-2 ring-amber-400/30" />
+            <img src={LOGO} alt="Instituto DespertaMente" className="h-16 w-16 object-contain mx-auto lg:mx-0 mb-5" />
 
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-[1.1]">
               Curso Gratuito de<br /><span className="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-500 bg-clip-text text-transparent">{turma.nome.replace(/^Turma #\d+\s*/i, '') || 'Psicanálise Integrativa'}!</span>
@@ -439,7 +439,7 @@ export default function TurmaCaptura() {
       {/* INSTITUTO */}
       <section className="relative px-5 sm:px-8 lg:px-12 py-16 max-w-4xl mx-auto text-center">
         <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 h-56 w-56 rounded-full bg-amber-400/10 blur-[90px]" aria-hidden="true" />
-        <img src={LOGO} alt="Instituto DespertaMente Logo" className="relative h-20 w-20 object-contain mx-auto mb-4 rounded-full ring-2 ring-amber-400/30 shadow-lg" />
+        <img src={LOGO} alt="Instituto DespertaMente Logo" className="relative h-24 w-24 object-contain mx-auto mb-4" />
         <h2 className="relative text-3xl sm:text-4xl font-bold">Instituto DespertaMente</h2>
         <p className="relative text-slate-300 mt-4 leading-relaxed text-lg">
           O Instituto Despertamente é uma escola de desenvolvimento humano especializada no ensino da psicanálise. Nossa missão é tornar o autoconhecimento acessível, ajudando pessoas a compreenderem melhor suas emoções, seus padrões de comportamento e a transformação da mente.
