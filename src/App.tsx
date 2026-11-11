@@ -12,7 +12,7 @@ import NotFound from "./pages/NotFound";
 // isto de novo a cada turma nova com subdomínio.
 function RaizPorDominio() {
   const match = window.location.hostname.match(/^turma(\d+)\.semanadodespertar\.online$/);
-  if (match) return <Navigate to={`/turma/${match[1]}`} replace />;
+  if (match) return <Navigate to={`/turma/${match[1]}${window.location.search}`} replace />;
   return <Index />;
 }
 
