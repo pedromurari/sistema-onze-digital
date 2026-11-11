@@ -42,16 +42,17 @@ serve(async (req) => {
       subject?: string;
       description?: string;
       obter_link?: boolean;
+      photo_base64?: string;
     };
 
     let { groupJid } = body;
-    const { inviteCode, instance_name, subject, description, obter_link } = body;
+    const { inviteCode, instance_name, subject, description, obter_link, photo_base64 } = body;
 
     if (!groupJid?.trim() && !inviteCode?.trim()) {
       return ok({ error: 'informe groupJid ou inviteCode' });
     }
-    if (!subject?.trim() && !description?.trim() && !obter_link) {
-      return ok({ error: 'informe subject, description e/ou obter_link' });
+    if (!subject?.trim() && !description?.trim() && !obter_link && !photo_base64?.trim()) {
+      return ok({ error: 'informe subject, description, photo_base64 e/ou obter_link' });
     }
 
     let query = sb.from('evolution_config').select('api_url, api_key, instance_name').eq('ativo', true);
@@ -105,6 +106,17 @@ serve(async (req) => {
       const txt = await res.text();
       if (!res.ok) return ok({ error: `Evolution (description) ${res.status}: ${txt.slice(0, 300)}` });
       resultados.description = 'ok';
+    }
+
+    if (photo_base64?.trim()) {
+      const res = await fetch(`${base}/group/updateGroupPicture/${instName}`, {
+        method: 'POST',
+        headers: { apikey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groupJid, image: photo_base64.trim() }),
+      });
+      const txt = await res.text();
+      if (!res.ok) return ok({ error: `Evolution (photo) ${res.status}: ${txt.slice(0, 300)}` });
+      resultados.photo = 'ok';
     }
 
     if (obter_link) {
