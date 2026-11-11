@@ -266,7 +266,7 @@ export default function TurmaCaptura() {
   return (
     <div className="min-h-screen bg-[#000a1f] text-slate-50 overflow-x-hidden">
       {/* HERO -- duas colunas no desktop (texto/oferta à esquerda, vídeo+form à direita), empilha no celular */}
-      <section className="relative px-5 sm:px-8 lg:px-12 pt-14 pb-16 max-w-7xl mx-auto">
+      <section className="relative px-5 sm:px-8 lg:px-12 pt-8 pb-10 sm:pt-14 sm:pb-16 max-w-7xl mx-auto">
         <div className="pointer-events-none absolute -top-24 left-1/4 h-96 w-96 rounded-full bg-amber-400/15 blur-[120px]" aria-hidden="true" />
         <div className="pointer-events-none absolute top-40 right-0 h-72 w-72 rounded-full bg-purple-500/10 blur-[120px]" aria-hidden="true" />
 
@@ -335,7 +335,7 @@ export default function TurmaCaptura() {
       </section>
 
       {/* CALENDÁRIO -- calendário e datas lado a lado no desktop */}
-      <section className="px-5 sm:px-8 lg:px-12 py-16 max-w-6xl mx-auto">
+      <section className="px-5 sm:px-8 lg:px-12 py-10 sm:py-16 max-w-6xl mx-auto">
         <div className="text-center mb-10">
           <h2 className="text-3xl sm:text-4xl font-bold">Quando será o Curso Gratuito?</h2>
           <p className="text-slate-300 mt-2 text-lg">Reserve esses três dias na sua agenda</p>
@@ -365,7 +365,7 @@ export default function TurmaCaptura() {
       </section>
 
       {/* 3 PILARES */}
-      <section className="px-5 sm:px-8 lg:px-12 py-16 max-w-6xl mx-auto text-center">
+      <section className="px-5 sm:px-8 lg:px-12 py-10 sm:py-16 max-w-6xl mx-auto text-center">
         <h2 className="text-3xl sm:text-4xl font-bold">VEJA OS <span className="text-amber-400">3 PILARES</span> DO CURSO:</h2>
         <div className="mt-10 grid gap-6 lg:grid-cols-3">
           {aulas.map((aula) => {
@@ -391,7 +391,7 @@ export default function TurmaCaptura() {
       </section>
 
       {/* DEPOIMENTOS */}
-      <section className="px-5 sm:px-8 lg:px-12 py-16 max-w-6xl mx-auto text-center">
+      <section className="px-5 sm:px-8 lg:px-12 py-10 sm:py-16 max-w-6xl mx-auto text-center">
         <h2 className="text-3xl sm:text-4xl font-bold">O que dizem nossos Alunos</h2>
         <p className="text-slate-300 mt-3 text-lg max-w-2xl mx-auto">Histórias reais de transformação e sucesso profissional através da nossa formação em Psicanálise Clínica Integrativa.</p>
         <div className="mt-10 grid gap-6 lg:grid-cols-3">
@@ -442,7 +442,7 @@ export default function TurmaCaptura() {
       )}
 
       {/* INSTITUTO */}
-      <section className="relative px-5 sm:px-8 lg:px-12 py-16 max-w-4xl mx-auto text-center">
+      <section className="relative px-5 sm:px-8 lg:px-12 py-10 sm:py-16 max-w-4xl mx-auto text-center">
         <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 h-56 w-56 rounded-full bg-amber-400/10 blur-[90px]" aria-hidden="true" />
         <img src={LOGO} alt="Instituto DespertaMente Logo" className="relative h-24 w-24 object-contain mx-auto mb-4" />
         <h2 className="relative text-3xl sm:text-4xl font-bold">Instituto DespertaMente</h2>
@@ -453,7 +453,7 @@ export default function TurmaCaptura() {
       </section>
 
       {/* PROFESSORES */}
-      <section className="px-5 sm:px-8 lg:px-12 py-16 max-w-6xl mx-auto text-center">
+      <section className="px-5 sm:px-8 lg:px-12 py-10 sm:py-16 max-w-6xl mx-auto text-center">
         <h2 className="text-3xl sm:text-4xl font-bold">Conheça seus Professores</h2>
         <div className="mt-10 grid gap-8 lg:grid-cols-2 text-left">
           <div className={`rounded-2xl border border-white/10 ${CARD_BG} p-7 shadow-lg transition-transform hover:-translate-y-1`}>
@@ -483,7 +483,7 @@ export default function TurmaCaptura() {
       </section>
 
       {/* FAQ */}
-      <section className="px-5 sm:px-8 lg:px-12 py-16 max-w-3xl mx-auto">
+      <section className="px-5 sm:px-8 lg:px-12 py-10 sm:py-16 max-w-3xl mx-auto">
         <div className="text-center mb-8">
           <h2 className="text-3xl sm:text-4xl font-bold">Perguntas Frequentes</h2>
           <p className="text-slate-300 mt-2 text-lg">Tire suas dúvidas!</p>
@@ -501,29 +501,34 @@ export default function TurmaCaptura() {
         <p className="text-center text-slate-400 mt-6">Ainda tem dúvidas? Entre em contato conosco!</p>
       </section>
 
-      {/* CTA FINAL */}
-      <section className="relative px-5 sm:px-8 py-16 max-w-2xl mx-auto text-center">
+      {/* CTA FINAL -- mesma lógica de duas colunas do hero, pra não ficar uma faixa estreita sobrando espaço nos dois lados no desktop */}
+      <section className="relative px-5 sm:px-8 lg:px-12 py-10 sm:py-16 max-w-6xl mx-auto">
         <div className="pointer-events-none absolute top-10 left-1/2 -translate-x-1/2 h-72 w-72 rounded-full bg-amber-400/15 blur-[100px]" aria-hidden="true" />
-        <div className="relative flex flex-wrap justify-center gap-2 text-xs font-semibold mb-4">
-          <span className="flex items-center gap-1.5 rounded-full border border-amber-400/40 text-amber-400 px-3 py-1.5"><ShieldCheck className="h-3.5 w-3.5" />Vagas Limitadas</span>
-          <span className="flex items-center gap-1.5 rounded-full border border-amber-400/40 text-amber-400 px-3 py-1.5"><Users className="h-3.5 w-3.5" />Mais de 5000 Inscritos</span>
-          <span className="flex items-center gap-1.5 rounded-full border border-amber-400/40 text-amber-400 px-3 py-1.5"><Gift className="h-3.5 w-3.5" />100% Gratuito</span>
-        </div>
-        <h2 className="relative text-3xl sm:text-4xl font-bold">Vagas limitadas.<br />Corra para garantir a sua.</h2>
-        <p className="relative text-slate-300 mt-4 text-lg">
-          {turma.descricao
-            ? 'Essa condição de Black Friday não se repete. Garanta sua vaga gratuita agora e aproveite enquanto está no ar.'
-            : 'Não perca a oportunidade de transformar sua vida através do autoconhecimento. As inscrições podem ser encerradas a qualquer momento.'}
-        </p>
-        <div className={`relative mt-7 rounded-2xl border border-white/10 ${CARD_BG} p-6 text-left shadow-2xl`}>
-          {formulario}
-        </div>
-        <p className="relative mt-4 text-sm text-slate-300">🎁 BÔNUS EXCLUSIVO: Ebook <a href={LINK_EBOOK} target="_blank" rel="noopener noreferrer" className="text-amber-400 underline">"Desenvolvimento da Personalidade"</a><br />+ Certificado de Participação + Material Complementar</p>
-        <div className="relative mt-6 flex flex-wrap justify-center gap-x-5 gap-y-2 text-sm text-slate-300">
-          <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-amber-400" />Evento 100% Gratuito</span>
-          <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-amber-400" />Certificado Incluso</span>
-          <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-amber-400" />Material Complementar</span>
-          <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-amber-400" />Ao Vivo no YouTube</span>
+        <div className="relative grid lg:grid-cols-[1.1fr_0.9fr] gap-10 lg:gap-16 items-center">
+          <div className="text-center lg:text-left">
+            <div className="flex flex-wrap justify-center lg:justify-start gap-2 text-xs font-semibold mb-4">
+              <span className="flex items-center gap-1.5 rounded-full border border-amber-400/40 text-amber-400 px-3 py-1.5"><ShieldCheck className="h-3.5 w-3.5" />Vagas Limitadas</span>
+              <span className="flex items-center gap-1.5 rounded-full border border-amber-400/40 text-amber-400 px-3 py-1.5"><Users className="h-3.5 w-3.5" />Mais de 5000 Inscritos</span>
+              <span className="flex items-center gap-1.5 rounded-full border border-amber-400/40 text-amber-400 px-3 py-1.5"><Gift className="h-3.5 w-3.5" />100% Gratuito</span>
+            </div>
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold">Vagas limitadas.<br />Corra para garantir a sua.</h2>
+            <p className="text-slate-300 mt-4 text-lg max-w-md mx-auto lg:mx-0">
+              {turma.descricao
+                ? 'Essa condição de Black Friday não se repete. Garanta sua vaga gratuita agora e aproveite enquanto está no ar.'
+                : 'Não perca a oportunidade de transformar sua vida através do autoconhecimento. As inscrições podem ser encerradas a qualquer momento.'}
+            </p>
+            <p className="mt-6 text-sm text-slate-300">🎁 BÔNUS EXCLUSIVO: Ebook <a href={LINK_EBOOK} target="_blank" rel="noopener noreferrer" className="text-amber-400 underline">"Desenvolvimento da Personalidade"</a><br />+ Certificado de Participação + Material Complementar</p>
+            <div className="mt-6 flex flex-wrap justify-center lg:justify-start gap-x-5 gap-y-2 text-sm text-slate-300">
+              <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-amber-400" />Evento 100% Gratuito</span>
+              <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-amber-400" />Certificado Incluso</span>
+              <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-amber-400" />Material Complementar</span>
+              <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-amber-400" />Ao Vivo no YouTube</span>
+            </div>
+          </div>
+
+          <div className={`rounded-2xl border border-white/10 ${CARD_BG} p-6 text-left shadow-2xl`}>
+            {formulario}
+          </div>
         </div>
       </section>
 
