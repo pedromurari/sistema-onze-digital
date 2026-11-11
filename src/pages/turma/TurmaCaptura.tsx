@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import {
   Flame, CalendarDays, Clock, CheckCircle2, Gift, Users, ShieldCheck,
   Eye, HeartPulse, Sparkles, Quote, HelpCircle, ArrowRight, Play, X,
+  Instagram, Facebook, Youtube,
 } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { carregarPixel, trackPixel } from '../webinario/meta-pixel';
@@ -17,6 +18,10 @@ const FOTO_JOCIMARAH = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/turm
 const VIDEO_POSTER = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/vsl/semana-do-despertar-poster.jpg';
 const VIDEO_URL = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/vsl/semana-do-despertar.mp4';
 const LINK_EBOOK = 'https://drive.google.com/file/d/1Wk04rk8msKuEV5loMZa8Iilpowsn3BKq/view?usp=sharing';
+const LINK_INSTAGRAM = 'https://www.instagram.com/institutodespertamente/';
+const LINK_FACEBOOK = 'https://www.facebook.com/institutodespertamente';
+const LINK_YOUTUBE = 'https://www.youtube.com/@institutodespertamente';
+const LINK_11DIGITAL = 'https://www.onzedigitalstrategy.com.br/';
 
 // Mesmo conteúdo evergreen usado em todas as turmas do Curso Gratuito --
 // não muda por turma, só a copy/datas/link no topo mudam.
@@ -523,11 +528,35 @@ export default function TurmaCaptura() {
       </section>
 
       {/* FOOTER */}
-      <footer className="px-5 py-10 max-w-3xl mx-auto text-center text-xs text-slate-500 border-t border-white/10 space-y-3">
-        <p>© Instituto Despertamente - Copyright {new Date().getFullYear()} Todos os direitos reservados</p>
-        <p>Este site não é afiliado ao Facebook ou a qualquer entidade do Facebook. Depois que você sair do Facebook, a responsabilidade não é deles e sim do nosso site. Fazemos todos os esforços para indicar claramente e mostrar todas as provas do produto e usamos resultados reais. Nós não vendemos o seu e-mail ou qualquer informação para terceiros. Jamais fazemos nenhum tipo de spam.</p>
-        <p>Se você tiver alguma dúvida, sinta-se à vontade para usar o link de contato e falar conosco em horário comercial de Segunda a Sextas das 09h00 às 18h00. Lemos e respondemos todas as mensagens por ordem de chegada.</p>
-        <p className="text-slate-400">Instituto DespertaMente • Psicanálise Integrativa • Desenvolvimento Humano</p>
+      <footer className="px-5 py-12 max-w-3xl mx-auto text-center border-t border-white/10">
+        <img src={LOGO} alt="Instituto DespertaMente" className="h-12 w-12 object-contain mx-auto mb-5" />
+
+        <div className="flex items-center justify-center gap-3 mb-6">
+          <a href={LINK_INSTAGRAM} target="_blank" rel="noopener noreferrer" aria-label="Instagram do Instituto Despertamente"
+            className="h-10 w-10 rounded-full border border-white/10 bg-[#0d1b3d] flex items-center justify-center text-slate-300 hover:text-amber-400 hover:border-amber-400/40 transition-colors">
+            <Instagram className="h-5 w-5" />
+          </a>
+          <a href={LINK_FACEBOOK} target="_blank" rel="noopener noreferrer" aria-label="Facebook do Instituto Despertamente"
+            className="h-10 w-10 rounded-full border border-white/10 bg-[#0d1b3d] flex items-center justify-center text-slate-300 hover:text-amber-400 hover:border-amber-400/40 transition-colors">
+            <Facebook className="h-5 w-5" />
+          </a>
+          <a href={LINK_YOUTUBE} target="_blank" rel="noopener noreferrer" aria-label="YouTube do Instituto Despertamente"
+            className="h-10 w-10 rounded-full border border-white/10 bg-[#0d1b3d] flex items-center justify-center text-slate-300 hover:text-amber-400 hover:border-amber-400/40 transition-colors">
+            <Youtube className="h-5 w-5" />
+          </a>
+        </div>
+
+        <div className="text-xs text-slate-500 space-y-3">
+          <p>© Instituto Despertamente - Copyright {new Date().getFullYear()} Todos os direitos reservados</p>
+          <p>Este site não é afiliado ao Facebook ou a qualquer entidade do Facebook. Depois que você sair do Facebook, a responsabilidade não é deles e sim do nosso site. Fazemos todos os esforços para indicar claramente e mostrar todas as provas do produto e usamos resultados reais. Nós não vendemos o seu e-mail ou qualquer informação para terceiros. Jamais fazemos nenhum tipo de spam.</p>
+          <p>Se você tiver alguma dúvida, sinta-se à vontade para usar o link de contato e falar conosco em horário comercial de Segunda a Sextas das 09h00 às 18h00. Lemos e respondemos todas as mensagens por ordem de chegada.</p>
+          <p className="text-slate-400">Instituto DespertaMente • Psicanálise Integrativa • Desenvolvimento Humano</p>
+        </div>
+
+        <a href={LINK_11DIGITAL} target="_blank" rel="noopener noreferrer"
+          className="mt-6 inline-flex items-center gap-1.5 text-[11px] text-slate-500 hover:text-amber-400 transition-colors">
+          Desenvolvido por <span className="font-semibold">11 Digital</span>
+        </a>
       </footer>
     </div>
   );
