@@ -41,16 +41,17 @@ serve(async (req) => {
       instance_name?: string;
       subject?: string;
       description?: string;
+      obter_link?: boolean;
     };
 
     let { groupJid } = body;
-    const { inviteCode, instance_name, subject, description } = body;
+    const { inviteCode, instance_name, subject, description, obter_link } = body;
 
     if (!groupJid?.trim() && !inviteCode?.trim()) {
       return ok({ error: 'informe groupJid ou inviteCode' });
     }
-    if (!subject?.trim() && !description?.trim()) {
-      return ok({ error: 'informe subject e/ou description' });
+    if (!subject?.trim() && !description?.trim() && !obter_link) {
+      return ok({ error: 'informe subject, description e/ou obter_link' });
     }
 
     let query = sb.from('evolution_config').select('api_url, api_key, instance_name').eq('ativo', true);
@@ -104,6 +105,18 @@ serve(async (req) => {
       const txt = await res.text();
       if (!res.ok) return ok({ error: `Evolution (description) ${res.status}: ${txt.slice(0, 300)}` });
       resultados.description = 'ok';
+    }
+
+    if (obter_link) {
+      const res = await fetch(`${base}/group/inviteCode/${instName}?groupJid=${encodeURIComponent(groupJid!)}`, {
+        headers: { apikey },
+      });
+      const txt = await res.text();
+      if (!res.ok) return ok({ error: `Evolution (inviteCode) ${res.status}: ${txt.slice(0, 300)}` });
+      let json: any;
+      try { json = JSON.parse(txt); } catch { json = {}; }
+      const codigo = json?.inviteCode ?? json?.code ?? json?.data?.inviteCode ?? '';
+      resultados.link = codigo ? `https://chat.whatsapp.com/${codigo}` : null;
     }
 
     return ok({ ok: true, instance: instName, ...resultados });
