@@ -82,7 +82,13 @@ export function ComissoesFechamento({ viewAsName }: { viewAsName: string | null 
   const [loading, setLoading] = useState(true);
   const [sincronizando, setSincronizando] = useState(false);
   const [salvandoId, setSalvandoId] = useState<string | null>(null);
-  const [mesFiltro, setMesFiltro] = useState<string>('todos');
+  // Achado pelo dono do produto (2026-11-12): abrir em "todos os meses" por
+  // padrão deixava a tela sempre cheia de lançamento misturado de ano
+  // inteiro -- "um filtro, precisa" -- agora já abre direto no mês atual,
+  // que é o que interessa 90% das vezes (fechamento é sempre do mês
+  // corrente); "Todos os meses" continua disponível no seletor pra quem
+  // quiser conferir histórico.
+  const [mesFiltro, setMesFiltro] = useState<string>(new Date().toISOString().slice(0, 7));
 
   const carregar = async () => {
     setLoading(true);
@@ -241,6 +247,13 @@ export function ComissoesFechamento({ viewAsName }: { viewAsName: string | null 
   );
 }
 
+// Linhas "Pagamento de comissões — <mês>" são o Pix consolidado que já cobre
+// outras linhas de comissão (venda por venda) que já estão somadas aqui em
+// cima -- pedido do Pedro 06/11/2026: manter a linha visível (ele quer ver o
+// pagamento consolidado), mas sem contar o valor duas vezes no total
+// Pendente/Reservado/Pago nem misturado com vendas de verdade no dia-a-dia.
+const ehPagamentoConsolidado = (r: ComissaoRow) => r.aluno_nome.startsWith('Pagamento de comissões —');
+
 function TabelaVendedor({
   vendedor, rows, salvandoId, onAtualizar, onExcluir,
 }: {
@@ -250,26 +263,62 @@ function TabelaVendedor({
   onAtualizar: (id: string, patch: Partial<ComissaoRow>) => void;
   onExcluir: (id: string) => void;
 }) {
-  // Linhas "Pagamento de comissões — <mês>" são o Pix consolidado que já cobre
-  // outras linhas de comissão (venda por venda) que já estão somadas aqui em
-  // cima -- pedido do Pedro 06/11/2026: manter a linha visível na tabela (ele
-  // quer ver o pagamento consolidado igual já tem o de ajuda de custo), mas
-  // sem contar o valor duas vezes no total Pendente/Reservado/Pago.
-  const ehPagamentoConsolidado = (r: ComissaoRow) => r.aluno_nome.startsWith('Pagamento de comissões —');
   const totais = rows.filter(r => !ehPagamentoConsolidado(r)).reduce((acc, r) => { acc[r.status] += Number(r.valor_comissao); return acc; }, { pendente: 0, reservado: 0, pago: 0 });
+  const aPagarAgora = totais.pendente + totais.reservado;
+
+  // Achado pelo dono do produto (2026-11-12): "estuda o mercado, cara" --
+  // uma tela de fechamento de comissão de verdade separa o que é venda
+  // (o que gera comissão) do que é lançamento fixo/administrativo (ajuda de
+  // custo, outro) e do histórico de repasse já feito (pagamento consolidado)
+  // -- não é uma lista única ordenada só por data. Três blocos por vendedor,
+  // cada um só aparece se tiver linha.
+  const vendas = rows.filter(r => r.tipo === 'comissao' && !ehPagamentoConsolidado(r));
+  const ajudaCustoOutros = rows.filter(r => r.tipo !== 'comissao' && !ehPagamentoConsolidado(r));
+  const pagamentosConsolidados = rows.filter(ehPagamentoConsolidado);
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3 flex-wrap rounded-lg border border-border bg-card px-3 py-2.5">
         <p className="text-sm font-semibold text-foreground">{vendedor}</p>
-        <div className="flex gap-3 text-xs text-muted-foreground flex-wrap">
+        <div className="flex gap-3 text-xs text-muted-foreground flex-wrap items-center">
           <span>Pendente: <strong className="text-foreground">R$ {fmtBRL(totais.pendente)}</strong></span>
           <span>Reservado: <strong className="text-foreground">R$ {fmtBRL(totais.reservado)}</strong></span>
           <span>Pago: <strong className="text-foreground">R$ {fmtBRL(totais.pago)}</strong></span>
+          {aPagarAgora > 0 && (
+            <span className="px-2 py-1 rounded-md bg-primary/10 text-primary font-semibold">
+              A pagar agora: R$ {fmtBRL(aPagarAgora)}
+            </span>
+          )}
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-border">
+      {vendas.length > 0 && (
+        <BlocoComissao titulo={`Vendas (geram comissão) · ${vendas.length}`} rows={vendas} salvandoId={salvandoId} onAtualizar={onAtualizar} onExcluir={onExcluir} />
+      )}
+      {ajudaCustoOutros.length > 0 && (
+        <BlocoComissao titulo={`Ajuda de custo / outros lançamentos · ${ajudaCustoOutros.length}`} rows={ajudaCustoOutros} salvandoId={salvandoId} onAtualizar={onAtualizar} onExcluir={onExcluir} />
+      )}
+      {pagamentosConsolidados.length > 0 && (
+        <BlocoComissao titulo="Histórico de repasses consolidados (Pix do mês)" rows={pagamentosConsolidados} salvandoId={salvandoId} onAtualizar={onAtualizar} onExcluir={onExcluir} muted />
+      )}
+    </div>
+  );
+}
+
+function BlocoComissao({
+  titulo, rows, salvandoId, onAtualizar, onExcluir, muted,
+}: {
+  titulo: string;
+  rows: ComissaoRow[];
+  salvandoId: string | null;
+  onAtualizar: (id: string, patch: Partial<ComissaoRow>) => void;
+  onExcluir: (id: string) => void;
+  muted?: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5 pl-1">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{titulo}</p>
+      <div className={`overflow-x-auto rounded-lg border border-border ${muted ? 'opacity-70' : ''}`}>
         <Table>
           <TableHeader>
             <TableRow>
