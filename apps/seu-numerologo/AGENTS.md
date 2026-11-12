@@ -25,6 +25,27 @@ este app **já usa o mesmo projeto Supabase do CRM na raiz deste repo**
 lead-event`, `vega-webhook` etc. gravam direto nas tabelas daqui. Não
 duplicar cadastro de lead/aluno num banco à parte.
 
+## ⚠️ Mesmo projeto Supabase = cuidado com nome de edge function
+
+Como o banco é o mesmo da raiz, **função com o mesmo nome nas duas pastas
+compartilha o mesmo slug no mesmo projeto** — deploy de uma sobrescreve a
+outra. Achado em 12/11/2026: existiam dois `vega-webhook` (um aqui, outro
+em `supabase/functions/` na raiz). O que está **no ar é o da raiz**, que já
+roteia os três casos (NPA, material e o produto do Seu Numerólogo, via
+`processNumerologa` + tabela `seu_numerologo_leads`). Um deploy feito desta
+pasta teria derrubado a venda de ingresso do NPA.
+
+A cópia antiga daqui foi renomeada pra `supabase/functions/_vega-webhook-antigo/`
+— prefixo `_` faz a CLI do Supabase ignorar na hora do deploy. Ela **não
+está no ar** e serve só de referência: é a única versão que tem a entrega do
+PDF do mapa por e-mail (Resend) + Meta CAPI, que a versão da raiz não tem
+(por isso `seu_numerologo_leads.mapa_enviado` está zerado). O cabeçalho dela
+cita `DS11_URL = qdpitjwpvmqsgshsdiab.supabase.co`, projeto que não existe
+mais na conta — é da arquitetura antiga, quando o SN tinha banco próprio.
+
+Antes de criar função nova aqui, confira se o nome já existe em
+`supabase/functions/` na raiz.
+
 ## Deploy
 
 Projeto Vercel próprio ("seu-numerologo-igeo"), Root Directory =

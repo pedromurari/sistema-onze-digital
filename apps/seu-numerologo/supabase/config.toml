@@ -1,7 +1,10 @@
 project_id = "usqiyekfmwwnvkmkdlej"
 
-[functions.vega-webhook]
-verify_jwt = false
+# ATENÇÃO: este app compartilha o projeto Supabase com o CRM da raiz deste
+# repo. Só declare aqui função que exista SÓ nesta pasta -- se o nome da
+# função também existir em `supabase/functions/` na raiz, deploy daqui
+# sobrescreve a da raiz (mesmo projeto, mesmo slug). Foi o que quase
+# aconteceu com `vega-webhook` em 12/11/2026 -- ver `_vega-webhook-antigo/`.
 
 [functions.lead-event]
 verify_jwt = false
