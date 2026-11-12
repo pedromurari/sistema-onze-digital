@@ -70,6 +70,33 @@ async function listarContas() {
   }));
 }
 
+// O que conta como "lead" muda conforme o objetivo da campanha: campanha de
+// formulário/pixel reporta `lead`, campanha de Click-to-WhatsApp (objetivo
+// ENGAGEMENT/MESSAGES) reporta conversa iniciada. Sem isso, campanha de
+// WhatsApp aparecia com "Leads 0" mesmo tendo conversa -- achado real
+// 12/11/2026 na campanha "(WPP-HELEN)(LEAD DIRETO) - PÚBLICO FRIO", que
+// tinha 13 conversas no Ads Manager e 0 no painel. Ordem = prioridade; pega
+// só o PRIMEIRO que existir (somar duplicaria quem reporta mais de um).
+const ACOES_LEAD = [
+  'lead',
+  'onsite_conversion.lead_grouped',
+  'onsite_conversion.messaging_conversation_started_7d',
+  'onsite_conversion.total_messaging_connection',
+];
+
+type Acao = { action_type: string; value: string };
+
+function acharLead(actions: Acao[], custoPorAcao: Acao[]) {
+  for (const tipo of ACOES_LEAD) {
+    const achou = actions.find((a) => a.action_type === tipo);
+    if (achou) {
+      const custo = custoPorAcao.find((a) => a.action_type === tipo)?.value;
+      return { leads: Number(achou.value), custo: custo ? Number(custo) : null };
+    }
+  }
+  return { leads: 0, custo: null };
+}
+
 type Periodo = { since: string; until: string };
 
 function resolverPeriodo(payload: Record<string, unknown>): Periodo {
@@ -123,16 +150,14 @@ async function listarCampanhas(periodo: Periodo, adAccountId: string) {
 
   const campanhas = (json.data ?? []).map((c: any) => {
     const insight = c.insights?.data?.[0];
-    const actions: Array<{ action_type: string; value: string }> = insight?.actions ?? [];
-    const leads = actions.find((a) => a.action_type === 'lead' || a.action_type === 'onsite_conversion.lead_grouped')?.value;
+    const actions: Acao[] = insight?.actions ?? [];
     const purchases = actions.find((a) => a.action_type === 'purchase' || a.action_type === 'offsite_conversion.fb_pixel_purchase')?.value;
-    const custoPorAcao: Array<{ action_type: string; value: string }> = insight?.cost_per_action_type ?? [];
-    const custoPorLead = custoPorAcao.find((a) => a.action_type === 'lead' || a.action_type === 'onsite_conversion.lead_grouped')?.value;
+    const custoPorAcao: Acao[] = insight?.cost_per_action_type ?? [];
+    const { leads, custo: custoPorLeadNum } = acharLead(actions, custoPorAcao);
 
     const orcamentoDiario = c.daily_budget ? Number(c.daily_budget) / 100 : null;
     const orcamentoTotal = c.lifetime_budget ? Number(c.lifetime_budget) / 100 : null;
     const gasto = insight?.spend ? Number(insight.spend) : 0;
-    const custoPorLeadNum = custoPorLead ? Number(custoPorLead) : null;
 
     return {
       id: c.id,
@@ -151,7 +176,7 @@ async function listarCampanhas(periodo: Periodo, adAccountId: string) {
       ctr: insight?.ctr ? Number(insight.ctr) : 0,
       cpc: insight?.cpc ? Number(insight.cpc) : 0,
       alcance: insight?.reach ? Number(insight.reach) : 0,
-      leads: leads ? Number(leads) : 0,
+      leads,
       compras: purchases ? Number(purchases) : 0,
       custo_por_lead: custoPorLeadNum,
       custo_por_lead_brl: converter(custoPorLeadNum),
@@ -194,13 +219,11 @@ async function listarConjuntos(campaignId: string, periodo: Periodo, adAccountId
 
   const conjuntos = (json.data ?? []).map((c: any) => {
     const insight = c.insights?.data?.[0];
-    const actions: Array<{ action_type: string; value: string }> = insight?.actions ?? [];
-    const leads = actions.find((a) => a.action_type === 'lead' || a.action_type === 'onsite_conversion.lead_grouped')?.value;
-    const custoPorAcao: Array<{ action_type: string; value: string }> = insight?.cost_per_action_type ?? [];
-    const custoPorLead = custoPorAcao.find((a) => a.action_type === 'lead' || a.action_type === 'onsite_conversion.lead_grouped')?.value;
+    const actions: Acao[] = insight?.actions ?? [];
+    const custoPorAcao: Acao[] = insight?.cost_per_action_type ?? [];
+    const { leads, custo: custoPorLeadNum } = acharLead(actions, custoPorAcao);
     const orcamentoDiario = c.daily_budget ? Number(c.daily_budget) / 100 : null;
     const gasto = insight?.spend ? Number(insight.spend) : 0;
-    const custoPorLeadNum = custoPorLead ? Number(custoPorLead) : null;
 
     return {
       id: c.id,
@@ -213,7 +236,7 @@ async function listarConjuntos(campaignId: string, periodo: Periodo, adAccountId
       gasto,
       gasto_brl: converter(gasto),
       cliques: insight?.clicks ? Number(insight.clicks) : 0,
-      leads: leads ? Number(leads) : 0,
+      leads,
       custo_por_lead: custoPorLeadNum,
       custo_por_lead_brl: converter(custoPorLeadNum),
     };
