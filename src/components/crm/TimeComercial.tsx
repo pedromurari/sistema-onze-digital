@@ -1692,27 +1692,6 @@ const LINKS_MATRICULA: OperacaoLink[] = [
     vendedor: 'Helen Magna', grupo: 'vendedor',
     descricao: 'Cliente preenche a ficha e assina o contrato agora, mas a 1ª cobrança (entrada) fica programada pra uma data futura que ele escolhe. Só boleto 15x. Bom pra quem fecha mas só pode pagar dias depois.',
   },
-  // Links gerais / de campanha — sem vendedor fixo, todo mundo do time enxerga
-  {
-    label: 'Ficha Direta (sem vendedor)', url: 'https://ir.idmpsi.com.br/direto',
-    vendedor: null, grupo: 'campanha',
-    descricao: 'Mesmo plano padrão, mas a matrícula entra SEM dono — cai como "sem vendedor" pra qualquer um do time reivindicar depois. Use pra indicação/venda sem consultor definido.',
-  },
-  {
-    label: 'Condição Promo (R$ 997 / R$ 110)', url: 'https://ir.idmpsi.com.br/promo',
-    vendedor: null, grupo: 'campanha',
-    descricao: 'Condição promocional: R$ 997 à vista ou R$ 110 nas parcelas (12x cartão / 15x boleto). Todas as formas de pagamento. Sem vendedor atribuído.',
-  },
-  {
-    label: 'Cartão à vista R$ 997 (1x)', url: 'https://ir.idmpsi.com.br/997',
-    vendedor: null, grupo: 'campanha',
-    descricao: 'Oferta pontual: R$ 997 no cartão de crédito em parcela única (1x), sem parcelar, sem PIX/boleto. Sem vendedor atribuído.',
-  },
-  {
-    label: 'Boleto 15x de R$ 50', url: 'https://ir.idmpsi.com.br/15x50',
-    vendedor: null, grupo: 'campanha',
-    descricao: 'Venda pontual (ex-aluna refazendo a turma, meia parcela): só boleto recorrente, 15x de R$ 50. Sem PIX/cartão/bolsa. Sem vendedor atribuído.',
-  },
   // Interno — não é link pro cliente, é a ferramenta do time
   {
     label: 'Registrar venda de PNL + gerar contrato', url: 'https://ir.idmpsi.com.br/pnl-contrato',

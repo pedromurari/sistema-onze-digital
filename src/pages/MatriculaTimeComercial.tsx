@@ -331,7 +331,8 @@ function PagamentoStep({
   const pixPollRef = useRef<{ tentativas: number; timer: ReturnType<typeof setInterval> | null }>({ tentativas: 0, timer: null });
 
   // Cartão (parcelado/recorrente)
-  const [cardResultado, setCardResultado] = useState<{ status: string; statusDetail?: string } | null>(null);
+  const [cardResultado, setCardResultado] = useState<{ status: string; statusDetail?: string; paymentId?: string | number } | null>(null);
+  const cardPollRef = useRef<{ tentativas: number; timer: ReturnType<typeof setInterval> | null }>({ tentativas: 0, timer: null });
   const brickContainerRef = useRef<HTMLDivElement>(null);
   const brickControllerRef = useRef<any>(null);
   const pixRequestedRef = useRef(false);
@@ -409,6 +410,45 @@ function PagamentoStep({
     return () => { if (pixPollRef.current.timer) clearInterval(pixPollRef.current.timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pix, pixStatus]);
+
+  // ── Cartão parcelado: mesmo polling de segurança do Pix (a cada 4s, até
+  // ~4min) quando a MP devolve "em análise"/"pendente" em vez de aprovar na
+  // hora (comum em revisão antifraude). Achado real 2026-11-12 (dono do
+  // produto): sem isso, a única forma de saber que aprovou depois era o
+  // webhook do Mercado Pago -- se ele falhar/atrasar, a venda fica num limbo
+  // sem ninguém saber que já foi. Só cartao_parcelado (paymentId numérico da
+  // MP) -- cartao_recorrente usa preapproval, que checkStatus não cobre.
+  useEffect(() => {
+    if (metodo !== 'cartao_parcelado') return;
+    if (!cardResultado?.paymentId || !['in_process', 'pending'].includes(cardResultado.status)) return;
+
+    const poll = () => {
+      cardPollRef.current.tentativas += 1;
+      fetch(`${SUPABASE_FUNCTIONS_URL}/matricula-pagamento-criar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checkStatus: true, paymentId: cardResultado.paymentId }),
+      })
+        .then(r => r.json())
+        .then(d => {
+          if (d.ok && d.status && d.status !== cardResultado.status) {
+            setCardResultado(prev => prev ? { ...prev, status: d.status, statusDetail: d.statusDetail } : prev);
+          }
+          if (d.ok && (d.status === 'approved' || d.status === 'rejected')) {
+            if (cardPollRef.current.timer) clearInterval(cardPollRef.current.timer);
+            return;
+          }
+          if (cardPollRef.current.tentativas >= 60 && cardPollRef.current.timer) {
+            clearInterval(cardPollRef.current.timer);
+          }
+        })
+        .catch(() => {});
+    };
+
+    cardPollRef.current.timer = setInterval(poll, 4000);
+    return () => { if (cardPollRef.current.timer) clearInterval(cardPollRef.current.timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metodo, cardResultado?.paymentId, cardResultado?.status]);
 
   // ── WhatsApp do vendedor assim que o pagamento confirma ─────────────────────
   // (PIX aprovado, ou cartão aprovado/em análise) -- pedido explícito do dono
@@ -524,7 +564,7 @@ function PagamentoStep({
                   else { setErro('Assinatura não autorizada. Tente outro cartão.'); reject(new Error('nao autorizado')); }
                   return;
                 }
-                setCardResultado({ status: d.status, statusDetail: d.statusDetail });
+                setCardResultado({ status: d.status, statusDetail: d.statusDetail, paymentId: d.paymentId });
                 if (d.status === 'approved' || d.status === 'in_process' || d.status === 'pending') {
                   resolve();
                 } else {
