@@ -124,7 +124,7 @@ serve(async (req) => {
         headers: { apikey },
       });
       const txt = await res.text();
-      if (!res.ok) return ok({ error: `Evolution (inviteCode) ${res.status}: ${txt.slice(0, 300)}` });
+      if (!res.ok) return ok({ error: `Evolution (inviteCode) ${res.status}: ${txt.slice(0, 300)}`, groupJid });
       let json: any;
       try { json = JSON.parse(txt); } catch { json = {}; }
       const codigo = json?.inviteCode ?? json?.code ?? json?.data?.inviteCode ?? '';

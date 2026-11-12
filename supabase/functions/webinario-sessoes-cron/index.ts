@@ -1,25 +1,33 @@
 /**
  * webinario-sessoes-cron
- * Gera a grade de sessões do dia (30 em 30 min, 06h-23h BRT) pra cada
+ * Gera a grade de sessões do dia (3 em 3 min, 06h-23h BRT) pra cada
  * webinário ativo -- idempotente (não duplica se já existir sessão no
  * mesmo horário). Chamado 1x/dia às 06h BRT via pg_cron, mesmo padrão do
  * Vercel Cron original (E:\webnar-idm\src\app\api\webhooks\cron).
+ *
+ * Intervalo apertado de propósito (era 30min até 2026-11-11): grade larga
+ * fazia o lead esperar até ~30min entre cadastro e sessão "começar" --
+ * confirmado em produção que isso matava a entrada (lead cadastrava e
+ * nunca voltava pra assistir). webinario-registrar já pega a sessão mais
+ * próxima (tolerância de 5min pra trás), então só encurtar o passo da
+ * grade já resolve, sem tocar na lógica de seleção.
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const CRON_SECRET = Deno.env.get('CRON_SECRET') ?? 'webinario-internal-2026';
+const PASSO_MINUTOS = 3;
 
 function horariosDoDiaBRT(dataBase: Date): Date[] {
   // dataBase já em UTC; a grade é 06:00-23:00 horário de Brasília (UTC-3),
-  // ou seja 09:00-02:00 UTC do dia seguinte às 23h30.
+  // ou seja 09:00-02:00 UTC do dia seguinte às 23h.
   const ano = dataBase.getUTCFullYear();
   const mes = dataBase.getUTCMonth();
   const dia = dataBase.getUTCDate();
   const horarios: Date[] = [];
   for (let h = 6; h <= 23; h++) {
-    for (const m of [0, 30]) {
-      if (h === 23 && m === 30) continue; // última sessão é 23:00
+    for (let m = 0; m < 60; m += PASSO_MINUTOS) {
+      if (h === 23 && m > 0) continue; // última sessão do dia é 23:00
       // 06:00 BRT = 09:00 UTC (BRT = UTC-3, sem horário de verão)
       const utcHour = h + 3;
       horarios.push(new Date(Date.UTC(ano, mes, dia, utcHour, m, 0)));

@@ -112,8 +112,8 @@ export default function WebinarioCaptura() {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!nome.trim() || !whatsapp.trim()) {
-      toast.error('Preencha seu nome e WhatsApp para continuar.');
+    if (!nome.trim() || !email.trim() || !whatsapp.trim()) {
+      toast.error('Preencha nome, e-mail e WhatsApp para continuar.');
       return;
     }
     const digitos = whatsapp.replace(/\D/g, '');
@@ -172,7 +172,7 @@ export default function WebinarioCaptura() {
               <label className="sr-only" htmlFor="web-nome">Nome completo</label>
               <input id="web-nome" autoComplete="name" required placeholder="Insira seu nome" value={nome} onChange={(event) => setNome(event.target.value)} />
               <label className="sr-only" htmlFor="web-email">E-mail</label>
-              <input id="web-email" type="email" autoComplete="email" placeholder="Insira seu melhor e-mail (opcional)" value={email} onChange={(event) => setEmail(event.target.value)} />
+              <input id="web-email" type="email" autoComplete="email" required placeholder="Insira seu melhor e-mail" value={email} onChange={(event) => setEmail(event.target.value)} />
               <label className="sr-only" htmlFor="web-whatsapp">WhatsApp</label>
               <div className="iw-replica-phone"><span>BR +55</span><input id="web-whatsapp" type="tel" inputMode="tel" autoComplete="tel" required maxLength={11} placeholder="WhatsApp - (99) 99999-9999" value={whatsapp} onChange={(event) => setWhatsapp(event.target.value.replace(/\D/g, '').slice(0, 11))} /></div>
               <button type="submit" disabled={enviando}>{enviando ? 'INSCREVENDO...' : 'INSCREVER-SE AGORA!'}</button>
@@ -231,7 +231,7 @@ export default function WebinarioCaptura() {
           <h2>Perguntas <em>Frequentes</em></h2><p>Tire suas dúvidas!</p>
           <div className="iw-replica-faq-list">
             <details><summary>O webinar é realmente gratuito?</summary><p>Sim. A inscrição e a aula introdutória não têm custo. A formação completa, se apresentada depois, é uma oferta separada e opcional.</p></details>
-            <details><summary>Como faço minha inscrição?</summary><p>Preencha seu nome e WhatsApp no formulário acima. A inscrição é gratuita e não obriga nenhuma compra.</p></details>
+            <details><summary>Como faço minha inscrição?</summary><p>Preencha seu nome, e-mail e WhatsApp no formulário acima. A inscrição é gratuita e não obriga nenhuma compra.</p></details>
             <details><summary>Preciso ter conhecimento prévio?</summary><p>Não. O conteúdo é introdutório e foi preparado para quem quer conhecer o tema com responsabilidade.</p></details>
             <details><summary>Vou receber certificado ou material?</summary><p>Não há certificado nem material complementar anunciado para este webinar. Se isso mudar, a informação será atualizada aqui.</p></details>
             {tema.perguntas.map((item) => <details key={item.pergunta}><summary>{item.pergunta}</summary><p>{item.resposta}</p></details>)}

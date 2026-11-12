@@ -75,8 +75,8 @@ serve(async (req) => {
   const webinarioSlug = limpar(entrada.webinarioSlug, 80);
   const horarioEscolhido = limpar(entrada.horarioEscolhido, 40);
 
-  if (!nome || !whatsapp || !webinarioSlug) {
-    return json({ ok: false, erro: 'nome, whatsapp e webinarioSlug sao obrigatorios' }, 400);
+  if (!nome || !email || !whatsapp || !webinarioSlug) {
+    return json({ ok: false, erro: 'nome, email, whatsapp e webinarioSlug sao obrigatorios' }, 400);
   }
 
   const supabase = createClient(

@@ -516,11 +516,28 @@ serve(async (req) => {
     // diario, instancia escolhida em evolution_task_config (task 'boas_vindas') so' usada
     // se estiver com sessao aberta, e pausa automatica apos erros seguidos.
     if (bvCount) {
-      const { data: bvPendentes } = await supabase
+      // Funil pausado/inativo nao pode ocupar vaga no lote de 20 -- descoberto
+      // 12/11/2026: a Turma #47 ficou pausada por erro com 49 pendentes bem
+      // mais antigos que os da Turma #48, e como o lote e' global (ordenado
+      // so por agendado_para), a Turma #47 sozinha enchia os 20 todo ciclo e
+      // a Turma #48 nunca era nem buscada do banco -- zero boas-vindas saindo
+      // por dias sem nenhum erro registrado (parecia tudo certo de fora).
+      const { data: bvConfigsBloqueio } = await supabase
+        .from('boas_vindas_config')
+        .select('funnel_name')
+        .or('ativo.eq.false,pausado_por_erro.eq.true');
+      const funisBloqueados = (bvConfigsBloqueio ?? []).map((c: { funnel_name: string }) => c.funnel_name);
+
+      let bvQuery = supabase
         .from('boas_vindas_agendados')
         .select('*')
         .eq('status', 'pendente')
-        .lte('agendado_para', now.toISOString())
+        .lte('agendado_para', now.toISOString());
+      if (funisBloqueados.length) {
+        bvQuery = bvQuery.not('funnel_name', 'in', `(${funisBloqueados.join(',')})`);
+      }
+
+      const { data: bvPendentes } = await bvQuery
         .order('agendado_para', { ascending: true })
         .limit(20); // teto de seguranca por ciclo -- o gate real e' o daily_limit por funil
 
@@ -650,10 +667,25 @@ serve(async (req) => {
               }
               if (lastBvErr) throw lastBvErr;
 
+              const enviadoEm = new Date().toISOString();
               await supabase
                 .from('boas_vindas_agendados')
-                .update({ status: 'enviado', enviado_em: new Date().toISOString() })
+                .update({ status: 'enviado', enviado_em: enviadoEm })
                 .eq('id', bv.id);
+
+              // Espelha o envio em lancamento_leads.bv_enviado -- o Kanban do
+              // lançamento (LancamentoKanban.tsx) lê essa flag pro banner "N
+              // lead(s) sem boas-vindas", não a fila boas_vindas_agendados.
+              // Descoberto 12/11/2026: nada escrevia aqui, então o banner
+              // nunca atualizava mesmo com os envios reais acontecendo.
+              if (bv.lancamento_id) {
+                await supabase
+                  .from('lancamento_leads')
+                  .update({ bv_enviado: true, bv_enviado_em: enviadoEm })
+                  .eq('lancamento_id', bv.lancamento_id)
+                  .eq('whatsapp', bv.whatsapp);
+              }
+
               // Áudio não aceita legenda (bv.mensagem só é enviado de verdade
               // pro WhatsApp nos ramos texto/mídia-com-legenda acima).
               await registrarMensagemEnviada(
@@ -666,8 +698,24 @@ serve(async (req) => {
               enviadosHoje++;
               errosSeq = 0;
               processed++;
-              const delayS = cfgBV.delay_min_s + Math.random() * (cfgBV.delay_max_s - cfgBV.delay_min_s);
-              await new Promise(r => setTimeout(r, delayS * 1000));
+
+              await supabase.from('boas_vindas_config').update({
+                enviados_hoje: enviadosHoje,
+                dia_contagem: sp.dateStr,
+                erros_seq: errosSeq,
+              }).eq('funnel_name', funnelName);
+
+              // UM envio por turma por ciclo, depois sai -- nunca mais dorme
+              // minutos dentro da funcao. Descoberto 12/11/2026: com
+              // delay_min_s/max_s de vários minutos, a funcao quase nunca
+              // sobrevivia pra terminar o loop inteiro (o servidor mata a
+              // execucao durante o sleep), e mesmo persistindo o progresso na
+              // hora (acima), execucoes concorrentes/zumbis do mesmo ciclo
+              // ainda conseguiam repetir a mesma instancia. O espacamento real
+              // agora vem do proprio intervalo do cron (a cada 5min) -- que já
+              // cai dentro da janela de 5-7min pedida -- em vez de um sleep
+              // interno que o ambiente serverless não garante terminar.
+              break;
             } catch (e: unknown) {
               const ambiguous = isAmbiguousError(e);
               await supabase
@@ -675,6 +723,11 @@ serve(async (req) => {
                 .update({ status: 'erro', erro_msg: (e as Error).message })
                 .eq('id', bv.id);
               if (!ambiguous) errosSeq++;
+              await supabase.from('boas_vindas_config').update({
+                erros_seq: errosSeq,
+                dia_contagem: sp.dateStr,
+                ...(errosSeq >= cfgBV.max_errors_seq ? { pausado_por_erro: true } : {}),
+              }).eq('funnel_name', funnelName);
             }
           }
 
