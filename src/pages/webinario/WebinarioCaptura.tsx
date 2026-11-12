@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { BookOpenCheck, Gift, MonitorPlay } from 'lucide-react';
@@ -28,6 +28,11 @@ export default function WebinarioCaptura() {
   const [whatsapp, setWhatsapp] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [capturaVideoUrl, setCapturaVideoUrl] = useState<string | null>(null);
+  // Trava de "não pula pra frente": deixa voltar e rever à vontade, mas
+  // arrasta de volta pro ponto mais longe já assistido se a pessoa tentar
+  // avançar pela barra/teclado. Ref (não state) pra não re-renderizar a
+  // cada frame do vídeo.
+  const maxAssistidoRef = useRef(0);
   const [opcoesForaHorario, setOpcoesForaHorario] = useState<{ inicioEm: string; periodo: 'manha' | 'tarde' | 'noite' }[] | null>(null);
 
   // Teste de headline com N variantes: sorteia peso igual entre todas na
@@ -163,7 +168,25 @@ export default function WebinarioCaptura() {
 
           {capturaVideoUrl && (
             <div className="iw-replica-media">
-              <video src={capturaVideoUrl} controls playsInline preload="metadata" poster="https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/vsl/semana-do-despertar-poster.jpg" aria-label={`Vídeo de apresentação: ${tema.titulo}`} />
+              <video
+                src={capturaVideoUrl}
+                controls
+                controlsList="noplaybackrate nodownload"
+                playsInline
+                preload="metadata"
+                poster="https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/vsl/semana-do-despertar-poster.jpg"
+                aria-label={`Vídeo de apresentação: ${tema.titulo}`}
+                onTimeUpdate={(event) => {
+                  const t = event.currentTarget.currentTime;
+                  if (t > maxAssistidoRef.current) maxAssistidoRef.current = t;
+                }}
+                onSeeking={(event) => {
+                  const video = event.currentTarget;
+                  if (video.currentTime > maxAssistidoRef.current + 0.5) {
+                    video.currentTime = maxAssistidoRef.current;
+                  }
+                }}
+              />
             </div>
           )}
 
