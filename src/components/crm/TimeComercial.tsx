@@ -26,7 +26,7 @@ import {
   MessageCircle, Target, Copy, ExternalLink, Users, TrendingUp, DollarSign, CalendarDays,
   Video, Repeat, GraduationCap, Link2, Wallet, CreditCard, Kanban, ClipboardList,
   Search, X, History, Filter, CornerDownRight, Eye, Zap, BookOpen, Layers, Trash2, RotateCcw,
-  Activity, Percent, BarChart3, Phone, Trophy, Timer, Info, StickyNote, AlarmClock, Clock, Lock, UserPlus,
+  Activity, Percent, BarChart3, Phone, Timer, Info, StickyNote, AlarmClock, Clock, Lock, UserPlus,
 } from 'lucide-react';
 
 // -----------------------------------------------------------------------
@@ -2643,18 +2643,103 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
     (acc[v.vendedor] ??= []).push(v);
     return acc;
   }, {});
-  // Pré-matrícula (ainda não virou venda de verdade) sempre no topo, venda
-  // concretizada vai descendo -- pedido dele: "não ficar uma mistura dessa
-  // toda". Dentro de cada grupo, mais recente primeiro.
+  // Mais recente primeiro dentro de cada vendedor.
   for (const nome of Object.keys(porVendedor)) {
-    porVendedor[nome].sort((a, b) => {
-      const grupoA = a.status === 'pre_matricula' ? 0 : 1;
-      const grupoB = b.status === 'pre_matricula' ? 0 : 1;
-      if (grupoA !== grupoB) return grupoA - grupoB;
-      return (b.data_registro ?? '').localeCompare(a.data_registro ?? '');
-    });
+    porVendedor[nome].sort((a, b) => (b.data_registro ?? '').localeCompare(a.data_registro ?? ''));
   }
   const nomes = Object.keys(porVendedor).sort((a, b) => a.localeCompare(b));
+
+  // Pedido dele 2026-11-12: "separar o que é venda e o que é pré, pra ficar
+  // mais separado" -- antes era uma tabela só por vendedor com a pré-matrícula
+  // ordenada no topo (misturado visualmente); agora são duas tabelas
+  // distintas, cada uma só aparece se tiver linha.
+  const renderTabela = (linhas: VendaNominal[]) => (
+    <Card className="p-0 overflow-x-auto">
+      <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
+        <TableHeader>
+          <TableRow className={PREMIUM_TABLE_HEADER_ROW}>
+            <TableHead className="w-8"></TableHead>
+            <TableHead>Pré-matrícula feita</TableHead>
+            <TableHead>Venda concretizada</TableHead>
+            <TableHead>Pagamento previsto</TableHead>
+            <TableHead>Aluno</TableHead>
+            <TableHead>Produto</TableHead>
+            <TableHead>Forma</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Contrato</TableHead>
+            <TableHead className="text-right">Valor</TableHead>
+            <TableHead className="w-10"></TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {linhas.map((v, idx) => (
+            <TableRow key={v.aluno_id} className={premiumZebraRow(idx)}>
+              <TableCell className="w-8">
+                {v.origem === 'matricula' && (
+                  <button
+                    type="button"
+                    onClick={() => abrirFicha(v.aluno_id)}
+                    title="Ver/editar dados do aluno"
+                    className="text-muted-foreground hover:text-primary transition-colors"
+                  >
+                    <Eye className="h-4 w-4" />
+                  </button>
+                )}
+              </TableCell>
+              <TableCell className="text-xs whitespace-nowrap">
+                {v.data_registro ? new Date(v.data_registro + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
+              </TableCell>
+              <TableCell className="text-xs whitespace-nowrap">
+                {v.data_venda_concretizada ? new Date(v.data_venda_concretizada + 'T12:00:00').toLocaleDateString('pt-BR') : <span className="text-muted-foreground">—</span>}
+              </TableCell>
+              <TableCell className="text-xs whitespace-nowrap">
+                {v.origem === 'matricula' && v.status === 'pre_matricula' && v.forma_pagamento === 'boleto' ? (
+                  <button
+                    type="button"
+                    onClick={() => { setDataEditando({ alunoId: v.aluno_id, alunoNome: v.aluno_nome, dataAtual: v.data_venda ?? '' }); setNovaData(v.data_venda ?? ''); setAtualizarBoleto(true); }}
+                    className="underline decoration-dotted underline-offset-2 hover:text-primary transition-colors"
+                    title="Clique para mudar a data de pagamento previsto"
+                  >
+                    {v.data_venda ? new Date(v.data_venda + 'T12:00:00').toLocaleDateString('pt-BR') : 'definir'}
+                  </button>
+                ) : (
+                  v.data_venda ? new Date(v.data_venda + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
+                )}
+              </TableCell>
+              <TableCell className="text-sm font-medium text-foreground">{v.aluno_nome}</TableCell>
+              <TableCell className="text-xs whitespace-nowrap">{v.produto ? (PRODUTO_LABEL_TC[v.produto] ?? v.produto) : '—'}</TableCell>
+              <TableCell className="text-xs whitespace-nowrap">{v.forma_pagamento ? (FORMA_LABEL_TC[v.forma_pagamento] ?? v.forma_pagamento) : '—'}</TableCell>
+              <TableCell className="text-xs whitespace-nowrap">{v.status ? (STATUS_LABEL_TC[v.status] ?? v.status) : '—'}</TableCell>
+              <TableCell className="whitespace-nowrap"><ContratoBadge assinado={v.contrato_assinado} enviado={v.contrato_enviado} /></TableCell>
+              <TableCell className="text-right text-sm whitespace-nowrap">
+                {/* Sempre o líquido de verdade já recebido (soma das parcelas pagas, já
+                    descontada a taxa) -- é o valor que entra no cálculo de comissão.
+                    R$0 pra pré-matrícula sem nenhum pagamento ainda é o comportamento
+                    correto, não um bug. */}
+                {v.valor_total != null ? fmt(Number(v.valor_total)) : '—'}
+                <span className="block text-[10px] text-muted-foreground">líquido recebido</span>
+                {v.num_parcelas && v.num_parcelas > 1 && v.valor_parcela != null && (
+                  <span className="block text-[10px] text-muted-foreground">plano: {v.num_parcelas}x de {fmt(Number(v.valor_parcela))}</span>
+                )}
+              </TableCell>
+              <TableCell className="w-10">
+                {v.origem === 'matricula' && v.status === 'pre_matricula' && (
+                  <button
+                    type="button"
+                    onClick={() => setCancelando({ alunoId: v.aluno_id, alunoNome: v.aluno_nome })}
+                    title="Cancelar pré-matrícula (aluno desistiu) -- cancela boleto no Asaas e contrato na Autentique"
+                    className="text-muted-foreground hover:text-destructive transition-colors"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </Card>
+  );
 
   const [ano, mesNum] = mesFiltro.split('-');
   const nomeMesFiltro = `${MESES_ABREV[Number(mesNum) - 1]}/${ano}`;
@@ -2688,96 +2773,25 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
       ) : (
         nomes.map((nome) => {
           const linhas = porVendedor[nome];
+          const preMatriculas = linhas.filter((v) => v.status === 'pre_matricula');
+          const vendasFechadas = linhas.filter((v) => v.status !== 'pre_matricula');
           return (
-            <div key={nome} className="flex flex-col gap-2">
+            <div key={nome} className="flex flex-col gap-4">
               {!viewAsName && (
                 <p className="text-sm font-semibold text-foreground">{nome} · {linhas.length} venda{linhas.length === 1 ? '' : 's'}</p>
               )}
-              <Card className="p-0 overflow-x-auto">
-                <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
-                  <TableHeader>
-                    <TableRow className={PREMIUM_TABLE_HEADER_ROW}>
-                      <TableHead className="w-8"></TableHead>
-                      <TableHead>Pré-matrícula feita</TableHead>
-                      <TableHead>Venda concretizada</TableHead>
-                      <TableHead>Pagamento previsto</TableHead>
-                      <TableHead>Aluno</TableHead>
-                      <TableHead>Produto</TableHead>
-                      <TableHead>Forma</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Contrato</TableHead>
-                      <TableHead className="text-right">Valor</TableHead>
-                      <TableHead className="w-10"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {linhas.map((v, idx) => (
-                      <TableRow key={v.aluno_id} className={premiumZebraRow(idx)}>
-                        <TableCell className="w-8">
-                          {v.origem === 'matricula' && (
-                            <button
-                              type="button"
-                              onClick={() => abrirFicha(v.aluno_id)}
-                              title="Ver/editar dados do aluno"
-                              className="text-muted-foreground hover:text-primary transition-colors"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </button>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-xs whitespace-nowrap">
-                          {v.data_registro ? new Date(v.data_registro + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}
-                        </TableCell>
-                        <TableCell className="text-xs whitespace-nowrap">
-                          {v.data_venda_concretizada ? new Date(v.data_venda_concretizada + 'T12:00:00').toLocaleDateString('pt-BR') : <span className="text-muted-foreground">—</span>}
-                        </TableCell>
-                        <TableCell className="text-xs whitespace-nowrap">
-                          {v.origem === 'matricula' && v.status === 'pre_matricula' && v.forma_pagamento === 'boleto' ? (
-                            <button
-                              type="button"
-                              onClick={() => { setDataEditando({ alunoId: v.aluno_id, alunoNome: v.aluno_nome, dataAtual: v.data_venda ?? '' }); setNovaData(v.data_venda ?? ''); setAtualizarBoleto(true); }}
-                              className="underline decoration-dotted underline-offset-2 hover:text-primary transition-colors"
-                              title="Clique para mudar a data de pagamento previsto"
-                            >
-                              {v.data_venda ? new Date(v.data_venda + 'T12:00:00').toLocaleDateString('pt-BR') : 'definir'}
-                            </button>
-                          ) : (
-                            v.data_venda ? new Date(v.data_venda + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
-                          )}
-                        </TableCell>
-                        <TableCell className="text-sm font-medium text-foreground">{v.aluno_nome}</TableCell>
-                        <TableCell className="text-xs whitespace-nowrap">{v.produto ? (PRODUTO_LABEL_TC[v.produto] ?? v.produto) : '—'}</TableCell>
-                        <TableCell className="text-xs whitespace-nowrap">{v.forma_pagamento ? (FORMA_LABEL_TC[v.forma_pagamento] ?? v.forma_pagamento) : '—'}</TableCell>
-                        <TableCell className="text-xs whitespace-nowrap">{v.status ? (STATUS_LABEL_TC[v.status] ?? v.status) : '—'}</TableCell>
-                        <TableCell className="whitespace-nowrap"><ContratoBadge assinado={v.contrato_assinado} enviado={v.contrato_enviado} /></TableCell>
-                        <TableCell className="text-right text-sm whitespace-nowrap">
-                          {/* Sempre o líquido de verdade já recebido (soma das parcelas pagas, já
-                              descontada a taxa) -- é o valor que entra no cálculo de comissão.
-                              R$0 pra pré-matrícula sem nenhum pagamento ainda é o comportamento
-                              correto, não um bug. */}
-                          {v.valor_total != null ? fmt(Number(v.valor_total)) : '—'}
-                          <span className="block text-[10px] text-muted-foreground">líquido recebido</span>
-                          {v.num_parcelas && v.num_parcelas > 1 && v.valor_parcela != null && (
-                            <span className="block text-[10px] text-muted-foreground">plano: {v.num_parcelas}x de {fmt(Number(v.valor_parcela))}</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="w-10">
-                          {v.origem === 'matricula' && v.status === 'pre_matricula' && (
-                            <button
-                              type="button"
-                              onClick={() => setCancelando({ alunoId: v.aluno_id, alunoNome: v.aluno_nome })}
-                              title="Cancelar pré-matrícula (aluno desistiu) -- cancela boleto no Asaas e contrato na Autentique"
-                              className="text-muted-foreground hover:text-destructive transition-colors"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </Card>
+              {preMatriculas.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pré-matrículas · {preMatriculas.length}</p>
+                  {renderTabela(preMatriculas)}
+                </div>
+              )}
+              {vendasFechadas.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vendas concretizadas · {vendasFechadas.length}</p>
+                  {renderTabela(vendasFechadas)}
+                </div>
+              )}
             </div>
           );
         })
@@ -3114,14 +3128,16 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
   const resumoDe = (nome: string) => resumoVend.find((r) => r.vendedor === nome);
   const resumoDeMes = (nome: string) => resumoVendMes.find((r) => r.vendedor === nome);
 
-  // Mesmo critério do Funil: campanha de retorno (base antiga) não conta como
-  // "leads que entraram" na visão de admin — senão o número vem inflado com
-  // milhares de leads frios de anos atrás, que não representam captação real.
-  const campanhaIdsRetorno = campanhas.filter((c) => c.tipo === 'retorno').map((c) => c.id);
-  const leadsCaptacaoAdmin = contagens
-    .filter((c) => !(c.campanha_id && campanhaIdsRetorno.includes(c.campanha_id)))
-    .filter((c) => !viewAsName || c.vendedor === viewAsName)
-    .reduce((soma, c) => soma + Number(c.total), 0);
+  // Achado pelo dono do produto (2026-11-12): "Leads que entraram" da Visão
+  // Geral usava `contagens` (time_comercial_contagens), que é uma foto
+  // ACUMULADA desde sempre -- aparecia "2916 leads" na tela mesmo com o
+  // filtro de mês em "Nov/2026" ao lado. Troca pra leadsPorMes
+  // (time_comercial_leads_por_mes), que já é agrupado por mês e já exclui a
+  // campanha de retorno (mesmo critério que o filtro manual fazia aqui) --
+  // respeita o seletor de mês (mesFaturamento) igual o resto da Visão Geral.
+  const leadsCaptacaoAdmin = mesFaturamento === TODOS_PERIODOS
+    ? leadsPorMes.reduce((soma, l) => soma + Number(l.total), 0)
+    : Number(leadsPorMes.find((l) => l.mes.slice(0, 7) === mesFaturamento)?.total ?? 0);
 
   // Visão do vendedor: "leads que entraram" = leads que ele realmente
   // trabalhou (pegou ou contactou), contando a base de retorno também (é
@@ -3149,12 +3165,6 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
     const total7dias = doVendedor.reduce((soma, m) => soma + Number(m.eventos), 0);
     return { hoje, media7dias: Math.round((total7dias / 7) * 10) / 10 };
   };
-
-  // Ranking simples por vendas fechadas — métrica clássica de leaderboard de
-  // time de vendas, só faz sentido na visão de admin (com todo mundo junto).
-  const ranking = [...INITIAL_VENDORS]
-    .map((v) => ({ v, vendas: alunosDe(v.name)?.total ?? 0 }))
-    .sort((a, b) => b.vendas - a.vendas);
 
   const vendasPorDiaMap = new Map(vendasPorDia.map((d) => [d.dia_semana, d.vendas]));
   const maxVendasDia = Math.max(1, ...vendasPorDia.map((d) => d.vendas));
@@ -3349,29 +3359,6 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
           Inclui as vendas de PNL lançadas no fechamento, mesmo as que não têm matrícula no sistema. "Sem forma de pgto." são matrículas reivindicadas mas sem à-vista/cartão/boleto informado ainda na ficha. "Bolsa/cortesia" não geram comissão. A coluna Comissão é o total já apurado no painel Fechamento (líquido de cada venda).
         </p>
       </Card>
-
-      {!viewAsName && (
-        <>
-          <SectionBar title="Ranking da equipe" subtitle="Vendas fechadas por vendedor — quem está na frente agora." icon={Trophy} />
-          <Card className="p-4">
-            <div className="flex flex-col divide-y divide-border">
-              {ranking.map(({ v, vendas }, idx) => {
-                const medalha = idx === 0 ? 'bg-warning/15 text-warning border-warning/30' : idx === 1 ? 'bg-muted text-muted-foreground border-border' : 'bg-transparent text-muted-foreground border-transparent';
-                return (
-                  <div key={v.name} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
-                    <div className={`w-7 h-7 rounded-full border flex items-center justify-center flex-shrink-0 ${medalha}`}>
-                      {idx === 0 && vendas > 0 ? <Trophy className="h-3.5 w-3.5" /> : <span className="text-xs font-bold">{idx + 1}º</span>}
-                    </div>
-                    <div className="w-8 h-8 rounded-md flex items-center justify-center font-bold text-xs text-white flex-shrink-0" style={{ backgroundColor: v.cor }}>{v.initials}</div>
-                    <p className="text-sm font-medium text-foreground flex-1">{v.name}</p>
-                    <Badge className="text-xs border-0 bg-primary/10 text-primary">{vendas} {vendas === 1 ? 'venda' : 'vendas'}</Badge>
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
-        </>
-      )}
 
       <SectionBar title="Indicadores de eficiência" subtitle="Velocidade de venda e valor médio por venda." icon={Timer} />
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
