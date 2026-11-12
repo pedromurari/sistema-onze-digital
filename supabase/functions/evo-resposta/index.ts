@@ -570,6 +570,64 @@ async function tentarCriarLeadDireto(
   }
 }
 
+// ── Lead direto via WhatsApp (Click-to-WhatsApp, instância "Helen vendas") ──
+// Esse lead clica no anúncio e cai direto numa conversa de WhatsApp com a
+// Helen -- nunca passa por formulário, nunca vira linha em `leads` (achado
+// real do Pedro 12/11/2026: o card "Leads que você trabalhou" sempre ficava
+// atrás da realidade porque esse lead simplesmente não existia no sistema,
+// só na conversa). Sem IA, sem resposta automática (atendimento é 100%
+// humano) -- só garante que a PRIMEIRA mensagem de um número novo nessa
+// instância vire um lead de verdade no Kanban (canal 'Direto', Time
+// Comercial, já atribuído à Helen), pra aparecer lá sem ela precisar fazer
+// nada. Mensagens seguintes do mesmo número não recriam -- o lead já existe.
+// Roda em paralelo ao tentarCriarLeadDireto acima (não concorre: aquele é só
+// pro gatilho exato do anúncio antigo + SDR de IA, hoje desligado).
+const INSTANCIA_LEAD_DIRETO_WPP = 'Helen vendas';
+
+async function tentarRegistrarLeadDiretoWpp(
+  supabase: ReturnType<typeof createClient>,
+  phone: string,
+  s8: string,
+  instance: string,
+  pushName: string,
+): Promise<void> {
+  if (instance !== INSTANCIA_LEAD_DIRETO_WPP) return;
+
+  try {
+    const { data: leadExistente } = await supabase
+      .from('leads')
+      .select('id')
+      .filter('whatsapp', 'ilike', `%${s8}`)
+      .limit(1)
+      .maybeSingle();
+    if (leadExistente) return; // já é lead -- não recria
+
+    const { data: alunoExistente } = await supabase
+      .from('alunos')
+      .select('id')
+      .filter('whatsapp', 'ilike', `%${s8}`)
+      .limit(1)
+      .maybeSingle();
+    if (alunoExistente) return; // já é aluno/pré-matrícula -- não é lead novo
+
+    const { error } = await supabase.from('leads').insert({
+      nome: pushName || `Lead WhatsApp ${s8}`,
+      telefone: phone,
+      whatsapp: phone,
+      origem: 'Time Comercial',
+      status: 'novo',
+      canal: 'Direto',
+      produto: 'time_comercial',
+      interesse_produto: 'Psicanálise',
+      vendedor: 'Helen Magna',
+      observacoes: 'Lead direto do anúncio (Click-to-WhatsApp) -- criado automaticamente pela 1ª mensagem recebida.',
+    });
+    if (error) console.error('tentarRegistrarLeadDiretoWpp: falha ao criar lead:', error.message);
+  } catch (e: unknown) {
+    console.error('tentarRegistrarLeadDiretoWpp: falha:', (e as Error).message);
+  }
+}
+
 // ── Debounce de mensagens rápidas em sequência ──────────────────────────────
 // Um lead que manda 2-3 mensagens em poucos segundos (ex.: "Din" seguido de
 // "Sim" 3s depois) fazia o webhook disparar leads-ia-responder duas vezes em
@@ -887,6 +945,11 @@ serve(async (req) => {
     // tabela, e independente de casar com alguma. Um numero desconhecido hoje
     // pode virar lead/aluno amanha, e ai a conversa ja esta completa.
     await registrarMensagemRecebida(supabase, phone, mensagem, mensagemTipo, instance);
+
+    // Lead direto via WhatsApp (instância da Helen) -- não bloqueia nada do
+    // resto do fluxo, só garante que o lead exista no Kanban caso ainda não
+    // exista (ver tentarRegistrarLeadDiretoWpp acima).
+    await tentarRegistrarLeadDiretoWpp(supabase, phone, s8, instance, pushName);
 
     if (mensagemTipo === 'text' && detectarOptOut(mensagem)) {
       await registrarOptOut(supabase, phone, mensagem);

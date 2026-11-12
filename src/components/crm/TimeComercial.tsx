@@ -2996,6 +2996,51 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
     return () => { ativo = false; };
   }, [mesFaturamento]);
 
+  // Lead direto (anúncio Click-to-WhatsApp) nunca entra na tabela `leads` --
+  // a pessoa clica no anúncio e cai direto na conversa, sem formulário, então
+  // "leads_trabalhados" (que só conta `leads_historico_fase`) sempre ficava
+  // pra trás da realidade (achado real do Pedro 12/11/2026: card mostrava 15,
+  // "mas foram mais leads"). Busca direto no Gestor de Tráfego (Meta Ads) e
+  // soma só as campanhas de lead direto (mesmo critério do relatório diário
+  // do comercial: nome com "LEAD DIRETO" ou ação de conversa iniciada).
+  const [leadsDiretoMeta, setLeadsDiretoMeta] = useState<number | null>(null);
+  const [leadsDiretoMetaErro, setLeadsDiretoMetaErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    let ativo = true;
+    setLeadsDiretoMeta(null);
+    setLeadsDiretoMetaErro(null);
+
+    const hojeStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    let since: string;
+    let until: string;
+    if (mesFaturamento === TODOS_PERIODOS) {
+      const d = new Date(`${hojeStr}T12:00:00Z`);
+      d.setUTCDate(d.getUTCDate() - 365);
+      since = d.toISOString().slice(0, 10);
+      until = hojeStr;
+    } else {
+      since = `${mesFaturamento}-01`;
+      const [ano, mes] = mesFaturamento.split('-').map(Number);
+      const fimMes = new Date(Date.UTC(ano, mes, 0)).toISOString().slice(0, 10);
+      until = fimMes > hojeStr ? hojeStr : fimMes;
+    }
+
+    (supabase as any).functions.invoke('meta-ads', { body: { action: 'listar', since, until } })
+      .then(({ data, error }: any) => {
+        if (!ativo) return;
+        if (error || !data?.ok) {
+          setLeadsDiretoMetaErro(data?.error ?? error?.message ?? 'Gestor de Tráfego indisponível');
+          return;
+        }
+        const total = (data.campanhas ?? [])
+          .filter((c: any) => String(c.nome ?? '').toUpperCase().includes('LEAD DIRETO'))
+          .reduce((soma: number, c: any) => soma + Number(c.leads ?? 0), 0);
+        setLeadsDiretoMeta(total);
+      });
+    return () => { ativo = false; };
+  }, [mesFaturamento]);
+
   const vendedoresVisiveis = viewAsName ? INITIAL_VENDORS.filter((v) => v.name === viewAsName) : INITIAL_VENDORS;
   const alunosDe = (nome: string) => alunosPorVendedor.find((a) => a.vendedor === nome);
   const alunosDeMes = (nome: string) => alunosPorVendedorMes.find((a) => a.vendedor === nome);
@@ -3016,7 +3061,8 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
   // trabalho dele); "vendas" inclui pré-matrícula. Admin segue na métrica de
   // captação acima.
   const resumoLogado = viewAsName ? resumoDeMes(viewAsName) : undefined;
-  const leadsEntraram = viewAsName ? (resumoLogado?.leads_trabalhados ?? 0) : leadsCaptacaoAdmin;
+  const leadsTrabalhadosCrm = viewAsName ? (resumoLogado?.leads_trabalhados ?? 0) : leadsCaptacaoAdmin;
+  const leadsEntraram = leadsTrabalhadosCrm + (leadsDiretoMeta ?? 0);
   const vendasTotais = viewAsName
     ? (resumoLogado?.vendas ?? 0)
     : vendedoresVisiveis.reduce((soma, v) => soma + (alunosDe(v.name)?.total ?? 0), 0);
@@ -3156,7 +3202,13 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
         <StatTile
           label={viewAsName ? 'Leads que você trabalhou' : 'Leads que entraram'}
           value={leadsEntraram}
-          hint={viewAsName ? 'leads que você pegou ou contactou' : undefined}
+          hint={
+            leadsDiretoMetaErro
+              ? `${leadsTrabalhadosCrm} no CRM · lead direto indisponível (${leadsDiretoMetaErro})`
+              : leadsDiretoMeta !== null
+                ? `${leadsTrabalhadosCrm} no CRM + ${leadsDiretoMeta} direto no WhatsApp (anúncio)`
+                : viewAsName ? 'leads que você pegou ou contactou' : undefined
+          }
           icon={Users}
         />
         <StatTile
