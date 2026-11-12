@@ -1,18 +1,27 @@
 /**
  * comercial-relatorio-dia
  * Manda pro grupo "DP - Comercial" o relatório automático do dia que passou:
- * leads diretos (anúncio -> WhatsApp, puxados do Meta Ads), vendas e
+ * leads diretos (WhatsApp via anúncio + site), leads de webinário, vendas e
  * pré-matrículas fechadas, e envios das campanhas de disparo em massa.
- * Pedido do Pedro 11/11/2026, ajustado 12/11/2026 (horário + fonte dos leads).
+ * Pedido do Pedro 11/11/2026, ajustado 12/11/2026 (horário, fonte dos leads
+ * de WhatsApp, e adição de site/webinário).
  *
  * Roda à 00:05 de Brasília com os números do DIA ANTERIOR já fechado.
  *
- * Por que os leads vêm do Meta e não da tabela `leads`: a campanha de lead
- * direto é Click-to-WhatsApp -- a pessoa clica no anúncio e cai na conversa,
- * sem preencher formulário nenhum, então nunca vira linha em `leads`. O Meta
- * conta isso como "conversa por mensagem iniciada"
- * (onsite_conversion.messaging_conversation_started_7d). Achado real
- * 12/11/2026: relatório saiu "0 leads" num dia com 13 conversas no Ads.
+ * Leads diretos tem DUAS fontes, somadas:
+ * - WhatsApp (anúncio Click-to-WhatsApp): vem do Meta Ads, não da tabela
+ *   `leads` -- a pessoa clica no anúncio e cai direto na conversa, sem
+ *   formulário, então o Meta conta como "conversa por mensagem iniciada"
+ *   (onsite_conversion.messaging_conversation_started_7d). Achado real
+ *   12/11/2026: relatório saiu "0 leads" num dia com 13 conversas no Ads.
+ *   (Desde 12/11/2026 o evo-resposta também cria a linha em `leads` pra
+ *   cada conversa nova -- alimenta o Kanban -- mas a CONTAGEM do relatório
+ *   continua vindo do Meta, fonte já validada, pra não depender de um
+ *   mecanismo ainda sem dias de dado real confirmado.)
+ * - Site (origem='Direto' em `leads`): mecanismo antigo, parado desde
+ *   14/08/2026 -- incluído por completude, hoje deve dar sempre 0.
+ * Leads de webinário (canal='Webinário' em Time Comercial) vêm direto de
+ * `leads`, já é um dado real e ativo.
  *
  * Chamada só pelo cron interno (ver migração comercial_relatorio_dia_cron):
  * exige header x-cron-key.
@@ -132,13 +141,25 @@ serve(async (req) => {
     if (erroDados || !dados) return json({ ok: false, erro: erroDados?.message ?? 'sem dados' }, 500);
 
     const disparos = (dados.disparos ?? []) as { nome: string; enviados: number }[];
+    const leadsSite = Number(dados.leads_site ?? 0);
+    const leadsWebinario = Number(dados.leads_webinario ?? 0);
 
-    const linhasLeads = meta.erro
-      ? `🎯 Leads diretos: não consegui ler o Gestor de Tráfego (${meta.erro})`
+    const linhaWpp = meta.erro
+      ? `   • WhatsApp (anúncio): não consegui ler o Gestor de Tráfego (${meta.erro})`
       : [
-          `🎯 Leads diretos (anúncio → WhatsApp): ${meta.total}`,
-          ...meta.porCampanha.map((c) => `   • ${c.nome}: ${c.leads}`),
+          `   • WhatsApp (anúncio): ${meta.total}`,
+          ...meta.porCampanha.map((c) => `      - ${c.nome}: ${c.leads}`),
         ].join('\n');
+
+    const totalLeadsDiretos = (meta.erro ? 0 : meta.total) + leadsSite;
+
+    const linhasLeads = [
+      `🎯 *Leads diretos (${totalLeadsDiretos}${meta.erro ? '+' : ''}):*`,
+      linhaWpp,
+      `   • Site: ${leadsSite}`,
+      '',
+      `📺 Leads do webinário: ${leadsWebinario}`,
+    ].join('\n');
 
     const linhasDisparos = disparos.length
       ? disparos.map((d) => `   • ${d.nome}: ${d.enviados} enviado(s)`).join('\n')
