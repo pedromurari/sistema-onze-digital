@@ -53,6 +53,21 @@ const formatCEP = (v: string) => {
   return d.replace(/(\d{5})(\d)/, '$1-$2');
 };
 
+// Mesmo fix de MatriculaTimeComercial.tsx (achado real 2026-11-12): CPF com
+// 11 dígitos mas dígito verificador inválido passava direto por aqui e só
+// travava horas depois na Asaas. Valida de verdade, igual a Receita Federal.
+const cpfValido = (v: string) => {
+  const d = v.replace(/\D/g, '');
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+  const digitos = d.split('').map(Number);
+  const calcDigito = (fatorInicial: number) => {
+    const soma = digitos.slice(0, fatorInicial - 1).reduce((acc, num, i) => acc + num * (fatorInicial - i), 0);
+    const resto = soma % 11;
+    return resto < 2 ? 0 : 11 - resto;
+  };
+  return calcDigito(11) === digitos[9] && calcDigito(12) === digitos[10];
+};
+
 const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 interface DadosPagamento {
@@ -108,7 +123,7 @@ export default function PnlContrato() {
     dadosPessoais.nome.trim().length > 0 &&
     dadosPessoais.email.trim().length > 0 &&
     dadosPessoais.whatsapp.trim().length > 0 &&
-    cpfDigits.length === 11 &&
+    cpfValido(cpfDigits) &&
     dadosPessoais.rg.trim().length > 0 &&
     dadosPessoais.sexo.trim().length > 0 &&
     dataNascimento.length > 0;

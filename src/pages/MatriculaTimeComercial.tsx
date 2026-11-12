@@ -204,6 +204,25 @@ const formatCEP = (v: string) => {
   return d.replace(/(\d{5})(\d)/, '$1-$2');
 };
 
+// Achado real 2026-11-12 (dono do produto): aluna cadastrada com CPF de
+// dígito verificador inválido (11 números, mas não é um CPF que existe) --
+// passava direto pelo formulário (só checava length===11) e só travava horas
+// depois na Asaas, no meio da geração do boleto, sem conseguir dar baixa
+// nisso sem contato manual com a aluna. Valida o dígito verificador de
+// verdade aqui, igual a Receita Federal calcula, pra nunca mais deixar um
+// CPF inválido passar da tela de matrícula.
+const cpfValido = (v: string) => {
+  const d = v.replace(/\D/g, '');
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false; // 11 dígitos repetidos (111.111.111-11 etc) nunca é CPF válido
+  const digitos = d.split('').map(Number);
+  const calcDigito = (fatorInicial: number) => {
+    const soma = digitos.slice(0, fatorInicial - 1).reduce((acc, num, i) => acc + num * (fatorInicial - i), 0);
+    const resto = soma % 11;
+    return resto < 2 ? 0 : 11 - resto;
+  };
+  return calcDigito(11) === digitos[9] && calcDigito(12) === digitos[10];
+};
+
 // ─── Telas auxiliares ───────────────────────────────────────────────────────────
 
 function ScreenLinkInvalido() {
@@ -855,7 +874,7 @@ export default function MatriculaTimeComercial({ preMatricula = false }: { preMa
     form.nome.trim().length > 0 &&
     form.email.trim().length > 0 &&
     form.whatsapp.trim().length > 0 &&
-    cpfDigits.length === 11 &&
+    cpfValido(cpfDigits) &&
     form.rg.trim().length > 0 &&
     form.sexo.trim().length > 0 &&
     dataNascimento.length > 0;
@@ -1166,7 +1185,11 @@ export default function MatriculaTimeComercial({ preMatricula = false }: { preMa
                 !form.nome.trim() && 'nome completo',
                 !form.email.trim() && 'e-mail',
                 !form.whatsapp.trim() && 'telefone/WhatsApp',
-                cpfDigits.length !== 11 && (cpfDigits.length === 0 ? 'CPF' : `CPF (só tem ${cpfDigits.length} dos 11 números — confira se não faltou digitar algum)`),
+                !cpfValido(cpfDigits) && (
+                  cpfDigits.length === 0 ? 'CPF'
+                  : cpfDigits.length !== 11 ? `CPF (só tem ${cpfDigits.length} dos 11 números — confira se não faltou digitar algum)`
+                  : 'CPF (esse número não é um CPF válido — confira se não digitou algum dígito errado)'
+                ),
                 !form.rg.trim() && 'RG',
                 !dataNascimento && 'data de nascimento (dia, mês e ano)',
                 !form.sexo.trim() && 'sexo',

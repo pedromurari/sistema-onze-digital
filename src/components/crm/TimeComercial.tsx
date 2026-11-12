@@ -24,7 +24,7 @@ import { useInvalidarDados } from '@/lib/db';
 import { INITIAL_VENDORS, calcVendor, type VendorRow, BONUS_MOTIVO, BONUS_SUPERACAO } from '@/lib/vendedores';
 import {
   MessageCircle, Target, Copy, ExternalLink, Users, TrendingUp, DollarSign, CalendarDays,
-  Video, Repeat, GraduationCap, Link2, Wallet, CreditCard, Crown, Kanban, ClipboardList,
+  Video, Repeat, GraduationCap, Link2, Wallet, CreditCard, Kanban, ClipboardList,
   Search, X, History, Filter, CornerDownRight, Eye, Zap, BookOpen, Layers, Trash2, RotateCcw,
   Activity, Percent, BarChart3, Phone, Trophy, Timer, Info, StickyNote, AlarmClock, Clock, Lock, UserPlus,
 } from 'lucide-react';
@@ -2064,7 +2064,7 @@ function OperacaoTab({ viewAsName }: VendorScopeProps) {
         <BlocoLinksMatricula links={matriculaLinks} />
         {!viewAsName && (
           <p className="text-xs text-muted-foreground bg-muted rounded-md border border-dashed border-border px-3 py-2 mt-3">
-            Atribuição das fichas por vendedor: por ordem de chegada dos links (Helen → Miguel).
+            Atribuição das fichas por vendedor: entra direto pra quem mandou o link.
           </p>
         )}
       </Card>
@@ -2497,6 +2497,40 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
   const [atualizarBoleto, setAtualizarBoleto] = useState(true);
   const [salvandoData, setSalvandoData] = useState(false);
 
+  // "Cancelar pré-matrícula" -- pedido dele 2026-11-12: a vendedora não pode
+  // precisar passar pro dono toda vez que um aluno de pré-matrícula desiste.
+  // Cancela tudo numa tacada: parcelas no Asaas, contrato na Autentique, e a
+  // ficha fica marcada cancelada aqui. Só aparece pra pré-matrícula -- cancelar
+  // aluno já ativo/pagante continua sendo decisão do financeiro/dono.
+  const [cancelando, setCancelando] = useState<{ alunoId: string; alunoNome: string } | null>(null);
+  const [cancelandoEmAndamento, setCancelandoEmAndamento] = useState(false);
+
+  const confirmarCancelarPreMatricula = async () => {
+    if (!cancelando) return;
+    setCancelandoEmAndamento(true);
+    const { data, error } = await supabase.functions.invoke('time-comercial-pre-matricula-cancelar', {
+      body: { aluno_id: cancelando.alunoId },
+    });
+    setCancelandoEmAndamento(false);
+    const resp = data as { ok?: boolean; erro?: string; boletosCancelados?: number; boletosComFalha?: number; contratoCancelado?: boolean | null } | null;
+    if (error || !resp?.ok) {
+      toast({ title: 'Não foi possível cancelar', description: resp?.erro || error?.message, variant: 'destructive' });
+      return;
+    }
+    const detalhes = [
+      resp.boletosCancelados ? `${resp.boletosCancelados} boleto(s) cancelado(s) no Asaas` : null,
+      resp.boletosComFalha ? `${resp.boletosComFalha} boleto(s) não cancelaram (confira no Asaas)` : null,
+      resp.contratoCancelado === true ? 'contrato cancelado na Autentique' : resp.contratoCancelado === false ? 'contrato não pôde ser cancelado na Autentique' : null,
+    ].filter(Boolean).join(' · ');
+    toast({
+      title: 'Pré-matrícula cancelada',
+      description: detalhes || 'Ficha marcada como cancelada.',
+      variant: (resp.boletosComFalha || resp.contratoCancelado === false) ? 'destructive' : undefined,
+    });
+    setCancelando(null);
+    (supabase as any).rpc('time_comercial_minhas_vendas').then(({ data }: any) => setVendas((data ?? []) as VendaNominal[]));
+  };
+
   const salvarPagamentoPrevisto = async () => {
     if (!dataEditando || !novaData) return;
     setSalvandoData(true);
@@ -2673,6 +2707,7 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
                       <TableHead>Status</TableHead>
                       <TableHead>Contrato</TableHead>
                       <TableHead className="text-right">Valor</TableHead>
+                      <TableHead className="w-10"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -2724,6 +2759,18 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
                           <span className="block text-[10px] text-muted-foreground">líquido recebido</span>
                           {v.num_parcelas && v.num_parcelas > 1 && v.valor_parcela != null && (
                             <span className="block text-[10px] text-muted-foreground">plano: {v.num_parcelas}x de {fmt(Number(v.valor_parcela))}</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="w-10">
+                          {v.origem === 'matricula' && v.status === 'pre_matricula' && (
+                            <button
+                              type="button"
+                              onClick={() => setCancelando({ alunoId: v.aluno_id, alunoNome: v.aluno_nome })}
+                              title="Cancelar pré-matrícula (aluno desistiu) -- cancela boleto no Asaas e contrato na Autentique"
+                              className="text-muted-foreground hover:text-destructive transition-colors"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
                           )}
                         </TableCell>
                       </TableRow>
@@ -2867,6 +2914,26 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
             <Button variant="outline" onClick={() => setDataEditando(null)} disabled={salvandoData}>Cancelar</Button>
             <Button onClick={salvarPagamentoPrevisto} disabled={salvandoData || !novaData}>
               {salvandoData ? 'Salvando...' : 'Salvar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!cancelando} onOpenChange={(open) => !open && !cancelandoEmAndamento && setCancelando(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base">Cancelar pré-matrícula</DialogTitle>
+          </DialogHeader>
+          {cancelando && (
+            <p className="text-sm text-muted-foreground">
+              Tem certeza que quer cancelar a pré-matrícula de <strong className="text-foreground">{cancelando.alunoNome}</strong>?
+              <span className="block mt-2">Isso cancela os boletos pendentes dela no Asaas, cancela o contrato na Autentique (se já tiver sido enviado) e marca a ficha como cancelada. Não dá pra desfazer.</span>
+            </p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelando(null)} disabled={cancelandoEmAndamento}>Voltar</Button>
+            <Button variant="destructive" onClick={confirmarCancelarPreMatricula} disabled={cancelandoEmAndamento}>
+              {cancelandoEmAndamento ? 'Cancelando...' : 'Cancelar pré-matrícula'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3542,45 +3609,6 @@ function MetaEquipeTab() {
 // só o que é dela — pronto pra trocar por auth real quando Helen/Miguel
 // virarem usuarios de verdade no sistema.
 
-// Chips de avatar coloridos pra trocar "Ver como" — clique direto em vez de dropdown,
-// mesma cor de identificação usada nos avatares da tabela de Remuneração.
-function VendorSwitch({ viewAs, onChange }: { viewAs: string; onChange: (v: string) => void }) {
-  return (
-    <div className="flex items-center gap-2.5 overflow-x-auto px-1 py-2 -mx-1 -my-2">
-      <button
-        type="button"
-        onClick={() => onChange('todos')}
-        className="flex flex-col items-center gap-1 flex-shrink-0"
-        title="Todos (visão admin)"
-      >
-        <div
-          className="w-9 h-9 rounded-full flex items-center justify-center text-[9px] font-bold bg-muted text-muted-foreground transition-shadow"
-          style={viewAs === 'todos' ? { boxShadow: '0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--primary))' } : undefined}
-        >
-          Todos
-        </div>
-      </button>
-      {INITIAL_VENDORS.map((v) => (
-        <button
-          key={v.name}
-          type="button"
-          onClick={() => onChange(v.name)}
-          className="flex flex-col items-center gap-1 flex-shrink-0"
-          title={v.gerente ? `${v.name} (gerente — vê todos)` : v.name}
-        >
-          <div
-            className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white transition-shadow"
-            style={{ backgroundColor: v.cor, ...(viewAs === v.name ? { boxShadow: `0 0 0 2px hsl(var(--background)), 0 0 0 4px ${v.cor}` } : {}) }}
-          >
-            {v.initials}
-          </div>
-          <span className="text-[9px] text-muted-foreground max-w-[46px] truncate inline-flex items-center gap-0.5">{v.name.split(' ')[0]}{v.gerente && <Crown className="h-2.5 w-2.5 text-warning flex-shrink-0" />}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export function TimeComercial() {
   const { user } = useAuth();
   // Vendedor(a) logado(a) de verdade: trava a própria visão, sem opção de trocar
@@ -3590,7 +3618,7 @@ export function TimeComercial() {
     ? INITIAL_VENDORS.find((v) => v.name === user.nome && !v.gerente)
     : undefined;
 
-  const [viewAs, setViewAs] = useState(lockedVendor ? lockedVendor.name : 'todos');
+  const [viewAs] = useState(lockedVendor ? lockedVendor.name : 'todos');
   const activeVendor = lockedVendor ?? INITIAL_VENDORS.find((v) => v.name === viewAs);
   // null = sem filtro (admin ou gerente); string = so os dados desse vendedor.
   const viewAsName = activeVendor && !activeVendor.gerente ? activeVendor.name : null;
@@ -3599,14 +3627,6 @@ export function TimeComercial() {
     <div className="h-full flex flex-col animate-fade-in p-4 lg:p-6 gap-4 overflow-y-auto">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-xl lg:text-2xl font-bold text-foreground">CRM Time Comercial</h1>
-        {!lockedVendor && (
-          <div className="flex flex-col items-end gap-1">
-            <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
-              <Eye className="h-2.5 w-2.5" /> Ver como
-            </p>
-            <VendorSwitch viewAs={viewAs} onChange={setViewAs} />
-          </div>
-        )}
       </div>
 
       <Tabs defaultValue="funil" className="flex-1 flex flex-col min-h-0">

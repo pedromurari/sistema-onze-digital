@@ -540,23 +540,36 @@ serve(async (req) => {
       }
 
       // ── Gera o boleto de cada parcela no Asaas, em paralelo ──────────────────
-      const resultados = await Promise.all(inseridos.map(async (row) => {
-        const { ok, data } = await asaasFetch('/payments', {
-          method: 'POST',
-          body: JSON.stringify({
-            customer: customerId,
-            billingType: 'BOLETO',
-            value: Number(row.valor),
-            dueDate: row.data_vencimento,
-            // "/" sai da description (achado em teste real 2026-09-04: o
-            // Asaas engole caracteres especiais nesse campo, "1/15" virava
-            // "115") -- "de" no lugar da barra.
-            description: `Matricula PSI (parcela ${row.numero_parcela} de ${totalParcelas}) - ${nomeCompleto || alunoId}`,
-            externalReference: row.id,
-          }),
-        });
-        return { row, ok, data };
-      }));
+      // Achado 2026-11-12 (dono do produto): várias pré-matrículas nascendo
+      // com as 15 parcelas em `pagamentos`, mas NENHUMA com asaas_payment_id
+      // -- ou seja, as 15 chamadas em paralelo falharam juntas (rate limit ou
+      // blip transitório da API do Asaas num POST tão concentrado), o aluno
+      // nunca recebe boleto/link e só se descobre dias depois. Mesmo padrão
+      // de retry já usado abaixo pro Pix (3 tentativas com espera curta) --
+      // aplicado aqui pra cada parcela individualmente, não só na 1ª.
+      const criarBoletoComRetry = async (row: { id: string; numero_parcela: number; data_vencimento: string; valor: number }) => {
+        let ultimo: { ok: boolean; data: any } = { ok: false, data: null };
+        for (let tentativa = 0; tentativa < 3; tentativa++) {
+          if (tentativa > 0) await new Promise(r => setTimeout(r, 1000 * tentativa));
+          ultimo = await asaasFetch('/payments', {
+            method: 'POST',
+            body: JSON.stringify({
+              customer: customerId,
+              billingType: 'BOLETO',
+              value: Number(row.valor),
+              dueDate: row.data_vencimento,
+              // "/" sai da description (achado em teste real 2026-09-04: o
+              // Asaas engole caracteres especiais nesse campo, "1/15" virava
+              // "115") -- "de" no lugar da barra.
+              description: `Matricula PSI (parcela ${row.numero_parcela} de ${totalParcelas}) - ${nomeCompleto || alunoId}`,
+              externalReference: row.id,
+            }),
+          });
+          if (ultimo.ok && ultimo.data?.id) break;
+        }
+        return { row, ok: ultimo.ok, data: ultimo.data };
+      };
+      const resultados = await Promise.all(inseridos.map(criarBoletoComRetry));
 
       await Promise.all(resultados.map(async (r) => {
         if (!r.ok || !r.data?.id) {
