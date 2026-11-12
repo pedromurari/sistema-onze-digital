@@ -177,10 +177,29 @@ export default function WebinarioCaptura() {
                 poster="https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/vsl/semana-do-despertar-poster.jpg"
                 aria-label={`Vídeo de apresentação: ${tema.titulo}`}
                 onTimeUpdate={(event) => {
-                  const t = event.currentTarget.currentTime;
-                  if (t > maxAssistidoRef.current) maxAssistidoRef.current = t;
+                  // timeupdate é quem manda de verdade (onde o vídeo REALMENTE
+                  // está) -- onSeeking sozinho tem corrida de evento (currentTime
+                  // já reflete o alvo do seek antes do dado carregar, então um
+                  // segundo seek disparado de dentro do handler pode perder a
+                  // disputa). Só sobe o "mais longe assistido" se o avanço for
+                  // compatível com reprodução normal (até ~1.5s por tick); um
+                  // salto maior é seek escapando da trava -- devolve pro ponto
+                  // mais longe já visto, sem legitimar o salto.
+                  const video = event.currentTarget;
+                  const t = video.currentTime;
+                  if (t > maxAssistidoRef.current + 1.5) {
+                    video.currentTime = maxAssistidoRef.current;
+                  } else if (t > maxAssistidoRef.current) {
+                    maxAssistidoRef.current = t;
+                  }
                 }}
                 onSeeking={(event) => {
+                  const video = event.currentTarget;
+                  if (video.currentTime > maxAssistidoRef.current + 0.5) {
+                    video.currentTime = maxAssistidoRef.current;
+                  }
+                }}
+                onSeeked={(event) => {
                   const video = event.currentTarget;
                   if (video.currentTime > maxAssistidoRef.current + 0.5) {
                     video.currentTime = maxAssistidoRef.current;
