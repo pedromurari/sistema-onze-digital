@@ -2618,7 +2618,12 @@ function MinhasVendasSection({ viewAsName, mesFiltro }: VendorScopeProps & { mes
     });
   }, []);
 
-  const visiveis = viewAsName ? vendas.filter((v) => v.vendedor === viewAsName) : vendas;
+  // Achado pelo dono do produto (2026-11-12): matrícula cancelada (aluno
+  // desistiu, foi cancelada manualmente etc.) caía em "Vendas concretizadas"
+  // só porque o status dela não é 'pre_matricula' -- não é venda nenhuma,
+  // não deveria aparecer em nenhuma das duas tabelas.
+  const visiveis = (viewAsName ? vendas.filter((v) => v.vendedor === viewAsName) : vendas)
+    .filter((v) => v.status !== 'cancelado' && v.status !== 'inativo');
 
   // Pedido do Pedro 04/11/2026: pré-matrícula conta pro mês do pagamento
   // PROGRAMADO (data_venda), não pro mês em que a ficha foi preenchida
