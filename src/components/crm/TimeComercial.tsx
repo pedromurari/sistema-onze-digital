@@ -2444,6 +2444,9 @@ interface VendaNominal {
   // vendedora precisa conseguir copiar/abrir o link direto daqui, sem
   // precisar da ficha ou pedir pro financeiro.
   link_pagamento_asaas: string | null;
+  // Link de assinatura do contrato (Autentique) -- mesmo pedido, agora pro
+  // contrato: copiar/abrir direto, além do envio automático (WhatsApp/e-mail).
+  link_contrato: string | null;
 }
 
 const ContratoBadge = ({ assinado, enviado }: { assinado: boolean | null; enviado: boolean | null }) => {
@@ -2714,7 +2717,21 @@ function MinhasVendasSection({ viewAsName, mesFiltro }: VendorScopeProps & { mes
               <TableCell className="text-xs whitespace-nowrap">{v.produto ? (PRODUTO_LABEL_TC[v.produto] ?? v.produto) : '—'}</TableCell>
               <TableCell className="text-xs whitespace-nowrap">{v.forma_pagamento ? (FORMA_LABEL_TC[v.forma_pagamento] ?? v.forma_pagamento) : '—'}</TableCell>
               <TableCell className="text-xs whitespace-nowrap">{v.status ? (STATUS_LABEL_TC[v.status] ?? v.status) : '—'}</TableCell>
-              <TableCell className="whitespace-nowrap"><ContratoBadge assinado={v.contrato_assinado} enviado={v.contrato_enviado} /></TableCell>
+              <TableCell className="whitespace-nowrap">
+                <div className="flex items-center gap-1.5">
+                  <ContratoBadge assinado={v.contrato_assinado} enviado={v.contrato_enviado} />
+                  {v.link_contrato && (
+                    <>
+                      <button type="button" onClick={() => copyLink(v.link_contrato!)} className="h-6 w-6 inline-flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors" title="Copiar link do contrato">
+                        <Copy className="h-3 w-3 text-muted-foreground" />
+                      </button>
+                      <a href={v.link_contrato} target="_blank" rel="noopener noreferrer" className="h-6 w-6 inline-flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors" title="Abrir link do contrato">
+                        <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                      </a>
+                    </>
+                  )}
+                </div>
+              </TableCell>
               <TableCell className="whitespace-nowrap">
                 {v.link_pagamento_asaas ? (
                   <div className="flex items-center gap-1">
