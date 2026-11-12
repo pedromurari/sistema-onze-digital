@@ -2440,6 +2440,10 @@ interface VendaNominal {
   // NULL enquanto for so pre-matricula sem nenhum pagamento ainda. E a resposta
   // pra "essa venda ja aconteceu de fato, ou so foi prometida?".
   data_venda_concretizada: string | null;
+  // Link do boleto/Pix da 1a parcela no Asaas -- pedido dele 2026-11-12: a
+  // vendedora precisa conseguir copiar/abrir o link direto daqui, sem
+  // precisar da ficha ou pedir pro financeiro.
+  link_pagamento_asaas: string | null;
 }
 
 const ContratoBadge = ({ assinado, enviado }: { assinado: boolean | null; enviado: boolean | null }) => {
@@ -2474,7 +2478,7 @@ interface AlunoDadosPessoais {
   cidade_estado: string | null; endereco: string | null;
 }
 
-function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
+function MinhasVendasSection({ viewAsName, mesFiltro }: VendorScopeProps & { mesFiltro: string }) {
   const [vendas, setVendas] = useState<VendaNominal[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -2614,12 +2618,6 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
     });
   }, []);
 
-  // Filtro de mês (pela data de "Pré-matrícula feita", ou seja, quando a venda
-  // entrou no sistema) -- sem isso, virando o mês a lista só cresce e mistura
-  // setembro com outubro pra sempre. Default = mês atual (Brasília).
-  const mesAtualISO = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }).slice(0, 7);
-  const [mesFiltro, setMesFiltro] = useState(mesAtualISO);
-
   const visiveis = viewAsName ? vendas.filter((v) => v.vendedor === viewAsName) : vendas;
 
   // Pedido do Pedro 04/11/2026: pré-matrícula conta pro mês do pagamento
@@ -2632,12 +2630,12 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
   const mesChave = (v: VendaNominal) =>
     v.data_venda_concretizada ?? (v.status === 'pre_matricula' ? v.data_venda : v.data_registro) ?? v.data_registro;
 
-  const mesesDisponiveis = Array.from(new Set([
-    mesAtualISO,
-    ...visiveis.map((v) => mesChave(v)?.slice(0, 7)).filter((m): m is string => !!m),
-  ])).sort((a, b) => b.localeCompare(a));
-
-  const doMes = visiveis.filter((v) => (mesChave(v) ?? '').slice(0, 7) === mesFiltro);
+  // Achado pelo dono do produto (2026-11-12): essa seção tinha seu PRÓPRIO
+  // seletor de mês, diferente do que já existia em "Visão geral"/
+  // "Faturamento por vendedor" -- "quero um filtro só pra tudo". mesFiltro
+  // agora vem de fora (de DadosTab), único pro menu Dados inteiro.
+  // "todos" (TODOS_PERIODOS) mostra tudo, sem filtrar por mês.
+  const doMes = mesFiltro === 'todos' ? visiveis : visiveis.filter((v) => (mesChave(v) ?? '').slice(0, 7) === mesFiltro);
 
   const porVendedor = doMes.reduce<Record<string, VendaNominal[]>>((acc, v) => {
     (acc[v.vendedor] ??= []).push(v);
@@ -2667,6 +2665,7 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
             <TableHead>Forma</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Contrato</TableHead>
+            <TableHead>Link (1ª parcela)</TableHead>
             <TableHead className="text-right">Valor</TableHead>
             <TableHead className="w-10"></TableHead>
           </TableRow>
@@ -2711,6 +2710,20 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
               <TableCell className="text-xs whitespace-nowrap">{v.forma_pagamento ? (FORMA_LABEL_TC[v.forma_pagamento] ?? v.forma_pagamento) : '—'}</TableCell>
               <TableCell className="text-xs whitespace-nowrap">{v.status ? (STATUS_LABEL_TC[v.status] ?? v.status) : '—'}</TableCell>
               <TableCell className="whitespace-nowrap"><ContratoBadge assinado={v.contrato_assinado} enviado={v.contrato_enviado} /></TableCell>
+              <TableCell className="whitespace-nowrap">
+                {v.link_pagamento_asaas ? (
+                  <div className="flex items-center gap-1">
+                    <button type="button" onClick={() => copyLink(v.link_pagamento_asaas!)} className="h-6 w-6 inline-flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors" title="Copiar link">
+                      <Copy className="h-3 w-3 text-muted-foreground" />
+                    </button>
+                    <a href={v.link_pagamento_asaas} target="_blank" rel="noopener noreferrer" className="h-6 w-6 inline-flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors" title="Abrir link">
+                      <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                    </a>
+                  </div>
+                ) : (
+                  <span className="text-xs text-muted-foreground">—</span>
+                )}
+              </TableCell>
               <TableCell className="text-right text-sm whitespace-nowrap">
                 {/* Sempre o líquido de verdade já recebido (soma das parcelas pagas, já
                     descontada a taxa) -- é o valor que entra no cálculo de comissão.
@@ -2741,8 +2754,12 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
     </Card>
   );
 
-  const [ano, mesNum] = mesFiltro.split('-');
-  const nomeMesFiltro = `${MESES_ABREV[Number(mesNum) - 1]}/${ano}`;
+  // Achado pelo dono do produto (2026-11-12): nome do mês/"todos" pro texto
+  // de "sem venda" -- mesma regra de rótulo usada no seletor único lá em
+  // cima, em DadosTab (mesFiltro vem de lá agora).
+  const nomeMesFiltro = mesFiltro === 'todos'
+    ? 'todos os períodos'
+    : (() => { const [a, mm] = mesFiltro.split('-'); return `${MESES_ABREV[Number(mm) - 1]}/${a}`; })();
 
   return (
     <>
@@ -2752,17 +2769,6 @@ function MinhasVendasSection({ viewAsName }: VendorScopeProps) {
           ? 'Cada aluno que você fechou — psicanálise, PNL e pré-matrícula — com produto e valor.'
           : 'Vendas nominais por vendedor (psicanálise + PNL + pré-matrícula).'}
         icon={GraduationCap}
-        right={
-          <Select value={mesFiltro} onValueChange={setMesFiltro}>
-            <SelectTrigger className="w-36 h-8 text-xs"><SelectValue>{nomeMesFiltro}</SelectValue></SelectTrigger>
-            <SelectContent>
-              {mesesDisponiveis.map((m) => {
-                const [a, mm] = m.split('-');
-                return <SelectItem key={m} value={m}>{MESES_ABREV[Number(mm) - 1]}/{a}</SelectItem>;
-              })}
-            </SelectContent>
-          </Select>
-        }
       />
       {loading ? (
         <p className="text-sm text-muted-foreground">Carregando…</p>
@@ -3146,16 +3152,21 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
   const resumoLogado = viewAsName ? resumoDeMes(viewAsName) : undefined;
   const leadsTrabalhadosCrm = viewAsName ? (resumoLogado?.leads_trabalhados ?? 0) : leadsCaptacaoAdmin;
   const leadsEntraram = leadsTrabalhadosCrm + (leadsDiretoMeta ?? 0);
+  // Achado pelo dono do produto (2026-11-12): "Vendas fechadas" na visão
+  // admin usava alunosDe (alunosPorVendedor, SEMPRE acumulado desde sempre)
+  // -- o card não se mexia nenhum pouco ao trocar o seletor de mês ao lado.
+  // Troca pra alunosDeMes (já month-scoped, mesmo dataset que "Faturamento
+  // por vendedor" usa), consistente com o filtro único do topo.
   const vendasTotais = viewAsName
     ? (resumoLogado?.vendas ?? 0)
-    : vendedoresVisiveis.reduce((soma, v) => soma + (alunosDe(v.name)?.total ?? 0), 0);
+    : vendedoresVisiveis.reduce((soma, v) => soma + (alunosDeMes(v.name)?.total ?? 0), 0);
   const preMatriculasVend = resumoLogado?.pre_matriculas ?? 0;
   const conversaoPct = leadsEntraram > 0 ? (vendasTotais / leadsEntraram) * 100 : 0;
 
   // Ticket médio — faturamento total / venda com valor real (exclui bolsa,
   // cortesia e as ainda sem forma de pagamento cadastrada).
-  const faturamentoTotal = vendedoresVisiveis.reduce((soma, v) => soma + Number(alunosDe(v.name)?.faturamento ?? 0), 0);
-  const vendasComValor = vendedoresVisiveis.reduce((soma, v) => soma + (alunosDe(v.name)?.vista_cartao ?? 0) + (alunosDe(v.name)?.boleto ?? 0), 0);
+  const faturamentoTotal = vendedoresVisiveis.reduce((soma, v) => soma + Number(alunosDeMes(v.name)?.faturamento ?? 0), 0);
+  const vendasComValor = vendedoresVisiveis.reduce((soma, v) => soma + (alunosDeMes(v.name)?.vista_cartao ?? 0) + (alunosDeMes(v.name)?.boleto ?? 0), 0);
   const ticketMedio = vendasComValor > 0 ? faturamentoTotal / vendasComValor : 0;
 
   const hojeStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
@@ -3244,36 +3255,38 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
     return <p className="text-sm text-muted-foreground">Carregando dados...</p>;
   }
 
+  // Achado pelo dono do produto (2026-11-12): "quero um filtro só pra tudo
+  // esse menu de Dados" -- Minhas Vendas tinha seletor próprio, Visão Geral
+  // não filtrava nada de verdade (olhava sempre o acumulado), e só
+  // Faturamento por vendedor respeitava mesFaturamento. Um seletor único no
+  // topo agora controla as três seções (e os cards de Visão Geral passaram
+  // a usar os dados já filtrados por mês, não mais o acumulado).
+  const rotuloMes = (m: string) => m === TODOS_PERIODOS ? 'Todos os períodos' : `${MESES_ABREV[Number(m.split('-')[1]) - 1]}/${m.split('-')[0]}`;
+  const seletorMesUnico = (
+    <Select value={mesFaturamento} onValueChange={setMesFaturamento}>
+      <SelectTrigger className="w-40 h-8 text-xs">
+        <SelectValue>{rotuloMes(mesFaturamento)}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {ultimosMeses(12).map((m) => <SelectItem key={m} value={m}>{rotuloMes(m)}</SelectItem>)}
+        <SelectItem value={TODOS_PERIODOS}>Todos os períodos</SelectItem>
+      </SelectContent>
+    </Select>
+  );
+
   return (
     <div className="flex flex-col gap-5">
-      <p className="text-sm text-muted-foreground -mt-1">{viewAsName ? 'Seus números reais até agora — não é simulação.' : 'Números reais do time até agora — não é simulação. Onde estamos antes de olhar a meta.'}</p>
+      <div className="flex items-center justify-between gap-3 flex-wrap -mt-1">
+        <p className="text-sm text-muted-foreground">{viewAsName ? 'Seus números reais até agora — não é simulação.' : 'Números reais do time até agora — não é simulação. Onde estamos antes de olhar a meta.'}</p>
+        {seletorMesUnico}
+      </div>
 
-      <MinhasVendasSection viewAsName={viewAsName} />
+      <MinhasVendasSection viewAsName={viewAsName} mesFiltro={mesFaturamento} />
 
       <SectionBar
         title="Visão geral"
         subtitle={viewAsName ? 'Seus números: leads que você trabalhou e o que fechou a partir deles.' : 'Apenas leads captados no período. A base de retorno reimportada fica de fora.'}
         icon={Users}
-        right={
-          viewAsName ? (
-            <Select value={mesFaturamento} onValueChange={setMesFaturamento}>
-              <SelectTrigger className="w-40 h-8 text-xs">
-                <SelectValue>
-                  {mesFaturamento === TODOS_PERIODOS
-                    ? 'Todos os períodos'
-                    : `${MESES_ABREV[Number(mesFaturamento.split('-')[1]) - 1]}/${mesFaturamento.split('-')[0]}`}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {ultimosMeses(12).map((m) => {
-                  const [a, mm] = m.split('-');
-                  return <SelectItem key={m} value={m}>{MESES_ABREV[Number(mm) - 1]}/{a}</SelectItem>;
-                })}
-                <SelectItem value={TODOS_PERIODOS}>Todos os períodos</SelectItem>
-              </SelectContent>
-            </Select>
-          ) : undefined
-        }
       />
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         <StatTile
@@ -3301,24 +3314,6 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
         title="Faturamento realizado por vendedor"
         subtitle="Baseado em matrículas efetivadas (pré-matrícula não conta), creditadas ao vendedor que reivindicou o aluno."
         icon={DollarSign}
-        right={
-          <Select value={mesFaturamento} onValueChange={setMesFaturamento}>
-            <SelectTrigger className="w-40 h-8 text-xs">
-              <SelectValue>
-                {mesFaturamento === TODOS_PERIODOS
-                  ? 'Todos os períodos'
-                  : `${MESES_ABREV[Number(mesFaturamento.split('-')[1]) - 1]}/${mesFaturamento.split('-')[0]}`}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {ultimosMeses(12).map((m) => {
-                const [a, mm] = m.split('-');
-                return <SelectItem key={m} value={m}>{MESES_ABREV[Number(mm) - 1]}/{a}</SelectItem>;
-              })}
-              <SelectItem value={TODOS_PERIODOS}>Todos os períodos</SelectItem>
-            </SelectContent>
-          </Select>
-        }
       />
       <Card className="p-4 overflow-x-auto">
         <Table className="[&_td]:px-2.5 [&_td]:py-2 sm:[&_td]:px-4 sm:[&_td]:py-3 [&_th]:px-2.5 sm:[&_th]:px-4">
