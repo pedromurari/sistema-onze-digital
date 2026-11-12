@@ -420,6 +420,29 @@
 .iw-replica-event-box b { color: var(--iw-primary); font-size: 1rem; }
 .iw-replica-media { width: min(100%, 672px); margin: 0 auto 40px; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 16px; background: #000; border: 1px solid rgba(255,255,255,.15); box-shadow: 0 22px 55px rgba(0,0,0,.5); }
 .iw-replica-media video { display: block; width: 100%; height: 100%; object-fit: contain; }
+/* Player customizado sem barra de progresso arrastável -- só play/pause
+   (clique em qualquer lugar do vídeo) e mudo. Pedido explícito: ninguém
+   pode pular o teaser pra frente. */
+.iw-replica-media--custom { position: relative; cursor: pointer; }
+.iw-replica-media-playbtn {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.iw-replica-media-playbtn svg {
+  width: 72px; height: 72px; padding: 22px; border-radius: 999px;
+  background: rgba(0,0,0,.55); color: #fff; backdrop-filter: blur(2px);
+}
+.iw-replica-media-bar {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 5px;
+  background: rgba(255,255,255,.18); pointer-events: none;
+}
+.iw-replica-media-bar-fill { height: 100%; background: var(--iw-primary); transition: width .15s linear; }
+.iw-replica-media-mute {
+  position: absolute; right: 12px; bottom: 14px; width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center; border: 0; border-radius: 999px;
+  background: rgba(0,0,0,.55); color: #fff; cursor: pointer;
+}
+.iw-replica-media-mute svg { width: 18px; height: 18px; }
 .iw-replica-video-disclosure { max-width: 672px; margin: -24px auto 34px; color: #bfcce3; font-size: .8rem; line-height: 1.45; text-align: center; }
 .iw-replica-form-card { width: min(100%, 448px); margin: 0 auto; padding: 32px; border: 1px solid rgba(255,255,255,.15); border-radius: 16px; background: rgba(18,42,94,.46); box-shadow: 0 20px 55px rgba(0,0,0,.4); scroll-margin-top: 15px; }
 .iw-replica-form-card form { display: grid; gap: 22px; }

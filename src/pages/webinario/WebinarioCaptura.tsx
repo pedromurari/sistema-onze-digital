@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { BookOpenCheck, Gift, MonitorPlay } from 'lucide-react';
+import { BookOpenCheck, Gift, MonitorPlay, Play, Volume2, VolumeX } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { temaPorSlug } from './webinario-temas';
 import { carregarPixel, trackPixel } from './meta-pixel';
@@ -33,6 +33,10 @@ export default function WebinarioCaptura() {
   // avançar pela barra/teclado. Ref (não state) pra não re-renderizar a
   // cada frame do vídeo.
   const maxAssistidoRef = useRef(0);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [videoPlaying, setVideoPlaying] = useState(false);
+  const [videoMuted, setVideoMuted] = useState(false);
+  const [videoProgressPct, setVideoProgressPct] = useState(0);
   const [opcoesForaHorario, setOpcoesForaHorario] = useState<{ inicioEm: string; periodo: 'manha' | 'tarde' | 'noite' }[] | null>(null);
 
   // Teste de headline com N variantes: sorteia peso igual entre todas na
@@ -167,15 +171,24 @@ export default function WebinarioCaptura() {
           </div>
 
           {capturaVideoUrl && (
-            <div className="iw-replica-media">
+            <div
+              className="iw-replica-media iw-replica-media--custom"
+              onClick={() => {
+                const v = videoRef.current;
+                if (!v) return;
+                if (v.paused) v.play().catch(() => {});
+                else v.pause();
+              }}
+            >
               <video
+                ref={videoRef}
                 src={capturaVideoUrl}
-                controls
-                controlsList="noplaybackrate nodownload"
                 playsInline
                 preload="metadata"
                 poster="https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/vsl/semana-do-despertar-poster.jpg"
                 aria-label={`Vídeo de apresentação: ${tema.titulo}`}
+                onPlay={() => setVideoPlaying(true)}
+                onPause={() => setVideoPlaying(false)}
                 onTimeUpdate={(event) => {
                   // timeupdate é quem manda de verdade (onde o vídeo REALMENTE
                   // está) -- onSeeking sozinho tem corrida de evento (currentTime
@@ -192,6 +205,7 @@ export default function WebinarioCaptura() {
                   } else if (t > maxAssistidoRef.current) {
                     maxAssistidoRef.current = t;
                   }
+                  if (video.duration) setVideoProgressPct((video.currentTime / video.duration) * 100);
                 }}
                 onSeeking={(event) => {
                   const video = event.currentTarget;
@@ -206,6 +220,32 @@ export default function WebinarioCaptura() {
                   }
                 }}
               />
+
+              {/* Sem barra de progresso arrastável de propósito -- só play/pause
+                  e mudo. Barra abaixo é só visual (pointer-events: none),
+                  não dá pra clicar nem arrastar pra pular o vídeo. */}
+              {!videoPlaying && (
+                <div className="iw-replica-media-playbtn" aria-hidden="true">
+                  <Play fill="currentColor" />
+                </div>
+              )}
+              <div className="iw-replica-media-bar">
+                <div className="iw-replica-media-bar-fill" style={{ width: `${videoProgressPct}%` }} />
+              </div>
+              <button
+                type="button"
+                className="iw-replica-media-mute"
+                aria-label={videoMuted ? 'Ativar som' : 'Silenciar'}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  const v = videoRef.current;
+                  if (!v) return;
+                  v.muted = !v.muted;
+                  setVideoMuted(v.muted);
+                }}
+              >
+                {videoMuted ? <VolumeX /> : <Volume2 />}
+              </button>
             </div>
           )}
 
