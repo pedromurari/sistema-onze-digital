@@ -15,7 +15,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, AlertCircle, CheckCircle2, Tag, Plus } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle2, Tag, Plus, CreditCard, QrCode, Copy, Check } from 'lucide-react';
 import './matricula/matricula-reference.css';
 
 const IDM_LOGO = 'https://turma47.semanadodespertar.online/lovable-uploads/1b0d4a56-e01f-4ce0-b2f7-0eecf33da536.png';
@@ -66,10 +66,16 @@ export default function Checkout() {
   const [loading, setLoading] = useState(true);
   const [nome, setNome] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
+  const [email, setEmail] = useState('');
   const [cupom, setCupom] = useState('');
   const [incluirBump, setIncluirBump] = useState(false);
   const [pago, setPago] = useState(false);
   const [erro, setErro] = useState('');
+  const [metodoAtivo, setMetodoAtivo] = useState<'cartao' | 'pix'>('cartao');
+  const [pixLoading, setPixLoading] = useState(false);
+  const [pixErro, setPixErro] = useState('');
+  const [pixQr, setPixQr] = useState<{ qrCodeBase64: string | null; qrCode: string | null } | null>(null);
+  const [pixCopiado, setPixCopiado] = useState(false);
   const brickContainerRef = useRef<HTMLDivElement>(null);
   const brickCriado = useRef(false);
   const brickControllerRef = useRef<any>(null);
@@ -80,10 +86,12 @@ export default function Checkout() {
   // tecla -- achado real 13/11/2026, print do Pedro com "Pagar" duas vezes).
   const nomeRef = useRef(nome);
   const whatsappRef = useRef(whatsapp);
+  const emailRef = useRef(email);
   const cupomRef = useRef(cupom);
   const incluirBumpRef = useRef(incluirBump);
   nomeRef.current = nome;
   whatsappRef.current = whatsapp;
+  emailRef.current = email;
   cupomRef.current = cupom;
   incluirBumpRef.current = incluirBump;
 
@@ -95,7 +103,8 @@ export default function Checkout() {
 
   const totalAmount = produto ? produto.preco + (incluirBump && produto.bump_ativo && produto.bump_preco ? produto.bump_preco : 0) : 0;
   const whatsappValido = whatsapp.replace(/\D/g, '').length >= 10;
-  const mostrarBrick = !!produto?.mp_public_key && nome.trim().length > 0 && whatsappValido;
+  const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const mostrarBrick = !!produto?.mp_public_key && nome.trim().length > 0 && whatsappValido && emailValido;
 
   useEffect(() => {
     if (!mostrarBrick || !produto) return;
@@ -112,12 +121,15 @@ export default function Checkout() {
       brickCriado.current = true;
       const mp = new window.MercadoPago(produto.mp_public_key, { locale: 'pt-BR' });
       const bricksBuilder = mp.bricks();
-      brickControllerRef.current = await bricksBuilder.create('payment', brickContainerRef.current.id, {
-        initialization: { amount: totalAmount },
-        // "pix" nao e uma chave valida pro Brick (SDK loga "Invalid param(s)
-        // [pix]" e ignora silenciosamente, so sobra cartao) -- a chave certa
-        // pro Pix no customization.paymentMethods e "bankTransfer".
-        customization: { paymentMethods: { creditCard: 'all', bankTransfer: 'all' } },
+      // Brick "cardPayment" (nao "payment" generico): renderiza so o formulario
+      // de cartao direto, sem lista de selecao de metodo -- o Pix roda num fluxo
+      // proprio nosso (ver pagarComPix), porque o sub-passo de Pix do Brick
+      // generico sempre reexibe um campo de e-mail (mesmo pre-preenchido)
+      // pedindo de novo o que a pessoa ja preencheu lá em cima, e nao mostra o
+      // QR Code na tela -- so manda por e-mail (achado real 13/11/2026, Pedro
+      // testou e reclamou dos dois pontos: lista com 1 item so e Pix sem QR).
+      brickControllerRef.current = await bricksBuilder.create('cardPayment', brickContainerRef.current.id, {
+        initialization: { amount: totalAmount, payer: { email: emailRef.current } },
         callbacks: {
           onReady: () => {},
           onError: (error: unknown) => { console.error(error); setErro('Erro ao carregar o pagamento. Recarregue a página.'); },
@@ -132,7 +144,7 @@ export default function Checkout() {
                 incluir_bump: incluirBumpRef.current,
                 comprador: {
                   nome: nomeRef.current,
-                  email: formData.payer?.email,
+                  email: formData.payer?.email || emailRef.current,
                   whatsapp: whatsappRef.current || undefined,
                   cpf: formData.payer?.identification?.number,
                 },
@@ -168,6 +180,50 @@ export default function Checkout() {
 
     return () => { cancelado = true; };
   }, [produto, mostrarBrick, totalAmount]);
+
+  async function pagarComPix() {
+    if (!produto || pixLoading) return;
+    setPixLoading(true);
+    setPixErro('');
+    try {
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/checkout-criar-pagamento`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          produto_id: produto.id,
+          cupom_codigo: cupomRef.current.trim() || undefined,
+          incluir_bump: incluirBumpRef.current,
+          comprador: {
+            nome: nomeRef.current,
+            email: emailRef.current,
+            whatsapp: whatsappRef.current,
+          },
+          pagamento: { metodo: 'pix' },
+        }),
+      });
+      const json = await res.json();
+      if (json.error) { setPixErro(json.error); return; }
+      setPixQr({ qrCodeBase64: json.qr_code_base64 ?? null, qrCode: json.qr_code ?? null });
+    } catch {
+      setPixErro('Erro ao gerar o Pix. Tente novamente.');
+    } finally {
+      setPixLoading(false);
+    }
+  }
+
+  async function copiarPix(texto: string) {
+    try { await navigator.clipboard.writeText(texto); setPixCopiado(true); setTimeout(() => setPixCopiado(false), 2500); return; } catch { /* cai pro fallback */ }
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = texto;
+      textarea.style.position = 'fixed'; textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.focus(); textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      setPixCopiado(true); setTimeout(() => setPixCopiado(false), 2500);
+    } catch { /* usuario copia selecionando o texto na tela */ }
+  }
 
   if (loading) return <ScreenLoading />;
   if (!produto) return <ScreenNotFound />;
@@ -246,6 +302,10 @@ export default function Checkout() {
             <input type="tel" placeholder="(11) 91234-5678" value={whatsapp} onChange={e => setWhatsapp(e.target.value)} />
           </div>
           <div className="field span-full">
+            <label className="field-label">E-mail<span className="field-required">*</span></label>
+            <input type="email" placeholder="seu@email.com" value={email} onChange={e => setEmail(e.target.value)} />
+          </div>
+          <div className="field span-full">
             <label className="field-label">Cupom</label>
             <div className="field-control">
               <Tag className="h-4 w-4" style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
@@ -264,9 +324,68 @@ export default function Checkout() {
         )}
 
         {!mostrarBrick ? (
-          <p style={{ textAlign: 'center', fontSize: '0.8125rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Preencha seu nome e WhatsApp para liberar o pagamento.</p>
+          <p style={{ textAlign: 'center', fontSize: '0.8125rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Preencha nome, WhatsApp e e-mail para liberar o pagamento.</p>
         ) : (
-          <div id="paymentBrick_container" ref={brickContainerRef} />
+          <div className="pay-options">
+            <div className={`pay-card ${metodoAtivo === 'cartao' ? 'active' : ''}`}>
+              <div className="pay-card-header" onClick={() => setMetodoAtivo('cartao')} style={{ cursor: 'pointer' }}>
+                <div className="pay-card-icon"><CreditCard className="h-5 w-5" /></div>
+                <div className="pay-card-info">
+                  <div className="pay-card-title">Cartão de crédito</div>
+                  <div className="pay-card-sub">Aprovação na hora</div>
+                </div>
+                <div className="pay-card-check">{metodoAtivo === 'cartao' ? '✓' : ''}</div>
+              </div>
+              <div className="pay-card-body" style={{ display: metodoAtivo === 'cartao' ? 'block' : 'none' }}>
+                <div id="paymentBrick_container" ref={brickContainerRef} style={{ paddingTop: 'var(--space-4)' }} />
+              </div>
+            </div>
+
+            <div className={`pay-card ${metodoAtivo === 'pix' ? 'active' : ''}`}>
+              <div className="pay-card-header" onClick={() => setMetodoAtivo('pix')} style={{ cursor: 'pointer' }}>
+                <div className="pay-card-icon"><QrCode className="h-5 w-5" /></div>
+                <div className="pay-card-info">
+                  <div className="pay-card-title">Pix</div>
+                  <div className="pay-card-sub">QR Code ou copia e cola</div>
+                </div>
+                <div className="pay-card-check">{metodoAtivo === 'pix' ? '✓' : ''}</div>
+              </div>
+              <div className="pay-card-body" style={{ display: metodoAtivo === 'pix' ? 'block' : 'none' }}>
+                <div className="pix-container">
+                  {pixErro && <div className="global-error show">{pixErro}</div>}
+                  {!pixQr ? (
+                    <button type="button" className="btn-submit" style={{ marginTop: 'var(--space-4)' }} onClick={() => void pagarComPix()} disabled={pixLoading}>
+                      {pixLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <span className="btn-text">Gerar código Pix</span>}
+                    </button>
+                  ) : (
+                    <>
+                      <div className="pix-amount-badge">
+                        <span className="pix-amount-label">Total no Pix</span>
+                        <span className="pix-amount-value">{totalAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                      </div>
+                      {pixQr.qrCodeBase64 && (
+                        <div className="qr-wrapper">
+                          <img src={`data:image/png;base64,${pixQr.qrCodeBase64}`} alt="QR Code Pix" />
+                        </div>
+                      )}
+                      {pixQr.qrCode && (
+                        <div className="pix-code-wrap">
+                          <p className="pix-code-label">Código Pix copia e cola</p>
+                          <div className="pix-code-box">
+                            <div className="pix-code-input">{pixQr.qrCode}</div>
+                            <button type="button" className={`btn-copy ${pixCopiado ? 'copied' : ''}`} onClick={() => void copiarPix(pixQr.qrCode!)}>
+                              {pixCopiado ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      <p className="field-hint" style={{ textAlign: 'center' }}>Após pagar, você recebe a confirmação automática por e-mail e WhatsApp.</p>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
         )}
 
         <p className="pay-footer-note">
@@ -277,7 +396,12 @@ export default function Checkout() {
       <div className="site-footer">
         <p className="footer-logo">Instituto Despertamente</p>
         <div className="footer-rule" />
-        <p className="footer-note">CNPJ 55.184.481/0001-24</p>
+        <p className="footer-note">
+          <a href="/politica-de-privacidade#privacidade" style={{ color: 'inherit', textDecoration: 'underline' }}>Política de Privacidade</a>
+          {' · '}
+          <a href="/termos-de-uso#termos" style={{ color: 'inherit', textDecoration: 'underline' }}>Termos de Uso</a>
+        </p>
+        <p className="footer-note" style={{ marginTop: 'var(--space-2)' }}>CNPJ 55.184.481/0001-24 · Pagamentos processados com segurança pelo Mercado Pago</p>
       </div>
     </div>
   );

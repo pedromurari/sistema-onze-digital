@@ -25,9 +25,9 @@ export default defineConfig(({ mode }) => ({
         // A Evolution API e' chamada direto do browser (QR code, estado de conexao,
         // lista de grupos). Sem o host aqui, essas telas so funcionam em producao
         // — onde nao ha CSP — e quebram silenciosamente no dev.
-        "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://idm-evolution-api.nzj83i.easypanel.host https://connect.facebook.net https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev https://api.mercadopago.com https://events.mercadopago.com https://http2.mlstatic.com https://www.mercadolibre.com https://api.mercadolibre.com; " +
+        "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://idm-evolution-api.nzj83i.easypanel.host https://connect.facebook.net https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev https://api.mercadopago.com https://events.mercadopago.com https://http2.mlstatic.com https://www.mercadolibre.com https://api.mercadolibre.com https://secure-fields.mercadopago.com https://api-static.mercadopago.com; " +
         // Campos seguros (cartao) do Payment Brick rodam num iframe do proprio Mercado Pago.
-        "frame-src 'self' https://www.mercadopago.com https://www.mercadolibre.com; " +
+        "frame-src 'self' https://www.mercadopago.com https://www.mercadolibre.com https://secure-fields.mercadopago.com; " +
         "frame-ancestors 'none'; " +
         "base-uri 'self'; " +
         "form-action 'self';",

@@ -24,6 +24,7 @@ const MatriculaTimeComercial = React.lazy(() => import("./pages/MatriculaTimeCom
 const PnlContrato = React.lazy(() => import("./pages/PnlContrato"));
 const AreaMembros     = React.lazy(() => import("./pages/AreaMembros"));
 const Checkout        = React.lazy(() => import("./pages/Checkout"));
+const LegalInstituto  = React.lazy(() => import("./pages/LegalInstituto"));
 const LinkRedirect    = React.lazy(() => import("./pages/LinkRedirect"));
 const PresencaPublica = React.lazy(() => import("./pages/PresencaPublica"));
 const AtualizarDados   = React.lazy(() => import("./pages/AtualizarDados"));
@@ -124,6 +125,8 @@ const App = () => (
               <Route path="/assinar/:token"         element={<ContratoPublico />} />
               <Route path="/membros/:token"         element={<AreaMembros />} />
               <Route path="/comprar/:produtoId"     element={<Checkout />} />
+              <Route path="/politica-de-privacidade" element={<LegalInstituto />} />
+              <Route path="/termos-de-uso"           element={<LegalInstituto />} />
               <Route path="/webinario/:slug"              element={<WebinarioCaptura />} />
               <Route path="/webinario/obrigado/:slug"     element={<WebinarioObrigado />} />
               <Route path="/webinario/sala/:sessionId"    element={<WebinarioSala />} />
