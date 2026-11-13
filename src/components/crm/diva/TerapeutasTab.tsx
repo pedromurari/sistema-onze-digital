@@ -23,8 +23,26 @@ interface ProdutoSplit { id: string; nome: string; preco: number; }
 const SUPABASE_FUNCTIONS_URL = 'https://usqiyekfmwwnvkmkdlej.supabase.co/functions/v1';
 
 async function copiar(texto: string) {
-  try { await navigator.clipboard.writeText(texto); toast.success('Link copiado.'); }
-  catch { toast.error('Não consegui copiar — copia manualmente.'); }
+  try {
+    await navigator.clipboard.writeText(texto);
+    toast.success('Link copiado.');
+    return;
+  } catch { /* cai pro fallback abaixo */ }
+
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = texto;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    if (ok) { toast.success('Link copiado.'); return; }
+  } catch { /* cai pro aviso manual abaixo */ }
+
+  toast.error(`Não consegui copiar automático. Link: ${texto}`, { duration: 15000 });
 }
 
 const STATUS_CONFIG: Record<StatusTerapeuta, { label: string; className: string; icon: typeof CheckCircle2 }> = {
