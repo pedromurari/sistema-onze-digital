@@ -1,6 +1,6 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { HeartHandshake, ShieldCheck, Wallet } from 'lucide-react';
+import { HeartHandshake, Play, ShieldCheck, Wallet } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import './webinario/webinario.css';
 
@@ -22,6 +22,10 @@ export default function DivaCaptura() {
   const [whatsappContato, setWhatsappContato] = useState('5511930439385');
   const [redesSociais, setRedesSociais] = useState<{ label: string; url: string }[]>([]);
   const [depoimentos, setDepoimentos] = useState<{ nome: string; texto: string; video_url: string }[]>([]);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const maxAssistidoRef = useRef(0);
+  const [videoPlaying, setVideoPlaying] = useState(false);
+  const [videoProgressPct, setVideoProgressPct] = useState(0);
 
   useEffect(() => {
     let ativo = true;
@@ -74,14 +78,61 @@ export default function DivaCaptura() {
             <b>A PARTIR DE R$ 80 · SEM FILA DE ESPERA</b>
           </div>
 
-          <div className="iw-replica-media">
+          <div
+            className="iw-replica-media iw-replica-media--custom"
+            onClick={() => {
+              const v = videoRef.current;
+              if (!v) return;
+              if (v.paused) v.play().catch(() => {});
+              else v.pause();
+            }}
+          >
             <video
+              ref={videoRef}
               src={videoCapturaUrl || VIDEO_PLACEHOLDER}
-              controls
               playsInline
               preload="metadata"
               aria-label={videoCapturaUrl ? 'Vídeo de apresentação do Divã IDM' : 'Vídeo institucional do IDM'}
+              onPlay={() => setVideoPlaying(true)}
+              onPause={() => setVideoPlaying(false)}
+              onTimeUpdate={(event) => {
+                // Mesmo esquema anti-pular do Webinário: só sobe o "mais longe
+                // assistido" se o avanço for compatível com reprodução normal;
+                // salto maior é seek escapando da trava -- devolve pro ponto
+                // mais longe já visto, sem legitimar o salto.
+                const video = event.currentTarget;
+                const t = video.currentTime;
+                if (t > maxAssistidoRef.current + 1.5) {
+                  video.currentTime = maxAssistidoRef.current;
+                } else if (t > maxAssistidoRef.current) {
+                  maxAssistidoRef.current = t;
+                }
+                if (video.duration) setVideoProgressPct((video.currentTime / video.duration) * 100);
+              }}
+              onSeeking={(event) => {
+                const video = event.currentTarget;
+                if (video.currentTime > maxAssistidoRef.current + 0.5) {
+                  video.currentTime = maxAssistidoRef.current;
+                }
+              }}
+              onSeeked={(event) => {
+                const video = event.currentTarget;
+                if (video.currentTime > maxAssistidoRef.current + 0.5) {
+                  video.currentTime = maxAssistidoRef.current;
+                }
+              }}
             />
+            {/* Sem barra de progresso arrastável de propósito -- só play/pause
+                (clique em qualquer lugar do vídeo). Barra abaixo é só visual
+                (pointer-events: none), não dá pra clicar nem arrastar. */}
+            {!videoPlaying && (
+              <div className="iw-replica-media-playbtn iw-replica-media-playbtn--pulse" aria-hidden="true">
+                <Play fill="currentColor" />
+              </div>
+            )}
+            <div className="iw-replica-media-bar">
+              <div className="iw-replica-media-bar-fill" style={{ width: `${videoProgressPct}%` }} />
+            </div>
           </div>
           {!videoCapturaUrl && <p className="iw-replica-video-disclosure">Conheça o Instituto Despertamente neste vídeo institucional.</p>}
 
