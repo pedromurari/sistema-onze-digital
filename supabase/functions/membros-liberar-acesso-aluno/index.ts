@@ -123,7 +123,13 @@ async function notificarAcessoMembros(
   }
 
   try {
-    const mensagem = `Oi${primeiroNome ? ', ' + primeiroNome : ''}! 💛\n\nSeu acesso à *${produtoNome}* já está liberado. Te mandamos um e-mail em *${email}* com o link direto pra entrar na área de membros — é só clicar, não precisa de senha.\n\nNão achou o e-mail? Olha também a caixa de spam/promoções. Login direto: ${siteUrl}/login`;
+    // Quem nunca logou antes (link manda pra /reset-password) ainda não tem
+    // senha nenhuma -- "não precisa de senha" e o link direto de /login
+    // confundem e levam a nada. Achado 13/11/2026 com a Karina.
+    const primeiroAcesso = loginUrl.includes('reset-password');
+    const mensagem = primeiroAcesso
+      ? `Oi${primeiroNome ? ', ' + primeiroNome : ''}! 💛\n\nTe mandamos um e-mail com o link pra você criar sua senha e acessar a área de membros da *${produtoNome}*. É só abrir o e-mail e clicar no link — ele vai te levar direto pra tela de criar sua senha.\n\nNão achou o e-mail? Olha também a caixa de spam/promoções 🙏`
+      : `Oi${primeiroNome ? ', ' + primeiroNome : ''}! 💛\n\nSeu acesso à *${produtoNome}* já está liberado. Te mandamos um e-mail em *${email}* com o link direto pra entrar na área de membros — é só clicar, não precisa de senha.\n\nNão achou o e-mail? Olha também a caixa de spam/promoções. Login direto: ${siteUrl}/login`;
     // Pedido do Pedro (09/11/2026): aviso de acesso liberado sai pelo
     // número do financeiro, igual cobrança/pagamento/contrato -- não pelo
     // pool genérico. Mesmo padrão de supabase/functions/enviar-cobranca.
