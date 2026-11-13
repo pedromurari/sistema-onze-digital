@@ -70,8 +70,8 @@ export default function DivaCaptura() {
         <div className="iw-replica-orb iw-replica-orb-one" aria-hidden="true" />
         <div className="iw-replica-orb iw-replica-orb-two" aria-hidden="true" />
         <div className="iw-replica-hero-inner">
-          <h1><span>Terapia</span><br /><em>com quem entende do assunto</em></h1>
-          <h2>Sessões de psicanálise com terapeutas credenciados pelo Instituto Despertamente — você não precisa ter certeza de nada, só precisa começar.</h2>
+          <h1><span>Divã IDM</span><br /><em>terapia para todos</em></h1>
+          <h2>Um espaço seguro para falar, ser ouvido e acolhido, com atendimento online a valor social.</h2>
           <div className="iw-replica-event-box">
             <strong>TERAPIA SOCIAL · DIVÃ IDM</strong>
             <span>Sessões 100% online com terapeutas credenciados</span>
