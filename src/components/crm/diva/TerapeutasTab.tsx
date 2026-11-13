@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Plus, CheckCircle2, PauseCircle, XCircle, Clock } from 'lucide-react';
+import { Plus, CheckCircle2, PauseCircle, XCircle, Clock, Link as LinkIcon } from 'lucide-react';
+import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,6 +15,16 @@ interface Terapeuta {
   id: string; nome: string; especialidade: string | null; bio: string | null;
   whatsapp: string | null; email: string | null; chave_pix: string | null;
   foto_url: string | null; status: StatusTerapeuta; aluno_id: string | null;
+  parceiro_id: string | null;
+}
+
+interface ProdutoSplit { id: string; nome: string; preco: number; }
+
+const SUPABASE_FUNCTIONS_URL = 'https://usqiyekfmwwnvkmkdlej.supabase.co/functions/v1';
+
+async function copiar(texto: string) {
+  try { await navigator.clipboard.writeText(texto); toast.success('Link copiado.'); }
+  catch { toast.error('Não consegui copiar — copia manualmente.'); }
 }
 
 const STATUS_CONFIG: Record<StatusTerapeuta, { label: string; className: string; icon: typeof CheckCircle2 }> = {
@@ -38,11 +49,31 @@ export function TerapeutasTab() {
   const [pixRascunho, setPixRascunho] = useState('');
   const [fotoEditando, setFotoEditando] = useState<string | null>(null);
   const [fotoRascunho, setFotoRascunho] = useState('');
+  const [mpConectado, setMpConectado] = useState<Record<string, boolean>>({});
+  const [produtosPorParceiro, setProdutosPorParceiro] = useState<Record<string, ProdutoSplit[]>>({});
+  const [splitAberto, setSplitAberto] = useState<string | null>(null);
 
   const carregar = async () => {
     setCarregando(true);
     const { data } = await supabase.from('diva_terapeutas').select('*').order('created_at', { ascending: false });
-    setTerapeutas((data as Terapeuta[]) ?? []);
+    const lista = (data as Terapeuta[]) ?? [];
+    setTerapeutas(lista);
+
+    const parceiroIds = lista.map(t => t.parceiro_id).filter((id): id is string => !!id);
+    if (parceiroIds.length > 0) {
+      const [{ data: parceirosData }, { data: produtosData }] = await Promise.all([
+        supabase.from('parceiros').select('id, mp_connected_at').in('id', parceiroIds),
+        supabase.from('parceiros_produtos').select('id, parceiro_id, nome, preco').in('parceiro_id', parceiroIds).order('preco'),
+      ]);
+      const conectado: Record<string, boolean> = {};
+      (parceirosData as { id: string; mp_connected_at: string | null }[] ?? []).forEach(p => { conectado[p.id] = !!p.mp_connected_at; });
+      setMpConectado(conectado);
+      const porParceiro: Record<string, ProdutoSplit[]> = {};
+      (produtosData as (ProdutoSplit & { parceiro_id: string })[] ?? []).forEach(p => {
+        (porParceiro[p.parceiro_id] ??= []).push({ id: p.id, nome: p.nome, preco: p.preco });
+      });
+      setProdutosPorParceiro(porParceiro);
+    }
     setCarregando(false);
   };
 
@@ -162,6 +193,38 @@ export function TerapeutasTab() {
                         </button>
                       )}
                     </div>
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                      <span className="text-muted-foreground">Split (Mercado Pago):</span>
+                      {mpConectado[t.parceiro_id ?? ''] ? (
+                        <>
+                          <Badge variant="outline" className="bg-emerald-100 text-emerald-700 border-emerald-200">Conectado</Badge>
+                          <button
+                            type="button"
+                            className="font-medium underline-offset-2 hover:underline"
+                            onClick={() => setSplitAberto(splitAberto === t.id ? null : t.id)}
+                          >
+                            {splitAberto === t.id ? 'ocultar links' : 'ver links dos planos'}
+                          </button>
+                        </>
+                      ) : (
+                        <Button
+                          size="sm" variant="outline" className="h-7 text-xs gap-1"
+                          onClick={() => void copiar(`${SUPABASE_FUNCTIONS_URL}/diva-terapeuta-conectar-mp?terapeuta_id=${t.id}`)}
+                        >
+                          <LinkIcon className="h-3 w-3" /> Copiar link de conexão
+                        </Button>
+                      )}
+                    </div>
+                    {splitAberto === t.id && t.parceiro_id && (
+                      <div className="rounded-lg border border-border/60 bg-muted/20 p-2 space-y-1">
+                        {(produtosPorParceiro[t.parceiro_id] ?? []).map(p => (
+                          <div key={p.id} className="flex items-center justify-between gap-2 text-xs">
+                            <span>{p.nome.replace(/^Divã IDM — /, '')} — R${Number(p.preco).toFixed(0)}</span>
+                            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => void copiar(`${window.location.origin}/comprar/${p.id}`)}>Copiar link</Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div className="flex flex-wrap gap-1.5">
                       {t.status !== 'aprovado' && <Button size="sm" variant="outline" onClick={() => void mudarStatus(t.id, 'aprovado')}>Aprovar</Button>}
                       {t.status !== 'pausado' && <Button size="sm" variant="outline" onClick={() => void mudarStatus(t.id, 'pausado')}>Pausar</Button>}
