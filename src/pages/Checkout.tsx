@@ -7,11 +7,18 @@
  * pagamento via Mercado Pago Payment Bricks, usando a chave publica da
  * parceira dona do produto. O split (parceira + IDM + afiliada) acontece
  * no backend, na function checkout-criar-pagamento.
+ *
+ * Visual reaproveita o mesmo design system da ficha de matricula/pre
+ * (matricula-reference.css: navy + dourado) -- pedido do Pedro 13/11/2026,
+ * o visual anterior (cartao branco genérico) parecia phishing.
  */
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, AlertCircle, CheckCircle2, Tag, Plus } from 'lucide-react';
+import './matricula/matricula-reference.css';
+
+const IDM_LOGO = 'https://turma47.semanadodespertar.online/lovable-uploads/1b0d4a56-e01f-4ce0-b2f7-0eecf33da536.png';
 
 declare global {
   interface Window { MercadoPago: any; }
@@ -32,19 +39,22 @@ interface ProdutoCheckout {
 
 function ScreenLoading() {
   return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: '#f0f4f8' }}>
-      <Loader2 className="h-10 w-10 animate-spin" style={{ color: '#6c63ff' }} />
+    <div className="idm-matricula" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--navy-deeper)' }}>
+      <Loader2 className="h-10 w-10 animate-spin" style={{ color: 'var(--gold-light)' }} />
     </div>
   );
 }
 
 function ScreenNotFound() {
   return (
-    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: '#f0f4f8' }}>
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 max-w-md w-full p-10 text-center space-y-4">
-        <AlertCircle className="h-14 w-14 mx-auto text-red-400" />
-        <h2 className="text-xl font-semibold text-gray-800">Produto não encontrado</h2>
-        <p className="text-gray-500 text-sm">Esse link de compra não está mais disponível.</p>
+    <div className="idm-matricula">
+      <div className="pay-header">
+        <div className="pay-header-badge">Instituto Despertamente</div>
+        <h2 className="pay-header-title">Link indisponível</h2>
+      </div>
+      <div className="pay-body" style={{ textAlign: 'center' }}>
+        <AlertCircle className="h-12 w-12 mx-auto" style={{ color: 'var(--error)' }} />
+        <p style={{ marginTop: 'var(--space-4)', color: 'var(--text-muted)' }}>Esse link de compra não está mais disponível.</p>
       </div>
     </div>
   );
@@ -63,6 +73,19 @@ export default function Checkout() {
   const brickContainerRef = useRef<HTMLDivElement>(null);
   const brickCriado = useRef(false);
   const brickControllerRef = useRef<any>(null);
+  // Refs com os dados mais recentes do formulario, lidos no onSubmit do brick --
+  // assim o efeito que monta o brick nao precisa depender de nome/whatsapp/cupom
+  // (cada letra digitada recriava o formulario inteiro, duplicando a UI porque o
+  // unmount() do brick anterior e assincrono e nao termina a tempo da proxima
+  // tecla -- achado real 13/11/2026, print do Pedro com "Pagar" duas vezes).
+  const nomeRef = useRef(nome);
+  const whatsappRef = useRef(whatsapp);
+  const cupomRef = useRef(cupom);
+  const incluirBumpRef = useRef(incluirBump);
+  nomeRef.current = nome;
+  whatsappRef.current = whatsapp;
+  cupomRef.current = cupom;
+  incluirBumpRef.current = incluirBump;
 
   useEffect(() => {
     if (!produtoId) return;
@@ -71,22 +94,30 @@ export default function Checkout() {
   }, [produtoId]);
 
   const totalAmount = produto ? produto.preco + (incluirBump && produto.bump_ativo && produto.bump_preco ? produto.bump_preco : 0) : 0;
+  const whatsappValido = whatsapp.replace(/\D/g, '').length >= 10;
+  const mostrarBrick = !!produto?.mp_public_key && nome.trim().length > 0 && whatsappValido;
 
   useEffect(() => {
-    if (!produto?.mp_public_key || !nome.trim()) return;
+    if (!mostrarBrick || !produto) return;
+
+    let cancelado = false;
 
     const criarBrick = async () => {
-      if (!brickContainerRef.current) return;
+      if (cancelado || !brickContainerRef.current) return;
       if (brickControllerRef.current) {
         await brickControllerRef.current.unmount();
         brickControllerRef.current = null;
       }
+      if (cancelado) return;
       brickCriado.current = true;
       const mp = new window.MercadoPago(produto.mp_public_key, { locale: 'pt-BR' });
       const bricksBuilder = mp.bricks();
       brickControllerRef.current = await bricksBuilder.create('payment', brickContainerRef.current.id, {
         initialization: { amount: totalAmount },
-        customization: { paymentMethods: { creditCard: 'all', pix: 'all' } },
+        // "pix" nao e uma chave valida pro Brick (SDK loga "Invalid param(s)
+        // [pix]" e ignora silenciosamente, so sobra cartao) -- a chave certa
+        // pro Pix no customization.paymentMethods e "bankTransfer".
+        customization: { paymentMethods: { creditCard: 'all', bankTransfer: 'all' } },
         callbacks: {
           onReady: () => {},
           onError: (error: unknown) => { console.error(error); setErro('Erro ao carregar o pagamento. Recarregue a página.'); },
@@ -97,12 +128,12 @@ export default function Checkout() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 produto_id: produto.id,
-                cupom_codigo: cupom.trim() || undefined,
-                incluir_bump: incluirBump,
+                cupom_codigo: cupomRef.current.trim() || undefined,
+                incluir_bump: incluirBumpRef.current,
                 comprador: {
-                  nome,
+                  nome: nomeRef.current,
                   email: formData.payer?.email,
-                  whatsapp: whatsapp || undefined,
+                  whatsapp: whatsappRef.current || undefined,
                   cpf: formData.payer?.identification?.number,
                 },
                 pagamento: {
@@ -134,48 +165,62 @@ export default function Checkout() {
     } else {
       criarBrick();
     }
-  }, [produto, nome, whatsapp, cupom, incluirBump]);
+
+    return () => { cancelado = true; };
+  }, [produto, mostrarBrick, totalAmount]);
 
   if (loading) return <ScreenLoading />;
   if (!produto) return <ScreenNotFound />;
 
   if (pago) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4" style={{ background: '#f0f4f8' }}>
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 max-w-md w-full p-10 text-center space-y-4">
-          <CheckCircle2 className="h-14 w-14 mx-auto text-emerald-500" />
-          <h2 className="text-xl font-semibold text-gray-800">Pagamento em andamento!</h2>
-          <p className="text-gray-500 text-sm">Se for Pix, confirme o pagamento no seu banco. Você receberá a confirmação por e-mail/WhatsApp.</p>
+      <div className="idm-matricula">
+        <div className="obrigado-wrap" style={{ minHeight: '100vh' }}>
+          <div className="obrigado-seal"><CheckCircle2 className="obrigado-check" /></div>
+          <div className="obrigado-eyebrow">Pagamento confirmado</div>
+          <h1 className="obrigado-title">Recebido!</h1>
+          <div className="obrigado-instituto">Instituto Despertamente</div>
+          <div className="obrigado-rule" />
+          <div className="obrigado-card">
+            <p>Se for <strong>Pix</strong>, confirme o pagamento no seu banco. Você vai receber a confirmação por e-mail e WhatsApp assim que cair.</p>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen py-10 px-4" style={{ background: '#f0f4f8' }}>
-      <div className="max-w-lg mx-auto bg-white rounded-2xl shadow-sm border border-gray-200 p-8 space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">{produto.nome}</h1>
-          {produto.descricao && <p className="text-sm text-gray-500 mt-1">{produto.descricao}</p>}
-          <p className="text-3xl font-bold text-gray-900 mt-3">
-            {produto.preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-          </p>
+    <div className="idm-matricula">
+      <div className="pay-header">
+        <img src={IDM_LOGO} alt="Instituto Despertamente" style={{ height: 36, margin: '0 auto var(--space-4)', display: 'block' }} loading="lazy" />
+        <div className="pay-header-badge">Instituto Despertamente</div>
+        <h2 className="pay-header-title">{produto.nome}</h2>
+        {produto.descricao && <p className="pay-header-name">{produto.descricao}</p>}
+      </div>
+
+      <div className="pay-body">
+        <div className="pix-amount-badge" style={{ margin: '0 auto var(--space-8)', display: 'flex', width: 'fit-content' }}>
+          <span className="pix-amount-label">Valor</span>
+          <span className="pix-amount-value">{produto.preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
         </div>
 
         {produto.bump_ativo && produto.bump_preco != null && (
-          <label className={`flex items-start gap-3 rounded-xl border-2 p-4 cursor-pointer transition-colors ${incluirBump ? 'border-emerald-400 bg-emerald-50' : 'border-dashed border-gray-300'}`}>
+          <label
+            className="pay-card"
+            style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-4)', padding: 'var(--space-5)', cursor: 'pointer', marginBottom: 'var(--space-6)', borderColor: incluirBump ? 'var(--navy)' : undefined }}
+          >
             <input
               type="checkbox"
-              className="mt-1 h-4 w-4"
+              style={{ marginTop: 4, width: 16, height: 16, accentColor: 'var(--navy)' }}
               checked={incluirBump}
               onChange={e => setIncluirBump(e.target.checked)}
             />
-            <div className="flex-1">
-              <p className="text-sm font-semibold text-gray-900 flex items-center gap-1">
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--navy)', display: 'flex', alignItems: 'center', gap: 4 }}>
                 <Plus className="h-3.5 w-3.5" /> Adicionar: {produto.bump_nome}
               </p>
-              {produto.bump_descricao && <p className="text-xs text-gray-500 mt-0.5">{produto.bump_descricao}</p>}
-              <p className="text-sm font-bold text-emerald-600 mt-1">
+              {produto.bump_descricao && <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginTop: 2 }}>{produto.bump_descricao}</p>}
+              <p style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--navy)', marginTop: 4 }}>
                 + {produto.bump_preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </p>
             </div>
@@ -183,40 +228,56 @@ export default function Checkout() {
         )}
 
         {incluirBump && (
-          <div className="flex items-center justify-between text-sm border-t border-gray-100 pt-3">
-            <span className="text-gray-500">Total</span>
-            <span className="font-bold text-gray-900">{totalAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+          <div className="statement-divider" style={{ margin: '0 0 var(--space-8) 0' }}>
+            <span className="statement-tag">Total</span>
+            <span className="statement-text" style={{ fontWeight: 700, color: '#F5F0E4' }}>
+              {totalAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            </span>
           </div>
         )}
 
-        <div className="space-y-3">
-          <input
-            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm"
-            placeholder="Nome completo"
-            value={nome} onChange={e => setNome(e.target.value)}
-          />
-          <input
-            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm"
-            placeholder="WhatsApp (opcional)"
-            value={whatsapp} onChange={e => setWhatsapp(e.target.value)}
-          />
-          <div className="relative">
-            <Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2.5 text-sm uppercase"
-              placeholder="Cupom (opcional)"
-              value={cupom} onChange={e => setCupom(e.target.value.toUpperCase())}
-            />
+        <div className="field-grid" style={{ marginBottom: 'var(--space-6)' }}>
+          <div className="field span-full">
+            <label className="field-label">Nome completo<span className="field-required">*</span></label>
+            <input type="text" placeholder="Seu nome" value={nome} onChange={e => setNome(e.target.value)} />
+          </div>
+          <div className="field span-full">
+            <label className="field-label">WhatsApp<span className="field-required">*</span></label>
+            <input type="tel" placeholder="(11) 91234-5678" value={whatsapp} onChange={e => setWhatsapp(e.target.value)} />
+          </div>
+          <div className="field span-full">
+            <label className="field-label">Cupom</label>
+            <div className="field-control">
+              <Tag className="h-4 w-4" style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input
+                type="text"
+                style={{ paddingLeft: 38, textTransform: 'uppercase' }}
+                placeholder="(opcional)"
+                value={cupom} onChange={e => setCupom(e.target.value.toUpperCase())}
+              />
+            </div>
           </div>
         </div>
 
-        {erro && <p className="text-sm text-red-500">{erro}</p>}
+        {erro && (
+          <div className="global-error show" style={{ marginBottom: 'var(--space-6)' }}>{erro}</div>
+        )}
 
-        {!nome.trim() ? (
-          <p className="text-xs text-gray-400 text-center">Preencha seu nome para liberar o pagamento.</p>
+        {!mostrarBrick ? (
+          <p style={{ textAlign: 'center', fontSize: '0.8125rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Preencha seu nome e WhatsApp para liberar o pagamento.</p>
         ) : (
           <div id="paymentBrick_container" ref={brickContainerRef} />
         )}
+
+        <p className="pay-footer-note">
+          <span className="lock-icon">🔒</span> Pagamento processado com segurança pelo Mercado Pago.
+        </p>
+      </div>
+
+      <div className="site-footer">
+        <p className="footer-logo">Instituto Despertamente</p>
+        <div className="footer-rule" />
+        <p className="footer-note">CNPJ 55.184.481/0001-24</p>
       </div>
     </div>
   );

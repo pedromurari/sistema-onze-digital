@@ -36,7 +36,8 @@ serve(async (req) => {
     const pagamento = body?.pagamento ?? {};
     const incluirBump = Boolean(body?.incluir_bump);
 
-    if (!produtoId || !comprador?.email || !comprador?.nome) {
+    const whatsappDigits = String(comprador?.whatsapp ?? '').replace(/\D/g, '');
+    if (!produtoId || !comprador?.email || !comprador?.nome || whatsappDigits.length < 10) {
       return new Response(JSON.stringify({ error: 'Dados obrigatórios ausentes.' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
