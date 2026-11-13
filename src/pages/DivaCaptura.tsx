@@ -171,6 +171,10 @@ export default function DivaCaptura() {
               <div className="iw-replica-pillar-top"><span aria-hidden="true">◎</span><h3>Acessível de verdade</h3></div>
               <div className="iw-replica-pillar-bottom"><p>Sessões a partir de R$80, com pacotes pra quem quer continuidade — sem fila de espera pra começar.</p></div>
             </article>
+            <article>
+              <div className="iw-replica-pillar-top"><span aria-hidden="true">✦</span><h3>Compromisso social</h3></div>
+              <div className="iw-replica-pillar-bottom"><p>Ao participar, você fortalece uma rede que democratiza o acesso à terapia pra quem mais precisa.</p></div>
+            </article>
           </div>
         </div>
       </section>
@@ -247,9 +251,13 @@ export default function DivaCaptura() {
 
       <section className="iw-replica-section iw-replica-institute">
         <div className="iw-replica-container">
-          <img src={IDM_LOGO} alt="Instituto Despertamente" loading="lazy" />
-          <h2>Instituto <em>Despertamente</em></h2>
-          <p>O Instituto Despertamente é uma escola de desenvolvimento humano especializada no ensino da psicanálise. O Divã IDM é o programa de terapia social do Instituto: usa a estrutura e a rede de terapeutas associados ao IDM pra oferecer sessões com valores sociais, credenciadas e supervisionadas dentro da nossa proposta de Psicanálise Integrativa.</p>
+          <img src={IDM_LOGO} alt="Clínica Online do Despertamente" loading="lazy" />
+          <h2>Clínica Online do <em>Despertamente</em></h2>
+          <p>
+            Em 2019, <strong>10,2% dos brasileiros</strong> com 18 anos ou mais informaram ter recebido diagnóstico de depressão de um profissional de saúde mental — cerca de <strong>16,3 milhões de pessoas</strong>. Por trás de cada número há uma história que merece atenção, escuta e cuidado. Você pode dar o primeiro passo no seu tempo.
+            <br /><small style={{ opacity: 0.6, fontSize: '0.75em' }}>Fonte: IBGE, Pesquisa Nacional de Saúde 2019.</small>
+          </p>
+          <p>O Divã IDM é uma iniciativa social da Clínica Online do Despertamente, criada pra ampliar o acesso à terapia e oferecer um espaço de escuta, acolhimento e cuidado emocional. Conectamos você a psicanalistas associados à Sociedade IDM, dentro da proposta de Psicanálise Integrativa, com modalidades de atendimento a valor social.</p>
           <div>Cada processo é único — não prometemos resultado específico, mas oferecemos profissionais credenciados, comprometidos com ética e sigilo.</div>
         </div>
       </section>
@@ -260,6 +268,7 @@ export default function DivaCaptura() {
           <div className="iw-replica-faq-list">
             <details><summary>As sessões são gratuitas?</summary><p>Não. As sessões custam a partir de R$80. O cadastro aqui é gratuito — serve só pra nosso time te indicar o terapeuta certo.</p></details>
             <details><summary>Como eu escolho o terapeuta?</summary><p>Você não precisa escolher sozinho: depois do cadastro, nosso time conversa com você e indica o terapeuta credenciado mais adequado pro seu caso.</p></details>
+            <details><summary>Como funciona o encaminhamento pro profissional?</summary><p>Nossa equipe organiza o encaminhamento e indica um terapeuta credenciado conforme a disponibilidade de agenda e os critérios do programa. Depois, entramos em contato pra te orientar sobre os próximos passos.</p></details>
             <details><summary>As sessões são online?</summary><p>Sim, 100% online, com terapeutas credenciados pelo Instituto Despertamente.</p></details>
             <details><summary>Existe pacote de sessões?</summary><p>Sim. Pacotes a partir de 3 sessões saem com desconto. Nosso time te explica as opções depois do cadastro.</p></details>
             <details><summary>Terapia realmente funciona?</summary><p>Cada processo é único. Terapia é um espaço de escuta e cuidado contínuo — não prometemos resultado específico, mas oferecemos profissionais credenciados e comprometidos com ética.</p></details>
