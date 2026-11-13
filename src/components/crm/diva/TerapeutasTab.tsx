@@ -165,6 +165,30 @@ export function TerapeutasTab() {
                     </div>
                     {t.bio && <p className="text-xs text-muted-foreground">{t.bio}</p>}
                     <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                      <span className="text-muted-foreground">WhatsApp:</span>
+                      {t.whatsapp ? (
+                        <>
+                          <a
+                            href={`https://wa.me/${t.whatsapp}`}
+                            target="_blank" rel="noreferrer"
+                            className="font-medium underline-offset-2 hover:underline"
+                          >
+                            {t.whatsapp}
+                          </a>
+                          <button
+                            type="button"
+                            className="text-muted-foreground hover:text-foreground"
+                            onClick={() => void copiar(t.whatsapp!)}
+                            title="Copiar número"
+                          >
+                            <LinkIcon className="h-3 w-3" />
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground">não informado</span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs">
                       <span className="text-muted-foreground">Chave PIX:</span>
                       {pixEditando === t.id ? (
                         <>
