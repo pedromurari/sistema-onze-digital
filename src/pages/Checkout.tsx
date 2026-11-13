@@ -130,6 +130,10 @@ export default function Checkout() {
       // testou e reclamou dos dois pontos: lista com 1 item so e Pix sem QR).
       brickControllerRef.current = await bricksBuilder.create('cardPayment', brickContainerRef.current.id, {
         initialization: { amount: totalAmount, payer: { email: emailRef.current } },
+        // Forca a vista (1x) -- sem isso o Brick oferece parcelamento conforme
+        // o cartao/bandeira, o que nao faz sentido pra sessao avulsa/pacote e
+        // contraria a decisao de nunca ter cobranca recorrente/parcelada.
+        customization: { paymentMethods: { maxInstallments: 1 } },
         callbacks: {
           onReady: () => {},
           onError: (error: unknown) => { console.error(error); setErro('Erro ao carregar o pagamento. Recarregue a página.'); },
