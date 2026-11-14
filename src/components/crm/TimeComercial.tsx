@@ -27,7 +27,9 @@ import {
   Video, Repeat, GraduationCap, Link2, Wallet, CreditCard, Kanban, ClipboardList,
   Search, X, History, Filter, CornerDownRight, Eye, Zap, BookOpen, Layers, Trash2, RotateCcw,
   Activity, Percent, BarChart3, Phone, Timer, Info, StickyNote, AlarmClock, Clock, Lock, UserPlus,
+  HeartHandshake,
 } from 'lucide-react';
+import { TerapeutasVendedorTab } from '@/components/crm/diva/TerapeutasVendedorTab';
 
 // -----------------------------------------------------------------------
 // Funil — pool de leads independente de "Leads Diretos" (Pipeline.tsx).
@@ -3592,6 +3594,48 @@ function MetaEquipeTab() {
 // só o que é dela — pronto pra trocar por auth real quando Helen/Miguel
 // virarem usuarios de verdade no sistema.
 
+// Chips de avatar coloridos pra trocar "Ver como" — clique direto em vez de dropdown,
+// mesma cor de identificação usada nos avatares da tabela de Remuneração.
+// Readicionado 14/11/2026 (pedido do Pedro): tinha sido removido em 12/11 com a
+// justificativa "só tem uma vendedora ativa hoje", mas o admin precisa dele pra
+// conferir como a tela aparece pra vendedora (ex: card de WhatsApp dela) sem
+// precisar da senha de ninguém.
+function VendorSwitch({ viewAs, onChange }: { viewAs: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex items-center gap-2.5 overflow-x-auto px-1 py-2 -mx-1 -my-2">
+      <button
+        type="button"
+        onClick={() => onChange('todos')}
+        className="flex flex-col items-center gap-1 flex-shrink-0"
+        title="Todos (visão admin)"
+      >
+        <div
+          className="w-9 h-9 rounded-full flex items-center justify-center text-[9px] font-bold bg-muted text-muted-foreground transition-shadow"
+          style={viewAs === 'todos' ? { boxShadow: '0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--primary))' } : undefined}
+        >
+          Todos
+        </div>
+      </button>
+      {INITIAL_VENDORS.map((v) => (
+        <button
+          key={v.name}
+          type="button"
+          onClick={() => onChange(v.name)}
+          className="flex flex-col items-center gap-1 flex-shrink-0"
+          title={v.gerente ? `${v.name} (gerente — vê todos)` : v.name}
+        >
+          <div
+            className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white transition-shadow"
+            style={{ backgroundColor: v.cor, ...(viewAs === v.name ? { boxShadow: `0 0 0 2px hsl(var(--background)), 0 0 0 4px ${v.cor}` } : {}) }}
+          >
+            {v.initials}
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function TimeComercial() {
   const { user } = useAuth();
   // Vendedor(a) logado(a) de verdade: trava a própria visão, sem opção de trocar
@@ -3601,7 +3645,7 @@ export function TimeComercial() {
     ? INITIAL_VENDORS.find((v) => v.name === user.nome && !v.gerente)
     : undefined;
 
-  const [viewAs] = useState(lockedVendor ? lockedVendor.name : 'todos');
+  const [viewAs, setViewAs] = useState(lockedVendor ? lockedVendor.name : 'todos');
   const activeVendor = lockedVendor ?? INITIAL_VENDORS.find((v) => v.name === viewAs);
   // null = sem filtro (admin ou gerente); string = so os dados desse vendedor.
   const viewAsName = activeVendor && !activeVendor.gerente ? activeVendor.name : null;
@@ -3610,6 +3654,14 @@ export function TimeComercial() {
     <div className="h-full flex flex-col animate-fade-in p-4 lg:p-6 gap-4 overflow-y-auto">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-xl lg:text-2xl font-bold text-foreground">CRM Time Comercial</h1>
+        {!lockedVendor && (
+          <div className="flex flex-col items-end gap-1">
+            <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+              <Eye className="h-2.5 w-2.5" /> Ver como
+            </p>
+            <VendorSwitch viewAs={viewAs} onChange={setViewAs} />
+          </div>
+        )}
       </div>
 
       <Tabs defaultValue="funil" className="flex-1 flex flex-col min-h-0">
@@ -3660,6 +3712,16 @@ export function TimeComercial() {
             >
               <MessageCircle className="h-3.5 w-3.5" /> Chat
             </TabsTrigger>
+            {/* Divã IDM -- pedido do Pedro 14/11/2026: a vendedora do Time Comercial
+                (Helen) não vende Divã, essa aba é só pra admin/gestão acompanhar. */}
+            {!lockedVendor && (
+              <TabsTrigger
+                value="diva"
+                className="rounded-lg px-4 py-2 text-sm font-medium bg-muted border border-border text-muted-foreground hover:text-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-sm gap-1.5"
+              >
+                <HeartHandshake className="h-3.5 w-3.5" /> Divã
+              </TabsTrigger>
+            )}
 
             {/* Fechamento de comissao -- so visivel pro Pedro (pdrmurari@gmail.com,
                 pedido explicito "somente eu posso conseguir ver"). A trava de
@@ -3697,6 +3759,12 @@ export function TimeComercial() {
             vendedores={INITIAL_VENDORS.filter((v) => !v.gerente).map((v) => v.name)}
           />
         </TabsContent>
+
+        {!lockedVendor && (
+          <TabsContent value="diva">
+            <TerapeutasVendedorTab />
+          </TabsContent>
+        )}
 
         <TabsContent value="dados">
           <DadosTab viewAsName={viewAsName} />
