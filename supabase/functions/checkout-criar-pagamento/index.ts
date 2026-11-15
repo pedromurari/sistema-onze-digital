@@ -144,6 +144,13 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({
       status,
+      // mpData.status original ('approved'/'rejected'/'pending'/'in_process') vem
+      // sempre com HTTP 200 -- cartao recusado NAO e' erro de rede/API pro
+      // Mercado Pago, e' um resultado valido do pagamento. status_detail da o
+      // motivo (ex: cc_rejected_insufficient_amount) pro front mostrar mensagem
+      // amigavel em vez de tratar como sucesso (achado real 13/11/2026, varredura
+      // final pedida pelo Pedro antes de abrir pra clientes de verdade).
+      status_detail: mpData.status_detail ?? null,
       mp_payment_id: mpData.id,
       qr_code: mpData.point_of_interaction?.transaction_data?.qr_code ?? null,
       qr_code_base64: mpData.point_of_interaction?.transaction_data?.qr_code_base64 ?? null,

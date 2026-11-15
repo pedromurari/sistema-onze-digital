@@ -20,6 +20,24 @@ import './matricula/matricula-reference.css';
 
 const IDM_LOGO = 'https://turma47.semanadodespertar.online/lovable-uploads/1b0d4a56-e01f-4ce0-b2f7-0eecf33da536.png';
 
+// Mesmo mapeamento usado em MatriculaTimeComercial.tsx pro cartao de aluno --
+// mpData.status_detail vem sempre que o cartao e recusado (HTTP 200, nao e erro).
+function mensagemRecusa(statusDetail?: string | null) {
+  const map: Record<string, string> = {
+    cc_rejected_insufficient_amount: 'Saldo/limite insuficiente.',
+    cc_rejected_bad_filled_security_code: 'CVV incorreto.',
+    cc_rejected_bad_filled_date: 'Data de validade incorreta.',
+    cc_rejected_bad_filled_card_number: 'Número do cartão incorreto.',
+    cc_rejected_call_for_authorize: 'Cartão exige autorização — ligue para a operadora.',
+    cc_rejected_card_disabled: 'Cartão desabilitado. Ligue para a operadora ou use outro cartão.',
+    cc_rejected_duplicated_payment: 'Pagamento duplicado.',
+    cc_rejected_high_risk: 'Pagamento recusado por segurança.',
+    cc_rejected_max_attempts: 'Excedeu o número de tentativas. Use outro cartão.',
+    cc_rejected_other_reason: 'Pagamento recusado pelo emissor do cartão.',
+  };
+  return (statusDetail && map[statusDetail]) || 'Pagamento recusado. Tente outro cartão ou o Pix.';
+}
+
 declare global {
   interface Window { MercadoPago: any; }
 }
@@ -70,6 +88,7 @@ export default function Checkout() {
   const [cupom, setCupom] = useState('');
   const [incluirBump, setIncluirBump] = useState(false);
   const [pago, setPago] = useState(false);
+  const [pagoStatus, setPagoStatus] = useState<'aprovado' | 'pendente'>('aprovado');
   const [erro, setErro] = useState('');
   const [metodoAtivo, setMetodoAtivo] = useState<'cartao' | 'pix'>('cartao');
   const [pixLoading, setPixLoading] = useState(false);
@@ -164,6 +183,15 @@ export default function Checkout() {
               .then(r => r.json())
               .then(json => {
                 if (json.error) { setErro(json.error); reject(json.error); return; }
+                // mpData.status vem com HTTP 200 mesmo quando o cartao e' recusado
+                // -- so trata como sucesso se o status realmente for aprovado ou
+                // ainda em analise (pendente/in_process); "recusado" tem que
+                // rejeitar a promise pra nao mostrar "Recebido!" pra quem nao pagou.
+                if (json.status === 'recusado') {
+                  const msg = mensagemRecusa(json.status_detail);
+                  setErro(msg); reject(new Error(msg)); return;
+                }
+                setPagoStatus(json.status === 'pendente' ? 'pendente' : 'aprovado');
                 setPago(true);
                 resolve();
               })
@@ -237,12 +265,16 @@ export default function Checkout() {
       <div className="idm-matricula">
         <div className="obrigado-wrap" style={{ minHeight: '100vh' }}>
           <div className="obrigado-seal"><CheckCircle2 className="obrigado-check" /></div>
-          <div className="obrigado-eyebrow">Pagamento confirmado</div>
-          <h1 className="obrigado-title">Recebido!</h1>
+          <div className="obrigado-eyebrow">{pagoStatus === 'pendente' ? 'Pagamento em análise' : 'Pagamento confirmado'}</div>
+          <h1 className="obrigado-title">{pagoStatus === 'pendente' ? 'Quase lá!' : 'Recebido!'}</h1>
           <div className="obrigado-instituto">Instituto Despertamente</div>
           <div className="obrigado-rule" />
           <div className="obrigado-card">
-            <p>Se for <strong>Pix</strong>, confirme o pagamento no seu banco. Você vai receber a confirmação por e-mail e WhatsApp assim que cair.</p>
+            <p>
+              {pagoStatus === 'pendente'
+                ? 'Seu cartão está em análise pelo banco. Assim que for aprovado, você recebe a confirmação por e-mail e WhatsApp.'
+                : 'Você vai receber a confirmação por e-mail e WhatsApp.'}
+            </p>
           </div>
         </div>
       </div>
@@ -273,7 +305,13 @@ export default function Checkout() {
               type="checkbox"
               style={{ marginTop: 4, width: 16, height: 16, accentColor: 'var(--navy)' }}
               checked={incluirBump}
-              onChange={e => setIncluirBump(e.target.checked)}
+              onChange={e => {
+                setIncluirBump(e.target.checked);
+                // Se o Pix ja tinha sido gerado com o valor antigo, descarta --
+                // senao o QR pago fica desatualizado (menos ou mais que o total
+                // mostrado na tela).
+                setPixQr(null);
+              }}
             />
             <div style={{ flex: 1 }}>
               <p style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--navy)', display: 'flex', alignItems: 'center', gap: 4 }}>
