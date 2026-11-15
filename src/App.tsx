@@ -38,6 +38,7 @@ const WorkshopCaptura   = React.lazy(() => import("./pages/WorkshopCaptura"));
 const WorkshopConfirmacao = React.lazy(() => import("./pages/WorkshopConfirmacao"));
 const DivaCaptura      = React.lazy(() => import("./pages/DivaCaptura"));
 const DivaConfirmacao  = React.lazy(() => import("./pages/DivaConfirmacao"));
+const DivaTerapeutaPainel = React.lazy(() => import("./pages/DivaTerapeutaPainel"));
 const TurmaCaptura     = React.lazy(() => import("./pages/turma/TurmaCaptura"));
 const TurmaObrigado    = React.lazy(() => import("./pages/turma/TurmaObrigado"));
 
@@ -137,6 +138,7 @@ const App = () => (
               <Route path="/workshop/confirmacao/:inscricaoId" element={<WorkshopConfirmacao />} />
               <Route path="/diva"                         element={<DivaCaptura />} />
               <Route path="/diva/confirmacao/:leadId"      element={<DivaConfirmacao />} />
+              <Route path="/diva/terapeuta/:terapeutaId"   element={<DivaTerapeutaPainel />} />
               <Route path="/ir/:slug"               element={<LinkRedirect />} />
               <Route path="/"                       element={<RaizPorDominio />} />
               <Route path="*"                       element={<NotFound />} />
