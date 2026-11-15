@@ -74,8 +74,8 @@ export default function DivaCaptura() {
           <h2>Um espaço seguro para falar, ser ouvido e acolhido, com atendimento online a valor social.</h2>
           <div className="iw-replica-event-box">
             <strong>TERAPIA SOCIAL · DIVÃ IDM</strong>
-            <span>Sessões 100% online com terapeutas credenciados</span>
-            <b>A PARTIR DE R$ 80 · SEM FILA DE ESPERA</b>
+            <span>Sessões 100% online com psicanalistas credenciados pelo IDM</span>
+            <b>SESSÕES A PARTIR DE R$ 70 · SEM FILA DE ESPERA</b>
           </div>
 
           <div
@@ -90,6 +90,7 @@ export default function DivaCaptura() {
             <video
               ref={videoRef}
               src={videoCapturaUrl || VIDEO_PLACEHOLDER}
+              poster="https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/diva/captura-poster.jpg"
               playsInline
               preload="metadata"
               aria-label={videoCapturaUrl ? 'Vídeo de apresentação do Divã IDM' : 'Vídeo institucional do IDM'}
@@ -144,8 +145,8 @@ export default function DivaCaptura() {
               <input id="diva-email" type="email" autoComplete="email" placeholder="Insira seu melhor e-mail (opcional)" value={email} onChange={(e) => setEmail(e.target.value)} />
               <label className="sr-only" htmlFor="diva-whatsapp">WhatsApp</label>
               <div className="iw-replica-phone"><span>BR +55</span><input id="diva-whatsapp" type="tel" inputMode="tel" autoComplete="tel" required placeholder="WhatsApp - (99) 99999-9999" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} /></div>
-              <label className="sr-only" htmlFor="diva-mensagem">Quer contar algo antes da gente ligar?</label>
-              <textarea id="diva-mensagem" maxLength={500} placeholder="Quer contar algo antes da gente ligar? (opcional)" value={mensagem} onChange={(e) => setMensagem(e.target.value)} />
+              <label className="sr-only" htmlFor="diva-mensagem">Tem algo específico que você gostaria de trabalhar na terapia?</label>
+              <textarea id="diva-mensagem" maxLength={500} placeholder="Tem algo específico que você gostaria de trabalhar na terapia? (opcional)" value={mensagem} onChange={(e) => setMensagem(e.target.value)} />
               <input aria-hidden="true" tabIndex={-1} autoComplete="off" className="sr-only" value={website} onChange={(e) => setWebsite(e.target.value)} />
               {erro && <p role="alert" style={{ color: '#f87171', fontSize: '0.85em' }}>{erro}</p>}
               <button type="submit" disabled={enviando}>{enviando ? 'ENVIANDO...' : 'QUERO MINHA SESSÃO'}</button>
@@ -169,7 +170,7 @@ export default function DivaCaptura() {
             </article>
             <article>
               <div className="iw-replica-pillar-top"><span aria-hidden="true">◎</span><h3>Acessível de verdade</h3></div>
-              <div className="iw-replica-pillar-bottom"><p>Sessões a partir de R$80, com pacotes pra quem quer continuidade — sem fila de espera pra começar.</p></div>
+              <div className="iw-replica-pillar-bottom"><p>Sessões a partir de R$70 no pacote — sem fila de espera pra começar.</p></div>
             </article>
             <article>
               <div className="iw-replica-pillar-top"><span aria-hidden="true">✦</span><h3>Compromisso social</h3></div>
@@ -243,7 +244,7 @@ export default function DivaCaptura() {
             </article>
             <article>
               <div className="iw-replica-pillar-top"><span aria-hidden="true">💭</span><h3>"Terapia é cara e demorada pra começar"</h3></div>
-              <div className="iw-replica-pillar-bottom"><p>No Divã IDM, sessões a partir de R$80, com terapeutas credenciados disponíveis, sem fila de espera.</p></div>
+              <div className="iw-replica-pillar-bottom"><p>No Divã IDM, sessões a partir de R$70 no pacote, com terapeutas credenciados disponíveis, sem fila de espera.</p></div>
             </article>
           </div>
         </div>
@@ -266,7 +267,7 @@ export default function DivaCaptura() {
         <div className="iw-replica-container">
           <h2>Perguntas <em>Frequentes</em></h2><p>Tire suas dúvidas!</p>
           <div className="iw-replica-faq-list">
-            <details><summary>As sessões são gratuitas?</summary><p>Não. As sessões custam a partir de R$80. O cadastro aqui é gratuito — serve só pra nosso time te indicar o terapeuta certo.</p></details>
+            <details><summary>As sessões são gratuitas?</summary><p>Não. A sessão avulsa é R$80, e no pacote (a partir de 3 sessões) cai pra R$70 cada. O cadastro aqui é gratuito — serve só pra nosso time te indicar o terapeuta certo.</p></details>
             <details><summary>Como eu escolho o terapeuta?</summary><p>Você não precisa escolher sozinho: depois do cadastro, nosso time conversa com você e indica o terapeuta credenciado mais adequado pro seu caso.</p></details>
             <details><summary>Como funciona o encaminhamento pro profissional?</summary><p>Nossa equipe organiza o encaminhamento e indica um terapeuta credenciado conforme a disponibilidade de agenda e os critérios do programa. Depois, entramos em contato pra te orientar sobre os próximos passos.</p></details>
             <details><summary>As sessões são online?</summary><p>Sim, 100% online, com terapeutas credenciados pelo Instituto Despertamente.</p></details>
@@ -281,16 +282,16 @@ export default function DivaCaptura() {
         <div className="iw-replica-container">
           <div className="iw-replica-benefits" aria-label="O que você recebe ao se cadastrar">
             <article className="iw-replica-benefit"><div className="iw-replica-benefit-icon"><HeartHandshake aria-hidden="true" /></div><h3>Terapeuta indicado pra você</h3><p>Nosso time escolhe com você</p></article>
-            <article className="iw-replica-benefit"><div className="iw-replica-benefit-icon"><Wallet aria-hidden="true" /></div><h3>A partir de R$80</h3><p>Sem fila de espera</p></article>
+            <article className="iw-replica-benefit"><div className="iw-replica-benefit-icon"><Wallet aria-hidden="true" /></div><h3>A partir de R$70</h3><p>Sem fila de espera</p></article>
             <article className="iw-replica-benefit"><div className="iw-replica-benefit-icon"><ShieldCheck aria-hidden="true" /></div><h3>Terapeutas credenciados</h3><p>Sigilo e acolhimento</p></article>
           </div>
           <div className="iw-replica-final-card">
             <h2>Você não precisa ter certeza.<br /><em>Só precisa começar.</em></h2>
-            <p>Cadastre-se e nosso time te ajuda a escolher o terapeuta certo pra você, com sessões a partir de R$80.</p>
+            <p>Cadastre-se e nosso time te ajuda a escolher o terapeuta certo pra você, com sessões a partir de R$70.</p>
             <a href="#cadastro">QUERO MINHA SESSÃO</a>
             <div>Cadastro gratuito · nosso time entra em contato por WhatsApp.</div>
           </div>
-          <p className="iw-replica-final-line">✓ Sessões 100% online &nbsp; ✓ A partir de R$80 &nbsp; ✓ Terapeutas credenciados pelo IDM</p>
+          <p className="iw-replica-final-line">✓ Sessões 100% online &nbsp; ✓ A partir de R$70 &nbsp; ✓ Terapeutas credenciados pelo IDM</p>
         </div>
       </section>
       <footer className="iw-replica-footer-full">
