@@ -115,6 +115,8 @@ interface ContaEmpresaAPagar {
   recorrente: boolean;
   dia_vencimento: number | null;
   data_competencia: string | null;
+  mes_referencia: string | null;
+  data_caixa: string | null;
 }
 
 const CATEGORIA_LABEL: Record<string, string> = {
@@ -124,15 +126,26 @@ const CATEGORIA_LABEL: Record<string, string> = {
   taxa_gateway: 'Taxa de gateway',
 };
 
+interface LinhaUnificadaConta {
+  key: string;
+  descricao: string;
+  categoria: string;
+  fornecedor: string;
+  dia: number | null;
+  valor: number | null; // null = valor variável, confira manualmente
+  recorrente: boolean;
+}
+
 // Contas a pagar da EMPRESA (assinaturas, contabilidade, software -- ex:
-// Claude, Spedy) -- não confundir com pagamento de profissional, que já
-// tem sua própria prévia acima ("Prévia do fechamento de folha"). Pedido
-// explícito do Pedro (06/11/2026): esse card tinha virado pagamento de
-// profissional por engano; reaproveita balanco_itens (Financeiro →
-// Balanço), que já é onde esses gastos são lançados -- data_caixa nulo
-// é o mesmo critério que o Balanço usa pra "ainda não conciliado/pago".
-function useContasAPagarEmpresa() {
-  const [itens, setItens] = useState<ContaEmpresaAPagar[]>([]);
+// Claude, Spedy), filtradas por mês de competência. Reaproveita
+// balanco_itens (Financeiro → Balanço): "pago" é data_caixa preenchida
+// dentro do mês; "a pagar" é (a) lançamento do mês ainda sem data_caixa,
+// ou (b) um item recorrente que nem foi lançado ainda nesse mês --
+// nesse caso projeta um "previsto" a partir da última ocorrência
+// conhecida (mesmo fornecedor/dia_vencimento), pra não sumir do mês
+// seguinte só porque ninguém ainda registrou o pagamento.
+function useContasAPagarEmpresa(mes: string) {
+  const [todos, setTodos] = useState<ContaEmpresaAPagar[]>([]);
   const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
@@ -141,25 +154,171 @@ function useContasAPagarEmpresa() {
       setCarregando(true);
       const { data } = await supabase
         .from('balanco_itens')
-        .select('id, descricao, valor, categoria, fornecedor, recorrente, dia_vencimento, data_competencia')
+        .select('id, descricao, valor, categoria, fornecedor, recorrente, dia_vencimento, data_competencia, mes_referencia, data_caixa')
         .eq('tipo', 'saida')
-        .is('data_caixa', null)
-        .order('dia_vencimento', { ascending: true, nullsFirst: false });
+        .order('data_competencia', { ascending: false });
       if (!ativo) return;
-      const linhas = ((data ?? []) as ContaEmpresaAPagar[]).map((l) => ({ ...l, valor: Number(l.valor) }));
-      linhas.sort((a, b) => {
-        if (a.dia_vencimento != null && b.dia_vencimento != null) return a.dia_vencimento - b.dia_vencimento;
-        if (a.dia_vencimento != null) return -1;
-        if (b.dia_vencimento != null) return 1;
-        return (a.data_competencia ?? '').localeCompare(b.data_competencia ?? '');
-      });
-      setItens(linhas);
+      setTodos(((data ?? []) as ContaEmpresaAPagar[]).map((l) => ({ ...l, valor: Number(l.valor) })));
       setCarregando(false);
     })();
     return () => { ativo = false; };
   }, []);
 
-  return { itens, carregando };
+  const mesDoItem = (item: ContaEmpresaAPagar) => (item.mes_referencia ?? item.data_competencia ?? '').slice(0, 7);
+  const chaveRecorrencia = (item: ContaEmpresaAPagar) => `${item.fornecedor ?? item.descricao}__${item.dia_vencimento ?? ''}`;
+
+  const pagos = todos.filter((item) => item.data_caixa && item.data_caixa.slice(0, 7) === mes);
+  const pendentesLancados = todos.filter((item) => !item.data_caixa && mesDoItem(item) === mes);
+
+  // Só projeta pra frente quem tem dia_vencimento e valor estáveis (ex:
+  // Claude, Supabase, Autentique) -- itens recorrentes sem dia_vencimento
+  // (ex: Meta Ads, Google Cloud) têm valor variável mês a mês e só devem
+  // aparecer quando alguém realmente lançar aquele mês no Balanço, senão
+  // vira ruído repetindo todo mês com um valor que já não é o real.
+  const ultimaOcorrenciaRecorrente = new Map<string, ContaEmpresaAPagar>();
+  for (const item of todos) {
+    if (!item.recorrente || item.dia_vencimento == null) continue;
+    const chave = chaveRecorrencia(item);
+    const atual = ultimaOcorrenciaRecorrente.get(chave);
+    if (!atual || (item.data_competencia ?? '') > (atual.data_competencia ?? '')) ultimaOcorrenciaRecorrente.set(chave, item);
+  }
+
+  const previstos: ContaEmpresaAPagar[] = [];
+  for (const [chave, modelo] of ultimaOcorrenciaRecorrente) {
+    const jaTemNoMes = todos.some((item) => item.recorrente && chaveRecorrencia(item) === chave && mesDoItem(item) === mes);
+    if (jaTemNoMes) continue;
+    previstos.push({ ...modelo, id: `previsto-${chave}-${mes}`, data_caixa: null, mes_referencia: mes });
+  }
+
+  return { aPagar: [...pendentesLancados, ...previstos], pagos, carregando };
+}
+
+interface ProfissionalContaFixa {
+  id: string;
+  nome: string;
+  funcao: string | null;
+  dia_pagamento_1: number | null;
+  valor_pagamento_1: number | null;
+  dia_pagamento_2: number | null;
+  valor_pagamento_2: number | null;
+  valor_por_aula: number | null;
+  modelo_pagamento: string;
+}
+
+interface PagamentoProfissionalResumo {
+  profissional_id: string;
+  data_pagamento: string;
+}
+
+interface AulaConfirmadaResumo {
+  profissional_id: string;
+  data: string;
+}
+
+function diaDentroDaJanela(diaAlvo: number, dataISO: string, mes: string) {
+  const [ano, m] = mes.split('-').map(Number);
+  const alvo = new Date(ano, m - 1, diaAlvo).getTime();
+  const data = new Date(`${dataISO}T12:00:00`).getTime();
+  return Math.abs(data - alvo) / 86_400_000 <= 5;
+}
+
+interface SlotPagamentoProfissional {
+  profissional: ProfissionalContaFixa;
+  dia: number;
+  valor: number | null;
+  pago: boolean;
+}
+
+// Profissionais com pagamento fixo recorrente (ajuda de custo, por turma de
+// valor estável) -- pedido do Pedro (14/11/2026): esses também precisam
+// aparecer em "Contas a pagar", não só as despesas da empresa. "Pago" é
+// best-effort: existe algum profissionais_pagamentos dentro de uma janela
+// de +-5 dias do dia configurado, nesse mês -- não valida o valor exato
+// (pagamentos variáveis ou agrupados com comissão tornam isso pouco
+// confiável); confira o valor na tela de Pagamentos de cada profissional.
+function useContasAPagarProfissionais(mes: string) {
+  const [configs, setConfigs] = useState<ProfissionalContaFixa[]>([]);
+  const [pagamentos, setPagamentos] = useState<PagamentoProfissionalResumo[]>([]);
+  const [aulasConfirmadas, setAulasConfirmadas] = useState<AulaConfirmadaResumo[]>([]);
+  const [carregando, setCarregando] = useState(true);
+
+  useEffect(() => {
+    let ativo = true;
+    void (async () => {
+      setCarregando(true);
+      const { data: profs } = await supabase
+        .from('profissionais')
+        .select('id, nome, funcao, dia_pagamento_1, valor_pagamento_1, dia_pagamento_2, valor_pagamento_2, valor_por_aula, modelo_pagamento')
+        .eq('ativo', true)
+        .not('dia_pagamento_1', 'is', null);
+      if (!ativo) return;
+      const lista = (profs ?? []) as ProfissionalContaFixa[];
+      setConfigs(lista);
+      if (lista.length === 0) { setPagamentos([]); setAulasConfirmadas([]); setCarregando(false); return; }
+
+      const idsTodos = lista.map((p) => p.id);
+      // Só calcula pelo nº de aulas pra quem é pago PURAMENTE por aula (Vinícius,
+      // Renata). Profissional "híbrido" (ex: Jocimara) tem componente extra (ex:
+      // repasse de faturamento) que a contagem de aulas não cobre -- contar só
+      // as aulas daria um valor menor que o real, pior que deixar "Variável".
+      const idsPorAula = lista.filter((p) => p.valor_por_aula != null && p.modelo_pagamento === 'por_aula').map((p) => p.id);
+
+      const [{ data: pagtos }, aulasEPresencas] = await Promise.all([
+        supabase.from('profissionais_pagamentos').select('profissional_id, data_pagamento').in('profissional_id', idsTodos),
+        idsPorAula.length === 0 ? Promise.resolve(null) : (async () => {
+          const { data: aulasData } = await supabase.from('aulas').select('id, profissional_id, data').in('profissional_id', idsPorAula);
+          const aulaIds = (aulasData ?? []).map((a) => a.id);
+          if (aulaIds.length === 0) return { aulasData: aulasData ?? [], presData: [] };
+          const { data: presData } = await supabase.from('presencas').select('aula_id, presente').eq('tipo', 'professor').in('aula_id', aulaIds);
+          return { aulasData: aulasData ?? [], presData: presData ?? [] };
+        })(),
+      ]);
+      if (!ativo) return;
+      setPagamentos((pagtos ?? []) as PagamentoProfissionalResumo[]);
+
+      if (aulasEPresencas) {
+        const presMap = new Map(aulasEPresencas.presData.map((p: { aula_id: string; presente: boolean | null }) => [p.aula_id, p.presente]));
+        setAulasConfirmadas(
+          aulasEPresencas.aulasData
+            .filter((a: { id: string }) => presMap.get(a.id) === true)
+            .map((a: { profissional_id: string; data: string }) => ({ profissional_id: a.profissional_id, data: a.data })),
+        );
+      } else {
+        setAulasConfirmadas([]);
+      }
+      setCarregando(false);
+    })();
+    return () => { ativo = false; };
+  }, [mes]);
+
+  // Pra professor "por aula" (Vinícius, Renata), o valor do mês não é fixo --
+  // é a contagem de aulas com presença confirmada desde o último pagamento
+  // dele até o dia do slot, vezes o valor por aula. Pedido do Pedro
+  // (14/11/2026): antes disso mostrava "Variável" pra qualquer um sem
+  // valor_pagamento fixo, mas pra quem tem valor_por_aula configurado dá
+  // pra calcular em vez de deixar genérico.
+  function valorCalculadoPorAulas(profissionalId: string, valorPorAula: number, dataSlotISO: string) {
+    const pagamentosAnteriores = pagamentos.filter((pg) => pg.profissional_id === profissionalId && pg.data_pagamento < dataSlotISO);
+    const ultimoPagamento = pagamentosAnteriores.length > 0
+      ? pagamentosAnteriores.reduce((maisRecente, atual) => (atual.data_pagamento > maisRecente ? atual.data_pagamento : maisRecente), pagamentosAnteriores[0].data_pagamento)
+      : null;
+    const aulasNoPeriodo = aulasConfirmadas.filter((a) =>
+      a.profissional_id === profissionalId && a.data <= dataSlotISO && (ultimoPagamento == null || a.data > ultimoPagamento));
+    return aulasNoPeriodo.length * valorPorAula;
+  }
+
+  const slots: SlotPagamentoProfissional[] = [];
+  for (const p of configs) {
+    const seusPagamentos = pagamentos.filter((pg) => pg.profissional_id === p.id);
+    for (const [dia, valorFixo] of [[p.dia_pagamento_1, p.valor_pagamento_1], [p.dia_pagamento_2, p.valor_pagamento_2]] as const) {
+      if (dia == null) continue;
+      const dataSlotISO = `${mes}-${String(dia).padStart(2, '0')}`;
+      const valor = valorFixo ?? (p.valor_por_aula != null && p.modelo_pagamento === 'por_aula' ? valorCalculadoPorAulas(p.id, p.valor_por_aula, dataSlotISO) : null);
+      slots.push({ profissional: p, dia, valor, pago: seusPagamentos.some((pg) => diaDentroDaJanela(dia, pg.data_pagamento, mes)) });
+    }
+  }
+
+  return { slots, carregando };
 }
 
 function useProfissionais() {
@@ -349,8 +508,26 @@ export function RH() {
   const [verPagamentos, setVerPagamentos] = useState<Profissional | null>(null);
   const ativos = itens.filter((p) => p.ativo);
   const { aPagar, notasPendentes } = useIndicadoresRH(ativos);
-  const { itens: contasAPagar, carregando: carregandoContas } = useContasAPagarEmpresa();
-  const totalContasAPagar = contasAPagar.reduce((soma, c) => soma + c.valor, 0);
+
+  const [mesContas, setMesContas] = useState(mesAtualBrasil);
+  const { aPagar: empresaAPagar, pagos: empresaPagos, carregando: carregandoEmpresa } = useContasAPagarEmpresa(mesContas);
+  const { slots: profSlots, carregando: carregandoProfSlots } = useContasAPagarProfissionais(mesContas);
+  const carregandoContas = carregandoEmpresa || carregandoProfSlots;
+
+  const linhaEmpresa = (c: ContaEmpresaAPagar): LinhaUnificadaConta => ({
+    key: c.id, descricao: c.descricao, categoria: CATEGORIA_LABEL[c.categoria] ?? c.categoria,
+    fornecedor: c.fornecedor || '—', dia: c.dia_vencimento, valor: c.valor, recorrente: c.recorrente,
+  });
+  const linhaProfissional = (s: SlotPagamentoProfissional): LinhaUnificadaConta => ({
+    key: `${s.profissional.id}-${s.dia}`, descricao: `${s.profissional.funcao || 'Profissional'} — pagamento fixo`,
+    categoria: 'Profissional', fornecedor: s.profissional.nome, dia: s.dia, valor: s.valor, recorrente: true,
+  });
+  const porDia = (a: LinhaUnificadaConta, b: LinhaUnificadaConta) => (a.dia ?? 99) - (b.dia ?? 99);
+
+  const contasAPagar = [...empresaAPagar.map(linhaEmpresa), ...profSlots.filter((s) => !s.pago).map(linhaProfissional)].sort(porDia);
+  const contasPagas = [...empresaPagos.map(linhaEmpresa), ...profSlots.filter((s) => s.pago).map(linhaProfissional)].sort(porDia);
+  const totalContasAPagar = contasAPagar.reduce((soma, c) => soma + (c.valor ?? 0), 0);
+  const totalContasPagas = contasPagas.reduce((soma, c) => soma + (c.valor ?? 0), 0);
 
   async function alternarAtivo(p: Profissional) {
     const { error } = await supabase.from('profissionais').update({ ativo: !p.ativo }).eq('id', p.id);
@@ -451,52 +628,105 @@ export function RH() {
         </div>
 
         <Card className="border-border/70 shadow-sm">
-          <CardHeader className="pb-3">
+          <CardHeader className="space-y-3 pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <CalendarClock className="h-4 w-4 text-primary" />
               Contas a pagar
             </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="mb-3 text-xs text-muted-foreground">
-              Despesas da empresa lançadas no Financeiro → Balanço e ainda não conciliadas/pagas (assinaturas,
-              contabilidade, software — não é pagamento de profissional, isso fica na prévia acima).
-              {!carregandoContas && contasAPagar.length > 0 && (
-                <span className="font-semibold text-foreground"> {totalContasAPagar.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} em aberto no total.</span>
-              )}
+            <p className="text-xs text-muted-foreground">
+              Despesas da empresa (Financeiro → Balanço: assinaturas, contabilidade, software) e pagamentos fixos
+              de profissionais (ajuda de custo, por turma de valor estável), separados por competência.
             </p>
+            <div className="space-y-1">
+              <Label htmlFor="contas-mes">Competência</Label>
+              <Input id="contas-mes" type="month" className="w-44" value={mesContas} onChange={(e) => setMesContas(e.target.value)} />
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
             {carregandoContas && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
-            {!carregandoContas && contasAPagar.length === 0 && (
-              <p className="text-sm text-muted-foreground">Nenhuma despesa em aberto lançada no Balanço.</p>
-            )}
-            {contasAPagar.length > 0 && (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-xs uppercase text-muted-foreground">
-                      <th className="p-2">Descrição</th>
-                      <th className="p-2">Categoria</th>
-                      <th className="p-2">Fornecedor</th>
-                      <th className="p-2">Vencimento</th>
-                      <th className="p-2 text-right">Valor</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {contasAPagar.map((c) => (
-                      <tr key={c.id} className="border-b last:border-0">
-                        <td className="p-2 font-medium">{c.descricao}</td>
-                        <td className="p-2 text-muted-foreground">{CATEGORIA_LABEL[c.categoria] ?? c.categoria}</td>
-                        <td className="p-2 text-muted-foreground">{c.fornecedor || '—'}</td>
-                        <td className="p-2 text-muted-foreground whitespace-nowrap">
-                          {c.dia_vencimento ? `Dia ${c.dia_vencimento}` : c.data_competencia ? new Date(`${c.data_competencia}T12:00:00`).toLocaleDateString('pt-BR') : '—'}
-                          {c.recorrente && <Badge variant="outline" className="ml-2 text-[10px]">recorrente</Badge>}
-                        </td>
-                        <td className="p-2 text-right tabular-nums font-semibold">{c.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            {!carregandoContas && (
+              <>
+                <div>
+                  <p className="mb-2 text-sm font-semibold text-foreground">
+                    A pagar
+                    {contasAPagar.length > 0 && (
+                      <span className="ml-2 font-normal text-muted-foreground">{totalContasAPagar.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} em aberto</span>
+                    )}
+                  </p>
+                  {contasAPagar.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Nada em aberto para essa competência.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+                            <th className="p-2">Descrição</th>
+                            <th className="p-2">Categoria</th>
+                            <th className="p-2">Fornecedor</th>
+                            <th className="p-2">Vencimento</th>
+                            <th className="p-2 text-right">Valor</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {contasAPagar.map((c) => (
+                            <tr key={c.key} className="border-b last:border-0">
+                              <td className="p-2 font-medium">{c.descricao}</td>
+                              <td className="p-2 text-muted-foreground">{c.categoria}</td>
+                              <td className="p-2 text-muted-foreground">{c.fornecedor}</td>
+                              <td className="p-2 text-muted-foreground whitespace-nowrap">
+                                {c.dia != null ? `Dia ${c.dia}` : '—'}
+                                {c.recorrente && <Badge variant="outline" className="ml-2 text-[10px]">recorrente</Badge>}
+                              </td>
+                              <td className="p-2 text-right tabular-nums font-semibold">
+                                {c.valor != null ? c.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'Variável'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <p className="mb-2 text-sm font-semibold text-foreground">
+                    Pago
+                    {contasPagas.length > 0 && (
+                      <span className="ml-2 font-normal text-muted-foreground">{totalContasPagas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} nessa competência</span>
+                    )}
+                  </p>
+                  {contasPagas.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Nada pago ainda nessa competência.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+                            <th className="p-2">Descrição</th>
+                            <th className="p-2">Categoria</th>
+                            <th className="p-2">Fornecedor</th>
+                            <th className="p-2">Dia</th>
+                            <th className="p-2 text-right">Valor</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {contasPagas.map((c) => (
+                            <tr key={c.key} className="border-b last:border-0 opacity-70">
+                              <td className="p-2 font-medium">{c.descricao}</td>
+                              <td className="p-2 text-muted-foreground">{c.categoria}</td>
+                              <td className="p-2 text-muted-foreground">{c.fornecedor}</td>
+                              <td className="p-2 text-muted-foreground whitespace-nowrap">{c.dia != null ? `Dia ${c.dia}` : '—'}</td>
+                              <td className="p-2 text-right tabular-nums font-semibold">
+                                {c.valor != null ? c.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'Variável'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </>
             )}
           </CardContent>
         </Card>

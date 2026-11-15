@@ -8251,6 +8251,8 @@ export type Database = {
           comissoes_vendedor: string | null
           contato: string | null
           created_at: string
+          dia_pagamento_1: number | null
+          dia_pagamento_2: number | null
           documento: string | null
           funcao: string | null
           id: string
@@ -8260,6 +8262,8 @@ export type Database = {
           pix: string | null
           updated_at: string
           valor_fixo: number | null
+          valor_pagamento_1: number | null
+          valor_pagamento_2: number | null
           valor_por_aula: number | null
           vinculo: string | null
         }
@@ -8274,6 +8278,8 @@ export type Database = {
           comissoes_vendedor?: string | null
           contato?: string | null
           created_at?: string
+          dia_pagamento_1?: number | null
+          dia_pagamento_2?: number | null
           documento?: string | null
           funcao?: string | null
           id?: string
@@ -8283,6 +8289,8 @@ export type Database = {
           pix?: string | null
           updated_at?: string
           valor_fixo?: number | null
+          valor_pagamento_1?: number | null
+          valor_pagamento_2?: number | null
           valor_por_aula?: number | null
           vinculo?: string | null
         }
@@ -8297,6 +8305,8 @@ export type Database = {
           comissoes_vendedor?: string | null
           contato?: string | null
           created_at?: string
+          dia_pagamento_1?: number | null
+          dia_pagamento_2?: number | null
           documento?: string | null
           funcao?: string | null
           id?: string
@@ -8306,6 +8316,8 @@ export type Database = {
           pix?: string | null
           updated_at?: string
           valor_fixo?: number | null
+          valor_pagamento_1?: number | null
+          valor_pagamento_2?: number | null
           valor_por_aula?: number | null
           vinculo?: string | null
         }
