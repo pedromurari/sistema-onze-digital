@@ -67,7 +67,9 @@ interface Metas {
   cac_estimado: number; gross_margin_pct: number;
 }
 // FONTE: balanco_itens — livro-razão de custos/entradas manuais (categoria
-// 'custo_fixo' | 'custo_variavel' | 'ads' | 'outro_saida' | 'outro_entrada' | 'alocacao').
+// 'custo_fixo' | 'custo_variavel' | 'ads' | 'alocacao'). 'outro_saida'/
+// 'outro_entrada' são carregadas mas não entram no DRE -- são transferência
+// entre contas da própria empresa, não receita/despesa (ver 15/11/2026).
 // Alimenta o DRE Gerencial, Ponto de Equilíbrio e CAC/LTV/Payback desta tela.
 interface BalancoItem {
   id: string; descricao: string; valor: number; tipo: 'entrada' | 'saida';
@@ -764,8 +766,12 @@ export function FinanceiroCFO() {
   const custoFixoMes     = somaCategoria('custo_fixo', 'saida');
   const custoVariavelMes = somaCategoria('custo_variavel', 'saida');
   const adsMes           = somaCategoria('ads', 'saida');
-  const outraSaidaMes    = somaCategoria('outro_saida', 'saida');
-  const outraEntradaMes  = somaCategoria('outro_entrada', 'entrada');
+  // 'outro_saida'/'outro_entrada' ficam de fora do DRE de propósito (achado em
+  // auditoria, 15/11/2026): na prática são as duas pernas da MESMA transferência
+  // interna entre contas da própria empresa (ex: Asaas->C6) ou aporte de sócio --
+  // nunca receita ou despesa real. Entravam aqui como "-saida +entrada" no lucro
+  // líquido, o que inflava/reduzia o resultado toda vez que uma perna aparecia
+  // sem a outra no mesmo mês. Ver mesmo ajuste em DreCompetencia.tsx.
 
   const receitaBrutaDre       = totaisLiquido.bruto;
   const impostosDre           = receitaBrutaDre * ((parametrosCfo.impostos_pct ?? 0) / 100);
@@ -773,7 +779,7 @@ export function FinanceiroCFO() {
   const margemContribuicao    = receitaLiquidaDre - totaisLiquido.taxas - custoVariavelMes - adsMes;
   const margemContribuicaoPct = receitaLiquidaDre > 0 ? (margemContribuicao / receitaLiquidaDre) * 100 : 0;
   const ebitda                = margemContribuicao - custoFixoMes;
-  const lucroLiquidoDre       = ebitda - outraSaidaMes + outraEntradaMes;
+  const lucroLiquidoDre       = ebitda;
 
   // Ponto de equilíbrio: quanto precisa faturar (ou quantas vendas, no ticket
   // médio atual) pra cobrir os custos fixos do mês com a margem de contribuição atual.
@@ -1548,7 +1554,7 @@ export function FinanceiroCFO() {
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <FileText size={14} className="text-muted-foreground" />
                 DRE Gerencial — {format(new Date(), 'MMMM yyyy', { locale: ptBR })}
-                <InfoTip text="Receita Bruta (pagamentos reais) → Impostos → Receita Líquida → Taxas de gateway/Custos variáveis/Ads → Margem de Contribuição → Custos Fixos → EBITDA → outras saídas/entradas → Lucro Líquido. Custos vêm de lançamentos manuais em Balanço (balanco_itens) — se não houver lançamento, o valor aparece zerado." />
+                <InfoTip text="Receita Bruta (pagamentos reais) → Impostos → Receita Líquida → Taxas de gateway/Custos variáveis/Ads → Margem de Contribuição → Custos Fixos → EBITDA = Lucro Líquido. Custos vêm de lançamentos manuais em Balanço (balanco_itens) — se não houver lançamento, o valor aparece zerado. Transferências entre contas da própria empresa (categoria outro_entrada/outro_saida) não entram aqui, não são receita nem despesa." />
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-1.5">
@@ -1561,8 +1567,6 @@ export function FinanceiroCFO() {
               <Row label={`= Margem de Contribuição (${margemContribuicaoPct.toFixed(1)}%)`} value={fmt(margemContribuicao)} bold />
               <Row label="(–) Custos fixos" value={`−${fmt(custoFixoMes)}`} sub="lançados em Balanço, categoria custo_fixo" />
               <Row label="= EBITDA" value={fmt(ebitda)} bold />
-              <Row label="(–) Outras saídas" value={`−${fmt(outraSaidaMes)}`} />
-              <Row label="(+) Outras entradas" value={`+${fmt(outraEntradaMes)}`} />
               <Row label="= Lucro Líquido" value={fmt(lucroLiquidoDre)} bold />
             </CardContent>
           </Card>
@@ -1570,7 +1574,7 @@ export function FinanceiroCFO() {
             <CardContent className="p-4">
               <p className="text-xs text-blue-700 font-medium mb-1">📊 Fonte dos dados</p>
               <p className="text-xs text-blue-600">
-                Receita = pagamentos reais (mesma fonte das abas Receita/Líquido Real). Custos = lançamentos manuais em <strong>Balanço</strong> (categorias custo_fixo/custo_variavel/ads/outro_saida/outro_entrada) para o mês corrente.
+                Receita = pagamentos reais (mesma fonte das abas Receita/Líquido Real). Custos = lançamentos manuais em <strong>Balanço</strong> (categorias custo_fixo/custo_variavel/ads) para o mês corrente. Transferências entre contas da própria empresa (outro_entrada/outro_saida) não entram no resultado.
                 Alíquota de impostos e demais parâmetros editáveis na aba <strong>Config</strong>.
               </p>
             </CardContent>

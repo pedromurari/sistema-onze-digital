@@ -96,11 +96,21 @@ const LABEL_CATEGORIA: Record<string, string> = {
 // Quais categorias de balanco_itens entram em cada bloco do DRE.
 const CAT_CUSTO_DIRETO = ['comissao', 'repasse_investidor', 'custo_produto', 'custo_variavel'] as const;
 const CAT_DESPESA_FIXA = ['pro_labore', 'folha', 'software', 'contabilidade', 'ads', 'adm', 'custo_fixo'] as const;
-const CAT_NAO_OP_SAIDA = ['financeiro', 'investimento', 'distribuicao_lucro', 'alocacao', 'outro_saida'] as const;
+const CAT_NAO_OP_SAIDA = ['financeiro', 'investimento', 'distribuicao_lucro', 'alocacao'] as const;
 // Receita operacional que não passa pelo CRM (pagamentos): eventos NPA, coortes
 // legadas (DKSoft), vendas avulsas. Lançadas como balanco_itens tipo=entrada e
 // somadas na Receita bruta — não no rodapé "não operacional".
-const CAT_RECEITA_EXTRA = ['receita_curso', 'receita_outra', 'matricula', 'outro_entrada'] as const;
+//
+// 'outro_entrada'/'outro_saida' ficam de fora de propósito (achado em auditoria,
+// 15/11/2026): na prática toda vez que são usadas são as duas pernas da MESMA
+// transferência interna entre contas da própria empresa (ex: "saldo do Asaas
+// enviado pro C6" de um lado, "recebido no C6" do outro) ou aporte de sócio
+// -- nunca receita ou despesa real. Contar isso inflava a receita bruta (lado
+// entrada) e reduzia o resultado (lado saída) do mês em que a transferência
+// foi lançada, mesmo a descrição do lançamento dizendo explicitamente "não é
+// receita da empresa". Não é caixa de 2 contas -- é só 1 conta (consolidada),
+// então transferência entre contas da empresa não deveria nem aparecer no DRE.
+const CAT_RECEITA_EXTRA = ['receita_curso', 'receita_outra', 'matricula'] as const;
 
 const mesAtual = () => new Date().toISOString().slice(0, 7);
 const rotuloMes = (ym: string) => {
