@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CalendarClock, Plus, Trash2, Copy } from 'lucide-react';
+import { CalendarClock, Plus, Trash2, Copy, CalendarCheck2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
@@ -8,9 +8,11 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { SectionBar } from '@/components/crm/ui/premium';
+import { AgendarSessaoDialog } from './AgendarSessaoDialog';
 
 interface Terapeuta { id: string; nome: string; }
 interface Slot { id: string; data: string; horario_inicio: string; horario_fim: string; status: 'livre' | 'ocupado'; }
+interface VendaPendente { id: string; cliente_nome: string; pendente: number; }
 
 function hhmm(v: string) { return v.slice(0, 5); }
 function dataBR(iso: string) {
@@ -25,11 +27,13 @@ export function AgendaTab() {
   const [terapeutas, setTerapeutas] = useState<Terapeuta[]>([]);
   const [terapeutaId, setTerapeutaId] = useState('');
   const [slots, setSlots] = useState<Slot[]>([]);
+  const [vendasPendentes, setVendasPendentes] = useState<VendaPendente[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [dataNova, setDataNova] = useState('');
   const [inicioNovo, setInicioNovo] = useState('09:00');
   const [fimNovo, setFimNovo] = useState('10:00');
   const [salvando, setSalvando] = useState(false);
+  const [slotParaAgendar, setSlotParaAgendar] = useState<Slot | null>(null);
 
   useEffect(() => {
     void supabase.from('diva_terapeutas').select('id,nome').order('nome').then(({ data }) => {
@@ -37,6 +41,26 @@ export function AgendaTab() {
       setCarregando(false);
     });
   }, []);
+
+  // Pendências dessa terapeuta: pega as vendas dela em diva_sessoes e
+  // subtrai quantas já têm um horário "ocupado" vinculado (sessao_id) --
+  // o que sobrar é o que ainda falta marcar na agenda.
+  const carregarPendentes = async (id: string) => {
+    const [vendasRes, agendadasRes] = await Promise.all([
+      supabase.from('diva_sessoes').select('id,cliente_nome,quantidade_sessoes').eq('terapeuta_id', id),
+      supabase.from('diva_disponibilidade_dias' as never).select('sessao_id').eq('terapeuta_id', id).eq('status', 'ocupado').not('sessao_id', 'is', null),
+    ]);
+    const contagem: Record<string, number> = {};
+    for (const row of (agendadasRes.data as { sessao_id: string }[] | null) ?? []) {
+      contagem[row.sessao_id] = (contagem[row.sessao_id] ?? 0) + 1;
+    }
+    const pendentes: VendaPendente[] = [];
+    for (const v of (vendasRes.data as { id: string; cliente_nome: string; quantidade_sessoes: number }[] | null) ?? []) {
+      const pendente = Math.max(0, (v.quantidade_sessoes ?? 1) - (contagem[v.id] ?? 0));
+      if (pendente > 0) pendentes.push({ id: v.id, cliente_nome: v.cliente_nome, pendente });
+    }
+    setVendasPendentes(pendentes);
+  };
 
   const carregarSlots = async (id: string) => {
     const { data } = await supabase.from('diva_disponibilidade_dias' as never)
@@ -47,7 +71,16 @@ export function AgendaTab() {
     setSlots((data as Slot[]) ?? []);
   };
 
-  const selecionar = (id: string) => { setTerapeutaId(id); void carregarSlots(id); };
+  const selecionar = (id: string) => {
+    setTerapeutaId(id);
+    void carregarSlots(id);
+    void carregarPendentes(id);
+  };
+
+  const recarregarTudo = () => {
+    void carregarSlots(terapeutaId);
+    void carregarPendentes(terapeutaId);
+  };
 
   const copiarLinkPainel = async (id: string) => {
     const link = `${window.location.origin}/diva/terapeuta/${id}`;
@@ -69,8 +102,10 @@ export function AgendaTab() {
 
   const remover = async (id: string) => {
     await supabase.from('diva_disponibilidade_dias' as never).delete().eq('id', id);
-    await carregarSlots(terapeutaId);
+    recarregarTudo();
   };
+
+  const totalPendente = vendasPendentes.reduce((soma, v) => soma + v.pendente, 0);
 
   return (
     <div className="space-y-4">
@@ -92,6 +127,11 @@ export function AgendaTab() {
               <Button size="sm" variant="outline" className="gap-1.5" onClick={() => void copiarLinkPainel(terapeutaId)}>
                 <Copy className="h-3.5 w-3.5" /> Copiar link do painel
               </Button>
+            )}
+            {terapeutaId && totalPendente > 0 && (
+              <Badge variant="outline" className="bg-amber-100 text-amber-700">
+                {totalPendente} sessão{totalPendente > 1 ? 'ões' : ''} pendente{totalPendente > 1 ? 's' : ''} de agendamento
+              </Badge>
             )}
           </div>
         </CardContent>
@@ -116,6 +156,11 @@ export function AgendaTab() {
                       >
                         {s.status === 'ocupado' ? 'Ocupado (sessão vendida)' : 'Livre'}
                       </Badge>
+                      {s.status === 'livre' && vendasPendentes.length > 0 && (
+                        <Button variant="ghost" size="icon" className="h-7 w-7" title="Agendar venda pendente nesse horário" onClick={() => setSlotParaAgendar(s)}>
+                          <CalendarCheck2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => void remover(s.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
                     </div>
                   ))}
@@ -136,6 +181,17 @@ export function AgendaTab() {
             </CardContent>
           </Card>
         </>
+      )}
+
+      {slotParaAgendar && (
+        <AgendarSessaoDialog
+          mode="porSlot"
+          open={!!slotParaAgendar}
+          onOpenChange={(open) => { if (!open) setSlotParaAgendar(null); }}
+          slot={slotParaAgendar}
+          vendasPendentes={vendasPendentes}
+          onConfirmado={recarregarTudo}
+        />
       )}
     </div>
   );

@@ -79,9 +79,17 @@ async function criarSessaoDivaSeAplicavel(
 
   const { tipo, quantidade } = lerPlanoDivaDoNome(produto.nome);
 
+  // Acha (ou cria) a ficha única do cliente antes de gravar a venda -- se
+  // esse WhatsApp já comprou do Divã antes, cai na mesma ficha em vez de
+  // duplicar (mesmo find-or-create que o registro manual usa).
+  const { data: clienteId } = await supabase.rpc('diva_cliente_vincular', {
+    p_nome: venda.comprador_nome, p_whatsapp: venda.comprador_whatsapp,
+  });
+
   const { error: insertError } = await supabase.from('diva_sessoes').insert({
     cliente_nome: venda.comprador_nome,
     cliente_whatsapp: venda.comprador_whatsapp,
+    cliente_id: clienteId,
     terapeuta_id: terapeuta.id,
     tipo,
     quantidade_sessoes: quantidade,

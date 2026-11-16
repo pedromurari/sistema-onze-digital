@@ -6,6 +6,13 @@
  * sempre do token, nunca de um parâmetro da requisição, pra não dar pra
  * ler o painel de outro terapeuta trocando um id na mão.
  *
+ * Cada venda em diva_sessoes pode ter mais de uma data marcada (pacote de
+ * N sessões = até N horários ocupados em diva_disponibilidade_dias, cada
+ * um com sessao_id apontando pra essa venda) -- por isso a lista de
+ * "sessoes" devolvida aqui tem uma linha por data JÁ marcada, mais uma
+ * linha extra (data_sessao null) se ainda sobrar sessão daquela venda sem
+ * data combinada.
+ *
  * GET com header x-diva-token
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -55,6 +62,12 @@ async function verificarToken(token: string | null, secret: string): Promise<str
   return terapeutaId;
 }
 
+interface Venda {
+  id: string; cliente_nome: string; cliente_whatsapp: string | null; tipo: string;
+  quantidade_sessoes: number; valor_total: number; status_pagamento: string;
+}
+interface Instancia { sessao_id: string; data: string; horario_inicio: string; horario_fim: string; }
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
@@ -75,14 +88,19 @@ Deno.serve(async (req) => {
     const hoje = hojeBrasilia();
     const limite = somarDias(hoje, 30);
 
-    const [sessoesRes, disponibilidadeRes] = await Promise.all([
+    const [vendasRes, instanciasRes, disponibilidadeRes] = await Promise.all([
       supabase
         .from('diva_sessoes')
-        .select('data_sessao, horario_inicio, horario_fim, cliente_nome, cliente_whatsapp, tipo, quantidade_sessoes, valor_total, status_pagamento')
+        .select('id, cliente_nome, cliente_whatsapp, tipo, quantidade_sessoes, valor_total, status_pagamento')
         .eq('terapeuta_id', terapeutaId)
-        .order('data_sessao', { ascending: false, nullsFirst: true })
         .order('created_at', { ascending: false })
         .limit(50),
+      supabase
+        .from('diva_disponibilidade_dias')
+        .select('sessao_id, data, horario_inicio, horario_fim')
+        .eq('terapeuta_id', terapeutaId)
+        .eq('status', 'ocupado')
+        .not('sessao_id', 'is', null),
       supabase
         .from('diva_disponibilidade_dias')
         .select('data, horario_inicio, horario_fim, status')
@@ -93,9 +111,44 @@ Deno.serve(async (req) => {
         .order('horario_inicio'),
     ]);
 
+    const vendas = (vendasRes.data ?? []) as Venda[];
+    const instancias = (instanciasRes.data ?? []) as Instancia[];
+
+    const instanciasPorVenda = new Map<string, Instancia[]>();
+    for (const inst of instancias) {
+      const lista = instanciasPorVenda.get(inst.sessao_id) ?? [];
+      lista.push(inst);
+      instanciasPorVenda.set(inst.sessao_id, lista);
+    }
+
+    // Uma linha por data já marcada dessa venda, mais uma linha "a combinar"
+    // se sobrar sessão do pacote sem horário ainda.
+    const sessoes = vendas.flatMap((v) => {
+      const marcadas = (instanciasPorVenda.get(v.id) ?? []).sort((a, b) => a.data.localeCompare(b.data));
+      const linhas = marcadas.map((inst) => ({
+        data_sessao: inst.data, horario_inicio: inst.horario_inicio, horario_fim: inst.horario_fim,
+        cliente_nome: v.cliente_nome, cliente_whatsapp: v.cliente_whatsapp, tipo: v.tipo,
+        quantidade_sessoes: v.quantidade_sessoes, valor_total: v.valor_total, status_pagamento: v.status_pagamento,
+      }));
+      const pendente = (v.quantidade_sessoes ?? 1) - marcadas.length;
+      if (pendente > 0) {
+        linhas.push({
+          data_sessao: null, horario_inicio: null, horario_fim: null,
+          cliente_nome: v.cliente_nome, cliente_whatsapp: v.cliente_whatsapp, tipo: v.tipo,
+          quantidade_sessoes: pendente, valor_total: v.valor_total, status_pagamento: v.status_pagamento,
+        } as unknown as typeof linhas[number]);
+      }
+      return linhas;
+    }).sort((a, b) => {
+      if (!a.data_sessao && !b.data_sessao) return 0;
+      if (!a.data_sessao) return -1;
+      if (!b.data_sessao) return 1;
+      return b.data_sessao.localeCompare(a.data_sessao);
+    });
+
     return respond(200, {
       terapeuta: { nome: terapeuta.nome, foto_url: terapeuta.foto_url, status: terapeuta.status },
-      sessoes: sessoesRes.data ?? [],
+      sessoes,
       disponibilidade: disponibilidadeRes.data ?? [],
       janela: { hoje, limite },
     });
