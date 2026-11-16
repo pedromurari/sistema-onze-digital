@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 /**
  * Painel público do terapeuta parceiro do Divã IDM (/diva/terapeuta/:id).
@@ -165,10 +166,26 @@ export default function DivaTerapeutaPainel() {
   const [diasSelecionados, setDiasSelecionados] = useState<Date[]>([]);
   const [salvando, setSalvando] = useState(false);
 
+  const [sessaoAberta, setSessaoAberta] = useState<SessaoPainel | null>(null);
+
+  const sessoesComData = useMemo(() => sessoes.filter((s) => !!s.data_sessao), [sessoes]);
+
+  const sessoesPorData = useMemo(() => {
+    const mapa: Record<string, SessaoPainel[]> = {};
+    for (const s of sessoesComData) (mapa[s.data_sessao] ??= []).push(s);
+    return mapa;
+  }, [sessoesComData]);
+
   const diasComSessao = useMemo(
-    () => sessoes.map((s) => { const [y, m, d] = s.data_sessao.split('-').map(Number); return new Date(y, m - 1, d); }),
-    [sessoes],
+    () => sessoesComData.map((s) => { const [y, m, d] = s.data_sessao.split('-').map(Number); return new Date(y, m - 1, d); }),
+    [sessoesComData],
   );
+
+  const abrirFichaPorDia = (dia: Date | undefined) => {
+    if (!dia) return;
+    const lista = sessoesPorData[chaveData(dia)];
+    if (lista?.length) setSessaoAberta(lista[0]);
+  };
 
   const carregarPainel = async (token: string) => {
     setLoading(true);
@@ -304,14 +321,31 @@ export default function DivaTerapeutaPainel() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2"><Receipt className="h-4.5 w-4.5 text-[#C9A227]" /> Minhas sessões</CardTitle>
-            <CardDescription>Sessões vendidas pelo IDM, a partir de hoje</CardDescription>
+            <CardDescription>Sessões vendidas pelo IDM. Toque num dia marcado ou numa sessão pra ver a ficha completa do cliente.</CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col gap-3">
+          <CardContent className="flex flex-col gap-4">
+            {sessoesComData.length > 0 && (
+              <Calendar
+                mode="single"
+                selected={undefined}
+                onSelect={abrirFichaPorDia}
+                disabled={(dia) => !sessoesPorData[chaveData(dia)]}
+                modifiers={{ temSessao: diasComSessao }}
+                modifiersClassNames={{ temSessao: 'relative font-semibold text-foreground after:content-[\'\'] after:absolute after:bottom-1 after:left-1/2 after:-translate-x-1/2 after:w-1.5 after:h-1.5 after:rounded-full after:bg-[#C9A227]' }}
+                className="rounded-xl border mx-auto bg-background"
+              />
+            )}
+
             {sessoes.length === 0 ? (
               <p className="text-sm text-muted-foreground py-2">Nenhuma sessão agendada ainda.</p>
             ) : (
               sessoes.map((s, i) => (
-                <div key={i} className="flex gap-3 border rounded-xl p-3.5 bg-muted/30">
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setSessaoAberta(s)}
+                  className="flex gap-3 border rounded-xl p-3.5 bg-muted/30 text-left hover:border-[#C9A227]/60 hover:bg-muted/50 transition-colors"
+                >
                   <div className="h-10 w-10 rounded-full bg-[#1C2B4A] text-[#F5F0E4] flex items-center justify-center font-semibold text-sm shrink-0">
                     {iniciais(s.cliente_nome)}
                   </div>
@@ -324,7 +358,7 @@ export default function DivaTerapeutaPainel() {
                     </div>
                     <p className="text-sm text-muted-foreground flex items-center gap-1.5 mt-0.5">
                       <CalendarDays className="h-3.5 w-3.5" />
-                      {formatarDataExtensa(s.data_sessao)}
+                      {s.data_sessao ? formatarDataExtensa(s.data_sessao) : 'Data a combinar'}
                       {s.horario_inicio ? ` · ${s.horario_inicio.slice(0, 5)}` : ''}
                     </p>
                     <p className="text-sm text-muted-foreground mt-0.5">
@@ -332,13 +366,8 @@ export default function DivaTerapeutaPainel() {
                       {' · '}
                       {Number(s.valor_total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                     </p>
-                    {s.cliente_whatsapp && (
-                      <a href={linkWhatsapp(s.cliente_whatsapp)} target="_blank" rel="noreferrer" className="text-sm text-emerald-700 hover:underline flex items-center gap-1.5 mt-1.5">
-                        <PhoneCall className="h-3.5 w-3.5" /> {s.cliente_whatsapp}
-                      </a>
-                    )}
                   </div>
-                </div>
+                </button>
               ))
             )}
           </CardContent>
@@ -387,6 +416,67 @@ export default function DivaTerapeutaPainel() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={!!sessaoAberta} onOpenChange={(v) => { if (!v) setSessaoAberta(null); }}>
+        <DialogContent className="max-w-sm">
+          {sessaoAberta && (
+            <>
+              <DialogHeader>
+                <div className="flex items-center gap-3">
+                  <div className="h-12 w-12 rounded-full bg-[#1C2B4A] text-[#F5F0E4] flex items-center justify-center font-semibold shrink-0">
+                    {iniciais(sessaoAberta.cliente_nome)}
+                  </div>
+                  <div>
+                    <DialogTitle className="text-lg leading-tight">{sessaoAberta.cliente_nome}</DialogTitle>
+                    <DialogDescription>Ficha da sessão</DialogDescription>
+                  </div>
+                </div>
+              </DialogHeader>
+
+              <div className="flex flex-col gap-3 pt-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Status</span>
+                  <Badge variant={sessaoAberta.status_pagamento === 'pago' ? 'default' : 'secondary'} className={sessaoAberta.status_pagamento === 'pago' ? 'bg-emerald-600 hover:bg-emerald-600' : ''}>
+                    {sessaoAberta.status_pagamento === 'pago' ? 'Pagamento confirmado' : 'Pagamento pendente'}
+                  </Badge>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Data / horário</span>
+                  <span className="text-sm font-medium">
+                    {sessaoAberta.data_sessao ? formatarDataExtensa(sessaoAberta.data_sessao) : 'A combinar'}
+                    {sessaoAberta.horario_inicio ? ` · ${sessaoAberta.horario_inicio.slice(0, 5)}` : ''}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Plano</span>
+                  <span className="text-sm font-medium">
+                    {sessaoAberta.tipo === 'pacote' ? `Pacote de ${sessaoAberta.quantidade_sessoes} sessões` : 'Sessão avulsa'}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Valor</span>
+                  <span className="text-sm font-medium">{Number(sessaoAberta.valor_total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                </div>
+
+                {sessaoAberta.cliente_whatsapp ? (
+                  <a
+                    href={linkWhatsapp(sessaoAberta.cliente_whatsapp)}
+                    target="_blank" rel="noreferrer"
+                    className="mt-1 flex items-center justify-center gap-2 rounded-lg bg-emerald-600 text-white py-2.5 text-sm font-medium hover:bg-emerald-700 transition-colors"
+                  >
+                    <PhoneCall className="h-4 w-4" /> Chamar {sessaoAberta.cliente_nome.split(' ')[0]} no WhatsApp
+                  </a>
+                ) : (
+                  <p className="text-xs text-muted-foreground text-center">Sem WhatsApp do cliente cadastrado.</p>
+                )}
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
