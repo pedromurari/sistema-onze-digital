@@ -28,6 +28,22 @@ function formatCpf(raw: string): string {
   return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
 }
 
+// Achado real 16/11/2026 (Pedro): o campo de WhatsApp não tinha limite
+// nenhum -- dava pra digitar um número gigante sem formato. Mesmo padrão de
+// máscara do CPF: trava em 13 dígitos (55 + DDD + 9 dígitos do celular),
+// formatando como "+55 (11) 9 0000-0000" conforme o placeholder já mostrava.
+function formatWhatsapp(raw: string): string {
+  const d = raw.replace(/\D/g, '').slice(0, 13);
+  if (!d) return '';
+  let out = `+${d.slice(0, 2)}`;
+  if (d.length > 2) out += ` (${d.slice(2, 4)}`;
+  if (d.length >= 4) out += ')';
+  if (d.length > 4) out += ` ${d.slice(4, 5)}`;
+  if (d.length > 5) out += ` ${d.slice(5, 9)}`;
+  if (d.length > 9) out += `-${d.slice(9, 13)}`;
+  return out;
+}
+
 function StatusBadge({ status }: { status: 'pending' | 'approved' | 'timeout' }) {
   const map = {
     pending: { texto: 'Aguardando pagamento', cor: '#8A6100', bg: '#FFF6DF' },
@@ -86,8 +102,9 @@ export default function MatriculaNPS() {
 
   async function enviar() {
     setErro('');
-    if (!nome.trim() || !whatsapp.trim() || !email.trim() || cpf.replace(/\D/g, '').length !== 11) {
-      setErro('Preencha nome, WhatsApp, e-mail e CPF (válido) pra continuar.');
+    const whatsappDigits = whatsapp.replace(/\D/g, '');
+    if (!nome.trim() || whatsappDigits.length !== 13 || !email.trim() || cpf.replace(/\D/g, '').length !== 11) {
+      setErro('Preencha nome, WhatsApp (com DDD e DDI, ex: +55 11 9 0000-0000), e-mail e CPF (válido) pra continuar.');
       return;
     }
     setEnviando(true);
@@ -95,7 +112,7 @@ export default function MatriculaNPS() {
       const r = await fetch(`${SUPABASE_FUNCTIONS_URL}/nps-matricula-criar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nome, whatsapp, email, cpf }),
+        body: JSON.stringify({ nome, whatsapp: whatsappDigits, email, cpf }),
       });
       const d = await r.json();
       if (!d.ok) { setErro(d.erro || 'Não foi possível gerar o PIX.'); setEnviando(false); return; }
@@ -152,7 +169,7 @@ export default function MatriculaNPS() {
               <div className="field">
                 <label className="field-label" htmlFor="telefone">WhatsApp <span className="field-required">*</span></label>
                 <div className="field-control">
-                  <input type="tel" id="telefone" autoComplete="tel" placeholder="+55 (11) 9 0000-0000" value={whatsapp} onChange={e => setWhatsapp(e.target.value)} />
+                  <input type="tel" id="telefone" maxLength={20} autoComplete="tel" placeholder="+55 (11) 9 0000-0000" value={whatsapp} onChange={e => setWhatsapp(formatWhatsapp(e.target.value))} />
                 </div>
               </div>
               <div className="field span-full">
