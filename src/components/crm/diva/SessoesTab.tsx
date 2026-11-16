@@ -9,7 +9,33 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { SectionBar } from '@/components/crm/ui/premium';
 
-interface Terapeuta { id: string; nome: string; }
+interface Terapeuta { id: string; nome: string; whatsapp: string | null; }
+
+async function avisarTerapeutaNovaVenda(terapeuta: Terapeuta, s: {
+  cliente_nome: string; tipo: string; quantidade: number; valor_total: number;
+}): Promise<boolean> {
+  if (!terapeuta.whatsapp) return false;
+  const primeiroNome = terapeuta.nome.split(' ')[0];
+  const descricaoPacote = s.tipo === 'pacote' ? `pacote de ${s.quantidade} sessões` : `${s.quantidade} sessão${s.quantidade > 1 ? 'ões' : ''} avulsa${s.quantidade > 1 ? 's' : ''}`;
+  const mensagem = `Oi, ${primeiroNome}! Aqui é o time do Divã IDM 💙\n\nSaiu uma venda nova pra você:\n\n👤 Cliente: ${s.cliente_nome}\n📦 ${descricaoPacote}\n💰 Valor: ${formatReal(s.valor_total)}\n\nJá atualizei isso no seu painel (aba "Minhas sessões"). Só falta combinar com ${s.cliente_nome.split(' ')[0]} o dia e horário — pode marcar direto lá na sua agenda, no mesmo link que você já tem.`;
+
+  try {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+    const res = await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+      body: JSON.stringify({ numero: terapeuta.whatsapp, mensagem, instance_name: 'Divã IDM' }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json().catch(() => null);
+    return data?.ok === true;
+  } catch {
+    // Falha no aviso não deve travar o registro da venda -- vendedora já vê
+    // na tela que salvou; o aviso é um extra, não a fonte de verdade.
+    return false;
+  }
+}
 interface LeadDiva { id: string; nome: string; whatsapp: string | null; }
 interface Sessao {
   id: string; cliente_nome: string; cliente_whatsapp: string | null; tipo: string;
@@ -63,7 +89,7 @@ export function SessoesTab() {
     setCarregando(true);
     const [sessoesRes, terapeutasRes, leadsRes] = await Promise.all([
       supabase.from('diva_sessoes').select('*').order('created_at', { ascending: false }),
-      supabase.from('diva_terapeutas').select('id,nome').eq('status', 'aprovado'),
+      supabase.from('diva_terapeutas').select('id,nome,whatsapp').eq('status', 'aprovado'),
       supabase.from('leads').select('id,nome,whatsapp').eq('produto', 'diva_idm').neq('status', 'perdido').order('criado_em', { ascending: false }).limit(100),
     ]);
     setSessoes((sessoesRes.data as Sessao[]) ?? []);
@@ -83,8 +109,9 @@ export function SessoesTab() {
     // select (pacote_3/4/5, personalizado) são só pra UX escolher valor e
     // quantidade rápido; quem decide o tipo real gravado é a quantidade.
     const tipoBanco = quantidade >= 3 ? 'pacote' : 'avulsa';
+    const nomeCliente = clienteNome.trim();
     const { error } = await supabase.from('diva_sessoes').insert({
-      cliente_nome: clienteNome.trim(),
+      cliente_nome: nomeCliente,
       cliente_whatsapp: clienteWhatsapp.trim() || null,
       terapeuta_id: terapeutaId || null,
       lead_id: leadId || null,
@@ -97,6 +124,16 @@ export function SessoesTab() {
     setSalvando(false);
     if (error) { toast.error('Não foi possível registrar a sessão: ' + error.message); return; }
     toast.success('Sessão registrada.');
+
+    const terapeuta = terapeutas.find(t => t.id === terapeutaId);
+    if (terapeuta) {
+      void avisarTerapeutaNovaVenda(terapeuta, { cliente_nome: nomeCliente, tipo: tipoBanco, quantidade, valor_total: total })
+        .then((ok) => {
+          if (ok) toast.success(`Terapeuta avisada no WhatsApp (${terapeuta.nome.split(' ')[0]}).`);
+          else toast.error(`Não consegui avisar ${terapeuta.nome.split(' ')[0]} no WhatsApp. Avisa você mesma.`);
+        });
+    }
+
     setClienteNome(''); setClienteWhatsapp(''); setTerapeutaId(''); setLeadId('');
     escolherPacote(OPCOES_PACOTE[0].label);
     await carregar();

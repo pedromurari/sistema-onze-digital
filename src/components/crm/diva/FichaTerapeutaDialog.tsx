@@ -7,7 +7,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { RefreshCw, Link as LinkIcon, CheckCircle2, PauseCircle, XCircle, Clock } from 'lucide-react';
+import { RefreshCw, Link as LinkIcon, CheckCircle2, PauseCircle, XCircle, Clock, KeyRound } from 'lucide-react';
 
 /**
  * Ficha do terapeuta em pop-up -- mesmo padrão de FichaAlunoResumo.tsx
@@ -84,6 +84,8 @@ export function FichaTerapeutaDialog({ terapeutaId, modo, onClose, onAtualizado 
   const [salvando, setSalvando] = useState(false);
 
   const [linksVendedor, setLinksVendedor] = useState<LinksVendedor | null>(null);
+  const [pinGerado, setPinGerado] = useState<string | null>(null);
+  const [gerandoPin, setGerandoPin] = useState(false);
 
   useEffect(() => {
     let cancelado = false;
@@ -162,6 +164,15 @@ export function FichaTerapeutaDialog({ terapeutaId, modo, onClose, onAtualizado 
     setTerapeuta({ ...terapeuta, foto_url: fotoRascunho.trim() || null });
     setEditandoFoto(false);
     onAtualizado?.();
+  };
+
+  const gerarPin = async () => {
+    if (!terapeuta || gerandoPin) return;
+    setGerandoPin(true);
+    const { data, error } = await supabase.rpc('diva_terapeuta_pin_gerar' as never, { p_terapeuta_id: terapeuta.id } as never);
+    setGerandoPin(false);
+    if (error || !data) { toast.error('Não foi possível gerar o PIN: ' + (error?.message ?? 'erro desconhecido')); return; }
+    setPinGerado(data as unknown as string);
   };
 
   const nomeExibido = modo === 'vendedor' ? linksVendedor?.nome : terapeuta?.nome;
@@ -275,10 +286,33 @@ export function FichaTerapeutaDialog({ terapeutaId, modo, onClose, onAtualizado 
             </section>
 
             <section>
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">Painel de agenda (mandar pro terapeuta)</p>
-              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => void copiar(`${window.location.origin}/diva/terapeuta/${terapeuta.id}`)}>
-                <LinkIcon className="h-3 w-3" /> Copiar link do painel
-              </Button>
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">Painel de agenda (login com WhatsApp + PIN)</p>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => void copiar(`${window.location.origin}/diva/terapeuta/${terapeuta.id}`)}>
+                  <LinkIcon className="h-3 w-3" /> Copiar link do painel
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={gerandoPin} onClick={() => void gerarPin()}>
+                  <KeyRound className="h-3 w-3" /> {pinGerado ? 'Gerar novo PIN' : 'Gerar PIN de acesso'}
+                </Button>
+              </div>
+              {pinGerado && (
+                <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 space-y-1.5">
+                  <p className="text-xs text-emerald-800">
+                    PIN gerado: <span className="font-mono font-bold tracking-widest text-sm">{pinGerado}</span>
+                    {' '}— só aparece essa vez, copia a mensagem e manda pro terapeuta pelo WhatsApp.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1 bg-white"
+                    onClick={() => void copiar(
+                      `Oi, ${terapeuta.nome.split(' ')[0]}! Seu painel do Divã IDM (sessões vendidas + sua agenda) já tá pronto:\n\n${window.location.origin}/diva/terapeuta/${terapeuta.id}\n\nPra entrar, usa o seu WhatsApp + esse PIN: ${pinGerado}\n\nGuarda esse PIN, ele é só seu.`,
+                    )}
+                  >
+                    <LinkIcon className="h-3 w-3" /> Copiar mensagem pronta (link + PIN)
+                  </Button>
+                </div>
+              )}
             </section>
           </div>
         )}

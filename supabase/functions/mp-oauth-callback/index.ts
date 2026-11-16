@@ -9,15 +9,37 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-function redirectComStatus(siteUrl: string, status: 'ok' | 'erro', detalhe?: string) {
-  const url = new URL(siteUrl);
+// Fallback fixo -- a env SITE_URL nunca foi configurada neste projeto, e o
+// fallback antigo ('https://onze-digital.vercel.app') e' um dominio que nao
+// existe mais: toda parceira que conectava direto (sem erro nenhum na troca
+// de token) caia numa 404 "DEPLOYMENT_NOT_FOUND" e achava que tinha dado
+// errado (achado real 16/11/2026, caso da Virginia -- o token dela foi salvo
+// normal, o problema era so esse redirect final).
+const SITE_URL_FALLBACK = 'https://sistema.idmpsi.com.br';
+
+function redirectComStatus(destinoBase: string, status: 'ok' | 'erro', detalhe?: string) {
+  const url = new URL(destinoBase);
   url.searchParams.set('mp', status);
   if (detalhe) url.searchParams.set('mp_detalhe', detalhe);
   return new Response(null, { status: 302, headers: { Location: url.toString() } });
 }
 
 serve(async (req) => {
-  const siteUrl = Deno.env.get('SITE_URL') ?? 'https://onze-digital.vercel.app';
+  const siteUrl = Deno.env.get('SITE_URL') ?? SITE_URL_FALLBACK;
+
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  );
+
+  // Se o parceiro (state) for um terapeuta do Divã, manda pro painel dele em
+  // vez da raiz do site -- confirmacao visual de verdade (ve a propria
+  // disponibilidade/sessoes), nao so um "?mp=ok" na URL que ninguem le.
+  async function destino(parceiroId: string | null): Promise<string> {
+    if (!parceiroId) return siteUrl;
+    const { data } = await supabase.from('diva_terapeutas').select('id').eq('parceiro_id', parceiroId).maybeSingle();
+    return data ? `${siteUrl}/diva/terapeuta/${data.id}` : siteUrl;
+  }
 
   try {
     const url = new URL(req.url);
@@ -25,8 +47,10 @@ serve(async (req) => {
     const parceiroId = url.searchParams.get('state');
     const errorParam = url.searchParams.get('error');
 
-    if (errorParam) return redirectComStatus(siteUrl, 'erro', errorParam);
-    if (!code || !parceiroId) return redirectComStatus(siteUrl, 'erro', 'parametros_ausentes');
+    const destinoBase = await destino(parceiroId);
+
+    if (errorParam) return redirectComStatus(destinoBase, 'erro', errorParam);
+    if (!code || !parceiroId) return redirectComStatus(destinoBase, 'erro', 'parametros_ausentes');
 
     const clientId = Deno.env.get('MP_CLIENT_ID');
     const clientSecret = Deno.env.get('MP_CLIENT_SECRET');
@@ -34,7 +58,7 @@ serve(async (req) => {
 
     if (!clientId || !clientSecret || !redirectUri) {
       console.error('mp-oauth-callback: MP_CLIENT_ID/MP_CLIENT_SECRET/MP_REDIRECT_URI nao configurados');
-      return redirectComStatus(siteUrl, 'erro', 'app_nao_configurada');
+      return redirectComStatus(destinoBase, 'erro', 'app_nao_configurada');
     }
 
     const tokenRes = await fetch('https://api.mercadopago.com/oauth/token', {
@@ -53,13 +77,8 @@ serve(async (req) => {
 
     if (!tokenRes.ok || !tokenData.access_token) {
       console.error('mp-oauth-callback: erro ao trocar code por token', tokenData);
-      return redirectComStatus(siteUrl, 'erro', 'token_invalido');
+      return redirectComStatus(destinoBase, 'erro', 'token_invalido');
     }
-
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-    );
 
     const { error: updateError } = await supabase.from('parceiros').update({
       mp_user_id: tokenData.user_id ?? null,
@@ -71,10 +90,10 @@ serve(async (req) => {
 
     if (updateError) {
       console.error('mp-oauth-callback: erro ao salvar tokens', updateError);
-      return redirectComStatus(siteUrl, 'erro', 'salvar_token');
+      return redirectComStatus(destinoBase, 'erro', 'salvar_token');
     }
 
-    return redirectComStatus(siteUrl, 'ok');
+    return redirectComStatus(destinoBase, 'ok');
   } catch (error) {
     console.error('mp-oauth-callback error:', error);
     return redirectComStatus(siteUrl, 'erro', 'interno');

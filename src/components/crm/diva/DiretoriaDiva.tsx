@@ -1,23 +1,8 @@
 import { useEffect, useState } from 'react';
-import { HeartHandshake, Users, UserPlus, BadgeDollarSign, Link as LinkIcon, Send } from 'lucide-react';
+import { HeartHandshake, Users, UserPlus, BadgeDollarSign, Send } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { StatTile, SectionBar } from '@/components/crm/ui/premium';
-
-interface PlanoPagamento {
-  id: string; nome: string; quantidade_sessoes: number; valor: number;
-  link_pix_boleto: string | null; link_cartao: string | null;
-}
-
-function usePlanosDiva() {
-  const [planos, setPlanos] = useState<PlanoPagamento[]>([]);
-  useEffect(() => {
-    void supabase.from('diva_planos' as never).select('*').order('quantidade_sessoes')
-      .then(({ data }) => setPlanos((data as PlanoPagamento[]) ?? []));
-  }, []);
-  return planos;
-}
 
 interface ProgressoCampanha { nome: string; enviados: number; total: number; }
 
@@ -70,13 +55,16 @@ function useDiretoriaDiva() {
       const [terapeutasRes, leadsRes, sessoesRes] = await Promise.all([
         supabase.from('diva_terapeutas').select('id', { count: 'exact', head: true }).eq('status', 'aprovado'),
         supabase.from('leads').select('id', { count: 'exact', head: true }).eq('produto', 'diva_idm').gte('criado_em', `${inicioMes}T00:00:00`),
-        supabase.from('diva_sessoes').select('valor_total').eq('status_pagamento', 'pago').gte('created_at', `${inicioMes}T00:00:00`),
+        supabase.from('diva_sessoes').select('valor_total, quantidade_sessoes').eq('status_pagamento', 'pago').gte('created_at', `${inicioMes}T00:00:00`),
       ]);
       if (!ativo) return;
       setTerapeutasAprovados(terapeutasRes.count ?? 0);
       setLeadsMes(leadsRes.count ?? 0);
-      const sessoes = (sessoesRes.data as { valor_total: number }[] | null) ?? [];
-      setSessoesFechadasMes(sessoes.length);
+      const sessoes = (sessoesRes.data as { valor_total: number; quantidade_sessoes: number | null }[] | null) ?? [];
+      // "Sessões fechadas" conta sessões de verdade, não vendas -- uma venda de
+      // pacote de 4 sessões soma 4, não 1 (achado real 16/11: pacote da Jocimarah
+      // aparecia como "1 sessão fechada" quando na verdade eram 4).
+      setSessoesFechadasMes(sessoes.reduce((s, x) => s + (x.quantidade_sessoes ?? 1), 0));
       setFaturamentoMes(sessoes.reduce((s, x) => s + Number(x.valor_total), 0));
       setCarregando(false);
     })();
@@ -89,11 +77,10 @@ function useDiretoriaDiva() {
 const DECISOES = [
   { titulo: 'Preço', texto: 'Sessão avulsa R$80 (2 sessões R$160, sem desconto). Pacote a partir de 3 sessões sai com desconto: 3 por R$210, 4 por R$280, 5 por R$350. Split sempre proporcional ao valor cobrado: 62,5% pro terapeuta, 37,5% pro IDM (R$50/R$30 na base de R$80). Pacote exige pagamento integral antes da 1ª sessão — mas nem todo cliente pede o desconto do pacote; muitos pagam a quantidade avulsa que quiserem de forma antecipada, registrar como "Outro valor" nesse caso.' },
   { titulo: 'Credenciamento', texto: 'Curadoria manual — Pedro/Rodrygo aprovam cada terapeuta. Ser assinante em dia da Sociedade IDM é pré-requisito, mas não dá acesso automático.' },
-  { titulo: 'Pagamento e repasse', texto: 'Manual por enquanto (marcar pago/repassado na aba Sessões). Split automático (Asaas Split) é Fase 2 — os campos já existem na tabela.' },
+  { titulo: 'Pagamento e repasse', texto: 'Venda pelo link do terapeuta (aba Terapeutas): split automático via Mercado Pago, a parte dele já cai direto na conta dele. Registro na aba Sessões é só histórico/agenda, não precisa marcar repasse manual pra essas.' },
   { titulo: 'Funil', texto: 'Cliente preenche interesse em /diva → lead criado com produto "diva_idm" → confirmação automática no WhatsApp → vendedor do Divã assume na aba Funil pra negociar pacote ou sessão avulsa.' },
   { titulo: 'Vendedor', texto: 'Camila Murari — já atende a base comercial, assumiu o Divã também (08/11/2026). Atende pelo WhatsApp "Divã IDM" conectado no computador dela.' },
-  { titulo: 'Como vender — passo a passo', texto: 'Lead chega em /diva → recebe boas-vindas automática no WhatsApp. Você assume na aba Funil ("Pegar lead"). Conversa, entende a necessidade, confere a aba Agenda pra ver qual terapeuta tem horário livre. Fechou? Manda o link de pagamento certo (tabela abaixo — PIX/boleto ou cartão) e registra a venda na aba Sessões (mesmo antes de confirmar o pagamento, pra não esquecer). Quando o cliente pagar, marca "Pago" na aba Sessões. O repasse pro terapeuta (a chave PIX dele está na aba Terapeutas) você marca como "Repassado" depois de transferir.' },
-  { titulo: 'Links de pagamento por plano', texto: '1 sessão R$80 · 2 sessões R$160 · Pacote 3 R$210 · Pacote 4 R$280 · Pacote 5 R$350. Cada plano tem 2 links — PIX/boleto (Asaas) e cartão (Mercado Pago). Ainda não tem split automático (depende de conversa com o Asaas), o dinheiro cai na conta principal do IDM e o repasse é manual.' },
+  { titulo: 'Como vender — passo a passo', texto: 'Lead chega em /diva → recebe boas-vindas automática no WhatsApp. Você assume na aba Funil ("Pegar lead"). Conversa, entende a necessidade, confere a aba Agenda pra ver qual terapeuta tem horário livre. Fechou? Pega o link de venda daquele terapeuta específico na aba Terapeutas (split automático via Mercado Pago, cai direto a parte dele) e registra a venda na aba Sessões. O repasse já é automático — não precisa marcar "Repassado" na mão pra vendas feitas por esse link.' },
 ];
 
 export function DiretoriaDiva() {
