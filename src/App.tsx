@@ -21,6 +21,7 @@ const TarefaPublica   = React.lazy(() => import("./pages/TarefaPublica"));
 const ContratoPublico = React.lazy(() => import("./pages/ContratoPublico"));
 const FormularioAluno = React.lazy(() => import("./pages/FormularioAluno"));
 const MatriculaTimeComercial = React.lazy(() => import("./pages/MatriculaTimeComercial"));
+const MatriculaNPS = React.lazy(() => import("./pages/MatriculaNPS"));
 const PnlContrato = React.lazy(() => import("./pages/PnlContrato"));
 const AreaMembros     = React.lazy(() => import("./pages/AreaMembros"));
 const Checkout        = React.lazy(() => import("./pages/Checkout"));
@@ -117,6 +118,11 @@ const App = () => (
                   cobrada na hora -- link separado de propósito, pra não
                   confundir com o link normal de pagamento no ato. */}
               <Route path="/pre-matricula/:vendedor" element={<MatriculaTimeComercial preMatricula />} />
+              {/* Mentoria NPS (Numerologia): link próprio, formulário curto
+                  (nome/whatsapp/email/CPF) -> PIX na hora. Assinatura (sem
+                  wizard de 3 passos, sem N parcelas fixas) -- por isso é
+                  componente separado, não um modo do MatriculaTimeComercial. */}
+              <Route path="/matricula/nps"          element={<MatriculaNPS />} />
               <Route path="/pnl-contrato"           element={<PnlContrato />} />
               {/* Alias curto pra vendedor (ir.idmpsi.com.br/helen, /miguel) --
                   aponta pro mesmo componente que /matricula/:vendedor. Rota

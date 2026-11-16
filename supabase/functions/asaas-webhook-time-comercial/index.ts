@@ -21,6 +21,17 @@
  * Sempre responde 200 rápido em qualquer evento reconhecido/ignorado -- o
  * Asaas re-tenta agressivamente em resposta != 2xx (mesmo princípio do
  * mp-webhook-time-comercial).
+ *
+ * BRANCH "numerologia" (16/11/2026): mesma URL recebe também os pagamentos
+ * da Mentoria NPS (link público /matricula/nps -> nps-matricula-criar),
+ * porque o Asaas só permite UM webhook de pagamento por conta -- não dá pra
+ * cadastrar uma URL separada só pra esse produto. Diferença real: NPS é
+ * assinatura (1 parcela pendente por vez, nunca um lote de 15), então na 1ª
+ * confirmação a gente gera a PRÓXIMA parcela (nunca contrato Autentique,
+ * esse produto não tem) e libera acesso na Área de Membros. Ver
+ * processarPagamentoNumerologia() abaixo -- duplicado de propósito de
+ * nps-matricula-status (mesmo motivo de todo o resto deste arquivo: edge
+ * functions Deno não importam entre si nesse projeto).
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -91,6 +102,156 @@ async function calcularTaxaAsaas(
   if (net == null || !(value > 0) || net > value) return null;
   const taxaMensageria = await buscarTaxaMensageria(invoiceNumber);
   return Math.round((value - net + taxaMensageria) * 100) / 100;
+}
+
+// ── NPS (numerologia) -- assinatura, não lote de parcelas ────────────────────
+// Ver comentário no topo do arquivo. Tudo abaixo até EVENTOS_PAGO só roda pra
+// aluno.produto === 'numerologia'.
+
+function primeiroDiaDoMesNps(iso: string): string {
+  return `${iso.slice(0, 7)}-01`;
+}
+
+// Mesma regra de "dia travado" do resto do projeto (ex.: matricula-pagamento-criar).
+function proximoVencimentoNps(diaVencimento: number): string {
+  const hoje = new Date();
+  const ano = hoje.getFullYear();
+  const mes = hoje.getMonth() + 1; // mês seguinte
+  const ultimoDia = new Date(ano, mes + 1, 0).getDate();
+  const dia = Math.min(diaVencimento, ultimoDia);
+  const d = new Date(ano, mes, dia, 12, 0, 0);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+async function liberarAcessoMembrosNps(supabaseUrl: string, serviceKey: string, alunoId: string) {
+  try {
+    await fetch(`${supabaseUrl}/functions/v1/membros-liberar-acesso-aluno`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${serviceKey}`,
+        apikey: serviceKey,
+        'x-cron-key': Deno.env.get('MEMBROS_LIBERAR_KEY') ?? '',
+      },
+      body: JSON.stringify({ alunoId }),
+    });
+  } catch (e) {
+    console.error('asaas-webhook-time-comercial (NPS): falha ao liberar acesso à área de membros', alunoId, e);
+  }
+}
+
+async function enviarConfirmacaoNps(
+  supabaseUrl: string, serviceKey: string,
+  aluno: { nome: string | null; email: string | null; whatsapp: string | null; cobranca_telefone: string | null },
+  valor: number, mesReferencia: string,
+) {
+  const fnHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey };
+  const financeiroKey = Deno.env.get('FINANCEIRO_INSTANCE_KEY') ?? 'financeiro-only-idm-2026';
+  const nome = aluno.nome || 'aluno(a)';
+  const valorFmt = Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+  const [ano, mes] = mesReferencia.split('-');
+  const meses = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  const refMes = `${meses[Number(mes) - 1]}/${ano}`;
+
+  const numero = aluno.cobranca_telefone || aluno.whatsapp;
+  if (numero) {
+    try {
+      await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
+        method: 'POST', headers: { ...fnHeaders, 'x-financeiro-key': financeiroKey },
+        body: JSON.stringify({
+          numero,
+          mensagem: `✅ Pagamento confirmado, ${nome}!\n\nRecebemos sua mensalidade da *Mentoria NPS* (${refMes}), no valor de *R$ ${valorFmt}*.\n\nA próxima cobrança será gerada automaticamente e enviada por aqui.\n\nQualquer dúvida, é só chamar. Financeiro IDM.`,
+          instance_name: 'Financeiro IDM',
+        }),
+      });
+    } catch (e) {
+      console.error('asaas-webhook-time-comercial (NPS): falha ao enviar whatsapp de confirmação', e);
+    }
+  }
+  if (aluno.email) {
+    try {
+      await fetch(`${supabaseUrl}/functions/v1/email-enviar`, {
+        method: 'POST', headers: fnHeaders,
+        body: JSON.stringify({
+          to: aluno.email, to_name: nome,
+          subject: 'Pagamento confirmado - Mentoria NPS',
+          html: `<h2>Pagamento aprovado! 🎉</h2><p>Oi, ${nome}!</p><p>Confirmamos sua mensalidade da Mentoria NPS (${refMes}), no valor de <strong>R$ ${valorFmt}</strong>.</p><p>Qualquer dúvida, é só responder este e-mail.</p>`,
+        }),
+      });
+    } catch (e) {
+      console.error('asaas-webhook-time-comercial (NPS): falha ao enviar email de confirmação', e);
+    }
+  }
+}
+
+async function gerarProximaParcelaNps(
+  supabase: ReturnType<typeof createClient>,
+  aluno: { id: string; dia_vencimento: number | null; valor_mensalidade: number | null; nome: string | null },
+  numeroParcelaAtual: number,
+) {
+  const { data: fresh } = await supabase.from('alunos').select('asaas_customer_id, status').eq('id', aluno.id).maybeSingle();
+  if (!fresh?.asaas_customer_id || fresh.status !== 'ativo') return;
+
+  const diaVencimento = Number(aluno.dia_vencimento) || 10;
+  const valor = Number(aluno.valor_mensalidade) || 100;
+  const dueDate = proximoVencimentoNps(diaVencimento);
+
+  const { data: pagamentoRow, error: pagErr } = await supabase
+    .from('pagamentos')
+    .insert({
+      aluno_id: aluno.id, produto: 'numerologia', valor,
+      mes_referencia: primeiroDiaDoMesNps(dueDate), data_vencimento: dueDate,
+      numero_parcela: numeroParcelaAtual + 1, status: 'pendente',
+    })
+    .select('id')
+    .single();
+  if (pagErr || !pagamentoRow) {
+    console.error('asaas-webhook-time-comercial (NPS): falha ao criar próxima parcela', aluno.id, pagErr);
+    return;
+  }
+
+  const { ok, data } = await (async () => {
+    const res = await fetch(`${ASAAS_API}/payments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', access_token: ASAAS_API_KEY ?? '' },
+      body: JSON.stringify({
+        customer: fresh.asaas_customer_id, billingType: 'PIX', value: valor, dueDate,
+        description: `Mentoria NPS - mensalidade - ${aluno.nome ?? aluno.id}`,
+        externalReference: pagamentoRow.id,
+      }),
+    });
+    const body = await res.json().catch(() => ({}));
+    return { ok: res.ok, data: body };
+  })();
+  if (!ok || !data?.id) {
+    console.error('asaas-webhook-time-comercial (NPS): falha ao gerar cobrança da próxima parcela', aluno.id, data);
+    return;
+  }
+  await supabase.from('pagamentos').update({
+    asaas_payment_id: String(data.id), link_pagamento_asaas: data.invoiceUrl ?? null,
+  }).eq('id', pagamentoRow.id);
+}
+
+async function processarPagamentoNumerologia(
+  supabase: ReturnType<typeof createClient>,
+  pagamento: { id: string; aluno_id: string; valor: number; numero_parcela: number },
+  aluno: { id: string; nome: string | null; email: string | null; whatsapp: string | null; cobranca_telefone: string | null; dia_vencimento: number | null; valor_mensalidade: number | null },
+  mesReferencia: string,
+) {
+  // mensalidades_pagas já foi recalculado (recontagem, não incremento) pelo
+  // chamador (marcarPago) antes de entrar aqui -- não repetir.
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+  await enviarConfirmacaoNps(supabaseUrl, serviceKey, aluno, Number(pagamento.valor), mesReferencia).catch(e =>
+    console.error('processarPagamentoNumerologia: falha ao enviar confirmação', e));
+
+  if (pagamento.numero_parcela === 1) {
+    await liberarAcessoMembrosNps(supabaseUrl, serviceKey, aluno.id);
+  }
+
+  await gerarProximaParcelaNps(supabase, aluno, Number(pagamento.numero_parcela)).catch(e =>
+    console.error('processarPagamentoNumerologia: falha ao gerar próxima parcela', e));
 }
 
 const EVENTOS_PAGO = new Set(['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED']);
@@ -247,7 +408,7 @@ serve(async (req) => {
 
     const { data: pagamento } = await supabase
       .from('pagamentos')
-      .select('id, aluno_id, valor, numero_parcela, status')
+      .select('id, aluno_id, valor, numero_parcela, status, mes_referencia')
       .eq('asaas_payment_id', String(payment.id))
       .maybeSingle();
 
@@ -265,7 +426,7 @@ serve(async (req) => {
 
       const { data: pagamentoPorRef } = await supabase
         .from('pagamentos')
-        .select('id, aluno_id, valor, numero_parcela, status')
+        .select('id, aluno_id, valor, numero_parcela, status, mes_referencia')
         .eq('id', externalReference)
         .maybeSingle();
 
@@ -289,7 +450,7 @@ serve(async (req) => {
 
 async function marcarPago(
   supabase: ReturnType<typeof createClient>,
-  pagamento: { id: string; aluno_id: string; valor: number; numero_parcela: number; status: string | null },
+  pagamento: { id: string; aluno_id: string; valor: number; numero_parcela: number; status: string | null; mes_referencia?: string | null },
   asaasPaymentId: string,
   netValueDoWebhook?: unknown,
   invoiceNumber?: string | null,
@@ -335,10 +496,34 @@ async function marcarPago(
   if (!jaEstavaPago) {
     const { data: aluno } = await supabase
       .from('alunos')
-      .select('nome, email, whatsapp, cobranca_telefone, cpf, data_nascimento, endereco, cep, cidade_estado, total_mensalidades, produto')
+      .select('nome, email, whatsapp, cobranca_telefone, cpf, data_nascimento, endereco, cep, cidade_estado, total_mensalidades, produto, dia_vencimento, valor_mensalidade, forma_pagamento')
       .eq('id', pagamento.aluno_id)
       .maybeSingle();
     if (aluno) {
+      // NPS (numerologia) é assinatura, não lote de parcelas -- fluxo
+      // totalmente separado (gera a próxima, libera área de membros, sem
+      // contrato Autentique). Ver comentário no topo do arquivo.
+      //
+      // IMPORTANTE: o discriminador não é só produto==='numerologia' --
+      // os 22 alunos NPS que já existiam antes deste link (16/11/2026) têm
+      // forma_pagamento='boleto' e JÁ têm as próprias parcelas 2-10
+      // pré-criadas (plano antigo, de lote fixo). Se esse branch rodasse pra
+      // eles também, geraria uma parcela NOVA em cima das que já existem
+      // (duplicata) toda vez que pagassem. Só o link novo grava
+      // forma_pagamento='pix' (nps-matricula-criar) -- é esse o sinal real
+      // de "assinatura", não o produto sozinho.
+      if ((aluno as any).produto === 'numerologia' && (aluno as any).forma_pagamento === 'pix') {
+        await processarPagamentoNumerologia(
+          supabase,
+          pagamento,
+          { id: pagamento.aluno_id, ...aluno } as any,
+          String(pagamento.mes_referencia ?? new Date().toISOString().slice(0, 10)),
+        ).catch((e) => console.error('asaas-webhook-time-comercial: falha ao processar pagamento NPS', e));
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       await enviarConfirmacoes(supabaseUrl, serviceKey, aluno as any, Number(pagamento.valor), pagamento.numero_parcela, Number((aluno as any).total_mensalidades) || 15).catch((e) =>
         console.error('asaas-webhook-time-comercial: falha ao enviar confirmações', e));
 
