@@ -65,7 +65,9 @@ const cpfValido = (v: string) => {
     const resto = soma % 11;
     return resto < 2 ? 0 : 11 - resto;
   };
-  return calcDigito(11) === digitos[9] && calcDigito(12) === digitos[10];
+  // Mesmo bug do MatriculaTimeComercial.tsx (achado real 16/11/2026): fatorInicial
+  // estava 11/12 em vez de 10/11, rejeitando quase todo CPF válido.
+  return calcDigito(10) === digitos[9] && calcDigito(11) === digitos[10];
 };
 
 const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

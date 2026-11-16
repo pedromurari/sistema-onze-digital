@@ -220,7 +220,12 @@ const cpfValido = (v: string) => {
     const resto = soma % 11;
     return resto < 2 ? 0 : 11 - resto;
   };
-  return calcDigito(11) === digitos[9] && calcDigito(12) === digitos[10];
+  // Achado real 16/11/2026 (Pedro/Helen: "toda venda no cartão dá erro"):
+  // fatorInicial estava 11/12 em vez de 10/11 -- pegava 10 dígitos pra calcular
+  // o 1º dígito verificador (devia pegar só os 9 primeiros), rejeitando quase
+  // todo CPF válido desde que essa validação entrou no ar (12/11/2026). Ninguém
+  // passava da ficha; 0 chamada pro backend de pagamento em 24h confirmou.
+  return calcDigito(10) === digitos[9] && calcDigito(11) === digitos[10];
 };
 
 // ─── Telas auxiliares ───────────────────────────────────────────────────────────
