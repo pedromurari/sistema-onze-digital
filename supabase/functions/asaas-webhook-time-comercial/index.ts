@@ -39,10 +39,42 @@ const ASAAS_API = 'https://api.asaas.com/v3';
 // não vier no corpo, busca em GET /payments/{id}. Sem número confiável, deixa
 // null -- melhor não gravar do que gravar chute (o Balanço/CFO leem taxa_valor
 // pra montar o líquido real).
+//
+// ACHADO EM AUDITORIA (16/11/2026, Pedro reparou no extrato financeiro do
+// Asaas): `netValue` só reflete a "Taxa do Pix"/"Taxa de boleto". O Asaas
+// lança, em ALGUNS pagamentos (não todos -- conferido: 76 de 101 recebidos
+// num período de 45 dias, ~75%), uma SEGUNDA taxa separada, "Taxa de
+// mensageria" (R$0,99), direto no extrato da conta -- não entra no objeto
+// do pagamento nem no `netValue`. Como não é universal, não dá pra somar
+// um valor fixo "no escuro" (tentei isso primeiro e o Pedro corrigiu --
+// teria inflado a taxa de pagamentos que não tiveram a segunda cobrança).
+// Em vez disso, busca de verdade em /financialTransactions se existe uma
+// linha "Taxa de mensageria" citando o número desta fatura, e só soma se
+// achar.
+async function buscarTaxaMensageria(invoiceNumber: string | null): Promise<number> {
+  if (!invoiceNumber || !ASAAS_API_KEY) return 0;
+  try {
+    const hoje = new Date().toISOString().slice(0, 10);
+    const params = new URLSearchParams({ startDate: hoje, endDate: hoje, limit: '100' });
+    const res = await fetch(`${ASAAS_API}/financialTransactions?${params.toString()}`, {
+      headers: { 'Content-Type': 'application/json', access_token: ASAAS_API_KEY },
+    });
+    const data = await res.json().catch(() => ({}));
+    const itens = Array.isArray(data?.data) ? data.data : [];
+    const linha = itens.find((t: { description?: string }) =>
+      /mensageria/i.test(t.description ?? '') && (t.description ?? '').includes(invoiceNumber));
+    return linha ? Math.abs(Number(linha.value) || 0) : 0;
+  } catch (e) {
+    console.error('asaas-webhook-time-comercial: falha ao buscar taxa de mensageria', invoiceNumber, e);
+    return 0;
+  }
+}
+
 async function calcularTaxaAsaas(
   paymentId: string,
   value: number,
   netValueDoWebhook: unknown,
+  invoiceNumber: string | null,
 ): Promise<number | null> {
   let net = typeof netValueDoWebhook === 'number' ? netValueDoWebhook : null;
   if (net == null && ASAAS_API_KEY) {
@@ -57,7 +89,8 @@ async function calcularTaxaAsaas(
     }
   }
   if (net == null || !(value > 0) || net > value) return null;
-  return Math.round((value - net) * 100) / 100;
+  const taxaMensageria = await buscarTaxaMensageria(invoiceNumber);
+  return Math.round((value - net + taxaMensageria) * 100) / 100;
 }
 
 const EVENTOS_PAGO = new Set(['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED']);
@@ -242,10 +275,10 @@ serve(async (req) => {
         });
       }
 
-      return await marcarPago(supabase, pagamentoPorRef, String(payment.id), payment.netValue);
+      return await marcarPago(supabase, pagamentoPorRef, String(payment.id), payment.netValue, payment.invoiceNumber ? String(payment.invoiceNumber) : null);
     }
 
-    return await marcarPago(supabase, pagamento, String(payment.id), payment.netValue);
+    return await marcarPago(supabase, pagamento, String(payment.id), payment.netValue, payment.invoiceNumber ? String(payment.invoiceNumber) : null);
   } catch (error) {
     console.error('asaas-webhook-time-comercial error:', error);
     return new Response(JSON.stringify({ ok: false }), {
@@ -259,11 +292,12 @@ async function marcarPago(
   pagamento: { id: string; aluno_id: string; valor: number; numero_parcela: number; status: string | null },
   asaasPaymentId: string,
   netValueDoWebhook?: unknown,
+  invoiceNumber?: string | null,
 ) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-  const taxaValor = await calcularTaxaAsaas(asaasPaymentId, Number(pagamento.valor), netValueDoWebhook);
+  const taxaValor = await calcularTaxaAsaas(asaasPaymentId, Number(pagamento.valor), netValueDoWebhook, invoiceNumber ?? null);
 
   // UPDATE...WHERE status<>'pago'...RETURNING (não confiar no `pagamento`
   // pré-carregado) de propósito: esse `pagamento` foi lido num SELECT
