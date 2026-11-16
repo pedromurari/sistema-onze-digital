@@ -85,7 +85,6 @@ const DECISOES = [
 
 export function DiretoriaDiva() {
   const { terapeutasAprovados, leadsMes, sessoesFechadasMes, faturamentoMes, carregando } = useDiretoriaDiva();
-  const planos = usePlanosDiva();
   const campanhas = useCampanhasDiva();
 
   return (
@@ -146,44 +145,6 @@ export function DiretoriaDiva() {
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/70 shadow-sm">
-          <CardContent className="p-4 sm:p-5 space-y-3">
-            <SectionBar title="Links de pagamento por plano" icon={LinkIcon} />
-            <p className="text-xs text-muted-foreground">
-              Sem split automático ainda — o valor cai na conta principal do IDM, repasse ao terapeuta é manual (aba Sessões).
-            </p>
-            {planos.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Carregando...</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr className="border-b text-left text-xs uppercase text-muted-foreground">
-                    <th className="p-2">Plano</th><th className="p-2 text-right">Valor</th><th className="p-2">PIX / Boleto</th><th className="p-2">Cartão</th>
-                  </tr></thead>
-                  <tbody>
-                    {planos.map(p => (
-                      <tr key={p.id} className="border-b last:border-0">
-                        <td className="p-2 font-medium">{p.nome}</td>
-                        <td className="p-2 text-right tabular-nums">{formatReal(Number(p.valor))}</td>
-                        <td className="p-2">
-                          {p.link_pix_boleto
-                            ? <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { void navigator.clipboard.writeText(p.link_pix_boleto!); }}>Copiar link</Button>
-                            : <span className="text-xs text-muted-foreground">—</span>}
-                        </td>
-                        <td className="p-2">
-                          {p.link_cartao
-                            ? <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { void navigator.clipboard.writeText(p.link_cartao!); }}>Copiar link</Button>
-                            : <span className="text-xs text-muted-foreground">—</span>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
           </CardContent>
         </Card>
       </div>
