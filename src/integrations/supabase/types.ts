@@ -6680,6 +6680,7 @@ export type Database = {
           id: string
           link_pagamento_asaas: string | null
           link_pagamento_mp: string | null
+          link_pagamento_voomp: string | null
           mes_referencia: string
           mp_payment_id: string | null
           nf_emitida_em: string | null
@@ -6712,6 +6713,7 @@ export type Database = {
           id?: string
           link_pagamento_asaas?: string | null
           link_pagamento_mp?: string | null
+          link_pagamento_voomp?: string | null
           mes_referencia: string
           mp_payment_id?: string | null
           nf_emitida_em?: string | null
@@ -6744,6 +6746,7 @@ export type Database = {
           id?: string
           link_pagamento_asaas?: string | null
           link_pagamento_mp?: string | null
+          link_pagamento_voomp?: string | null
           mes_referencia?: string
           mp_payment_id?: string | null
           nf_emitida_em?: string | null

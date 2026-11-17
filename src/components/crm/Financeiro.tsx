@@ -167,6 +167,7 @@ interface Pagamento {
   created_at: string;
   link_pagamento_asaas?: string | null;
   link_pagamento_mp?: string | null;
+  link_pagamento_voomp?: string | null;
   asaas_payment_id?: string | null;
   conta_recebimento?: string | null;
   nf_status?: string | null;
@@ -1997,7 +1998,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
   };
 
   // Link do boleto da parcela: prioriza Asaas, cai pro Mercado Pago.
-  const linkBoleto = (p: Pagamento) => p.link_pagamento_asaas || p.link_pagamento_mp || null;
+  const linkBoleto = (p: Pagamento) => p.link_pagamento_asaas || p.link_pagamento_mp || p.link_pagamento_voomp || null;
 
   const copiarLinkParcela = (p: Pagamento) => {
     const link = linkBoleto(p);
