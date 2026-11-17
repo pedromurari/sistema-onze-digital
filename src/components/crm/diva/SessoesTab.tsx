@@ -142,8 +142,12 @@ export function SessoesTab() {
       tipo: tipoBanco,
       quantidade_sessoes: quantidade,
       valor_total: total,
-      valor_terapeuta: Math.round(total * (50 / 80) * 100) / 100,
-      valor_idm: Math.round(total * (30 / 80) * 100) / 100,
+      // Terapeuta recebe R$50 fixo por sessão (não percentual) -- com
+      // desconto de pacote, uma % só da sessão avulsa (R$80) deixava a
+      // terapeuta com menos que R$50/sessão. Math.min evita valor_idm
+      // negativo se alguém registrar um total abaixo do piso por engano.
+      valor_terapeuta: Math.min(total, quantidade * 50),
+      valor_idm: Math.max(0, Math.round((total - Math.min(total, quantidade * 50)) * 100) / 100),
     } as never);
     setSalvando(false);
     if (error) { toast.error('Não foi possível registrar a sessão: ' + error.message); return; }

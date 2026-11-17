@@ -100,8 +100,17 @@ export function AgendaTab() {
     await carregarSlots(terapeutaId);
   };
 
-  const remover = async (id: string) => {
-    await supabase.from('diva_disponibilidade_dias' as never).delete().eq('id', id);
+  const remover = async (slot: Slot) => {
+    // Horário "ocupado" está vinculado a uma venda real (sessao_id) -- apagar
+    // direto some com o agendamento sem desfazer nada no resto do sistema e
+    // sem deixar rastro (já aconteceu sem querer). Exige confirmação extra.
+    if (slot.status === 'ocupado') {
+      const confirmado = window.confirm(
+        'Esse horário está ligado a uma sessão vendida. Apagar aqui NÃO cancela a venda, só desmarca a data -- ela volta a aparecer como pendente de agendamento. Tem certeza?'
+      );
+      if (!confirmado) return;
+    }
+    await supabase.from('diva_disponibilidade_dias' as never).delete().eq('id', slot.id);
     recarregarTudo();
   };
 
@@ -161,7 +170,7 @@ export function AgendaTab() {
                           <CalendarCheck2 className="h-3.5 w-3.5" />
                         </Button>
                       )}
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => void remover(s.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => void remover(s)}><Trash2 className="h-3.5 w-3.5" /></Button>
                     </div>
                   ))}
                 </div>

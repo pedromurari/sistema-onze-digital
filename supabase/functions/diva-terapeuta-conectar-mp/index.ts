@@ -13,13 +13,25 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+// Terapeuta sempre recebe R$50 fixo por sessão, não percentual -- com
+// desconto de pacote (preço/sessão cai abaixo de R$80), uma % fixa de
+// 37,5% deixaria a terapeuta com menos que R$50 (foi o que aconteceu
+// com a Jocimarah num pacote de 4). comissao_idm_pct é calculada por
+// plano pra sempre sobrar exatamente R$50/sessão pra terapeuta.
 const PLANOS = [
-  { nome: '1 sessão avulsa', preco: 80 },
-  { nome: '2 sessões avulsas', preco: 160 },
-  { nome: 'Pacote 3 sessões', preco: 210 },
-  { nome: 'Pacote 4 sessões', preco: 280 },
-  { nome: 'Pacote 5 sessões', preco: 350 },
+  { nome: '1 sessão avulsa', preco: 80, sessoes: 1 },
+  { nome: '2 sessões avulsas', preco: 160, sessoes: 2 },
+  { nome: 'Pacote 3 sessões', preco: 210, sessoes: 3 },
+  { nome: 'Pacote 4 sessões', preco: 280, sessoes: 4 },
+  { nome: 'Pacote 5 sessões', preco: 350, sessoes: 5 },
 ];
+
+const VALOR_TERAPEUTA_POR_SESSAO = 50;
+
+function comissaoIdmPct(preco: number, sessoes: number): number {
+  const pisoTerapeuta = sessoes * VALOR_TERAPEUTA_POR_SESSAO;
+  return Math.round(((preco - pisoTerapeuta) / preco) * 10000) / 100;
+}
 
 function erroHtml(msg: string) {
   return new Response(
@@ -67,8 +79,8 @@ serve(async (req) => {
         descricao: `Terapia social Divã IDM -- ${p.nome}, com ${terapeuta.nome}.`,
         preco: p.preco,
         status: 'ativo',
-        comissao_idm_pct: 37.5,
-        comissao_parceiro_pct: 62.5,
+        comissao_idm_pct: comissaoIdmPct(p.preco, p.sessoes),
+        comissao_parceiro_pct: 100 - comissaoIdmPct(p.preco, p.sessoes),
       })),
     );
     if (produtosError) return erroHtml(`Parceiro criado, mas erro ao criar os planos: ${produtosError.message}`);
