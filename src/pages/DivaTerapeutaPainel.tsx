@@ -352,9 +352,13 @@ export default function DivaTerapeutaPainel() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
                       <p className="font-semibold leading-tight">{s.cliente_nome}</p>
-                      <Badge variant={s.status_pagamento === 'pago' ? 'default' : 'secondary'} className={s.status_pagamento === 'pago' ? 'bg-emerald-600 hover:bg-emerald-600' : ''}>
-                        {s.status_pagamento === 'pago' ? 'Confirmada' : 'Pendente'}
-                      </Badge>
+                      {s.tipo === 'reserva' ? (
+                        <Badge variant="secondary">Compromisso</Badge>
+                      ) : (
+                        <Badge variant={s.status_pagamento === 'pago' ? 'default' : 'secondary'} className={s.status_pagamento === 'pago' ? 'bg-emerald-600 hover:bg-emerald-600' : ''}>
+                          {s.status_pagamento === 'pago' ? 'Confirmada' : 'Pendente'}
+                        </Badge>
+                      )}
                     </div>
                     <p className="text-sm text-muted-foreground flex items-center gap-1.5 mt-0.5">
                       <CalendarDays className="h-3.5 w-3.5" />
@@ -362,9 +366,9 @@ export default function DivaTerapeutaPainel() {
                       {s.horario_inicio ? ` · ${s.horario_inicio.slice(0, 5)}` : ''}
                     </p>
                     <p className="text-sm text-muted-foreground mt-0.5">
-                      {s.tipo === 'pacote' ? `Pacote de ${s.quantidade_sessoes} sessões` : 'Sessão avulsa'}
-                      {' · '}
-                      {Number(s.valor_total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      {s.tipo === 'reserva'
+                        ? 'Compromisso pessoal'
+                        : `${s.tipo === 'pacote' ? `Pacote de ${s.quantidade_sessoes} sessões` : 'Sessão avulsa'} · ${Number(s.valor_total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`}
                     </p>
                   </div>
                 </button>
@@ -434,12 +438,19 @@ export default function DivaTerapeutaPainel() {
               </DialogHeader>
 
               <div className="flex flex-col gap-3 pt-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Status</span>
-                  <Badge variant={sessaoAberta.status_pagamento === 'pago' ? 'default' : 'secondary'} className={sessaoAberta.status_pagamento === 'pago' ? 'bg-emerald-600 hover:bg-emerald-600' : ''}>
-                    {sessaoAberta.status_pagamento === 'pago' ? 'Pagamento confirmado' : 'Pagamento pendente'}
-                  </Badge>
-                </div>
+                {sessaoAberta.tipo === 'reserva' ? (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Tipo</span>
+                    <Badge variant="secondary">Compromisso pessoal (não é venda do IDM)</Badge>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Status</span>
+                    <Badge variant={sessaoAberta.status_pagamento === 'pago' ? 'default' : 'secondary'} className={sessaoAberta.status_pagamento === 'pago' ? 'bg-emerald-600 hover:bg-emerald-600' : ''}>
+                      {sessaoAberta.status_pagamento === 'pago' ? 'Pagamento confirmado' : 'Pagamento pendente'}
+                    </Badge>
+                  </div>
+                )}
 
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Data / horário</span>
@@ -449,17 +460,21 @@ export default function DivaTerapeutaPainel() {
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Plano</span>
-                  <span className="text-sm font-medium">
-                    {sessaoAberta.tipo === 'pacote' ? `Pacote de ${sessaoAberta.quantidade_sessoes} sessões` : 'Sessão avulsa'}
-                  </span>
-                </div>
+                {sessaoAberta.tipo !== 'reserva' && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Plano</span>
+                      <span className="text-sm font-medium">
+                        {sessaoAberta.tipo === 'pacote' ? `Pacote de ${sessaoAberta.quantidade_sessoes} sessões` : 'Sessão avulsa'}
+                      </span>
+                    </div>
 
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Valor</span>
-                  <span className="text-sm font-medium">{Number(sessaoAberta.valor_total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
-                </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Valor</span>
+                      <span className="text-sm font-medium">{Number(sessaoAberta.valor_total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                    </div>
+                  </>
+                )}
 
                 {sessaoAberta.cliente_whatsapp ? (
                   <a

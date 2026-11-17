@@ -67,6 +67,11 @@ interface Venda {
   quantidade_sessoes: number; valor_total: number; status_pagamento: string;
 }
 interface Instancia { sessao_id: string; data: string; horario_inicio: string; horario_fim: string; }
+interface LinhaPainel {
+  data_sessao: string | null; horario_inicio: string | null; horario_fim: string | null;
+  cliente_nome: string; cliente_whatsapp: string | null; tipo: string;
+  quantidade_sessoes: number; valor_total: number; status_pagamento: string;
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
@@ -88,7 +93,7 @@ Deno.serve(async (req) => {
     const hoje = hojeBrasilia();
     const limite = somarDias(hoje, 30);
 
-    const [vendasRes, instanciasRes, disponibilidadeRes] = await Promise.all([
+    const [vendasRes, instanciasRes, reservasRes, disponibilidadeRes] = await Promise.all([
       supabase
         .from('diva_sessoes')
         .select('id, cliente_nome, cliente_whatsapp, tipo, quantidade_sessoes, valor_total, status_pagamento')
@@ -101,6 +106,16 @@ Deno.serve(async (req) => {
         .eq('terapeuta_id', terapeutaId)
         .eq('status', 'ocupado')
         .not('sessao_id', 'is', null),
+      // Compromissos que a terapeuta já tinha (agenda dela) e ainda não
+      // viraram venda no sistema -- aparecem igual a uma "sessão", só sem
+      // valor/pagamento, pra ela ver nome e horário no calendário dela.
+      supabase
+        .from('diva_disponibilidade_dias')
+        .select('data, horario_inicio, horario_fim, reservado_nome')
+        .eq('terapeuta_id', terapeutaId)
+        .eq('status', 'ocupado')
+        .is('sessao_id', null)
+        .not('reservado_nome', 'is', null),
       supabase
         .from('diva_disponibilidade_dias')
         .select('data, horario_inicio, horario_fim, status')
@@ -113,6 +128,7 @@ Deno.serve(async (req) => {
 
     const vendas = (vendasRes.data ?? []) as Venda[];
     const instancias = (instanciasRes.data ?? []) as Instancia[];
+    const reservas = (reservasRes.data ?? []) as Array<{ data: string; horario_inicio: string; horario_fim: string; reservado_nome: string }>;
 
     const instanciasPorVenda = new Map<string, Instancia[]>();
     for (const inst of instancias) {
@@ -123,9 +139,9 @@ Deno.serve(async (req) => {
 
     // Uma linha por data já marcada dessa venda, mais uma linha "a combinar"
     // se sobrar sessão do pacote sem horário ainda.
-    const sessoes = vendas.flatMap((v) => {
+    const sessoes: LinhaPainel[] = vendas.flatMap((v) => {
       const marcadas = (instanciasPorVenda.get(v.id) ?? []).sort((a, b) => a.data.localeCompare(b.data));
-      const linhas = marcadas.map((inst) => ({
+      const linhas: LinhaPainel[] = marcadas.map((inst) => ({
         data_sessao: inst.data, horario_inicio: inst.horario_inicio, horario_fim: inst.horario_fim,
         cliente_nome: v.cliente_nome, cliente_whatsapp: v.cliente_whatsapp, tipo: v.tipo,
         quantidade_sessoes: v.quantidade_sessoes, valor_total: v.valor_total, status_pagamento: v.status_pagamento,
@@ -136,10 +152,18 @@ Deno.serve(async (req) => {
           data_sessao: null, horario_inicio: null, horario_fim: null,
           cliente_nome: v.cliente_nome, cliente_whatsapp: v.cliente_whatsapp, tipo: v.tipo,
           quantidade_sessoes: pendente, valor_total: v.valor_total, status_pagamento: v.status_pagamento,
-        } as unknown as typeof linhas[number]);
+        });
       }
       return linhas;
-    }).sort((a, b) => {
+    });
+
+    const linhasReserva: LinhaPainel[] = reservas.map((r) => ({
+      data_sessao: r.data, horario_inicio: r.horario_inicio, horario_fim: r.horario_fim,
+      cliente_nome: r.reservado_nome, cliente_whatsapp: null, tipo: 'reserva',
+      quantidade_sessoes: 1, valor_total: 0, status_pagamento: 'reserva',
+    }));
+
+    const todasAsLinhas = [...sessoes, ...linhasReserva].sort((a, b) => {
       if (!a.data_sessao && !b.data_sessao) return 0;
       if (!a.data_sessao) return -1;
       if (!b.data_sessao) return 1;
@@ -148,7 +172,7 @@ Deno.serve(async (req) => {
 
     return respond(200, {
       terapeuta: { nome: terapeuta.nome, foto_url: terapeuta.foto_url, status: terapeuta.status },
-      sessoes,
+      sessoes: todasAsLinhas,
       disponibilidade: disponibilidadeRes.data ?? [],
       janela: { hoje, limite },
     });

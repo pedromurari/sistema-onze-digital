@@ -11,7 +11,7 @@ import { SectionBar } from '@/components/crm/ui/premium';
 import { AgendarSessaoDialog } from './AgendarSessaoDialog';
 
 interface Terapeuta { id: string; nome: string; }
-interface Slot { id: string; data: string; horario_inicio: string; horario_fim: string; status: 'livre' | 'ocupado'; }
+interface Slot { id: string; data: string; horario_inicio: string; horario_fim: string; status: 'livre' | 'ocupado'; reservado_nome: string | null; sessao_id: string | null; }
 interface VendaPendente { id: string; cliente_nome: string; pendente: number; }
 
 function hhmm(v: string) { return v.slice(0, 5); }
@@ -64,7 +64,7 @@ export function AgendaTab() {
 
   const carregarSlots = async (id: string) => {
     const { data } = await supabase.from('diva_disponibilidade_dias' as never)
-      .select('id,data,horario_inicio,horario_fim,status')
+      .select('id,data,horario_inicio,horario_fim,status,reservado_nome,sessao_id')
       .eq('terapeuta_id', id)
       .gte('data', hoje())
       .order('data').order('horario_inicio');
@@ -106,7 +106,9 @@ export function AgendaTab() {
     // sem deixar rastro (já aconteceu sem querer). Exige confirmação extra.
     if (slot.status === 'ocupado') {
       const confirmado = window.confirm(
-        'Esse horário está ligado a uma sessão vendida. Apagar aqui NÃO cancela a venda, só desmarca a data -- ela volta a aparecer como pendente de agendamento. Tem certeza?'
+        slot.sessao_id
+          ? 'Esse horário está ligado a uma sessão vendida. Apagar aqui NÃO cancela a venda, só desmarca a data -- ela volta a aparecer como pendente de agendamento. Tem certeza?'
+          : `Esse horário está reservado${slot.reservado_nome ? ` pra ${slot.reservado_nome}` : ''} na agenda da terapeuta. Tem certeza que quer apagar?`
       );
       if (!confirmado) return;
     }
@@ -163,7 +165,13 @@ export function AgendaTab() {
                         variant="outline"
                         className={s.status === 'ocupado' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}
                       >
-                        {s.status === 'ocupado' ? 'Ocupado (sessão vendida)' : 'Livre'}
+                        {s.status === 'ocupado'
+                          ? s.sessao_id
+                            ? `Ocupado -- venda IDM${s.reservado_nome ? ` (${s.reservado_nome})` : ''}`
+                            : s.reservado_nome
+                              ? `Ocupado -- ${s.reservado_nome}`
+                              : 'Ocupado'
+                          : 'Livre'}
                       </Badge>
                       {s.status === 'livre' && vendasPendentes.length > 0 && (
                         <Button variant="ghost" size="icon" className="h-7 w-7" title="Agendar venda pendente nesse horário" onClick={() => setSlotParaAgendar(s)}>
