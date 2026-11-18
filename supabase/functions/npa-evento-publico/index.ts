@@ -25,7 +25,7 @@ serve(async (req) => {
 
   const { data, error } = await supabase
     .from('npa_eventos')
-    .select('nome, data_evento, local, valor_ingresso, valor_material_padrao, slogan, professor_convidado, slug, ativo')
+    .select('id, nome, data_evento, local, valor_ingresso, valor_material_padrao, slogan, professor_convidado, slug, ativo')
     .eq('slug', slug)
     .maybeSingle();
 

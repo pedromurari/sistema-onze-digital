@@ -1,0 +1,102 @@
+/* Tema das páginas de captura do NPA (IDM Pelo Brasil Numerologia) --
+   portado do layout real usado nas últimas turmas (idmpelobrasil-22-rio-de-janeiro),
+   não inventado: fundo navy com números flutuando de fundo, full-bleed
+   (sem margens laterais vazias), dourado como cor de destaque. */
+
+.npa-page {
+  position: relative;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0d1420 0%, #1a2436 100%);
+  color: #fff;
+  overflow-x: hidden;
+}
+
+.npa-page::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 20% 50%, rgba(234, 179, 8, 0.04) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(234, 179, 8, 0.04) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.npa-geometric-numbers {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.npa-number-float {
+  position: absolute;
+  font-size: 120px;
+  font-weight: 900;
+  color: #eab308;
+  opacity: 0.025;
+  font-family: system-ui, -apple-system, sans-serif;
+  animation: npa-float 6s ease-in-out infinite;
+}
+.npa-number-float:nth-child(1) { top: 10%; left: 5%; animation-delay: 0s; }
+.npa-number-float:nth-child(2) { top: 30%; right: 10%; animation-delay: .5s; }
+.npa-number-float:nth-child(3) { top: 50%; left: 15%; animation-delay: 1s; }
+.npa-number-float:nth-child(4) { top: 70%; right: 20%; animation-delay: 1.5s; }
+.npa-number-float:nth-child(5) { top: 20%; left: 50%; animation-delay: 2s; }
+.npa-number-float:nth-child(6) { top: 60%; left: 45%; animation-delay: 2.5s; }
+.npa-number-float:nth-child(7) { top: 85%; left: 25%; animation-delay: 3s; }
+.npa-number-float:nth-child(8) { top: 15%; right: 30%; animation-delay: 3.5s; }
+.npa-number-float:nth-child(9) { top: 45%; right: 5%; animation-delay: 4s; }
+
+@keyframes npa-float {
+  0%, 100% { transform: translateY(0) rotate(0deg); opacity: .025; }
+  50% { transform: translateY(-20px) rotate(5deg); opacity: .05; }
+}
+@keyframes npa-shine { to { background-position: 200% center; } }
+@keyframes npa-pulse-button {
+  0%, 100% { transform: scale(1); box-shadow: 0 8px 32px rgba(234,179,8,.5), inset 0 -3px 0 rgba(0,0,0,.2), 0 0 0 3px rgba(234,179,8,.2); }
+  50% { transform: scale(1.02); box-shadow: 0 12px 48px rgba(234,179,8,.7), inset 0 -3px 0 rgba(0,0,0,.3), 0 0 0 5px rgba(234,179,8,.4); }
+}
+
+.npa-hero-headline { font-size: clamp(1.75rem, 4vw, 3.5rem); line-height: 1.2; font-weight: 900; text-align: center; margin: 0 auto 24px; letter-spacing: -0.02em; max-width: 900px; }
+.npa-headline-line { display: block; color: #fff; text-shadow: 0 4px 20px rgba(0,0,0,.8); }
+.npa-headline-line.npa-highlight {
+  background: linear-gradient(135deg, #eab308 0%, #fde047 100%);
+  background-size: 200% auto; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  margin-top: 8px; animation: npa-shine 3s linear infinite;
+}
+@media (max-width: 768px) { .npa-hero-headline { font-size: clamp(1.5rem, 7vw, 2.25rem); padding: 0 12px; } }
+
+.npa-price-shine {
+  background: linear-gradient(90deg, #eab308 0%, #fde047 50%, #eab308 100%);
+  background-size: 200% auto; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  animation: npa-shine 3s linear infinite;
+}
+
+.npa-section-container { background: rgba(255,255,255,.02); border: 1px solid rgba(234,179,8,.1); border-radius: 16px; padding: 48px 24px; margin: 32px auto; max-width: 1200px; backdrop-filter: blur(10px); }
+.npa-section-highlight { border: 2px solid rgba(234,179,8,.3); background: linear-gradient(135deg, rgba(234,179,8,.03) 0%, rgba(26,36,54,.8) 100%); }
+@media (max-width: 768px) { .npa-section-container { padding: 28px 16px; margin: 20px auto; } }
+
+.npa-hover-lift { transition: all .4s cubic-bezier(.4,0,.2,1); }
+.npa-hover-lift:hover { transform: translateY(-8px); box-shadow: 0 16px 48px rgba(0,0,0,.3); }
+
+.npa-pillar {
+  background: linear-gradient(135deg, rgba(234,179,8,.1) 0%, rgba(26,36,54,.5) 100%);
+  border: 2px solid rgba(234,179,8,.2); border-radius: 12px; padding: 32px; position: relative; overflow: hidden;
+}
+
+.npa-video-wrap { width: 100%; max-width: 672px; margin: 0 auto 24px; aspect-ratio: 16/9; border-radius: 16px; overflow: hidden; border: 2px solid rgba(234,179,8,.4); box-shadow: 0 22px 55px rgba(0,0,0,.5); background: #000; position: relative; }
+
+.npa-form-card { width: 100%; max-width: 480px; margin: 0 auto; background: rgba(26,36,54,.5); backdrop-filter: blur(10px); border: 2px solid rgba(234,179,8,.3); border-radius: 16px; padding: 24px; box-shadow: 0 8px 32px rgba(0,0,0,.3); }
+
+.npa-turma-option { width: 100%; padding: 16px; border-radius: 12px; border: 2px solid rgba(255,255,255,.12); background: rgba(255,255,255,.03); text-align: left; transition: all .25s; cursor: pointer; }
+.npa-turma-option:hover { border-color: rgba(234,179,8,.5); }
+.npa-turma-option.npa-selected { border-color: #eab308; background: rgba(234,179,8,.1); }
+
+.npa-cta-button {
+  width: 100%; background: #eab308; color: #0d1420; font-weight: 800; padding: 18px 24px; border-radius: 999px;
+  text-transform: uppercase; letter-spacing: .02em; font-size: 1.05rem; box-shadow: 0 8px 32px rgba(234,179,8,.5), inset 0 -3px 0 rgba(0,0,0,.2), 0 0 0 3px rgba(234,179,8,.2);
+  animation: npa-pulse-button 2s ease-in-out infinite; transition: opacity .2s;
+}
+.npa-cta-button:disabled { opacity: .7; animation: none; cursor: not-allowed; }
