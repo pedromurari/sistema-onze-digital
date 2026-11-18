@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Calendar, MapPin, Phone, Play, User } from 'lucide-react';
@@ -14,9 +14,12 @@ const LOGO = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/turma-assets/l
 const FOTO_RODRYGO = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/turma-assets/rodrygo.png';
 
 // Vídeo real do NPA (Rodrygo falando sobre o IDM Pelo Brasil Numerologia),
-// o mesmo usado na última turma de verdade (Rio #22) -- não é o vídeo de
-// Psicanálise que tinha sido reaproveitado por engano da pasta antiga.
-const VIDEO_YT_ID = 'enYdWdV5zGM';
+// baixado do YouTube da última turma de verdade (Rio #22, enYdWdV5zGM) e
+// subido pro R2 -- não é mais o vídeo de Psicanálise que tinha sido
+// reaproveitado por engano da pasta antiga, nem o embed do YouTube (que
+// expõe sugestões de outros vídeos e sai do nosso controle de avanço).
+const VIDEO_URL = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/npa-assets/video-rodrygo-npa.mp4';
+const VIDEO_POSTER = 'https://img.youtube.com/vi/enYdWdV5zGM/maxresdefault.jpg';
 
 // Links de checkout do Vega -- placeholders até o Pedro criar os produtos e
 // mandar as URLs reais. Troca só os valores aqui quando chegarem.
@@ -60,30 +63,60 @@ function formatarWhatsApp(value: string) {
 }
 
 function VideoPlayer() {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const maxAssistidoRef = useRef(0);
   const [tocando, setTocando] = useState(false);
+  const [progressoPct, setProgressoPct] = useState(0);
+
   return (
-    <div className="npa-video-wrap">
-      {!tocando ? (
-        <button type="button" aria-label="Reproduzir vídeo" className="group relative block h-full w-full" onClick={() => setTocando(true)}>
-          <img src={`https://img.youtube.com/vi/${VIDEO_YT_ID}/maxresdefault.jpg`} alt="Clique para assistir o vídeo" className="h-full w-full object-cover" />
-          <div className="absolute inset-0 bg-black/55 transition-colors group-hover:bg-black/45" />
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4">
-            <span className="flex h-16 w-16 md:h-20 md:w-20 items-center justify-center rounded-full bg-amber-400 shadow-[0_0_20px_rgba(234,179,8,0.4)] transition-transform group-hover:scale-110">
-              <Play className="h-7 w-7 md:h-9 md:w-9 translate-x-0.5 text-[#0d1420] fill-[#0d1420]" />
-            </span>
-            <p className="text-white font-bold text-sm md:text-xl drop-shadow-lg text-center">▶ ASSISTA ANTES DE SE INSCREVER</p>
-          </div>
-        </button>
-      ) : (
-        <iframe
-          className="absolute inset-0 h-full w-full"
-          src={`https://www.youtube.com/embed/${VIDEO_YT_ID}?controls=0&autoplay=1`}
-          title="Vídeo IDM Pelo Brasil Numerologia"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          referrerPolicy="strict-origin-when-cross-origin"
-          allowFullScreen
-        />
+    <div
+      className="npa-video-wrap group cursor-pointer"
+      onClick={() => {
+        const v = videoRef.current;
+        if (!v) return;
+        if (v.paused) v.play().catch(() => {});
+        else v.pause();
+      }}
+    >
+      <video
+        ref={videoRef}
+        src={VIDEO_URL}
+        poster={VIDEO_POSTER}
+        playsInline
+        preload="metadata"
+        className="absolute inset-0 h-full w-full object-cover"
+        onPlay={() => setTocando(true)}
+        onPause={() => setTocando(false)}
+        onTimeUpdate={(e) => {
+          const v = e.currentTarget;
+          const t = v.currentTime;
+          if (t > maxAssistidoRef.current + 1.5) v.currentTime = maxAssistidoRef.current;
+          else if (t > maxAssistidoRef.current) maxAssistidoRef.current = t;
+          if (v.duration) setProgressoPct((v.currentTime / v.duration) * 100);
+        }}
+        onSeeking={(e) => {
+          const v = e.currentTarget;
+          if (v.currentTime > maxAssistidoRef.current + 0.5) v.currentTime = maxAssistidoRef.current;
+        }}
+        onSeeked={(e) => {
+          const v = e.currentTarget;
+          if (v.currentTime > maxAssistidoRef.current + 0.5) v.currentTime = maxAssistidoRef.current;
+        }}
+      />
+      {/* Sem barra de progresso arrastável de propósito -- só play/pause
+          (clique em qualquer lugar do vídeo), pra ninguém pular o teaser
+          pra frente. Barra abaixo é só visual. */}
+      {!tocando && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 bg-black/35 transition-colors group-hover:bg-black/25">
+          <span className="flex h-16 w-16 md:h-20 md:w-20 items-center justify-center rounded-full bg-amber-400 shadow-[0_0_20px_rgba(234,179,8,0.4)] transition-transform group-hover:scale-110">
+            <Play className="h-7 w-7 md:h-9 md:w-9 translate-x-0.5 text-[#0d1420] fill-[#0d1420]" />
+          </span>
+          <p className="text-white font-bold text-sm md:text-xl drop-shadow-lg text-center">▶ ASSISTA ANTES DE SE INSCREVER</p>
+        </div>
       )}
+      <div className="absolute left-0 right-0 bottom-0 h-1 bg-black/40 pointer-events-none">
+        <div className="h-full bg-amber-400" style={{ width: `${progressoPct}%` }} />
+      </div>
     </div>
   );
 }
