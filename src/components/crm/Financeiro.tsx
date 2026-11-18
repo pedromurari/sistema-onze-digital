@@ -287,6 +287,14 @@ const deriveAlunoStatus = (
   mensalidadesPagas?: number | null,
 ): Aluno['status'] => {
   if (previousStatus === 'cancelado' || previousStatus === 'concluido') return previousStatus;
+  // Já pagou pelo menos a 1ª parcela: nunca força de volta pra pré-matrícula,
+  // mesmo com data_matricula (a data PROGRAMADA) ainda no futuro -- achado real
+  // 2026-11-17 (Lorena): ela pagou antes da data prevista e esta tela ficava
+  // revertendo o status pra pré-matrícula sozinha a cada vez que carregava,
+  // porque o teste de data futura rodava antes do teste de pagamento.
+  if (mensalidadesPagas != null && mensalidadesPagas >= 1) {
+    return previousStatus === 'pre_matricula' ? 'ativo' : (previousStatus || 'ativo');
+  }
   if (isFutureDate(dataMatricula)) return 'pre_matricula';
   // Só vira Ativo quando a 1ª parcela foi paga -- a data chegar sozinha não basta
   // (2026-09-21: pré-matrículas do time comercial viravam "ativo" sem pagar nada).
@@ -2014,35 +2022,23 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
     return `Oi, ${nome}! 😊\n\nAqui é o *Financeiro do Instituto Despertamente*.\n\nSegue o boleto da *parcela ${p.numero_parcela}/${total}*, com *vencimento em ${safeDate(p.data_vencimento)}* — ${formatCurrency(p.valor)}:\n👉 ${link}\n\nQualquer dúvida, é só chamar por aqui. 🙏`;
   };
 
-  // Envia a cobrança da parcela pelo WhatsApp do Financeiro (disp3) e registra
-  // no histórico (cobranca_logs) -- mesma via que a cobrança automática usa,
-  // marcada como manual.
+  // Envia a cobrança da parcela pelo WhatsApp do Financeiro via
+  // cobranca-manual-enviar -- essa function (não o wpp-enviar direto) porque
+  // a instância do financeiro exige uma chave que só pode viver no servidor;
+  // ela também cuida de registrar o cobranca_logs e marcar a parcela como
+  // contatada, então não duplicamos isso aqui (achado 18/11/2026: o código
+  // antigo chamava o wpp-enviar direto do navegador sem essa chave, e por
+  // isso o botão estava silenciosamente quebrado desde o bloqueio de 03/11).
   const enviarCobrancaParcela = async () => {
     if (!cobrarParcela || !alunoDetail) return;
-    const numero = alunoDetail.whatsapp;
-    if (!numero) { toast({ variant: 'destructive', title: 'Sem telefone', description: 'O aluno não tem WhatsApp cadastrado.' }); return; }
+    if (!alunoDetail.whatsapp) { toast({ variant: 'destructive', title: 'Sem telefone', description: 'O aluno não tem WhatsApp cadastrado.' }); return; }
     const mensagem = mensagemCobrancaParcela(cobrarParcela);
     setEnviandoCobranca(true);
     try {
-      const { data, error } = await supabase.functions.invoke('wpp-enviar', {
-        body: { numero, mensagem, instance_name: 'disp3' },
+      const { data, error } = await supabase.functions.invoke('cobranca-manual-enviar', {
+        body: { pagamento_id: cobrarParcela.id, mensagem },
       });
-      if (error || (data && data.ok === false)) throw new Error(error?.message || data?.error || 'Falha no envio');
-
-      await supabase.from('cobranca_logs').insert({
-        aluno_id: alunoDetail.id,
-        pagamento_id: cobrarParcela.id,
-        aluno_nome: alunoDetail.nome || '',
-        telefone: String(numero),
-        mensagem,
-        template_nome: 'Cobrança manual (Financeiro)',
-        template_tipo: 'manual',
-        status: 'enviado',
-        manual: true,
-        enviado_em: new Date().toISOString(),
-      });
-
-      await supabase.from('pagamentos').update({ cobranca_contatado_em: new Date().toISOString(), canal_cobranca: 'Financeiro' }).eq('id', cobrarParcela.id);
+      if (error || (data && data.ok === false)) throw new Error(error?.message || data?.erro || 'Falha no envio');
 
       toast({ title: 'Cobrança enviada', description: `Parcela ${cobrarParcela.numero_parcela} pelo WhatsApp do Financeiro` });
       setCobrarParcela(null);
