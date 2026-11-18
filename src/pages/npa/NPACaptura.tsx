@@ -19,7 +19,10 @@ const FOTO_RODRYGO = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/turma-
 // reaproveitado por engano da pasta antiga, nem o embed do YouTube (que
 // expõe sugestões de outros vídeos e sai do nosso controle de avanço).
 const VIDEO_URL = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/npa-assets/video-rodrygo-npa.mp4';
-const VIDEO_POSTER = 'https://img.youtube.com/vi/enYdWdV5zGM/maxresdefault.jpg';
+// hqdefault (480x360) em vez de maxresdefault (1920x1080, ~10x mais pesado) --
+// a imagem só aparece atrás do botão de play num card de 672px no máximo,
+// não precisa de resolução full HD pra isso.
+const VIDEO_POSTER = 'https://img.youtube.com/vi/enYdWdV5zGM/hqdefault.jpg';
 
 // Links de checkout do Vega -- placeholders até o Pedro criar os produtos e
 // mandar as URLs reais. Troca só os valores aqui quando chegarem.
@@ -321,7 +324,7 @@ export default function NPACaptura() {
       <section className="relative z-10 px-4 py-6 md:py-12">
         <div className="max-w-6xl mx-auto">
           <div className="flex justify-center mb-8">
-            <img src={LOGO} alt="Instituto DespertaMente" className="h-20 md:h-28 w-auto object-contain" />
+            <img src={LOGO} alt="Instituto DespertaMente" className="h-20 md:h-28 w-auto object-contain" fetchPriority="high" decoding="async" />
           </div>
 
           <div className="text-center mb-8">
@@ -380,7 +383,7 @@ export default function NPACaptura() {
 
       <section className="relative z-10 px-4">
         <div className="npa-section-container text-center max-w-4xl">
-          <img src={LOGO} alt="Instituto DespertaMente" className="h-20 w-auto object-contain mx-auto mb-6" />
+          <img src={LOGO} alt="Instituto DespertaMente" className="h-20 w-auto object-contain mx-auto mb-6" loading="lazy" decoding="async" />
           <h2 className="text-2xl md:text-4xl font-bold text-white mb-6">QUEM ESTÁ POR TRÁS DESTE PROJETO?</h2>
           <div className="text-lg text-slate-300 space-y-4 leading-relaxed">
             <p>O Instituto DespertaMente é referência em desenvolvimento humano, integrando Psicanálise, PNL, Hipnose e Numerologia Pitagórica Sistêmica.</p>
@@ -395,7 +398,7 @@ export default function NPACaptura() {
           <h2 className="text-2xl md:text-4xl font-bold text-center text-white mb-10">CONHEÇA SEU PROFESSOR</h2>
           <div className="flex flex-col md:flex-row items-center gap-8 md:gap-12">
             <div className="flex-shrink-0 text-center">
-              <img src={FOTO_RODRYGO} alt="Rodrygo Murari" className="w-56 h-56 md:w-72 md:h-72 rounded-2xl object-cover border-4 border-amber-400/30 shadow-2xl mx-auto" />
+              <img src={FOTO_RODRYGO} alt="Rodrygo Murari" className="w-56 h-56 md:w-72 md:h-72 rounded-2xl object-cover border-4 border-amber-400/30 shadow-2xl mx-auto" loading="lazy" decoding="async" />
               <p className="text-xl font-bold text-white mt-4">Rodrygo Murari</p>
               <p className="text-amber-400 font-semibold">Fundador e Professor Especialista</p>
             </div>
@@ -496,7 +499,7 @@ export default function NPACaptura() {
 
       <footer className="relative z-10 px-4 py-12 border-t border-white/10 text-center">
         <div className="max-w-3xl mx-auto space-y-5">
-          <img src={LOGO} alt="Instituto DespertaMente" className="h-14 w-auto object-contain mx-auto" />
+          <img src={LOGO} alt="Instituto DespertaMente" className="h-14 w-auto object-contain mx-auto" loading="lazy" decoding="async" />
           <p className="text-lg font-semibold text-white">Instituto DespertaMente</p>
           <p className="text-slate-400">Transformando vidas através do autoconhecimento</p>
           <div className="space-y-1 text-slate-400 text-sm">
