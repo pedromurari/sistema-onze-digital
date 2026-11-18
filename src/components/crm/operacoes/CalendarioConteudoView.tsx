@@ -171,6 +171,7 @@ function ContentCard({
 }
 
 function ContentFormFields({ form, onChange }: { form: ContentForm; onChange: (next: ContentForm) => void }) {
+  const ehVideoLongo = form.plataforma === 'youtube' && form.formato === 'video';
   return (
     <div className="space-y-3">
       <div>
@@ -213,19 +214,21 @@ function ContentFormFields({ form, onChange }: { form: ContentForm; onChange: (n
       <div>
         <Label>Legenda / copy (Instagram)</Label>
         <Textarea rows={4} maxLength={5000} value={form.legenda} onChange={event => onChange({ ...form, legenda: event.target.value })} />
+        {ehVideoLongo && <p className="mt-1 text-xs text-muted-foreground">Vídeo longo do YouTube não usa este campo — a copy vai no bloco do YouTube abaixo.</p>}
       </div>
       <div className="rounded-xl border border-border p-3 space-y-3">
         <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          <Youtube className="h-4 w-4 text-red-600" /> YouTube Shorts
+          <Youtube className="h-4 w-4 text-red-600" /> {ehVideoLongo ? 'YouTube — vídeo longo' : 'YouTube Shorts'}
         </p>
         <div>
-          <Label htmlFor="conteudo-yt-titulo">Título do Short</Label>
+          <Label htmlFor="conteudo-yt-titulo">{ehVideoLongo ? 'Título do vídeo' : 'Título do Short'}</Label>
           <Input id="conteudo-yt-titulo" maxLength={100} placeholder="Até 100 caracteres" value={form.titulo_youtube} onChange={event => onChange({ ...form, titulo_youtube: event.target.value })} />
           <p className="mt-1 text-xs text-muted-foreground">{form.titulo_youtube.length}/100</p>
         </div>
         <div>
-          <Label htmlFor="conteudo-yt-descricao">Descrição do Short</Label>
-          <Textarea id="conteudo-yt-descricao" rows={4} maxLength={5000} value={form.descricao_youtube} onChange={event => onChange({ ...form, descricao_youtube: event.target.value })} />
+          <Label htmlFor="conteudo-yt-descricao">{ehVideoLongo ? 'Descrição do vídeo (com capítulos)' : 'Descrição do Short'}</Label>
+          <Textarea id="conteudo-yt-descricao" rows={ehVideoLongo ? 14 : 4} maxLength={5000} value={form.descricao_youtube} onChange={event => onChange({ ...form, descricao_youtube: event.target.value })} />
+          <p className="mt-1 text-xs text-muted-foreground">{form.descricao_youtube.length}/5000</p>
         </div>
       </div>
       <div>
