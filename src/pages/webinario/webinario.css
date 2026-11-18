@@ -418,6 +418,10 @@
 .iw-replica-event-box strong { color: var(--iw-primary); font-size: .9rem; letter-spacing: .12em; }
 .iw-replica-event-box span { font-size: 1.15rem; font-weight: 700; }
 .iw-replica-event-box b { color: var(--iw-primary); font-size: 1rem; }
+.iw-replica-countdown { display: flex; justify-content: center; gap: 10px; margin: -24px auto 40px; }
+.iw-replica-countdown > div { width: 68px; padding: 10px 0; border-radius: 10px; border: 1px solid rgba(248,183,62,.3); background: rgba(10,22,48,.75); text-align: center; }
+.iw-replica-countdown strong { display: block; font-size: 1.4rem; font-weight: 800; color: var(--iw-primary); font-variant-numeric: tabular-nums; }
+.iw-replica-countdown span { display: block; font-size: .65rem; letter-spacing: .08em; text-transform: uppercase; color: #9aa4b8; margin-top: 2px; }
 .iw-replica-media { width: min(100%, 672px); margin: 0 auto 40px; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 16px; background: #000; border: 1px solid rgba(255,255,255,.15); box-shadow: 0 22px 55px rgba(0,0,0,.5); }
 .iw-replica-media video { display: block; width: 100%; height: 100%; object-fit: contain; }
 /* Player customizado sem barra de progresso arrastável -- só play/pause

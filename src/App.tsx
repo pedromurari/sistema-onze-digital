@@ -42,6 +42,7 @@ const DivaConfirmacao  = React.lazy(() => import("./pages/DivaConfirmacao"));
 const DivaTerapeutaPainel = React.lazy(() => import("./pages/DivaTerapeutaPainel"));
 const TurmaCaptura     = React.lazy(() => import("./pages/turma/TurmaCaptura"));
 const TurmaObrigado    = React.lazy(() => import("./pages/turma/TurmaObrigado"));
+const NPACaptura       = React.lazy(() => import("./pages/npa/NPACaptura"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -140,6 +141,7 @@ const App = () => (
               <Route path="/webinario/oferta/:slug"       element={<WebinarioOferta />} />
               <Route path="/turma/:slug"                  element={<TurmaCaptura />} />
               <Route path="/turma/:slug/obrigado"         element={<TurmaObrigado />} />
+              <Route path="/npa/:slug"                    element={<NPACaptura />} />
               <Route path="/workshop/:slug"               element={<WorkshopCaptura />} />
               <Route path="/workshop/confirmacao/:inscricaoId" element={<WorkshopConfirmacao />} />
               <Route path="/diva"                         element={<DivaCaptura />} />
