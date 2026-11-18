@@ -42,6 +42,8 @@ export interface ConteudoCalendario {
   data_publicacao: string | null;
   status: string | null;
   legenda?: string | null;
+  titulo_youtube?: string | null;
+  descricao_youtube?: string | null;
   observacoes?: string | null;
   texto_peca?: string | null;
   link?: string | null;
@@ -61,6 +63,8 @@ interface ContentForm {
   status: ContentStatus;
   data_publicacao: string;
   legenda: string;
+  titulo_youtube: string;
+  descricao_youtube: string;
   observacoes: string;
   texto_peca: string;
   link: string;
@@ -107,6 +111,8 @@ const emptyForm = (date = ''): ContentForm => ({
   status: 'ideia',
   data_publicacao: date,
   legenda: '',
+  titulo_youtube: '',
+  descricao_youtube: '',
   observacoes: '',
   texto_peca: '',
   link: '',
@@ -205,8 +211,22 @@ function ContentFormFields({ form, onChange }: { form: ContentForm; onChange: (n
         <Input type="url" maxLength={2000} placeholder="https://drive.google.com/..." value={form.link} onChange={event => onChange({ ...form, link: event.target.value })} />
       </div>
       <div>
-        <Label>Legenda / copy</Label>
+        <Label>Legenda / copy (Instagram)</Label>
         <Textarea rows={4} maxLength={5000} value={form.legenda} onChange={event => onChange({ ...form, legenda: event.target.value })} />
+      </div>
+      <div className="rounded-xl border border-border p-3 space-y-3">
+        <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <Youtube className="h-4 w-4 text-red-600" /> YouTube Shorts
+        </p>
+        <div>
+          <Label htmlFor="conteudo-yt-titulo">Título do Short</Label>
+          <Input id="conteudo-yt-titulo" maxLength={100} placeholder="Até 100 caracteres" value={form.titulo_youtube} onChange={event => onChange({ ...form, titulo_youtube: event.target.value })} />
+          <p className="mt-1 text-xs text-muted-foreground">{form.titulo_youtube.length}/100</p>
+        </div>
+        <div>
+          <Label htmlFor="conteudo-yt-descricao">Descrição do Short</Label>
+          <Textarea id="conteudo-yt-descricao" rows={4} maxLength={5000} value={form.descricao_youtube} onChange={event => onChange({ ...form, descricao_youtube: event.target.value })} />
+        </div>
       </div>
       <div>
         <Label htmlFor="conteudo-roteiro">Roteiro completo / falas de gravação</Label>
@@ -278,6 +298,8 @@ export function CalendarioConteudoView({ conteudos, onLoadData, createRequest = 
       status: normalizeStatus(content.status),
       data_publicacao: content.data_publicacao?.slice(0, 10) ?? '',
       legenda: content.legenda ?? '',
+      titulo_youtube: content.titulo_youtube ?? '',
+      descricao_youtube: content.descricao_youtube ?? '',
       observacoes: content.observacoes ?? '',
       texto_peca: content.texto_peca ?? '',
       link: content.link ?? '',
@@ -303,6 +325,8 @@ export function CalendarioConteudoView({ conteudos, onLoadData, createRequest = 
       status: form.status,
       data_publicacao: form.data_publicacao,
       legenda: form.legenda.trim() || null,
+      titulo_youtube: form.titulo_youtube.trim() || null,
+      descricao_youtube: form.descricao_youtube.trim() || null,
       observacoes: form.observacoes.trim() || null,
       texto_peca: form.texto_peca.trim() || null,
       link: form.link.trim() || null,
