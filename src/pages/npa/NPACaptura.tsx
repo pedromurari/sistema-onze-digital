@@ -146,12 +146,12 @@ export default function NPACaptura() {
         <div className="iw-replica-orb iw-replica-orb-two" aria-hidden="true" />
         <div className="iw-replica-hero-inner">
           <h1><span>IDM Pelo Brasil</span><br /><em>Numerologia em {cidade}</em></h1>
-          <h2>Um evento presencial e gratuito* para você descobrir o seu Caminho de Vida, o número do seu nome e o ciclo que você está vivendo — com o psicanalista Rodrygo Murari.</h2>
+          <h2>Um evento presencial para você descobrir o seu Caminho de Vida, o número do seu nome e o ciclo que você está vivendo — com o psicanalista Rodrygo Murari.</h2>
 
           <div className="iw-replica-event-box">
             <strong>NPA · NUMEROLOGIA PRESENCIAL · {cidade.toUpperCase()}</strong>
             <span>{dataFormatada?.diaSemana}, {dataFormatada?.curta} · Manhã (09h-13h) ou Tarde (14h-18h)</span>
-            <b>INVESTIMENTO SIMBÓLICO: R$ {evento.valor_ingresso.toFixed(2).replace('.', ',')} (garante sua vaga)</b>
+            <b>INGRESSO: R$ {evento.valor_ingresso.toFixed(2).replace('.', ',')}</b>
           </div>
 
           <ContadorRegressivo alvo={evento.data_evento} />
@@ -259,7 +259,7 @@ export default function NPACaptura() {
           <div className="iw-replica-pillar-grid">
             <article>
               <div className="iw-replica-pillar-top"><span aria-hidden="true">①</span><h3>Garanta sua vaga aqui</h3></div>
-              <div className="iw-replica-pillar-bottom"><p>Investimento simbólico de R$ {evento.valor_ingresso.toFixed(2).replace('.', ',')}, pago no ato — é o que garante seu lugar.</p></div>
+              <div className="iw-replica-pillar-bottom"><p>Ingresso de R$ {evento.valor_ingresso.toFixed(2).replace('.', ',')}, pago no ato — é o que garante seu lugar.</p></div>
             </article>
             <article>
               <div className="iw-replica-pillar-top"><span aria-hidden="true">②</span><h3>Entre no grupo VIP</h3></div>
@@ -282,9 +282,9 @@ export default function NPACaptura() {
           <img src={IDM_LOGO} alt="Instituto Despertamente" loading="lazy" />
           <h2>Instituto <em>Despertamente</em></h2>
           <p>
-            O Instituto Despertamente é uma escola de desenvolvimento humano especializada no ensino da psicanálise. O IDM Pelo Brasil leva esse conteúdo, de forma presencial e gratuita*, pelas principais cidades do país — unindo numerologia, autoconhecimento e psicanálise integrativa num só evento.
+            O Instituto Despertamente é uma escola de desenvolvimento humano especializada no ensino da psicanálise. O IDM Pelo Brasil leva esse conteúdo, de forma presencial, pelas principais cidades do país — unindo numerologia, autoconhecimento e psicanálise integrativa num só evento.
           </p>
-          <div>* Investimento simbólico de R$ {evento.valor_ingresso.toFixed(2).replace('.', ',')} pra garantir sua vaga — o conteúdo em si não tem custo.</div>
+          <div>Ingresso: R$ {evento.valor_ingresso.toFixed(2).replace('.', ',')} — vagas limitadas.</div>
         </div>
       </section>
 
@@ -292,7 +292,7 @@ export default function NPACaptura() {
         <div className="iw-replica-container">
           <h2>Perguntas <em>Frequentes</em></h2><p>Tire suas dúvidas!</p>
           <div className="iw-replica-faq-list">
-            <details><summary>O evento é mesmo gratuito?</summary><p>O conteúdo é gratuito. Existe só um investimento simbólico de R$ {evento.valor_ingresso.toFixed(2).replace('.', ',')} pra garantir sua vaga, já que as vagas são limitadas.</p></details>
+            <details><summary>Quanto custa o ingresso?</summary><p>R$ {evento.valor_ingresso.toFixed(2).replace('.', ',')}, pago no ato pra garantir sua vaga — as vagas são limitadas.</p></details>
             <details><summary>Preciso ter conhecimento prévio sobre numerologia?</summary><p>Não! O evento foi pensado tanto pra quem nunca ouviu falar do assunto quanto pra quem já estuda psicanálise ou numerologia.</p></details>
             <details><summary>Onde vai ser o evento?</summary><p>{evento.local}. O link do Google Maps está logo acima do formulário de inscrição.</p></details>
             <details><summary>O evento é presencial ou online?</summary><p>100% presencial, em {cidade}, no dia {dataFormatada?.curta}.</p></details>
@@ -313,7 +313,7 @@ export default function NPACaptura() {
             <h2>Vagas limitadas.<br /><em>Garanta a sua agora.</em></h2>
             <p>{dataFormatada?.diaSemana}, {dataFormatada?.curta} · {cidade} · Manhã ou Tarde</p>
             <a href="#cadastro">GARANTIR MINHA VAGA</a>
-            <div>Investimento simbólico de R$ {evento.valor_ingresso.toFixed(2).replace('.', ',')} — garante sua vaga no evento.</div>
+            <div>Ingresso: R$ {evento.valor_ingresso.toFixed(2).replace('.', ',')} — garante sua vaga no evento.</div>
           </div>
           <p className="iw-replica-final-line">✓ Evento presencial &nbsp; ✓ Certificado incluso &nbsp; ✓ Grupo VIP no WhatsApp</p>
         </div>
