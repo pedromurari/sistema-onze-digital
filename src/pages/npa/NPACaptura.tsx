@@ -27,7 +27,10 @@ const VIDEO_POSTER = 'https://img.youtube.com/vi/enYdWdV5zGM/hqdefault.jpg';
 // Links de checkout do Vega -- placeholders até o Pedro criar os produtos e
 // mandar as URLs reais. Troca só os valores aqui quando chegarem.
 const CHECKOUT_URLS: Record<string, { manha: string; tarde: string }> = {
-  'sao-paulo': { manha: '', tarde: '' },
+  'sao-paulo': {
+    manha: 'https://checkout.institutodespertamente.shop/VCCL1O8SDC5B',
+    tarde: 'https://checkout.institutodespertamente.shop/VCCL1O8SDC77',
+  },
   santos: { manha: '', tarde: '' },
 };
 
@@ -184,7 +187,7 @@ export default function NPACaptura() {
   const dataFmt = useMemo(() => (evento ? formatarData(evento.data_evento) : null), [evento]);
   const mapsUrl = useMemo(() => (evento ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(evento.local)}` : '#'), [evento]);
   const cidade = evento ? evento.nome.replace(/^NPA #\d+\s*/i, '') : '';
-  const preco = evento ? evento.valor_ingresso.toFixed(0) : '26';
+  const preco = evento ? evento.valor_ingresso.toFixed(0) : '29';
 
   function handleWhatsapp(e: ChangeEvent<HTMLInputElement>) {
     setWhatsapp(formatarWhatsApp(e.target.value));
