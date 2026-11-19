@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.4"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       alma_par_leads: {
@@ -221,6 +246,9 @@ export type Database = {
       }
       alunos: {
         Row: {
+          acesso_membros_acessado_em: string | null
+          acesso_membros_liberado_em: string | null
+          acesso_membros_url: string | null
           asaas_customer_id: string | null
           asaas_integrado: boolean | null
           asaas_link: string | null
@@ -286,6 +314,9 @@ export type Database = {
           whatsapp: string | null
         }
         Insert: {
+          acesso_membros_acessado_em?: string | null
+          acesso_membros_liberado_em?: string | null
+          acesso_membros_url?: string | null
           asaas_customer_id?: string | null
           asaas_integrado?: boolean | null
           asaas_link?: string | null
@@ -351,6 +382,9 @@ export type Database = {
           whatsapp?: string | null
         }
         Update: {
+          acesso_membros_acessado_em?: string | null
+          acesso_membros_liberado_em?: string | null
+          acesso_membros_url?: string | null
           asaas_customer_id?: string | null
           asaas_integrado?: boolean | null
           asaas_link?: string | null
@@ -861,6 +895,30 @@ export type Database = {
         }
         Relationships: []
       }
+      aula_confirmacao_config: {
+        Row: {
+          antecedencia_minutos: number
+          ativo: boolean
+          id: number
+          instance_name: string | null
+          numero_destino: string | null
+        }
+        Insert: {
+          antecedencia_minutos?: number
+          ativo?: boolean
+          id?: number
+          instance_name?: string | null
+          numero_destino?: string | null
+        }
+        Update: {
+          antecedencia_minutos?: number
+          ativo?: boolean
+          id?: number
+          instance_name?: string | null
+          numero_destino?: string | null
+        }
+        Relationships: []
+      }
       aula_secreta_eventos: {
         Row: {
           ativo: boolean | null
@@ -1027,6 +1085,8 @@ export type Database = {
           aviso_erro: string | null
           aviso_status: string | null
           aviso_tentativas: number
+          confirmacao_pedro_enviada_em: string | null
+          confirmacao_pedro_status: string | null
           created_at: string
           data: string
           horario_fim: string | null
@@ -1045,6 +1105,8 @@ export type Database = {
           aviso_erro?: string | null
           aviso_status?: string | null
           aviso_tentativas?: number
+          confirmacao_pedro_enviada_em?: string | null
+          confirmacao_pedro_status?: string | null
           created_at?: string
           data: string
           horario_fim?: string | null
@@ -1063,6 +1125,8 @@ export type Database = {
           aviso_erro?: string | null
           aviso_status?: string | null
           aviso_tentativas?: number
+          confirmacao_pedro_enviada_em?: string | null
+          confirmacao_pedro_status?: string | null
           created_at?: string
           data?: string
           horario_fim?: string | null
@@ -1466,6 +1530,156 @@ export type Database = {
           },
         ]
       }
+      campanhas_massa: {
+        Row: {
+          canal: string
+          criado_em: string
+          criado_por: string | null
+          daily_limit: number | null
+          delay_max_s: number | null
+          delay_min_s: number | null
+          disparo_campanha_id: string | null
+          email_assunto: string | null
+          email_corpo: string | null
+          email_link_cta: string | null
+          enviado_em: string | null
+          evolution_config_ids: string[] | null
+          fonte: string
+          fonte_filtro: Json
+          id: string
+          link_cta: string | null
+          nome: string
+          status: string
+          texto_whatsapp: string | null
+          total_destinatarios: number
+          total_enviados_email: number
+          total_erro_email: number
+        }
+        Insert: {
+          canal?: string
+          criado_em?: string
+          criado_por?: string | null
+          daily_limit?: number | null
+          delay_max_s?: number | null
+          delay_min_s?: number | null
+          disparo_campanha_id?: string | null
+          email_assunto?: string | null
+          email_corpo?: string | null
+          email_link_cta?: string | null
+          enviado_em?: string | null
+          evolution_config_ids?: string[] | null
+          fonte: string
+          fonte_filtro?: Json
+          id?: string
+          link_cta?: string | null
+          nome: string
+          status?: string
+          texto_whatsapp?: string | null
+          total_destinatarios?: number
+          total_enviados_email?: number
+          total_erro_email?: number
+        }
+        Update: {
+          canal?: string
+          criado_em?: string
+          criado_por?: string | null
+          daily_limit?: number | null
+          delay_max_s?: number | null
+          delay_min_s?: number | null
+          disparo_campanha_id?: string | null
+          email_assunto?: string | null
+          email_corpo?: string | null
+          email_link_cta?: string | null
+          enviado_em?: string | null
+          evolution_config_ids?: string[] | null
+          fonte?: string
+          fonte_filtro?: Json
+          id?: string
+          link_cta?: string | null
+          nome?: string
+          status?: string
+          texto_whatsapp?: string | null
+          total_destinatarios?: number
+          total_enviados_email?: number
+          total_erro_email?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campanhas_massa_disparo_campanha_id_fkey"
+            columns: ["disparo_campanha_id"]
+            isOneToOne: false
+            referencedRelation: "disparo_campanhas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campanhas_massa_destinatarios: {
+        Row: {
+          campanha_id: string
+          clicado_email_em: string | null
+          created_at: string
+          disparo_lead_id: string | null
+          email: string | null
+          enviado_email_em: string | null
+          erro_msg: string | null
+          id: string
+          nome: string | null
+          pessoa_id: string | null
+          status_email: string
+          telefone: string | null
+        }
+        Insert: {
+          campanha_id: string
+          clicado_email_em?: string | null
+          created_at?: string
+          disparo_lead_id?: string | null
+          email?: string | null
+          enviado_email_em?: string | null
+          erro_msg?: string | null
+          id?: string
+          nome?: string | null
+          pessoa_id?: string | null
+          status_email?: string
+          telefone?: string | null
+        }
+        Update: {
+          campanha_id?: string
+          clicado_email_em?: string | null
+          created_at?: string
+          disparo_lead_id?: string | null
+          email?: string | null
+          enviado_email_em?: string | null
+          erro_msg?: string | null
+          id?: string
+          nome?: string | null
+          pessoa_id?: string | null
+          status_email?: string
+          telefone?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campanhas_massa_destinatarios_campanha_id_fkey"
+            columns: ["campanha_id"]
+            isOneToOne: false
+            referencedRelation: "campanhas_massa"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campanhas_massa_destinatarios_disparo_lead_id_fkey"
+            columns: ["disparo_lead_id"]
+            isOneToOne: false
+            referencedRelation: "disparo_leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campanhas_massa_destinatarios_pessoa_id_fkey"
+            columns: ["pessoa_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       canais_cobranca: {
         Row: {
           ativo: boolean
@@ -1484,6 +1698,98 @@ export type Database = {
           criado_em?: string
           id?: string
           nome?: string
+        }
+        Relationships: []
+      }
+      ceo_rotina_conclusoes: {
+        Row: {
+          concluido_em: string
+          concluido_por: string | null
+          data: string
+          id: string
+          item_id: string
+        }
+        Insert: {
+          concluido_em?: string
+          concluido_por?: string | null
+          data: string
+          id?: string
+          item_id: string
+        }
+        Update: {
+          concluido_em?: string
+          concluido_por?: string | null
+          data?: string
+          id?: string
+          item_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ceo_rotina_conclusoes_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "ceo_rotina_itens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ceo_rotina_grupos: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          departamento: string
+          grupo_jid: string
+          grupo_nome: string | null
+          id: string
+          instancia: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          departamento: string
+          grupo_jid: string
+          grupo_nome?: string | null
+          id?: string
+          instancia?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          departamento?: string
+          grupo_jid?: string
+          grupo_nome?: string | null
+          id?: string
+          instancia?: string
+        }
+        Relationships: []
+      }
+      ceo_rotina_itens: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          data_alvo: string | null
+          departamento: string
+          id: string
+          ordem: number
+          texto: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          data_alvo?: string | null
+          departamento: string
+          id?: string
+          ordem: number
+          texto: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          data_alvo?: string | null
+          departamento?: string
+          id?: string
+          ordem?: number
+          texto?: string
         }
         Relationships: []
       }
@@ -1620,6 +1926,24 @@ export type Database = {
             referencedColumns: ["slug"]
           },
         ]
+      }
+      cobranca_feriados: {
+        Row: {
+          created_at: string
+          data: string
+          nome: string
+        }
+        Insert: {
+          created_at?: string
+          data: string
+          nome: string
+        }
+        Update: {
+          created_at?: string
+          data?: string
+          nome?: string
+        }
+        Relationships: []
       }
       cobranca_ia_config: {
         Row: {
@@ -1896,6 +2220,7 @@ export type Database = {
           mensagem: string
           nome: string
           ordem: number
+          produto: string | null
           tipo: string
           updated_at: string
         }
@@ -1908,6 +2233,7 @@ export type Database = {
           mensagem: string
           nome: string
           ordem?: number
+          produto?: string | null
           tipo: string
           updated_at?: string
         }
@@ -1920,6 +2246,7 @@ export type Database = {
           mensagem?: string
           nome?: string
           ordem?: number
+          produto?: string | null
           tipo?: string
           updated_at?: string
         }
@@ -2051,6 +2378,7 @@ export type Database = {
           created_by: string | null
           cta_texto: string | null
           data_publicacao: string | null
+          descricao_youtube: string | null
           evento_id: string | null
           formato: string | null
           formato_1x1: boolean | null
@@ -2073,6 +2401,7 @@ export type Database = {
           texto_peca: string | null
           tipo_conteudo: string | null
           titulo: string
+          titulo_youtube: string | null
         }
         Insert: {
           angulo?: string | null
@@ -2083,6 +2412,7 @@ export type Database = {
           created_by?: string | null
           cta_texto?: string | null
           data_publicacao?: string | null
+          descricao_youtube?: string | null
           evento_id?: string | null
           formato?: string | null
           formato_1x1?: boolean | null
@@ -2105,6 +2435,7 @@ export type Database = {
           texto_peca?: string | null
           tipo_conteudo?: string | null
           titulo: string
+          titulo_youtube?: string | null
         }
         Update: {
           angulo?: string | null
@@ -2115,6 +2446,7 @@ export type Database = {
           created_by?: string | null
           cta_texto?: string | null
           data_publicacao?: string | null
+          descricao_youtube?: string | null
           evento_id?: string | null
           formato?: string | null
           formato_1x1?: boolean | null
@@ -2137,6 +2469,7 @@ export type Database = {
           texto_peca?: string | null
           tipo_conteudo?: string | null
           titulo?: string
+          titulo_youtube?: string | null
         }
         Relationships: [
           {
@@ -2363,6 +2696,66 @@ export type Database = {
         Update: {
           nome?: string
           valor?: string
+        }
+        Relationships: []
+      }
+      cronograma_confirmacao_config: {
+        Row: {
+          ativo: boolean
+          grupo_jid: string
+          hora_links: string
+          hora_pergunta: string
+          id: number
+          telefone_confirmador: string
+        }
+        Insert: {
+          ativo?: boolean
+          grupo_jid: string
+          hora_links?: string
+          hora_pergunta?: string
+          id?: number
+          telefone_confirmador: string
+        }
+        Update: {
+          ativo?: boolean
+          grupo_jid?: string
+          hora_links?: string
+          hora_pergunta?: string
+          id?: number
+          telefone_confirmador?: string
+        }
+        Relationships: []
+      }
+      cronograma_confirmacoes: {
+        Row: {
+          confirmado_em: string | null
+          confirmado_por_telefone: string | null
+          data: string
+          links_enviados_em: string | null
+          links_erro: string | null
+          mensagem_recebida: string | null
+          pergunta_enviada_em: string | null
+          status: string
+        }
+        Insert: {
+          confirmado_em?: string | null
+          confirmado_por_telefone?: string | null
+          data: string
+          links_enviados_em?: string | null
+          links_erro?: string | null
+          mensagem_recebida?: string | null
+          pergunta_enviada_em?: string | null
+          status?: string
+        }
+        Update: {
+          confirmado_em?: string | null
+          confirmado_por_telefone?: string | null
+          data?: string
+          links_enviados_em?: string | null
+          links_erro?: string | null
+          mensagem_recebida?: string | null
+          pergunta_enviada_em?: string | null
+          status?: string
         }
         Relationships: []
       }
@@ -2620,6 +3013,487 @@ export type Database = {
             columns: ["pessoa_id"]
             isOneToOne: false
             referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      diva_campanha_analise_leads: {
+        Row: {
+          aluno_id: string
+          created_at: string
+          enviado_em: string | null
+          id: string
+          nome: string
+          pessoa_id: string
+          whatsapp: string
+        }
+        Insert: {
+          aluno_id: string
+          created_at?: string
+          enviado_em?: string | null
+          id?: string
+          nome: string
+          pessoa_id: string
+          whatsapp: string
+        }
+        Update: {
+          aluno_id?: string
+          created_at?: string
+          enviado_em?: string | null
+          id?: string
+          nome?: string
+          pessoa_id?: string
+          whatsapp?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "diva_campanha_analise_leads_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "alunos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diva_campanha_analise_leads_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "v_pipeline_contratos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diva_campanha_analise_leads_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "vw_alunos_financeiro"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diva_campanha_analise_leads_pessoa_id_fkey"
+            columns: ["pessoa_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      diva_campanha_despertar_leads: {
+        Row: {
+          created_at: string
+          enviado_em: string | null
+          id: string
+          lancamento_lead_id: string
+          nome: string
+          whatsapp: string
+        }
+        Insert: {
+          created_at?: string
+          enviado_em?: string | null
+          id?: string
+          lancamento_lead_id: string
+          nome: string
+          whatsapp: string
+        }
+        Update: {
+          created_at?: string
+          enviado_em?: string | null
+          id?: string
+          lancamento_lead_id?: string
+          nome?: string
+          whatsapp?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "diva_campanha_despertar_leads_lancamento_lead_id_fkey"
+            columns: ["lancamento_lead_id"]
+            isOneToOne: false
+            referencedRelation: "lancamento_kanban"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diva_campanha_despertar_leads_lancamento_lead_id_fkey"
+            columns: ["lancamento_lead_id"]
+            isOneToOne: false
+            referencedRelation: "lancamento_leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      diva_clientes: {
+        Row: {
+          created_at: string
+          id: string
+          nome: string
+          whatsapp: string | null
+          whatsapp_normalizado: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          nome: string
+          whatsapp?: string | null
+          whatsapp_normalizado?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          nome?: string
+          whatsapp?: string | null
+          whatsapp_normalizado?: string | null
+        }
+        Relationships: []
+      }
+      diva_config: {
+        Row: {
+          atualizado_em: string
+          depoimentos: Json
+          id: boolean
+          redes_sociais: Json
+          video_captura_url: string | null
+          whatsapp_contato: string | null
+        }
+        Insert: {
+          atualizado_em?: string
+          depoimentos?: Json
+          id?: boolean
+          redes_sociais?: Json
+          video_captura_url?: string | null
+          whatsapp_contato?: string | null
+        }
+        Update: {
+          atualizado_em?: string
+          depoimentos?: Json
+          id?: boolean
+          redes_sociais?: Json
+          video_captura_url?: string | null
+          whatsapp_contato?: string | null
+        }
+        Relationships: []
+      }
+      diva_disponibilidade: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          dia_semana: number
+          horario_fim: string
+          horario_inicio: string
+          id: string
+          terapeuta_id: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          dia_semana: number
+          horario_fim: string
+          horario_inicio: string
+          id?: string
+          terapeuta_id: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          dia_semana?: number
+          horario_fim?: string
+          horario_inicio?: string
+          id?: string
+          terapeuta_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "diva_disponibilidade_terapeuta_id_fkey"
+            columns: ["terapeuta_id"]
+            isOneToOne: false
+            referencedRelation: "diva_terapeutas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diva_disponibilidade_terapeuta_id_fkey"
+            columns: ["terapeuta_id"]
+            isOneToOne: false
+            referencedRelation: "diva_terapeutas_links_vendedor"
+            referencedColumns: ["terapeuta_id"]
+          },
+        ]
+      }
+      diva_disponibilidade_dias: {
+        Row: {
+          created_at: string
+          data: string
+          horario_fim: string
+          horario_inicio: string
+          id: string
+          reservado_nome: string | null
+          sessao_id: string | null
+          status: string
+          terapeuta_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          data: string
+          horario_fim: string
+          horario_inicio: string
+          id?: string
+          reservado_nome?: string | null
+          sessao_id?: string | null
+          status?: string
+          terapeuta_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          data?: string
+          horario_fim?: string
+          horario_inicio?: string
+          id?: string
+          reservado_nome?: string | null
+          sessao_id?: string | null
+          status?: string
+          terapeuta_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "diva_disponibilidade_dias_sessao_id_fkey"
+            columns: ["sessao_id"]
+            isOneToOne: false
+            referencedRelation: "diva_sessoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diva_disponibilidade_dias_terapeuta_id_fkey"
+            columns: ["terapeuta_id"]
+            isOneToOne: false
+            referencedRelation: "diva_terapeutas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diva_disponibilidade_dias_terapeuta_id_fkey"
+            columns: ["terapeuta_id"]
+            isOneToOne: false
+            referencedRelation: "diva_terapeutas_links_vendedor"
+            referencedColumns: ["terapeuta_id"]
+          },
+        ]
+      }
+      diva_planos: {
+        Row: {
+          asaas_link_id: string | null
+          created_at: string
+          id: string
+          link_cartao: string | null
+          link_pix_boleto: string | null
+          mp_preference_id: string | null
+          nome: string
+          quantidade_sessoes: number
+          updated_at: string
+          valor: number
+        }
+        Insert: {
+          asaas_link_id?: string | null
+          created_at?: string
+          id?: string
+          link_cartao?: string | null
+          link_pix_boleto?: string | null
+          mp_preference_id?: string | null
+          nome: string
+          quantidade_sessoes: number
+          updated_at?: string
+          valor: number
+        }
+        Update: {
+          asaas_link_id?: string | null
+          created_at?: string
+          id?: string
+          link_cartao?: string | null
+          link_pix_boleto?: string | null
+          mp_preference_id?: string | null
+          nome?: string
+          quantidade_sessoes?: number
+          updated_at?: string
+          valor?: number
+        }
+        Relationships: []
+      }
+      diva_sessoes: {
+        Row: {
+          aviso_status: string | null
+          aviso_tentativas: number
+          cliente_id: string | null
+          cliente_nome: string
+          cliente_whatsapp: string | null
+          created_at: string
+          data_sessao: string | null
+          horario_fim: string | null
+          horario_inicio: string | null
+          id: string
+          lead_id: string | null
+          observacoes: string | null
+          quantidade_sessoes: number
+          status_pagamento: string
+          status_repasse: string
+          terapeuta_id: string | null
+          tipo: string
+          valor_idm: number
+          valor_terapeuta: number
+          valor_total: number
+        }
+        Insert: {
+          aviso_status?: string | null
+          aviso_tentativas?: number
+          cliente_id?: string | null
+          cliente_nome: string
+          cliente_whatsapp?: string | null
+          created_at?: string
+          data_sessao?: string | null
+          horario_fim?: string | null
+          horario_inicio?: string | null
+          id?: string
+          lead_id?: string | null
+          observacoes?: string | null
+          quantidade_sessoes?: number
+          status_pagamento?: string
+          status_repasse?: string
+          terapeuta_id?: string | null
+          tipo?: string
+          valor_idm?: number
+          valor_terapeuta?: number
+          valor_total?: number
+        }
+        Update: {
+          aviso_status?: string | null
+          aviso_tentativas?: number
+          cliente_id?: string | null
+          cliente_nome?: string
+          cliente_whatsapp?: string | null
+          created_at?: string
+          data_sessao?: string | null
+          horario_fim?: string | null
+          horario_inicio?: string | null
+          id?: string
+          lead_id?: string | null
+          observacoes?: string | null
+          quantidade_sessoes?: number
+          status_pagamento?: string
+          status_repasse?: string
+          terapeuta_id?: string | null
+          tipo?: string
+          valor_idm?: number
+          valor_terapeuta?: number
+          valor_total?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "diva_sessoes_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "diva_clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diva_sessoes_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diva_sessoes_terapeuta_id_fkey"
+            columns: ["terapeuta_id"]
+            isOneToOne: false
+            referencedRelation: "diva_terapeutas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diva_sessoes_terapeuta_id_fkey"
+            columns: ["terapeuta_id"]
+            isOneToOne: false
+            referencedRelation: "diva_terapeutas_links_vendedor"
+            referencedColumns: ["terapeuta_id"]
+          },
+        ]
+      }
+      diva_terapeutas: {
+        Row: {
+          aluno_id: string | null
+          bio: string | null
+          chave_pix: string | null
+          created_at: string
+          disponibilidade_solicitada_em: string | null
+          email: string | null
+          especialidade: string | null
+          foto_url: string | null
+          id: string
+          nome: string
+          parceiro_id: string | null
+          pin_bloqueado_ate: string | null
+          pin_hash: string | null
+          pin_tentativas: number
+          status: string
+          whatsapp: string | null
+        }
+        Insert: {
+          aluno_id?: string | null
+          bio?: string | null
+          chave_pix?: string | null
+          created_at?: string
+          disponibilidade_solicitada_em?: string | null
+          email?: string | null
+          especialidade?: string | null
+          foto_url?: string | null
+          id?: string
+          nome: string
+          parceiro_id?: string | null
+          pin_bloqueado_ate?: string | null
+          pin_hash?: string | null
+          pin_tentativas?: number
+          status?: string
+          whatsapp?: string | null
+        }
+        Update: {
+          aluno_id?: string | null
+          bio?: string | null
+          chave_pix?: string | null
+          created_at?: string
+          disponibilidade_solicitada_em?: string | null
+          email?: string | null
+          especialidade?: string | null
+          foto_url?: string | null
+          id?: string
+          nome?: string
+          parceiro_id?: string | null
+          pin_bloqueado_ate?: string | null
+          pin_hash?: string | null
+          pin_tentativas?: number
+          status?: string
+          whatsapp?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "diva_terapeutas_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "alunos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diva_terapeutas_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "v_pipeline_contratos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diva_terapeutas_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "vw_alunos_financeiro"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diva_terapeutas_parceiro_id_fkey"
+            columns: ["parceiro_id"]
+            isOneToOne: false
+            referencedRelation: "parceiros"
             referencedColumns: ["id"]
           },
         ]
@@ -3700,6 +4574,54 @@ export type Database = {
         }
         Relationships: []
       }
+      extratos_mensais: {
+        Row: {
+          conta: string
+          fonte: string
+          id: string
+          observacoes: string | null
+          periodo_fim: string
+          periodo_inicio: string
+          precisao: string
+          registrado_em: string
+          saldo_final: number | null
+          saldo_inicial: number | null
+          titular: string | null
+          total_entradas: number | null
+          total_saidas: number | null
+        }
+        Insert: {
+          conta: string
+          fonte?: string
+          id?: string
+          observacoes?: string | null
+          periodo_fim: string
+          periodo_inicio: string
+          precisao?: string
+          registrado_em?: string
+          saldo_final?: number | null
+          saldo_inicial?: number | null
+          titular?: string | null
+          total_entradas?: number | null
+          total_saidas?: number | null
+        }
+        Update: {
+          conta?: string
+          fonte?: string
+          id?: string
+          observacoes?: string | null
+          periodo_fim?: string
+          periodo_inicio?: string
+          precisao?: string
+          registrado_em?: string
+          saldo_final?: number | null
+          saldo_inicial?: number | null
+          titular?: string | null
+          total_entradas?: number | null
+          total_saidas?: number | null
+        }
+        Relationships: []
+      }
       fechamentos: {
         Row: {
           bruto: number
@@ -4004,6 +4926,45 @@ export type Database = {
           id?: string
           impressoes?: number
           leads_count?: number
+        }
+        Relationships: []
+      }
+      franquia_lancamentos: {
+        Row: {
+          categoria: string | null
+          conta_pagamento: string | null
+          created_at: string
+          data_caixa: string | null
+          descricao: string
+          id: string
+          observacoes: string | null
+          socio: string | null
+          tipo: string
+          valor: number
+        }
+        Insert: {
+          categoria?: string | null
+          conta_pagamento?: string | null
+          created_at?: string
+          data_caixa?: string | null
+          descricao: string
+          id?: string
+          observacoes?: string | null
+          socio?: string | null
+          tipo: string
+          valor: number
+        }
+        Update: {
+          categoria?: string | null
+          conta_pagamento?: string | null
+          created_at?: string
+          data_caixa?: string | null
+          descricao?: string
+          id?: string
+          observacoes?: string | null
+          socio?: string | null
+          tipo?: string
+          valor?: number
         }
         Relationships: []
       }
@@ -4600,6 +5561,47 @@ export type Database = {
           },
         ]
       }
+      lancamento_aulas: {
+        Row: {
+          created_at: string
+          id: string
+          inicio_em: string
+          lancamento_id: string
+          numero: number
+          restream_event_id: string | null
+          titulo: string
+          youtube_url: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          inicio_em: string
+          lancamento_id: string
+          numero: number
+          restream_event_id?: string | null
+          titulo: string
+          youtube_url?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          inicio_em?: string
+          lancamento_id?: string
+          numero?: number
+          restream_event_id?: string | null
+          titulo?: string
+          youtube_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lancamento_aulas_lancamento_id_fkey"
+            columns: ["lancamento_id"]
+            isOneToOne: false
+            referencedRelation: "lancamentos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lancamento_campanhas: {
         Row: {
           created_at: string
@@ -4809,6 +5811,7 @@ export type Database = {
           responsavel_id: string | null
           sheets_id: string | null
           slogan: string | null
+          slug: string | null
           status: string | null
           total_mensalidades_destino: number | null
           turma_destino_id: string | null
@@ -4837,6 +5840,7 @@ export type Database = {
           responsavel_id?: string | null
           sheets_id?: string | null
           slogan?: string | null
+          slug?: string | null
           status?: string | null
           total_mensalidades_destino?: number | null
           turma_destino_id?: string | null
@@ -4865,6 +5869,7 @@ export type Database = {
           responsavel_id?: string | null
           sheets_id?: string | null
           slogan?: string | null
+          slug?: string | null
           status?: string | null
           total_mensalidades_destino?: number | null
           turma_destino_id?: string | null
@@ -5313,6 +6318,11 @@ export type Database = {
           tempo_interesse: string | null
           turma_id: string | null
           ultima_atividade: string | null
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          utm_term: string | null
           valor_potencial: number | null
           vendedor: string | null
           whatsapp: string | null
@@ -5353,6 +6363,11 @@ export type Database = {
           tempo_interesse?: string | null
           turma_id?: string | null
           ultima_atividade?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
           valor_potencial?: number | null
           vendedor?: string | null
           whatsapp?: string | null
@@ -5393,6 +6408,11 @@ export type Database = {
           tempo_interesse?: string | null
           turma_id?: string | null
           ultima_atividade?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
           valor_potencial?: number | null
           vendedor?: string | null
           whatsapp?: string | null
@@ -6665,6 +7685,7 @@ export type Database = {
       pagamentos: {
         Row: {
           aluno_id: string | null
+          asaas_invoice_number: string | null
           asaas_payment_id: string | null
           canal_cobranca: string | null
           categoria_contabil: string
@@ -6698,6 +7719,7 @@ export type Database = {
         }
         Insert: {
           aluno_id?: string | null
+          asaas_invoice_number?: string | null
           asaas_payment_id?: string | null
           canal_cobranca?: string | null
           categoria_contabil?: string
@@ -6731,6 +7753,7 @@ export type Database = {
         }
         Update: {
           aluno_id?: string | null
+          asaas_invoice_number?: string | null
           asaas_payment_id?: string | null
           canal_cobranca?: string | null
           categoria_contabil?: string
@@ -6989,6 +8012,13 @@ export type Database = {
             foreignKeyName: "parceiros_cupons_produto_id_fkey"
             columns: ["produto_id"]
             isOneToOne: false
+            referencedRelation: "diva_terapeutas_links_vendedor"
+            referencedColumns: ["produto_id"]
+          },
+          {
+            foreignKeyName: "parceiros_cupons_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
             referencedRelation: "parceiros_produtos"
             referencedColumns: ["id"]
           },
@@ -7055,6 +8085,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "parceiros"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "parceiros_entregas_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "diva_terapeutas_links_vendedor"
+            referencedColumns: ["produto_id"]
           },
           {
             foreignKeyName: "parceiros_entregas_produto_id_fkey"
@@ -7205,6 +8242,13 @@ export type Database = {
             foreignKeyName: "parceiros_links_produto_id_fkey"
             columns: ["produto_id"]
             isOneToOne: false
+            referencedRelation: "diva_terapeutas_links_vendedor"
+            referencedColumns: ["produto_id"]
+          },
+          {
+            foreignKeyName: "parceiros_links_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
             referencedRelation: "parceiros_produtos"
             referencedColumns: ["id"]
           },
@@ -7252,6 +8296,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "parceiros"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "parceiros_metas_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "diva_terapeutas_links_vendedor"
+            referencedColumns: ["produto_id"]
           },
           {
             foreignKeyName: "parceiros_metas_produto_id_fkey"
@@ -7459,6 +8510,13 @@ export type Database = {
             foreignKeyName: "parceiros_vendas_produto_id_fkey"
             columns: ["produto_id"]
             isOneToOne: false
+            referencedRelation: "diva_terapeutas_links_vendedor"
+            referencedColumns: ["produto_id"]
+          },
+          {
+            foreignKeyName: "parceiros_vendas_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
             referencedRelation: "parceiros_produtos"
             referencedColumns: ["id"]
           },
@@ -7509,6 +8567,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "parceiros"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "parceiros_video_metricas_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "diva_terapeutas_links_vendedor"
+            referencedColumns: ["produto_id"]
           },
           {
             foreignKeyName: "parceiros_video_metricas_produto_id_fkey"
@@ -7789,8 +8854,10 @@ export type Database = {
           criterios_correcao: string | null
           enunciado: string
           id: string
+          opcoes: Json | null
           ordem: number
           pontos: number
+          resposta_correta: string | null
           resposta_esperada: string | null
           tipo: string
           updated_at: string
@@ -7801,8 +8868,10 @@ export type Database = {
           criterios_correcao?: string | null
           enunciado: string
           id?: string
+          opcoes?: Json | null
           ordem: number
           pontos?: number
+          resposta_correta?: string | null
           resposta_esperada?: string | null
           tipo: string
           updated_at?: string
@@ -7813,8 +8882,10 @@ export type Database = {
           criterios_correcao?: string | null
           enunciado?: string
           id?: string
+          opcoes?: Json | null
           ordem?: number
           pontos?: number
+          resposta_correta?: string | null
           resposta_esperada?: string | null
           tipo?: string
           updated_at?: string
@@ -8257,6 +9328,7 @@ export type Database = {
           dia_pagamento_1: number | null
           dia_pagamento_2: number | null
           documento: string | null
+          email_google: string | null
           funcao: string | null
           id: string
           modelo_pagamento: string
@@ -8284,6 +9356,7 @@ export type Database = {
           dia_pagamento_1?: number | null
           dia_pagamento_2?: number | null
           documento?: string | null
+          email_google?: string | null
           funcao?: string | null
           id?: string
           modelo_pagamento?: string
@@ -8311,6 +9384,7 @@ export type Database = {
           dia_pagamento_1?: number | null
           dia_pagamento_2?: number | null
           documento?: string | null
+          email_google?: string | null
           funcao?: string | null
           id?: string
           modelo_pagamento?: string
@@ -8522,6 +9596,39 @@ export type Database = {
             referencedColumns: ["chave"]
           },
         ]
+      }
+      saldos_contas: {
+        Row: {
+          conta: string
+          created_at: string
+          fonte: string | null
+          id: string
+          observacoes: string | null
+          registrado_em: string
+          saldo: number
+          titular: string | null
+        }
+        Insert: {
+          conta: string
+          created_at?: string
+          fonte?: string | null
+          id?: string
+          observacoes?: string | null
+          registrado_em?: string
+          saldo: number
+          titular?: string | null
+        }
+        Update: {
+          conta?: string
+          created_at?: string
+          fonte?: string | null
+          id?: string
+          observacoes?: string | null
+          registrado_em?: string
+          saldo?: number
+          titular?: string | null
+        }
+        Relationships: []
       }
       seu_numerologo_config: {
         Row: {
@@ -10120,6 +11227,42 @@ export type Database = {
           },
         ]
       }
+      trafego_ig_posts_cache: {
+        Row: {
+          atualizado_em: string
+          caption: string | null
+          comments_count: number
+          ig_username: string
+          like_count: number
+          media_type: string | null
+          permalink: string | null
+          post_id: string
+          publicado_em: string | null
+        }
+        Insert: {
+          atualizado_em?: string
+          caption?: string | null
+          comments_count?: number
+          ig_username: string
+          like_count?: number
+          media_type?: string | null
+          permalink?: string | null
+          post_id: string
+          publicado_em?: string | null
+        }
+        Update: {
+          atualizado_em?: string
+          caption?: string | null
+          comments_count?: number
+          ig_username?: string
+          like_count?: number
+          media_type?: string | null
+          permalink?: string | null
+          post_id?: string
+          publicado_em?: string | null
+        }
+        Relationships: []
+      }
       trafego_regras: {
         Row: {
           acao: string
@@ -10609,6 +11752,78 @@ export type Database = {
           },
         ]
       }
+      voomp_webhook_logs: {
+        Row: {
+          headers: Json | null
+          id: string
+          payload: Json | null
+          processado: boolean
+          query_params: Json | null
+          recebido_em: string
+          resultado: string | null
+        }
+        Insert: {
+          headers?: Json | null
+          id?: string
+          payload?: Json | null
+          processado?: boolean
+          query_params?: Json | null
+          recebido_em?: string
+          resultado?: string | null
+        }
+        Update: {
+          headers?: Json | null
+          id?: string
+          payload?: Json | null
+          processado?: boolean
+          query_params?: Json | null
+          recebido_em?: string
+          resultado?: string | null
+        }
+        Relationships: []
+      }
+      webinario_chat_mensagens: {
+        Row: {
+          criado_em: string
+          id: string
+          lead_id: string | null
+          nome: string
+          sessao_id: string
+          texto: string
+        }
+        Insert: {
+          criado_em?: string
+          id?: string
+          lead_id?: string | null
+          nome: string
+          sessao_id: string
+          texto: string
+        }
+        Update: {
+          criado_em?: string
+          id?: string
+          lead_id?: string | null
+          nome?: string
+          sessao_id?: string
+          texto?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webinario_chat_mensagens_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "webinario_chat_mensagens_sessao_id_fkey"
+            columns: ["sessao_id"]
+            isOneToOne: false
+            referencedRelation: "webinario_sessoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       webinario_mensagens_chat: {
         Row: {
           autor_nome: string
@@ -10681,8 +11896,10 @@ export type Database = {
           current_second: number | null
           device: string | null
           entered_at: string | null
+          followup_oferta_enviado_em: string | null
           id: string
           lead_id: string
+          lembrete_enviado_em: string | null
           sessao_id: string
           total_seconds: number | null
           updated_at: string
@@ -10691,14 +11908,17 @@ export type Database = {
           utm_medium: string | null
           utm_source: string | null
           utm_term: string | null
+          variante_headline: string | null
           watch_stage: string
         }
         Insert: {
           current_second?: number | null
           device?: string | null
           entered_at?: string | null
+          followup_oferta_enviado_em?: string | null
           id?: string
           lead_id: string
+          lembrete_enviado_em?: string | null
           sessao_id: string
           total_seconds?: number | null
           updated_at?: string
@@ -10707,14 +11927,17 @@ export type Database = {
           utm_medium?: string | null
           utm_source?: string | null
           utm_term?: string | null
+          variante_headline?: string | null
           watch_stage?: string
         }
         Update: {
           current_second?: number | null
           device?: string | null
           entered_at?: string | null
+          followup_oferta_enviado_em?: string | null
           id?: string
           lead_id?: string
+          lembrete_enviado_em?: string | null
           sessao_id?: string
           total_seconds?: number | null
           updated_at?: string
@@ -10723,6 +11946,7 @@ export type Database = {
           utm_medium?: string | null
           utm_source?: string | null
           utm_term?: string | null
+          variante_headline?: string | null
           watch_stage?: string
         }
         Relationships: [
@@ -10745,6 +11969,7 @@ export type Database = {
       webinarios: {
         Row: {
           ativo: boolean
+          captura_video_url: string | null
           created_at: string
           grupo_whatsapp_url: string | null
           id: string
@@ -10752,12 +11977,14 @@ export type Database = {
           oferta_offset_segundos: number | null
           produto_id: string | null
           slug: string
+          time_comercial_campanha_id: string | null
           updated_at: string
           video_duracao_segundos: number | null
           video_url: string | null
         }
         Insert: {
           ativo?: boolean
+          captura_video_url?: string | null
           created_at?: string
           grupo_whatsapp_url?: string | null
           id?: string
@@ -10765,12 +11992,14 @@ export type Database = {
           oferta_offset_segundos?: number | null
           produto_id?: string | null
           slug: string
+          time_comercial_campanha_id?: string | null
           updated_at?: string
           video_duracao_segundos?: number | null
           video_url?: string | null
         }
         Update: {
           ativo?: boolean
+          captura_video_url?: string | null
           created_at?: string
           grupo_whatsapp_url?: string | null
           id?: string
@@ -10778,6 +12007,7 @@ export type Database = {
           oferta_offset_segundos?: number | null
           produto_id?: string | null
           slug?: string
+          time_comercial_campanha_id?: string | null
           updated_at?: string
           video_duracao_segundos?: number | null
           video_url?: string | null
@@ -10788,6 +12018,13 @@ export type Database = {
             columns: ["produto_id"]
             isOneToOne: false
             referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "webinarios_time_comercial_campanha_id_fkey"
+            columns: ["time_comercial_campanha_id"]
+            isOneToOne: false
+            referencedRelation: "time_comercial_campanhas"
             referencedColumns: ["id"]
           },
         ]
@@ -10849,6 +12086,116 @@ export type Database = {
         }
         Relationships: []
       }
+      workshop_edicoes: {
+        Row: {
+          ativo: boolean
+          bonus_descricao: string | null
+          created_at: string
+          descricao: string | null
+          headline: string
+          id: string
+          inicio_em: string | null
+          modalidade: string
+          produto_id: string | null
+          slug: string
+          subheadline: string
+          titulo: string
+          updated_at: string
+          valor_centavos: number | null
+        }
+        Insert: {
+          ativo?: boolean
+          bonus_descricao?: string | null
+          created_at?: string
+          descricao?: string | null
+          headline: string
+          id?: string
+          inicio_em?: string | null
+          modalidade: string
+          produto_id?: string | null
+          slug: string
+          subheadline: string
+          titulo: string
+          updated_at?: string
+          valor_centavos?: number | null
+        }
+        Update: {
+          ativo?: boolean
+          bonus_descricao?: string | null
+          created_at?: string
+          descricao?: string | null
+          headline?: string
+          id?: string
+          inicio_em?: string | null
+          modalidade?: string
+          produto_id?: string | null
+          slug?: string
+          subheadline?: string
+          titulo?: string
+          updated_at?: string
+          valor_centavos?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workshop_edicoes_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workshop_inscricoes: {
+        Row: {
+          created_at: string
+          id: string
+          lead_id: string
+          pagamento_id: string | null
+          pagamento_url: string | null
+          pago_em: string | null
+          status: string
+          whatsapp_normalizado: string
+          workshop_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lead_id: string
+          pagamento_id?: string | null
+          pagamento_url?: string | null
+          pago_em?: string | null
+          status?: string
+          whatsapp_normalizado: string
+          workshop_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lead_id?: string
+          pagamento_id?: string | null
+          pagamento_url?: string | null
+          pago_em?: string | null
+          status?: string
+          whatsapp_normalizado?: string
+          workshop_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workshop_inscricoes_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workshop_inscricoes_workshop_id_fkey"
+            columns: ["workshop_id"]
+            isOneToOne: false
+            referencedRelation: "workshop_edicoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       alunos_financeiro: {
@@ -10899,6 +12246,18 @@ export type Database = {
           leads_npa: number | null
           receita_potencial_funil: number | null
           valor_em_risco: number | null
+        }
+        Relationships: []
+      }
+      diva_terapeutas_links_vendedor: {
+        Row: {
+          especialidade: string | null
+          foto_url: string | null
+          nome: string | null
+          preco: number | null
+          produto_id: string | null
+          produto_nome: string | null
+          terapeuta_id: string | null
         }
         Relationships: []
       }
@@ -11324,7 +12683,15 @@ export type Database = {
         }
         Returns: Json
       }
+      ceo_relatorio_financeiro_texto: {
+        Args: { p_periodo: string }
+        Returns: string
+      }
       certificados_sincronizar_kanban: { Args: never; Returns: number }
+      comercial_relatorio_dia_dados: {
+        Args: { p_data?: string }
+        Returns: Json
+      }
       comissoes_sincronizar_vendas: {
         Args: never
         Returns: {
@@ -11345,6 +12712,23 @@ export type Database = {
           p_user_id: string
         }
         Returns: undefined
+      }
+      diva_cliente_vincular: {
+        Args: { p_nome: string; p_whatsapp: string }
+        Returns: string
+      }
+      diva_terapeuta_pin_autenticar: {
+        Args: { p_pin: string; p_whatsapp: string }
+        Returns: {
+          motivo: string
+          nome: string
+          sucesso: boolean
+          terapeuta_id: string
+        }[]
+      }
+      diva_terapeuta_pin_gerar: {
+        Args: { p_terapeuta_id: string }
+        Returns: string
       }
       email_config_resumo: {
         Args: never
@@ -11372,11 +12756,38 @@ export type Database = {
           pagamento_id: string
           pagamento_status: string
           parcela: number
+          produto: string
           telefone: string
           valor: number
         }[]
       }
+      get_alunos_para_cobranca_automatica: {
+        Args: { p_data?: string }
+        Returns: {
+          aluno_id: string
+          aluno_nome: string
+          asaas_customer_id: string
+          asaas_payment_id: string
+          cobranca_ativa: boolean
+          cobranca_ia_ativa: boolean
+          data_prevista_pagamento: string
+          data_vencimento: string
+          dias_offset: number
+          link_pagamento: string
+          pagamento_id: string
+          pagamento_status: string
+          parcela: number
+          produto: string
+          telefone: string
+          valor: number
+        }[]
+      }
+      get_aula_confirmacao_cron_secret: { Args: never; Returns: string }
       get_aviso_meet_cron_secret: { Args: never; Returns: string }
+      get_ceo_relatorio_financeiro_cron_secret: { Args: never; Returns: string }
+      get_comercial_relatorio_dia_cron_secret: { Args: never; Returns: string }
+      get_cronograma_links_cron_secret: { Args: never; Returns: string }
+      get_cronograma_pergunta_cron_secret: { Args: never; Returns: string }
       get_equipe_11ds_composite_config: {
         Args: never
         Returns: {
@@ -11443,58 +12854,32 @@ export type Database = {
         Args: { p_npa_evento_id: string; p_whatsapp: string }
         Returns: Json
       }
-      matricula_time_comercial_criar:
-        | {
-            Args: {
-              p_canal: string
-              p_cep: string
-              p_cidade_estado: string
-              p_codigo_bolsa: string
-              p_cpf: string
-              p_data_nascimento: string
-              p_data_primeiro_pagamento?: string
-              p_dia_vencimento: number
-              p_email: string
-              p_endereco: string
-              p_forma_pagamento: string
-              p_nome: string
-              p_pais: string
-              p_plano_slug?: string
-              p_rg: string
-              p_sexo: string
-              p_valor_avista?: number
-              p_valor_parcela?: number
-              p_vendedor: string
-              p_whatsapp: string
-            }
-            Returns: Json
-          }
-        | {
-            Args: {
-              p_canal: string
-              p_cep: string
-              p_cidade_estado: string
-              p_codigo_bolsa: string
-              p_cpf: string
-              p_data_nascimento: string
-              p_data_primeiro_pagamento?: string
-              p_dia_vencimento: number
-              p_email: string
-              p_endereco: string
-              p_forma_pagamento: string
-              p_nome: string
-              p_num_parcelas?: number
-              p_pais: string
-              p_plano_slug?: string
-              p_rg: string
-              p_sexo: string
-              p_valor_avista?: number
-              p_valor_parcela?: number
-              p_vendedor: string
-              p_whatsapp: string
-            }
-            Returns: Json
-          }
+      matricula_time_comercial_criar: {
+        Args: {
+          p_canal: string
+          p_cep: string
+          p_cidade_estado: string
+          p_codigo_bolsa: string
+          p_cpf: string
+          p_data_nascimento: string
+          p_data_primeiro_pagamento?: string
+          p_dia_vencimento: number
+          p_email: string
+          p_endereco: string
+          p_forma_pagamento: string
+          p_nome: string
+          p_num_parcelas?: number
+          p_pais: string
+          p_plano_slug?: string
+          p_rg: string
+          p_sexo: string
+          p_valor_avista?: number
+          p_valor_parcela?: number
+          p_vendedor: string
+          p_whatsapp: string
+        }
+        Returns: Json
+      }
       matricula_vincular_turma_evento: {
         Args: { p_aluno_id: string; p_turma_id: string }
         Returns: Json
@@ -11543,6 +12928,7 @@ export type Database = {
           id: string
           nome: string
           status: string
+          turma_base: string
           turma_id: string
         }[]
       }
@@ -11630,6 +13016,17 @@ export type Database = {
           whatsapp: string
         }[]
       }
+      portal_elegibilidade_por_pessoa: {
+        Args: { p_pessoa_id: string }
+        Returns: {
+          aluno_id: string
+          data_matricula: string
+          produto: string
+          status: string
+          turma_id: string
+          turma_nome: string
+        }[]
+      }
       portal_pagamentos_por_token: {
         Args: { p_token: string }
         Returns: {
@@ -11706,33 +13103,19 @@ export type Database = {
           whatsapp: string
         }[]
       }
-      time_comercial_alunos_vendedor:
-        | {
-            Args: never
-            Returns: {
-              boleto: number
-              bolsa_cortesia: number
-              comissao_est: number
-              faturamento: number
-              sem_forma: number
-              total: number
-              vendedor: string
-              vista_cartao: number
-            }[]
-          }
-        | {
-            Args: { p_mes?: string }
-            Returns: {
-              boleto: number
-              bolsa_cortesia: number
-              comissao_est: number
-              faturamento: number
-              sem_forma: number
-              total: number
-              vendedor: string
-              vista_cartao: number
-            }[]
-          }
+      time_comercial_alunos_vendedor: {
+        Args: { p_mes?: string }
+        Returns: {
+          boleto: number
+          bolsa_cortesia: number
+          comissao_est: number
+          faturamento: number
+          sem_forma: number
+          total: number
+          vendedor: string
+          vista_cartao: number
+        }[]
+      }
       time_comercial_atividade_vendedor: {
         Args: { p_dias?: number }
         Returns: {
@@ -11749,6 +13132,10 @@ export type Database = {
       }
       time_comercial_atualizar_pagamento_previsto: {
         Args: { p_aluno_id: string; p_nova_data: string }
+        Returns: Json
+      }
+      time_comercial_cancelar_pre_matricula: {
+        Args: { p_aluno_id: string }
         Returns: Json
       }
       time_comercial_ciclo_vendas: {
@@ -11796,6 +13183,8 @@ export type Database = {
           data_venda: string
           data_venda_concretizada: string
           forma_pagamento: string
+          link_contrato: string
+          link_pagamento_asaas: string
           num_parcelas: number
           origem: string
           produto: string
@@ -11830,7 +13219,7 @@ export type Database = {
         Returns: undefined
       }
       time_comercial_resumo_vendedor: {
-        Args: never
+        Args: { p_mes?: string }
         Returns: {
           leads_trabalhados: number
           pre_matriculas: number
@@ -11863,6 +13252,7 @@ export type Database = {
         Args: never
         Returns: {
           boleto: number
+          faturamento: number
           mes: string
           total: number
           vendedor: string
@@ -11870,6 +13260,7 @@ export type Database = {
         }[]
       }
       turmas_financeiro_permitidas: { Args: never; Returns: string[] }
+      unaccent: { Args: { "": string }; Returns: string }
     }
     Enums: {
       app_role:
@@ -12007,6 +13398,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       app_role: [

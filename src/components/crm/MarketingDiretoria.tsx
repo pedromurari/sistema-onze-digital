@@ -1,9 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
-import { CalendarCheck2, Clapperboard, Clock3, Megaphone, MessageCircle, RefreshCw } from 'lucide-react';
+import { CalendarCheck2, Clapperboard, Clock3, DollarSign, Heart, Megaphone, MessageCircle, RefreshCw, Users } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { SectionBar, StatTile } from '@/components/crm/ui/premium';
+
+const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+interface IgPost {
+  post_id: string;
+  ig_username: string;
+  caption: string | null;
+  like_count: number;
+  comments_count: number;
+  permalink: string | null;
+  publicado_em: string | null;
+  atualizado_em: string;
+}
 
 const ETAPAS = [
   { id: 'ideia', label: 'Planejado' },
@@ -41,6 +54,14 @@ export function MarketingDiretoria() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
 
+  const [gastoTrafego, setGastoTrafego] = useState<number | null>(null);
+  const [leadsTrafego, setLeadsTrafego] = useState<number | null>(null);
+  const [erroTrafego, setErroTrafego] = useState('');
+  const [carregandoTrafego, setCarregandoTrafego] = useState(true);
+
+  const [posts, setPosts] = useState<IgPost[]>([]);
+  const [atualizadoEmIg, setAtualizadoEmIg] = useState<string | null>(null);
+
   const carregar = useCallback(async () => {
     setCarregando(true);
     setErro('');
@@ -60,7 +81,42 @@ export function MarketingDiretoria() {
     setCarregando(false);
   }, []);
 
-  useEffect(() => { void carregar(); }, [carregar]);
+  const carregarTrafego = useCallback(async () => {
+    setCarregandoTrafego(true);
+    setErroTrafego('');
+    const { data, error } = await supabase.functions.invoke('meta-ads', { body: { action: 'listar', dias: 30 } });
+    if (error || !data?.ok) {
+      setErroTrafego(data?.error || error?.message || 'Não foi possível carregar os dados de tráfego pago.');
+      setGastoTrafego(null);
+      setLeadsTrafego(null);
+    } else {
+      const moeda = data.conta?.moeda ?? 'BRL';
+      const totais = (data.campanhas as any[]).reduce(
+        (acc, c) => ({
+          gasto: acc.gasto + (moeda === 'BRL' ? c.gasto : (c.gasto_brl ?? c.gasto)),
+          leads: acc.leads + c.leads,
+        }),
+        { gasto: 0, leads: 0 },
+      );
+      setGastoTrafego(totais.gasto);
+      setLeadsTrafego(totais.leads);
+    }
+    setCarregandoTrafego(false);
+  }, []);
+
+  const carregarInstagram = useCallback(async () => {
+    const { data } = await supabase.from('trafego_ig_posts_cache').select('*').order('publicado_em', { ascending: false }).limit(5);
+    if (data) {
+      setPosts(data);
+      setAtualizadoEmIg(data[0]?.atualizado_em ?? null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void carregar();
+    void carregarTrafego();
+    void carregarInstagram();
+  }, [carregar, carregarTrafego, carregarInstagram]);
 
   const emProducao = ['ideia', 'roteiro', 'gravando', 'editando'].reduce((total, etapa) => total + (contagens[etapa] ?? 0), 0);
 
@@ -71,7 +127,7 @@ export function MarketingDiretoria() {
           <div className="flex items-center gap-2"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary"><Megaphone className="h-5 w-5" /></div><h1 className="text-2xl font-bold tracking-tight">Diretoria — DP Marketing</h1></div>
           <p className="max-w-3xl text-sm text-muted-foreground">Acompanhe o pipeline de conteúdo do IDM e decida onde a produção precisa avançar. Dados do Social Media; playbook abaixo.</p>
         </div>
-        <Button variant="outline" onClick={() => void carregar()} disabled={carregando}><RefreshCw className="mr-2 h-4 w-4" />Atualizar</Button>
+        <Button variant="outline" onClick={() => { void carregar(); void carregarTrafego(); void carregarInstagram(); }} disabled={carregando || carregandoTrafego}><RefreshCw className="mr-2 h-4 w-4" />Atualizar</Button>
       </header>
 
       {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
@@ -89,6 +145,44 @@ export function MarketingDiretoria() {
       <Card className="border-border/70 shadow-sm"><CardContent className="space-y-3 p-4 sm:p-5">
         <SectionBar title="Pipeline editorial" subtitle="Quantidade atual em cada etapa do Kanban único de Social Media." icon={Clapperboard} />
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{ETAPAS.map(etapa => <div key={etapa.id} className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/20 p-3 text-sm"><span>{etapa.label}</span><strong className="tabular-nums">{carregando ? '—' : contagens[etapa.id] ?? 0}</strong></div>)}</div>
+      </CardContent></Card>
+
+      <Card className="border-border/70 shadow-sm"><CardContent className="space-y-3 p-4 sm:p-5">
+        <SectionBar title="Tráfego pago" subtitle="Últimos 30 dias, conta Onze Digital USA #02. Dados ao vivo do Gestor de Tráfego." icon={DollarSign} />
+        {erroTrafego && <p role="alert" className="text-sm text-destructive">{erroTrafego}</p>}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <StatTile label="Gasto (30d)" value={carregandoTrafego ? '—' : gastoTrafego !== null ? fmtBRL(gastoTrafego) : '—'} icon={DollarSign} />
+          <StatTile label="Leads (30d)" value={carregandoTrafego ? '—' : leadsTrafego ?? '—'} icon={Users} />
+        </div>
+      </CardContent></Card>
+
+      <Card className="border-border/70 shadow-sm"><CardContent className="space-y-3 p-4 sm:p-5">
+        <SectionBar
+          title="Instagram — engajamento"
+          subtitle={`@institutodespertamente, últimos posts. ${atualizadoEmIg ? `Foto de ${new Date(atualizadoEmIg).toLocaleDateString('pt-BR')} — não atualiza sozinho ainda (precisa de permissão instagram_basic no token).` : 'Sem dados ainda.'}`}
+          icon={Heart}
+        />
+        {posts.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nenhum post em cache ainda.</p>
+        ) : (
+          <div className="space-y-2">
+            {posts.map(post => (
+              <a
+                key={post.post_id}
+                href={post.permalink ?? undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 p-3 text-sm hover:bg-muted/40 transition-colors"
+              >
+                <span className="truncate flex-1 text-xs text-muted-foreground">{post.caption ?? '(sem legenda)'}</span>
+                <span className="shrink-0 flex items-center gap-3 text-xs font-medium">
+                  <span className="flex items-center gap-1"><Heart className="h-3 w-3" />{post.like_count}</span>
+                  <span className="flex items-center gap-1"><MessageCircle className="h-3 w-3" />{post.comments_count}</span>
+                </span>
+              </a>
+            ))}
+          </div>
+        )}
       </CardContent></Card>
 
       <Card className="border-border/70 shadow-sm"><CardContent className="space-y-3 p-4 sm:p-5">
