@@ -83,10 +83,18 @@ serve(async (req) => {
 
     const descricaoPagamento = bumpIncluido ? `${produto.nome} + ${produto.bump_nome}` : produto.nome;
 
+    // Sem isso o Mercado Pago nao sabe pra onde mandar a notificacao desse
+    // pagamento (ele foi criado com o access_token da PARCEIRA, nao do app
+    // principal, entao o webhook configurado no painel do app nao cobre
+    // esse pagamento) -- achado real 19/11/2026: pelo menos duas vendas
+    // aprovadas no MP nunca chegaram no nosso mp-webhook por causa disso.
+    const notificationUrl = `${Deno.env.get('SUPABASE_URL')!}/functions/v1/mp-webhook`;
+
     const mpPayload: Record<string, unknown> = {
       transaction_amount: valorBruto,
       description: descricaoPagamento,
       application_fee: applicationFee,
+      notification_url: notificationUrl,
       payer: {
         email: comprador.email,
         first_name: firstName,
