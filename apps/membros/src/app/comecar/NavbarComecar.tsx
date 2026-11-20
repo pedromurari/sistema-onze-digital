@@ -28,6 +28,7 @@ const NAV_ITEMS: NavItem[] = [
     href: '/comecar#programas',
     dropdown: [
       { label: 'Psicanálise Integrativa', href: '/programas/psicanalise-integrativa' },
+      { label: 'Despertar Sistêmico (Constelação Familiar)', href: '/programas/constelacao-familiar' },
       { label: 'Mentoria NPS', href: '/programas/mentoria-nps' },
       { label: 'Mentoria NPA', href: '/programas/mentoria-npa' },
       { label: 'Practitioner em PNL', href: '/programas/practitioner-pnl' },
