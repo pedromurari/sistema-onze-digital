@@ -101,6 +101,7 @@ const CATEGORIAS = [
   { label: 'Tudo', test: () => true },
   { label: '🎬 Reels/Shorts/TikTok', test: (c: ConteudoCalendario) => c.formato === 'reels' || c.formato === 'short' },
   { label: '📢 Anúncios', test: (c: ConteudoCalendario) => c.formato === 'anuncio' },
+  { label: '📱 Stories', test: (c: ConteudoCalendario) => c.formato === 'stories' },
   { label: '📺 YouTube Longo', test: (c: ConteudoCalendario) => c.plataforma === 'youtube' && c.formato === 'video' },
 ] as const;
 
@@ -172,6 +173,8 @@ function ContentCard({
 
 function ContentFormFields({ form, onChange }: { form: ContentForm; onChange: (next: ContentForm) => void }) {
   const ehVideoLongo = form.plataforma === 'youtube' && form.formato === 'video';
+  const mostraBlocoYoutube = form.plataforma === 'youtube'
+    || form.titulo_youtube.trim() !== '' || form.descricao_youtube.trim() !== '';
   return (
     <div className="space-y-3">
       <div>
@@ -216,6 +219,7 @@ function ContentFormFields({ form, onChange }: { form: ContentForm; onChange: (n
         <Textarea rows={4} maxLength={5000} value={form.legenda} onChange={event => onChange({ ...form, legenda: event.target.value })} />
         {ehVideoLongo && <p className="mt-1 text-xs text-muted-foreground">Vídeo longo do YouTube não usa este campo — a copy vai no bloco do YouTube abaixo.</p>}
       </div>
+      {mostraBlocoYoutube && (
       <div className="rounded-xl border border-border p-3 space-y-3">
         <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <Youtube className="h-4 w-4 text-red-600" /> {ehVideoLongo ? 'YouTube — vídeo longo' : 'YouTube Shorts'}
@@ -231,6 +235,7 @@ function ContentFormFields({ form, onChange }: { form: ContentForm; onChange: (n
           <p className="mt-1 text-xs text-muted-foreground">{form.descricao_youtube.length}/5000</p>
         </div>
       </div>
+      )}
       <div>
         <Label htmlFor="conteudo-roteiro">Roteiro completo / falas de gravação</Label>
         <Textarea id="conteudo-roteiro" rows={16} className="font-mono text-xs" value={form.texto_peca} onChange={event => onChange({ ...form, texto_peca: event.target.value })} placeholder="Cole aqui a copy completa, com falas, cenas e CTA." />
