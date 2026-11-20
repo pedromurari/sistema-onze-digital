@@ -46,6 +46,12 @@ const FAQ: [string, string][] = [
   ['Quanto tempo dura o curso?', 'O curso acontece em 3 dias consecutivos, sempre às 20h. Cada aula tem duração aproximada de 2 horas, totalizando cerca de 6 horas de conteúdo exclusivo.'],
 ];
 
+const FAQ_BLACK_FRIDAY: [string, string][] = [
+  ['O que muda nessa edição de Black Friday?', 'Três coisas: cada aula tem um convidado diferente, o conteúdo foi remontado do zero (não é reprise de turma anterior) e, no encerramento da terceira aula, abrimos uma condição de Black Friday pra Formação Completa em Psicanálise, com bônus que não entram em nenhuma outra turma.'],
+  ['Preciso pagar alguma coisa pra assistir às três aulas?', 'Não. As três aulas são gratuitas, com certificado e material inclusos. A condição de Black Friday é uma oferta opcional, apresentada só no fim da terceira noite pra quem quiser continuar na formação.'],
+  ['Até quando vale a condição de Black Friday?', 'Ela é apresentada no encerramento da terceira aula e fica no ar por tempo limitado. Quem está inscrito recebe o aviso por WhatsApp e e-mail quando abrir e quando estiver perto de fechar.'],
+];
+
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 const DIAS_SEMANA_CURTO = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
 
@@ -65,7 +71,29 @@ interface TurmaInfo {
   nome: string;
   slogan: string | null;
   descricao: string | null;
+  tema_campanha?: string | null;
 }
+
+// O que muda numa edicao tematica. A pagina e a mesma pra toda turma, entao
+// nada disso pode ser hardcode solto -- so aparece quando a turma declara o
+// tema no banco (lancamentos.tema_campanha).
+const DIFERENCIAIS_BF: { titulo: string; texto: string; icone: typeof Eye }[] = [
+  {
+    titulo: 'Um convidado diferente por aula',
+    texto: 'Cada uma das três noites tem um convidado próprio, com a bagagem clínica dele. Nenhuma turma anterior teve isso.',
+    icone: Users,
+  },
+  {
+    titulo: 'Conteúdo inédito',
+    texto: 'Não é reprise do que já foi dado nas outras turmas. Os três temas foram remontados do zero pra esta edição.',
+    icone: Sparkles,
+  },
+  {
+    titulo: 'Condição de Black Friday na última aula',
+    texto: 'No encerramento abrimos uma condição de Black Friday pra Formação Completa em Psicanálise, com bônus que não entram em nenhuma outra turma.',
+    icone: Flame,
+  },
+];
 
 function formatarDatasHero(aulas: Aula[]): string {
   if (aulas.length === 0) return '';
@@ -185,6 +213,7 @@ export default function TurmaCaptura() {
   }, [depoimentoAberto]);
 
   const datasHero = useMemo(() => formatarDatasHero(aulas), [aulas]);
+  const ehBlackFriday = turma?.tema_campanha === 'black_friday';
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -275,10 +304,20 @@ export default function TurmaCaptura() {
           <div className="text-center lg:text-left">
             <img src={LOGO} alt="Instituto DespertaMente" className="h-16 w-16 object-contain mx-auto lg:mx-0 mb-5" />
 
+            {ehBlackFriday && (
+              <p className="mb-4 inline-flex items-center gap-2 rounded-full border border-amber-400/50 bg-amber-400/10 px-4 py-1.5 text-xs font-bold tracking-widest text-amber-400">
+                <Flame className="h-3.5 w-3.5 animate-pulse" /> EDIÇÃO BLACK FRIDAY
+              </p>
+            )}
+
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-[1.1]">
               Curso Gratuito de<br /><span className="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-500 bg-clip-text text-transparent">{turma.nome.replace(/^Turma #\d+\s*/i, '') || 'Psicanálise Integrativa'}!</span>
             </h1>
-            <p className="mt-5 text-slate-300 text-lg lg:text-xl max-w-xl mx-auto lg:mx-0">Uma sequência de 3 aulas ONLINE. 100% Gratuitas com Certificado + Material.</p>
+            <p className="mt-5 text-slate-300 text-lg lg:text-xl max-w-xl mx-auto lg:mx-0">
+              {ehBlackFriday
+                ? 'Três aulas ao vivo, conteúdo inédito e um convidado diferente em cada noite. 100% gratuitas, com certificado e material.'
+                : 'Uma sequência de 3 aulas ONLINE. 100% Gratuitas com Certificado + Material.'}
+            </p>
 
             <div className={`mt-7 rounded-2xl border border-white/10 ${CARD_BG} px-6 py-5 shadow-xl max-w-md mx-auto lg:mx-0`}>
               <p className="text-amber-400 font-bold text-sm tracking-wide">{turma.nome.toUpperCase()}</p>
@@ -299,7 +338,7 @@ export default function TurmaCaptura() {
             {turma.descricao && (
               <div className="mt-6 rounded-2xl border border-amber-400/40 bg-[#1a1308] px-6 py-5 text-left shadow-[0_0_30px_-10px_rgba(251,191,36,0.35)] max-w-md mx-auto lg:mx-0">
                 <p className="text-amber-400 font-bold text-sm mb-1.5 flex items-center gap-1.5">
-                  <Flame className="h-4 w-4 animate-pulse" /> EDIÇÃO ESPECIAL
+                  <Flame className="h-4 w-4 animate-pulse" /> {ehBlackFriday ? 'O QUE TEM DE DIFERENTE' : 'EDIÇÃO ESPECIAL'}
                 </p>
                 <p className="text-slate-200 text-sm leading-relaxed">{turma.descricao}</p>
               </div>
@@ -389,6 +428,36 @@ export default function TurmaCaptura() {
           })}
         </div>
       </section>
+
+      {/* O QUE MUDA NESTA EDIÇÃO -- só em edição temática */}
+      {ehBlackFriday && (
+        <section className="px-5 sm:px-8 lg:px-12 py-10 sm:py-16 max-w-6xl mx-auto text-center">
+          <p className="inline-flex items-center gap-2 rounded-full border border-amber-400/50 bg-amber-400/10 px-4 py-1.5 text-xs font-bold tracking-widest text-amber-400">
+            <Flame className="h-3.5 w-3.5" /> BLACK FRIDAY
+          </p>
+          <h2 className="mt-5 text-3xl sm:text-4xl font-bold">O que muda <span className="text-amber-400">nesta edição</span></h2>
+          <p className="text-slate-300 mt-3 text-lg max-w-2xl mx-auto">
+            A Semana do Despertar acontece várias vezes por ano. Esta é a única com estes três pontos.
+          </p>
+          <div className="mt-10 grid gap-6 lg:grid-cols-3">
+            {DIFERENCIAIS_BF.map((item) => {
+              const Icone = item.icone;
+              return (
+                <div key={item.titulo} className={`rounded-2xl border border-amber-400/30 ${CARD_BG} p-7 text-left shadow-lg transition-transform hover:-translate-y-1 hover:shadow-[0_0_30px_-10px_rgba(251,191,36,0.5)]`}>
+                  <div className="h-12 w-12 rounded-xl bg-amber-400/15 border border-amber-400/30 flex items-center justify-center mb-4">
+                    <Icone className="h-6 w-6 text-amber-400" />
+                  </div>
+                  <p className="text-amber-400 font-bold text-xl mb-3">{item.titulo}</p>
+                  <p className="text-base text-slate-200 leading-relaxed">{item.texto}</p>
+                </div>
+              );
+            })}
+          </div>
+          <p className="mt-8 text-slate-300 text-base max-w-2xl mx-auto">
+            As três aulas continuam <span className="text-amber-400 font-semibold">100% gratuitas</span>. A condição de Black Friday é pra quem quiser seguir depois — e só aparece no fim da terceira noite.
+          </p>
+        </section>
+      )}
 
       {/* DEPOIMENTOS */}
       <section className="px-5 sm:px-8 lg:px-12 py-10 sm:py-16 max-w-6xl mx-auto text-center">
@@ -489,7 +558,7 @@ export default function TurmaCaptura() {
           <p className="text-slate-300 mt-2 text-lg">Tire suas dúvidas!</p>
         </div>
         <Accordion type="single" collapsible className="space-y-2">
-          {FAQ.map(([pergunta, resposta], i) => (
+          {(ehBlackFriday ? [...FAQ_BLACK_FRIDAY, ...FAQ] : FAQ).map(([pergunta, resposta], i) => (
             <AccordionItem key={i} value={`item-${i}`} className={`rounded-xl border border-white/10 ${CARD_BG} px-5 border-b-0 shadow-md`}>
               <AccordionTrigger className="text-left hover:no-underline text-base">
                 <span className="flex items-center gap-2.5"><HelpCircle className="h-5 w-5 text-amber-400 shrink-0" />{pergunta}</span>
@@ -511,10 +580,14 @@ export default function TurmaCaptura() {
               <span className="flex items-center gap-1.5 rounded-full border border-amber-400/40 text-amber-400 px-3 py-1.5"><Users className="h-3.5 w-3.5" />Mais de 5000 Inscritos</span>
               <span className="flex items-center gap-1.5 rounded-full border border-amber-400/40 text-amber-400 px-3 py-1.5"><Gift className="h-3.5 w-3.5" />100% Gratuito</span>
             </div>
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold">Vagas limitadas.<br />Corra para garantir a sua.</h2>
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold">
+              {ehBlackFriday
+                ? <>Três noites.<br />Uma única vez no ano.</>
+                : <>Vagas limitadas.<br />Corra para garantir a sua.</>}
+            </h2>
             <p className="text-slate-300 mt-4 text-lg max-w-md mx-auto lg:mx-0">
-              {turma.descricao
-                ? 'Essa condição de Black Friday não se repete. Garanta sua vaga gratuita agora e aproveite enquanto está no ar.'
+              {ehBlackFriday
+                ? 'Convidado diferente em cada noite, conteúdo inédito e uma condição de Black Friday que não se repete. A inscrição continua gratuita — garanta a sua enquanto está no ar.'
                 : 'Não perca a oportunidade de transformar sua vida através do autoconhecimento. As inscrições podem ser encerradas a qualquer momento.'}
             </p>
             <p className="mt-6 text-sm text-slate-300">🎁 BÔNUS EXCLUSIVO: Ebook <a href={LINK_EBOOK} target="_blank" rel="noopener noreferrer" className="text-amber-400 underline">"Desenvolvimento da Personalidade"</a><br />+ Certificado de Participação + Material Complementar</p>
