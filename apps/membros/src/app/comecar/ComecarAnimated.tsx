@@ -62,12 +62,12 @@ function HeroSection() {
           {/* Texto — esquerda */}
           <div className="space-y-8">
             <FadeIn delay={0}>
-              <span className="inline-block text-xs font-semibold uppercase tracking-[0.2em] text-[#FFB800] bg-[#FFB800]/10 rounded-full px-3 py-1.5">
+              <span className="fds-eyebrow">
                 Método Despertamente
               </span>
             </FadeIn>
             <FadeIn delay={80}>
-              <h1 className="font-display text-[clamp(2.8rem,6vw,5.5rem)] font-bold text-white leading-[0.93] tracking-tight">
+              <h1 className="fds-display">
                 Desperte a mente<br />que decide<br />por você.
               </h1>
             </FadeIn>
@@ -82,7 +82,7 @@ function HeroSection() {
               <div className="flex flex-wrap items-center gap-4">
                 <Link
                   href="/loja"
-                  className="inline-flex items-center gap-2 rounded-xl bg-[#FFB800] px-7 py-4 text-sm font-bold text-[#0D1638] hover:bg-[#FFC933] active:scale-[0.98] transition-all duration-200"
+                  className="fds-btn fds-btn--primary"
                 >
                   VER TODOS OS PROGRAMAS <ArrowRight className="h-4 w-4" />
                 </Link>
@@ -102,8 +102,7 @@ function HeroSection() {
               é de fato nossa. */}
           <FadeIn direction="right" delay={200} className="hidden lg:block">
             <div className="relative flex items-center justify-center">
-              <div className="absolute inset-0 bg-[#FFB800]/10 rounded-full blur-[120px]" />
-              <img
+                            <img
                 src="/despertamente-simbolo.png"
                 alt="Símbolo do Instituto Despertamente"
                 className="relative w-full max-w-[420px] drop-shadow-[0_0_60px_rgba(255,184,0,0.15)]"
@@ -111,7 +110,7 @@ function HeroSection() {
               />
               {/* Badge flutuante */}
               <div className="absolute bottom-2 left-0 bg-[#09122C] border border-white/10 rounded-2xl px-5 py-4 shadow-xl">
-                <p className="text-[#FFB800] text-2xl font-bold font-display">12.000+</p>
+                <p className="fds-h3" style={{ fontSize: '1.5rem' }}>12.000+</p>
                 <p className="text-white/45 text-xs mt-0.5">Vidas transformadas</p>
               </div>
             </div>
@@ -139,7 +138,7 @@ function ReconhecimentoSection() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 sm:gap-4 divide-y sm:divide-y-0 sm:divide-x divide-white/8">
           {NUMEROS.map((item, i) => (
             <div key={i} className="text-center pt-8 sm:pt-0 first:pt-0 sm:px-10 first:pl-0 last:pr-0">
-              <p className="font-display text-4xl font-bold text-white">{item.n}</p>
+              <p className="fds-h3">{item.n}</p>
               <p className="text-white/35 text-sm mt-1.5 uppercase tracking-wide">{item.l}</p>
             </div>
           ))}
@@ -158,7 +157,7 @@ function ManifestoSection() {
       <div className="fds-wrap px-6 sm:px-10 lg:px-16">
         <FadeIn direction="none">
           <div className="w-14 h-px bg-[#FFB800]/40 mb-10" />
-          <h2 className="font-display text-[clamp(2.8rem,7vw,6.5rem)] font-bold text-white leading-[0.92] tracking-tight max-w-4xl">
+          <h2 className="fds-display max-w-4xl">
             Nem toda mudança<br />começa do lado de fora.
           </h2>
         </FadeIn>
@@ -176,7 +175,7 @@ function ManifestoSection() {
           <div className="mt-12">
             <a
               href="#programas"
-              className="inline-flex items-center gap-2 rounded-xl bg-[#FFB800] px-7 py-4 text-sm font-bold text-[#0D1638] hover:bg-[#FFC933] active:scale-[0.98] transition-all duration-200"
+              className="fds-btn fds-btn--primary"
             >
               COLA NO JOGO <ArrowRight className="h-4 w-4" />
             </a>
@@ -211,9 +210,9 @@ function AcessoRapidoSection() {
             <a
               key={label}
               href={href}
-              className="group flex flex-col items-center gap-3 p-5 rounded-2xl border border-white/8 hover:border-[#FFB800]/40 hover:bg-[#FFB800]/5 transition-all duration-200"
+              className="group flex flex-col items-center gap-3 p-5 rounded-2xl border border-white/8 hover:border-white/20 hover:bg-white/[0.03] transition-all duration-200"
             >
-              <div className="w-10 h-10 rounded-xl bg-white/6 group-hover:bg-[#FFB800]/15 flex items-center justify-center transition-colors">
+              <div className="w-10 h-10 rounded-xl bg-white/6 group-hover:bg-white/10 flex items-center justify-center transition-colors">
                 <Icon className="h-5 w-5 text-white/45 group-hover:text-[#FFB800] transition-colors" />
               </div>
               <span className="text-xs font-medium text-white/45 group-hover:text-white/80 text-center transition-colors leading-tight">
@@ -263,7 +262,7 @@ function TrilhasSection() {
       <div className="fds-wrap px-6 sm:px-10 lg:px-16 fds-section">
         <FadeIn direction="none" className="mb-14">
           <p className="text-xs uppercase tracking-[0.22em] text-white/30 mb-3">Jornadas</p>
-          <h2 className="font-display text-3xl sm:text-4xl font-bold text-white leading-[1.0]">
+          <h2 className="fds-h2">
             Três caminhos.<br />O mesmo propósito.
           </h2>
         </FadeIn>
@@ -284,11 +283,11 @@ function TrilhasSection() {
                   </span>
                 </div>
                 <div className="p-6 flex flex-col gap-3 flex-1">
-                  <h3 className="font-display text-xl font-bold text-white">{trilha.title}</h3>
+                  <h3 className="fds-h3" style={{ fontSize: '1.25rem' }}>{trilha.title}</h3>
                   <p className="text-white/45 text-sm leading-relaxed flex-1">{trilha.desc}</p>
                   <a
                     href={trilha.href}
-                    className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#FFB800] hover:gap-3 transition-all duration-200 mt-2"
+                    className="inline-flex items-center gap-1.5 text-sm font-semibold text-white/70 hover:text-[#FFB800] hover:gap-3 transition-all duration-200 mt-2"
                   >
                     {trilha.cta} <ArrowRight className="h-3.5 w-3.5" />
                   </a>
@@ -366,13 +365,13 @@ function ProgramasSection({ programas }: { programas: Programa[] }) {
         <FadeIn direction="none" className="flex items-end justify-between mb-12">
           <div>
             <p className="text-xs uppercase tracking-[0.22em] text-white/30 mb-3">Programas</p>
-            <h2 className="font-display text-3xl sm:text-4xl font-bold text-white leading-[1.0]">
+            <h2 className="fds-h2">
               Cursos que transformam<br />carreiras e vidas.
             </h2>
           </div>
           <Link
             href="/loja"
-            className="hidden sm:inline-flex items-center gap-1.5 text-sm font-semibold text-[#FFB800] hover:gap-3 transition-all duration-200 shrink-0"
+            className="hidden sm:inline-flex items-center gap-1.5 text-sm font-semibold text-white/70 hover:text-[#FFB800] hover:gap-3 transition-all duration-200 shrink-0"
           >
             Ver todos <ArrowRight className="h-4 w-4" />
           </Link>
@@ -400,7 +399,7 @@ function ProgramasSection({ programas }: { programas: Programa[] }) {
                   {p.short_description && (
                     <p className="text-white/40 text-xs leading-relaxed line-clamp-2">{p.short_description}</p>
                   )}
-                  <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-[#FFB800]">
+                  <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-white/60">
                     Saiba mais <ChevronRight className="h-3.5 w-3.5" />
                   </div>
                 </div>
@@ -412,7 +411,7 @@ function ProgramasSection({ programas }: { programas: Programa[] }) {
         <div className="mt-8 sm:hidden text-center">
           <Link
             href="/loja"
-            className="inline-flex items-center gap-2 text-sm font-semibold text-[#FFB800] border border-[#FFB800]/30 rounded-xl px-6 py-3 hover:bg-[#FFB800]/8 transition-colors"
+            className="fds-btn fds-btn--ghost"
           >
             Ver todos os programas <ArrowRight className="h-4 w-4" />
           </Link>
@@ -453,7 +452,7 @@ function MetodologiaSection() {
         <div className="px-6 sm:px-10 lg:pl-16 lg:pr-16 fds-section flex flex-col justify-center">
           <FadeIn direction="right">
             <p className="text-xs uppercase tracking-[0.22em] text-white/30 mb-8">Metodologia IDM</p>
-            <h2 className="font-display text-4xl sm:text-5xl font-bold text-white leading-[1.0] mb-12">
+            <h2 className="fds-h2 mb-12">
               Conhecimento.<br />Consciência.<br />Prática.
             </h2>
             <div className="space-y-9">
@@ -495,7 +494,7 @@ function DiferenciaisSection() {
         <div className="px-6 sm:px-10 lg:pl-16 lg:pr-16 fds-section flex flex-col justify-center">
           <FadeIn direction="left">
             <p className="text-xs uppercase tracking-[0.22em] text-white/30 mb-8">Por que o IDM</p>
-            <h2 className="font-display text-4xl sm:text-5xl font-bold text-white leading-[1.0] mb-10">
+            <h2 className="fds-h2 mb-10">
               Aprendizagem<br />que transforma<br />na prática.
             </h2>
             <ul className="space-y-5">
@@ -539,17 +538,16 @@ function CTAPromoSection() {
     <section id="franqueado" className="fds-band">
       <div className="fds-wrap px-6 sm:px-10 lg:px-16 fds-section">
         <FadeIn direction="none">
-          <div className="relative rounded-3xl overflow-hidden border border-[#FFB800]/20 bg-gradient-to-br from-[#FFB800]/10 via-[#09122C] to-[#09122C]">
+          <div className="fds-card relative overflow-hidden">
             {/* Glow */}
-            <div className="absolute -top-20 -right-20 w-80 h-80 bg-[#FFB800]/10 rounded-full blur-3xl pointer-events-none" />
-
+            
             <div className="relative lg:grid lg:grid-cols-[1fr_auto] gap-12 items-center px-8 sm:px-14 py-14">
 
               <div className="space-y-5">
-                <span className="inline-block text-[10px] font-bold uppercase tracking-[0.25em] text-[#FFB800] bg-[#FFB800]/15 rounded-full px-3 py-1.5">
+                <span className="fds-eyebrow">
                   Inscrições Abertas
                 </span>
-                <h2 className="font-display text-4xl sm:text-5xl font-bold text-white leading-[0.95]">
+                <h2 className="fds-h2">
                   O despertar começa<br />com uma decisão.
                 </h2>
                 <div className="space-y-1.5 text-white/45 text-sm leading-relaxed">
@@ -562,7 +560,7 @@ function CTAPromoSection() {
               <div className="mt-10 lg:mt-0 flex flex-col gap-3 shrink-0">
                 <Link
                   href="/loja"
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#FFB800] px-8 py-4 text-sm font-bold text-[#0D1638] hover:bg-[#FFC933] active:scale-[0.98] transition-all duration-200 whitespace-nowrap"
+                  className="fds-btn fds-btn--primary whitespace-nowrap"
                 >
                   QUERO MINHA VAGA <ArrowRight className="h-4 w-4" />
                 </Link>
@@ -634,13 +632,13 @@ function BlogSection() {
         <FadeIn direction="none" className="flex items-end justify-between mb-12">
           <div>
             <p className="text-xs uppercase tracking-[0.22em] text-white/30 mb-3">Blog</p>
-            <h2 className="font-display text-3xl sm:text-4xl font-bold text-white leading-[1.0]">
+            <h2 className="fds-h2">
               Conteúdo que<br />expande a consciência.
             </h2>
           </div>
           <a
             href="#blog"
-            className="hidden sm:inline-flex items-center gap-1.5 text-sm font-semibold text-[#FFB800] hover:gap-3 transition-all duration-200 shrink-0"
+            className="hidden sm:inline-flex items-center gap-1.5 text-sm font-semibold text-white/70 hover:text-[#FFB800] hover:gap-3 transition-all duration-200 shrink-0"
           >
             Ver todos <ArrowRight className="h-4 w-4" />
           </a>
@@ -660,7 +658,7 @@ function BlogSection() {
                 </div>
                 <div className="p-5 flex flex-col gap-3 flex-1">
                   <div className="flex items-center gap-3">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#FFB800] bg-[#FFB800]/10 rounded-full px-2.5 py-1">
+                    <span className="fds-eyebrow">
                       {post.category}
                     </span>
                     <span className="flex items-center gap-1 text-[11px] text-white/30">
@@ -674,7 +672,7 @@ function BlogSection() {
                   <p className="text-white/40 text-xs leading-relaxed flex-1 line-clamp-2">{post.excerpt}</p>
                   <a
                     href="#blog"
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#FFB800] mt-1"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-white/60 mt-1"
                   >
                     Ler mais <ChevronRight className="h-3.5 w-3.5" />
                   </a>
@@ -714,7 +712,7 @@ function DepoimentosSection({ depos }: { depos: Depo[] }) {
 
         <FadeIn direction="none" className="mb-16">
           <p className="text-xs uppercase tracking-[0.22em] text-white/30 mb-3">Histórias de sucesso</p>
-          <h2 className="font-display text-4xl sm:text-5xl font-bold text-white leading-[1.0]">
+          <h2 className="fds-h2">
             Quem decidiu<br />olhar para dentro.
           </h2>
           <p className="mt-4 text-white/35 text-sm max-w-sm leading-relaxed">
@@ -768,7 +766,7 @@ function NewsletterSection() {
         <FadeIn direction="none">
           <div className="max-w-2xl mx-auto text-center">
             <p className="text-xs uppercase tracking-[0.22em] text-white/30 mb-4">Newsletter</p>
-            <h2 className="font-display text-4xl sm:text-5xl font-bold text-white leading-[1.0] mb-4">
+            <h2 className="fds-h2 mb-4">
               Conteúdo que expande<br />a consciência.
             </h2>
             <p className="text-white/40 text-sm leading-relaxed mb-10">
@@ -804,7 +802,7 @@ function NewsletterSection() {
                 />
                 <button
                   type="submit"
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#FFB800] px-6 py-3.5 text-sm font-bold text-[#0D1638] hover:bg-[#FFC933] active:scale-[0.98] transition-all duration-200 whitespace-nowrap"
+                  className="fds-btn fds-btn--primary whitespace-nowrap"
                 >
                   Inscrever <Send className="h-4 w-4" />
                 </button>
