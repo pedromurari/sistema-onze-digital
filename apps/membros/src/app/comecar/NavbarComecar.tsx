@@ -41,17 +41,25 @@ const NAV_ITEMS: NavItem[] = [
 ]
 
 function DropdownPanel({ items }: { items: DropdownItem[] }) {
+  // O respiro entre o botão e o painel é PADDING deste wrapper, não margin do
+  // painel. Com `mt-2` havia 8px que não pertenciam a elemento nenhum: ao
+  // descer o mouse pra clicar num programa, o cursor saía da área de hover no
+  // meio do caminho, o onMouseLeave disparava e o menu fechava na cara da
+  // pessoa (achado do Pedro, 21/11/2026). Como padding, o vão continua
+  // existindo visualmente mas faz parte da área que mantém o menu aberto.
   return (
-    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-56 rounded-xl bg-[#09122C] border border-white/10 shadow-2xl shadow-black/40 py-1.5 z-50">
-      {items.map(item => (
-        <a
-          key={item.label}
-          href={item.href}
-          className="block px-4 py-2.5 text-sm text-white/65 hover:text-white hover:bg-white/6 transition-colors"
-        >
-          {item.label}
-        </a>
-      ))}
+    <div className="absolute top-full left-1/2 z-50 w-60 -translate-x-1/2 pt-2">
+      <div className="rounded-xl border border-white/10 bg-[#09122C] py-1.5">
+        {items.map(item => (
+          <a
+            key={item.label}
+            href={item.href}
+            className="block px-4 py-2.5 text-sm text-white/65 transition-colors hover:bg-white/6 hover:text-white"
+          >
+            {item.label}
+          </a>
+        ))}
+      </div>
     </div>
   )
 }
@@ -59,6 +67,26 @@ function DropdownPanel({ items }: { items: DropdownItem[] }) {
 function NavItemDesktop({ item }: { item: NavItem }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  // Fecha com um respiro de 150ms em vez de na hora: quem desce o mouse na
+  // diagonal (do botão pro último item da lista) passa de raspão por fora da
+  // área, e fechar instantaneamente nesse caso faz o menu "fugir" do cursor.
+  const fecharTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const abrir = () => {
+    if (fecharTimer.current) {
+      clearTimeout(fecharTimer.current)
+      fecharTimer.current = null
+    }
+    setOpen(true)
+  }
+  const fecharComDelay = () => {
+    if (fecharTimer.current) clearTimeout(fecharTimer.current)
+    fecharTimer.current = setTimeout(() => setOpen(false), 150)
+  }
+
+  useEffect(() => () => {
+    if (fecharTimer.current) clearTimeout(fecharTimer.current)
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -81,8 +109,8 @@ function NavItemDesktop({ item }: { item: NavItem }) {
     <div
       ref={ref}
       className="relative"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
+      onMouseEnter={abrir}
+      onMouseLeave={fecharComDelay}
     >
       <button
         className="flex items-center gap-1 text-sm font-medium text-white/60 hover:text-white transition-colors"
