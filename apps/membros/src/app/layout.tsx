@@ -3,6 +3,7 @@ import { Fraunces, Poppins } from "next/font/google";
 import Script from "next/script";
 import { PwaRegister } from "@/components/PwaRegister";
 import "./globals.css";
+import "./design-system.css";
 
 const fraunces = Fraunces({
   subsets: ["latin"],

@@ -7,7 +7,8 @@
  * idmpelobrasil.com.br/npa/sao-paulo (VSL no topo, oferta e formulário
  * logo abaixo, pilares do conteúdo, urgência no fim).
  *
- * VISUAL: o design system em `../_sistema/formacao-design-system.css`,
+ * VISUAL: o design system em `src/app/design-system.css` (carregado no
+ * layout, vale pro site inteiro),
  * extraído do estilo que o Pedro escolheu no Refero e adaptado pra marca
  * (dourado como destaque único, Fraunces no serif, design plano, separação
  * por linha de 1px, escala tipográfica e espaçamento em base 4px).
@@ -28,7 +29,6 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion'
 import { FormacaoInscricaoForm } from '@/components/marketing/FormacaoInscricaoForm'
-import '../_sistema/formacao-design-system.css'
 
 const SLUG = 'constelacao-familiar'
 const WA_URL =
