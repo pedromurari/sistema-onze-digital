@@ -33,6 +33,8 @@ const NAV_ITEMS: NavItem[] = [
       { label: 'Mentoria NPA', href: '/programas/mentoria-npa' },
       { label: 'Practitioner em PNL', href: '/programas/practitioner-pnl' },
       { label: 'IDM Pelo Brasil', href: '/programas/idm-pelo-brasil' },
+      { label: 'Seu Numerólogo', href: '/programas/seu-numerologo' },
+      { label: 'Divã IDM (terapia)', href: '/programas/diva-idm' },
       { label: 'Ver todos os programas', href: '/loja' },
     ],
   },
