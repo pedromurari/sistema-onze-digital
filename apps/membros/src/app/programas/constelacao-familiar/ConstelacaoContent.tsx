@@ -214,7 +214,7 @@ function BlocoOferta({ comMoldura = true }: { comMoldura?: boolean }) {
         target="_blank"
         rel="noopener noreferrer"
         className="mt-4 flex items-center justify-center gap-2"
-        style={{ fontSize: 'var(--fds-caption)', color: 'var(--fds-ink-4)' }}
+        style={{ fontSize: 'var(--fds-small)', color: 'var(--fds-ink-3)' }}
       >
         <MessageCircle className="h-3.5 w-3.5" />
         Prefiro tirar uma dúvida antes

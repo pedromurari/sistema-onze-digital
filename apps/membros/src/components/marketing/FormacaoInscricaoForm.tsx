@@ -102,7 +102,9 @@ export function FormacaoInscricaoForm({
         )}
       </button>
 
-      <p className="text-[11px] text-[#383838] text-center leading-relaxed">
+      {/* Sinal de confiança: tem que ser legível. Fica no --fds-ink-3, não no
+          --fds-ink-4 (que é pra metadado tipo "01" / "AULA 1"). */}
+      <p className="text-center" style={{ fontSize: 'var(--fds-caption)', color: 'var(--fds-ink-3)', lineHeight: 1.6 }}>
         Pagamento seguro via Mercado Pago · Pix ou cartão
       </p>
     </form>
