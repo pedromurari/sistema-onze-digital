@@ -187,13 +187,13 @@ interface ParcelaLocal {
   deleted?: boolean;
 }
 
-type ProdutoTab = 'psicanalise' | 'numerologia' | 'pnl' | 'sociedade-idm' | 'npa-mentoria';
+type ProdutoTab = 'psicanalise' | 'numerologia' | 'pnl' | 'sociedade-idm' | 'npa-mentoria' | 'constelacao-familiar';
 // Produto real gravado em turmas/alunos/pagamentos -- 'pnl' na aba/ProdutoTab e um
 // guarda-chuva (mostra Practitioner e Master juntos), nunca um valor de verdade no banco.
 // "numerologia" (valor no banco) é exibido como "NPS Mentoria" na UI -- rótulo mudou,
 // dado não (2026-10-07). "npa-mentoria" é produto novo, mesma data: compradores da
 // mentoria vendida nos eventos IDM Pelo Brasil (NPA), importados de npa_evento_leads.
-type ProdutoReal = 'psicanalise' | 'numerologia' | 'pnl-practitioner' | 'pnl-master' | 'sociedade-idm' | 'npa-mentoria';
+type ProdutoReal = 'psicanalise' | 'numerologia' | 'pnl-practitioner' | 'pnl-master' | 'sociedade-idm' | 'npa-mentoria' | 'constelacao-familiar';
 type SubView = 'alunos' | 'turmas' | 'responsaveis';
 
 // 'pnl' casa com qualquer produto que comece com 'pnl-' (practitioner ou master);
@@ -1099,8 +1099,8 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
 
   // Tabs visíveis conforme turmas acessíveis
   const visibleTabs = useMemo<ProdutoTab[]>(() => {
-    if (isAdmin) return ['psicanalise', 'numerologia', 'pnl', 'sociedade-idm', 'npa-mentoria'];
-    const tabs: ProdutoTab[] = (['psicanalise', 'numerologia', 'pnl', 'sociedade-idm', 'npa-mentoria'] as ProdutoTab[]).filter(tab =>
+    if (isAdmin) return ['psicanalise', 'numerologia', 'pnl', 'sociedade-idm', 'npa-mentoria', 'constelacao-familiar'];
+    const tabs: ProdutoTab[] = (['psicanalise', 'numerologia', 'pnl', 'sociedade-idm', 'npa-mentoria', 'constelacao-familiar'] as ProdutoTab[]).filter(tab =>
       turmas.some(t => matchesProdutoTab(t.tipo || t.produto, tab) && permissions && canAccessFinanceiroTurma(permissions, t.id))
     );
     return tabs.length > 0 ? tabs : ['psicanalise'];
@@ -3074,12 +3074,13 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
               {/* Largura por quantidade de abas -- max-w-md (448px) ficou apertado
                   demais quando "npa-mentoria" virou a 5ª aba (2026-10-08): rótulos
                   como "Sociedade IDM" e "NPA Mentoria" vazavam do botão. */}
-              <TabsList className={`grid w-full ${visibleTabs.length >= 5 ? 'max-w-2xl' : visibleTabs.length === 4 ? 'max-w-lg' : 'max-w-xs'}`} style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, 1fr)` }}>
+              <TabsList className={`grid w-full ${visibleTabs.length >= 6 ? 'max-w-3xl' : visibleTabs.length === 5 ? 'max-w-2xl' : visibleTabs.length === 4 ? 'max-w-lg' : 'max-w-xs'}`} style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, 1fr)` }}>
                 {visibleTabs.includes('psicanalise') && <TabsTrigger value="psicanalise">Psicanalise</TabsTrigger>}
                 {visibleTabs.includes('numerologia') && <TabsTrigger value="numerologia">NPS Mentoria</TabsTrigger>}
                 {visibleTabs.includes('pnl') && <TabsTrigger value="pnl">PNL</TabsTrigger>}
                 {visibleTabs.includes('sociedade-idm') && <TabsTrigger value="sociedade-idm">Sociedade IDM</TabsTrigger>}
                 {visibleTabs.includes('npa-mentoria') && <TabsTrigger value="npa-mentoria">NPA Mentoria</TabsTrigger>}
+                {visibleTabs.includes('constelacao-familiar') && <TabsTrigger value="constelacao-familiar">Constelacao</TabsTrigger>}
               </TabsList>
             </Tabs>
           </div>
@@ -3117,6 +3118,7 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                   <SelectItem value="pnl-master">PNL Master</SelectItem>
                   <SelectItem value="sociedade-idm">Sociedade IDM</SelectItem>
                   <SelectItem value="npa-mentoria">NPA Mentoria</SelectItem>
+                  <SelectItem value="constelacao-familiar">Constelação Familiar</SelectItem>
                 </SelectContent>
               </Select>
             </div>

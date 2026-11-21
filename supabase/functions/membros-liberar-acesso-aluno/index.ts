@@ -10,10 +10,12 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const PRODUTO_PARA_SLUG: Record<string, string> = {
   psicanalise: 'formacao-psicanalise',
   numerologia: 'mentoria-nps',
+  'constelacao-familiar': 'despertar-sistemico',
 };
 const PRODUTO_NOME: Record<string, string> = {
   psicanalise: 'Formação em Psicanálise',
   numerologia: 'Mentoria NPS',
+  'constelacao-familiar': 'Despertar Sistêmico — Constelação Familiar',
 };
 
 const cors = {
