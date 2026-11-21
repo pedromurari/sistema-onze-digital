@@ -65,7 +65,7 @@ export function FormacaoInscricaoForm({
         onChange={e => setNome(e.target.value)}
         placeholder="Seu nome completo"
         autoComplete="name"
-        className="w-full rounded-xl bg-white/[0.04] border border-white/10 px-4 py-3 text-sm text-[#f0f0f0] placeholder:text-[#505050] outline-none focus:border-[#FFB800]/50 transition-colors"
+        className="fds-field"
       />
       <input
         type="tel"
@@ -74,7 +74,7 @@ export function FormacaoInscricaoForm({
         placeholder="WhatsApp com DDD"
         autoComplete="tel"
         inputMode="numeric"
-        className="w-full rounded-xl bg-white/[0.04] border border-white/10 px-4 py-3 text-sm text-[#f0f0f0] placeholder:text-[#505050] outline-none focus:border-[#FFB800]/50 transition-colors"
+        className="fds-field"
       />
       <input
         type="email"
@@ -82,15 +82,15 @@ export function FormacaoInscricaoForm({
         onChange={e => setEmail(e.target.value)}
         placeholder="Seu melhor e-mail"
         autoComplete="email"
-        className="w-full rounded-xl bg-white/[0.04] border border-white/10 px-4 py-3 text-sm text-[#f0f0f0] placeholder:text-[#505050] outline-none focus:border-[#FFB800]/50 transition-colors"
+        className="fds-field"
       />
 
-      {erro && <p className="text-xs text-red-400/90">{erro}</p>}
+      {erro && <p style={{ fontSize: 'var(--fds-caption)', color: '#ff8a8a' }}>{erro}</p>}
 
       <button
         type="submit"
         disabled={indo}
-        className="group w-full flex items-center justify-center gap-2.5 py-4 rounded-xl bg-[#FFB800] text-sm font-bold text-[#0D1638] hover:bg-[#FFC933] transition-colors disabled:opacity-70"
+        className="fds-btn fds-btn--primary group w-full" style={{ paddingBlock: 'var(--fds-4)' }}
       >
         {indo ? (
           <Loader2 className="h-4 w-4 animate-spin" />
@@ -102,7 +102,9 @@ export function FormacaoInscricaoForm({
         )}
       </button>
 
-      <p className="text-[11px] text-[#383838] text-center leading-relaxed">
+      {/* Sinal de confiança: tem que ser legível. Fica no --fds-ink-3, não no
+          --fds-ink-4 (que é pra metadado tipo "01" / "AULA 1"). */}
+      <p className="text-center" style={{ fontSize: 'var(--fds-caption)', color: 'var(--fds-ink-3)', lineHeight: 1.6 }}>
         Pagamento seguro via Mercado Pago · Pix ou cartão
       </p>
     </form>
