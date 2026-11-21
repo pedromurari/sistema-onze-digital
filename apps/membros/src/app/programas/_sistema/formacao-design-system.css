@@ -1,0 +1,239 @@
+/**
+ * Design system das páginas de formação (site institucional).
+ *
+ * Base: o estilo "editorial command observatory" que o Pedro escolheu no
+ * Refero (extraído do site da Prevalent) — serif editorial, UMA cor de
+ * destaque usada com parcimônia, design totalmente plano (zero sombra,
+ * zero gradiente, zero borda colorida), separação feita só com linha de
+ * 1px e espaço em branco, escala tipográfica e espaçamento disciplinados
+ * numa base de 4px.
+ *
+ * O que foi adaptado pra marca do IDM:
+ *   - a cor de destaque é o nosso dourado (#FFB800), não o roxo deles;
+ *   - o serif continua sendo Fraunces (já é o do site), no lugar do
+ *     Tiempos Headline;
+ *   - a página segue escura (o institucional inteiro é navy/preto) em vez
+ *     do fundo branco da referência. Se quisermos testar a versão clara,
+ *     é só trocar --fds-bg / --fds-ink aqui -- nenhum componente tem cor
+ *     fixa no JSX.
+ *
+ * REGRA DE OURO DO DESTAQUE: dourado aparece em no máximo
+ *   (1) um botão primário por tela,
+ *   (2) 2 a 3 palavras-chave de um título,
+ *   (3) ícones/setas pequenos e o eyebrow da seção.
+ * Fora isso, é branco/cinza. Se tudo é destaque, nada é.
+ */
+
+:root {
+  /* ── Cor ──────────────────────────────────────────────────────────── */
+  --fds-bg: #08090d;          /* fundo da página */
+  --fds-surface: #0c0e14;     /* faixa alternada (ritmo entre seções) */
+  --fds-deep: #09122c;        /* navy do topo/rodapé — mesma da navbar */
+  --fds-ink: #f2f2f3;         /* texto principal */
+  --fds-ink-2: #a7a8ae;       /* texto secundário */
+  --fds-ink-3: #71737c;       /* texto de apoio */
+  --fds-ink-4: #4a4c55;       /* legendas, metadados */
+  --fds-line: rgba(255, 255, 255, 0.09);  /* a separação é ESTA linha */
+  --fds-accent: #ffb800;      /* destaque único */
+  --fds-accent-ink: #09122c;  /* texto sobre o destaque */
+
+  /* ── Tipografia ───────────────────────────────────────────────────── */
+  --fds-serif: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --fds-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --fds-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --fds-display: 4.75rem;  /* 76px */
+  --fds-h1: 3.25rem;       /* 52px */
+  --fds-h2: 3rem;          /* 48px */
+  --fds-h3: 1.875rem;      /* 30px */
+  --fds-body-lg: 1.125rem; /* 18px */
+  --fds-body: 1rem;        /* 16px */
+  --fds-small: 0.875rem;   /* 14px */
+  --fds-caption: 0.75rem;  /* 12px */
+
+  /* ── Espaço (base 4px) ────────────────────────────────────────────── */
+  --fds-1: 4px;
+  --fds-2: 8px;
+  --fds-3: 12px;
+  --fds-4: 16px;
+  --fds-6: 24px;
+  --fds-8: 32px;
+  --fds-12: 48px;
+  --fds-16: 64px;
+  --fds-24: 96px;   /* respiro padrão entre seções */
+  --fds-30: 120px;  /* respiro de abertura/fechamento */
+
+  --fds-max: 1200px;
+
+  /* ── Forma ────────────────────────────────────────────────────────── */
+  --fds-r-btn: 4px;
+  --fds-r-card: 10px;
+}
+
+/* ── Estrutura ──────────────────────────────────────────────────────── */
+
+.fds {
+  background: var(--fds-bg);
+  color: var(--fds-ink);
+  font-family: var(--fds-sans);
+}
+
+.fds-section {
+  padding-block: var(--fds-24);
+}
+@media (max-width: 640px) {
+  .fds-section { padding-block: var(--fds-16); }
+}
+
+/* Faixa alternada: o ritmo vem da troca de fundo + linha de 1px, nunca de
+   sombra ou card flutuante. */
+.fds-band {
+  background: var(--fds-surface);
+  border-block: 1px solid var(--fds-line);
+}
+.fds-band--deep {
+  background: var(--fds-deep);
+  border-block: 1px solid var(--fds-line);
+}
+
+.fds-wrap {
+  width: 100%;
+  max-width: var(--fds-max);
+  margin-inline: auto;
+  padding-inline: var(--fds-6);
+}
+@media (min-width: 640px) {
+  .fds-wrap { padding-inline: var(--fds-12); }
+}
+
+.fds-rule {
+  height: 1px;
+  background: var(--fds-line);
+  border: 0;
+}
+
+/* ── Tipografia ─────────────────────────────────────────────────────── */
+
+.fds-eyebrow {
+  font-family: var(--fds-mono);
+  font-size: var(--fds-caption);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--fds-accent);
+  opacity: 0.8;
+}
+
+.fds-display,
+.fds-h1,
+.fds-h2,
+.fds-h3 {
+  font-family: var(--fds-serif);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--fds-ink);
+  text-wrap: balance;
+}
+
+.fds-display { font-size: clamp(2.75rem, 7vw, var(--fds-display)); line-height: 1.02; }
+.fds-h1      { font-size: clamp(2.25rem, 5.5vw, var(--fds-h1));    line-height: 1.06; }
+.fds-h2      { font-size: clamp(2rem, 5vw, var(--fds-h2));          line-height: 1.08; }
+.fds-h3      { font-size: clamp(1.375rem, 3vw, var(--fds-h3));      line-height: 1.2; }
+
+/* 2 a 3 palavras do título no destaque — nunca o título inteiro. */
+.fds-accent { color: var(--fds-accent); }
+
+.fds-lead {
+  font-size: var(--fds-body-lg);
+  line-height: 1.65;
+  color: var(--fds-ink-2);
+  max-width: 62ch;
+}
+.fds-body {
+  font-size: var(--fds-body);
+  line-height: 1.7;
+  color: var(--fds-ink-3);
+  max-width: 68ch;
+}
+.fds-small {
+  font-size: var(--fds-small);
+  line-height: 1.6;
+  color: var(--fds-ink-3);
+}
+.fds-meta {
+  font-family: var(--fds-mono);
+  font-size: var(--fds-caption);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fds-ink-4);
+}
+
+/* ── Componentes ────────────────────────────────────────────────────── */
+
+/* Design plano: o botão primário não tem sombra nem gradiente. */
+.fds-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--fds-2);
+  border-radius: var(--fds-r-btn);
+  font-size: var(--fds-small);
+  font-weight: 700;
+  padding: var(--fds-4) var(--fds-8);
+  transition: background-color 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+  cursor: pointer;
+}
+.fds-btn--primary {
+  background: var(--fds-accent);
+  color: var(--fds-accent-ink);
+  border: 1px solid var(--fds-accent);
+}
+.fds-btn--primary:hover { background: #ffc733; border-color: #ffc733; }
+.fds-btn--ghost {
+  background: transparent;
+  color: var(--fds-ink-2);
+  border: 1px solid var(--fds-line);
+}
+.fds-btn--ghost:hover { color: var(--fds-ink); border-color: rgba(255, 255, 255, 0.2); }
+.fds-btn[disabled] { opacity: 0.6; cursor: default; }
+
+/* Card = retângulo delimitado por 1px, sem sombra e sem fundo colorido. */
+.fds-card {
+  border: 1px solid var(--fds-line);
+  border-radius: var(--fds-r-card);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.fds-field {
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--fds-line);
+  border-radius: var(--fds-r-btn);
+  padding: var(--fds-3) var(--fds-4);
+  font-size: var(--fds-small);
+  color: var(--fds-ink);
+  transition: border-color 0.16s ease;
+}
+.fds-field::placeholder { color: var(--fds-ink-4); }
+.fds-field:focus { outline: none; border-color: rgba(255, 184, 0, 0.45); }
+
+.fds-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fds-2);
+  border: 1px solid var(--fds-line);
+  border-radius: 999px;
+  padding: var(--fds-1) var(--fds-3);
+  font-family: var(--fds-mono);
+  font-size: var(--fds-caption);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fds-ink-3);
+}
+
+/* Lista de itens separada por linha, não por bullet colorido. */
+.fds-list > * + * {
+  border-top: 1px solid var(--fds-line);
+}
+.fds-list > * {
+  padding-block: var(--fds-4);
+}
