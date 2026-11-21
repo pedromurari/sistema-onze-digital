@@ -135,7 +135,7 @@ export interface ProductData {
   checkout_url: string | null
 }
 
-function Reveal({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+function Reveal({ children, className = '', style }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
   const ref = useRef<HTMLDivElement>(null)
   const inView = useInView(ref, { once: true, margin: '-80px' as `${number}px` })
   const reduce = useReducedMotion()
@@ -143,6 +143,7 @@ function Reveal({ children, className = '' }: { children: React.ReactNode; class
     <motion.div
       ref={ref}
       className={className}
+      style={style}
       initial={{ opacity: 0, y: reduce ? 0 : 18 }}
       animate={inView ? { opacity: 1, y: 0 } : {}}
       transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
@@ -157,25 +158,20 @@ export function IdmBrasilContent({ product }: { product: ProductData | null }) {
   const otherDepos = depoimentos.filter(d => !d.featured).slice(0, 3)
 
   return (
-    <>
+    <div className="fds">
       {/* ── HERO ─────────────────────────────────── */}
       <section
-        className="relative min-h-screen flex flex-col justify-end pb-20 pt-32 overflow-hidden"
-        style={{
-          backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.025) 1px, transparent 0)',
-          backgroundSize: '48px 48px',
-        }}
+        className="fds-band--deep" style={{ paddingTop: 'var(--fds-30)', paddingBottom: 'var(--fds-24)' }}
       >
-        <div className="absolute top-1/3 right-1/4 w-[600px] h-[600px] rounded-full bg-[#FFB800]/4 blur-[250px] pointer-events-none" />
 
-        <div className="relative max-w-5xl mx-auto px-6 sm:px-10 w-full space-y-10">
+        <div className="fds-wrap space-y-10">
           <motion.div
             initial={{ opacity: 0, y: 28 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
             className="space-y-7"
           >
-            <p className="text-[11px] font-mono tracking-[0.22em] uppercase text-[#404040]">
+            <p className="fds-eyebrow">
               Instituto Despertamente · Workshop presencial
             </p>
             <h1
@@ -199,20 +195,20 @@ export function IdmBrasilContent({ product }: { product: ProductData | null }) {
             <div className="flex flex-col items-start sm:items-end gap-3">
               <a
                 href="#cidades"
-                className="group inline-flex items-center gap-2.5 rounded-xl bg-[#FFB800] px-7 py-3.5 text-sm font-bold text-[#0D1638] hover:bg-[#FFC933] transition-colors whitespace-nowrap"
+                className="fds-btn fds-btn--primary group whitespace-nowrap"
               >
                 Ver datas e cidades
                 <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
               </a>
-              <p className="text-[11px] font-mono text-[#303030]">4 dias · Tour nacional · Vagas limitadas</p>
+              <p className="fds-meta">4 dias · Tour nacional · Vagas limitadas</p>
             </div>
           </motion.div>
         </div>
       </section>
 
       {/* ── MANIFESTO ────────────────────────────── */}
-      <section className="bg-[#0d0d0d] border-y border-white/5">
-        <Reveal className="max-w-2xl mx-auto px-6 sm:px-10 py-20">
+      <section className="fds-band">
+        <Reveal className="fds-wrap fds-section" style={{ maxWidth: 680 }}>
           <p
             style={{ fontFamily: "'Fraunces', Georgia, serif" }}
             className="text-2xl sm:text-3xl font-light leading-relaxed text-[#888888]"
@@ -229,15 +225,14 @@ export function IdmBrasilContent({ product }: { product: ProductData | null }) {
 
       {/* ── OS 4 DIAS ────────────────────────────── */}
       <Reveal>
-        <section className="max-w-5xl mx-auto px-6 sm:px-10 py-20">
+        <section className="fds-wrap fds-section">
           <div className="grid sm:grid-cols-[1fr_auto] items-end gap-4 mb-10">
             <h2
-              style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-              className="text-4xl sm:text-5xl font-bold text-[#f0f0f0]"
+              className="fds-h2"
             >
               Os 4 dias.
             </h2>
-            <p className="text-xs font-mono text-[#383838] pb-1">Jornada progressiva</p>
+            <p className="fds-meta pb-1">Jornada progressiva</p>
           </div>
 
           <Accordion type="single" collapsible defaultValue="01">
@@ -255,7 +250,7 @@ export function IdmBrasilContent({ product }: { product: ProductData | null }) {
                   <AccordionContent className="pb-5 pl-10">
                     <ul className="space-y-2">
                       {d.conteudo.map((c) => (
-                        <li key={c} className="text-sm text-[#505050] leading-relaxed">{c}</li>
+                        <li key={c} className="fds-small">{c}</li>
                       ))}
                     </ul>
                   </AccordionContent>
@@ -268,11 +263,10 @@ export function IdmBrasilContent({ product }: { product: ProductData | null }) {
 
       {/* ── O QUE ESTÁ INCLUÍDO ───────────────────── */}
       <Reveal>
-        <section className="bg-[#0d0d0d] border-y border-white/5">
-          <div className="max-w-5xl mx-auto px-6 sm:px-10 py-20 grid sm:grid-cols-2 gap-12 lg:gap-20 items-start">
+        <section className="fds-band">
+          <div className="fds-wrap fds-section grid sm:grid-cols-2 gap-12 lg:gap-20 items-start">
             <h2
-              style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-              className="text-4xl sm:text-5xl font-bold text-[#f0f0f0] leading-tight"
+              className="fds-h2"
             >
               O que está<br />incluído.
             </h2>
@@ -289,16 +283,15 @@ export function IdmBrasilContent({ product }: { product: ProductData | null }) {
 
       {/* ── PRÓXIMAS CIDADES ─────────────────────── */}
       <Reveal>
-        <section id="cidades" className="max-w-5xl mx-auto px-6 sm:px-10 py-20">
+        <section id="cidades" className="fds-wrap fds-section">
           <div className="grid sm:grid-cols-2 gap-12 lg:gap-20 items-start">
             <div className="space-y-4">
               <h2
-                style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                className="text-4xl sm:text-5xl font-bold text-[#f0f0f0]"
+                className="fds-h2"
               >
                 Próximas<br />edições.
               </h2>
-              <p className="text-sm text-[#484848] leading-relaxed">
+              <p className="fds-small">
                 Datas sendo confirmadas. Entre na lista de espera para ter prioridade nas inscrições.
               </p>
               <a
@@ -328,8 +321,8 @@ export function IdmBrasilContent({ product }: { product: ProductData | null }) {
 
       {/* ── DEPOIMENTOS ──────────────────────────── */}
       <Reveal>
-        <section className="bg-[#0d0d0d] border-y border-white/5">
-          <div className="max-w-5xl mx-auto px-6 sm:px-10 py-20">
+        <section className="fds-band">
+          <div className="fds-wrap fds-section">
             <div className="grid md:grid-cols-2 gap-12 lg:gap-20 items-start">
               <div className="space-y-6">
                 <span style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="block text-[80px] leading-none text-[#FFB800]/8 select-none -mb-6">
@@ -362,26 +355,25 @@ export function IdmBrasilContent({ product }: { product: ProductData | null }) {
 
       {/* ── INVESTIMENTO ─────────────────────────── */}
       <Reveal>
-        <section className="max-w-5xl mx-auto px-6 sm:px-10 py-20">
+        <section className="fds-wrap fds-section">
           <div className="grid sm:grid-cols-2 gap-12 lg:gap-20 items-start">
             <div className="space-y-4">
               <h2
-                style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                className="text-4xl sm:text-5xl font-bold text-[#f0f0f0]"
+                className="fds-h2"
               >
                 Investimento.
               </h2>
-              <p className="text-sm text-[#484848] leading-relaxed">
+              <p className="fds-small">
                 O valor varia por cidade e data. Entre em contato para saber o valor da próxima edição na sua região.
               </p>
-              <p className="text-xs text-[#383838]">Pix com desconto · Parcelamento em até 6x · Desconto para alunos IDM</p>
+              <p className="fds-small">Pix com desconto · Parcelamento em até 6x · Desconto para alunos IDM</p>
             </div>
             <div className="space-y-5 pt-2">
               <a
                 href={WA_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2.5 py-4 rounded-xl bg-[#FFB800] text-sm font-bold text-[#0D1638] hover:bg-[#FFC933] transition-colors"
+                className="fds-btn fds-btn--primary w-full"
               >
                 <MessageCircle className="h-4 w-4" />
                 Saber o valor da minha cidade
@@ -394,11 +386,10 @@ export function IdmBrasilContent({ product }: { product: ProductData | null }) {
 
       {/* ── FAQ ──────────────────────────────────── */}
       <Reveal>
-        <section className="bg-[#0d0d0d] border-y border-white/5">
-          <div className="max-w-3xl mx-auto px-6 sm:px-10 py-20">
+        <section className="fds-band">
+          <div className="fds-wrap fds-section" style={{ maxWidth: 760 }}>
             <h2
-              style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-              className="text-4xl sm:text-5xl font-bold text-[#f0f0f0] mb-10"
+              className="fds-h2"
             >
               Dúvidas.
             </h2>
@@ -429,15 +420,10 @@ export function IdmBrasilContent({ product }: { product: ProductData | null }) {
       {/* ── CTA FINAL ─────────────────────────────── */}
       <section
         className="relative overflow-hidden py-32"
-        style={{
-          backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.02) 1px, transparent 0)',
-          backgroundSize: '48px 48px',
-        }}
       >
         <Reveal className="relative max-w-3xl mx-auto px-6 sm:px-10 space-y-10">
           <h2
-            style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-            className="text-5xl sm:text-6xl lg:text-7xl font-bold text-[#f0f0f0] leading-[1.0]"
+            className="fds-h1"
           >
             O IDM está<br />chegando até você.
           </h2>
@@ -446,8 +432,7 @@ export function IdmBrasilContent({ product }: { product: ProductData | null }) {
               href={WA_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="group inline-flex items-center gap-2.5 rounded-xl bg-[#FFB800] px-8 py-4 text-base font-bold text-[#0D1638] hover:bg-[#FFC933] transition-colors"
-              style={{ boxShadow: '0 8px 32px rgba(255,184,0,0.22)' }}
+              className="fds-btn fds-btn--primary group"
             >
               <MessageCircle className="h-4 w-4" />
               Entrar na lista de espera
@@ -464,6 +449,6 @@ export function IdmBrasilContent({ product }: { product: ProductData | null }) {
           </p>
         </Reveal>
       </section>
-    </>
+    </div>
   )
 }

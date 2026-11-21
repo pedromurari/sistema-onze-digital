@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useRef } from 'react'
 import { motion, useInView, useReducedMotion } from 'framer-motion'
-import { ArrowRight, MessageCircle } from 'lucide-react'
+import { ArrowRight, Check, MessageCircle } from 'lucide-react'
 import {
   Accordion,
   AccordionContent,
@@ -167,7 +167,7 @@ export interface ProductData {
   checkout_url: string | null
 }
 
-function Reveal({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+function Reveal({ children, className = '', style }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
   const ref = useRef<HTMLDivElement>(null)
   const inView = useInView(ref, { once: true, margin: '-80px' as `${number}px` })
   const reduce = useReducedMotion()
@@ -175,6 +175,7 @@ function Reveal({ children, className = '' }: { children: React.ReactNode; class
     <motion.div
       ref={ref}
       className={className}
+      style={style}
       initial={{ opacity: 0, y: reduce ? 0 : 18 }}
       animate={inView ? { opacity: 1, y: 0 } : {}}
       transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
@@ -209,8 +210,8 @@ function PriceBlock({ product }: { product: ProductData | null }) {
   return (
     <div className="space-y-8">
       <div className="grid sm:grid-cols-2 gap-3 max-w-lg">
-        <div className="rounded-2xl border border-white/8 bg-[#0A1232] p-6 space-y-3">
-          <p className="text-[11px] font-mono uppercase tracking-widest text-[#404040]">Pix · à vista</p>
+        <div className="fds-card space-y-3" style={{ padding: 'var(--fds-6)' }}>
+          <p className="fds-eyebrow">Pix · à vista</p>
           {product.original_price && (
             <p className="text-xs text-[#383838] line-through">R$ {product.original_price.toLocaleString('pt-BR')}</p>
           )}
@@ -220,26 +221,26 @@ function PriceBlock({ product }: { product: ProductData | null }) {
           <p className="text-[11px] text-[#404040]">10% de desconto</p>
           <a
             href={checkoutUrl}
-            className="mt-2 flex items-center justify-center py-3 rounded-xl bg-[#FFB800] text-sm font-bold text-[#0D1638] hover:bg-[#FFC933] transition-colors"
+            className="fds-btn fds-btn--primary mt-2 w-full"
           >
             Pagar com Pix
           </a>
         </div>
-        <div className="rounded-2xl border border-white/5 bg-[#0A1232] p-6 space-y-3">
-          <p className="text-[11px] font-mono uppercase tracking-widest text-[#404040]">Cartão · parcelado</p>
+        <div className="fds-card space-y-3" style={{ padding: 'var(--fds-6)' }}>
+          <p className="fds-eyebrow">Cartão · parcelado</p>
           <p style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="text-4xl font-bold text-[#f0f0f0] leading-none">
             12×
           </p>
           <p className="text-sm text-[#505050]">R$ {parcelamento.toLocaleString('pt-BR')} por mês</p>
           <a
             href={checkoutUrl}
-            className="mt-2 flex items-center justify-center py-3 rounded-xl border border-white/10 text-sm font-bold text-[#d0d0d0] hover:border-white/20 transition-colors"
+            className="fds-btn fds-btn--ghost mt-2 w-full"
           >
             Parcelar agora
           </a>
         </div>
       </div>
-      <p className="text-xs text-[#383838]">Garantia de 7 dias. Se não fizer sentido, devolvemos tudo.</p>
+      <p className="fds-small">Garantia de 7 dias. Se não fizer sentido, devolvemos tudo.</p>
     </div>
   )
 }
@@ -250,62 +251,65 @@ export function PsicanaliseContent({ product }: { product: ProductData | null })
   const otherDepos = depoimentos.filter(d => !d.featured).slice(0, 3)
 
   return (
-    <>
+    <div className="fds">
       {/* ── HERO ─────────────────────────────────── */}
-      <section
-        className="relative min-h-screen flex flex-col justify-end pb-20 pt-32 overflow-hidden"
-        style={{
-          backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.025) 1px, transparent 0)',
-          backgroundSize: '48px 48px',
-        }}
-      >
-        <div className="absolute top-1/3 left-1/4 w-[600px] h-[600px] rounded-full bg-[#FFB800]/4 blur-[250px] pointer-events-none" />
-
-        <div className="relative max-w-5xl mx-auto px-6 sm:px-10 w-full space-y-10">
+      {/* Oferta dentro do hero, acima da dobra -- antes o preço só aparecia
+          lá embaixo e quem vinha de anúncio tinha que rolar a página toda
+          pra descobrir quanto custa. */}
+      <section className="fds-band--deep" style={{ paddingTop: 'var(--fds-30)', paddingBottom: 'var(--fds-24)' }}>
+        <div className="fds-wrap">
           <motion.div
-            initial={{ opacity: 0, y: 28 }}
+            initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
-            className="space-y-7"
+            transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+            className="text-center"
           >
-            <p className="text-[11px] font-mono tracking-[0.22em] uppercase text-[#404040]">
-              Instituto Despertamente · Formação certificante
-            </p>
-            <h1
-              style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-              className="text-[64px] sm:text-[80px] lg:text-[100px] font-bold leading-[0.97] text-[#f0f0f0] tracking-tight"
-            >
-              Psicanálise<br />Integrativa.
+            <p className="fds-eyebrow block">Instituto Despertamente · Formação certificante</p>
+            <h1 className="fds-display mx-auto mt-4 max-w-4xl">
+              Psicanálise <span className="fds-accent">Integrativa</span>
             </h1>
-            <div className="w-full max-w-3xl h-px bg-white/6" />
+            <p className="fds-lead mx-auto mt-5 text-center">
+              Do inconsciente à prática clínica. Teoria, análise pessoal e supervisão — o tripé
+              clássico, integrado a neurociência e PNL.
+            </p>
+            <p className="fds-meta mt-5">7 módulos · 2 anos · ICF / ABNLP</p>
           </motion.div>
 
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3, duration: 0.6 }}
-            className="grid sm:grid-cols-[1fr_auto] gap-8 items-end max-w-3xl"
-          >
-            <p className="text-base text-[#4a4a4a] leading-relaxed max-w-md">
-              Do inconsciente à prática clínica. Teoria, análise pessoal e supervisão — o tripé clássico, integrado a neurociência e PNL.
-            </p>
-            <div className="flex flex-col items-start sm:items-end gap-3">
-              <a
-                href={checkoutHref}
-                className="group inline-flex items-center gap-2.5 rounded-xl bg-[#FFB800] px-7 py-3.5 text-sm font-bold text-[#0D1638] hover:bg-[#FFC933] transition-colors whitespace-nowrap"
-              >
-                Garantir minha vaga
-                <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
-              </a>
-              <p className="text-[11px] font-mono text-[#303030]">7 módulos · 2 anos · ICF / ABNLP</p>
+          <div className="mt-16 grid gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:items-start lg:gap-16">
+            <div>
+              <hr className="fds-rule" style={{ width: 64 }} />
+              <p className="fds-h3 mt-6" style={{ fontWeight: 400, color: 'var(--fds-ink-2)' }}>
+                Psicanálise Integrativa não é mais uma modalidade terapêutica.{' '}
+                <span style={{ color: 'var(--fds-ink)' }}>
+                  É um método de investigação do inconsciente
+                </span>{' '}
+                que une a tradição clássica à neurociência, PNL e abordagens somáticas.
+              </p>
+              <ul className="mt-8 space-y-3">
+                {[
+                  'Formação completa em 7 módulos, ao longo de 2 anos',
+                  'Teoria, análise pessoal e supervisão — o tripé clássico',
+                  'Certificação ICF / ABNLP',
+                  'Acesso à plataforma com todo o material',
+                ].map(i => (
+                  <li key={i} className="fds-small flex items-start gap-3">
+                    <Check className="mt-0.5 h-4 w-4 shrink-0" style={{ color: 'var(--fds-accent)' }} />
+                    {i}
+                  </li>
+                ))}
+              </ul>
             </div>
-          </motion.div>
+
+            <div>
+              <PriceBlock product={product} />
+            </div>
+          </div>
         </div>
       </section>
 
       {/* ── MANIFESTO ────────────────────────────── */}
-      <section className="bg-[#0d0d0d] border-y border-white/5">
-        <Reveal className="max-w-2xl mx-auto px-6 sm:px-10 py-20">
+      <section className="fds-band">
+        <Reveal className="fds-wrap fds-section" style={{ maxWidth: 680 }}>
           <p
             style={{ fontFamily: "'Fraunces', Georgia, serif" }}
             className="text-2xl sm:text-3xl font-light leading-relaxed text-[#888888]"
@@ -322,15 +326,14 @@ export function PsicanaliseContent({ product }: { product: ProductData | null })
 
       {/* ── PROGRAMA ─────────────────────────────── */}
       <Reveal>
-        <section className="max-w-5xl mx-auto px-6 sm:px-10 py-20">
+        <section className="fds-wrap fds-section">
           <div className="grid sm:grid-cols-[1fr_auto] items-end gap-4 mb-10">
             <h2
-              style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-              className="text-4xl sm:text-5xl font-bold text-[#f0f0f0]"
+              className="fds-h2"
             >
               O programa.
             </h2>
-            <p className="text-xs font-mono text-[#383838] pb-1">7 módulos</p>
+            <p className="fds-meta pb-1">7 módulos</p>
           </div>
 
           <Accordion type="single" collapsible>
@@ -349,7 +352,7 @@ export function PsicanaliseContent({ product }: { product: ProductData | null })
                   <AccordionContent className="pb-5 pl-10">
                     <ul className="space-y-2">
                       {m.conteudo.map((c) => (
-                        <li key={c} className="text-sm text-[#505050] leading-relaxed">{c}</li>
+                        <li key={c} className="fds-small">{c}</li>
                       ))}
                     </ul>
                   </AccordionContent>
@@ -362,11 +365,10 @@ export function PsicanaliseContent({ product }: { product: ProductData | null })
 
       {/* ── PERCURSO ─────────────────────────────── */}
       <Reveal>
-        <section className="bg-[#0d0d0d] border-y border-white/5">
+        <section className="fds-band">
           <div className="max-w-5xl mx-auto px-6 sm:px-10 py-20 grid sm:grid-cols-2 gap-12 items-start">
             <h2
-              style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-              className="text-4xl sm:text-5xl font-bold text-[#f0f0f0] leading-tight"
+              className="fds-h2"
             >
               Da inscrição<br />à certificação.
             </h2>
@@ -387,7 +389,7 @@ export function PsicanaliseContent({ product }: { product: ProductData | null })
 
       {/* ── FUNDADOR ─────────────────────────────── */}
       <Reveal>
-        <section className="max-w-5xl mx-auto px-6 sm:px-10 py-20">
+        <section className="fds-wrap fds-section">
           <div className="grid md:grid-cols-[200px_1fr] gap-12 lg:gap-20">
             <div>
               <div
@@ -408,12 +410,12 @@ export function PsicanaliseContent({ product }: { product: ProductData | null })
                   FUNDADOR · PSICANALISTA INTEGRATIVO · MASTER PNL
                 </p>
               </div>
-              <p className="text-sm text-[#505050] leading-relaxed">
+              <p className="fds-small">
                 Desenvolvi a Formação em Psicanálise Integrativa depois de perceber que os modelos existentes
                 eram ou muito teóricos para a prática clínica real, ou superficiais demais para produzir
                 transformação genuína.
               </p>
-              <p className="text-sm text-[#505050] leading-relaxed">
+              <p className="fds-small">
                 O IDM reúne psicanálise, neurociência e PNL porque o ser humano não funciona em
                 compartimentos. A formação que você vai fazer é o mesmo percurso que eu percorri —
                 e que mais de 1.200 profissionais já concluíram.
@@ -432,8 +434,8 @@ export function PsicanaliseContent({ product }: { product: ProductData | null })
 
       {/* ── DEPOIMENTOS ──────────────────────────── */}
       <Reveal>
-        <section className="bg-[#0d0d0d] border-y border-white/5">
-          <div className="max-w-5xl mx-auto px-6 sm:px-10 py-20">
+        <section className="fds-band">
+          <div className="fds-wrap fds-section">
             <div className="grid md:grid-cols-2 gap-12 lg:gap-20 items-start">
               {/* Featured */}
               <div className="space-y-6">
@@ -468,16 +470,15 @@ export function PsicanaliseContent({ product }: { product: ProductData | null })
 
       {/* ── INVESTIMENTO ─────────────────────────── */}
       <Reveal>
-        <section id="investimento" className="max-w-5xl mx-auto px-6 sm:px-10 py-20">
+        <section id="investimento" className="fds-wrap fds-section">
           <div className="grid sm:grid-cols-2 gap-12 lg:gap-20 items-start">
             <div className="space-y-4">
               <h2
-                style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                className="text-4xl sm:text-5xl font-bold text-[#f0f0f0]"
+                className="fds-h2"
               >
                 Investimento.
               </h2>
-              <p className="text-sm text-[#484848] leading-relaxed">
+              <p className="fds-small">
                 Formação completa — teoria, análise pessoal, supervisão clínica e certificação.
               </p>
               <a
@@ -497,11 +498,10 @@ export function PsicanaliseContent({ product }: { product: ProductData | null })
 
       {/* ── FAQ ──────────────────────────────────── */}
       <Reveal>
-        <section className="bg-[#0d0d0d] border-y border-white/5">
-          <div className="max-w-3xl mx-auto px-6 sm:px-10 py-20">
+        <section className="fds-band">
+          <div className="fds-wrap fds-section" style={{ maxWidth: 760 }}>
             <h2
-              style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-              className="text-4xl sm:text-5xl font-bold text-[#f0f0f0] mb-10"
+              className="fds-h2"
             >
               Dúvidas.
             </h2>
@@ -539,16 +539,14 @@ export function PsicanaliseContent({ product }: { product: ProductData | null })
         />
         <Reveal className="relative max-w-3xl mx-auto px-6 sm:px-10 space-y-10">
           <h2
-            style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-            className="text-5xl sm:text-6xl lg:text-7xl font-bold text-[#f0f0f0] leading-[1.0]"
+            className="fds-h1"
           >
             A formação começa<br />quando você decide.
           </h2>
           <div className="flex flex-col sm:flex-row items-start gap-4">
             <a
               href={checkoutHref}
-              className="group inline-flex items-center gap-2.5 rounded-xl bg-[#FFB800] px-8 py-4 text-base font-bold text-[#0D1638] hover:bg-[#FFC933] transition-colors"
-              style={{ boxShadow: '0 8px 32px rgba(255,184,0,0.22)' }}
+              className="fds-btn fds-btn--primary group"
             >
               Garantir minha vaga
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
@@ -568,6 +566,6 @@ export function PsicanaliseContent({ product }: { product: ProductData | null })
           </p>
         </Reveal>
       </section>
-    </>
+    </div>
   )
 }
