@@ -13,12 +13,12 @@ import { AgendarSessaoDialog } from './AgendarSessaoDialog';
 interface Terapeuta { id: string; nome: string; whatsapp: string | null; }
 
 async function avisarTerapeutaNovaVenda(terapeuta: Terapeuta, s: {
-  cliente_nome: string; tipo: string; quantidade: number; valor_total: number;
+  cliente_nome: string; cliente_whatsapp: string | null; tipo: string; quantidade: number; valor_total: number;
 }): Promise<boolean> {
   if (!terapeuta.whatsapp) return false;
   const primeiroNome = terapeuta.nome.split(' ')[0];
   const descricaoPacote = s.tipo === 'pacote' ? `pacote de ${s.quantidade} sessões` : `${s.quantidade} sessão${s.quantidade > 1 ? 'ões' : ''} avulsa${s.quantidade > 1 ? 's' : ''}`;
-  const mensagem = `Oi, ${primeiroNome}! Aqui é o time do Divã IDM 💙\n\nSaiu uma venda nova pra você:\n\n👤 Cliente: ${s.cliente_nome}\n📦 ${descricaoPacote}\n💰 Valor: ${formatReal(s.valor_total)}\n\nJá atualizei isso no seu painel (aba "Minhas sessões"). Só falta combinar com ${s.cliente_nome.split(' ')[0]} o dia e horário — pode marcar direto lá na sua agenda, no mesmo link que você já tem.`;
+  const mensagem = `Oi, ${primeiroNome}! Aqui é o time do Divã IDM 💙\n\nSaiu uma venda nova pra você:\n\n👤 Cliente: ${s.cliente_nome}\n📱 WhatsApp: ${s.cliente_whatsapp ?? 'não informado'}\n📦 ${descricaoPacote}\n💰 Valor: ${formatReal(s.valor_total)}\n\nJá atualizei isso no seu painel (aba "Minhas sessões"). Só falta combinar com ${s.cliente_nome.split(' ')[0]} o dia e horário — pode marcar direto lá na sua agenda, no mesmo link que você já tem.`;
 
   try {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
@@ -80,7 +80,7 @@ export function SessoesTab() {
   const [quantidadeSessoes, setQuantidadeSessoes] = useState('1');
   const [salvando, setSalvando] = useState(false);
   const [expandidos, setExpandidos] = useState<Record<string, boolean>>({});
-  const [agendarVenda, setAgendarVenda] = useState<{ id: string; terapeuta_id: string; cliente_nome: string; pendente: number } | null>(null);
+  const [agendarVenda, setAgendarVenda] = useState<{ id: string; terapeuta_id: string; cliente_nome: string; cliente_whatsapp: string | null; pendente: number } | null>(null);
 
   const escolherPacote = (label: string) => {
     setPacoteLabel(label);
@@ -155,7 +155,7 @@ export function SessoesTab() {
 
     const terapeuta = terapeutas.find(t => t.id === terapeutaId);
     if (terapeuta) {
-      void avisarTerapeutaNovaVenda(terapeuta, { cliente_nome: nomeCliente, tipo: tipoBanco, quantidade, valor_total: total })
+      void avisarTerapeutaNovaVenda(terapeuta, { cliente_nome: nomeCliente, cliente_whatsapp: whatsappCliente, tipo: tipoBanco, quantidade, valor_total: total })
         .then((ok) => {
           if (ok) toast.success(`Terapeuta avisada no WhatsApp (${terapeuta.nome.split(' ')[0]}).`);
           else toast.error(`Não consegui avisar ${terapeuta.nome.split(' ')[0]} no WhatsApp. Avisa você mesma.`);
@@ -256,7 +256,7 @@ export function SessoesTab() {
                                     <Button
                                       variant="ghost" size="icon" className="h-6 w-6"
                                       title="Agendar sessão pendente"
-                                      onClick={(e) => { e.stopPropagation(); setAgendarVenda({ id: s.id, terapeuta_id: s.terapeuta_id!, cliente_nome: s.cliente_nome, pendente }); }}
+                                      onClick={(e) => { e.stopPropagation(); setAgendarVenda({ id: s.id, terapeuta_id: s.terapeuta_id!, cliente_nome: s.cliente_nome, cliente_whatsapp: s.cliente_whatsapp, pendente }); }}
                                     >
                                       <CalendarCheck2 className="h-3.5 w-3.5" />
                                     </Button>
@@ -333,6 +333,7 @@ export function SessoesTab() {
           open={!!agendarVenda}
           onOpenChange={(open) => { if (!open) setAgendarVenda(null); }}
           venda={agendarVenda}
+          terapeuta={terapeutas.find(t => t.id === agendarVenda.terapeuta_id) ?? { nome: 'Terapeuta', whatsapp: null }}
           onConfirmado={() => void carregar()}
         />
       )}

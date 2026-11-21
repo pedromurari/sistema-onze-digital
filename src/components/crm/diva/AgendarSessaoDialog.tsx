@@ -16,19 +16,54 @@ function hoje(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
 }
 
+async function avisarTerapetaAgendamento(
+  terapeuta: { nome: string; whatsapp: string | null },
+  cliente: { nome: string; whatsapp: string | null },
+  slots: Array<{ data: string; horario_inicio: string }>,
+): Promise<void> {
+  if (!terapeuta.whatsapp || slots.length === 0) return;
+  const primeiroNome = terapeuta.nome.split(' ')[0];
+  const linhasSlots = slots
+    .slice().sort((a, b) => (a.data + a.horario_inicio).localeCompare(b.data + b.horario_inicio))
+    .map((s) => `🗓️ ${dataBR(s.data)} às ${hhmm(s.horario_inicio)}`)
+    .join('\n');
+  const mensagem = `Oi, ${primeiroNome}! Atualizei sua agenda do Divã IDM 💙\n\n` +
+    `👤 Cliente: ${cliente.nome}\n` +
+    `📱 WhatsApp: ${cliente.whatsapp ?? 'não informado'}\n\n` +
+    `${linhasSlots}\n\n` +
+    `Já está certinho no seu painel (aba "Minhas sessões").`;
+
+  try {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+    await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+      body: JSON.stringify({ numero: terapeuta.whatsapp, mensagem, instance_name: 'Divã IDM' }),
+    });
+  } catch {
+    // Falha no aviso não deve travar o agendamento -- já salvou no banco,
+    // o aviso é um extra pra terapeuta ficar sabendo mais rápido.
+  }
+}
+
 interface SlotLivre { id: string; data: string; horario_inicio: string; horario_fim: string; }
-interface VendaPendente { id: string; cliente_nome: string; pendente: number; }
+interface VendaPendente { id: string; cliente_nome: string; cliente_whatsapp: string | null; pendente: number; }
+interface Terapeuta { nome: string; whatsapp: string | null; }
 
 // Popup de agendamento do Divã -- usado nos dois sentidos:
 // "porVenda" (aba Sessões: já sei a venda, escolho entre os horários livres
 // que a própria terapeuta cadastrou) e "porSlot" (aba Agenda: já sei o
 // horário livre, escolho qual venda pendente daquela terapeuta vai usá-lo).
+// Nos dois casos, ao confirmar, a terapeuta recebe um WhatsApp avisando
+// data/horário + dados do cliente -- não só a venda em si, mas o agendamento.
 type Props =
   | {
       mode: 'porVenda';
       open: boolean;
       onOpenChange: (open: boolean) => void;
-      venda: { id: string; terapeuta_id: string; cliente_nome: string; pendente: number };
+      venda: { id: string; terapeuta_id: string; cliente_nome: string; cliente_whatsapp: string | null; pendente: number };
+      terapeuta: Terapeuta;
       onConfirmado: () => void;
     }
   | {
@@ -37,6 +72,7 @@ type Props =
       onOpenChange: (open: boolean) => void;
       slot: { id: string; data: string; horario_inicio: string; horario_fim: string };
       vendasPendentes: VendaPendente[];
+      terapeuta: Terapeuta;
       onConfirmado: () => void;
     };
 
@@ -78,6 +114,7 @@ export function AgendarSessaoDialog(props: Props) {
     setSalvando(true);
     if (props.mode === 'porVenda') {
       if (selecionados.length === 0) { setSalvando(false); return; }
+      const slotsEscolhidos = slotsLivres.filter(s => selecionados.includes(s.id));
       const { error } = await supabase.from('diva_disponibilidade_dias' as never)
         .update({ status: 'ocupado', sessao_id: props.venda.id } as never)
         .in('id', selecionados);
@@ -86,8 +123,14 @@ export function AgendarSessaoDialog(props: Props) {
       toast.success('Sessão agendada.');
       onOpenChange(false);
       onConfirmado();
+      void avisarTerapetaAgendamento(
+        props.terapeuta,
+        { nome: props.venda.cliente_nome, whatsapp: props.venda.cliente_whatsapp },
+        slotsEscolhidos,
+      );
     } else {
       if (!vendaEscolhida) { setSalvando(false); return; }
+      const venda = props.vendasPendentes.find(v => v.id === vendaEscolhida);
       const { error } = await supabase.from('diva_disponibilidade_dias' as never)
         .update({ status: 'ocupado', sessao_id: vendaEscolhida } as never)
         .eq('id', props.slot.id);
@@ -96,6 +139,13 @@ export function AgendarSessaoDialog(props: Props) {
       toast.success('Sessão agendada.');
       onOpenChange(false);
       onConfirmado();
+      if (venda) {
+        void avisarTerapetaAgendamento(
+          props.terapeuta,
+          { nome: venda.cliente_nome, whatsapp: venda.cliente_whatsapp },
+          [{ data: props.slot.data, horario_inicio: props.slot.horario_inicio }],
+        );
+      }
     }
   };
 

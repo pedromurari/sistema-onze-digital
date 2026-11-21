@@ -105,7 +105,7 @@ async function criarSessaoDivaSeAplicavel(
   if (terapeuta.whatsapp) {
     const primeiroNome = (terapeuta.nome as string).split(' ')[0];
     const descricaoPacote = tipo === 'pacote' ? `pacote de ${quantidade} sessões` : `${quantidade} sessão${quantidade > 1 ? 'ões' : ''} avulsa${quantidade > 1 ? 's' : ''}`;
-    const mensagem = `Oi, ${primeiroNome}! Aqui é o time do Divã IDM 💙\n\nSaiu uma venda nova pra você (pagamento confirmado automático):\n\n👤 Cliente: ${venda.comprador_nome}\n📦 ${descricaoPacote}\n💰 Valor: R$ ${Number(venda.valor_bruto).toFixed(2).replace('.', ',')}\n\nJá atualizei isso no seu painel (aba "Minhas sessões"). Só falta combinar com ${venda.comprador_nome.split(' ')[0]} o dia e horário — pode marcar direto lá na sua agenda, no mesmo link que você já tem.`;
+    const mensagem = `Oi, ${primeiroNome}! Aqui é o time do Divã IDM 💙\n\nSaiu uma venda nova pra você (pagamento confirmado automático):\n\n👤 Cliente: ${venda.comprador_nome}\n📱 WhatsApp: ${venda.comprador_whatsapp ?? 'não informado'}\n📦 ${descricaoPacote}\n💰 Valor: R$ ${Number(venda.valor_bruto).toFixed(2).replace('.', ',')}\n\nJá atualizei isso no seu painel (aba "Minhas sessões"). Só falta combinar com ${venda.comprador_nome.split(' ')[0]} o dia e horário — pode marcar direto lá na sua agenda, no mesmo link que você já tem.`;
     await wppEnviar(supabaseUrl, serviceKey, terapeuta.whatsapp as string, mensagem, 'Divã IDM');
   }
 }

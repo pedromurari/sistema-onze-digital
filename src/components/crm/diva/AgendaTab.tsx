@@ -10,9 +10,9 @@ import { Badge } from '@/components/ui/badge';
 import { SectionBar } from '@/components/crm/ui/premium';
 import { AgendarSessaoDialog } from './AgendarSessaoDialog';
 
-interface Terapeuta { id: string; nome: string; }
+interface Terapeuta { id: string; nome: string; whatsapp: string | null; }
 interface Slot { id: string; data: string; horario_inicio: string; horario_fim: string; status: 'livre' | 'ocupado'; reservado_nome: string | null; sessao_id: string | null; }
-interface VendaPendente { id: string; cliente_nome: string; pendente: number; }
+interface VendaPendente { id: string; cliente_nome: string; cliente_whatsapp: string | null; pendente: number; }
 
 function hhmm(v: string) { return v.slice(0, 5); }
 function dataBR(iso: string) {
@@ -36,7 +36,7 @@ export function AgendaTab() {
   const [slotParaAgendar, setSlotParaAgendar] = useState<Slot | null>(null);
 
   useEffect(() => {
-    void supabase.from('diva_terapeutas').select('id,nome').order('nome').then(({ data }) => {
+    void supabase.from('diva_terapeutas').select('id,nome,whatsapp').order('nome').then(({ data }) => {
       setTerapeutas((data as Terapeuta[]) ?? []);
       setCarregando(false);
     });
@@ -47,7 +47,7 @@ export function AgendaTab() {
   // o que sobrar é o que ainda falta marcar na agenda.
   const carregarPendentes = async (id: string) => {
     const [vendasRes, agendadasRes] = await Promise.all([
-      supabase.from('diva_sessoes').select('id,cliente_nome,quantidade_sessoes').eq('terapeuta_id', id),
+      supabase.from('diva_sessoes').select('id,cliente_nome,cliente_whatsapp,quantidade_sessoes').eq('terapeuta_id', id),
       supabase.from('diva_disponibilidade_dias' as never).select('sessao_id').eq('terapeuta_id', id).eq('status', 'ocupado').not('sessao_id', 'is', null),
     ]);
     const contagem: Record<string, number> = {};
@@ -55,9 +55,9 @@ export function AgendaTab() {
       contagem[row.sessao_id] = (contagem[row.sessao_id] ?? 0) + 1;
     }
     const pendentes: VendaPendente[] = [];
-    for (const v of (vendasRes.data as { id: string; cliente_nome: string; quantidade_sessoes: number }[] | null) ?? []) {
+    for (const v of (vendasRes.data as { id: string; cliente_nome: string; cliente_whatsapp: string | null; quantidade_sessoes: number }[] | null) ?? []) {
       const pendente = Math.max(0, (v.quantidade_sessoes ?? 1) - (contagem[v.id] ?? 0));
-      if (pendente > 0) pendentes.push({ id: v.id, cliente_nome: v.cliente_nome, pendente });
+      if (pendente > 0) pendentes.push({ id: v.id, cliente_nome: v.cliente_nome, cliente_whatsapp: v.cliente_whatsapp, pendente });
     }
     setVendasPendentes(pendentes);
   };
@@ -207,6 +207,7 @@ export function AgendaTab() {
           onOpenChange={(open) => { if (!open) setSlotParaAgendar(null); }}
           slot={slotParaAgendar}
           vendasPendentes={vendasPendentes}
+          terapeuta={terapeutas.find(t => t.id === terapeutaId) ?? { nome: 'Terapeuta', whatsapp: null }}
           onConfirmado={recarregarTudo}
         />
       )}
