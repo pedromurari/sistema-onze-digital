@@ -56,7 +56,7 @@ function HeroSection() {
         backgroundSize: '48px 48px',
       }}
     >
-      <div className="max-w-7xl mx-auto px-6 sm:px-10 lg:px-16 w-full py-20 relative">
+      <div className="fds-wrap px-6 sm:px-10 lg:px-16 w-full fds-section relative">
         <div className="lg:grid lg:grid-cols-[1fr_44%] lg:gap-16 items-center">
 
           {/* Texto — esquerda */}
@@ -134,8 +134,8 @@ const NUMEROS = [
 
 function ReconhecimentoSection() {
   return (
-    <section className="bg-[#09122C] border-y border-white/8">
-      <div className="max-w-7xl mx-auto px-6 sm:px-10 lg:px-16 py-10">
+    <section className="fds-band--deep">
+      <div className="fds-wrap px-6 sm:px-10 lg:px-16 py-10">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 sm:gap-4 divide-y sm:divide-y-0 sm:divide-x divide-white/8">
           {NUMEROS.map((item, i) => (
             <div key={i} className="text-center pt-8 sm:pt-0 first:pt-0 sm:px-10 first:pl-0 last:pr-0">
@@ -154,8 +154,8 @@ function ReconhecimentoSection() {
 // ═══════════════════════════════════════════════════════════════════
 function ManifestoSection() {
   return (
-    <section id="sobre" className="bg-[#0D1638] py-32 sm:py-48">
-      <div className="max-w-7xl mx-auto px-6 sm:px-10 lg:px-16">
+    <section id="sobre" className="fds-band" style={{ paddingBlock: 'var(--fds-30)' }}>
+      <div className="fds-wrap px-6 sm:px-10 lg:px-16">
         <FadeIn direction="none">
           <div className="w-14 h-px bg-[#FFB800]/40 mb-10" />
           <h2 className="font-display text-[clamp(2.8rem,7vw,6.5rem)] font-bold text-white leading-[0.92] tracking-tight max-w-4xl">
@@ -201,8 +201,8 @@ const ACESSO_RAPIDO = [
 
 function AcessoRapidoSection() {
   return (
-    <section className="bg-[#0A1232] border-t border-white/6">
-      <div className="max-w-7xl mx-auto px-6 sm:px-10 lg:px-16 py-14">
+    <section className="fds-band--deep">
+      <div className="fds-wrap px-6 sm:px-10 lg:px-16 py-14">
         <FadeIn direction="none" className="mb-8">
           <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/30">Acesso Rápido</p>
         </FadeIn>
@@ -259,8 +259,8 @@ const TRILHAS = [
 
 function TrilhasSection() {
   return (
-    <section id="jornadas" className="bg-[#0D1638] border-t border-white/6">
-      <div className="max-w-7xl mx-auto px-6 sm:px-10 lg:px-16 py-24">
+    <section id="jornadas" className="fds-band">
+      <div className="fds-wrap px-6 sm:px-10 lg:px-16 fds-section">
         <FadeIn direction="none" className="mb-14">
           <p className="text-xs uppercase tracking-[0.22em] text-white/30 mb-3">Jornadas</p>
           <h2 className="font-display text-3xl sm:text-4xl font-bold text-white leading-[1.0]">
@@ -361,8 +361,8 @@ function ProgramasSection({ programas }: { programas: Programa[] }) {
     : PROGRAMAS_FIXOS
 
   return (
-    <section id="programas" className="bg-[#0A1232] border-t border-white/6">
-      <div className="max-w-7xl mx-auto px-6 sm:px-10 lg:px-16 py-24">
+    <section id="programas" className="fds-band--deep">
+      <div className="fds-wrap px-6 sm:px-10 lg:px-16 fds-section">
         <FadeIn direction="none" className="flex items-end justify-between mb-12">
           <div>
             <p className="text-xs uppercase tracking-[0.22em] text-white/30 mb-3">Programas</p>
@@ -433,8 +433,8 @@ const PILARES = [
 
 function MetodologiaSection() {
   return (
-    <section id="metodologia" className="bg-[#0D1638] border-t border-white/6 overflow-hidden">
-      <div className="max-w-7xl mx-auto lg:grid lg:grid-cols-[38%_1fr] lg:min-h-[560px]">
+    <section id="metodologia" className="fds-band overflow-hidden">
+      <div className="fds-wrap lg:grid lg:grid-cols-[38%_1fr] lg:min-h-[560px]">
 
         {/* Imagem — esquerda */}
         <div className="hidden lg:block relative border-r border-white/[0.05]">
@@ -450,7 +450,7 @@ function MetodologiaSection() {
         </div>
 
         {/* Texto — direita */}
-        <div className="px-6 sm:px-10 lg:pl-16 lg:pr-16 py-24 sm:py-32 flex flex-col justify-center">
+        <div className="px-6 sm:px-10 lg:pl-16 lg:pr-16 fds-section flex flex-col justify-center">
           <FadeIn direction="right">
             <p className="text-xs uppercase tracking-[0.22em] text-white/30 mb-8">Metodologia IDM</p>
             <h2 className="font-display text-4xl sm:text-5xl font-bold text-white leading-[1.0] mb-12">
@@ -488,11 +488,11 @@ const DIFERENCIAIS = [
 
 function DiferenciaisSection() {
   return (
-    <section className="bg-[#0A1232] border-t border-white/6 overflow-hidden">
-      <div className="max-w-7xl mx-auto lg:grid lg:grid-cols-[1fr_40%] lg:min-h-[520px]">
+    <section className="fds-band--deep overflow-hidden">
+      <div className="fds-wrap lg:grid lg:grid-cols-[1fr_40%] lg:min-h-[520px]">
 
         {/* Texto — esquerda */}
-        <div className="px-6 sm:px-10 lg:pl-16 lg:pr-16 py-24 sm:py-32 flex flex-col justify-center">
+        <div className="px-6 sm:px-10 lg:pl-16 lg:pr-16 fds-section flex flex-col justify-center">
           <FadeIn direction="left">
             <p className="text-xs uppercase tracking-[0.22em] text-white/30 mb-8">Por que o IDM</p>
             <h2 className="font-display text-4xl sm:text-5xl font-bold text-white leading-[1.0] mb-10">
@@ -536,8 +536,8 @@ function DiferenciaisSection() {
 // ═══════════════════════════════════════════════════════════════════
 function CTAPromoSection() {
   return (
-    <section id="franqueado" className="bg-[#0D1638] border-t border-white/6">
-      <div className="max-w-7xl mx-auto px-6 sm:px-10 lg:px-16 py-24">
+    <section id="franqueado" className="fds-band">
+      <div className="fds-wrap px-6 sm:px-10 lg:px-16 fds-section">
         <FadeIn direction="none">
           <div className="relative rounded-3xl overflow-hidden border border-[#FFB800]/20 bg-gradient-to-br from-[#FFB800]/10 via-[#09122C] to-[#09122C]">
             {/* Glow */}
@@ -629,8 +629,8 @@ const BLOG_POSTS = [
 
 function BlogSection() {
   return (
-    <section id="blog" className="bg-[#09122C] border-t border-white/6">
-      <div className="max-w-7xl mx-auto px-6 sm:px-10 lg:px-16 py-24">
+    <section id="blog" className="fds-band--deep">
+      <div className="fds-wrap px-6 sm:px-10 lg:px-16 fds-section">
         <FadeIn direction="none" className="flex items-end justify-between mb-12">
           <div>
             <p className="text-xs uppercase tracking-[0.22em] text-white/30 mb-3">Blog</p>
@@ -709,8 +709,8 @@ const DEPOS_FALLBACK: Depo[] = [
 function DepoimentosSection({ depos }: { depos: Depo[] }) {
   const lista = depos.length > 0 ? depos : DEPOS_FALLBACK
   return (
-    <section id="depoimentos" className="bg-[#0D1638] border-t border-white/6">
-      <div className="max-w-7xl mx-auto px-6 sm:px-10 lg:px-16 py-24 sm:py-32">
+    <section id="depoimentos" className="fds-band">
+      <div className="fds-wrap px-6 sm:px-10 lg:px-16 fds-section">
 
         <FadeIn direction="none" className="mb-16">
           <p className="text-xs uppercase tracking-[0.22em] text-white/30 mb-3">Histórias de sucesso</p>
@@ -763,8 +763,8 @@ function NewsletterSection() {
   }
 
   return (
-    <section id="contato" className="bg-[#0A1232] border-t border-white/6">
-      <div className="max-w-7xl mx-auto px-6 sm:px-10 lg:px-16 py-24">
+    <section id="contato" className="fds-band--deep">
+      <div className="fds-wrap px-6 sm:px-10 lg:px-16 fds-section">
         <FadeIn direction="none">
           <div className="max-w-2xl mx-auto text-center">
             <p className="text-xs uppercase tracking-[0.22em] text-white/30 mb-4">Newsletter</p>
