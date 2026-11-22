@@ -47,7 +47,7 @@ export default function Turma38Page() {
 
         {/* Logo */}
         <div className="mb-14">
-          <Link href="/comecar">
+          <Link href="/">
             <Image
               src="/despertamente-simbolo-branco.png"
               alt="Instituto Despertamente"

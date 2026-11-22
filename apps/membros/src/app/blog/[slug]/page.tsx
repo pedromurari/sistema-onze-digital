@@ -105,7 +105,7 @@ export default async function PostPage({ params }: { params: Promise<{ slug: str
                 O que você leu aqui é introdução. As formações do Instituto são o percurso completo,
                 com prática supervisionada e certificação.
               </p>
-              <Link href="/comecar#programas" className="fds-btn fds-btn--primary mt-7">
+              <Link href="/#programas" className="fds-btn fds-btn--primary mt-7">
                 Ver os programas
               </Link>
             </div>

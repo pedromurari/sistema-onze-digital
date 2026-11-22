@@ -16,7 +16,7 @@ export default function PrivacidadePage() {
       {/* Simple header */}
       <header className="border-b border-white/5 bg-[#080808]/95 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-5xl mx-auto px-6 sm:px-10 h-14 flex items-center justify-between">
-          <Link href="/comecar" className="flex items-center gap-2.5">
+          <Link href="/" className="flex items-center gap-2.5">
             <Image src="/despertamente-simbolo-branco.png" alt="IDM" width={24} height={24} className="object-contain" />
             <span style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="text-sm font-bold text-[#f0f0f0]">
               Instituto <span className="text-[#FFB800]">Despertamente</span>

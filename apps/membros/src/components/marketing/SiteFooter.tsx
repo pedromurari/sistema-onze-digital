@@ -10,13 +10,13 @@ const COL_PLATAFORMA = [
   { href: '/loja', label: 'Programas' },
 ]
 
-// Ancoras (#) sempre prefixadas com /comecar -- o rodape aparece em varias
+// Ancoras (#) sempre prefixadas com / -- o rodape aparece em varias
 // paginas, e essas secoes so existem la.
 const COL_CONTEUDO = [
-  { href: '/comecar#metodologia', label: 'Nossa metodologia' },
-  { href: '/comecar#jornadas', label: 'Jornadas' },
+  { href: '/#metodologia', label: 'Nossa metodologia' },
+  { href: '/#jornadas', label: 'Jornadas' },
   { href: '/certificado', label: 'Certificações' },
-  { href: '/comecar#depoimentos', label: 'Depoimentos' },
+  { href: '/#depoimentos', label: 'Depoimentos' },
 ]
 
 const COL_LEGAL = [

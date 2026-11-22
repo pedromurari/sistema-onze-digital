@@ -51,7 +51,7 @@ export default function BlogPage() {
                 <p className="fds-body mt-4">
                   Enquanto isso, o conteúdo do Instituto está nas formações e nos encontros ao vivo.
                 </p>
-                <Link href="/comecar#programas" className="fds-btn fds-btn--primary mt-7">
+                <Link href="/#programas" className="fds-btn fds-btn--primary mt-7">
                   Ver os programas
                 </Link>
               </div>

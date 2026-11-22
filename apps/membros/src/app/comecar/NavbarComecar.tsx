@@ -8,19 +8,19 @@ import { Menu, X, ChevronDown, User } from 'lucide-react'
 type DropdownItem = { label: string; href: string }
 type NavItem = { label: string; href: string; dropdown?: DropdownItem[] }
 
-// Âncoras sempre apontam pra /comecar explicitamente -- antes eram "#sobre"
+// Âncoras sempre apontam pra raiz explicitamente -- antes eram "#sobre"
 // etc. direto, o que só funcionava se você já estivesse na home. Clicar
 // nesses itens de dentro de uma página de programa (que reusa esta mesma
 // navbar) não levava a lugar nenhum, só empilhava o fragmento na URL atual.
 const NAV_ITEMS: NavItem[] = [
-  { label: 'Início', href: '/comecar' },
+  { label: 'Início', href: '/' },
   // "A IDM" saiu em 21/11/2026 a pedido do Pedro: o dropdown inteiro
   // (Sobre o Instituto / Nossa Metodologia / Resultados) só apontava pra
   // âncoras da própria home — menu que abre pra levar a pessoa pra um
   // pedaço da página em que ela já está é peso sem função.
   {
     label: 'Programas',
-    href: '/comecar#programas',
+    href: '/#programas',
     dropdown: [
       { label: 'Psicanálise Integrativa', href: '/programas/psicanalise-integrativa' },
       { label: 'Despertar Sistêmico (Constelação Familiar)', href: '/programas/constelacao-familiar' },
@@ -33,7 +33,7 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
   { label: 'Blog', href: '/blog' },
-  { label: 'Contato', href: '/comecar#contato' },
+  { label: 'Contato', href: '/#contato' },
 ]
 
 function DropdownPanel({ items }: { items: DropdownItem[] }) {

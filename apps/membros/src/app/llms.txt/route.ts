@@ -55,7 +55,7 @@ ${posts.length
 
 ## Institucional
 
-- [Página inicial](${SITE_URL}/comecar)
+- [Página inicial](${SITE_URL}/)
 - [Política de Privacidade](${SITE_URL}/privacidade)
 - [Termos de Uso](${SITE_URL}/termos)
 

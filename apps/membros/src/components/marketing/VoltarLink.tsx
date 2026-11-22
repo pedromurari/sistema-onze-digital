@@ -14,7 +14,7 @@ export function VoltarLink({ children, className }: { children: React.ReactNode;
     if (typeof window !== 'undefined' && window.history.length > 1) {
       router.back()
     } else {
-      router.push('/comecar')
+      router.push('/')
     }
   }
 

@@ -30,10 +30,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const agora = new Date()
 
   const institucional: Entrada[] = [
-    // A raiz nao entra: `/` redireciona (visitante -> /comecar, aluno
-    // logado -> /dashboard). URL de redirect no sitemap conta como erro
-    // leve no Search Console.
-    { url: `${SITE_URL}/comecar`, lastModified: agora, changeFrequency: 'weekly', priority: 1 },
+    // A home mora na raiz. `/comecar` saiu daqui porque virou redirect
+    // permanente pra ca, e URL de redirect no sitemap conta como erro leve
+    // no Search Console.
+    { url: `${SITE_URL}/`, lastModified: agora, changeFrequency: 'weekly', priority: 1 },
     { url: `${SITE_URL}/blog`, lastModified: agora, changeFrequency: 'daily', priority: 0.8 },
     { url: `${SITE_URL}/privacidade`, changeFrequency: 'yearly', priority: 0.2 },
     { url: `${SITE_URL}/termos`, changeFrequency: 'yearly', priority: 0.2 },
