@@ -5,14 +5,18 @@ import { StickyCTA } from '@/app/comecar/StickyCTA'
 import { CookieBanner } from '@/app/comecar/CookieBanner'
 import { ProgramaContent, type ProductData } from '@/components/marketing/ProgramaContent'
 import { SiteFooter } from '@/components/marketing/SiteFooter'
+import { SchemaCurso } from '@/components/marketing/SchemaCurso'
 
 const PRODUCT_SLUG = 'mentoria-npa'
 
 export const metadata = {
-  title: 'Mentoria NPA — Numerologia Pitagórica Aplicada — Instituto Despertamente',
+  title: 'Mentoria NPA — Numerologia Pitagórica Aplicada',
   description: 'Acesso ao grupo da mentoria, ao curso gravado do NPA e ao material de apoio — a metodologia exclusiva do IDM de leitura de padrões numéricos.',
+  alternates: { canonical: '/programas/mentoria-npa' },
   openGraph: {
-    title: 'Mentoria NPA — Instituto Despertamente',
+    url: '/programas/mentoria-npa',
+    type: 'website',
+    title: 'Mentoria NPA',
     description: 'A metodologia exclusiva do IDM de Numerologia Pitagórica Aplicada, com grupo de mentoria.',
   },
 }
@@ -43,6 +47,7 @@ export default async function MentoriaNpaPage() {
       <WhatsAppButton />
       <StickyCTA />
       <CookieBanner />
+      <SchemaCurso slug={PRODUCT_SLUG} preco={product?.price ?? null} />
 
       <ProgramaContent
         product={product}

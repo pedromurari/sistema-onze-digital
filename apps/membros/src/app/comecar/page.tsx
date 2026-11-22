@@ -12,7 +12,10 @@ import { SiteFooter } from '@/components/marketing/SiteFooter'
 export const metadata = {
   title: 'Instituto Despertamente — Método Despertamente',
   description: 'Desperte a mente que decide por você. Uma metodologia própria, construída em 9 anos de prática, que une neurociência, psicanálise e PNL.',
+  alternates: { canonical: '/comecar' },
   openGraph: {
+    url: '/comecar',
+    type: 'website',
     title: 'Instituto Despertamente — Método Despertamente',
     description: 'Desperte a mente que decide por você. Neurociência, psicanálise e PNL numa metodologia própria.',
     images: [{ url: '/despertamente-simbolo.png' }],

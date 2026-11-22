@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Fraunces, Poppins } from "next/font/google";
 import Script from "next/script";
 import { PwaRegister } from "@/components/PwaRegister";
+import { jsonLdOrganizacao, ORG, scriptJsonLd, SITE_URL } from "@/lib/seo";
 import "./globals.css";
 import "./design-system.css";
 
@@ -20,8 +21,53 @@ const poppins = Poppins({
 });
 
 export const metadata: Metadata = {
-  title: "Instituto Despertamente — Área de Membros",
-  description: "Desperte seu potencial. Psicanálise, Numerologia, PNL e Espiritualidade.",
+  // metadataBase resolve toda URL relativa (canonical, imagem de OG). Sem
+  // isso o Next gera link relativo e o Google trata cada variação de
+  // dominio como pagina diferente.
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "Instituto Despertamente — Formação em Psicanálise, PNL e Constelação",
+    // Cada página manda só o próprio nome; o sufixo vem daqui.
+    template: "%s | Instituto Despertamente",
+  },
+  description:
+    "Formação em Psicanálise Integrativa, Constelação Familiar Sistêmica, Numerologia e PNL. Metodologia própria que une psicanálise, neurociência e PNL. Mais de 12.000 alunos.",
+  applicationName: ORG.nome,
+  authors: [{ name: ORG.nome, url: SITE_URL }],
+  creator: ORG.nome,
+  publisher: ORG.nome,
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    locale: "pt_BR",
+    url: SITE_URL,
+    siteName: ORG.nome,
+    title: "Instituto Despertamente — Formação em Psicanálise, PNL e Constelação",
+    description:
+      "Formação em Psicanálise Integrativa, Constelação Familiar Sistêmica, Numerologia e PNL. Mais de 12.000 alunos.",
+    images: [{ url: "/despertamente-simbolo.png", width: 1200, height: 630, alt: ORG.nome }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Instituto Despertamente",
+    description:
+      "Formação em Psicanálise Integrativa, Constelação Familiar Sistêmica, Numerologia e PNL.",
+    images: ["/despertamente-simbolo.png"],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      // Sem limite de snippet: quanto mais texto o Google (e o AI
+      // Overview) pode citar, maior a chance de aparecer na resposta.
+      "max-snippet": -1,
+      "max-image-preview": "large",
+      "max-video-preview": -1,
+    },
+  },
+  category: "education",
   manifest: "/manifest.json",
   icons: {
     icon: [
@@ -49,6 +95,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="pt-BR" className={`${fraunces.variable} ${poppins.variable}`} suppressHydrationWarning>
       <body className="min-h-screen antialiased">
+        {/* Dado estruturado da organizacao: precisa estar no HTML servido,
+            nao injetado depois, senao crawler nenhum ve. */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={scriptJsonLd(jsonLdOrganizacao())}
+        />
         {children}
         <PwaRegister />
         <Script id="meta-pixel" strategy="afterInteractive">{`

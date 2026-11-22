@@ -5,14 +5,18 @@ import { StickyCTA } from '@/app/comecar/StickyCTA'
 import { CookieBanner } from '@/app/comecar/CookieBanner'
 import { ProgramaContent, type ProductData } from '@/components/marketing/ProgramaContent'
 import { SiteFooter } from '@/components/marketing/SiteFooter'
+import { SchemaCurso } from '@/components/marketing/SchemaCurso'
 
 const PRODUCT_SLUG = 'mentoria-nps'
 
 export const metadata = {
-  title: 'Mentoria NPS — Numerologia Pitagórica — Instituto Despertamente',
+  title: 'Mentoria NPS — Numerologia Pitagórica',
   description: 'Dois encontros ao vivo por mês, mapas numerológicos (Mapa 7 Esferas) e acompanhamento contínuo pra você aplicar a Numerologia Pitagórica de verdade.',
+  alternates: { canonical: '/programas/mentoria-nps' },
   openGraph: {
-    title: 'Mentoria NPS — Instituto Despertamente',
+    url: '/programas/mentoria-nps',
+    type: 'website',
+    title: 'Mentoria NPS',
     description: 'Dois encontros por mês, gravações e até 8 mapas numerológicos por mês, enquanto a mensalidade estiver em dia.',
   },
 }
@@ -43,6 +47,7 @@ export default async function MentoriaNpsPage() {
       <WhatsAppButton />
       <StickyCTA />
       <CookieBanner />
+      <SchemaCurso slug={PRODUCT_SLUG} preco={product?.price ?? null} />
 
       <ProgramaContent
         product={product}

@@ -5,13 +5,17 @@ import { StickyCTA } from '@/app/comecar/StickyCTA'
 import { CookieBanner } from '@/app/comecar/CookieBanner'
 import { PsicanaliseContent, type ProductData } from './PsicanaliseContent'
 import { SiteFooter } from '@/components/marketing/SiteFooter'
+import { SchemaCurso } from '@/components/marketing/SchemaCurso'
 
 const PRODUCT_SLUG = 'psicanalise-integrativa'
 
 export const metadata = {
-  title: 'Formação em Psicanálise Integrativa — Instituto Despertamente',
+  title: 'Formação em Psicanálise Integrativa',
   description: 'Formação completa em Psicanálise Integrativa: teoria, análise pessoal e supervisão clínica. Certificação reconhecida pela ICF e ABNLP.',
+  alternates: { canonical: '/programas/psicanalise-integrativa' },
   openGraph: {
+    url: '/programas/psicanalise-integrativa',
+    type: 'website',
     title: 'Formação em Psicanálise Integrativa — IDM',
     description: 'Do inconsciente à prática clínica. Formação com certificação internacional.',
   },
@@ -42,6 +46,7 @@ export default async function PsicanaliseIntegrativaPage() {
       <WhatsAppButton />
       <StickyCTA />
       <CookieBanner />
+      <SchemaCurso slug={PRODUCT_SLUG} preco={product?.price ?? null} />
 
       <PsicanaliseContent product={product} />
 

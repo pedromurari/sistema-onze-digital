@@ -118,7 +118,7 @@ const comoFunciona = [
   { t: 'Acompanhamento', s: 'durante os 3 meses', d: 'Entregas orientadas, registros, devolutivas e preparação para o certificado.' },
 ]
 
-const faqItems = [
+export const faqItems = [
   { q: 'Preciso ter conhecimento prévio em Constelação Familiar?', a: 'Não. Essa é a porta de entrada — não é necessário nenhum conhecimento prévio.' },
   { q: 'Como funciona o formato?', a: '3 meses, 8 módulos, 12 aulas, em 6 ciclos quinzenais. Cada ciclo combina um encontro ao vivo pelo Meet (1h30 a 2h) com uma semana de integração na plataforma — estudo, leitura e atividade orientada.' },
   { q: 'As aulas ficam gravadas?', a: 'Sim. Os conteúdos gravados ficam na plataforma para revisar e aprofundar, junto com apostilas, artigos, filmes indicados e as atividades de cada módulo.' },

@@ -5,6 +5,7 @@ import { WhatsAppButton } from '@/app/comecar/WhatsAppButton'
 import { CookieBanner } from '@/app/comecar/CookieBanner'
 import { SiteFooter } from '@/components/marketing/SiteFooter'
 import { BLOG_POSTS, buscarPost, formatarData } from '@/content/blog'
+import { jsonLdPost, ORG, scriptJsonLd } from '@/lib/seo'
 
 export function generateStaticParams() {
   return BLOG_POSTS.filter(p => p.publicado).map(p => ({ slug: p.slug }))
@@ -13,11 +14,25 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const post = buscarPost(slug)
-  if (!post) return { title: 'Post não encontrado — Instituto Despertamente' }
+  if (!post) return { title: 'Post não encontrado' }
   return {
-    title: `${post.titulo} — Instituto Despertamente`,
+    title: post.titulo,
     description: post.resumo,
-    openGraph: { title: post.titulo, description: post.resumo, type: 'article' },
+    // Canonical por post: sem isso qualquer parâmetro de campanha (?utm_)
+    // vira URL concorrente da mesma página aos olhos do Google.
+    alternates: { canonical: `/blog/${post.slug}` },
+    openGraph: {
+      title: post.titulo,
+      description: post.resumo,
+      type: 'article',
+      url: `/blog/${post.slug}`,
+      publishedTime: post.data,
+      modifiedTime: post.data,
+      authors: [post.autor],
+      section: post.categoria,
+    },
+    twitter: { card: 'summary_large_image', title: post.titulo, description: post.resumo },
+    other: { 'article:published_time': post.data },
   }
 }
 
@@ -31,6 +46,22 @@ export default async function PostPage({ params }: { params: Promise<{ slug: str
       <NavbarComecar />
       <WhatsAppButton />
       <CookieBanner />
+
+      {/* BlogPosting: é o schema que faz o post virar fonte citável --
+          dá autor, data e seção pro Google e pros buscadores de IA. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={scriptJsonLd(
+          jsonLdPost({
+            titulo: post.titulo,
+            resumo: post.resumo,
+            slug: post.slug,
+            data: post.data,
+            autor: post.autor || ORG.nome,
+            categoria: post.categoria,
+          }),
+        )}
+      />
 
       <div className="fds">
         <article>

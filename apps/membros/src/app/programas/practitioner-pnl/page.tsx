@@ -5,14 +5,18 @@ import { StickyCTA } from '@/app/comecar/StickyCTA'
 import { CookieBanner } from '@/app/comecar/CookieBanner'
 import { ProgramaContent, type ProductData } from '@/components/marketing/ProgramaContent'
 import { SiteFooter } from '@/components/marketing/SiteFooter'
+import { SchemaCurso } from '@/components/marketing/SchemaCurso'
 
 const PRODUCT_SLUG = 'practitioner-pnl'
 
 export const metadata = {
-  title: 'Practitioner em PNL — Instituto Despertamente',
+  title: 'Practitioner em PNL',
   description: 'Formação em Programação Neurolinguística: rapport, ancoragem, submodalidades e reformulação pra você reprogramar padrões mentais na prática.',
+  alternates: { canonical: '/programas/practitioner-pnl' },
   openGraph: {
-    title: 'Practitioner em PNL — Instituto Despertamente',
+    url: '/programas/practitioner-pnl',
+    type: 'website',
+    title: 'Practitioner em PNL',
     description: 'Reprograme seus padrões mentais e alcance resultados extraordinários.',
   },
 }
@@ -43,6 +47,7 @@ export default async function PractitionerPnlPage() {
       <WhatsAppButton />
       <StickyCTA />
       <CookieBanner />
+      <SchemaCurso slug={PRODUCT_SLUG} preco={product?.price ?? null} />
 
       <ProgramaContent
         product={product}

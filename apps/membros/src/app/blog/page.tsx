@@ -6,9 +6,16 @@ import { SiteFooter } from '@/components/marketing/SiteFooter'
 import { postsPublicados, formatarData } from '@/content/blog'
 
 export const metadata = {
-  title: 'Blog — Instituto Despertamente',
+  title: 'Blog',
   description:
     'Psicanálise, PNL e neurociência aplicadas ao dia a dia. Textos do Instituto Despertamente.',
+  alternates: { canonical: '/blog' },
+  openGraph: {
+    title: 'Blog do Instituto Despertamente',
+    description: 'Psicanálise, PNL e neurociência aplicadas ao dia a dia.',
+    url: '/blog',
+    type: 'website',
+  },
 }
 
 export default function BlogPage() {

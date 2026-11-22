@@ -5,13 +5,17 @@ import { StickyCTA } from '@/app/comecar/StickyCTA'
 import { CookieBanner } from '@/app/comecar/CookieBanner'
 import { IdmBrasilContent, type ProductData } from './IdmBrasilContent'
 import { SiteFooter } from '@/components/marketing/SiteFooter'
+import { SchemaCurso } from '@/components/marketing/SchemaCurso'
 
 const PRODUCT_SLUG = 'idm-pelo-brasil'
 
 export const metadata = {
-  title: 'IDM pelo Brasil — Workshops Presenciais · Instituto Despertamente',
+  title: 'IDM pelo Brasil — Workshops Presenciais',
   description: 'Imersão presencial de Psicanálise Integrativa e PNL em 4 dias. O IDM chega até a sua cidade.',
+  alternates: { canonical: '/programas/idm-pelo-brasil' },
   openGraph: {
+    url: '/programas/idm-pelo-brasil',
+    type: 'website',
     title: 'IDM pelo Brasil — Workshop Presencial',
     description: 'Imersão presencial. 4 dias. Transformação real.',
   },
@@ -42,6 +46,7 @@ export default async function IdmPeloBrasilPage() {
       <WhatsAppButton />
       <StickyCTA />
       <CookieBanner />
+      <SchemaCurso slug={PRODUCT_SLUG} preco={product?.price ?? null} />
 
       <IdmBrasilContent product={product} />
 
