@@ -90,6 +90,8 @@ export function jsonLdCurso(c: {
   moeda?: string
   modalidade?: 'online' | 'presencial' | 'blended'
   duracaoMeses?: number
+  /** true quando o valor e mensalidade, nao preco fechado do curso. */
+  assinatura?: boolean
 }) {
   const url = `${SITE_URL}/programas/${c.slug}`
   const modo =
@@ -108,11 +110,25 @@ export function jsonLdCurso(c: {
       ? {
           offers: {
             '@type': 'Offer',
-            price: c.preco,
             priceCurrency: c.moeda ?? 'BRL',
             availability: 'https://schema.org/InStock',
             url,
-            category: 'Paid',
+            category: c.assinatura ? 'Subscription' : 'Paid',
+            // Mensalidade precisa sair como recorrente. Mandar R$100 como
+            // `price` seco faz o Google -- e a IA -- anunciarem "curso por
+            // R$100", que nao e o que a gente cobra.
+            ...(c.assinatura
+              ? {
+                  priceSpecification: {
+                    '@type': 'UnitPriceSpecification',
+                    price: c.preco,
+                    priceCurrency: c.moeda ?? 'BRL',
+                    billingDuration: 1,
+                    billingIncrement: 1,
+                    unitText: 'MON',
+                  },
+                }
+              : { price: c.preco }),
           },
         }
       : {}),

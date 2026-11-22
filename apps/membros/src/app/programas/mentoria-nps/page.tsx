@@ -47,7 +47,11 @@ export default async function MentoriaNpsPage() {
       <WhatsAppButton />
       <StickyCTA />
       <CookieBanner />
-      <SchemaCurso slug={PRODUCT_SLUG} preco={product?.price ?? null} />
+      <SchemaCurso
+        slug={PRODUCT_SLUG}
+        preco={product?.price ?? null}
+        assinatura={product?.payment_type === 'subscription'}
+      />
 
       <ProgramaContent
         product={product}
