@@ -38,7 +38,7 @@ Contato: ${ORG.telefone}
 
 ## Formações e programas
 
-- [Psicanálise Integrativa](${SITE_URL}/programas/psicanalise-integrativa): formação completa em 7 módulos, 2 anos, com certificação. É a formação principal do Instituto.
+- [Formação em Psicanálise Clínica Integrativa](${SITE_URL}/programas/psicanalise-integrativa): formação de 14 meses, 100% online, estruturada em 4 arcos, com acesso vitalício à plataforma e certificado de Extensão Universitária nas diretrizes do MEC em parceria com a Anhanguera. R$1.500 à vista no Pix (valor original R$3.750), ou 12x de R$150. É a formação principal do Instituto.
 - [Despertar Sistêmico — Constelação Familiar Sistêmica](${SITE_URL}/programas/constelacao-familiar): formação de 3 meses, 8 módulos, 12 aulas, encontros quinzenais ao vivo. R$497.
 - [Mentoria NPS — Numerologia Pitagórica](${SITE_URL}/programas/mentoria-nps): assinatura mensal com encontros ao vivo e mapas numerológicos.
 - [Mentoria NPA](${SITE_URL}/programas/mentoria-npa): mentoria em Numerologia Pitagórica Aplicada.
