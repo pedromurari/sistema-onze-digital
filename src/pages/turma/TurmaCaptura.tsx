@@ -247,7 +247,14 @@ export default function TurmaCaptura() {
         setEnviando(false);
         return;
       }
-      trackPixel('Lead', { content_name: `Turma ${slug}` });
+      // nome/e-mail/whatsapp vão só pra API de Conversões, hasheados no
+      // servidor -- é o que permite a Meta casar o evento com a pessoa mesmo
+      // quando o pixel do navegador é bloqueado.
+      trackPixel('Lead', { content_name: `Turma ${slug}` }, {
+        nome: nome.trim(),
+        email: email.trim() || undefined,
+        whatsapp: whatsappLimpo,
+      });
       navigate(`/turma/${slug}/obrigado?nome=${encodeURIComponent(nome.trim())}`, { replace: true });
     } catch {
       toast.error('Erro de conexão. Tente novamente.');

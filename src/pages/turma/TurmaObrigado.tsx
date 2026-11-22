@@ -50,7 +50,9 @@ export default function TurmaObrigado() {
 
   useEffect(() => {
     carregarPixel();
-    trackPixel('CompleteRegistration', { content_name: `Turma ${slug}` });
+    // Só o nome chega aqui (vem na query da página anterior); e-mail e
+    // telefone ficaram no Lead. Já ajuda no match do servidor.
+    trackPixel('CompleteRegistration', { content_name: `Turma ${slug}` }, nome ? { nome } : undefined);
   }, [slug]);
 
   useEffect(() => {
