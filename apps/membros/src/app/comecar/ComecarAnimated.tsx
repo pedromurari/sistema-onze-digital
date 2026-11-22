@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { postsPublicados, formatarData } from '@/content/blog'
 import {
   ArrowRight, ChevronRight, Brain, Zap, Users, Award, Video,
   BookOpen, CheckCircle, Send, Calendar, Star,
@@ -580,104 +581,47 @@ function CTAPromoSection() {
 // ═══════════════════════════════════════════════════════════════════
 // SEÇÃO 10 — BLOG / CONTEÚDO (grid 6 artigos)
 // ═══════════════════════════════════════════════════════════════════
-const BLOG_POSTS = [
-  {
-    category: 'Psicanálise',
-    title: 'Como a psicanálise pode transformar seus relacionamentos',
-    excerpt: 'Entenda como padrões inconscientes afetam a forma como nos relacionamos com os outros.',
-    img: 'https://images.unsplash.com/photo-1508672019048-805c876b67e2?w=500&q=75',
-    date: '15 Jun 2025',
-  },
-  {
-    category: 'NPA',
-    title: 'NPA: os padrões que vêm dos seus antepassados ainda te controlam?',
-    excerpt: 'Como comportamentos herdados de gerações anteriores se repetem na sua vida sem você perceber.',
-    img: 'https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=500&q=75',
-    date: '8 Jun 2025',
-  },
-  {
-    category: 'Neurociência',
-    title: 'Como o cérebro aprende com transformação real',
-    excerpt: 'A neurociência por trás da mudança de comportamento e por que o método IDM funciona.',
-    img: 'https://images.unsplash.com/photo-1559757175-5700dde675bc?w=500&q=75',
-    date: '1 Jun 2025',
-  },
-  {
-    category: 'PNL',
-    title: 'PNL na prática: técnicas para ressignificar crenças limitantes',
-    excerpt: 'Ferramentas de Programação Neurolinguística que você pode aplicar imediatamente.',
-    img: 'https://images.unsplash.com/photo-1553877522-43269d4ea984?w=500&q=75',
-    date: '25 Mai 2025',
-  },
-  {
-    category: 'Autoconhecimento',
-    title: 'Por que autoconhecimento é o melhor investimento que você pode fazer',
-    excerpt: 'O impacto do autoconhecimento em resultados profissionais, relacionamentos e saúde mental.',
-    img: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&q=75',
-    date: '18 Mai 2025',
-  },
-  {
-    category: 'Formação',
-    title: 'A diferença entre terapia e formação em psicanálise integrativa',
-    excerpt: 'O que esperar de cada modalidade e como escolher o caminho certo para o seu objetivo.',
-    img: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=500&q=75',
-    date: '10 Mai 2025',
-  },
-]
 
 function BlogSection() {
+  // Lê os posts de verdade (src/content/blog.ts). Se ainda não houver artigo
+  // publicado, a seção não aparece -- antes daqui saíam 6 cards com foto de
+  // banco de imagem e "Ler mais" que não levava a lugar nenhum.
+  const posts = postsPublicados().slice(0, 3)
+  if (posts.length === 0) return null
+
   return (
     <section id="blog" className="fds-band--deep">
-      <div className="fds-wrap px-6 sm:px-10 lg:px-16 fds-section">
+      <div className="fds-wrap fds-section">
         <FadeIn direction="none" className="flex items-end justify-between mb-12">
           <div>
-            <p className="text-xs uppercase tracking-[0.22em] text-white/30 mb-3">Blog</p>
-            <h2 className="fds-h2">
+            <p className="fds-eyebrow">Blog</p>
+            <h2 className="fds-h2 mt-3">
               Conteúdo que<br />expande a consciência.
             </h2>
           </div>
-          <a
-            href="#blog"
+          <Link
+            href="/blog"
             className="hidden sm:inline-flex items-center gap-1.5 text-sm font-semibold text-white/70 hover:text-[#FFB800] hover:gap-3 transition-all duration-200 shrink-0"
           >
             Ver todos <ArrowRight className="h-4 w-4" />
-          </a>
+          </Link>
         </FadeIn>
 
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {BLOG_POSTS.map((post, i) => (
-            <FadeIn key={post.title} delay={i * 60}>
-              <article className="group rounded-2xl overflow-hidden border border-white/8 hover:border-white/16 bg-white/[0.02] transition-all duration-300 flex flex-col">
-                <div className="overflow-hidden" style={{ aspectRatio: '16/9' }}>
-                  <img
-                    src={post.img}
-                    alt={post.title}
-                    loading="lazy"
-                    className="w-full h-full object-cover group-hover:scale-[1.05] transition-transform duration-700"
-                  />
-                </div>
-                <div className="p-5 flex flex-col gap-3 flex-1">
-                  <div className="flex items-center gap-3">
-                    <span className="fds-eyebrow">
-                      {post.category}
-                    </span>
-                    <span className="flex items-center gap-1 text-[11px] text-white/30">
-                      <Calendar className="h-3 w-3" />
-                      {post.date}
-                    </span>
-                  </div>
-                  <h3 className="font-semibold text-white text-[15px] leading-snug group-hover:text-white/85 transition-colors">
-                    {post.title}
-                  </h3>
-                  <p className="text-white/40 text-xs leading-relaxed flex-1 line-clamp-2">{post.excerpt}</p>
-                  <a
-                    href="#blog"
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-white/60 mt-1"
-                  >
-                    Ler mais <ChevronRight className="h-3.5 w-3.5" />
-                  </a>
-                </div>
-              </article>
+        <div className="grid gap-px sm:grid-cols-2 lg:grid-cols-3" style={{ background: 'var(--fds-line)' }}>
+          {posts.map((post, i) => (
+            <FadeIn key={post.slug} delay={i * 60}>
+              <Link
+                href={`/blog/${post.slug}`}
+                className="group block h-full"
+                style={{ background: 'var(--fds-deep)', padding: 'var(--fds-8)' }}
+              >
+                <p className="fds-eyebrow">{post.categoria}</p>
+                <h3 className="fds-h3 mt-3" style={{ fontSize: '1.125rem' }}>{post.titulo}</h3>
+                <p className="fds-small mt-4">{post.resumo}</p>
+                <p className="fds-meta mt-6">
+                  <time dateTime={post.data}>{formatarData(post.data)}</time> · {post.leitura} min
+                </p>
+              </Link>
             </FadeIn>
           ))}
         </div>

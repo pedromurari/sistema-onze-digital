@@ -14,15 +14,10 @@ type NavItem = { label: string; href: string; dropdown?: DropdownItem[] }
 // navbar) não levava a lugar nenhum, só empilhava o fragmento na URL atual.
 const NAV_ITEMS: NavItem[] = [
   { label: 'Início', href: '/comecar' },
-  {
-    label: 'A IDM',
-    href: '/comecar#sobre',
-    dropdown: [
-      { label: 'Sobre o Instituto', href: '/comecar#sobre' },
-      { label: 'Nossa Metodologia', href: '/comecar#metodologia' },
-      { label: 'Resultados', href: '/comecar#depoimentos' },
-    ],
-  },
+  // "A IDM" saiu em 21/11/2026 a pedido do Pedro: o dropdown inteiro
+  // (Sobre o Instituto / Nossa Metodologia / Resultados) só apontava pra
+  // âncoras da própria home — menu que abre pra levar a pessoa pra um
+  // pedaço da página em que ela já está é peso sem função.
   {
     label: 'Programas',
     href: '/comecar#programas',
@@ -33,12 +28,11 @@ const NAV_ITEMS: NavItem[] = [
       { label: 'Mentoria NPA', href: '/programas/mentoria-npa' },
       { label: 'Practitioner em PNL', href: '/programas/practitioner-pnl' },
       { label: 'IDM Pelo Brasil', href: '/programas/idm-pelo-brasil' },
-      { label: 'Seu Numerólogo', href: '/programas/seu-numerologo' },
       { label: 'Divã IDM (terapia)', href: '/programas/diva-idm' },
       { label: 'Ver todos os programas', href: '/loja' },
     ],
   },
-  { label: 'Blog', href: '/comecar#blog' },
+  { label: 'Blog', href: '/blog' },
   { label: 'Contato', href: '/comecar#contato' },
 ]
 
