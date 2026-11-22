@@ -81,3 +81,10 @@ verify_jwt = false
 
 [functions.workshop-pagamento-webhook]
 verify_jwt = false
+
+# Pixel de abertura de e-mail: o cliente de e-mail carrega a imagem direto,
+# sem header nenhum -- com verify_jwt o gateway devolve 401 e a abertura nunca
+# é medida. Não expõe nada: só marca aberto_em de um id que já existe e
+# devolve um GIF 1x1.
+[functions.email-pixel]
+verify_jwt = false

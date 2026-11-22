@@ -12,6 +12,28 @@ interface EmailPayload {
   subject: string;
   html: string;
   text?: string;
+  /** De onde veio o e-mail: 'boas_vindas' | 'campanha_massa' | ... */
+  origem?: string;
+  /** Id do destinatario/lead/campanha na origem, pra cruzar depois. */
+  referencia_id?: string;
+  /** true desliga o pixel de abertura neste envio (transacional interno). */
+  sem_rastreio?: boolean;
+}
+
+const FUNCTIONS_URL = `${Deno.env.get('SUPABASE_URL')}/functions/v1`;
+
+/**
+ * Injeta o pixel 1x1 de abertura antes do </body> (ou no fim, se nao houver).
+ * Rastreio nunca pode derrubar envio: qualquer erro aqui devolve o HTML cru.
+ */
+function injetarPixel(html: string, envioId: string): string {
+  try {
+    const img = `<img src="${FUNCTIONS_URL}/email-pixel?e=${envioId}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0;outline:none;" />`;
+    const i = html.toLowerCase().lastIndexOf('</body>');
+    return i === -1 ? html + img : html.slice(0, i) + img + html.slice(i);
+  } catch {
+    return html;
+  }
 }
 
 // ── Resend ────────────────────────────────────────────────────────────────────
@@ -119,14 +141,60 @@ serve(async (req) => {
       });
     }
 
-    let result: unknown;
-    switch (cfg.provider) {
-      case 'sendgrid': result = await sendSendgrid(payload, cfg); break;
-      case 'brevo':    result = await sendBrevo(payload, cfg);    break;
-      default:         result = await sendResend(payload, cfg);   break; // resend
+    // ── Rastreio de abertura ────────────────────────────────────────────────
+    // Best-effort em todas as pontas: se gravar o registro falhar, o e-mail
+    // sai sem pixel em vez de nao sair. Medicao nunca derruba entrega.
+    let envioId: string | null = null;
+    if (!payload.sem_rastreio) {
+      try {
+        const { data: envio } = await supabase
+          .from('email_envios')
+          .insert({
+            destinatario: payload.to,
+            nome: payload.to_name ?? null,
+            assunto: payload.subject,
+            origem: payload.origem ?? 'avulso',
+            referencia_id: payload.referencia_id ?? null,
+            provider: cfg.provider ?? 'resend',
+          })
+          .select('id')
+          .single();
+        envioId = envio?.id ?? null;
+      } catch (e) {
+        console.error('email-enviar: falha ao registrar envio (segue sem rastreio):', (e as Error).message);
+      }
     }
 
-    return new Response(JSON.stringify({ ok: true, result }), {
+    const payloadFinal: EmailPayload = envioId
+      ? { ...payload, html: injetarPixel(payload.html, envioId) }
+      : payload;
+
+    let result: unknown;
+    try {
+      switch (cfg.provider) {
+        case 'sendgrid': result = await sendSendgrid(payloadFinal, cfg); break;
+        case 'brevo':    result = await sendBrevo(payloadFinal, cfg);    break;
+        default:         result = await sendResend(payloadFinal, cfg);   break; // resend
+      }
+    } catch (erroEnvio) {
+      if (envioId) {
+        await supabase.from('email_envios')
+          .update({ erro: (erroEnvio as Error).message.slice(0, 400) })
+          .eq('id', envioId)
+          .then(() => {}, () => {});
+      }
+      throw erroEnvio;
+    }
+
+    if (envioId) {
+      const provider_id = (result as { id?: string } | null)?.id ?? null;
+      if (provider_id) {
+        await supabase.from('email_envios').update({ provider_id }).eq('id', envioId)
+          .then(() => {}, () => {});
+      }
+    }
+
+    return new Response(JSON.stringify({ ok: true, result, envio_id: envioId }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 

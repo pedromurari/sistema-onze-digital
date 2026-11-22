@@ -175,7 +175,11 @@ serve(async (req) => {
       await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/email-enviar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` },
-        body: JSON.stringify({ to: email, to_name: nome, subject: assunto, html }),
+        body: JSON.stringify({
+          to: email, to_name: nome, subject: assunto, html,
+          // identifica a origem pro rastreio de abertura (email_envios)
+          origem: 'boas_vindas', referencia_id: lead.id,
+        }),
       });
     } catch (e) {
       console.error('turma-registrar: falha ao enviar e-mail de boas-vindas', e);

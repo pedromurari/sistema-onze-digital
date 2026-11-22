@@ -49,13 +49,18 @@ serve(async (req) => {
 
   let enviados = 0;
   let erros = 0;
+  let bloqueadoPorCota = false;
 
   for (const dest of pendentes) {
     const campanha = campanhaPorId.get(dest.campanha_id);
-    if (!campanha || campanha.status !== 'enviando' || !dest.email) {
-      await supabase.from('campanhas_massa_destinatarios').update({ status_email: 'erro', erro_msg: 'campanha pausada ou sem email' }).eq('id', dest.id);
+    // Sem e-mail e um fato definitivo; campanha pausada e um estado temporario
+    // -- marcar 'erro' nesse caso queimava o destinatario pra sempre e ele
+    // nunca mais sairia quando a campanha voltasse.
+    if (!dest.email) {
+      await supabase.from('campanhas_massa_destinatarios').update({ status_email: 'sem_email' }).eq('id', dest.id);
       continue;
     }
+    if (!campanha || campanha.status !== 'enviando') continue;
 
     const assunto = aplicarTemplate(campanha.email_assunto ?? '', dest.nome ?? '');
     let corpo = aplicarTemplate(campanha.email_corpo ?? '', dest.nome ?? '');
@@ -76,13 +81,38 @@ serve(async (req) => {
           Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
           apikey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
         },
-        body: JSON.stringify({ to: dest.email, to_name: dest.nome, subject: assunto, html: corpo }),
+        body: JSON.stringify({
+          to: dest.email, to_name: dest.nome, subject: assunto, html: corpo,
+          // identifica a origem pro rastreio de abertura (email_envios)
+          origem: 'campanha_massa', referencia_id: dest.id,
+        }),
       });
-      if (!res.ok) throw new Error(`email-enviar ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      // A email-enviar responde HTTP 200 mesmo quando o provedor recusa: o
+      // erro de verdade vem em `ok: false` no corpo. Sem olhar o corpo, falha
+      // de entrega era gravada como 'enviado' -- foi assim que 183 e-mails
+      // recusados por cota apareceram no painel como enviados em 22/11/2026.
+      const bruto = await res.text();
+      if (!res.ok) throw new Error(`email-enviar ${res.status}: ${bruto.slice(0, 200)}`);
+      let corpoResp: { ok?: boolean; error?: string } = {};
+      try { corpoResp = JSON.parse(bruto); } catch { /* resposta sem json */ }
+      if (corpoResp.ok === false) throw new Error(corpoResp.error ?? 'falha no envio');
+
       await supabase.from('campanhas_massa_destinatarios').update({ status_email: 'enviado', enviado_email_em: new Date().toISOString() }).eq('id', dest.id);
       enviados++;
     } catch (e) {
-      await supabase.from('campanhas_massa_destinatarios').update({ status_email: 'erro', erro_msg: (e as Error).message.slice(0, 300) }).eq('id', dest.id);
+      const msg = (e as Error).message;
+      // Cota/limite do provedor nao e culpa do destinatario: ele continua
+      // 'pendente' e sai sozinho quando a cota virar. E nao adianta tentar o
+      // resto do lote -- vai falhar igual e so gasta chamada.
+      if (/daily_quota_exceeded|rate_limit|429|too many requests/i.test(msg)) {
+        await supabase.from('campanhas_massa_destinatarios')
+          .update({ erro_msg: `aguardando cota do provedor: ${msg.slice(0, 200)}` })
+          .eq('id', dest.id);
+        console.warn('campanha-massa-email-cron: cota do provedor estourada, parando o lote');
+        bloqueadoPorCota = true;
+        break;
+      }
+      await supabase.from('campanhas_massa_destinatarios').update({ status_email: 'erro', erro_msg: msg.slice(0, 300) }).eq('id', dest.id);
       erros++;
     }
   }
@@ -110,5 +140,5 @@ serve(async (req) => {
     }
   }
 
-  return new Response(JSON.stringify({ ok: true, enviados, erros }), { headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify({ ok: true, enviados, erros, bloqueadoPorCota }), { headers: { 'Content-Type': 'application/json' } });
 });
