@@ -222,7 +222,10 @@ export default function NPACaptura() {
       console.error('Erro ao pré-registrar lead NPA:', err);
     }
 
-    trackPixel('Lead', { content_name: `NPA ${slug} - ${turno}` });
+    // nome/whatsapp vão só pra API de Conversões, hasheados no servidor --
+    // é o que permite a Meta casar o evento com a pessoa mesmo quando o pixel
+    // do navegador é bloqueado.
+    trackPixel('Lead', { content_name: `NPA ${slug} - ${turno}` }, { nome: nome.trim(), whatsapp: phoneToSend });
 
     if (!checkoutUrl) {
       toast.success('Interesse registrado! Assim que o checkout abrir, avisamos você pelo WhatsApp.');
@@ -241,7 +244,7 @@ export default function NPACaptura() {
       const v = params.get(key);
       if (v) url.searchParams.set(key, v);
     });
-    trackPixel('InitiateCheckout', { content_name: evento.nome, content_type: 'product', value: evento.valor_ingresso, currency: 'BRL' });
+    trackPixel('InitiateCheckout', { content_name: evento.nome, content_type: 'product', value: evento.valor_ingresso, currency: 'BRL' }, { nome: nome.trim(), whatsapp: phoneToSend });
     setTimeout(() => { window.location.href = url.toString(); }, 1200);
   }
 
