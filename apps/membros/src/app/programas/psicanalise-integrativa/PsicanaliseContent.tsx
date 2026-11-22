@@ -1,173 +1,253 @@
 'use client'
 
-import Link from 'next/link'
-import { useRef } from 'react'
+/**
+ * Formação em Psicanálise Clínica Integrativa — página do site institucional.
+ *
+ * ORIGEM DO CONTEÚDO (22/11/2026): é a `formacao.idmpsi.com.br` (repositório
+ * `lead-direto`), a página de captação que o time já roda em tráfego pago.
+ * O Pedro pediu pra trazer ela "inteira" pro institucional: mesmo texto,
+ * mesma ordem, mesmos números, mesmas ofertas. O que mudou é só a roupa --
+ * saiu o visual de landing page (gradiente, sombra, dourado em tudo) e
+ * entrou o design system do site (plano, linha de 1px, dourado contado).
+ *
+ * Por isso NÃO invente, resuma ou "melhore" copy aqui. Se o texto tiver que
+ * mudar, muda nos dois lugares -- senão a pessoa que vê o anúncio e a que
+ * chega pelo Google recebem promessas diferentes.
+ *
+ * Preços ficam fixos no código (R$3.750 original, R$1.500 Pix, 12x R$150,
+ * 15x R$150) porque é assim na página de origem. Não vêm de `products`:
+ * duas fontes de preço é a receita pra anunciar valor que a gente não cobra.
+ */
+
+import { useRef, useState } from 'react'
+import Image from 'next/image'
 import { motion, useInView, useReducedMotion } from 'framer-motion'
-import { ArrowRight, Check, MessageCircle } from 'lucide-react'
 import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion'
+  Award,
+  Brain,
+  CheckCircle,
+  Clock,
+  CreditCard,
+  FileText,
+  Gift,
+  Globe,
+  GraduationCap,
+  Heart,
+  Infinity as InfinityIcon,
+  Lightbulb,
+  Play,
+  ShieldCheck,
+  Sparkles,
+  Star,
+  Target,
+  Users,
+  X,
+} from 'lucide-react'
+import { LeadWhatsappCta } from '@/components/marketing/LeadWhatsappModal'
 
-const WA_URL = 'https://wa.me/5511919434040?text=Olá! Tenho interesse na Formação em Psicanálise Integrativa.'
+/* ── Dados (texto literal da página de origem) ─────────────────────────── */
 
-const modulos = [
+const SELOS = [
+  'Certificado Universitário',
+  'Diretrizes do MEC',
+  'Anhanguera',
+  'Validade Nacional',
+]
+
+const DESTAQUES = [
+  {
+    icone: Globe,
+    titulo: 'Formação 100% online',
+    texto: 'Estude no seu ritmo, de qualquer lugar do mundo',
+  },
+  {
+    icone: Clock,
+    titulo: 'Duração: 14 meses',
+    texto: 'Tempo ideal para absorver todo o conhecimento',
+  },
+  {
+    icone: Award,
+    titulo: 'Certificado reconhecido',
+    texto: 'Validação oficial da sua formação',
+  },
+  {
+    icone: InfinityIcon,
+    titulo: 'Acesso vitalício à plataforma',
+    texto: 'Revise o conteúdo sempre que precisar',
+  },
+]
+
+const POR_QUE = [
+  {
+    titulo: 'Autocura e Autoconhecimento',
+    texto: 'Trabalhe suas próprias questões enquanto se capacita',
+  },
+  {
+    titulo: 'Metodologia Comprovada',
+    texto: 'Baseada nos fundamentos clássicos da Psicanálise',
+  },
+  {
+    titulo: 'Realização Profissional',
+    texto: 'Uma nova carreira de propósito e significado',
+  },
+]
+
+const ARCOS = [
   {
     numero: '01',
-    titulo: 'Fundamentos da Psicanálise',
-    carga: '8 semanas',
-    conteudo: [
-      'Freud, Jung e Lacan: estruturas do inconsciente',
-      'Transferência, contratransferência e mecanismos de defesa',
-      'Interpretação de sonhos aplicada à prática',
-      'Formação do sujeito e constituição do sintoma',
+    titulo: 'O Inconsciente',
+    icone: Brain,
+    topicos: [
+      'Freud e os fundamentos da Psicanálise',
+      'Jung e o inconsciente coletivo',
+      'Lacan e o inconsciente estruturado',
+      'Aparelho psíquico e suas instâncias',
+      'Mecanismos de defesa do Ego',
     ],
   },
   {
     numero: '02',
-    titulo: 'Análise Pessoal',
-    carga: 'Processo individual',
-    conteudo: [
-      'Sessões de análise pessoal incluídas na formação',
-      'Mapeamento dos próprios padrões e pontos cegos',
-      'Desenvolvimento da escuta analítica a partir da experiência',
-      'O tripé clássico: teoria, análise e supervisão',
+    titulo: 'A Infância',
+    icone: Heart,
+    topicos: [
+      'Complexo de Narciso',
+      'Complexo de Édipo',
+      'Estruturas clínicas fundamentais',
+      'Melanie Klein e o mundo infantil',
+      'Winnicott e o desenvolvimento emocional',
     ],
   },
   {
     numero: '03',
-    titulo: 'Técnicas Integrativas',
-    carga: '10 semanas',
-    conteudo: [
-      'Regressão terapêutica: origens e aplicação segura',
-      'Abordagem somática: o corpo como mapa emocional',
-      'Constelações Familiares sistêmicas',
-      'Integração de diferentes abordagens em um mesmo percurso clínico',
+    titulo: 'As Manifestações',
+    icone: Users,
+    topicos: [
+      'Transtornos psicossomáticos',
+      'Distúrbios de personalidade',
+      'Vícios e compulsões',
+      'Comportamento suicida',
+      'TEA e TDAH na perspectiva psicanalítica',
     ],
   },
   {
     numero: '04',
-    titulo: 'Neurociência Aplicada',
-    carga: '6 semanas',
-    conteudo: [
-      'Como o cérebro cria e mantém padrões automáticos',
-      'Neuroplasticidade: o que é e como se aplica clinicamente',
-      'Trauma, memória e reprogramação neural',
-      'Conexão entre emoções, corpo e comportamento',
-    ],
-  },
-  {
-    numero: '05',
-    titulo: 'PNL na Prática Clínica',
-    carga: '8 semanas',
-    conteudo: [
-      'Fundamentos da Programação Neurolinguística',
-      'Técnicas de ressignificação rápida',
-      'Ancoragem e mudança de estado',
-      'Integração da PNL à escuta psicanalítica',
-    ],
-  },
-  {
-    numero: '06',
-    titulo: 'Supervisão e Prática Clínica',
-    carga: 'Processo contínuo',
-    conteudo: [
-      'Supervisão de casos reais com profissionais certificados',
-      'Grupos de estudo supervisionados',
-      'Desenvolvimento da identidade como psicanalista',
-      'Ética profissional e limites da atuação',
-    ],
-  },
-  {
-    numero: '07',
-    titulo: 'Certificação',
-    carga: 'Etapa final',
-    conteudo: [
-      'Avaliação integrativa — teoria e prática',
-      'Apresentação de caso clínico supervisionado',
-      'Emissão do certificado reconhecido pela ICF e ABNLP',
-      'Credencial digital + versão física por demanda',
+    titulo: 'As Técnicas Aplicadas',
+    icone: Lightbulb,
+    topicos: [
+      'Constelação familiar sistêmica',
+      'Hipnose clínica',
+      'Programação Neurolinguística (PNL)',
+      'Empreendedorismo em Psicanálise',
+      'Marketing para psicanalistas',
     ],
   },
 ]
 
-const passos = [
-  { titulo: 'Inscrição', desc: 'Você garante sua vaga, define a forma de pagamento e recebe acesso imediato à plataforma.' },
-  { titulo: 'Semana de imersão', desc: 'Primeira semana intensiva: você entende o método e inicia sua análise pessoal.' },
-  { titulo: 'Formação progressiva', desc: 'Semana a semana — teoria, prática e supervisão. Sem sobrecarregar, sem ser superficial.' },
-  { titulo: 'Certificação', desc: 'Avaliação final, supervisão do caso clínico e emissão da credencial ICF/ABNLP.' },
-]
-
-const depoimentos = [
+const BONUS = [
   {
-    featured: true,
-    nome: 'Luciana P.',
-    papel: 'Psicóloga Clínica · São Paulo',
-    texto: 'Já tinha graduação em Psicologia e me sentia limitada pelos modelos que conhecia. A Psicanálise Integrativa do IDM abriu um nível de compreensão que eu não tinha. Meus atendimentos mudaram completamente.',
+    icone: Users,
+    titulo: '10 Sessões de Supervisão Clínica',
+    valor: 'R$ 1.200,00',
+    texto: 'Acompanhamento personalizado com supervisores experientes',
   },
   {
-    nome: 'Rafael M.',
-    papel: 'Coach Executivo · Belo Horizonte',
-    texto: 'Minha prática ficou muito mais profunda. Entendo agora o que está por trás das resistências dos meus clientes.',
+    icone: Brain,
+    titulo: 'Curso Essencial Practitioner em PNL',
+    valor: 'R$ 790,00',
+    texto: 'Técnicas avançadas de Programação Neurolinguística',
+    selo: 'Encontros ao vivo',
   },
   {
-    nome: 'Carla S.',
-    papel: 'Terapeuta Holística · Porto Alegre',
-    texto: 'A análise pessoal incluída foi o que mais me transformou. Não é só um curso. É um processo.',
+    icone: Heart,
+    titulo: 'Workshop "Cicatrizes que Curam"',
+    valor: 'R$ 47,90',
+    texto: 'Metodologia exclusiva para transformar traumas em força',
+    selo: 'Encontro ao vivo',
   },
   {
-    nome: 'Eduardo T.',
-    papel: 'Professor e Facilitador · Curitiba',
-    texto: 'O rigor teórico aliado à supervisão clínica é o que diferencia essa formação de qualquer outro curso online.',
-  },
-]
-
-const faqItems = [
-  {
-    q: 'Esse certificado me permite clinicar como psicanalista?',
-    a: 'O certificado habilita você a atuar como psicanalista integrativo — sessões de escuta, análise de padrões e trabalho com o inconsciente. Para o exercício regulamentado pelo CFP/CRP, a formação complementa a graduação em Psicologia.',
-  },
-  {
-    q: 'Preciso ter formação em Psicologia antes?',
-    a: 'Não. A formação foi desenhada tanto para profissionais de saúde quanto para pessoas sem formação anterior. O programa parte do zero e constrói uma base progressivamente.',
-  },
-  {
-    q: 'Como funciona a análise pessoal incluída?',
-    a: 'Você recebe sessões de análise pessoal como parte da formação. Acontece com um analista certificado do IDM, de forma individual. É um requisito formativo — a mesma tradição do tripé psicanalítico clássico.',
-  },
-  {
-    q: 'O certificado é reconhecido pelo MEC?',
-    a: 'A Psicanálise não é regulamentada pelo MEC no Brasil. Nosso certificado é reconhecido pela ICF e pela ABNLP — os maiores organismos internacionais da área.',
-  },
-  {
-    q: 'Quantas horas por semana preciso dedicar?',
-    a: 'De 6 a 8 horas por semana — entre aulas, supervisão e análise pessoal. É um percurso que demanda comprometimento, não apenas consumo de conteúdo.',
-  },
-  {
-    q: 'As aulas ao vivo são obrigatórias?',
-    a: 'As aulas são gravadas e ficam disponíveis na plataforma. A supervisão em grupo tem horários fixos — esses requerem presença ou justificativa prévia.',
-  },
-  {
-    q: 'Tem garantia de reembolso?',
-    a: 'Garantia total de 7 dias. Se nos primeiros 7 dias você sentir que não é para você, devolvemos 100% do investimento.',
-  },
-  {
-    q: 'Aceita parcelamento? Tem desconto no Pix?',
-    a: 'Parcelamos em até 12x no cartão sem juros. Pagamento via Pix tem desconto especial. Ambas as opções aparecem no checkout.',
+    icone: Sparkles,
+    titulo: 'Workshop Reikiano com Elaine Ruivo',
+    valor: 'R$ 47,90',
+    texto: 'Workshop exclusivo com especialista em Reiki',
+    selo: 'Encontro ao vivo',
   },
 ]
 
-export interface ProductData {
-  price: number | null
-  original_price: number | null
-  highlights: string[] | null
-  cta_label: string | null
-  checkout_url: string | null
-}
+const PAGAMENTOS = [
+  {
+    icone: Sparkles,
+    titulo: 'PIX à vista',
+    valor: 'R$ 1.500,00',
+    texto: 'Pagamento à vista no PIX',
+    total: null as string | null,
+    itens: ['Maior desconto', 'Acesso imediato', 'Todos os bônus inclusos'],
+    melhor: true,
+  },
+  {
+    icone: CreditCard,
+    titulo: 'Cartão de Crédito',
+    valor: '12x R$ 150,00',
+    texto: 'Parcelado no Cartão de Crédito',
+    total: 'R$ 1.800,00',
+    itens: ['Sem juros', 'Acesso imediato', 'Parcelas fixas'],
+    melhor: false,
+  },
+  {
+    icone: FileText,
+    titulo: 'Boleto ou Cartão Recorrente',
+    valor: '15x R$ 150,00',
+    texto: 'No boleto bancário ou cartão recorrente',
+    total: 'R$ 2.250,00',
+    itens: ['Boleto ou cartão, você escolhe', 'Mais parcelas', 'Facilita o orçamento'],
+    melhor: false,
+  },
+]
 
-function Reveal({ children, className = '', style }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
+const INCLUSO = [
+  {
+    icone: Award,
+    titulo: 'Acesso vitalício',
+    texto: 'Estude no seu ritmo, para sempre',
+  },
+  {
+    icone: CheckCircle,
+    titulo: 'Certificado reconhecido',
+    texto: 'Extensão Universitária nas diretrizes do MEC',
+  },
+  {
+    icone: Users,
+    titulo: 'Comunidade exclusiva',
+    texto: 'Networking com outros profissionais',
+  },
+]
+
+const NUMEROS = [
+  { icone: Users, numero: '5.000+', rotulo: 'Alunos Formados' },
+  { icone: Award, numero: '98%', rotulo: 'Satisfação' },
+  { icone: Target, numero: '14', rotulo: 'Meses de Formação' },
+  { icone: Heart, numero: '100%', rotulo: 'Transformação' },
+]
+
+const DEPOIMENTOS = [
+  { id: 'wDQiV0VoBT4', frase: 'Transformei minha vida através da psicanálise.' },
+  { id: 'D4xbxCXSWoM', frase: 'A formação do iDM transformou completamente minha vida.' },
+  { id: 'g5-wCsj1D_0', frase: 'O método integrativo me deu ferramentas práticas que uso no dia a dia.' },
+  { id: 'PxDfmS4vvM8', frase: 'Recomendo o iDM para quem busca uma formação séria em Psicanálise.' },
+  { id: 'B_lpIOk1RQo', frase: 'A metodologia do iDM é única e transformadora.' },
+  { id: 'aYncgEhrXgs', frase: 'O iDM me deu as bases que eu precisava como psicanalista.' },
+]
+
+/* ── Utilidades visuais ────────────────────────────────────────────────── */
+
+function Reveal({
+  children,
+  className = '',
+  style,
+}: {
+  children: React.ReactNode
+  className?: string
+  style?: React.CSSProperties
+}) {
   const ref = useRef<HTMLDivElement>(null)
   const inView = useInView(ref, { once: true, margin: '-80px' as `${number}px` })
   const reduce = useReducedMotion()
@@ -176,396 +256,525 @@ function Reveal({ children, className = '', style }: { children: React.ReactNode
       ref={ref}
       className={className}
       style={style}
-      initial={{ opacity: 0, y: reduce ? 0 : 18 }}
+      initial={{ opacity: 0, y: reduce ? 0 : 14 }}
       animate={inView ? { opacity: 1, y: 0 } : {}}
-      transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+      transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
     >
       {children}
     </motion.div>
   )
 }
 
-function PriceBlock({ product }: { product: ProductData | null }) {
-  if (!product?.price) {
-    return (
-      <div className="space-y-5">
-        <p className="text-sm text-[#505050]">Vagas para a próxima turma em breve.</p>
-        <a
-          href={WA_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2.5 px-7 py-4 rounded-xl border border-[#25D366]/25 text-sm font-bold text-[#25D366] hover:bg-[#25D366]/6 transition-colors"
-        >
-          <MessageCircle className="h-4 w-4" />
-          Entrar na lista de espera
-        </a>
-      </div>
-    )
-  }
-
-  const parcelamento = Math.ceil(product.price / 12)
-  const pixPrice = Math.floor(product.price * 0.9)
-  const checkoutUrl = product.checkout_url ?? '/loja'
-
+/** Faixa de credenciamento. Aparece duas vezes na página de origem. */
+function BlocoMec({ comRodape = true }: { comRodape?: boolean }) {
   return (
-    <div className="space-y-8">
-      <div className="grid sm:grid-cols-2 gap-3 max-w-lg">
-        <div className="fds-card space-y-3" style={{ padding: 'var(--fds-6)' }}>
-          <p className="fds-eyebrow">Pix · à vista</p>
-          {product.original_price && (
-            <p className="text-xs text-[#383838] line-through">R$ {product.original_price.toLocaleString('pt-BR')}</p>
+    <div className="fds-card" style={{ padding: 'var(--fds-8)' }}>
+      <div className="flex flex-col gap-6 md:flex-row md:items-start">
+        <GraduationCap className="h-10 w-10 shrink-0" style={{ color: 'var(--fds-accent)' }} />
+        <div>
+          <p className="fds-eyebrow block">Extensão universitária</p>
+          <h3 className="fds-h3 mt-3">Curso nas diretrizes do MEC</h3>
+          <p className="fds-lead mt-4">
+            Extensão Universitária em parceria oficial com <strong>Anhanguera</strong>.
+          </p>
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            {SELOS.map(selo => (
+              <div key={selo} className="flex items-center gap-3">
+                <ShieldCheck className="h-4 w-4 shrink-0" style={{ color: 'var(--fds-accent)' }} />
+                <span className="fds-small">{selo}</span>
+              </div>
+            ))}
+          </div>
+          {comRodape && (
+            <p className="fds-small mt-6" style={{ color: 'var(--fds-ink-4)' }}>
+              Anhanguera faz parte do maior grupo educacional do Brasil — seu certificado
+              carrega esse peso.
+            </p>
           )}
-          <p style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="text-4xl font-bold text-[#f0f0f0] leading-none">
-            R$ {pixPrice.toLocaleString('pt-BR')}
-          </p>
-          <p className="text-[11px] text-[#404040]">10% de desconto</p>
-          <a
-            href={checkoutUrl}
-            className="fds-btn fds-btn--primary mt-2 w-full"
-          >
-            Pagar com Pix
-          </a>
-        </div>
-        <div className="fds-card space-y-3" style={{ padding: 'var(--fds-6)' }}>
-          <p className="fds-eyebrow">Cartão · parcelado</p>
-          <p style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="text-4xl font-bold text-[#f0f0f0] leading-none">
-            12×
-          </p>
-          <p className="text-sm text-[#505050]">R$ {parcelamento.toLocaleString('pt-BR')} por mês</p>
-          <a
-            href={checkoutUrl}
-            className="fds-btn fds-btn--ghost mt-2 w-full"
-          >
-            Parcelar agora
-          </a>
         </div>
       </div>
-      <p className="fds-small">Garantia de 7 dias. Se não fizer sentido, devolvemos tudo.</p>
     </div>
   )
 }
 
-export function PsicanaliseContent({ product }: { product: ProductData | null }) {
-  const checkoutHref = product?.checkout_url ?? '#investimento'
-  const featuredDepo = depoimentos.find(d => d.featured) ?? depoimentos[0]
-  const otherDepos = depoimentos.filter(d => !d.featured).slice(0, 3)
+/* ── Página ────────────────────────────────────────────────────────────── */
+
+export function PsicanaliseContent() {
+  const [video, setVideo] = useState<string | null>(null)
 
   return (
     <div className="fds">
-      {/* ── HERO ─────────────────────────────────── */}
-      {/* Oferta dentro do hero, acima da dobra -- antes o preço só aparecia
-          lá embaixo e quem vinha de anúncio tinha que rolar a página toda
-          pra descobrir quanto custa. */}
+      {/* ══ ABERTURA ═══════════════════════════════════════════════════ */}
       <section className="fds-band--deep" style={{ paddingTop: 'var(--fds-30)', paddingBottom: 'var(--fds-24)' }}>
         <div className="fds-wrap">
-          <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-            className="text-center"
-          >
-            <p className="fds-eyebrow block">Instituto Despertamente · Formação certificante</p>
-            <h1 className="fds-display mx-auto mt-4 max-w-4xl">
-              Psicanálise <span className="fds-accent">Integrativa</span>
-            </h1>
-            <p className="fds-lead mx-auto mt-5 text-center">
-              Do inconsciente à prática clínica. Teoria, análise pessoal e supervisão — o tripé
-              clássico, integrado a neurociência e PNL.
+          <Reveal>
+            <p className="fds-eyebrow block">Formação reconhecida</p>
+            <p className="fds-meta mt-4">
+              Vagas limitadas para a próxima turma · Garanta seu lugar agora
             </p>
-            <p className="fds-meta mt-5">7 módulos · 2 anos · ICF / ABNLP</p>
-          </motion.div>
 
-          <div className="mt-16 grid gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:items-start lg:gap-16">
+            <h1 className="fds-display mt-8 max-w-4xl">
+              Desperte o Psicanalista que há <span className="fds-accent">dentro de você</span>
+            </h1>
+
+            <p className="fds-lead mt-8">
+              <strong style={{ color: 'var(--fds-ink)' }}>
+                Comece agora a transformar sua vida.
+              </strong>{' '}
+              Dê o primeiro passo hoje mesmo. Porque antes de cuidar do outro, você aprende a
+              cuidar de si.
+            </p>
+          </Reveal>
+
+          <Reveal className="mt-12" style={{ maxWidth: 760 }}>
+            <BlocoMec />
+          </Reveal>
+
+          <Reveal className="mt-12">
+            <h2 className="fds-h2 max-w-3xl">
+              Sua vida está prestes a tomar um <span className="fds-accent">novo rumo</span>
+            </h2>
+            <p className="fds-lead mt-6">
+              Descubra como acessar o poder do inconsciente, dominar suas emoções e transformar
+              a si mesmo e ao mundo ao seu redor — <strong style={{ color: 'var(--fds-ink)' }}>
+                mesmo começando do zero.</strong>
+            </p>
+
+            <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                'Ao vivo (Meet) + Gravação + Área de Membros',
+                '14 meses',
+                'Certificado',
+                'Acesso vitalício',
+              ].map(item => (
+                <div key={item} className="flex items-start gap-3">
+                  <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" style={{ color: 'var(--fds-accent)' }} />
+                  <span className="fds-small">{item}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-12 flex flex-wrap items-center gap-6">
+              <LeadWhatsappCta texto="Quero transformar minha vida" />
+              <p className="fds-meta">Vagas limitadas para a próxima turma</p>
+            </div>
+          </Reveal>
+        </div>
+      </section>
+
+      {/* ══ VISÃO GERAL ════════════════════════════════════════════════ */}
+      <section className="fds-section">
+        <div className="fds-wrap">
+          <Reveal>
+            <p className="fds-eyebrow block">A formação</p>
+            <h2 className="fds-h2 mt-4 max-w-4xl">
+              Formação em <span className="fds-accent">Psicanálise Clínica Integrativa</span>
+            </h2>
+            <p className="fds-lead mt-6">
+              Uma jornada completa de transformação pessoal e profissional baseada no método
+              tradicional de Freud: <strong style={{ color: 'var(--fds-ink)' }}>Teoria</strong>,{' '}
+              <strong style={{ color: 'var(--fds-ink)' }}>Análise Pessoal</strong> e{' '}
+              <strong style={{ color: 'var(--fds-ink)' }}>Supervisão</strong>.
+            </p>
+          </Reveal>
+
+          <div className="mt-16 grid gap-px sm:grid-cols-2 lg:grid-cols-4" style={{ background: 'var(--fds-line)' }}>
+            {DESTAQUES.map(({ icone: Icone, titulo, texto }) => (
+              <div key={titulo} style={{ background: 'var(--fds-bg)', padding: 'var(--fds-8)' }}>
+                <Icone className="h-5 w-5" style={{ color: 'var(--fds-accent)' }} />
+                <h3 className="fds-h3 mt-6" style={{ fontSize: '1.25rem' }}>{titulo}</h3>
+                <p className="fds-small mt-3">{texto}</p>
+              </div>
+            ))}
+          </div>
+
+          <Reveal className="mt-24">
+            <h2 className="fds-h2 max-w-3xl">
+              Por que escolher a <span className="fds-accent">Psicanálise Integrativa</span>
+            </h2>
+            <div className="fds-list mt-10" style={{ maxWidth: 820 }}>
+              {POR_QUE.map(({ titulo, texto }) => (
+                <div key={titulo} className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:gap-8">
+                  <h3 className="fds-h3 shrink-0" style={{ fontSize: '1.125rem', minWidth: 280 }}>
+                    {titulo}
+                  </h3>
+                  <p className="fds-body" style={{ margin: 0 }}>{texto}</p>
+                </div>
+              ))}
+            </div>
+          </Reveal>
+
+          <Reveal className="mt-16">
+            <LeadWhatsappCta texto="Garanta sua vaga" />
+          </Reveal>
+        </div>
+      </section>
+
+      {/* ══ CONTEÚDO DO CURSO ══════════════════════════════════════════ */}
+      <section className="fds-band fds-section">
+        <div className="fds-wrap">
+          <Reveal>
+            <p className="fds-eyebrow block">Conteúdo do curso</p>
+            <h2 className="fds-h2 mt-4 max-w-4xl">
+              Quatro arcos, do básico ao <span className="fds-accent">domínio completo</span>
+            </h2>
+            <p className="fds-lead mt-6">
+              Uma jornada estruturada em 4 arcos fundamentais que levarão você do básico ao
+              domínio completo da Psicanálise Clínica Integrativa.
+            </p>
+          </Reveal>
+
+          <Reveal className="mt-16" style={{ maxWidth: 820 }}>
+            <h3 className="fds-h3">O Tripé Psicanalítico</h3>
+            <p className="fds-body mt-5">
+              Como proposto por Freud, nossa formação se baseia nos três pilares essenciais:{' '}
+              <strong style={{ color: 'var(--fds-ink)' }}>Teoria Psicanalítica</strong>,{' '}
+              <strong style={{ color: 'var(--fds-ink)' }}>Análise Pessoal</strong> e{' '}
+              <strong style={{ color: 'var(--fds-ink)' }}>Supervisão Clínica</strong>. Essa
+              estrutura garante uma formação completa e transformadora.
+            </p>
+          </Reveal>
+
+          <div className="mt-16 grid gap-px md:grid-cols-2" style={{ background: 'var(--fds-line)' }}>
+            {ARCOS.map(({ numero, titulo, icone: Icone, topicos }) => (
+              <div key={numero} style={{ background: 'var(--fds-surface)', padding: 'var(--fds-12)' }}>
+                <div className="flex items-center gap-4">
+                  <span className="fds-meta" style={{ color: 'var(--fds-accent)' }}>{numero}</span>
+                  <Icone className="h-5 w-5" style={{ color: 'var(--fds-ink-3)' }} />
+                </div>
+                <h3 className="fds-h3 mt-6">{titulo}</h3>
+                <ul className="mt-6 space-y-3">
+                  {topicos.map(topico => (
+                    <li key={topico} className="flex items-start gap-3">
+                      <CheckCircle className="mt-1 h-3.5 w-3.5 shrink-0" style={{ color: 'var(--fds-accent)' }} />
+                      <span className="fds-small">{topico}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+
+          <Reveal className="mt-16" style={{ maxWidth: 820 }}>
+            <h3 className="fds-h3">Metodologia exclusiva do iDM</h3>
+            <p className="fds-body mt-5">
+              Nossa abordagem integrativa combina os fundamentos clássicos da Psicanálise com
+              técnicas modernas comprovadas, proporcionando uma formação completa e prática para
+              sua atuação profissional.
+            </p>
+          </Reveal>
+        </div>
+      </section>
+
+      {/* ══ BÔNUS ══════════════════════════════════════════════════════ */}
+      <section className="fds-section">
+        <div className="fds-wrap">
+          <Reveal>
+            <p className="fds-eyebrow block">Bônus exclusivos</p>
+            <h2 className="fds-h2 mt-4 max-w-3xl">
+              Garanta hoje e receba <span className="fds-accent">grátis</span>
+            </h2>
+            <p className="fds-lead mt-6">
+              Além da formação completa, você recebe bônus especiais que potencializam ainda mais
+              seu desenvolvimento profissional.
+            </p>
+          </Reveal>
+
+          <div className="fds-list mt-16" style={{ maxWidth: 900 }}>
+            {BONUS.map(({ icone: Icone, titulo, valor, texto, selo }) => (
+              <div key={titulo} className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-8">
+                <Icone className="h-5 w-5 shrink-0 sm:mt-1" style={{ color: 'var(--fds-ink-3)' }} />
+                <div className="flex-1">
+                  <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
+                    <h3 className="fds-h3" style={{ fontSize: '1.125rem' }}>{titulo}</h3>
+                    {selo && <span className="fds-badge">{selo}</span>}
+                  </div>
+                  <p className="fds-small mt-2">{texto}</p>
+                </div>
+                <p className="fds-meta shrink-0" style={{ color: 'var(--fds-ink-2)' }}>{valor}</p>
+              </div>
+            ))}
+          </div>
+
+          <Reveal className="mt-16 flex flex-wrap items-baseline gap-x-8 gap-y-4">
             <div>
-              <hr className="fds-rule" style={{ width: 64 }} />
-              <p className="fds-h3 mt-6" style={{ fontWeight: 400, color: 'var(--fds-ink-2)' }}>
-                Psicanálise Integrativa não é mais uma modalidade terapêutica.{' '}
-                <span style={{ color: 'var(--fds-ink)' }}>
-                  É um método de investigação do inconsciente
-                </span>{' '}
-                que une a tradição clássica à neurociência, PNL e abordagens somáticas.
+              <p className="fds-meta">Valor total dos bônus</p>
+              <p className="fds-h2 mt-3">
+                <span className="fds-accent">R$ 2.085,80</span>
+              </p>
+            </div>
+            <div className="flex items-start gap-3" style={{ maxWidth: 420 }}>
+              <Gift className="mt-1 h-4 w-4 shrink-0" style={{ color: 'var(--fds-accent)' }} />
+              <p className="fds-small">
+                Gratuitos para quem garantir a vaga hoje. Esta é uma oportunidade única e por
+                tempo limitado — não perca a chance de transformar sua vida com essa formação
+                completa.
+              </p>
+            </div>
+          </Reveal>
+        </div>
+      </section>
+
+      {/* ══ INVESTIMENTO ═══════════════════════════════════════════════ */}
+      <section className="fds-band fds-section" id="investimento">
+        <div className="fds-wrap">
+          <Reveal>
+            <p className="fds-eyebrow block">Investimento</p>
+            <h2 className="fds-h2 mt-4 max-w-3xl">
+              Investimento na sua <span className="fds-accent">transformação</span>
+            </h2>
+            <p className="fds-lead mt-6">
+              Uma oportunidade única de investir em você mesmo e construir uma carreira de
+              propósito.
+            </p>
+          </Reveal>
+
+          <Reveal className="mt-16 flex flex-wrap items-end gap-x-16 gap-y-8">
+            <div>
+              <p className="fds-meta">Valor original</p>
+              <p className="fds-h3 mt-3" style={{ color: 'var(--fds-ink-4)', textDecoration: 'line-through' }}>
+                R$ 3.750,00
+              </p>
+              <p className="fds-small mt-2">Preço sem os bônus exclusivos</p>
+            </div>
+            <div>
+              <p className="fds-meta">Oferta especial</p>
+              <p className="fds-display mt-3" style={{ fontSize: 'clamp(2.5rem, 6vw, 4rem)' }}>
+                <span className="fds-accent">R$ 1.500,00</span>
+              </p>
+              <p className="fds-small mt-2">à vista no PIX · Economize mais de R$ 2.200</p>
+            </div>
+          </Reveal>
+
+          <div className="mt-16 grid gap-px md:grid-cols-3" style={{ background: 'var(--fds-line)' }}>
+            {PAGAMENTOS.map(({ icone: Icone, titulo, valor, texto, total, itens, melhor }) => (
+              <div key={titulo} style={{ background: 'var(--fds-surface)', padding: 'var(--fds-8)' }}>
+                <div className="flex items-center justify-between gap-4">
+                  <Icone className="h-5 w-5" style={{ color: melhor ? 'var(--fds-accent)' : 'var(--fds-ink-3)' }} />
+                  {melhor && <span className="fds-badge" style={{ color: 'var(--fds-accent)' }}>Melhor oferta</span>}
+                </div>
+                <h3 className="fds-h3 mt-6" style={{ fontSize: '1.125rem' }}>{titulo}</h3>
+                <p className="fds-h3 mt-4" style={{ fontSize: '1.5rem', color: melhor ? 'var(--fds-accent)' : 'var(--fds-ink)' }}>
+                  {valor}
+                </p>
+                <p className="fds-small mt-3">{texto}</p>
+                {total && <p className="fds-meta mt-2">Total: {total}</p>}
+                <ul className="mt-6 space-y-2">
+                  {itens.map(item => (
+                    <li key={item} className="flex items-start gap-3">
+                      <CheckCircle className="mt-1 h-3.5 w-3.5 shrink-0" style={{ color: 'var(--fds-ink-4)' }} />
+                      <span className="fds-small">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+
+          <Reveal className="mt-16">
+            <h3 className="fds-h3">O que está incluído no seu investimento</h3>
+            <div className="fds-list mt-8" style={{ maxWidth: 820 }}>
+              {INCLUSO.map(({ icone: Icone, titulo, texto }) => (
+                <div key={titulo} className="flex items-start gap-4">
+                  <Icone className="mt-1 h-4 w-4 shrink-0" style={{ color: 'var(--fds-accent)' }} />
+                  <div>
+                    <h4 className="fds-small" style={{ color: 'var(--fds-ink)', fontWeight: 600 }}>{titulo}</h4>
+                    <p className="fds-small mt-1">{texto}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Reveal>
+
+          <Reveal className="mt-16 flex flex-wrap items-center gap-6">
+            <LeadWhatsappCta texto="Quero garantir minha vaga" />
+            <p className="fds-meta">Vagas limitadas para a próxima turma</p>
+          </Reveal>
+        </div>
+      </section>
+
+      {/* ══ SOBRE O INSTITUTO ══════════════════════════════════════════ */}
+      <section className="fds-section">
+        <div className="fds-wrap">
+          <Reveal>
+            <p className="fds-eyebrow block">Sobre o Instituto</p>
+            <h2 className="fds-h2 mt-4 max-w-3xl">Nossa missão</h2>
+            <div style={{ maxWidth: 740 }}>
+              <p className="fds-lead mt-8">
+                O Instituto DespertaMENTE nasceu com o propósito de{' '}
+                <strong style={{ color: 'var(--fds-ink)' }}>acolher, curar e transformar vidas</strong>{' '}
+                por meio da Psicanálise Integrativa.
+              </p>
+              <p className="fds-body mt-6">
+                Já formamos milhares de alunos com um método que une teoria sólida, análise
+                pessoal e supervisão — como propôs Freud.
+              </p>
+              <p className="fds-h3 mt-8" style={{ fontSize: '1.375rem' }}>
+                Acreditamos que a Psicanálise é um direito de todos.
+              </p>
+            </div>
+          </Reveal>
+
+          <Reveal className="mt-24" style={{ maxWidth: 820 }}>
+            <BlocoMec comRodape={false} />
+            <p className="fds-body mt-8">
+              Isso significa que ao concluir sua formação, você receberá um certificado
+              universitário com validade nacional, emitido por uma instituição de ensino de
+              qualidade.
+            </p>
+          </Reveal>
+
+          <div className="mt-24 grid items-center gap-16 lg:grid-cols-2">
+            <Reveal>
+              <h3 className="fds-h3">Certificação reconhecida</h3>
+              <p className="fds-body mt-6">
+                Nosso certificado é reconhecido e validado, dando a você a credibilidade
+                necessária para atuar profissionalmente.
+              </p>
+              <p className="fds-body mt-5">
+                Ao concluir a formação, você estará apto a exercer a Psicanálise Clínica com toda
+                a base teórica e prática necessárias.
               </p>
               <ul className="mt-8 space-y-3">
                 {[
-                  'Formação completa em 7 módulos, ao longo de 2 anos',
-                  'Teoria, análise pessoal e supervisão — o tripé clássico',
-                  'Certificação ICF / ABNLP',
-                  'Acesso à plataforma com todo o material',
-                ].map(i => (
-                  <li key={i} className="fds-small flex items-start gap-3">
-                    <Check className="mt-0.5 h-4 w-4 shrink-0" style={{ color: 'var(--fds-accent)' }} />
-                    {i}
+                  'Certificado com validade nacional',
+                  'Reconhecimento profissional',
+                  'Base para especialização continuada',
+                ].map(item => (
+                  <li key={item} className="flex items-start gap-3">
+                    <CheckCircle className="mt-1 h-4 w-4 shrink-0" style={{ color: 'var(--fds-accent)' }} />
+                    <span className="fds-small">{item}</span>
                   </li>
                 ))}
               </ul>
-            </div>
+            </Reveal>
+            <Reveal className="fds-card" style={{ padding: 'var(--fds-4)' }}>
+              <Image
+                src="/images/certificado-idm.png"
+                alt="Certificado do Instituto DespertaMENTE"
+                width={800}
+                height={564}
+                className="w-full rounded"
+                style={{ borderRadius: 6 }}
+              />
+            </Reveal>
+          </div>
 
-            <div>
-              <PriceBlock product={product} />
+          <Reveal className="mt-24">
+            <h3 className="fds-h3">Números que comprovam nossa excelência</h3>
+            <div className="mt-10 grid gap-px sm:grid-cols-2 lg:grid-cols-4" style={{ background: 'var(--fds-line)' }}>
+              {NUMEROS.map(({ icone: Icone, numero, rotulo }) => (
+                <div key={rotulo} style={{ background: 'var(--fds-bg)', padding: 'var(--fds-8)' }}>
+                  <Icone className="h-4 w-4" style={{ color: 'var(--fds-ink-4)' }} />
+                  <p className="fds-h2 mt-6" style={{ fontSize: '2.5rem' }}>{numero}</p>
+                  <p className="fds-meta mt-3">{rotulo}</p>
+                </div>
+              ))}
             </div>
+          </Reveal>
+        </div>
+      </section>
+
+      {/* ══ DEPOIMENTOS ════════════════════════════════════════════════ */}
+      <section className="fds-band fds-section">
+        <div className="fds-wrap">
+          <Reveal>
+            <p className="fds-eyebrow block">Depoimentos</p>
+            <h2 className="fds-h2 mt-4 max-w-3xl">
+              O que dizem nossos <span className="fds-accent">alunos</span>
+            </h2>
+            <p className="fds-lead mt-6">
+              Histórias reais de transformação e sucesso profissional através da nossa formação em
+              Psicanálise Clínica Integrativa.
+            </p>
+          </Reveal>
+
+          <div className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {DEPOIMENTOS.map(({ id, frase }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setVideo(id)}
+                className="fds-card group text-left"
+                style={{ padding: 'var(--fds-4)' }}
+                aria-label={`Ver depoimento: ${frase}`}
+              >
+                <div className="relative overflow-hidden" style={{ borderRadius: 6 }}>
+                  <Image
+                    src={`https://img.youtube.com/vi/${id}/maxresdefault.jpg`}
+                    alt=""
+                    width={480}
+                    height={270}
+                    unoptimized
+                    className="h-40 w-full object-cover transition-opacity group-hover:opacity-80"
+                  />
+                  <span
+                    className="absolute inset-0 flex items-center justify-center"
+                    style={{ background: 'rgba(0,0,0,0.25)' }}
+                  >
+                    <Play className="h-8 w-8" style={{ color: 'var(--fds-accent)' }} />
+                  </span>
+                </div>
+                <div className="mt-4 flex gap-1">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Star key={i} className="h-3 w-3" style={{ color: 'var(--fds-accent)', fill: 'currentColor' }} />
+                  ))}
+                </div>
+                <p className="fds-small mt-3" style={{ color: 'var(--fds-ink-2)' }}>
+                  &ldquo;{frase}&rdquo;
+                </p>
+                <p className="fds-meta mt-4">Aluno IDM · Ver depoimento</p>
+              </button>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* ── MANIFESTO ────────────────────────────── */}
-      <section className="fds-band">
-        <Reveal className="fds-wrap fds-section" style={{ maxWidth: 680 }}>
-          <p
-            style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-            className="text-2xl sm:text-3xl font-light leading-relaxed text-[#888888]"
-          >
-            Psicanálise Integrativa não é mais uma modalidade terapêutica.{' '}
-            <span className="text-[#c8c8c8]">É um método de investigação do inconsciente</span>{' '}
-            que une a tradição clássica à neurociência, PNL e abordagens somáticas. O percurso
-            exige rigor — teoria, análise pessoal e supervisão. Se você quer entender o
-            comportamento humano em profundidade,{' '}
-            <span className="text-[#c8c8c8]">esta formação foi feita para você.</span>
-          </p>
-        </Reveal>
-      </section>
-
-      {/* ── PROGRAMA ─────────────────────────────── */}
-      <Reveal>
-        <section className="fds-wrap fds-section">
-          <div className="grid sm:grid-cols-[1fr_auto] items-end gap-4 mb-10">
-            <h2
-              className="fds-h2"
-            >
-              O programa.
-            </h2>
-            <p className="fds-meta pb-1">7 módulos</p>
-          </div>
-
-          <Accordion type="single" collapsible>
-            <div className="divide-y divide-white/5">
-              {modulos.map((m) => (
-                <AccordionItem key={m.numero} value={m.numero} className="border-0">
-                  <AccordionTrigger className="hover:no-underline py-5 text-left group w-full">
-                    <div className="flex items-center gap-5 w-full pr-4">
-                      <span className="text-xs font-mono text-[#383838] w-5 shrink-0">{m.numero}</span>
-                      <span className="text-sm font-medium text-[#c0c0c0] group-hover:text-[#f0f0f0] transition-colors flex-1">
-                        {m.titulo}
-                      </span>
-                      <span className="hidden sm:block text-[11px] font-mono text-[#333333] shrink-0">{m.carga}</span>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="pb-5 pl-10">
-                    <ul className="space-y-2">
-                      {m.conteudo.map((c) => (
-                        <li key={c} className="fds-small">{c}</li>
-                      ))}
-                    </ul>
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
-            </div>
-          </Accordion>
-        </section>
-      </Reveal>
-
-      {/* ── PERCURSO ─────────────────────────────── */}
-      <Reveal>
-        <section className="fds-band">
-          <div className="max-w-5xl mx-auto px-6 sm:px-10 py-20 grid sm:grid-cols-2 gap-12 items-start">
-            <h2
-              className="fds-h2"
-            >
-              Da inscrição<br />à certificação.
-            </h2>
-            <div className="relative pl-8 space-y-8 border-l border-white/8">
-              {passos.map((p, i) => (
-                <div key={i} className="relative">
-                  <span className="absolute -left-[33px] top-0.5 w-4 h-4 rounded-full border border-[#FFB800]/20 bg-[#0d0d0d] flex items-center justify-center">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#FFB800]/40" />
-                  </span>
-                  <p className="text-sm font-semibold text-[#d0d0d0]">{p.titulo}</p>
-                  <p className="text-xs text-[#484848] mt-1 leading-relaxed">{p.desc}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      </Reveal>
-
-      {/* ── FUNDADOR ─────────────────────────────── */}
-      <Reveal>
-        <section className="fds-wrap fds-section">
-          <div className="grid md:grid-cols-[200px_1fr] gap-12 lg:gap-20">
-            <div>
-              <div
-                className="w-full aspect-square rounded-2xl bg-[#0d0d0d] flex items-center justify-center"
-                style={{ border: '1px solid rgba(255,184,0,0.12)' }}
-              >
-                <span style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="text-7xl font-black text-[#1c1c1c]">
-                  F
-                </span>
-              </div>
-            </div>
-            <div className="space-y-6">
-              <div>
-                <h2 style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="text-3xl font-bold text-[#f0f0f0]">
-                  Nome do Fundador
-                </h2>
-                <p className="text-xs font-mono text-[#FFB800]/70 mt-1.5 tracking-wider">
-                  FUNDADOR · PSICANALISTA INTEGRATIVO · MASTER PNL
-                </p>
-              </div>
-              <p className="fds-small">
-                Desenvolvi a Formação em Psicanálise Integrativa depois de perceber que os modelos existentes
-                eram ou muito teóricos para a prática clínica real, ou superficiais demais para produzir
-                transformação genuína.
-              </p>
-              <p className="fds-small">
-                O IDM reúne psicanálise, neurociência e PNL porque o ser humano não funciona em
-                compartimentos. A formação que você vai fazer é o mesmo percurso que eu percorri —
-                e que mais de 1.200 profissionais já concluíram.
-              </p>
-              <blockquote
-                style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-                className="border-l border-[#FFB800]/20 pl-6 text-lg sm:text-xl italic text-[#707070] leading-relaxed"
-              >
-                "Um psicanalista que não se analisou não pode analisar. Um formador que não se formou não
-                pode formar. Essa formação exige que você vá fundo — em você mesmo."
-              </blockquote>
-            </div>
-          </div>
-        </section>
-      </Reveal>
-
-      {/* ── DEPOIMENTOS ──────────────────────────── */}
-      <Reveal>
-        <section className="fds-band">
-          <div className="fds-wrap fds-section">
-            <div className="grid md:grid-cols-2 gap-12 lg:gap-20 items-start">
-              {/* Featured */}
-              <div className="space-y-6">
-                <span style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="block text-[80px] leading-none text-[#FFB800]/8 select-none -mb-6">
-                  "
-                </span>
-                <p style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="text-xl sm:text-2xl text-[#888888] leading-relaxed font-light italic">
-                  {featuredDepo.texto}
-                </p>
-                <div>
-                  <p className="text-sm font-semibold text-[#d0d0d0]">{featuredDepo.nome}</p>
-                  <p className="text-xs text-[#404040] mt-0.5">{featuredDepo.papel}</p>
-                </div>
-              </div>
-
-              {/* Others */}
-              <div className="divide-y divide-white/5">
-                {otherDepos.map((d, i) => (
-                  <div key={i} className="py-6 space-y-3 first:pt-0">
-                    <p className="text-sm text-[#484848] leading-relaxed italic">"{d.texto}"</p>
-                    <div>
-                      <p className="text-xs font-semibold text-[#808080]">{d.nome}</p>
-                      <p className="text-[11px] text-[#383838] mt-0.5">{d.papel}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-      </Reveal>
-
-      {/* ── INVESTIMENTO ─────────────────────────── */}
-      <Reveal>
-        <section id="investimento" className="fds-wrap fds-section">
-          <div className="grid sm:grid-cols-2 gap-12 lg:gap-20 items-start">
-            <div className="space-y-4">
-              <h2
-                className="fds-h2"
-              >
-                Investimento.
-              </h2>
-              <p className="fds-small">
-                Formação completa — teoria, análise pessoal, supervisão clínica e certificação.
-              </p>
-              <a
-                href={WA_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 text-xs text-[#383838] hover:text-[#606060] transition-colors"
-              >
-                <MessageCircle className="h-3 w-3" />
-                Tirar dúvidas pelo WhatsApp
-              </a>
-            </div>
-            <PriceBlock product={product} />
-          </div>
-        </section>
-      </Reveal>
-
-      {/* ── FAQ ──────────────────────────────────── */}
-      <Reveal>
-        <section className="fds-band">
-          <div className="fds-wrap fds-section" style={{ maxWidth: 760 }}>
-            <h2
-              className="fds-h2"
-            >
-              Dúvidas.
-            </h2>
-            <Accordion type="single" collapsible>
-              <div className="divide-y divide-white/5">
-                {faqItems.map((item, i) => (
-                  <AccordionItem key={i} value={`faq-${i}`} className="border-0">
-                    <AccordionTrigger className="hover:no-underline py-5 text-left text-sm font-medium text-[#b0b0b0] hover:text-[#f0f0f0] transition-colors">
-                      {item.q}
-                    </AccordionTrigger>
-                    <AccordionContent className="text-sm text-[#505050] leading-relaxed pb-5">
-                      {item.a}
-                    </AccordionContent>
-                  </AccordionItem>
-                ))}
-              </div>
-            </Accordion>
-            <p className="text-xs text-[#383838] mt-8">
-              Ainda tem dúvida?{' '}
-              <a href={WA_URL} target="_blank" rel="noopener noreferrer" className="text-[#555555] hover:text-[#888888] transition-colors underline underline-offset-2">
-                Fale diretamente com a equipe.
-              </a>
-            </p>
-          </div>
-        </section>
-      </Reveal>
-
-      {/* ── CTA FINAL ─────────────────────────────── */}
-      <section className="relative overflow-hidden py-32">
-        <div className="absolute inset-0 pointer-events-none"
-          style={{
-            backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.02) 1px, transparent 0)',
-            backgroundSize: '48px 48px',
-          }}
-        />
-        <Reveal className="relative max-w-3xl mx-auto px-6 sm:px-10 space-y-10">
-          <h2
-            className="fds-h1"
-          >
-            A formação começa<br />quando você decide.
+      {/* ══ FECHAMENTO ═════════════════════════════════════════════════ */}
+      <section className="fds-band--deep" style={{ paddingBlock: 'var(--fds-24)' }}>
+        <div className="fds-wrap">
+          <h2 className="fds-h2 max-w-3xl">
+            Comece agora a <span className="fds-accent">transformar sua vida</span>
           </h2>
-          <div className="flex flex-col sm:flex-row items-start gap-4">
-            <a
-              href={checkoutHref}
-              className="fds-btn fds-btn--primary group"
-            >
-              Garantir minha vaga
-              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-            </a>
-            <a
-              href={WA_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 py-4 text-sm text-[#444444] hover:text-[#707070] transition-colors"
-            >
-              <MessageCircle className="h-4 w-4" />
-              WhatsApp
-            </a>
+          <div className="mt-10 flex flex-wrap items-center gap-6">
+            <LeadWhatsappCta texto="Quero transformar minha vida" />
+            <p className="fds-meta">Vagas limitadas para a próxima turma</p>
           </div>
-          <p className="text-xs font-mono text-[#303030]">
-            Vagas limitadas por turma · Garantia de 7 dias
-          </p>
-        </Reveal>
+        </div>
       </section>
+
+      {/* Vídeo do depoimento: só monta quando alguém clica -- seis iframes do
+          YouTube carregados de uma vez derrubam a performance da página. */}
+      {video && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.85)' }}
+          onClick={() => setVideo(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Depoimento em vídeo"
+        >
+          <div className="w-full max-w-3xl" onClick={e => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setVideo(null)}
+              className="mb-3 ml-auto flex items-center gap-2"
+              style={{ color: 'var(--fds-ink-2)' }}
+            >
+              <X className="h-5 w-5" /> <span className="fds-meta">Fechar</span>
+            </button>
+            <div className="aspect-video w-full overflow-hidden" style={{ borderRadius: 8 }}>
+              <iframe
+                src={`https://www.youtube.com/embed/${video}?autoplay=1`}
+                title="Depoimento"
+                className="h-full w-full"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

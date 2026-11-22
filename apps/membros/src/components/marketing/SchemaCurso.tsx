@@ -32,11 +32,13 @@ type Catalogo = Record<
 
 const CURSOS: Catalogo = {
   'psicanalise-integrativa': {
-    nome: 'Formação em Psicanálise Integrativa',
+    nome: 'Formação em Psicanálise Clínica Integrativa',
     descricao:
-      'Formação completa em Psicanálise Integrativa: teoria psicanalítica, análise pessoal e supervisão clínica, integrando psicanálise, neurociência e PNL. Com certificação.',
-    modalidade: 'blended',
-    duracaoMeses: 24,
+      'Formação em Psicanálise Clínica Integrativa: 14 meses, 100% online, baseada no tripé freudiano (teoria, análise pessoal e supervisão clínica), com certificado de Extensão Universitária nas diretrizes do MEC em parceria com a Anhanguera.',
+    modalidade: 'online',
+    duracaoMeses: 14,
+    // R$1.500 a vista no Pix. Valor fixo da oferta, igual na pagina.
+    precoPadrao: 1500,
   },
   'constelacao-familiar': {
     nome: 'Despertar Sistêmico — Formação em Constelação Familiar Sistêmica',
