@@ -35,6 +35,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     // no Search Console.
     { url: `${SITE_URL}/`, lastModified: agora, changeFrequency: 'weekly', priority: 1 },
     { url: `${SITE_URL}/blog`, lastModified: agora, changeFrequency: 'daily', priority: 0.8 },
+    { url: `${SITE_URL}/metodo`, changeFrequency: 'monthly', priority: 0.7 },
+    { url: `${SITE_URL}/contato`, changeFrequency: 'yearly', priority: 0.5 },
     { url: `${SITE_URL}/privacidade`, changeFrequency: 'yearly', priority: 0.2 },
     { url: `${SITE_URL}/termos`, changeFrequency: 'yearly', priority: 0.2 },
   ]

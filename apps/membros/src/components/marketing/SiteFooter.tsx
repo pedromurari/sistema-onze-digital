@@ -13,7 +13,7 @@ const COL_PLATAFORMA = [
 // Ancoras (#) sempre prefixadas com / -- o rodape aparece em varias
 // paginas, e essas secoes so existem la.
 const COL_CONTEUDO = [
-  { href: '/#metodologia', label: 'Nossa metodologia' },
+  { href: '/metodo', label: 'Nossa metodologia' },
   { href: '/#jornadas', label: 'Jornadas' },
   { href: '/certificado', label: 'Certificações' },
   { href: '/#depoimentos', label: 'Depoimentos' },
@@ -22,7 +22,7 @@ const COL_CONTEUDO = [
 const COL_LEGAL = [
   { href: '/privacidade', label: 'Política de Privacidade' },
   { href: '/termos', label: 'Termos de Uso' },
-  { href: WA_URL, label: 'Contato' },
+  { href: '/contato', label: 'Contato' },
 ]
 
 function FooterColumn({ title, items }: { title: string; items: { href: string; label: string }[] }) {

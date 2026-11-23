@@ -33,7 +33,7 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
   { label: 'Blog', href: '/blog' },
-  { label: 'Contato', href: '/#contato' },
+  { label: 'Contato', href: '/contato' },
 ]
 
 function DropdownPanel({ items }: { items: DropdownItem[] }) {
