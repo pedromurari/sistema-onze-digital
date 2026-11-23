@@ -110,21 +110,34 @@ export function filtrarPagamentosPorPeriodo<T extends PagamentoRealizadoRow>(
 
 // ─── Inadimplência (canônica) ─────────────────────────────────────────────────
 //
-// FONTE: pagamentos.status + pagamentos.data_vencimento
+// FONTE: pagamentos.status + pagamentos.data_vencimento + pagamentos.data_prevista_pagamento
 // REGRA: 'atrasado' literal, OU 'pendente' com data_vencimento já passada — sem
 // restrição de forma de pagamento (boleto/cartão/PIX contam igual). Filtros de
 // elegibilidade do aluno (bolsa, cortesia, cancelado, etc.) são responsabilidade
 // de quem chama — pré-filtre a lista de pagamentos antes de passar pra cá.
+//
+// EXCEÇÃO (23/11/2026): parcela com previsão de pagamento combinada e ainda no
+// futuro NÃO é inadimplência. Até aqui a previsão era gravada e simplesmente
+// ignorada neste cálculo, então nenhum acordo tirava ninguém da lista: a aluna
+// combinava data, a gente anotava, e ela seguia aparecendo como devedora e
+// entrando na régua de cobrança. Pego com a Joyce Caroline, que tinha acordo
+// pra 01/12 anotado desde outubro. Quando a data combinada chega e passa sem
+// pagamento, a parcela volta a contar sozinha -- promessa quebrada é
+// inadimplência de novo, sem ninguém precisar desfazer nada na mão.
 export interface PagamentoInadimplenteRow {
   aluno_id?: string | null;
   valor?: number | null;
   status: string | null;
   data_vencimento?: string | null;
+  data_prevista_pagamento?: string | null;
 }
 export function isPagamentoInadimplente(p: PagamentoInadimplenteRow, hoje: Date = new Date()): boolean {
+  if (p.status === 'pago' || p.status === 'cancelado') return false;
+  const hojeStr = hoje.toISOString().slice(0, 10);
+  // Acordo vigente: a data combinada ainda não chegou.
+  if (p.data_prevista_pagamento && p.data_prevista_pagamento >= hojeStr) return false;
   if (p.status === 'atrasado') return true;
   if (p.status !== 'pendente' || !p.data_vencimento) return false;
-  const hojeStr = hoje.toISOString().slice(0, 10);
   return p.data_vencimento < hojeStr;
 }
 

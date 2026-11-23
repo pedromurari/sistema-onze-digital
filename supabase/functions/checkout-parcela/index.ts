@@ -73,7 +73,7 @@ serve(async (req) => {
 
     const { data: p } = await sb
       .from('pagamentos')
-      .select('id, numero_parcela, valor, status, data_vencimento, produto, syncpay_identifier, link_pagamento_syncpay, link_pagamento_voomp, aluno_id')
+      .select('id, numero_parcela, valor, status, data_vencimento, produto, syncpay_identifier, link_pagamento_syncpay, link_pagamento_voomp, mp_payment_id, link_pagamento_mp, aluno_id')
       .eq('checkout_token', token)
       .maybeSingle();
 
@@ -114,6 +114,17 @@ serve(async (req) => {
     // PIX já gerado antes: reusa.
     if (p.link_pagamento_syncpay) {
       return json({ ...base, gateway: 'syncpay', pix_code: p.link_pagamento_syncpay });
+    }
+
+    // Parcela que já tem PIX do Mercado Pago em aberto reusa ELE, nunca cria
+    // um da SyncPay por cima. Senão o aluno fica com dois QR vivos pra mesma
+    // parcela -- um no WhatsApp, outro na tela -- e pode pagar os dois.
+    // Achado em 23/11/2026: 25 parcelas estavam nessa situação, dos PIX que o
+    // plano B do MP gerou em 21/11 (validade de 30 dias, vão até 21/12).
+    // O mp-webhook-time-comercial reconhece esses pagamentos por
+    // `external_reference = pagamentos.id`, então a baixa continua automática.
+    if (p.mp_payment_id && p.link_pagamento_mp) {
+      return json({ ...base, gateway: 'mercadopago', pix_code: p.link_pagamento_mp });
     }
 
     // Primeira visita: gera o PIX na hora.

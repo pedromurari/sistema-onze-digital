@@ -923,7 +923,7 @@ export function Cobranca() {
         critica,
         totalDevido: parcelas.reduce((s, p) => s + Number(p.valor), 0),
         isInadimplente: parcelas.some(p =>
-          isPagamentoInadimplente({ status: p.pagamento_status, data_vencimento: p.data_vencimento }, hojeSP)
+          isPagamentoInadimplente({ status: p.pagamento_status, data_vencimento: p.data_vencimento, data_prevista_pagamento: p.data_prevista_pagamento }, hojeSP)
         ),
         cobrancaIaAtiva: critica.cobranca_ia_ativa,
         cobrancaAtiva: critica.cobranca_ativa,

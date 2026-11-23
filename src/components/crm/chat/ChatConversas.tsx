@@ -145,7 +145,7 @@ export function ChatConversas({ onNavigateToAluno }: { onNavigateToAluno?: (alun
     const [alunosRes, turmasRes, pagsRes] = await Promise.all([
       supabase.from('alunos').select('id, nome, whatsapp, turma_id, status'),
       supabase.from('turmas').select('id, nome'),
-      supabase.from('pagamentos').select('aluno_id, valor, status, data_vencimento'),
+      supabase.from('pagamentos').select('aluno_id, valor, status, data_vencimento, data_prevista_pagamento'),
     ]);
 
     const turmaNome = new Map<string, string>();

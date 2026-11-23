@@ -32,8 +32,12 @@ export function useRespostasCobranca(inicio: string, fim: string) {
  * estava copiado literalmente entre Dashboard.tsx e Financeiro.tsx, com o comentário
  * "mesmo padrão de Financeiro.tsx" no de cima.
  */
+// `data_prevista_pagamento` entra até no resumo porque a regra canônica de
+// inadimplência depende dela desde 23/11/2026 (ver isPagamentoInadimplente):
+// sem a coluna, qualquer tela que use o resumo volta a contar como devedor
+// quem tem acordo vigente.
 export const COLUNAS_PAGAMENTO_RESUMO =
-  'id, aluno_id, turma_id, valor, mes_referencia, status, data_pagamento, data_vencimento, created_at';
+  'id, aluno_id, turma_id, valor, mes_referencia, status, data_pagamento, data_vencimento, data_prevista_pagamento, created_at';
 
 export const COLUNAS_PAGAMENTO_COMPLETO =
   'id, aluno_id, turma_id, produto, valor, mes_referencia, data_vencimento, data_pagamento, ' +
