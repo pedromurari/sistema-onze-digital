@@ -25,6 +25,7 @@ const MatriculaNPS = React.lazy(() => import("./pages/MatriculaNPS"));
 const PnlContrato = React.lazy(() => import("./pages/PnlContrato"));
 const AreaMembros     = React.lazy(() => import("./pages/AreaMembros"));
 const Checkout        = React.lazy(() => import("./pages/Checkout"));
+const PagarParcela    = React.lazy(() => import("./pages/PagarParcela"));
 const InscricaoFormacao = React.lazy(() => import("./pages/InscricaoFormacao"));
 const LegalInstituto  = React.lazy(() => import("./pages/LegalInstituto"));
 const LinkRedirect    = React.lazy(() => import("./pages/LinkRedirect"));
@@ -134,6 +135,7 @@ const App = () => (
               <Route path="/assinar/:token"         element={<ContratoPublico />} />
               <Route path="/membros/:token"         element={<AreaMembros />} />
               <Route path="/comprar/:produtoId"     element={<Checkout />} />
+              <Route path="/pagar/:token"           element={<PagarParcela />} />
               <Route path="/inscricao/:slug"        element={<InscricaoFormacao />} />
               <Route path="/politica-de-privacidade" element={<LegalInstituto />} />
               <Route path="/termos-de-uso"           element={<LegalInstituto />} />
