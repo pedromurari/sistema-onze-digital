@@ -228,6 +228,11 @@ const NUMEROS = [
   { icone: Heart, numero: '100%', rotulo: 'Transformação' },
 ]
 
+// Vídeos servidos do nosso R2 (regra do Pedro: vídeo de página nunca é
+// embed de terceiros). Os ids são os dos Shorts originais, usados como nome
+// do arquivo. São verticais (9:16).
+const R2_DEPOIMENTOS = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/site/depoimentos'
+
 const DEPOIMENTOS = [
   { id: 'wDQiV0VoBT4', frase: 'Transformei minha vida através da psicanálise.' },
   { id: 'D4xbxCXSWoM', frase: 'A formação do iDM transformou completamente minha vida.' },
@@ -701,12 +706,12 @@ export function PsicanaliseContent() {
               >
                 <div className="relative overflow-hidden" style={{ borderRadius: 6 }}>
                   <Image
-                    src={`https://img.youtube.com/vi/${id}/maxresdefault.jpg`}
+                    src={`${R2_DEPOIMENTOS}/${id}.jpg`}
                     alt=""
                     width={480}
                     height={270}
                     unoptimized
-                    className="h-40 w-full object-cover transition-opacity group-hover:opacity-80"
+                    className="h-72 w-full object-cover object-top transition-opacity group-hover:opacity-80"
                   />
                   <span
                     className="absolute inset-0 flex items-center justify-center"
@@ -743,8 +748,8 @@ export function PsicanaliseContent() {
         </div>
       </section>
 
-      {/* Vídeo do depoimento: só monta quando alguém clica -- seis iframes do
-          YouTube carregados de uma vez derrubam a performance da página. */}
+      {/* Vídeo do depoimento: só monta quando alguém clica, pra página não
+          baixar seis vídeos de uma vez. */}
       {video && (
         <div
           className="fixed inset-0 z-[70] flex items-center justify-center p-4"
@@ -754,7 +759,7 @@ export function PsicanaliseContent() {
           aria-modal="true"
           aria-label="Depoimento em vídeo"
         >
-          <div className="w-full max-w-3xl" onClick={e => e.stopPropagation()}>
+          <div className="w-full max-w-sm" onClick={e => e.stopPropagation()}>
             <button
               type="button"
               onClick={() => setVideo(null)}
@@ -763,13 +768,14 @@ export function PsicanaliseContent() {
             >
               <X className="h-5 w-5" /> <span className="fds-meta">Fechar</span>
             </button>
-            <div className="aspect-video w-full overflow-hidden" style={{ borderRadius: 8 }}>
-              <iframe
-                src={`https://www.youtube.com/embed/${video}?autoplay=1`}
-                title="Depoimento"
+            <div className="w-full overflow-hidden" style={{ borderRadius: 8, aspectRatio: '9 / 16', background: '#000' }}>
+              <video
+                src={`${R2_DEPOIMENTOS}/${video}.mp4`}
+                poster={`${R2_DEPOIMENTOS}/${video}.jpg`}
+                controls
+                autoPlay
+                playsInline
                 className="h-full w-full"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
               />
             </div>
           </div>
