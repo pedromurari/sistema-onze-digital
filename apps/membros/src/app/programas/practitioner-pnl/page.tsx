@@ -51,11 +51,12 @@ export default async function PractitionerPnlPage() {
 
       <ProgramaContent
         product={product}
-        waMessage="Olá! Tenho interesse no Practitioner em PNL."
+        waMessage="Olá! Quero entrar na lista de espera da próxima turma do Practitioner em PNL."
+        proximaTurma={{ previsao: '2 de março de 2027', detalhe: '8 sessões ao vivo, uma por semana, às terças-feiras.' }}
         eyebrow="Instituto Despertamente · Formação certificante"
         titulo={['Practitioner', 'em PNL.']}
         tagline="Programação Neurolinguística na prática: entenda como a mente cria padrões — e aprenda a técnica pra mudar os que não servem mais."
-        statsLine="Certificação Instituto Despertamente"
+        statsLine="8 sessões ao vivo, uma por semana · todas gravadas na plataforma · certificação"
         manifesto={<>
           A PNL parte de uma ideia simples: <span className="text-[#c8c8c8]">a forma como você representa a experiência por dentro</span> —
           as imagens, sons e sensações que você associa a cada situação — é o que determina como você reage a ela.

@@ -51,11 +51,12 @@ export default async function MentoriaNpaPage() {
 
       <ProgramaContent
         product={product}
-        waMessage="Olá! Tenho interesse na Mentoria NPA (Numerologia Pitagórica Aplicada)."
-        eyebrow="Instituto Despertamente · Mentoria + curso gravado"
+        waMessage="Olá! Quero entrar na lista de espera da próxima turma da Mentoria NPA (Numerologia Pitagórica Aplicada)."
+        proximaTurma={{ previsao: '12 de janeiro de 2027', detalhe: '6 sessões ao vivo, uma por semana, às terças-feiras.' }}
+        eyebrow="Instituto Despertamente · Mentoria ao vivo"
         titulo={['Mentoria', 'NPA.']}
         tagline="A metodologia exclusiva do IDM de Numerologia Pitagórica Aplicada — o número da alma, da imagem e os padrões que seu nome e data de nascimento revelam."
-        statsLine="Curso gravado + grupo de mentoria · Acesso imediato"
+        statsLine="6 sessões ao vivo, uma por semana · todas gravadas na plataforma"
         manifesto={<>
           Nome e data de nascimento carregam um padrão numérico que se repete na forma como você pensa,
           se relaciona e escolhe. <span className="text-[#c8c8c8]">O NPA ensina a ler esse padrão</span> —

@@ -310,7 +310,7 @@ export function PsicanaliseContent() {
           <Reveal>
             <p className="fds-eyebrow block">Formação reconhecida</p>
             <p className="fds-meta mt-4">
-              Vagas limitadas para a próxima turma · Garanta seu lugar agora
+              Matrículas abertas · Turmas iniciando todo mês
             </p>
 
             <h1 className="fds-display mt-8 max-w-4xl">
@@ -356,7 +356,7 @@ export function PsicanaliseContent() {
 
             <div className="mt-12 flex flex-wrap items-center gap-6">
               <LeadWhatsappCta texto="Quero transformar minha vida" />
-              <p className="fds-meta">Vagas limitadas para a próxima turma</p>
+              <p className="fds-meta">Matrículas abertas · Turmas iniciando todo mês</p>
             </div>
           </Reveal>
         </div>
@@ -588,7 +588,7 @@ export function PsicanaliseContent() {
 
           <Reveal className="mt-16 flex flex-wrap items-center gap-6">
             <LeadWhatsappCta texto="Quero garantir minha vaga" />
-            <p className="fds-meta">Vagas limitadas para a próxima turma</p>
+            <p className="fds-meta">Matrículas abertas · Turmas iniciando todo mês</p>
           </Reveal>
         </div>
       </section>
@@ -738,7 +738,7 @@ export function PsicanaliseContent() {
           </h2>
           <div className="mt-10 flex flex-wrap items-center gap-6">
             <LeadWhatsappCta texto="Quero transformar minha vida" />
-            <p className="fds-meta">Vagas limitadas para a próxima turma</p>
+            <p className="fds-meta">Matrículas abertas · Turmas iniciando todo mês</p>
           </div>
         </div>
       </section>

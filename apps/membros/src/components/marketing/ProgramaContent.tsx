@@ -69,7 +69,36 @@ function Reveal({ children, className = '' }: { children: ReactNode; className?:
   )
 }
 
-function PriceBlock({ product, waUrl }: { product: ProductData | null; waUrl: string }) {
+/** Turma ainda fechada: a página mostra a previsão e capta lista de espera. */
+export type ProximaTurma = { previsao: string; detalhe?: string }
+
+function PriceBlock({
+  product, waUrl, proximaTurma,
+}: { product: ProductData | null; waUrl: string; proximaTurma?: ProximaTurma }) {
+  // Turma fechada manda sobre o preço: sem turma aberta não existe checkout,
+  // mesmo que o produto tenha preço cadastrado.
+  if (proximaTurma) {
+    return (
+      <div className="fds-card" style={{ padding: 'var(--fds-8)' }}>
+        <p className="fds-eyebrow">Próxima turma</p>
+        <p className="fds-small mt-3" style={{ color: 'var(--fds-ink-3)' }}>Previsão de início</p>
+        <p className="fds-h2 mt-1" style={{ lineHeight: 1.1 }}>{proximaTurma.previsao}</p>
+        {proximaTurma.detalhe && <p className="fds-small mt-3">{proximaTurma.detalhe}</p>}
+        <a
+          href={waUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="fds-btn fds-btn--primary mt-7 w-full"
+          style={{ paddingBlock: 'var(--fds-4)' }}
+        >
+          <MessageCircle className="h-4 w-4" />
+          Entrar na lista de espera
+        </a>
+        <p className="fds-small mt-4 text-center">Quem está na lista é avisado antes e garante condição especial.</p>
+      </div>
+    )
+  }
+
   if (!product?.price) {
     return (
       <div className="fds-card" style={{ padding: 'var(--fds-8)' }}>
@@ -101,7 +130,7 @@ function PriceBlock({ product, waUrl }: { product: ProductData | null; waUrl: st
           </span>
           <span className="fds-small" style={{ paddingBottom: 4, color: 'var(--fds-ink-4)' }}>/mês</span>
         </div>
-        <p className="fds-small mt-2">Sem fidelidade — cancele quando quiser</p>
+        <p className="fds-small mt-2">Assinatura mensal: pagou, tem acesso a tudo; parou de pagar, o acesso é suspenso. Sem fidelidade.</p>
         <a href={checkoutUrl} className="fds-btn fds-btn--primary mt-7 w-full" style={{ paddingBlock: 'var(--fds-4)' }}>
           {product.cta_label ?? 'Começar agora'}
           <ArrowRight className="h-3.5 w-3.5" />
@@ -165,9 +194,10 @@ function PriceBlock({ product, waUrl }: { product: ProductData | null; waUrl: st
 }
 
 export function ProgramaContent({
-  product, waMessage, eyebrow, titulo, tagline, statsLine, manifesto, incluso, modulos, faqItems,
+  product, waMessage, eyebrow, titulo, tagline, statsLine, manifesto, incluso, modulos, faqItems, proximaTurma,
 }: {
   product: ProductData | null
+  proximaTurma?: ProximaTurma
   waMessage: string
   eyebrow: string
   titulo: string[]
@@ -223,7 +253,7 @@ export function ProgramaContent({
             </div>
 
             <div id="investimento">
-              <PriceBlock product={product} waUrl={waUrl} />
+              <PriceBlock product={product} waUrl={waUrl} proximaTurma={proximaTurma} />
             </div>
           </div>
         </div>
@@ -373,7 +403,7 @@ export function ProgramaContent({
               </p>
             </Reveal>
             <Reveal>
-              <PriceBlock product={product} waUrl={waUrl} />
+              <PriceBlock product={product} waUrl={waUrl} proximaTurma={proximaTurma} />
             </Reveal>
           </div>
         </div>
