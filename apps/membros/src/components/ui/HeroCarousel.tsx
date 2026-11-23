@@ -100,7 +100,10 @@ export function HeroCarousel({ slides: rawSlides, autoPlayInterval = 7000 }: Her
   return (
     <section
       className="relative w-full overflow-hidden bg-[#0D1638]"
-      style={{ height: 'clamp(340px, 60vw, 600px)' }}
+      // Proporção fixa (21:9) em vez de altura que acompanha a largura: antes
+      // a arte era recortada diferente em cada tela. No celular o mínimo de
+      // 380px ganha da proporção, porque o texto precisa de espaço.
+      style={{ aspectRatio: '21 / 9', minHeight: 380, maxHeight: 560 }}
       aria-roledescription="carrossel"
       aria-label="Destaques"
     >
@@ -135,7 +138,7 @@ export function HeroCarousel({ slides: rawSlides, autoPlayInterval = 7000 }: Her
       </AnimatePresence>
 
       {/* Conteúdo */}
-      <div className="relative h-full flex items-end pb-14 px-5 sm:px-10 lg:px-16">
+      <div className="relative h-full flex items-center pt-10 pb-16 px-5 sm:px-10 lg:px-16">
         <AnimatePresence mode="wait">
           <motion.div
             key={`content-${current}`}

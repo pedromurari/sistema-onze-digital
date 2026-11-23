@@ -27,11 +27,14 @@ function PromoCard({
   href,
   openInNew,
   minH,
+  proporcao,
   children,
 }: {
   href?: string | null
   openInNew?: boolean
   minH: number
+  /** Proporção fixa da arte; o minH só vale como piso no celular. */
+  proporcao: string
   children: React.ReactNode
 }) {
   const cls = 'relative overflow-hidden rounded-2xl group block'
@@ -42,14 +45,14 @@ function PromoCard({
         target={openInNew ? '_blank' : undefined}
         rel={openInNew ? 'noopener noreferrer' : undefined}
         className={cls}
-        style={{ minHeight: `${minH}px` }}
+        style={{ minHeight: `${minH}px`, aspectRatio: proporcao }}
       >
         {children}
       </Link>
     )
   }
   return (
-    <div className={cls} style={{ minHeight: `${minH}px` }}>
+    <div className={cls} style={{ minHeight: `${minH}px`, aspectRatio: proporcao }}>
       {children}
     </div>
   )
@@ -58,7 +61,7 @@ function PromoCard({
 function SinglePromo({ slide }: { slide: BannerSlide }) {
   return (
     <section className="px-4 sm:px-6 lg:px-10">
-      <PromoCard href={slide.cta_url} openInNew={slide.open_in_new} minH={200}>
+      <PromoCard href={slide.cta_url} openInNew={slide.open_in_new} minH={200} proporcao="3 / 1">
         {slide.image_url ? (
           <Image
             src={slide.image_url}
@@ -105,7 +108,7 @@ function SinglePromo({ slide }: { slide: BannerSlide }) {
 
 function SmallPromo({ slide }: { slide: BannerSlide }) {
   return (
-    <PromoCard href={slide.cta_url} openInNew={slide.open_in_new} minH={180}>
+    <PromoCard href={slide.cta_url} openInNew={slide.open_in_new} minH={180} proporcao="2 / 1">
       {slide.image_url ? (
         <Image
           src={slide.image_url}

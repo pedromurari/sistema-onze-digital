@@ -1,7 +1,7 @@
+import { CursoCard } from '@/components/member/CursoCard'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { DEMO_PRODUCTS, DEMO_PROGRESS } from '@/lib/demo-data'
-import { CourseCardNetflix } from '@/components/ui/CourseCardNetflix'
 import { FilterTabs } from './FilterTabs'
 import type { CourseProgress } from '@/types'
 
@@ -132,16 +132,20 @@ export default async function CoursesPage({
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-3 gap-y-6 sm:gap-x-4 sm:gap-y-8">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((e, i) => {
               if (!e.products) return null
+              const prog = progressMap[e.product_id]
               return (
-                <CourseCardNetflix
+                <CursoCard
                   key={e.id}
-                  product={e.products as unknown as Parameters<typeof CourseCardNetflix>[0]['product']}
-                  progress={progressMap[e.product_id]}
-                  href={`/cursos/${e.products.slug}`}
-                  priority={i < 8}
+                  slug={e.products.slug}
+                  titulo={e.products.title}
+                  capa={e.products.thumbnail_url}
+                  aulasFeitas={prog?.completed_lessons ?? 0}
+                  totalAulas={prog?.total_lessons ?? 0}
+                  percentual={prog?.percent_complete ?? 0}
+                  prioridade={i < 3}
                 />
               )
             })}
