@@ -13,7 +13,7 @@ import {
 const DRIVE_FILE_ID = '1HfrGZwI9yn46d9CnxaFIw2VG-F3_L-Gc'
 const VIDEO_EMBED_URL = `https://drive.google.com/file/d/${DRIVE_FILE_ID}/preview`
 
-const WA_NUMBER = '5511919434040'
+const WA_NUMBER = '5511930439385'
 const WA_MESSAGE = 'Quero resgatar meu presente da aula'
 const WA_URL = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(WA_MESSAGE)}`
 

@@ -1,7 +1,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 
-const WA_URL = 'https://wa.me/5511919434040'
+const WA_URL = 'https://wa.me/5511930439385'
 
 const COL_PLATAFORMA = [
   { href: '/login', label: 'Login' },

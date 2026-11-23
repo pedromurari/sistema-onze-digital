@@ -11,7 +11,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion'
 
-const WA_URL = 'https://wa.me/5511919434040?text=Olá! Quero saber mais sobre o IDM pelo Brasil.'
+const WA_URL = 'https://wa.me/5511930439385?text=Olá! Quero saber mais sobre o IDM pelo Brasil.'
 
 const diasPrograma = [
   {
@@ -72,29 +72,6 @@ const cidades = [
   { cidade: 'Curitiba — PR', status: 'Em breve' },
 ]
 
-const depoimentos = [
-  {
-    featured: true,
-    nome: 'Mariana C.',
-    papel: 'Coach · Rio de Janeiro',
-    texto: 'Já tinha feito cursos online de PNL e psicanálise. O IDM pelo Brasil foi diferente de tudo. Em 4 dias ao vivo aconteceu mais do que em 6 meses de conteúdo gravado.',
-  },
-  {
-    nome: 'Thiago R.',
-    papel: 'Terapeuta · Curitiba',
-    texto: 'A constelação familiar ao vivo foi transformadora. Não tem como substituir a experiência presencial.',
-  },
-  {
-    nome: 'Andressa M.',
-    papel: 'Facilitadora · Porto Alegre',
-    texto: 'Finalmente o IDM chegou aqui. Valeu cada centavo e cada hora dos 4 dias.',
-  },
-  {
-    nome: 'Fábio L.',
-    papel: 'Psicólogo · Belo Horizonte',
-    texto: 'O rigor do método IDM no presencial superou minhas expectativas. Saí com um plano claro de aplicação.',
-  },
-]
 
 const faqItems = [
   {
@@ -154,8 +131,6 @@ function Reveal({ children, className = '', style }: { children: React.ReactNode
 }
 
 export function IdmBrasilContent({ product }: { product: ProductData | null }) {
-  const featuredDepo = depoimentos.find(d => d.featured) ?? depoimentos[0]
-  const otherDepos = depoimentos.filter(d => !d.featured).slice(0, 3)
 
   return (
     <div className="fds">
@@ -314,40 +289,6 @@ export function IdmBrasilContent({ product }: { product: ProductData | null }) {
                   <span className="text-xs font-mono text-[#383838]">{c.status}</span>
                 </div>
               ))}
-            </div>
-          </div>
-        </section>
-      </Reveal>
-
-      {/* ── DEPOIMENTOS ──────────────────────────── */}
-      <Reveal>
-        <section className="fds-band">
-          <div className="fds-wrap fds-section">
-            <div className="grid md:grid-cols-2 gap-12 lg:gap-20 items-start">
-              <div className="space-y-6">
-                <span style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="block text-[80px] leading-none text-[#FFB800]/8 select-none -mb-6">
-                  "
-                </span>
-                <p style={{ fontFamily: "'Fraunces', Georgia, serif" }} className="text-xl sm:text-2xl text-[#888888] leading-relaxed font-light italic">
-                  {featuredDepo.texto}
-                </p>
-                <div>
-                  <p className="text-sm font-semibold text-[#d0d0d0]">{featuredDepo.nome}</p>
-                  <p className="text-xs text-[#404040] mt-0.5">{featuredDepo.papel}</p>
-                </div>
-              </div>
-
-              <div className="divide-y divide-white/5">
-                {otherDepos.map((d, i) => (
-                  <div key={i} className="py-6 space-y-3 first:pt-0">
-                    <p className="text-sm text-[#484848] leading-relaxed italic">"{d.texto}"</p>
-                    <div>
-                      <p className="text-xs font-semibold text-[#808080]">{d.nome}</p>
-                      <p className="text-[11px] text-[#383838] mt-0.5">{d.papel}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
           </div>
         </section>

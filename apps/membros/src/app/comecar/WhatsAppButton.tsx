@@ -1,6 +1,6 @@
 'use client'
 
-const WA_URL = 'https://wa.me/5511919434040?text=Olá! Tenho interesse no Instituto Despertamente.'
+const WA_URL = 'https://wa.me/5511930439385?text=Olá! Tenho interesse no Instituto Despertamente.'
 
 const WhatsAppSVG = () => (
   <svg viewBox="0 0 24 24" fill="white" className="w-7 h-7" aria-hidden="true">

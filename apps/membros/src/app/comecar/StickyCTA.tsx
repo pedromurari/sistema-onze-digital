@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 
-const WA_URL = 'https://wa.me/5511919434040?text=Olá! Tenho interesse no Instituto Despertamente.'
+const WA_URL = 'https://wa.me/5511930439385?text=Olá! Tenho interesse no Instituto Despertamente.'
 
 const WhatsAppIcon = () => (
   <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 shrink-0" aria-hidden="true">

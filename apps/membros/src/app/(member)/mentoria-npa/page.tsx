@@ -6,7 +6,7 @@ import { PerfilNumerologicoCard, MapaEsferasCard, VoltarButton } from './HubCard
 
 export const metadata = { title: 'Mentoria NPA — Instituto Despertamente' }
 
-const WHATSAPP_EQUIPE = '5511919434040'
+const WHATSAPP_EQUIPE = '5511930439385'
 function whatsappUpgrade(msg: string) {
   return `https://wa.me/${WHATSAPP_EQUIPE}?text=${encodeURIComponent(msg)}`
 }

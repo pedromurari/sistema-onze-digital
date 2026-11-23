@@ -10,7 +10,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion'
 
-const WA_NUMBER = '5511919434040'
+const WA_NUMBER = '5511930439385'
 
 export interface ProductData {
   price: number | null

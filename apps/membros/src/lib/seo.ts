@@ -26,7 +26,7 @@ export const ORG = {
   descricao:
     'Instituto de formação em Psicanálise Integrativa, PNL e Constelação Familiar Sistêmica, com metodologia própria que une psicanálise, neurociência e PNL.',
   logo: `${SITE_URL}/despertamente-simbolo.png`,
-  telefone: '+55 11 91943-4040',
+  telefone: '+55 11 93043-9385',
   endereco: {
     rua: 'Av. Paulista, 1636, sala 1105',
     bairro: 'Bela Vista',

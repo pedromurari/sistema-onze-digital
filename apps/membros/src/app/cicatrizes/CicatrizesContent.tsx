@@ -61,7 +61,7 @@ function formatarProximaTurma(data: Date) {
   return texto.charAt(0).toUpperCase() + texto.slice(1)
 }
 
-const WA_URL = 'https://wa.me/5511919434040?text=Ol%C3%A1!%20Quero%20garantir%20minha%20vaga%20no%20Cicatrizes%20que%20Curam.'
+const WA_URL = 'https://wa.me/5511930439385?text=Ol%C3%A1!%20Quero%20garantir%20minha%20vaga%20no%20Cicatrizes%20que%20Curam.'
 
 const bonusStack = [
   { t: 'Kit de reflexão pós-workshop', d: 'Um guia em PDF com exercícios pra continuar o processo em casa, nos dias seguintes ao encontro.' },

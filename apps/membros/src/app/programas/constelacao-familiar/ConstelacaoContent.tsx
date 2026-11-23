@@ -33,7 +33,7 @@ import { faqItems } from './faq'
 
 const SLUG = 'constelacao-familiar'
 const WA_URL =
-  'https://wa.me/5511919434040?text=Olá! Quero saber mais sobre o Despertar Sistêmico (Formação em Constelação Familiar Sistêmica).'
+  'https://wa.me/5511930439385?text=Olá! Quero saber mais sobre o Despertar Sistêmico (Formação em Constelação Familiar Sistêmica).'
 
 // VSL do Despertar Sistêmico: gravação do Rodrygo + a professora da formação
 // (combinado 21/11/2026), ainda não existe. Enquanto a URL for null a página

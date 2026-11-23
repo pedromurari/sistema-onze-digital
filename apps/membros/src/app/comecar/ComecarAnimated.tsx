@@ -633,23 +633,14 @@ function BlogSection() {
 // ═══════════════════════════════════════════════════════════════════
 // SEÇÃO 11 — DEPOIMENTOS
 // ═══════════════════════════════════════════════════════════════════
-const DEPOS_FALLBACK: Depo[] = [
-  { nome: 'Ana Beatriz S.', papel: 'Aluna — Psicanálise Integrativa', estrelas: 5,
-    texto: 'Eu tentei terapia por anos. O método IDM foi o único que me fez entender POR QUÊ eu agia do jeito que agia. Em 3 semanas mudei mais do que em 3 anos.' },
-  { nome: 'Marcos Vinicius', papel: 'Aluno — NPA 2.0', estrelas: 5,
-    texto: 'Nunca imaginei que padrões dos meus avós ainda me afetavam. Depois do NPA, sinto que finalmente sou eu mesmo.' },
-  { nome: 'Fernanda Lima', papel: 'Aluna — Practitioner PNL', estrelas: 5,
-    texto: 'A certificação foi incrível, mas o que ficou foi a transformação pessoal. Recomendo sem hesitar.' },
-  { nome: 'Ricardo Almeida', papel: 'Aluno — Practitioner PNL', estrelas: 5,
-    texto: 'O conteúdo é denso mas aplicável imediatamente. Já usei em reuniões de trabalho e na minha vida pessoal. Mudança real.' },
-  { nome: 'Juliana C.', papel: 'Aluna — Psicanálise Integrativa', estrelas: 5,
-    texto: 'Finalmente entendi por que sabotava minhas relações. O método é diferente de tudo que já fiz. Recomendo a todos.' },
-  { nome: 'Paulo R.', papel: 'Aluno — NPA 2.0', estrelas: 5,
-    texto: 'Comprei com ceticismo e saí transformado. Os padrões que identifiquei explicaram 20 anos de comportamento. Incrível.' },
-]
+// Sem fallback de propósito. Já houve aqui seis depoimentos com nome e texto
+// inventados, exibidos na home enquanto a tabela `testimonials` estava vazia --
+// propaganda com aluno que não existe é risco jurídico (CDC, publicidade
+// enganosa), não só conteúdo ruim. Sem depoimento real, a seção some.
 
 function DepoimentosSection({ depos }: { depos: Depo[] }) {
-  const lista = depos.length > 0 ? depos : DEPOS_FALLBACK
+  if (depos.length === 0) return null
+  const lista = depos
   return (
     <section id="depoimentos" className="fds-band">
       <div className="fds-wrap px-6 sm:px-10 lg:px-16 fds-section">

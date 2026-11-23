@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { CheckCircle2, ArrowRight, MessageCircle } from 'lucide-react'
 
-const WA_URL = 'https://wa.me/5511919434040?text=Ol%C3%A1!%20Acabei%20de%20entrar%20na%20lista%20de%20espera%20do%20programa%20da%20Renata.'
+const WA_URL = 'https://wa.me/5511930439385?text=Ol%C3%A1!%20Acabei%20de%20entrar%20na%20lista%20de%20espera%20do%20programa%20da%20Renata.'
 
 export function ObrigadoContent() {
   return (

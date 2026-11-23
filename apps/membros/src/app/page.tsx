@@ -37,15 +37,6 @@ export const metadata = {
   },
 }
 
-const depoimentosFallback = [
-  { nome: 'Ana Beatriz S.', papel: 'Aluna — Psicanálise Prática', texto: 'Eu tentei terapia por anos. O método IDM foi o único que me fez entender POR QUÊ eu agia do jeito que agia. Em 3 semanas mudei mais do que em 3 anos.', estrelas: 5 },
-  { nome: 'Marcos Vinicius', papel: 'Aluno — NPA 2.0', texto: 'Nunca imaginei que padrões dos meus avós ainda me afetavam. Depois do NPA, sinto que finalmente sou eu mesmo.', estrelas: 5 },
-  { nome: 'Fernanda Lima', papel: 'Aluna — Practitioner PNL', texto: 'A certificação foi incrível, mas o que ficou foi a transformação pessoal. Recomendo sem hesitar.', estrelas: 5 },
-  { nome: 'Ricardo Almeida', papel: 'Aluno — Practitioner PNL', texto: 'O conteúdo é denso mas aplicável imediatamente. Já usei em reuniões de trabalho e na minha vida pessoal. Mudança real.', estrelas: 5 },
-  { nome: 'Juliana C.', papel: 'Aluna — Psicanálise Prática', texto: 'Finalmente entendi por que sabotava minhas relações. O método é diferente de tudo que já fiz. Recomendo a todos.', estrelas: 5 },
-  { nome: 'Paulo R.', papel: 'Aluno — NPA 2.0', texto: 'Comprei com ceticismo e saí transformado. Os padrões que identifiquei explicaram 20 anos de comportamento. Incrível.', estrelas: 5 },
-]
-
 export default async function HomePage() {
   const sb = await createClient()
   const [testimonials, { data: productsRaw }] = await Promise.all([
@@ -60,7 +51,7 @@ export default async function HomePage() {
         texto: t.content,
         estrelas: t.rating ?? 5,
       }))
-    : depoimentosFallback
+    : []
 
   const programas: Programa[] = (productsRaw ?? []).map(p => ({
     id: p.id as string,

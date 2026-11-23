@@ -22,7 +22,7 @@ import { SiteFooter } from '@/components/marketing/SiteFooter'
 // Renata vai enviar essas infos pro time). Enquanto isso, a página captura
 // lista de espera em vez de vender direto. Trocar pro fluxo de venda
 // completo (igual /cicatrizes) assim que o produto estiver definido.
-const WA_URL = 'https://wa.me/5511919434040?text=Ol%C3%A1!%20Quero%20saber%20mais%20sobre%20o%20programa%20de%20Depend%C3%AAncia%20Qu%C3%ADmica%20com%20Psican%C3%A1lise%20da%20Renata.'
+const WA_URL = 'https://wa.me/5511930439385?text=Ol%C3%A1!%20Quero%20saber%20mais%20sobre%20o%20programa%20de%20Depend%C3%AAncia%20Qu%C3%ADmica%20com%20Psican%C3%A1lise%20da%20Renata.'
 
 const paraQuemE = [
   'Quem convive com a dependência química de alguém que ama — filho, cônjuge, pai, mãe, irmão',

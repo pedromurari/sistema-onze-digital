@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { SiInstagram } from 'react-icons/si'
 
-const EQUIPE_WHATSAPP = '5511919434040'
+const EQUIPE_WHATSAPP = '5511930439385'
 const INSTAGRAM_RODRYGO = 'murarirodrygo'
 const INSTAGRAM_DESPERTAMENTE = 'institutodespertamente'
 const REFRESH_INTERVAL_MS = 20000
