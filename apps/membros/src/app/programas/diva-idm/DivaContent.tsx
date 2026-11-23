@@ -1,5 +1,6 @@
 'use client'
 
+import { LeadWhatsappCta } from '@/components/marketing/LeadWhatsappModal'
 /**
  * Página institucional do Divã IDM.
  *
@@ -20,7 +21,7 @@
 
 import { useRef } from 'react'
 import { motion, useInView, useReducedMotion } from 'framer-motion'
-import { Check, ArrowRight, MessageCircle } from 'lucide-react'
+import { Check, ArrowRight } from 'lucide-react'
 import {
   Accordion,
   AccordionContent,
@@ -28,7 +29,9 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion'
 
-const AGENDAR_URL = 'https://sistema.idmpsi.com.br/diva'
+// A grade de terapeutas fica nesta mesma página e já registra o lead com o
+// terapeuta escolhido; não tem por que mandar a pessoa pra outro site.
+const AGENDAR_URL = '#terapeutas'
 const WA_URL =
   'https://wa.me/5511930439385?text=Olá! Quero saber mais sobre o Divã IDM (terapia).'
 
@@ -84,6 +87,10 @@ const faqItems = [
     a: 'No pacote, o valor por sessão cai de R$80 para R$70. As sessões são agendadas conforme a sua disponibilidade e a do terapeuta, no ritmo combinado entre vocês.',
   },
   {
+    q: 'E se eu não souber o que falar na primeira sessão?',
+    a: 'Ninguém sabe, e tudo bem. A primeira sessão existe pra isso: você chega com o que estiver na cabeça e quem conduz é o psicanalista. Não precisa ter um problema definido nem saber explicar direito.',
+  },
+  {
     q: 'A sessão é online ou presencial?',
     a: 'Online, por vídeo. É o que permite manter o valor acessível e atender pessoas de qualquer lugar do país.',
   },
@@ -135,16 +142,18 @@ function BlocoOferta() {
         Pix ou cartão · você escolhe o terapeuta
       </p>
 
-      <a
-        href={WA_URL}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="mt-3 flex items-center justify-center gap-2"
-        style={{ fontSize: 'var(--fds-small)', color: 'var(--fds-ink-3)' }}
-      >
-        <MessageCircle className="h-3.5 w-3.5" />
-        Prefiro tirar uma dúvida antes
-      </a>
+      {/* Até a dúvida vira lead no funil do Divã antes de abrir o WhatsApp. */}
+      <LeadWhatsappCta
+        texto="Prefiro tirar uma dúvida antes"
+        variante="ghost"
+        className="mt-3 w-full"
+        endpoint="/api/diva-lead"
+        whatsappUrl={WA_URL}
+        eyebrow="Divã IDM"
+        titulo="Tire sua dúvida"
+        descricao="Deixe seu nome e WhatsApp: a gente responde por lá, sem compromisso."
+        textoBotao="Falar com a equipe"
+      />
     </div>
   )
 }
@@ -326,6 +335,19 @@ export function DivaContent({ terapeutas }: { terapeutas?: React.ReactNode } = {
               </div>
             </Accordion>
           </Reveal>
+        </div>
+      </section>
+
+      {/* ── AVISO DE EMERGÊNCIA ──────────────────────
+          Página de terapia sem isso é irresponsável: quem chega aqui em
+          crise precisa saber na hora onde buscar ajuda imediata. */}
+      <section className="fds-wrap" style={{ paddingBottom: 'var(--fds-16)' }}>
+        <div className="fds-card" style={{ padding: 'var(--fds-6)', maxWidth: 860 }}>
+          <p className="fds-small" style={{ maxWidth: 'none' }}>
+            O Divã IDM é atendimento psicanalítico com supervisão e não substitui acompanhamento médico ou
+            psiquiátrico. Em situação de emergência, ligue para o CVV no <strong style={{ color: 'var(--fds-ink)' }}>188</strong> (24 horas,
+            gratuito) ou procure um serviço de saúde.
+          </p>
         </div>
       </section>
 
