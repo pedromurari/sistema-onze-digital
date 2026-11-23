@@ -46,6 +46,11 @@ const VIDEO_POSTER: string | null = null
 // em "próxima turma" em vez de inventar data.
 const DATA_INICIO: string | null = '03 de dezembro'
 
+// Professora da formação. Pedro vai mandar foto + descritivo (23/11/2026).
+// Enquanto for null, a seção "Quem conduz" não aparece. Foto vai em
+// /public/images/professores/.
+const PROFESSORA: { nome: string; titulo: string; foto: string; bio: string[] } | null = null
+
 const pilares = [
   {
     titulo: 'A base que organiza o olhar',
@@ -115,7 +120,7 @@ const incluso = [
 ]
 
 const comoFunciona = [
-  { t: 'Ao vivo no Meet', s: '1h30 a 2h · quinzenal', d: 'Aula dialogada, demonstrações, vivências e estudos de caso.' },
+  { t: 'Ao vivo no Meet', s: '1h30 a 2h · semanal', d: 'Aula dialogada, demonstrações, vivências e estudos de caso.' },
   { t: 'Plataforma', s: 'entre os encontros', d: 'Aulas gravadas, artigos, filmes indicados, atividades e materiais.' },
   { t: 'Acompanhamento', s: 'durante os 3 meses', d: 'Entregas orientadas, registros, devolutivas e preparação para o certificado.' },
 ]
@@ -240,7 +245,7 @@ export function ConstelacaoContent({ product }: { product: ProductData | null })
               Reconhecer a origem, compreender os vínculos e ocupar o próprio lugar — com método,
               prática supervisionada e limites éticos claros.
             </p>
-            <p className="fds-meta mt-5">3 meses · 8 módulos · 12 aulas · encontros quinzenais ao vivo</p>
+            <p className="fds-meta mt-5">3 meses · 8 módulos · 12 aulas · encontros semanais ao vivo</p>
           </div>
 
           <div className="mx-auto mt-12" style={{ maxWidth: 820 }}>
@@ -325,8 +330,8 @@ export function ConstelacaoContent({ product }: { product: ProductData | null })
               <div>
                 <h2 className="fds-h2">Como a formação <span className="fds-accent">roda.</span></h2>
                 <p className="fds-body mt-5">
-                  Seis ciclos quinzenais em três meses. Cada ciclo tem uma semana de encontro ao
-                  vivo e uma semana de integração na plataforma.
+                  Um encontro ao vivo por semana durante três meses, todos gravados na plataforma.
+                  Entre um encontro e outro, você integra o conteúdo com estudo e atividade orientada.
                 </p>
               </div>
               <div className="grid gap-6 sm:grid-cols-3">
@@ -391,6 +396,29 @@ export function ConstelacaoContent({ product }: { product: ProductData | null })
           </Reveal>
         </div>
       </section>
+
+      {/* ── QUEM CONDUZ ──────────────────────────── */}
+      {PROFESSORA && (
+        <section className="fds-section">
+          <div className="fds-wrap">
+            <Reveal>
+              <div className="grid items-center gap-14 md:grid-cols-[360px_1fr]">
+                <div className="relative aspect-square overflow-hidden" style={{ borderRadius: 10 }}>
+                  <Image src={PROFESSORA.foto} alt={PROFESSORA.nome} fill sizes="360px" className="object-cover" />
+                </div>
+                <div>
+                  <p className="fds-eyebrow block">Quem conduz</p>
+                  <h2 className="fds-h2 mt-4">{PROFESSORA.nome}</h2>
+                  <p className="fds-small mt-2" style={{ color: 'var(--fds-accent)', fontWeight: 600 }}>{PROFESSORA.titulo}</p>
+                  {PROFESSORA.bio.map((par, i) => (
+                    <p key={i} className={`fds-body ${i === 0 ? 'mt-6' : 'mt-4'}`}>{par}</p>
+                  ))}
+                </div>
+              </div>
+            </Reveal>
+          </div>
+        </section>
+      )}
 
       {/* ── PARA QUEM + O QUE VEM JUNTO ──────────── */}
       <section className="fds-section">

@@ -80,7 +80,7 @@ const PROGRAMAS: Programa[] = [
     href: '/programas/constelacao-familiar',
     titulo: 'Despertar Sistêmico — Constelação Familiar',
     tipo: 'Formação',
-    descricao: '3 meses, 8 módulos, 12 aulas, encontros quinzenais ao vivo.',
+    descricao: '3 meses, 8 módulos, 12 aulas, encontros semanais ao vivo.',
     situacao: 'Turma 01 começa em 03 de dezembro',
   },
 ]
