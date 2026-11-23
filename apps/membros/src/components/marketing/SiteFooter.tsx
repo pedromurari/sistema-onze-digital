@@ -7,7 +7,7 @@ const COL_PLATAFORMA = [
   { href: '/login', label: 'Login' },
   { href: '/register', label: 'Criar conta gratuita' },
   { href: '/cursos', label: 'Meus cursos' },
-  { href: '/loja', label: 'Programas' },
+  { href: '/programas', label: 'Programas' },
 ]
 
 // Ancoras (#) sempre prefixadas com / -- o rodape aparece em varias

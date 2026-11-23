@@ -22,14 +22,17 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Programas',
     href: '/#programas',
     dropdown: [
+      // Ordem definida pelo Pedro em 23/11/2026.
       { label: 'Psicanálise Integrativa', href: '/programas/psicanalise-integrativa' },
-      { label: 'Despertar Sistêmico (Constelação Familiar)', href: '/programas/constelacao-familiar' },
-      { label: 'Mentoria NPS', href: '/programas/mentoria-nps' },
-      { label: 'Mentoria NPA', href: '/programas/mentoria-npa' },
-      { label: 'Practitioner em PNL', href: '/programas/practitioner-pnl' },
-      { label: 'IDM Pelo Brasil', href: '/programas/idm-pelo-brasil' },
       { label: 'Divã IDM (terapia)', href: '/programas/diva-idm' },
-      { label: 'Ver todos os programas', href: '/loja' },
+      { label: 'Practitioner em PNL', href: '/programas/practitioner-pnl' },
+      { label: 'Mentoria NPA', href: '/programas/mentoria-npa' },
+      { label: 'Mentoria NPS', href: '/programas/mentoria-nps' },
+      { label: 'IDM Pelo Brasil', href: '/programas/idm-pelo-brasil' },
+      { label: 'Despertar Sistêmico (Constelação Familiar)', href: '/programas/constelacao-familiar' },
+      // Antes apontava pra /loja, que é da área de membros e jogava o
+      // visitante no login.
+      { label: 'Ver todos os programas', href: '/programas' },
     ],
   },
   { label: 'Blog', href: '/blog' },
