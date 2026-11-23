@@ -13,12 +13,8 @@
  * site institucional, e tem o menu pra entrar na area dele.
  */
 
-import Link from 'next/link'
-import Image from 'next/image'
-import { getTestimonials } from '@/lib/actions/store'
-import { createClient } from '@/lib/supabase/server'
-import { ComecarAnimated, type Programa } from './comecar/ComecarAnimated'
 import { NavbarComecar } from './comecar/NavbarComecar'
+import { HomeContent } from './HomeContent'
 import { WhatsAppButton } from './comecar/WhatsAppButton'
 import { StickyCTA } from './comecar/StickyCTA'
 import { CookieBanner } from './comecar/CookieBanner'
@@ -37,49 +33,14 @@ export const metadata = {
   },
 }
 
-export default async function HomePage() {
-  const sb = await createClient()
-  const [testimonials, { data: productsRaw }] = await Promise.all([
-    getTestimonials(),
-    sb.from('products').select('id, title, slug, short_description, thumbnail_url').eq('is_published', true).order('sort_order'),
-  ])
-
-  const depos = testimonials.length > 0
-    ? testimonials.slice(0, 6).map(t => ({
-        nome: t.author_name,
-        papel: t.author_role ?? '',
-        texto: t.content,
-        estrelas: t.rating ?? 5,
-      }))
-    : []
-
-  const programas: Programa[] = (productsRaw ?? []).map(p => ({
-    id: p.id as string,
-    title: p.title as string,
-    slug: p.slug as string,
-    short_description: p.short_description as string | null,
-    thumbnail_url: p.thumbnail_url as string | null,
-  }))
-
+export default function HomePage() {
   return (
-    <div className="min-h-screen bg-[#0D1638] text-white overflow-x-hidden">
-
-      {/* Navbar */}
+    <div className="min-h-screen bg-[#08090d] text-white overflow-x-hidden">
       <NavbarComecar />
-
-      {/* Floating WhatsApp button (desktop) */}
       <WhatsAppButton />
-
-      {/* Sticky CTA bar (mobile) */}
       <StickyCTA />
-
-      {/* Cookie banner (LGPD) */}
       <CookieBanner />
-
-      {/* All animated sections */}
-      <ComecarAnimated depos={depos} programas={programas} />
-
-      {/* ── FOOTER ── */}
+      <HomeContent />
       <SiteFooter />
     </div>
   )
