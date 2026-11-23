@@ -1,5 +1,6 @@
 'use client'
 
+import { LeadWhatsappCta } from '@/components/marketing/LeadWhatsappModal'
 import { useRef, type ReactNode } from 'react'
 import { motion, useInView, useReducedMotion } from 'framer-motion'
 import { ArrowRight, Check, MessageCircle } from 'lucide-react'
@@ -70,7 +71,12 @@ function Reveal({ children, className = '' }: { children: ReactNode; className?:
 }
 
 /** Turma ainda fechada: a página mostra a previsão e capta lista de espera. */
-export type ProximaTurma = { previsao: string; detalhe?: string }
+export type ProximaTurma = {
+  previsao: string
+  detalhe?: string
+  /** Slug aceito por /api/lista-espera; é o que separa a lista de cada produto. */
+  listaEspera: string
+}
 
 function PriceBlock({
   product, waUrl, proximaTurma,
@@ -84,16 +90,21 @@ function PriceBlock({
         <p className="fds-small mt-3" style={{ color: 'var(--fds-ink-3)' }}>Previsão de início</p>
         <p className="fds-h2 mt-1" style={{ lineHeight: 1.1 }}>{proximaTurma.previsao}</p>
         {proximaTurma.detalhe && <p className="fds-small mt-3">{proximaTurma.detalhe}</p>}
-        <a
-          href={waUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="fds-btn fds-btn--primary mt-7 w-full"
+        {/* Grava a pessoa no CRM como base (canal "Lista de espera — X")
+            antes de abrir o WhatsApp: é dessa lista que sai o disparo
+            quando a turma abrir. */}
+        <LeadWhatsappCta
+          texto="Entrar na lista de espera"
+          className="mt-7 w-full"
           style={{ paddingBlock: 'var(--fds-4)' }}
-        >
-          <MessageCircle className="h-4 w-4" />
-          Entrar na lista de espera
-        </a>
+          endpoint="/api/lista-espera"
+          corpoExtra={{ produto: proximaTurma.listaEspera }}
+          whatsappUrl={waUrl}
+          eyebrow="Lista de espera"
+          titulo="Te avisamos primeiro"
+          descricao="Deixe seu nome e WhatsApp: você é avisado antes de todo mundo quando a turma abrir e garante condição especial."
+          textoBotao="Entrar na lista"
+        />
         <p className="fds-small mt-4 text-center">Quem está na lista é avisado antes e garante condição especial.</p>
       </div>
     )

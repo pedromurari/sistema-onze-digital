@@ -1,24 +1,36 @@
 'use client'
 
 /**
- * Modal de lead da Formação em Psicanálise.
+ * Modal de captura: pede nome e WhatsApp, grava o lead no CRM e manda a
+ * pessoa pro WhatsApp com a mensagem já escrita. Dois campos e nada mais --
+ * cada campo extra aqui é gente desistindo no meio.
  *
- * Mesmo comportamento da `formacao.idmpsi.com.br`: pede nome e WhatsApp,
- * registra o lead no funil do Time Comercial e manda a pessoa pro WhatsApp
- * com a mensagem já escrita. Dois campos e nada mais -- cada campo extra
- * aqui é gente desistindo no meio.
- *
- * O número de fallback é o mesmo da página de anúncio (uma pessoa real
- * acompanhando), e o rodízio de vendedor acontece do lado do CRM, no insert.
+ * Nasceu pra Formação em Psicanálise (que continua sendo o padrão, sem
+ * nenhuma prop) e hoje serve também a lista de espera das turmas fechadas e
+ * o agendamento do Divã. Quem chama decide pra onde o lead vai (`endpoint` +
+ * `corpoExtra`) e em qual conversa a pessoa cai (`whatsappUrl`).
  */
 
 import { useEffect, useState } from 'react'
 import { Loader2, MessageCircle, X } from 'lucide-react'
 
-const WHATSAPP = '5511965781940'
-const MENSAGEM =
+const WHATSAPP_PSICANALISE = '5511965781940'
+const MENSAGEM_PSICANALISE =
   'Olá! Quero receber informações sobre a Formação em Psicanálise Integrativa do IDM.'
-const WHATSAPP_URL = `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(MENSAGEM)}`
+const WHATSAPP_URL_PSICANALISE = `https://wa.me/${WHATSAPP_PSICANALISE}?text=${encodeURIComponent(MENSAGEM_PSICANALISE)}`
+
+export type LeadModalConfig = {
+  /** Rota que grava o lead. Padrão: funil da Psicanálise. */
+  endpoint?: string
+  /** Campos a mais no corpo (ex: `{ produto }`, `{ terapeuta_id }`). */
+  corpoExtra?: Record<string, string>
+  /** Conversa de WhatsApp que abre depois do cadastro. */
+  whatsappUrl?: string
+  eyebrow?: string
+  titulo?: string
+  descricao?: string
+  textoBotao?: string
+}
 
 function formatarWhatsapp(valor: string) {
   const d = valor.replace(/\D/g, '').slice(0, 11)
@@ -31,10 +43,14 @@ function formatarWhatsapp(valor: string) {
 export function LeadWhatsappModal({
   aberto,
   onFechar,
-}: {
-  aberto: boolean
-  onFechar: () => void
-}) {
+  endpoint = '/api/lead-psicanalise',
+  corpoExtra,
+  whatsappUrl = WHATSAPP_URL_PSICANALISE,
+  eyebrow = 'Formação em Psicanálise',
+  titulo = 'Fale com nossa equipe',
+  descricao = 'Preencha seus dados e nossa equipe entra em contato agora pelo WhatsApp.',
+  textoBotao = 'Enviar e falar com consultor',
+}: LeadModalConfig & { aberto: boolean; onFechar: () => void }) {
   const [nome, setNome] = useState('')
   const [whatsapp, setWhatsapp] = useState('')
   const [website, setWebsite] = useState('')
@@ -63,7 +79,7 @@ export function LeadWhatsappModal({
     setEnviando(true)
 
     try {
-      const resposta = await fetch('/api/lead-psicanalise', {
+      const resposta = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -72,6 +88,7 @@ export function LeadWhatsappModal({
           website,
           referrer: document.referrer || '',
           ...Object.fromEntries(new URLSearchParams(window.location.search)),
+          ...corpoExtra,
         }),
       })
 
@@ -79,7 +96,7 @@ export function LeadWhatsappModal({
 
       setOk(true)
       // Pequena pausa pro usuário ver a confirmação antes de trocar de app.
-      setTimeout(() => window.location.assign(WHATSAPP_URL), 1000)
+      setTimeout(() => window.location.assign(whatsappUrl), 1000)
     } catch {
       setErro('Não foi possível registrar seus dados. Tente novamente em instantes.')
       setEnviando(false)
@@ -93,7 +110,7 @@ export function LeadWhatsappModal({
       onClick={() => !enviando && onFechar()}
       role="dialog"
       aria-modal="true"
-      aria-label="Fale com nossa equipe"
+      aria-label={titulo}
     >
       <div
         className="fds-card w-full max-w-md"
@@ -102,8 +119,8 @@ export function LeadWhatsappModal({
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="fds-eyebrow block">Formação em Psicanálise</p>
-            <h3 className="fds-h3 mt-3">Fale com nossa equipe</h3>
+            <p className="fds-eyebrow block">{eyebrow}</p>
+            <h3 className="fds-h3 mt-3">{titulo}</h3>
           </div>
           <button
             type="button"
@@ -122,9 +139,7 @@ export function LeadWhatsappModal({
           </p>
         ) : (
           <form onSubmit={enviar} className="mt-6 space-y-4">
-            <p className="fds-small">
-              Preencha seus dados e nossa equipe entra em contato agora pelo WhatsApp.
-            </p>
+            <p className="fds-small">{descricao}</p>
 
             {/* Honeypot: invisível pra gente, irresistível pra bot. */}
             <input
@@ -185,7 +200,7 @@ export function LeadWhatsappModal({
                 </>
               ) : (
                 <>
-                  <MessageCircle className="h-4 w-4" /> Enviar e falar com consultor
+                  <MessageCircle className="h-4 w-4" /> {textoBotao}
                 </>
               )}
             </button>
@@ -196,15 +211,18 @@ export function LeadWhatsappModal({
   )
 }
 
-/** Botão que abre o modal. Usado em todos os CTAs da página. */
+/** Botão que abre o modal. Sem config, é o CTA da Psicanálise. */
 export function LeadWhatsappCta({
   texto = 'Quero garantir minha vaga',
   variante = 'primary',
   className = '',
-}: {
+  style,
+  ...config
+}: LeadModalConfig & {
   texto?: string
   variante?: 'primary' | 'ghost'
   className?: string
+  style?: React.CSSProperties
 }) {
   const [aberto, setAberto] = useState(false)
   return (
@@ -213,10 +231,11 @@ export function LeadWhatsappCta({
         type="button"
         onClick={() => setAberto(true)}
         className={`fds-btn fds-btn--${variante} ${className}`}
+        style={style}
       >
         {texto}
       </button>
-      <LeadWhatsappModal aberto={aberto} onFechar={() => setAberto(false)} />
+      <LeadWhatsappModal {...config} aberto={aberto} onFechar={() => setAberto(false)} />
     </>
   )
 }

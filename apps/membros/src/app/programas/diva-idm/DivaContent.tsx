@@ -149,7 +149,7 @@ function BlocoOferta() {
   )
 }
 
-export function DivaContent() {
+export function DivaContent({ terapeutas }: { terapeutas?: React.ReactNode } = {}) {
   return (
     <div className="fds">
       {/* ── HERO + OFERTA ────────────────────────── */}
@@ -226,6 +226,8 @@ export function DivaContent() {
           </div>
         </div>
       </section>
+
+      {terapeutas}
 
       {/* ── PLANOS ───────────────────────────────── */}
       <section className="fds-section">
