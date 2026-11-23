@@ -90,6 +90,8 @@ export function jsonLdCurso(c: {
   moeda?: string
   modalidade?: 'online' | 'presencial' | 'blended'
   duracaoMeses?: number
+  /** Programas curtos (uma sessão por semana) medem em semanas, não meses. */
+  duracaoSemanas?: number
   /** true quando o valor e mensalidade, nao preco fechado do curso. */
   assinatura?: boolean
 }) {
@@ -135,7 +137,11 @@ export function jsonLdCurso(c: {
     hasCourseInstance: {
       '@type': 'CourseInstance',
       courseMode: modo,
-      ...(c.duracaoMeses ? { courseWorkload: `P${c.duracaoMeses}M` } : {}),
+      ...(c.duracaoMeses
+        ? { courseWorkload: `P${c.duracaoMeses}M` }
+        : c.duracaoSemanas
+          ? { courseWorkload: `P${c.duracaoSemanas}W` }
+          : {}),
     },
   }
 }

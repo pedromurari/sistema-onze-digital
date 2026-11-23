@@ -41,8 +41,8 @@ Contato: ${ORG.telefone}
 - [Formação em Psicanálise Clínica Integrativa](${SITE_URL}/programas/psicanalise-integrativa): formação de 14 meses, 100% online, estruturada em 4 arcos, com acesso vitalício à plataforma e certificado de Extensão Universitária nas diretrizes do MEC em parceria com a Anhanguera. R$1.500 à vista no Pix (valor original R$3.750), ou 12x de R$150. É a formação principal do Instituto.
 - [Despertar Sistêmico — Constelação Familiar Sistêmica](${SITE_URL}/programas/constelacao-familiar): formação de 3 meses, 8 módulos, 12 aulas, encontros quinzenais ao vivo. R$497.
 - [Mentoria NPS — Numerologia Pitagórica](${SITE_URL}/programas/mentoria-nps): assinatura mensal com 2 encontros ao vivo por mês, área de membros com as gravações e uma plataforma que gera mapas numerológicos.
-- [Mentoria NPA](${SITE_URL}/programas/mentoria-npa): mentoria em Numerologia Pitagórica Aplicada.
-- [Practitioner em PNL](${SITE_URL}/programas/practitioner-pnl): formação em Programação Neurolinguística.
+- [Mentoria NPA](${SITE_URL}/programas/mentoria-npa): mentoria em Numerologia Pitagórica Aplicada, com 6 sessões ao vivo, uma por semana. Todas as sessões são gravadas e ficam disponíveis na plataforma.
+- [Practitioner em PNL](${SITE_URL}/programas/practitioner-pnl): formação em Programação Neurolinguística, com 8 sessões ao vivo, uma por semana. Todas as aulas são gravadas e ficam disponíveis na plataforma.
 - [IDM pelo Brasil](${SITE_URL}/programas/idm-pelo-brasil): encontros presenciais itinerantes, em dois formatos. Numerologia (NPA): um dia com duas turmas de 4 horas no mesmo local, manhã das 09h às 13h e tarde das 14h às 18h, com Rodrygo Murari. Psicanálise (IDM PSI): imersão de dia inteiro, das 09h às 17h. Próximas datas de Numerologia: São Paulo em 05/12/2026 e Santos em 12/12/2026.
 - [Divã IDM](${SITE_URL}/programas/diva-idm): terapia online acessível, a partir de R$70 por sessão, com psicanalistas formados pelo Instituto.
 

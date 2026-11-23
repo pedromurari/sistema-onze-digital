@@ -22,6 +22,7 @@ type Catalogo = Record<
     descricao: string
     modalidade: 'online' | 'presencial' | 'blended'
     duracaoMeses?: number
+    duracaoSemanas?: number
     /**
      * Preco real quando ele nao vive em `products` deste app. Usado so como
      * fallback -- o banco, quando tem valor, manda.
@@ -58,12 +59,14 @@ const CURSOS: Catalogo = {
   },
   'mentoria-npa': {
     nome: 'Mentoria NPA — Numerologia Pitagórica Aplicada',
+    duracaoSemanas: 6,
     descricao:
       'Mentoria em Numerologia Pitagórica Aplicada: grupo de mentoria, curso gravado e material de apoio da metodologia exclusiva do Instituto Despertamente de leitura de padrões numéricos.',
     modalidade: 'online',
   },
   'practitioner-pnl': {
     nome: 'Practitioner em Programação Neurolinguística (PNL)',
+    duracaoSemanas: 8,
     descricao:
       'Formação Practitioner em PNL: rapport, ancoragem, submodalidades e reformulação, aplicados à reprogramação de padrões mentais.',
     modalidade: 'online',
@@ -106,6 +109,7 @@ export function SchemaCurso({
           preco: preco ?? curso.precoPadrao ?? null,
           modalidade: curso.modalidade,
           duracaoMeses: curso.duracaoMeses,
+          duracaoSemanas: curso.duracaoSemanas,
           assinatura,
         }),
       )}
