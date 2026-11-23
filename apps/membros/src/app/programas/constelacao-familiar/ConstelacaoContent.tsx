@@ -41,9 +41,10 @@ const WA_URL =
 const VIDEO_URL: string | null = null
 const VIDEO_POSTER: string | null = null
 
-// Data de início da Turma 01 — pendente com o Rodrygo. Enquanto for null, a
-// página fala em "próxima turma" em vez de inventar data.
-const DATA_INICIO: string | null = null
+// Data de início da Turma 01, definida pelo Pedro em 22/11/2026: uma semana e
+// meia depois do início dos disparos de venda (23/11). Com null, a página fala
+// em "próxima turma" em vez de inventar data.
+const DATA_INICIO: string | null = '03 de dezembro'
 
 const pilares = [
   {
