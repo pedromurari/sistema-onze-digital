@@ -178,10 +178,8 @@ async function liberarAcesso(supabase: ReturnType<typeof createClient>, venda: {
       });
     }
   }
-
-  await supabase.from('parceiros_vendas')
-    .update({ acesso_liberado: true, acesso_liberado_em: new Date().toISOString() })
-    .eq('id', venda.id);
+  // acesso_liberado já foi marcado true antes de chamar essa função (é o
+  // próprio "lock" que garante que só uma chamada concorrente chega até aqui).
 }
 
 serve(async (req) => {
@@ -258,7 +256,24 @@ serve(async (req) => {
     }
 
     if (novoStatus === 'aprovado' && !venda.acesso_liberado) {
-      await liberarAcesso(supabase, venda as any, String(paymentId)).catch((e) => console.error('mp-webhook: falha ao liberar acesso', e));
+      // Mercado Pago as vezes manda o mesmo webhook mais de uma vez quase
+      // simultaneo (retry) -- um simples "if (!venda.acesso_liberado)" lendo
+      // uma venda ja buscada antes nao impede as duas chamadas de passarem
+      // juntas (achado real 23/11/2026: Jucelia Souza Vieira ficou com a
+      // sessao duplicada no Diva). O UPDATE condicional abaixo so afeta a
+      // linha se ainda estiver false -- o Postgres serializa isso, entao só
+      // uma das chamadas concorrentes "ganha" a corrida e segue adiante.
+      const { data: reivindicada } = await supabase
+        .from('parceiros_vendas')
+        .update({ acesso_liberado: true, acesso_liberado_em: new Date().toISOString() })
+        .eq('id', venda.id)
+        .eq('acesso_liberado', false)
+        .select('id')
+        .maybeSingle();
+
+      if (reivindicada) {
+        await liberarAcesso(supabase, venda as any, String(paymentId)).catch((e) => console.error('mp-webhook: falha ao liberar acesso', e));
+      }
     }
 
     return new Response(JSON.stringify({ ok: true, status: novoStatus }), {
