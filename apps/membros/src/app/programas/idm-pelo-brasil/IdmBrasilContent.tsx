@@ -1,394 +1,339 @@
-'use client'
+/**
+ * IDM pelo Brasil — encontros presenciais itinerantes.
+ *
+ * São DOIS produtos diferentes, e a página separa os dois desde o começo
+ * (a versão anterior descrevia uma "imersão de 4 dias" que não existe):
+ * - Numerologia (NPA): um dia, duas turmas de 4h no mesmo local
+ *   (manhã 09h–13h, tarde 14h–18h), com Rodrygo Murari.
+ * - Psicanálise (IDM PSI): imersão de dia inteiro, 09h–17h.
+ *
+ * Datas e cidades vêm do CRM (`npa_eventos`). O botão de cada cidade grava o
+ * interessado no produto `npa` com o nome do evento (via /api/lista-espera,
+ * modo `evento`) e abre o WhatsApp institucional.
+ */
 
+import Image from 'next/image'
 import Link from 'next/link'
-import { useRef } from 'react'
-import { motion, useInView, useReducedMotion } from 'framer-motion'
-import { ArrowRight, MessageCircle, MapPin } from 'lucide-react'
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion'
+import { ArrowRight } from 'lucide-react'
+import { LeadWhatsappCta } from '@/components/marketing/LeadWhatsappModal'
 
-const WA_URL = 'https://wa.me/5511930439385?text=Olá! Quero saber mais sobre o IDM pelo Brasil.'
-
-const diasPrograma = [
-  {
-    numero: '01',
-    titulo: 'Mapeamento do Inconsciente',
-    conteudo: [
-      'O que são padrões inconscientes e como se formam',
-      'Técnica de mapeamento de comportamentos automáticos',
-      'Identificação dos principais pontos de travamento pessoal',
-      'Introdução à escuta analítica — como ouvir o que não é dito',
-    ],
-  },
-  {
-    numero: '02',
-    titulo: 'Técnicas Integrativas ao Vivo',
-    conteudo: [
-      'Regressão terapêutica guiada em grupo supervisionado',
-      'Trabalho corporal: o corpo como mapa emocional',
-      'Constelações familiares — dinâmica ao vivo',
-      'Integração das experiências do dia anterior',
-    ],
-  },
-  {
-    numero: '03',
-    titulo: 'PNL Aplicada',
-    conteudo: [
-      'Fundamentos de PNL para transformação de padrões',
-      'Ancoragem: como criar novos estados mentais no corpo',
-      'Ressignificação rápida — técnicas práticas ao vivo',
-      'Como integrar PNL ao dia a dia imediatamente',
-    ],
-  },
-  {
-    numero: '04',
-    titulo: 'Supervisão e Integração',
-    conteudo: [
-      'Revisão e consolidação dos quatro dias',
-      'Sessão de supervisão em grupos pequenos',
-      'Plano de aplicação individual — o que você faz na semana seguinte',
-      'Emissão do certificado de conclusão',
-    ],
-  },
-]
-
-const incluso = [
-  '4 dias de imersão presencial com o time IDM',
-  'Materiais didáticos físicos',
-  'Supervisão clínica em grupos (máx. 15 pessoas)',
-  'Acesso à plataforma IDM Membros por 30 dias',
-  'Certificado digital de conclusão',
-  'Comunidade exclusiva de alunos IDM',
-]
-
-const cidades = [
-  { cidade: 'São Paulo — SP', status: 'Em breve' },
-  { cidade: 'Rio de Janeiro — RJ', status: 'Em breve' },
-  { cidade: 'Belo Horizonte — MG', status: 'Em breve' },
-  { cidade: 'Curitiba — PR', status: 'Em breve' },
-]
-
-
-const faqItems = [
-  {
-    q: 'Quando serão as próximas edições?',
-    a: 'As próximas datas estão sendo definidas. Entre na lista de espera pelo WhatsApp — você será notificado quando as inscrições abrirem para sua cidade.',
-  },
-  {
-    q: 'Em quais cidades vocês estarão?',
-    a: 'O IDM pelo Brasil já passou por São Paulo, Rio de Janeiro, Belo Horizonte, Curitiba, Porto Alegre e Recife. Se sua cidade não está na lista, entre em contato — a demanda determina o calendário.',
-  },
-  {
-    q: 'O certificado é o mesmo da formação online?',
-    a: 'O workshop emite um certificado de conclusão do IDM pelo Brasil. É diferente da Formação completa em Psicanálise Integrativa, que exige o percurso completo. O workshop pode ser aproveitado como módulo prático dentro da formação.',
-  },
-  {
-    q: 'Quanto custa? Tem parcelamento?',
-    a: 'O investimento varia por cidade e data. Parcelamos em até 6x no cartão. Pix tem desconto à vista. Entre em contato pelo WhatsApp para saber o valor atual da sua região.',
-  },
-  {
-    q: 'Posso levar acompanhante?',
-    a: 'O workshop é individual. Mas é comum alunos virem com parceiros ou colegas — cada um com inscrição individual.',
-  },
-  {
-    q: 'Há desconto para alunos já matriculados no IDM?',
-    a: 'Sim. Alunos ativos da plataforma IDM Membros têm desconto no workshop. O código é enviado diretamente na plataforma.',
-  },
-  {
-    q: 'Qual é a política de cancelamento?',
-    a: 'Cancelamento até 15 dias antes: reembolso integral. Entre 15 e 7 dias: crédito para outra edição. Menos de 7 dias: sem reembolso (mas você pode transferir a vaga para outra pessoa).',
-  },
-]
-
-export interface ProductData {
-  price: number | null
-  original_price: number | null
-  highlights: string[] | null
-  cta_label: string | null
-  checkout_url: string | null
+export type EventoPublico = {
+  nome: string
+  slug: string | null
+  data_evento: string
+  local: string | null
+  professor_convidado: string | null
 }
 
-function Reveal({ children, className = '', style }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const inView = useInView(ref, { once: true, margin: '-80px' as `${number}px` })
-  const reduce = useReducedMotion()
+const WHATSAPP = '5511930439385'
+const wa = (mensagem: string) => `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(mensagem)}`
+
+/** "NPA #24 São Paulo" / "IDM PSI #20 - Curitiba" -> "São Paulo" / "Curitiba". */
+function cidade(nome: string) {
+  return nome.replace(/^.*?#\d+\s*[-–—]?\s*/, '').trim() || nome
+}
+
+function formato(nome: string): 'Psicanálise' | 'Numerologia' {
+  return /psi/i.test(nome) ? 'Psicanálise' : 'Numerologia'
+}
+
+/** Meio-dia em Brasília evita a data "voltar um dia" ao converter fuso. */
+function dataLocal(iso: string) {
+  return new Date(`${iso}T12:00:00-03:00`)
+}
+
+function diaMes(iso: string) {
+  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' }).format(dataLocal(iso))
+}
+
+function diaSemana(iso: string) {
+  return new Intl.DateTimeFormat('pt-BR', { weekday: 'long', timeZone: 'America/Sao_Paulo' }).format(dataLocal(iso))
+}
+
+function mes(iso: string) {
+  return new Intl.DateTimeFormat('pt-BR', { month: 'long', timeZone: 'America/Sao_Paulo' }).format(dataLocal(iso))
+}
+
+const ETAPAS = [
+  { titulo: 'Seu mapa, ao vivo', texto: 'Você monta o próprio mapa numerológico na hora, com a sua data de nascimento.' },
+  { titulo: 'O padrão que se repete', texto: 'Onde a mesma escolha reaparece na sua vida — e por quê.' },
+  { titulo: 'Prática na sala', texto: 'Você lê o mapa de outra pessoa, com o professor corrigindo ali.' },
+  { titulo: 'Certificado na mão', texto: 'Você sai do dia com o certificado de participação.' },
+]
+
+const etiqueta = { border: '1px solid var(--fds-line)', borderRadius: 4, padding: '7px 13px' }
+
+function Horario({ rotulo, horas }: { rotulo: string; horas: string }) {
   return (
-    <motion.div
-      ref={ref}
-      className={className}
-      style={style}
-      initial={{ opacity: 0, y: reduce ? 0 : 18 }}
-      animate={inView ? { opacity: 1, y: 0 } : {}}
-      transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-    >
-      {children}
-    </motion.div>
+    <div className="flex-1" style={{ background: 'var(--fds-surface)', padding: '16px 18px' }}>
+      <p className="fds-meta">{rotulo}</p>
+      <p className="fds-h3 mt-1" style={{ color: 'var(--fds-accent)', fontSize: 21 }}>{horas}</p>
+    </div>
   )
 }
 
-export function IdmBrasilContent({ product }: { product: ProductData | null }) {
+export function IdmBrasilContent({
+  proximos,
+  passados,
+}: {
+  proximos: EventoPublico[]
+  passados: EventoPublico[]
+}) {
+  const primeiro = proximos[0]
 
   return (
     <div className="fds">
-      {/* ── HERO ─────────────────────────────────── */}
-      <section
-        className="fds-band--deep" style={{ paddingTop: 'var(--fds-30)', paddingBottom: 'var(--fds-24)' }}
-      >
-
-        <div className="fds-wrap space-y-10">
-          <motion.div
-            initial={{ opacity: 0, y: 28 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
-            className="space-y-7"
-          >
-            <p className="fds-eyebrow">
-              Instituto Despertamente · Workshop presencial
+      {/* ── CAPA ─────────────────────────────────────────────────────── */}
+      <section className="relative overflow-hidden" style={{ borderBottom: '1px solid var(--fds-line)' }}>
+        <Image
+          src="/images/turmas/aula-sala-cheia.jpg"
+          alt="Sala cheia durante uma aula presencial do IDM pelo Brasil"
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover"
+        />
+        <div
+          className="absolute inset-0"
+          style={{ background: 'linear-gradient(100deg, rgba(8,9,13,0.97) 0%, rgba(8,9,13,0.9) 48%, rgba(8,9,13,0.5) 100%)' }}
+        />
+        <div className="fds-wrap relative" style={{ paddingTop: 'var(--fds-30)', paddingBottom: 'var(--fds-24)' }}>
+          <div className="max-w-[660px]">
+            <p className="fds-eyebrow block">IDM pelo Brasil</p>
+            <h1 className="fds-display mt-5">O método sai da tela e senta do seu lado.</h1>
+            <p className="fds-body mt-6" style={{ color: '#d4d5d9', fontSize: 18 }}>
+              Um dia presencial na sua cidade, com certificado na mão no fim. Em dois formatos:{' '}
+              <strong style={{ color: 'var(--fds-ink)' }}>Numerologia</strong>, em turmas de 4 horas, e{' '}
+              <strong style={{ color: 'var(--fds-ink)' }}>Psicanálise</strong>, em imersão de dia inteiro.
             </p>
-            <h1
-              style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-              className="text-[64px] sm:text-[80px] lg:text-[100px] font-bold leading-[0.97] text-[#f0f0f0] tracking-tight"
-            >
-              IDM pelo<br />Brasil.
-            </h1>
-            <div className="w-full max-w-3xl h-px bg-white/6" />
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3, duration: 0.6 }}
-            className="grid sm:grid-cols-[1fr_auto] gap-8 items-end max-w-3xl"
-          >
-            <p className="text-base text-[#4a4a4a] leading-relaxed max-w-md">
-              Imersão presencial de Psicanálise Integrativa e PNL em cidades do Brasil. Aprenda ao vivo, com supervisão e certificação incluída.
-            </p>
-            <div className="flex flex-col items-start sm:items-end gap-3">
-              <a
-                href="#cidades"
-                className="fds-btn fds-btn--primary group whitespace-nowrap"
-              >
-                Ver datas e cidades
-                <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
-              </a>
-              <p className="fds-meta">4 dias · Tour nacional · Vagas limitadas</p>
-            </div>
-          </motion.div>
+            <a href="#proximas" className="fds-btn fds-btn--primary mt-9">Ver as próximas datas</a>
+          </div>
         </div>
       </section>
 
-      {/* ── MANIFESTO ────────────────────────────── */}
-      <section className="fds-band">
-        <Reveal className="fds-wrap fds-section" style={{ maxWidth: 680 }}>
-          <p
-            style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-            className="text-2xl sm:text-3xl font-light leading-relaxed text-[#888888]"
-          >
-            Conteúdo online transforma. Mas{' '}
-            <span className="text-[#c8c8c8]">
-              a transformação mais profunda acontece ao vivo, com pessoas, com o corpo presente.
-            </span>{' '}
-            O IDM pelo Brasil foi criado para quem quer mais do que assistir aulas —{' '}
-            quer viver o processo. Quatro dias intensivos. Uma cidade de cada vez.
+      {/* ── OS DOIS FORMATOS ─────────────────────────────────────────── */}
+      <section className="fds-section">
+        <div className="fds-wrap">
+          <h2 className="fds-h2">Dois formatos. Escolha o seu.</h2>
+          <p className="fds-body mt-4">
+            São encontros diferentes, com cargas horárias diferentes — e cada cidade recebe um deles.
           </p>
-        </Reveal>
+
+          <div className="mt-12 grid gap-6 md:grid-cols-2">
+            <article className="fds-card flex flex-col overflow-hidden" style={{ padding: 0 }}>
+              <div className="relative aspect-video">
+                <Image src="/images/turmas/turma-grupo.jpg" alt="Turma de numerologia reunida ao fim da aula" fill sizes="(min-width: 768px) 50vw, 100vw" className="object-cover" />
+              </div>
+              <div className="flex flex-1 flex-col gap-4" style={{ padding: 'var(--fds-8)' }}>
+                <p className="fds-eyebrow block">Numerologia · NPA</p>
+                <h3 className="fds-h3">O Despertar dos Números</h3>
+                <p className="fds-body flex-1">
+                  Quatro horas pra você montar o próprio mapa numerológico e enxergar o padrão que se repete
+                  nas suas escolhas. No mesmo dia e no mesmo lugar rodam duas turmas — você escolhe a que
+                  cabe na sua agenda.
+                </p>
+                <div className="flex gap-px overflow-hidden" style={{ border: '1px solid var(--fds-line)', borderRadius: 8, background: 'var(--fds-line)' }}>
+                  <Horario rotulo="Turma da manhã" horas="09h às 13h" />
+                  <Horario rotulo="Turma da tarde" horas="14h às 18h" />
+                </div>
+                <p className="fds-small">Com Rodrygo Murari · 4 horas · certificado no fim</p>
+              </div>
+            </article>
+
+            <article className="fds-card flex flex-col overflow-hidden" style={{ padding: 0 }}>
+              <div className="relative aspect-video">
+                <Image src="/images/turmas/turma-certificados.jpg" alt="Turma reunida com os certificados ao fim da imersão" fill sizes="(min-width: 768px) 50vw, 100vw" className="object-cover" />
+              </div>
+              <div className="flex flex-1 flex-col gap-4" style={{ padding: 'var(--fds-8)' }}>
+                <p className="fds-eyebrow block">Psicanálise · IDM PSI</p>
+                <h3 className="fds-h3">Imersão de dia inteiro</h3>
+                <p className="fds-body flex-1">
+                  Oito horas de psicanálise aplicada, com ferramentas de autoconhecimento que você usa no mesmo
+                  dia. Uma turma só, o dia todo — dá tempo de ir fundo em vez de passar por cima.
+                </p>
+                <div className="overflow-hidden" style={{ border: '1px solid var(--fds-line)', borderRadius: 8 }}>
+                  <Horario rotulo="Turma única" horas="09h às 17h" />
+                </div>
+                <p className="fds-small">8 horas · material de apoio · certificado de conclusão</p>
+              </div>
+            </article>
+          </div>
+        </div>
       </section>
 
-      {/* ── OS 4 DIAS ────────────────────────────── */}
-      <Reveal>
-        <section className="fds-wrap fds-section">
-          <div className="grid sm:grid-cols-[1fr_auto] items-end gap-4 mb-10">
-            <h2
-              className="fds-h2"
-            >
-              Os 4 dias.
-            </h2>
-            <p className="fds-meta pb-1">Jornada progressiva</p>
-          </div>
-
-          <Accordion type="single" collapsible defaultValue="01">
-            <div className="divide-y divide-white/5">
-              {diasPrograma.map((d) => (
-                <AccordionItem key={d.numero} value={d.numero} className="border-0">
-                  <AccordionTrigger className="hover:no-underline py-5 text-left group w-full">
-                    <div className="flex items-center gap-5 w-full pr-4">
-                      <span className="text-xs font-mono text-[#383838] w-5 shrink-0">{d.numero}</span>
-                      <span className="text-sm font-medium text-[#c0c0c0] group-hover:text-[#f0f0f0] transition-colors flex-1">
-                        {d.titulo}
-                      </span>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="pb-5 pl-10">
-                    <ul className="space-y-2">
-                      {d.conteudo.map((c) => (
-                        <li key={c} className="fds-small">{c}</li>
-                      ))}
-                    </ul>
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
+      {/* ── AGENDA (dados do CRM) ────────────────────────────────────── */}
+      <section id="proximas" className="fds-band fds-section">
+        <div className="fds-wrap">
+          <div className="flex flex-wrap items-end justify-between gap-6">
+            <div>
+              <p className="fds-eyebrow block">Agenda</p>
+              <h2 className="fds-h2 mt-4">Próximas cidades</h2>
             </div>
-          </Accordion>
-        </section>
-      </Reveal>
-
-      {/* ── O QUE ESTÁ INCLUÍDO ───────────────────── */}
-      <Reveal>
-        <section className="fds-band">
-          <div className="fds-wrap fds-section grid sm:grid-cols-2 gap-12 lg:gap-20 items-start">
-            <h2
-              className="fds-h2"
-            >
-              O que está<br />incluído.
-            </h2>
-            <ul className="divide-y divide-white/5">
-              {incluso.map((item) => (
-                <li key={item} className="py-4 text-sm text-[#505050] first:pt-0">
-                  {item}
-                </li>
-              ))}
-            </ul>
+            <p className="fds-body max-w-sm">Vagas limitadas pelo tamanho da sala — quando lota, lotou.</p>
           </div>
-        </section>
-      </Reveal>
 
-      {/* ── PRÓXIMAS CIDADES ─────────────────────── */}
-      <Reveal>
-        <section id="cidades" className="fds-wrap fds-section">
-          <div className="grid sm:grid-cols-2 gap-12 lg:gap-20 items-start">
-            <div className="space-y-4">
-              <h2
-                className="fds-h2"
-              >
-                Próximas<br />edições.
-              </h2>
-              <p className="fds-small">
-                Datas sendo confirmadas. Entre na lista de espera para ter prioridade nas inscrições.
-              </p>
+          {proximos.length > 0 ? (
+            <div className="mt-10 grid gap-6 md:grid-cols-2">
+              {proximos.map((ev, i) => {
+                const nomeCidade = cidade(ev.nome)
+                const tipo = formato(ev.nome)
+                return (
+                  <article
+                    key={ev.slug ?? ev.nome}
+                    className="flex flex-col gap-5"
+                    style={{
+                      border: `1px solid ${i === 0 ? 'var(--fds-accent)' : 'var(--fds-line)'}`,
+                      borderRadius: 10,
+                      background: i === 0 ? 'var(--fds-deep)' : 'transparent',
+                      padding: 'var(--fds-8)',
+                    }}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <p className="fds-eyebrow block">{i === 0 ? 'Próxima' : 'Em seguida'} · {tipo}</p>
+                        <h3 className="fds-h2 mt-2" style={{ fontSize: 32 }}>{nomeCidade}</h3>
+                      </div>
+                      <div className="text-right">
+                        <p className="fds-h2" style={{ color: 'var(--fds-accent)', fontSize: 34, lineHeight: 1 }}>{diaMes(ev.data_evento)}</p>
+                        <p className="fds-small mt-1">{diaSemana(ev.data_evento)}</p>
+                      </div>
+                    </div>
+                    <div style={{ borderTop: '1px solid var(--fds-line)', paddingTop: 20 }}>
+                      {ev.local && <p className="fds-body" style={{ color: '#d4d5d9' }}>{ev.local}</p>}
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {tipo === 'Numerologia' ? (
+                          <>
+                            <span className="fds-small" style={etiqueta}>Manhã · 09h às 13h</span>
+                            <span className="fds-small" style={etiqueta}>Tarde · 14h às 18h</span>
+                          </>
+                        ) : (
+                          <span className="fds-small" style={etiqueta}>Dia inteiro · 09h às 17h</span>
+                        )}
+                      </div>
+                      {ev.professor_convidado && <p className="fds-small mt-4">Com {ev.professor_convidado}</p>}
+                    </div>
+                    {ev.slug && (
+                      <LeadWhatsappCta
+                        texto="Garantir meu lugar"
+                        variante={i === 0 ? 'primary' : 'ghost'}
+                        className="w-full"
+                        endpoint="/api/lista-espera"
+                        corpoExtra={{ evento: ev.slug }}
+                        whatsappUrl={wa(`Olá! Quero garantir meu lugar no IDM pelo Brasil de ${nomeCidade}, dia ${diaMes(ev.data_evento)}.`)}
+                        eyebrow={`IDM pelo Brasil · ${nomeCidade}`}
+                        titulo="Garantir meu lugar"
+                        descricao="Deixe seu nome e WhatsApp: a gente confirma a sua turma e te passa a inscrição por lá."
+                        textoBotao="Quero meu lugar"
+                      />
+                    )}
+                  </article>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="fds-body mt-10">As próximas datas estão sendo fechadas. Fale com a gente e seja avisado primeiro.</p>
+          )}
+
+          <div className="mt-6 grid gap-6 md:grid-cols-2">
+            <div className="fds-card flex flex-wrap items-center justify-between gap-4" style={{ padding: 'var(--fds-6)' }}>
+              <div>
+                <p className="fds-eyebrow block">Psicanálise</p>
+                <p className="fds-body mt-1" style={{ color: '#d4d5d9' }}>Próxima imersão de dia inteiro: data a definir.</p>
+              </div>
+              <LeadWhatsappCta
+                texto="Quero ser avisado"
+                variante="ghost"
+                endpoint="/api/lista-espera"
+                corpoExtra={{ produto: 'idm-pelo-brasil-psicanalise' }}
+                whatsappUrl={wa('Olá! Quero ser avisado da próxima imersão de Psicanálise do IDM pelo Brasil.')}
+                eyebrow="Lista de espera"
+                titulo="Te avisamos primeiro"
+                descricao="Deixe seu nome e WhatsApp: você é avisado antes de todo mundo quando a próxima imersão de Psicanálise tiver data."
+                textoBotao="Entrar na lista"
+              />
+            </div>
+            <div className="fds-card flex flex-wrap items-center justify-between gap-4" style={{ padding: 'var(--fds-6)' }}>
+              <p className="fds-body" style={{ color: '#d4d5d9' }}>Sua cidade não está na lista?</p>
               <a
-                href={WA_URL}
+                href={wa('Olá! Quero que o IDM pelo Brasil venha pra minha cidade.')}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 text-sm text-[#505050] hover:text-[#808080] transition-colors"
+                className="fds-small whitespace-nowrap"
+                style={{ color: 'var(--fds-accent)', fontWeight: 600 }}
               >
-                <MessageCircle className="h-3.5 w-3.5" />
-                Entrar na lista de espera
+                Chama o IDM pra cá →
               </a>
             </div>
-            <div className="divide-y divide-white/5">
-              {cidades.map((c) => (
-                <div key={c.cidade} className="py-5 flex items-center justify-between first:pt-0">
-                  <div className="flex items-center gap-3">
-                    <MapPin className="h-3.5 w-3.5 text-[#383838] shrink-0" />
-                    <p className="text-sm text-[#c0c0c0]">{c.cidade}</p>
-                  </div>
-                  <span className="text-xs font-mono text-[#383838]">{c.status}</span>
+          </div>
+        </div>
+      </section>
+
+      {/* ── O QUE ACONTECE NO DIA ────────────────────────────────────── */}
+      <section className="fds-section">
+        <div className="fds-wrap">
+          <h2 className="fds-h2">O que acontece nesse dia.</h2>
+          <p className="fds-body mt-4">No encontro de Numerologia, em 4 horas:</p>
+          <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {ETAPAS.map((e, i) => (
+              <div key={e.titulo} style={{ borderTop: `1px solid ${i === 0 ? 'var(--fds-accent)' : 'var(--fds-line)'}`, paddingTop: 22 }}>
+                <p className="fds-h3" style={{ color: 'var(--fds-accent)' }}>{String(i + 1).padStart(2, '0')}</p>
+                <h3 className="fds-body mt-2" style={{ color: 'var(--fds-ink)', fontWeight: 600 }}>{e.titulo}</h3>
+                <p className="fds-small mt-2">{e.texto}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── GALERIA ──────────────────────────────────────────────────── */}
+      <section className="fds-band fds-section">
+        <div className="fds-wrap">
+          <h2 className="fds-h2">Quem já esteve numa sala dessas.</h2>
+          <div className="mt-10 grid grid-cols-2 gap-4 md:grid-cols-4">
+            <div className="relative col-span-2 aspect-[4/3]">
+              <Image src="/images/turmas/turma-certificados.jpg" alt="Turma reunida ao fim da aula, com os certificados" fill sizes="(min-width: 768px) 50vw, 100vw" className="rounded-[10px] object-cover" />
+            </div>
+            <div className="relative aspect-[3/4]">
+              <Image src="/images/turmas/turma-escada.jpg" alt="Turma posando na escada da unidade, com certificados" fill sizes="25vw" className="rounded-[10px] object-cover" />
+            </div>
+            <div className="relative aspect-[3/4]">
+              <Image src="/images/turmas/rodrygo-alunas.jpg" alt="Rodrygo Murari ao lado de alunas com os certificados" fill sizes="25vw" className="rounded-[10px] object-cover" />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── POR ONDE JÁ PASSOU (dados do CRM) ────────────────────────── */}
+      {passados.length > 0 && (
+        <section className="fds-section">
+          <div className="fds-wrap">
+            <h2 className="fds-h3">Por onde o IDM já passou</h2>
+            <div
+              className="mt-8 grid gap-px overflow-hidden sm:grid-cols-2 lg:grid-cols-3"
+              style={{ background: 'var(--fds-line)', border: '1px solid var(--fds-line)', borderRadius: 10 }}
+            >
+              {passados.map(ev => (
+                <div key={ev.nome} style={{ background: 'var(--fds-bg)', padding: '20px 24px' }}>
+                  <p className="fds-body" style={{ color: 'var(--fds-ink)', fontWeight: 600 }}>{cidade(ev.nome)}</p>
+                  <p className="fds-small mt-1">{mes(ev.data_evento)} · {formato(ev.nome)}</p>
                 </div>
               ))}
             </div>
           </div>
         </section>
-      </Reveal>
+      )}
 
-      {/* ── INVESTIMENTO ─────────────────────────── */}
-      <Reveal>
-        <section className="fds-wrap fds-section">
-          <div className="grid sm:grid-cols-2 gap-12 lg:gap-20 items-start">
-            <div className="space-y-4">
-              <h2
-                className="fds-h2"
-              >
-                Investimento.
-              </h2>
-              <p className="fds-small">
-                O valor varia por cidade e data. Entre em contato para saber o valor da próxima edição na sua região.
-              </p>
-              <p className="fds-small">Pix com desconto · Parcelamento em até 6x · Desconto para alunos IDM</p>
-            </div>
-            <div className="space-y-5 pt-2">
-              <a
-                href={WA_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="fds-btn fds-btn--primary w-full"
-              >
-                <MessageCircle className="h-4 w-4" />
-                Saber o valor da minha cidade
-              </a>
-              <p className="text-xs text-[#383838] text-center">Garantia de 7 dias · Política de cancelamento no FAQ abaixo</p>
-            </div>
-          </div>
-        </section>
-      </Reveal>
-
-      {/* ── FAQ ──────────────────────────────────── */}
-      <Reveal>
-        <section className="fds-band">
-          <div className="fds-wrap fds-section" style={{ maxWidth: 760 }}>
-            <h2
-              className="fds-h2"
-            >
-              Dúvidas.
-            </h2>
-            <Accordion type="single" collapsible>
-              <div className="divide-y divide-white/5">
-                {faqItems.map((item, i) => (
-                  <AccordionItem key={i} value={`faq-${i}`} className="border-0">
-                    <AccordionTrigger className="hover:no-underline py-5 text-left text-sm font-medium text-[#b0b0b0] hover:text-[#f0f0f0] transition-colors">
-                      {item.q}
-                    </AccordionTrigger>
-                    <AccordionContent className="text-sm text-[#505050] leading-relaxed pb-5">
-                      {item.a}
-                    </AccordionContent>
-                  </AccordionItem>
-                ))}
-              </div>
-            </Accordion>
-            <p className="text-xs text-[#383838] mt-8">
-              Outras dúvidas?{' '}
-              <a href={WA_URL} target="_blank" rel="noopener noreferrer" className="text-[#555555] hover:text-[#888888] transition-colors underline underline-offset-2">
-                Fale diretamente com a equipe.
-              </a>
-            </p>
-          </div>
-        </section>
-      </Reveal>
-
-      {/* ── CTA FINAL ─────────────────────────────── */}
-      <section
-        className="relative overflow-hidden py-32"
-      >
-        <Reveal className="relative max-w-3xl mx-auto px-6 sm:px-10 space-y-10">
-          <h2
-            className="fds-h1"
-          >
-            O IDM está<br />chegando até você.
+      {/* ── FECHAMENTO ───────────────────────────────────────────────── */}
+      <section className="fds-band--deep">
+        <div className="fds-wrap flex flex-wrap items-center justify-between gap-8" style={{ paddingBlock: 'var(--fds-16)' }}>
+          <h2 className="fds-h2 flex-1 basis-96" style={{ fontSize: 34 }}>
+            {primeiro ? <>{cidade(primeiro.nome)}, {diaMes(primeiro.data_evento)}.<br />{formato(primeiro.nome) === 'Numerologia' ? 'Manhã ou tarde?' : 'Te vejo lá?'}</> : <>O IDM pode ir<br />até a sua cidade.</>}
           </h2>
-          <div className="flex flex-col sm:flex-row items-start gap-4">
-            <a
-              href={WA_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="fds-btn fds-btn--primary group"
-            >
-              <MessageCircle className="h-4 w-4" />
-              Entrar na lista de espera
-            </a>
-            <Link
-              href="/programas/psicanalise-integrativa"
-              className="inline-flex items-center py-4 text-sm text-[#444444] hover:text-[#707070] transition-colors"
-            >
-              → Ver formação online
-            </Link>
+          <div className="flex flex-wrap gap-3">
+            <a href="#proximas" className="fds-btn fds-btn--primary">Ver as datas</a>
+            <Link href="/" className="fds-btn fds-btn--ghost">Conhecer o Instituto <ArrowRight className="h-3.5 w-3.5" /></Link>
           </div>
-          <p className="text-xs font-mono text-[#303030]">
-            Vagas limitadas por cidade · Prioridade para lista de espera
-          </p>
-        </Reveal>
+        </div>
       </section>
     </div>
   )

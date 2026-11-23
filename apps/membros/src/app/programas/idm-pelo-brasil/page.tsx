@@ -1,54 +1,65 @@
-import { createClient } from '@/lib/supabase/server'
 import { NavbarComecar } from '@/app/comecar/NavbarComecar'
 import { WhatsAppButton } from '@/app/comecar/WhatsAppButton'
 import { StickyCTA } from '@/app/comecar/StickyCTA'
 import { CookieBanner } from '@/app/comecar/CookieBanner'
-import { IdmBrasilContent, type ProductData } from './IdmBrasilContent'
 import { SiteFooter } from '@/components/marketing/SiteFooter'
 import { SchemaCurso } from '@/components/marketing/SchemaCurso'
+import { createSistema11Client } from '@/lib/sistema11'
+import { IdmBrasilContent, type EventoPublico } from './IdmBrasilContent'
 
-const PRODUCT_SLUG = 'idm-pelo-brasil'
+/**
+ * IDM pelo Brasil. As cidades e datas vêm de `npa_eventos` no CRM: evento
+ * novo cadastrado lá aparece aqui sozinho, e evento que passou sai da agenda
+ * e vai pra "por onde já passou". Revalida a cada 10 minutos.
+ */
+export const revalidate = 600
 
 export const metadata = {
-  title: 'IDM pelo Brasil — Workshops Presenciais',
-  description: 'Imersão presencial de Psicanálise Integrativa e PNL em 4 dias. O IDM chega até a sua cidade.',
+  title: 'IDM pelo Brasil — encontros presenciais na sua cidade',
+  description:
+    'Encontros presenciais com Rodrygo Murari: Numerologia em turmas de 4 horas (manhã ou tarde) e Psicanálise em imersão de dia inteiro, com certificado no fim.',
   alternates: { canonical: '/programas/idm-pelo-brasil' },
   openGraph: {
     url: '/programas/idm-pelo-brasil',
     type: 'website',
-    title: 'IDM pelo Brasil — Workshop Presencial',
-    description: 'Imersão presencial. 4 dias. Transformação real.',
+    title: 'IDM pelo Brasil — o método na sua cidade',
+    description: 'Numerologia em turmas de 4 horas e Psicanálise em imersão de dia inteiro. Certificado no fim do dia.',
   },
 }
 
-export default async function IdmPeloBrasilPage() {
-  const sb = await createClient()
-  const { data } = await sb
-    .from('products')
-    .select('price, original_price, highlights, cta_label, checkout_url')
-    .eq('slug', PRODUCT_SLUG)
-    .eq('is_published', true)
-    .maybeSingle()
+async function buscarEventos(): Promise<{ proximos: EventoPublico[]; passados: EventoPublico[] }> {
+  try {
+    const hoje = new Date().toISOString().slice(0, 10)
+    const sb = createSistema11Client()
+    const campos = 'nome, slug, data_evento, local, professor_convidado'
+    const [proximos, passados] = await Promise.all([
+      sb.from('npa_eventos').select(campos).gte('data_evento', hoje).order('data_evento'),
+      sb.from('npa_eventos').select(campos).lt('data_evento', hoje).not('data_evento', 'is', null)
+        .order('data_evento', { ascending: false }).limit(6),
+    ])
+    return {
+      proximos: (proximos.data ?? []) as EventoPublico[],
+      passados: (passados.data ?? []) as EventoPublico[],
+    }
+  } catch (erro) {
+    // Sem a agenda a página continua de pé, só sem os cards de data.
+    console.error('[idm-pelo-brasil] falha ao buscar eventos:', erro)
+    return { proximos: [], passados: [] }
+  }
+}
 
-  const product: ProductData | null = data
-    ? {
-        price: data.price as number | null,
-        original_price: data.original_price as number | null,
-        highlights: data.highlights as string[] | null,
-        cta_label: data.cta_label as string | null,
-        checkout_url: data.checkout_url as string | null,
-      }
-    : null
+export default async function IdmPeloBrasilPage() {
+  const { proximos, passados } = await buscarEventos()
 
   return (
-    <div className="min-h-screen bg-[#080808] text-[#f0f0f0] overflow-x-hidden">
+    <div className="min-h-screen bg-[#08090d] text-[#f2f2f3] overflow-x-hidden">
       <NavbarComecar />
       <WhatsAppButton />
       <StickyCTA />
       <CookieBanner />
-      <SchemaCurso slug={PRODUCT_SLUG} preco={product?.price ?? null} />
+      <SchemaCurso slug="idm-pelo-brasil" />
 
-      <IdmBrasilContent product={product} />
+      <IdmBrasilContent proximos={proximos} passados={passados} />
 
       <SiteFooter />
     </div>
