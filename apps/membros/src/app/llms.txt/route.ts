@@ -43,7 +43,7 @@ Contato: ${ORG.telefone}
 - [Mentoria NPS — Numerologia Pitagórica](${SITE_URL}/programas/mentoria-nps): assinatura mensal com encontros ao vivo e mapas numerológicos.
 - [Mentoria NPA](${SITE_URL}/programas/mentoria-npa): mentoria em Numerologia Pitagórica Aplicada.
 - [Practitioner em PNL](${SITE_URL}/programas/practitioner-pnl): formação em Programação Neurolinguística.
-- [IDM pelo Brasil](${SITE_URL}/programas/idm-pelo-brasil): imersões presenciais de 4 dias em cidades do Brasil.
+- [IDM pelo Brasil](${SITE_URL}/programas/idm-pelo-brasil): encontros presenciais itinerantes, em dois formatos. Numerologia (NPA): um dia com duas turmas de 4 horas no mesmo local, manhã das 09h às 13h e tarde das 14h às 18h, com Rodrygo Murari. Psicanálise (IDM PSI): imersão de dia inteiro, das 09h às 17h. Próximas datas de Numerologia: São Paulo em 05/12/2026 e Santos em 12/12/2026.
 - [Divã IDM](${SITE_URL}/programas/diva-idm): terapia online acessível, a partir de R$70 por sessão, com psicanalistas formados pelo Instituto.
 
 ## Conteúdo
