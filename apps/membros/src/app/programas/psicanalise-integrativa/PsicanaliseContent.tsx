@@ -217,9 +217,9 @@ const R2_DEPOIMENTOS = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/site
 
 const DEPOIMENTOS = [
   { id: 'wDQiV0VoBT4', frase: 'Transformei minha vida através da psicanálise.' },
-  { id: 'D4xbxCXSWoM', frase: 'A formação do iDM transformou completamente minha vida.' },
+  { id: 'dep-2026-11-24-1', frase: 'O curso de Psicanálise Integrativa me abriu uma nova carreira.' },
   { id: 'g5-wCsj1D_0', frase: 'O método integrativo me deu ferramentas práticas que uso no dia a dia.' },
-  { id: 'PxDfmS4vvM8', frase: 'Recomendo o iDM para quem busca uma formação séria em Psicanálise.' },
+  { id: 'dep-2026-11-24-2', frase: 'Foi uma jornada fantástica. Vale a pena investir no IDM.' },
   { id: 'B_lpIOk1RQo', frase: 'A metodologia do iDM é única e transformadora.' },
   { id: 'aYncgEhrXgs', frase: 'O iDM me deu as bases que eu precisava como psicanalista.' },
 ]

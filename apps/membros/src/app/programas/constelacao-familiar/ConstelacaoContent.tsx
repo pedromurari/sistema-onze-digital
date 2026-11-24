@@ -38,8 +38,8 @@ const WA_URL =
 // VSL do Despertar Sistêmico: gravação do Rodrygo + a professora da formação
 // (combinado 21/11/2026), ainda não existe. Enquanto a URL for null a página
 // esconde o bloco inteiro em vez de mostrar player vazio.
-const VIDEO_URL: string | null = null
-const VIDEO_POSTER: string | null = null
+const VIDEO_URL: string | null = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/site/constelacao/video-rodrygo.mp4'
+const VIDEO_POSTER: string | null = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/site/constelacao/video-rodrygo.jpg'
 
 // Data de início da Turma 01, definida pelo Pedro em 22/11/2026: uma semana e
 // meia depois do início dos disparos de venda (23/11). Com null, a página fala
@@ -159,12 +159,11 @@ function VideoVsl() {
 
   return (
     <div
-      className="fds-card relative w-full aspect-video overflow-hidden cursor-pointer group"
+      // Pedido do Pedro: só o play. Sem controles, sem pausar e sem avançar.
+      className={`fds-card relative w-full aspect-video overflow-hidden group ${tocando ? '' : 'cursor-pointer'}`}
       onClick={() => {
         const v = videoRef.current
-        if (!v) return
-        if (v.paused) void v.play().catch(() => {})
-        else v.pause()
+        if (v && v.paused) void v.play().catch(() => {})
       }}
     >
       <video
@@ -175,7 +174,10 @@ function VideoVsl() {
         preload="metadata"
         className="absolute inset-0 h-full w-full object-cover"
         onPlay={() => setTocando(true)}
-        onPause={() => setTocando(false)}
+        onEnded={() => setTocando(false)}
+        onContextMenu={e => e.preventDefault()}
+        disablePictureInPicture
+        controlsList="nodownload noplaybackrate"
       />
       {!tocando && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/45 transition-colors group-hover:bg-black/35">

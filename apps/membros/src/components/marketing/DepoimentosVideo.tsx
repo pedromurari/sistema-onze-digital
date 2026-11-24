@@ -12,12 +12,12 @@ import { Play, X } from 'lucide-react'
 export const R2_DEPOIMENTOS =
   'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/site/depoimentos'
 
-/** Ids dos Shorts originais, usados como nome dos arquivos no R2. */
+/** Nome dos arquivos no R2 (ids dos Shorts originais ou dep-AAAA-MM-DD-n). */
 export const DEPOIMENTOS_VIDEO = [
   'wDQiV0VoBT4',
-  'D4xbxCXSWoM',
+  'dep-2026-11-24-1',
   'g5-wCsj1D_0',
-  'PxDfmS4vvM8',
+  'dep-2026-11-24-2',
   'B_lpIOk1RQo',
   'aYncgEhrXgs',
 ]
