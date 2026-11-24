@@ -37,20 +37,19 @@ export interface BlogPost {
 }
 
 export const BLOG_POSTS: BlogPost[] = [
-  // RASCUNHOS gerados pelo sistema em 24/11/2026 a partir do briefing
-  // pré-preenchido. Ficam `publicado: false` até o Pedro/Rodrygo aprovarem:
-  // só aparecem no `npm run dev`, nunca em produção.
+  // Primeiros 3 posts, escritos pelo sistema a partir do briefing
+  // pré-preenchido e aprovados pelo Pedro em 24/11/2026.
   {
     slug: 'por-que-voce-repete-o-mesmo-padrao',
     titulo: 'Por que você repete o mesmo padrão, mesmo sabendo que ele te machuca',
     categoria: 'Psicanálise aplicada',
     resumo:
       'Você promete que dessa vez vai ser diferente, e se pega no mesmo lugar. A psicanálise tem um nome pra isso, e entender o mecanismo é o primeiro passo pra sair dele.',
-    data: '2026-11-25',
+    data: '2026-11-24',
     autor: 'Instituto Despertamente',
     leitura: 5,
     capa: '/images/turmas/aula-sala-cheia.jpg',
-    publicado: false,
+    publicado: true,
     corpo: [
       'Você termina um relacionamento e jura que o próximo vai ser diferente. Meses depois, percebe que está discutindo pelos mesmos motivos, com outra pessoa. Ou troca de emprego por causa de um chefe difícil e, no novo lugar, encontra outro chefe igualzinho. Parece azar. Quase nunca é.',
       '## O nome disso é repetição',
@@ -72,11 +71,11 @@ export const BLOG_POSTS: BlogPost[] = [
     categoria: 'Ser terapeuta',
     resumo:
       'Teoria é só uma das partes. Entenda o tripé que sustenta a formação em psicanálise e o que observar antes de escolher onde estudar.',
-    data: '2026-11-28',
+    data: '2026-11-24',
     autor: 'Instituto Despertamente',
     leitura: 5,
     capa: '/images/turmas/turma-certificados.jpg',
-    publicado: false,
+    publicado: true,
     corpo: [
       'Muita gente chega até nós com a mesma dúvida: dá pra virar psicanalista fazendo um curso? A resposta honesta é que um curso, sozinho, não forma ninguém. O que forma um psicanalista é um caminho com três partes que precisam andar juntas.',
       '## O tripé da formação',
@@ -99,11 +98,11 @@ export const BLOG_POSTS: BlogPost[] = [
     categoria: 'Constelação familiar',
     resumo:
       'Às vezes o peso que você sente não começou em você. Entenda o que a abordagem sistêmica chama de lealdade familiar e como ela aparece no dia a dia.',
-    data: '2026-12-02',
+    data: '2026-11-24',
     autor: 'Instituto Despertamente',
     leitura: 5,
     capa: '/images/turmas/turma-grupo.jpg',
-    publicado: false,
+    publicado: true,
     corpo: [
       'Tem gente que nunca consegue juntar dinheiro, por mais que ganhe bem. Tem gente que sabota todo relacionamento que começa a dar certo. E tem gente que sente uma tristeza sem motivo aparente, como se estivesse de luto por alguém que nem conheceu. Quando olhamos pra família, muitas vezes a história começa a fazer sentido.',
       '## O que é uma lealdade invisível',
