@@ -722,11 +722,19 @@ export function PsicanaliseContent() {
             </Reveal>
             <Reveal className="fds-card" style={{ padding: 'var(--fds-4)' }}>
               <Image
-                src="/images/certificado-idm.png"
-                alt="Certificado do Instituto DespertaMENTE"
-                width={800}
-                height={564}
+                src="/images/certificado-psicanalise-frente.jpg"
+                alt="Certificado da formação em Psicanálise Clínica Integrativa, frente"
+                width={1600}
+                height={1131}
                 className="w-full rounded"
+                style={{ borderRadius: 6 }}
+              />
+              <Image
+                src="/images/certificado-psicanalise-verso.jpg"
+                alt="Verso do certificado: grade curricular em 4 arcos, 580 horas e 27 módulos"
+                width={1600}
+                height={1131}
+                className="mt-4 w-full rounded"
                 style={{ borderRadius: 6 }}
               />
             </Reveal>
