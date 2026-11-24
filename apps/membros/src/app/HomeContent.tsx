@@ -287,7 +287,7 @@ export function HomeContent() {
               <p className="fds-small mt-2">Conheça o modelo da Franquia IDM PSI.</p>
             </div>
             <a href="https://www.idmpsifranquia.com.br" className="fds-small whitespace-nowrap" style={{ color: 'var(--fds-accent)', fontWeight: 600 }}>
-              Ser um franqueado →
+              Seja um franqueado →
             </a>
           </div>
         </div>
