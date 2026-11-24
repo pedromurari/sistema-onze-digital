@@ -52,7 +52,7 @@ export default async function PractitionerPnlPage() {
       <ProgramaContent
         product={product}
         waMessage="Olá! Quero entrar na lista de espera da próxima turma do Practitioner em PNL."
-        proximaTurma={{ previsao: '2 de março de 2027', detalhe: '8 sessões ao vivo, uma por semana, às terças-feiras.', listaEspera: 'practitioner-pnl' }}
+        proximaTurma={{ previsao: '15 de janeiro de 2027', detalhe: '8 sessões ao vivo, uma por semana, às terças-feiras.', listaEspera: 'practitioner-pnl' }}
         eyebrow="Instituto Despertamente · Formação certificante"
         titulo={['Practitioner', 'em PNL.']}
         tagline="Programação Neurolinguística na prática: entenda como a mente cria padrões — e aprenda a técnica pra mudar os que não servem mais."
