@@ -212,7 +212,18 @@ export function IdmBrasilContent({
                       </div>
                       {ev.professor_convidado && <p className="fds-small mt-4">Com {ev.professor_convidado}</p>}
                     </div>
-                    {ev.slug && (
+                    {ev.slug && tipo === 'Numerologia' && (
+                      // Cada turma de Numerologia tem página própria de inscrição
+                      // (rota /npa/:slug do CRM, com vídeo e checkout do Vega).
+                      <a
+                        href={`https://www.idmpelobrasil.com.br/npa/${ev.slug}`}
+                        className={`fds-btn ${i === 0 ? 'fds-btn--primary' : 'fds-btn--ghost'} w-full`}
+                      >
+                        Garantir meu lugar
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </a>
+                    )}
+                    {ev.slug && tipo !== 'Numerologia' && (
                       <LeadWhatsappCta
                         texto="Garantir meu lugar"
                         variante={i === 0 ? 'primary' : 'ghost'}
