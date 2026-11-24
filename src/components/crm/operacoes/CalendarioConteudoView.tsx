@@ -95,6 +95,7 @@ const FORMAT = [
   { id: 'video', label: 'Vídeo' },
   { id: 'short', label: 'Short' },
   { id: 'anuncio', label: 'Anúncio' },
+  { id: 'live', label: 'Live' },
 ] as const;
 
 const CATEGORIAS = [
@@ -103,6 +104,7 @@ const CATEGORIAS = [
   { label: '📢 Anúncios', test: (c: ConteudoCalendario) => c.formato === 'anuncio' },
   { label: '📱 Stories', test: (c: ConteudoCalendario) => c.formato === 'stories' },
   { label: '📺 YouTube Longo', test: (c: ConteudoCalendario) => c.plataforma === 'youtube' && c.formato === 'video' },
+  { label: '🔴 Lives', test: (c: ConteudoCalendario) => c.formato === 'live' },
 ] as const;
 
 const emptyForm = (date = ''): ContentForm => ({
