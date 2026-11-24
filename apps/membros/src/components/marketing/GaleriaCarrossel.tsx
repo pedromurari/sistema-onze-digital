@@ -84,7 +84,8 @@ function Faixa({ fotos, sentido, abrir }: { fotos: Foto[]; sentido: 'esq' | 'dir
   )
 }
 
-export function GaleriaCarrossel() {
+/** `compacta`: uma faixa só e fotos menores (bloco do IDM pelo Brasil na home). */
+export function GaleriaCarrossel({ compacta = false }: { compacta?: boolean }) {
   const [aberta, setAberta] = useState<number | null>(null)
   // As fotos só começam a baixar quando a galeria chega perto da tela.
   // (loading="lazy" não serve aqui: a foto entra na tela pelo transform do
@@ -114,10 +115,10 @@ export function GaleriaCarrossel() {
   }, [aberta])
 
   return (
-    <div ref={caixa} style={{ display: 'grid', gap: 14, minHeight: 'calc(2 * clamp(180px, 26vw, 300px) + 14px)', ['--gal-h' as string]: 'clamp(180px, 26vw, 300px)' }}>
+    <div ref={caixa} style={{ display: 'grid', gap: 14, minHeight: compacta ? 'clamp(150px, 18vw, 210px)' : 'calc(2 * clamp(180px, 26vw, 300px) + 14px)', ['--gal-h' as string]: compacta ? 'clamp(150px, 18vw, 210px)' : 'clamp(180px, 26vw, 300px)' }}>
       <style>{CSS}</style>
-      {perto && <Faixa fotos={FAIXA_A} sentido="esq" abrir={abrir} />}
-      {perto && <Faixa fotos={FAIXA_B} sentido="dir" abrir={abrir} />}
+      {perto && <Faixa fotos={compacta ? TODAS : FAIXA_A} sentido="esq" abrir={abrir} />}
+      {perto && !compacta && <Faixa fotos={FAIXA_B} sentido="dir" abrir={abrir} />}
 
       {aberta !== null && (
         <div className="gal-caixa" role="dialog" aria-modal="true" onClick={() => setAberta(null)}>

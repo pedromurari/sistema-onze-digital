@@ -17,6 +17,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
 import { DepoimentosVideo } from '@/components/marketing/DepoimentosVideo'
+import { GaleriaCarrossel } from '@/components/marketing/GaleriaCarrossel'
 import { postsPublicados, formatarData } from '@/content/blog'
 
 const WHATSAPP = 'https://wa.me/5511930439385?text=' +
@@ -251,17 +252,9 @@ export function HomeContent() {
               Ver as próximas cidades <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
-          <div className="mt-10 grid grid-cols-2 gap-4 md:grid-cols-4">
-            <div className="relative col-span-2 aspect-[4/3]">
-              <Image src="/images/turmas/turma-certificados.jpg" alt="Turma reunida com os certificados do curso" fill sizes="(min-width: 768px) 50vw, 100vw" className="rounded-[10px] object-cover" />
-            </div>
-            <div className="relative aspect-[4/5]">
-              <Image src="/images/turmas/turma-grupo.jpg" alt="Alunos de uma turma presencial ao fim da aula" fill sizes="25vw" className="rounded-[10px] object-cover" />
-            </div>
-            <div className="relative aspect-[4/5]">
-              <Image src="/images/turmas/turma-escada.jpg" alt="Turma reunida na escada da unidade, com certificados" fill sizes="25vw" className="rounded-[10px] object-cover" />
-            </div>
-          </div>
+        </div>
+        <div className="mt-10">
+          <GaleriaCarrossel compacta />
         </div>
       </section>
 
