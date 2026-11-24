@@ -61,10 +61,10 @@ export default async function MentoriaNpsPage() {
         // Black IDM (24/11/2026): 1ª mensalidade pela metade, o IDM paga a
         // outra metade. O valor de verdade é cobrado pelo nps-matricula-criar
         // (BLACK_NPS_ATE) -- se mudar aqui, mudar lá.
-        oferta={{ rotulo: 'Black IDM · 1º mês pela metade', primeira: 50, nota: 'Na Black Friday, o IDM paga metade da sua primeira mensalidade.' }}
+        oferta={{ rotulo: 'Black IDM · 1º mês pela metade', primeira: 50, nota: 'Na Black Friday, o IDM paga metade da sua primeira mensalidade. Condição válida só até 30 de novembro; depois, a primeira mensalidade volta a ser R$ 100.' }}
         faixas={[
-          ['Black Friday na Mentoria NPS', '1º mês por R$ 50', 'O IDM paga metade pra você', 'Aberta pra todos', 'Bônus: curso NPA gravado'],
-          ['Encontros ao vivo com Rodrygo Murari', 'Plataforma do Mapa 7 Esferas', 'Até 8 mapas por mês', 'Um tema novo a cada encontro', 'Gravações na área de membros', '1º mês por R$ 50'],
+          ['Black Friday na Mentoria NPS', '1º mês por R$ 50', 'Só até 30 de novembro', 'O IDM paga metade pra você', 'Aberta pra todos', 'Bônus: curso NPA gravado'],
+          ['Encontros ao vivo com Rodrygo Murari', 'Plataforma do Mapa 7 Esferas', 'Até 8 mapas por mês', 'Um tema novo a cada encontro', 'Gravações na área de membros', '1º mês por R$ 50 até 30/11'],
         ]}
         waMessage="Olá! Tenho interesse na Mentoria NPS (Numerologia Pitagórica)."
         eyebrow="Instituto Despertamente · Aperfeiçoamento contínuo"
@@ -95,7 +95,7 @@ export default async function MentoriaNpsPage() {
         ]}
         faqItems={[
           { q: 'Preciso ter feito o NPA antes?', a: 'Não. A Mentoria NPS é aberta pra todos: quem já fez o NPA aprofunda, e quem está começando aprende nos encontros ao vivo e nas gravações.' },
-          { q: 'Como funciona a promoção de Black Friday?', a: 'Quem entra durante a Black IDM paga só R$ 50 na primeira mensalidade, porque o IDM paga a outra metade. A partir do segundo mês, a mensalidade é R$ 100, sem fidelidade.' },
+          { q: 'Como funciona a promoção de Black Friday?', a: 'Quem entra durante a Black IDM paga só R$ 50 na primeira mensalidade, porque o IDM paga a outra metade. A partir do segundo mês, a mensalidade é R$ 100, sem fidelidade. A condição vale até 30 de novembro; depois disso, volta ao valor normal.' },
           { q: 'Os mapas numerológicos (Mapa 7 Esferas) são meus ou dos meus clientes?', a: 'Você pode usar as 8 leituras mensais pra praticar com seus próprios clientes/casos reais — é o mesmo material que você vai entregar no seu atendimento.' },
           { q: 'O que muda de um encontro pro outro?', a: 'Cada encontro traz um tema diferente: destino, imagem, obstrução, prosperidade, hemisférios, estudo de caso. Os temas se intercalam, então a mentoria funciona como um aperfeiçoamento contínuo, e não como um curso com começo e fim.' },
           { q: 'Ganho o curso NPA junto?', a: 'Sim. Quem assina a Mentoria NPS recebe de bônus o curso NPA gravado, na área de membros, pra estudar a base no seu ritmo.' },
