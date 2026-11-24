@@ -363,7 +363,18 @@ export default function TurmaCaptura() {
           <div className="lg:sticky lg:top-8">
             <div className="relative w-full overflow-hidden rounded-2xl shadow-2xl border border-white/10 aspect-video bg-black">
               {videoTocando ? (
-                <video src={VIDEO_URL} controls autoPlay className="h-full w-full object-cover" />
+                // Pedido do Pedro: só o play. Sem controles: não pausa, não
+                // adianta, não muda velocidade. Ao terminar, volta a capa.
+                <video
+                  src={VIDEO_URL}
+                  autoPlay
+                  playsInline
+                  disablePictureInPicture
+                  controlsList="nodownload noplaybackrate nofullscreen"
+                  onContextMenu={(e) => e.preventDefault()}
+                  onEnded={() => setVideoTocando(false)}
+                  className="h-full w-full object-cover"
+                />
               ) : (
                 <button type="button" aria-label="Assistir ao vídeo" className="group relative block h-full w-full" onClick={() => setVideoTocando(true)}>
                   <img src={VIDEO_POSTER} alt="Capa do vídeo" className="h-full w-full object-cover" />
