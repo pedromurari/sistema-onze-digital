@@ -143,34 +143,16 @@ const ARCOS = [
   },
 ]
 
+// Bônus da Black IDM, conforme o roteiro do Rodrygo (24/11/2026).
 const BONUS = [
-  {
-    icone: Users,
-    titulo: '10 Sessões de Supervisão Clínica',
-    valor: 'R$ 1.200,00',
-    texto: 'Acompanhamento personalizado com supervisores experientes',
-  },
-  {
-    icone: Brain,
-    titulo: 'Curso Essencial Practitioner em PNL',
-    valor: 'R$ 790,00',
-    texto: 'Técnicas avançadas de Programação Neurolinguística',
-    selo: 'Encontros ao vivo',
-  },
-  {
-    icone: Heart,
-    titulo: 'Workshop "Cicatrizes que Curam"',
-    valor: 'R$ 47,90',
-    texto: 'Metodologia exclusiva para transformar traumas em força',
-    selo: 'Encontro ao vivo',
-  },
-  {
-    icone: Sparkles,
-    titulo: 'Workshop Reikiano com Elaine Ruivo',
-    valor: 'R$ 47,90',
-    texto: 'Workshop exclusivo com especialista em Reiki',
-    selo: 'Encontro ao vivo',
-  },
+  { icone: Users, titulo: '10 Sessões de Supervisão Clínica', valor: 'R$ 1.200,00', texto: 'Acompanhamento dos seus primeiros atendimentos com supervisores experientes' },
+  { icone: Brain, titulo: 'Curso Practitioner em PNL', valor: 'R$ 790,00', texto: 'Formação em Programação Neurolinguística', selo: 'Encontros ao vivo' },
+  { icone: Heart, titulo: '3 Sessões de Análise', valor: 'R$ 540,00', texto: 'Sua análise pessoal começando junto com a formação' },
+  { icone: Heart, titulo: 'Workshop "Cicatrizes que Curam"', valor: 'R$ 150,00', texto: 'Melancolia, ansiedade, luto e depressão pela ótica da Psicanálise', selo: 'Encontro ao vivo' },
+  { icone: Users, titulo: 'Workshop "O Despertar Sistêmico"', valor: 'R$ 150,00', texto: 'O olhar da Constelação Familiar sobre os vínculos', selo: 'Encontro ao vivo' },
+  { icone: Sparkles, titulo: 'Workshop "O Despertar da Energia Vital"', valor: 'R$ 150,00', texto: 'Alinhamento dos chakras', selo: 'Encontro ao vivo' },
+  { icone: Target, titulo: 'Workshop "O Despertar dos Números"', valor: 'R$ 150,00', texto: 'Numerologia Pitagórica Sistêmica', selo: 'Encontro ao vivo' },
+  { icone: Lightbulb, titulo: 'Workshop "Reprogramando sua Mente com PNL"', valor: 'R$ 150,00', texto: 'Ferramentas da PNL aplicadas ao dia a dia', selo: 'Encontro ao vivo' },
 ]
 
 const PAGAMENTOS = [
@@ -186,18 +168,18 @@ const PAGAMENTOS = [
   {
     icone: CreditCard,
     titulo: 'Cartão de Crédito',
-    valor: '12x R$ 150,00',
+    valor: '12x R$ 137,00',
     texto: 'Parcelado no Cartão de Crédito',
-    total: 'R$ 1.800,00',
+    total: 'R$ 1.644,00',
     itens: ['Sem juros', 'Acesso imediato', 'Parcelas fixas'],
     melhor: false,
   },
   {
     icone: FileText,
     titulo: 'Boleto ou Cartão Recorrente',
-    valor: '15x R$ 150,00',
+    valor: '15x R$ 139,00',
     texto: 'No boleto bancário ou cartão recorrente',
-    total: 'R$ 2.250,00',
+    total: 'R$ 2.085,00',
     itens: ['Boleto ou cartão, você escolhe', 'Mais parcelas', 'Facilita o orçamento'],
     melhor: false,
   },
@@ -302,6 +284,35 @@ function BlocoMec({ comRodape = true }: { comRodape?: boolean }) {
   )
 }
 
+/* ── Black IDM ─────────────────────────────────────────────────────────
+ * Promoção de Black Friday liberada pelo Rodrygo em 24/11/2026. Pra
+ * encerrar: BLACK_ATIVA = false e voltar os preços de PAGAMENTOS e a
+ * lista de BONUS pros valores normais. */
+const BLACK_ATIVA = true
+
+function FaixaBlack({ compacta = false }: { compacta?: boolean }) {
+  if (!BLACK_ATIVA) return null
+  return (
+    <div
+      className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-center"
+      style={{
+        background: 'var(--fds-accent)',
+        color: '#080808',
+        padding: compacta ? '10px 16px' : '14px 16px',
+        fontWeight: 700,
+        letterSpacing: '0.02em',
+      }}
+    >
+      <span style={{ background: '#080808', color: 'var(--fds-accent)', padding: '2px 10px', borderRadius: 4, fontSize: 13, letterSpacing: '0.12em' }}>
+        BLACK IDM
+      </span>
+      <span style={{ fontSize: compacta ? 14 : 15 }}>
+        Promoção de Black Friday liberada · 52% de desconto + R$ 3.280 em bônus
+      </span>
+    </div>
+  )
+}
+
 /* ── Página ────────────────────────────────────────────────────────────── */
 
 export function PsicanaliseContent() {
@@ -309,13 +320,16 @@ export function PsicanaliseContent() {
 
   return (
     <div className="fds">
+      <FaixaBlack />
       {/* ══ ABERTURA ═══════════════════════════════════════════════════ */}
       <section className="fds-band--deep" style={{ paddingTop: 'var(--fds-30)', paddingBottom: 'var(--fds-24)' }}>
         <div className="fds-wrap">
           <Reveal>
-            <p className="fds-eyebrow block">Formação reconhecida</p>
+            <p className="fds-eyebrow block">{BLACK_ATIVA ? 'Black IDM · Black Friday liberada' : 'Formação reconhecida'}</p>
             <p className="fds-meta mt-4">
-              Matrículas abertas · Turmas iniciando todo mês
+              {BLACK_ATIVA
+                ? 'Condição especial de Black Friday · 15x R$ 139 no boleto ou R$ 1.500 no PIX'
+                : 'Matrículas abertas · Turmas iniciando todo mês'}
             </p>
 
             <h1 className="fds-display mt-8 max-w-4xl">
@@ -361,7 +375,7 @@ export function PsicanaliseContent() {
 
             <div className="mt-12 flex flex-wrap items-center gap-6">
               <LeadWhatsappCta texto="Quero transformar minha vida" />
-              <p className="fds-meta">Matrículas abertas · Turmas iniciando todo mês</p>
+              <p className="fds-meta">{BLACK_ATIVA ? 'Black IDM · condição de Black Friday por tempo limitado' : 'Matrículas abertas · Turmas iniciando todo mês'}</p>
             </div>
           </Reveal>
         </div>
@@ -475,7 +489,7 @@ export function PsicanaliseContent() {
       <section className="fds-section">
         <div className="fds-wrap">
           <Reveal>
-            <p className="fds-eyebrow block">Bônus exclusivos</p>
+            <p className="fds-eyebrow block">{BLACK_ATIVA ? 'Bônus da Black IDM' : 'Bônus exclusivos'}</p>
             <h2 className="fds-h2 mt-4 max-w-3xl">
               Garanta hoje e receba <span className="fds-accent">grátis</span>
             </h2>
@@ -505,15 +519,14 @@ export function PsicanaliseContent() {
             <div>
               <p className="fds-meta">Valor total dos bônus</p>
               <p className="fds-h2 mt-3">
-                <span className="fds-accent">R$ 2.085,80</span>
+                <span className="fds-accent">R$ 3.280,00</span>
               </p>
             </div>
             <div className="flex items-start gap-3" style={{ maxWidth: 420 }}>
               <Gift className="mt-1 h-4 w-4 shrink-0" style={{ color: 'var(--fds-accent)' }} />
               <p className="fds-small">
-                Gratuitos para quem garantir a vaga hoje. Esta é uma oportunidade única e por
-                tempo limitado — não perca a chance de transformar sua vida com essa formação
-                completa.
+                Presentes do Instituto para quem entrar na formação durante a Black IDM,
+                a promoção de Black Friday do Instituto Despertamente.
               </p>
             </div>
           </Reveal>
@@ -521,33 +534,34 @@ export function PsicanaliseContent() {
       </section>
 
       {/* ══ INVESTIMENTO ═══════════════════════════════════════════════ */}
+      <FaixaBlack compacta />
       <section className="fds-band fds-section" id="investimento">
         <div className="fds-wrap">
           <Reveal>
-            <p className="fds-eyebrow block">Investimento</p>
+            <p className="fds-eyebrow block">Black IDM · Investimento</p>
             <h2 className="fds-h2 mt-4 max-w-3xl">
-              Investimento na sua <span className="fds-accent">transformação</span>
+              Black Friday liberada na <span className="fds-accent">formação</span>
             </h2>
             <p className="fds-lead mt-6">
-              Uma oportunidade única de investir em você mesmo e construir uma carreira de
-              propósito.
+              Durante a Black IDM, a formação sai com mais de 52% de desconto sobre o valor de
+              referência, e todos os bônus acima vêm junto.
             </p>
           </Reveal>
 
           <Reveal className="mt-16 flex flex-wrap items-end gap-x-16 gap-y-8">
             <div>
-              <p className="fds-meta">Valor original</p>
+              <p className="fds-meta">Valor de referência</p>
               <p className="fds-h3 mt-3" style={{ color: 'var(--fds-ink-4)', textDecoration: 'line-through' }}>
-                R$ 3.750,00
+                15x R$ 290,00
               </p>
-              <p className="fds-small mt-2">Preço sem os bônus exclusivos</p>
+              <p className="fds-small mt-2">R$ 4.350,00 no total</p>
             </div>
             <div>
-              <p className="fds-meta">Oferta especial</p>
+              <p className="fds-meta">Preço Black IDM</p>
               <p className="fds-display mt-3" style={{ fontSize: 'clamp(2.5rem, 6vw, 4rem)' }}>
                 <span className="fds-accent">R$ 1.500,00</span>
               </p>
-              <p className="fds-small mt-2">à vista no PIX · Economize mais de R$ 2.200</p>
+              <p className="fds-small mt-2">à vista no PIX · ou 15x R$ 139,00 no boleto</p>
             </div>
           </Reveal>
 
@@ -593,7 +607,7 @@ export function PsicanaliseContent() {
 
           <Reveal className="mt-16 flex flex-wrap items-center gap-6">
             <LeadWhatsappCta texto="Quero garantir minha vaga" />
-            <p className="fds-meta">Matrículas abertas · Turmas iniciando todo mês</p>
+            <p className="fds-meta">{BLACK_ATIVA ? 'Black IDM · condição de Black Friday por tempo limitado' : 'Matrículas abertas · Turmas iniciando todo mês'}</p>
           </Reveal>
         </div>
       </section>
@@ -736,6 +750,7 @@ export function PsicanaliseContent() {
       </section>
 
       {/* ══ FECHAMENTO ═════════════════════════════════════════════════ */}
+      <FaixaBlack compacta />
       <section className="fds-band--deep" style={{ paddingBlock: 'var(--fds-24)' }}>
         <div className="fds-wrap">
           <h2 className="fds-h2 max-w-3xl">
@@ -743,7 +758,7 @@ export function PsicanaliseContent() {
           </h2>
           <div className="mt-10 flex flex-wrap items-center gap-6">
             <LeadWhatsappCta texto="Quero transformar minha vida" />
-            <p className="fds-meta">Matrículas abertas · Turmas iniciando todo mês</p>
+            <p className="fds-meta">{BLACK_ATIVA ? 'Black IDM · condição de Black Friday por tempo limitado' : 'Matrículas abertas · Turmas iniciando todo mês'}</p>
           </div>
         </div>
       </section>
