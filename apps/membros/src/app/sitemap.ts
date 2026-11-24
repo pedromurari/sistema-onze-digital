@@ -24,6 +24,7 @@ const PROGRAMAS = [
   'practitioner-pnl',
   'idm-pelo-brasil',
   'diva-idm',
+  'sociedade-idm',
 ]
 
 export default function sitemap(): MetadataRoute.Sitemap {

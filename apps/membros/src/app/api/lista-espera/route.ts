@@ -19,6 +19,7 @@ const PRODUTOS: Record<string, string> = {
   'mentoria-npa': 'Mentoria NPA',
   'practitioner-pnl': 'Practitioner em PNL',
   'idm-pelo-brasil-psicanalise': 'IDM pelo Brasil — Psicanálise presencial',
+  'sociedade-idm': 'Sociedade IDM',
 }
 
 const soDigitos = (v: unknown) => String(v ?? '').replace(/\D/g, '')

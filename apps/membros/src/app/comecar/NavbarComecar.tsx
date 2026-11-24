@@ -30,6 +30,7 @@ const NAV_ITEMS: NavItem[] = [
       { label: 'Mentoria NPS', href: '/programas/mentoria-nps' },
       { label: 'IDM Pelo Brasil', href: '/programas/idm-pelo-brasil' },
       { label: 'Despertar Sistêmico (Constelação Familiar)', href: '/programas/constelacao-familiar' },
+      { label: 'Sociedade IDM', href: '/programas/sociedade-idm' },
       // Antes apontava pra /loja, que é da área de membros e jogava o
       // visitante no login.
       { label: 'Ver todos os programas', href: '/programas' },

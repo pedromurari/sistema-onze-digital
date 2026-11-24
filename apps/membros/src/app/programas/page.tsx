@@ -48,11 +48,18 @@ const PROGRAMAS: Programa[] = [
     situacao: 'A partir de R$ 70 a sessão',
   },
   {
+    href: '/programas/sociedade-idm',
+    titulo: 'Sociedade IDM',
+    tipo: 'Associação',
+    descricao: 'Aperfeiçoamento contínuo, acompanhamento e networking pra quem cuida da mente. Porta de entrada pro Divã IDM.',
+    situacao: 'R$ 150/mês · aberta a todos',
+  },
+  {
     href: '/programas/practitioner-pnl',
     titulo: 'Practitioner em PNL',
     tipo: 'Formação',
     descricao: '8 sessões ao vivo, uma por semana, todas gravadas na plataforma.',
-    situacao: 'Próxima turma: previsão 2 de março',
+    situacao: 'Próxima turma: previsão 15 de janeiro',
   },
   {
     href: '/programas/mentoria-npa',
