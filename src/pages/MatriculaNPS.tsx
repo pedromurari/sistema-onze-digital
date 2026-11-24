@@ -145,6 +145,15 @@ export default function MatriculaNPS() {
       </header>
 
       <main style={{ maxWidth: 560, margin: '0 auto', padding: '32px 16px 64px' }}>
+        {/* Black IDM: o valor real vem do nps-matricula-criar (BLACK_NPS_ATE). */}
+        {!pix && new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date()) <= '2026-11-30' && (
+          <div style={{ background: '#FFB800', color: '#080808', borderRadius: 10, padding: '14px 18px', marginBottom: 20, fontWeight: 700, textAlign: 'center' }}>
+            BLACK IDM · Sua 1ª mensalidade sai por R$ 50 (o IDM paga a metade).
+            <span style={{ display: 'block', fontWeight: 500, fontSize: '0.875rem', marginTop: 4 }}>
+              Depois, R$ 100/mês. Sem fidelidade.
+            </span>
+          </div>
+        )}
         {!pix && (
           <section className="form-section">
             <div className="section-header">

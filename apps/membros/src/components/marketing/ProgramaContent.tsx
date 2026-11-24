@@ -1,6 +1,7 @@
 'use client'
 
 import { LeadWhatsappCta } from '@/components/marketing/LeadWhatsappModal'
+import { FaixaLetreiro } from '@/components/marketing/FaixaLetreiro'
 import { useRef, type ReactNode } from 'react'
 import { motion, useInView, useReducedMotion } from 'framer-motion'
 import { ArrowRight, Check, MessageCircle } from 'lucide-react'
@@ -80,9 +81,12 @@ export type ProximaTurma = {
   listaEspera: string
 }
 
+/** Promoção na mensalidade: só a 1ª sai pelo `primeira`, depois volta ao preço normal. */
+export type OfertaAssinatura = { rotulo: string; primeira: number; nota: string }
+
 function PriceBlock({
-  product, waUrl, proximaTurma, checkoutUrlFixo,
-}: { product: ProductData | null; waUrl: string; proximaTurma?: ProximaTurma; checkoutUrlFixo?: string }) {
+  product, waUrl, proximaTurma, checkoutUrlFixo, oferta,
+}: { product: ProductData | null; waUrl: string; proximaTurma?: ProximaTurma; checkoutUrlFixo?: string; oferta?: OfertaAssinatura }) {
   // Turma fechada manda sobre o preço: sem turma aberta não existe checkout,
   // mesmo que o produto tenha preço cadastrado.
   if (proximaTurma) {
@@ -132,6 +136,41 @@ function PriceBlock({
 
   const checkoutUrl = checkoutUrlFixo ?? product.checkout_url ?? '/loja'
   const isSubscription = product.payment_type === 'subscription'
+
+  if (isSubscription && oferta) {
+    return (
+      <div className="fds-card" style={{ padding: 'var(--fds-8)', borderColor: 'var(--fds-accent)' }}>
+        <p className="fds-eyebrow" style={{ color: 'var(--fds-accent)' }}>{oferta.rotulo}</p>
+        <p className="fds-small mt-3" style={{ color: 'var(--fds-ink-4)' }}>
+          1ª mensalidade <span style={{ textDecoration: 'line-through' }}>R$ {product.price.toLocaleString('pt-BR')}</span>
+        </p>
+        <div className="mt-1 flex items-end gap-2">
+          <span className="fds-h1" style={{ lineHeight: 1, color: 'var(--fds-accent)' }}>
+            R$ {oferta.primeira.toLocaleString('pt-BR')}
+          </span>
+          <span className="fds-small" style={{ paddingBottom: 4, color: 'var(--fds-ink-4)' }}>no 1º mês</span>
+        </div>
+        <p className="fds-small mt-3">{oferta.nota}</p>
+        <p className="fds-small mt-2" style={{ color: 'var(--fds-ink-4)' }}>
+          Depois, R$ {product.price.toLocaleString('pt-BR')}/mês. Sem fidelidade: parou de pagar, o acesso é suspenso.
+        </p>
+        <a href={checkoutUrl} className="fds-btn fds-btn--primary mt-7 w-full" style={{ paddingBlock: 'var(--fds-4)' }}>
+          Garantir pela metade
+          <ArrowRight className="h-3.5 w-3.5" />
+        </a>
+        <a
+          href={waUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-4 flex items-center justify-center gap-2"
+          style={{ fontSize: 'var(--fds-small)', color: 'var(--fds-ink-3)' }}
+        >
+          <MessageCircle className="h-3.5 w-3.5" />
+          Prefiro tirar uma dúvida antes
+        </a>
+      </div>
+    )
+  }
 
   if (isSubscription) {
     return (
@@ -208,7 +247,11 @@ function PriceBlock({
 
 export function ProgramaContent({
   product, waMessage, eyebrow, titulo, tagline, statsLine, manifesto, incluso, modulos, faqItems, proximaTurma, checkoutUrlFixo,
+  oferta, faixas,
 }: {
+  oferta?: OfertaAssinatura
+  /** Letreiros amarelos: [topo, antes do fim]. Topo nasce embaixo do menu. */
+  faixas?: [string[], string[]]
   product: ProductData | null
   /** Sobrescreve o checkout_url do banco (ex.: NPS vai direto pra ficha de assinatura do CRM). */
   checkoutUrlFixo?: string
@@ -227,8 +270,9 @@ export function ProgramaContent({
 
   return (
     <div className="fds">
+      {faixas && <FaixaLetreiro itens={faixas[0]} abaixoDoMenu />}
       {/* ── HERO + OFERTA ────────────────────────── */}
-      <section className="fds-band--deep" style={{ paddingTop: 'var(--fds-30)', paddingBottom: 'var(--fds-24)' }}>
+      <section className="fds-band--deep" style={{ paddingTop: faixas ? 'var(--fds-12)' : 'var(--fds-30)', paddingBottom: 'var(--fds-24)' }}>
         <div className="fds-wrap">
           <motion.div
             initial={{ opacity: 0, y: 24 }}
@@ -268,7 +312,7 @@ export function ProgramaContent({
             </div>
 
             <div id="investimento">
-              <PriceBlock product={product} waUrl={waUrl} proximaTurma={proximaTurma} checkoutUrlFixo={checkoutUrlFixo} />
+              <PriceBlock product={product} waUrl={waUrl} proximaTurma={proximaTurma} checkoutUrlFixo={checkoutUrlFixo} oferta={oferta} />
             </div>
           </div>
         </div>
@@ -344,7 +388,7 @@ export function ProgramaContent({
           <Reveal>
             <div className="grid grid-cols-1 sm:grid-cols-3">
               {[
-                { n: '12.000+', l: 'Pessoas impactadas pelo método' },
+                { n: '+500', l: 'Pessoas impactadas pelo método' },
                 { n: '20 anos', l: 'De experiência' },
                 { n: 'Nacional', l: 'Alunos em todo o Brasil' },
               ].map((item, i) => (
@@ -404,6 +448,7 @@ export function ProgramaContent({
       </section>
 
       {/* ── CTA FINAL ─────────────────────────────── */}
+      {faixas && <FaixaLetreiro itens={faixas[1]} compacta />}
       <section className="fds-band--deep" style={{ paddingBlock: 'var(--fds-30)' }}>
         <div className="fds-wrap">
           <div className="grid gap-14 lg:grid-cols-[1fr_0.8fr] lg:items-center lg:gap-20">
@@ -418,7 +463,7 @@ export function ProgramaContent({
               </p>
             </Reveal>
             <Reveal>
-              <PriceBlock product={product} waUrl={waUrl} proximaTurma={proximaTurma} checkoutUrlFixo={checkoutUrlFixo} />
+              <PriceBlock product={product} waUrl={waUrl} proximaTurma={proximaTurma} checkoutUrlFixo={checkoutUrlFixo} oferta={oferta} />
             </Reveal>
           </div>
         </div>

@@ -58,22 +58,32 @@ export default async function MentoriaNpsPage() {
         // Assinatura não passa pela vendedora: vai direto pra ficha do NPS
         // (PIX SyncPay -> acesso à área de membros + boas-vindas com o grupo).
         checkoutUrlFixo="https://sistema.idmpsi.com.br/matricula/nps"
+        // Black IDM (24/11/2026): 1ª mensalidade pela metade, o IDM paga a
+        // outra metade. O valor de verdade é cobrado pelo nps-matricula-criar
+        // (BLACK_NPS_ATE) -- se mudar aqui, mudar lá.
+        oferta={{ rotulo: 'Black IDM · 1º mês pela metade', primeira: 50, nota: 'Na Black Friday, o IDM paga metade da sua primeira mensalidade.' }}
+        faixas={[
+          ['Black Friday na Mentoria NPS', '1º mês por R$ 50', 'O IDM paga metade pra você', 'Aberta pra todos', 'Bônus: curso NPA gravado'],
+          ['Encontros ao vivo com Rodrygo Murari', 'Plataforma do Mapa 7 Esferas', 'Até 8 mapas por mês', 'Um tema novo a cada encontro', 'Gravações na área de membros', '1º mês por R$ 50'],
+        ]}
         waMessage="Olá! Tenho interesse na Mentoria NPS (Numerologia Pitagórica)."
-        eyebrow="Instituto Despertamente · Mentoria contínua"
+        eyebrow="Instituto Despertamente · Aperfeiçoamento contínuo"
         titulo={['Mentoria', 'NPS.']}
-        tagline="Numerologia Pitagórica aplicada, com acompanhamento ao vivo pra você virar referência na sua leitura."
+        tagline="Numerologia Pitagórica em aperfeiçoamento contínuo: encontros ao vivo com Rodrygo Murari, um tema diferente a cada vez, pra você virar referência na sua leitura."
         statsLine="2 encontros ao vivo / mês · Mapa 7 Esferas incluso"
         manifesto={<>
           A Numerologia Pitagórica não é tabela pronta — é <span className="text-[#c8c8c8]">leitura de padrão em movimento</span>.
-          A Mentoria NPS existe pra isso: você aplica o que aprendeu no NPA, tira dúvida real de atendimento real,
-          e recebe mapas numerológicos (Mapa 7 Esferas) todo mês pra praticar em cima de caso de verdade,
+          A Mentoria NPS é um intensivo que não acaba: a cada encontro, um tema diferente, intercalando destino,
+          prosperidade, bloqueios e estudo de caso. Você tira dúvida real de atendimento real e recebe mapas
+          numerológicos (Mapa 7 Esferas) todo mês pra praticar em cima de caso de verdade,
           <span className="text-[#c8c8c8]"> não de exercício teórico.</span>
         </>}
         incluso={[
-          'Dois encontros ao vivo por mês com a equipe do IDM',
+          'Dois encontros ao vivo por mês com Rodrygo Murari',
           'Gravação de todos os encontros, disponível na plataforma',
           'Até 8 mapas numerológicos (Mapa 7 Esferas) por mês, enquanto a mensalidade estiver em dia',
           'Material de apoio e grupo de prática entre mentorias',
+          'Bônus: o curso NPA (Numerologia Pitagórica Aplicada) completo, gravado na área de membros',
         ]}
         modulos={[
           { numero: '01', titulo: 'Destino e Desafios da Caminhada', conteudo: ['Leitura do número de destino e como ele se expressa na prática clínica.'] },
@@ -84,8 +94,11 @@ export default async function MentoriaNpsPage() {
           { numero: '06', titulo: 'Hierarquia e Hemisférios NPS', conteudo: ['Aprofundamento da metodologia NPS aplicada ao atendimento.'] },
         ]}
         faqItems={[
-          { q: 'Preciso já ter feito o NPA antes da Mentoria NPS?', a: 'Sim — a Mentoria NPS parte do que você já aprendeu no NPA (Numerologia Pitagórica Aplicada) e aprofunda com prática ao vivo. Não é curso introdutório.' },
+          { q: 'Preciso ter feito o NPA antes?', a: 'Não. A Mentoria NPS é aberta pra todos: quem já fez o NPA aprofunda, e quem está começando aprende nos encontros ao vivo e nas gravações.' },
+          { q: 'Como funciona a promoção de Black Friday?', a: 'Quem entra durante a Black IDM paga só R$ 50 na primeira mensalidade, porque o IDM paga a outra metade. A partir do segundo mês, a mensalidade é R$ 100, sem fidelidade.' },
           { q: 'Os mapas numerológicos (Mapa 7 Esferas) são meus ou dos meus clientes?', a: 'Você pode usar as 8 leituras mensais pra praticar com seus próprios clientes/casos reais — é o mesmo material que você vai entregar no seu atendimento.' },
+          { q: 'O que muda de um encontro pro outro?', a: 'Cada encontro traz um tema diferente: destino, imagem, obstrução, prosperidade, hemisférios, estudo de caso. Os temas se intercalam, então a mentoria funciona como um aperfeiçoamento contínuo, e não como um curso com começo e fim.' },
+          { q: 'Ganho o curso NPA junto?', a: 'Sim. Quem assina a Mentoria NPS recebe de bônus o curso NPA gravado, na área de membros, pra estudar a base no seu ritmo.' },
           { q: 'É assinatura mensal ou pagamento único?', a: 'É mensalidade — o acesso aos encontros, gravações e mapas continua enquanto a mensalidade estiver em dia.' },
           { q: 'Posso cancelar quando quiser?', a: 'Sim, não há fidelidade. Fale com a equipe pelo WhatsApp pra ajustar ou cancelar sua mensalidade.' },
         ]}

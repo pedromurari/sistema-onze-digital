@@ -34,6 +34,14 @@ const NPS_TURMA_ID = '25abbf54-ef59-4d7c-8db8-bf43ecd82318';
 const NPS_PRODUTO = 'numerologia';
 const SITE = 'https://sistema.idmpsi.com.br';
 
+// Black IDM (pedido do Pedro, 24/11/2026): na 1ª mensalidade de quem entra
+// na Black, o IDM paga metade. Só a parcela 1 de aluno novo; a partir da 2ª
+// volta ao valor da turma (gerarProximaParcela usa alunos.valor_mensalidade).
+// Até o fim do dia BLACK_NPS_ATE (Brasília). A página do site mostra R$ 50
+// (apps/membros/.../mentoria-nps/page.tsx) -- mudar os dois juntos.
+const BLACK_NPS_ATE = '2026-11-30';
+const BLACK_NPS_FATOR = 0.5;
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -212,13 +220,17 @@ serve(async (req) => {
     const numeroParcela = (parcelasAnteriores ?? 0) + 1;
 
     const hoje = hojeSP();
+    const ehBlack = numeroParcela === 1 && hoje <= BLACK_NPS_ATE;
+    const valorCobrado = ehBlack ? Math.round(valorMensalidade * BLACK_NPS_FATOR * 100) / 100 : valorMensalidade;
     const { data: pagamentoRow, error: pagErr } = await supabase
       .from('pagamentos')
       .insert({
-        aluno_id: alunoId, produto: NPS_PRODUTO, valor: valorMensalidade,
+        aluno_id: alunoId, produto: NPS_PRODUTO, valor: valorCobrado,
         mes_referencia: primeiroDiaDoMes(hoje), data_vencimento: hoje,
         numero_parcela: numeroParcela, status: 'pendente',
-        observacoes: numeroParcela === 1 ? 'Ato de matricula (link NPS)' : null,
+        observacoes: numeroParcela === 1
+          ? (ehBlack ? 'Ato de matricula (link NPS) - Black IDM: 1a mensalidade pela metade' : 'Ato de matricula (link NPS)')
+          : null,
       })
       .select('id, checkout_token')
       .single();
@@ -228,7 +240,7 @@ serve(async (req) => {
     }
 
     const pix = await gerarPix({
-      pagamentoId: pagamentoRow.id as string, valor: valorMensalidade,
+      pagamentoId: pagamentoRow.id as string, valor: valorCobrado,
       nome, cpf: cpfDigits, email, whatsapp,
     });
     if (!pix) return json({ ok: false, erro: 'Não foi possível gerar o PIX. Tente novamente.' }, 502);
@@ -239,7 +251,7 @@ serve(async (req) => {
     }).eq('id', pagamentoRow.id);
 
     return json({
-      ok: true, alunoId, paymentId: pagamentoRow.id, valor: valorMensalidade,
+      ok: true, alunoId, paymentId: pagamentoRow.id, valor: valorCobrado,
       qrCode: pix.pix_code, qrCodeBase64: await qrBase64(pix.pix_code),
       checkoutUrl: `${SITE}/pagar/${pagamentoRow.checkout_token}`,
     });
