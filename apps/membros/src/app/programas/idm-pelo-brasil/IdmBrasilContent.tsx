@@ -87,7 +87,7 @@ export function IdmBrasilContent({
       {/* ── CAPA ─────────────────────────────────────────────────────── */}
       <section className="relative overflow-hidden" style={{ borderBottom: '1px solid var(--fds-line)' }}>
         <Image
-          src="/images/turmas/turma-telao-certificados.jpg"
+          src="/images/turmas/turma-sala-grupo.jpg"
           alt="Turma do IDM pelo Brasil com os certificados no fim do encontro"
           fill
           priority
