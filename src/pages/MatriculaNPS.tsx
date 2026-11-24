@@ -36,16 +36,33 @@ function formatCpf(raw: string): string {
 // nenhum -- dava pra digitar um número gigante sem formato. Mesmo padrão de
 // máscara do CPF: trava em 13 dígitos (55 + DDD + 9 dígitos do celular),
 // formatando como "+55 (11) 9 0000-0000" conforme o placeholder já mostrava.
+// Aceita o número com ou sem o 55: a maioria digita só "11 9 0000-0000".
+// Com 12+ dígitos começando em 55, entende que veio com DDI.
+function comDDI(d: string): boolean {
+  return d.startsWith('55') && d.length > 11;
+}
+
 function formatWhatsapp(raw: string): string {
-  const d = raw.replace(/\D/g, '').slice(0, 13);
-  if (!d) return '';
-  let out = `+${d.slice(0, 2)}`;
-  if (d.length > 2) out += ` (${d.slice(2, 4)}`;
-  if (d.length >= 4) out += ')';
-  if (d.length > 4) out += ` ${d.slice(4, 5)}`;
-  if (d.length > 5) out += ` ${d.slice(5, 9)}`;
-  if (d.length > 9) out += `-${d.slice(9, 13)}`;
+  let d = raw.replace(/\D/g, '');
+  const ddi = comDDI(d);
+  if (ddi) d = d.slice(2);
+  d = d.slice(0, 11);
+  if (!d) return ddi ? '+55 ' : '';
+  let out = ddi ? '+55 ' : '';
+  out += `(${d.slice(0, 2)}`;
+  if (d.length > 2) {
+    const meio = d.length === 11 ? 7 : 6;
+    out += `) ${d.slice(2, meio)}`;
+    if (d.length > meio) out += `-${d.slice(meio)}`;
+  }
   return out;
+}
+
+/** Dígitos com 55 na frente, ou '' se o número não tem DDD + 8/9 dígitos. */
+function whatsappNormalizado(v: string): string {
+  let d = v.replace(/\D/g, '');
+  if (comDDI(d)) d = d.slice(2);
+  return d.length === 10 || d.length === 11 ? `55${d}` : '';
 }
 
 function StatusBadge({ status }: { status: 'pending' | 'approved' | 'timeout' }) {
@@ -106,9 +123,9 @@ export default function MatriculaNPS() {
 
   async function enviar() {
     setErro('');
-    const whatsappDigits = whatsapp.replace(/\D/g, '');
-    if (!nome.trim() || whatsappDigits.length !== 13 || !email.trim() || cpf.replace(/\D/g, '').length !== 11) {
-      setErro('Preencha nome, WhatsApp (com DDD e DDI, ex: +55 11 9 0000-0000), e-mail e CPF (válido) pra continuar.');
+    const whatsappDigits = whatsappNormalizado(whatsapp);
+    if (!nome.trim() || !whatsappDigits || !email.trim() || cpf.replace(/\D/g, '').length !== 11) {
+      setErro('Preencha nome, WhatsApp com DDD (ex: 11 9 0000-0000), e-mail e CPF (válido) pra continuar.');
       return;
     }
     setEnviando(true);
@@ -182,7 +199,7 @@ export default function MatriculaNPS() {
               <div className="field">
                 <label className="field-label" htmlFor="telefone">WhatsApp <span className="field-required">*</span></label>
                 <div className="field-control">
-                  <input type="tel" id="telefone" maxLength={20} autoComplete="tel" placeholder="+55 (11) 9 0000-0000" value={whatsapp} onChange={e => setWhatsapp(formatWhatsapp(e.target.value))} />
+                  <input type="tel" id="telefone" maxLength={20} autoComplete="tel" placeholder="(11) 9 0000-0000" value={whatsapp} onChange={e => setWhatsapp(formatWhatsapp(e.target.value))} />
                 </div>
               </div>
               <div className="field span-full">
