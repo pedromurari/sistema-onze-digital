@@ -204,10 +204,10 @@ const INCLUSO = [
 ]
 
 const NUMEROS = [
-  { icone: Users, numero: 'Quase 250', rotulo: 'Psicanalistas formados' },
-  { icone: Award, numero: '98%', rotulo: 'Satisfação' },
+  { icone: Users, numero: '+250', rotulo: 'Psicanalistas formados' },
+  { icone: Award, numero: '20 anos', rotulo: 'De experiência' },
   { icone: Target, numero: '14', rotulo: 'Meses de Formação' },
-  { icone: Heart, numero: '100%', rotulo: 'Transformação' },
+  { icone: Heart, numero: 'MEC', rotulo: 'Certificado via Anhanguera' },
 ]
 
 // Vídeos servidos do nosso R2 (regra do Pedro: vídeo de página nunca é
@@ -290,25 +290,75 @@ function BlocoMec({ comRodape = true }: { comRodape?: boolean }) {
  * lista de BONUS pros valores normais. */
 const BLACK_ATIVA = true
 
-function FaixaBlack({ compacta = false }: { compacta?: boolean }) {
+// Cada faixa tem o seu texto, passando de lado como letreiro. A lista é
+// repetida o bastante pra encher a largura toda (nunca sobra amarelo vazio)
+// e duplicada pra o loop não ter emenda.
+const FAIXAS_BLACK = {
+  topo: [
+    'Promoção de Black Friday liberada',
+    '52% de desconto na formação',
+    'R$ 3.280 em bônus',
+    'Black IDM',
+  ],
+  investimento: [
+    'R$ 1.500 no PIX',
+    '12x R$ 139 no cartão',
+    '15x R$ 139 no boleto',
+    'Condição de Black Friday',
+  ],
+  fechamento: [
+    'Supervisão clínica',
+    '3 sessões de análise',
+    'Practitioner em PNL',
+    '5 workshops ao vivo',
+    'Tudo incluso na Black IDM',
+  ],
+} as const
+
+function FaixaBlack({ tipo, compacta = false }: { tipo: keyof typeof FAIXAS_BLACK; compacta?: boolean }) {
   if (!BLACK_ATIVA) return null
+  const itens = [...FAIXAS_BLACK[tipo], ...FAIXAS_BLACK[tipo], ...FAIXAS_BLACK[tipo]]
+  const bloco = (oculto: boolean) => (
+    <div className="faixa-black-bloco" aria-hidden={oculto || undefined}>
+      {itens.map((t, i) => (
+        <span key={i} className="inline-flex items-center" style={{ gap: 18, paddingRight: 18 }}>
+          {i % FAIXAS_BLACK[tipo].length === 0 ? (
+            <span style={{ background: '#080808', color: 'var(--fds-accent)', padding: '2px 10px', borderRadius: 4, fontSize: 12, letterSpacing: '0.12em' }}>
+              BLACK IDM
+            </span>
+          ) : null}
+          <span>{t}</span>
+          <span aria-hidden style={{ opacity: 0.55 }}>✦</span>
+        </span>
+      ))}
+    </div>
+  )
   return (
     <div
-      className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-center"
+      className="faixa-black overflow-hidden"
       style={{
         background: 'var(--fds-accent)',
         color: '#080808',
-        padding: compacta ? '10px 16px' : '14px 16px',
+        padding: compacta ? '10px 0' : '14px 0',
+        // A do topo nasce embaixo do menu fixo (73px), senão fica escondida.
+        marginTop: tipo === 'topo' ? 73 : 0,
         fontWeight: 700,
+        fontSize: compacta ? 14 : 15,
         letterSpacing: '0.02em',
+        whiteSpace: 'nowrap',
       }}
     >
-      <span style={{ background: '#080808', color: 'var(--fds-accent)', padding: '2px 10px', borderRadius: 4, fontSize: 13, letterSpacing: '0.12em' }}>
-        BLACK IDM
-      </span>
-      <span style={{ fontSize: compacta ? 14 : 15 }}>
-        Promoção de Black Friday liberada · 52% de desconto + R$ 3.280 em bônus
-      </span>
+      <style>{`
+        .faixa-black-trilho { display: flex; width: max-content; animation: faixa-black-passa 40s linear infinite; }
+        .faixa-black:hover .faixa-black-trilho { animation-play-state: paused; }
+        .faixa-black-bloco { display: flex; flex-shrink: 0; }
+        @keyframes faixa-black-passa { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+        @media (prefers-reduced-motion: reduce) { .faixa-black-trilho { animation: none; } }
+      `}</style>
+      <div className="faixa-black-trilho">
+        {bloco(false)}
+        {bloco(true)}
+      </div>
     </div>
   )
 }
@@ -320,7 +370,7 @@ export function PsicanaliseContent() {
 
   return (
     <div className="fds">
-      <FaixaBlack />
+      <FaixaBlack tipo="topo" />
       {/* ══ ABERTURA ═══════════════════════════════════════════════════ */}
       <section className="fds-band--deep" style={{ paddingTop: 'var(--fds-30)', paddingBottom: 'var(--fds-24)' }}>
         <div className="fds-wrap">
@@ -534,7 +584,7 @@ export function PsicanaliseContent() {
       </section>
 
       {/* ══ INVESTIMENTO ═══════════════════════════════════════════════ */}
-      <FaixaBlack compacta />
+      <FaixaBlack tipo="investimento" compacta />
       <section className="fds-band fds-section" id="investimento">
         <div className="fds-wrap">
           <Reveal>
@@ -750,7 +800,7 @@ export function PsicanaliseContent() {
       </section>
 
       {/* ══ FECHAMENTO ═════════════════════════════════════════════════ */}
-      <FaixaBlack compacta />
+      <FaixaBlack tipo="fechamento" compacta />
       <section className="fds-band--deep" style={{ paddingBlock: 'var(--fds-24)' }}>
         <div className="fds-wrap">
           <h2 className="fds-h2 max-w-3xl">

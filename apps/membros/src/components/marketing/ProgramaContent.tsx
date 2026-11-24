@@ -11,7 +11,9 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion'
 
-const WA_NUMBER = '5511930439385'
+// WhatsApp da vendedora (Helen Magna) -- lead de produto do Time Comercial
+// tem que cair direto com ela, pedido do Pedro em 24/11/2026.
+const WA_NUMBER = '5511965781940'
 
 export interface ProductData {
   price: number | null

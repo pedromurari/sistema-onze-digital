@@ -15,6 +15,34 @@ import { useEffect, useState } from 'react'
 import { Loader2, MessageCircle, X } from 'lucide-react'
 
 const WHATSAPP_PSICANALISE = '5511965781940'
+
+/**
+ * Evento "Lead" no Meta: Pixel no navegador + CAPI no servidor (/api/meta-event),
+ * com o mesmo eventID pra o Meta deduplicar. Vale pra todo formulário que usa
+ * este modal (Psicanálise, PNL, NPA, NPS, Divã, IDM pelo Brasil). Falha aqui
+ * nunca pode travar o lead, por isso tudo é fire-and-forget.
+ */
+function registrarLeadMeta(nome: string, telefone: string) {
+  try {
+    const eventId = `Lead_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+    const w = window as unknown as { fbq?: (...args: unknown[]) => void }
+    w.fbq?.('track', 'Lead', { content_name: document.title }, { eventID: eventId })
+    fetch('/api/meta-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eventName: 'Lead',
+        phone: telefone.length <= 11 ? `55${telefone}` : telefone,
+        name: nome,
+        sourceUrl: window.location.href,
+        eventId,
+      }),
+      keepalive: true,
+    }).catch(() => {})
+  } catch {
+    // sem pixel não é motivo pra perder o lead
+  }
+}
 const MENSAGEM_PSICANALISE =
   'Olá! Quero receber informações sobre a Formação em Psicanálise Integrativa do IDM.'
 const WHATSAPP_URL_PSICANALISE = `https://wa.me/${WHATSAPP_PSICANALISE}?text=${encodeURIComponent(MENSAGEM_PSICANALISE)}`
@@ -94,6 +122,7 @@ export function LeadWhatsappModal({
 
       if (!resposta.ok) throw new Error('falha ao registrar')
 
+      registrarLeadMeta(nome.trim(), digitos)
       setOk(true)
       // Pequena pausa pro usuário ver a confirmação antes de trocar de app.
       setTimeout(() => window.location.assign(whatsappUrl), 1000)

@@ -77,17 +77,27 @@ export async function POST(request: Request) {
       canal = `Lista de espera — ${nomeProduto}`
     }
 
+    // Produto do Time Comercial (PNL, NPA, Psicanálise presencial) entra com
+    // origem "Time Comercial" -- é o filtro do Kanban da vendedora (mesmo
+    // caminho do /api/lead-psicanalise). Pedido do Pedro em 24/11/2026; antes
+    // caía como "Site Institucional" e ninguém via. O canal continua
+    // "Lista de espera — X" porque é dele que sai o disparo quando a turma abrir.
+    const ehTimeComercial = produtoCategoria === 'time_comercial'
+    const canalGravado = canal
+
     // Mesma pessoa entrando duas vezes na mesma lista não vira dois leads.
     const { data: existente } = await sistema11
       .from('leads')
       .select('id')
-      .eq('canal', canal)
+      .eq('canal', canalGravado)
+      .eq('interesse_produto', produto)
       .eq('whatsapp', whatsapp)
+      .limit(1)
       .maybeSingle()
     if (existente) return NextResponse.json({ success: true, leadId: existente.id })
 
     const observacoes = [
-      `Origem: site institucional — ${eventoSlug ? 'IDM pelo Brasil' : 'lista de espera'}`,
+      `Origem: site institucional — ${eventoSlug ? 'IDM pelo Brasil' : canal}`,
       texto(body.referrer, 500) && `Referência: ${texto(body.referrer, 500)}`,
       texto(body.utm_source, 100) && `UTM Source: ${texto(body.utm_source, 100)}`,
       texto(body.utm_campaign, 150) && `UTM Campaign: ${texto(body.utm_campaign, 150)}`,
@@ -101,9 +111,9 @@ export async function POST(request: Request) {
         nome,
         telefone: whatsapp,
         whatsapp,
-        origem: 'Site Institucional',
+        origem: ehTimeComercial ? 'Time Comercial' : 'Site Institucional',
         status: 'novo',
-        canal,
+        canal: canalGravado,
         // `produto` é categórico no banco (check constraint); o curso de
         // verdade vai em `interesse_produto` e no canal.
         produto: produtoCategoria,
