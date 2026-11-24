@@ -31,7 +31,7 @@ export const metadata: Metadata = {
     template: "%s | Instituto Despertamente",
   },
   description:
-    "Formação em Psicanálise Integrativa, Constelação Familiar Sistêmica, Numerologia e PNL. Metodologia própria que une psicanálise, neurociência e PNL. Mais de 12.000 alunos.",
+    "Formação em Psicanálise Integrativa, Constelação Familiar Sistêmica, Numerologia e PNL. Metodologia própria que une psicanálise, PNL, terapia breve e numerologia. Mais de 12.000 alunos.",
   applicationName: ORG.nome,
   authors: [{ name: ORG.nome, url: SITE_URL }],
   creator: ORG.nome,

@@ -62,7 +62,7 @@ const FORMACOES: Card[] = [
 ]
 
 const PILARES = [
-  { titulo: 'Teoria', texto: 'Psicanálise, neurociência e PNL numa base só.' },
+  { titulo: 'Teoria', texto: 'Psicanálise, PNL, terapia breve e numerologia numa base só.' },
   { titulo: 'Prática', texto: 'Porque não basta aprender sobre a mente: é preciso vivenciar.' },
   { titulo: 'Supervisão', texto: 'Você conduz atendimento com alguém olhando junto.' },
 ]
@@ -319,7 +319,7 @@ export function HomeContent() {
                 Leituras pra entender a mente que decide por você<span className="fds-accent">.</span>
               </h2>
               <p className="fds-body mt-6" style={{ fontSize: 18, color: '#d4d5d9' }}>
-                Psicanálise, PNL e neurociência aplicadas ao que acontece fora do consultório.
+                Psicanálise, PNL, terapia breve e numerologia aplicadas ao que acontece fora do consultório.
               </p>
               <div className="mt-9">
                 <Link href="/blog" className="fds-btn fds-btn--primary">

@@ -29,7 +29,7 @@ export function GET() {
 
 Instituição brasileira de ensino em psicanálise e desenvolvimento humano,
 com sede em São Paulo (SP). Metodologia própria construída ao longo de
-20 anos de experiência, que integra psicanálise, neurociência e PNL. Mais de 12.000 pessoas
+20 anos de experiência, que integra psicanálise, PNL, terapia breve e numerologia. Mais de 12.000 pessoas
 já passaram pelas formações.
 
 CNPJ: ${ORG.cnpj}
@@ -48,7 +48,7 @@ Contato: ${ORG.telefone}
 
 ## Conteúdo
 
-- [Blog](${SITE_URL}/blog): textos sobre psicanálise, PNL e neurociência aplicadas ao dia a dia.
+- [Blog](${SITE_URL}/blog): textos sobre psicanálise, PNL, terapia breve e numerologia aplicadas ao dia a dia.
 ${posts.length
   ? posts.map(p => `- [${p.titulo}](${SITE_URL}/blog/${p.slug}): ${p.resumo}`).join('\n')
   : '- Ainda sem artigos publicados.'}

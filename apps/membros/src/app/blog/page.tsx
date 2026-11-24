@@ -8,11 +8,11 @@ import { postsPublicados, formatarData } from '@/content/blog'
 export const metadata = {
   title: 'Blog',
   description:
-    'Psicanálise, PNL e neurociência aplicadas ao dia a dia. Textos do Instituto Despertamente.',
+    'Psicanálise, PNL, terapia breve e numerologia aplicadas ao dia a dia. Textos do Instituto Despertamente.',
   alternates: { canonical: '/blog' },
   openGraph: {
     title: 'Blog do Instituto Despertamente',
-    description: 'Psicanálise, PNL e neurociência aplicadas ao dia a dia.',
+    description: 'Psicanálise, PNL, terapia breve e numerologia aplicadas ao dia a dia.',
     url: '/blog',
     type: 'website',
   },
@@ -35,7 +35,7 @@ export default function BlogPage() {
               Blog<span className="fds-accent">.</span>
             </h1>
             <p className="fds-lead mt-5">
-              Psicanálise, PNL e neurociência aplicadas ao que acontece fora do consultório.
+              Psicanálise, PNL, terapia breve e numerologia aplicadas ao que acontece fora do consultório.
             </p>
           </div>
         </section>

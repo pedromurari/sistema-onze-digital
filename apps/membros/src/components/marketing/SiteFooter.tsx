@@ -72,7 +72,7 @@ export function SiteFooter({ parceira }: { parceira?: string } = {}) {
               )}
             </div>
             <p className="text-[13px] text-white/45 leading-relaxed max-w-[200px]">
-              Transformação humana baseada em neurociência, psicanálise e PNL.
+              Transformação humana com psicanálise, PNL, terapia breve e numerologia.
             </p>
             <div className="flex gap-3">
               <a

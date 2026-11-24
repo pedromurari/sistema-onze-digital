@@ -24,7 +24,7 @@ export const ORG = {
   nomeLegal: 'Grupo Despertamente',
   cnpj: '55.184.481/0001-24',
   descricao:
-    'Instituto de formação em Psicanálise Integrativa, PNL e Constelação Familiar Sistêmica, com metodologia própria que une psicanálise, neurociência e PNL.',
+    'Instituto de formação em Psicanálise Integrativa, PNL e Constelação Familiar Sistêmica, com metodologia própria que une psicanálise, PNL, terapia breve e numerologia.',
   logo: `${SITE_URL}/despertamente-simbolo.png`,
   telefone: '+55 11 93043-9385',
   endereco: {

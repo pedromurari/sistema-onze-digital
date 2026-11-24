@@ -16,18 +16,18 @@ import { SiteFooter } from '@/components/marketing/SiteFooter'
 export const metadata = {
   title: 'O Método Despertamente',
   description:
-    'Uma metodologia própria, construída em 20 anos de experiência, que une psicanálise, neurociência e PNL. Teoria, análise pessoal e supervisão em toda formação.',
+    'Uma metodologia própria, construída em 20 anos de experiência, que une psicanálise, PNL, terapia breve e numerologia. Teoria, análise pessoal e supervisão em toda formação.',
   alternates: { canonical: '/metodo' },
   openGraph: {
     url: '/metodo',
     type: 'website',
     title: 'O Método Despertamente',
-    description: 'Psicanálise, neurociência e PNL numa metodologia só. Conheça o método e quem conduz.',
+    description: 'Psicanálise, PNL, terapia breve e numerologia numa metodologia só. Conheça o método e quem conduz.',
   },
 }
 
 const PILARES = [
-  { titulo: 'Teoria', texto: 'Psicanálise, neurociência e PNL numa base só — não três cursos colados.' },
+  { titulo: 'Teoria', texto: 'Psicanálise, PNL, terapia breve e numerologia numa base só, não quatro cursos colados.' },
   { titulo: 'Análise pessoal', texto: 'Você passa pelo processo antes de conduzir alguém por ele. Quem nunca se olhou não sustenta a escuta do outro.' },
   { titulo: 'Supervisão', texto: 'Atendimento real com alguém mais experiente olhando junto, corrigindo o que você não vê.' },
 ]
@@ -77,12 +77,12 @@ export default function MetodoPage() {
               <h2 className="fds-h2">Aquilo que você ilumina na consciência deixa de comandar você no escuro.</h2>
               <p className="fds-body mt-6">
                 O Método Despertamente nasceu de vinte anos de experiência clínica e de sala de aula. Ele não escolheu
-                entre psicanálise, neurociência e PNL: usa as três, porque cada uma enxerga uma parte do mesmo
-                problema.
+                entre psicanálise, PNL, terapia breve e numerologia: usa as quatro, porque cada uma enxerga uma parte
+                do mesmo problema.
               </p>
               <p className="fds-body mt-4">
-                A psicanálise escuta o que se repete. A neurociência explica por que o corpo insiste. A PNL dá a
-                ferramenta pra interromper o ciclo. Separadas, são teorias. Juntas, viram método.
+                A psicanálise escuta o que se repete. A numerologia mostra o mapa de quem você é. A PNL e a terapia
+                breve dão a ferramenta pra interromper o ciclo. Separadas, são teorias. Juntas, viram método.
               </p>
             </div>
             <div className="flex flex-col gap-4">
