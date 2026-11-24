@@ -82,7 +82,15 @@
   padding-block: var(--fds-24);
 }
 @media (max-width: 640px) {
-  .fds-section { padding-block: var(--fds-16); }
+  /* Mobile: respiro entre seções menor (pedido do Pedro, 24/11/2026: no
+     celular sobrava espaço demais entre uma seção e outra). Os tokens são
+     redefinidos aqui pra valer também nos paddings inline das páginas. */
+  :root {
+    --fds-30: 104px;  /* abertura: 120 -> 104 (o menu fixo come 73px disso) */
+    --fds-24: 56px;   /* 96 -> 56 */
+    --fds-16: 48px;   /* 64 -> 48 */
+  }
+  .fds-section { padding-block: var(--fds-12); }
 }
 
 /* Faixa alternada: o ritmo vem da troca de fundo + linha de 1px, nunca de

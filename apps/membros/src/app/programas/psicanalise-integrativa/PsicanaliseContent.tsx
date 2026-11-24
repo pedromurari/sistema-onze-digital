@@ -349,7 +349,9 @@ function FaixaBlack({ tipo, compacta = false }: { tipo: keyof typeof FAIXAS_BLAC
       }}
     >
       <style>{`
-        .faixa-black-trilho { display: flex; width: max-content; animation: faixa-black-passa 40s linear infinite; }
+        /* !important: o globals.css zera animação de tudo quando o sistema pede
+           menos movimento -- o letreiro é exceção pedida pelo Pedro. */
+        .faixa-black-trilho { display: flex; width: max-content; animation: faixa-black-passa 40s linear infinite !important; animation-duration: 40s !important; animation-iteration-count: infinite !important; }
         .faixa-black:hover .faixa-black-trilho { animation-play-state: paused; }
         .faixa-black-bloco { display: flex; flex-shrink: 0; }
         @keyframes faixa-black-passa { from { transform: translateX(0); } to { transform: translateX(-50%); } }
@@ -371,7 +373,9 @@ export function PsicanaliseContent() {
     <div className="fds">
       <FaixaBlack tipo="topo" />
       {/* ══ ABERTURA ═══════════════════════════════════════════════════ */}
-      <section className="fds-band--deep" style={{ paddingTop: 'var(--fds-30)', paddingBottom: 'var(--fds-24)' }}>
+      {/* Com a faixa no topo, ela já empurra a página pra baixo do menu fixo:
+          o respiro de abertura vira o normal, senão sobra espaço vazio. */}
+      <section className="fds-band--deep" style={{ paddingTop: BLACK_ATIVA ? 'var(--fds-12)' : 'var(--fds-30)', paddingBottom: 'var(--fds-24)' }}>
         <div className="fds-wrap">
           <Reveal>
             <p className="fds-eyebrow block">{BLACK_ATIVA ? 'Black IDM · Black Friday liberada' : 'Formação reconhecida'}</p>

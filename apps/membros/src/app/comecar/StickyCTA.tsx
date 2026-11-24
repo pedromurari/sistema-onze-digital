@@ -31,10 +31,10 @@ export function StickyCTA() {
         href={WA_URL}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex flex-1 items-center justify-center gap-2 py-3 rounded-xl border border-[#25D366]/30 text-sm font-bold text-[#25D366] hover:bg-[#25D366]/8 transition-colors"
+        className="relative flex flex-1 items-center justify-center py-3 pl-12 pr-4 rounded-xl border border-[#25D366]/30 text-sm font-bold text-[#25D366] hover:bg-[#25D366]/8 transition-colors"
       >
-        <WhatsAppIcon />
-        WhatsApp
+        <span className="absolute left-4 top-1/2 -translate-y-1/2"><WhatsAppIcon /></span>
+        Falar com um humano 👋
       </a>
     </div>
   )
