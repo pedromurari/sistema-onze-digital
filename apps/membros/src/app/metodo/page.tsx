@@ -16,7 +16,7 @@ import { SiteFooter } from '@/components/marketing/SiteFooter'
 export const metadata = {
   title: 'O Método Despertamente',
   description:
-    'Uma metodologia própria, construída em 9 anos de prática, que une psicanálise, neurociência e PNL. Teoria, análise pessoal e supervisão em toda formação.',
+    'Uma metodologia própria, construída em 20 anos de experiência, que une psicanálise, neurociência e PNL. Teoria, análise pessoal e supervisão em toda formação.',
   alternates: { canonical: '/metodo' },
   openGraph: {
     url: '/metodo',
@@ -34,7 +34,7 @@ const PILARES = [
 
 const NUMEROS = [
   { valor: '12.000+', rotulo: 'pessoas já passaram pelas formações' },
-  { valor: '9 anos', rotulo: 'construindo e corrigindo o método' },
+  { valor: '20 anos', rotulo: 'de experiência' },
   { valor: 'MEC', rotulo: 'certificação via parceria com a Anhanguera' },
 ]
 
@@ -76,7 +76,7 @@ export default function MetodoPage() {
             <div>
               <h2 className="fds-h2">Aquilo que você ilumina na consciência deixa de comandar você no escuro.</h2>
               <p className="fds-body mt-6">
-                O Método Despertamente nasceu de nove anos de prática clínica e de sala de aula. Ele não escolheu
+                O Método Despertamente nasceu de vinte anos de experiência clínica e de sala de aula. Ele não escolheu
                 entre psicanálise, neurociência e PNL: usa as três, porque cada uma enxerga uma parte do mesmo
                 problema.
               </p>

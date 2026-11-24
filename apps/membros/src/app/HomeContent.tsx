@@ -103,7 +103,7 @@ export function HomeContent() {
             <h1 className="fds-display mt-5">Desperte a mente que decide por você.</h1>
             <p className="fds-body mt-6" style={{ color: '#d4d5d9', fontSize: 18 }}>
               Formações em psicanálise, constelação, numerologia e PNL. Uma metodologia própria,
-              construída em 9 anos de prática.
+              construída em 20 anos de experiência.
             </p>
             <div className="mt-9 flex flex-wrap gap-3">
               <a href="#programas" className="fds-btn fds-btn--primary">Ver as formações</a>

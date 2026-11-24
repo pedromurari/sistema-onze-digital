@@ -29,7 +29,7 @@ export function GET() {
 
 Instituição brasileira de ensino em psicanálise e desenvolvimento humano,
 com sede em São Paulo (SP). Metodologia própria construída ao longo de
-9 anos, que integra psicanálise, neurociência e PNL. Mais de 12.000 pessoas
+20 anos de experiência, que integra psicanálise, neurociência e PNL. Mais de 12.000 pessoas
 já passaram pelas formações.
 
 CNPJ: ${ORG.cnpj}

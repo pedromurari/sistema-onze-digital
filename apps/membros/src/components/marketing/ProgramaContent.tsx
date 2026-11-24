@@ -341,7 +341,7 @@ export function ProgramaContent({
             <div className="grid grid-cols-1 sm:grid-cols-3">
               {[
                 { n: '12.000+', l: 'Pessoas impactadas pelo método' },
-                { n: '9 anos', l: 'De metodologia própria' },
+                { n: '20 anos', l: 'De experiência' },
                 { n: 'Nacional', l: 'Alunos em todo o Brasil' },
               ].map((item, i) => (
                 <div
