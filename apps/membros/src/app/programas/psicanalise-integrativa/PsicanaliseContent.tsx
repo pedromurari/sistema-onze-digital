@@ -353,7 +353,6 @@ function FaixaBlack({ tipo, compacta = false }: { tipo: keyof typeof FAIXAS_BLAC
         .faixa-black:hover .faixa-black-trilho { animation-play-state: paused; }
         .faixa-black-bloco { display: flex; flex-shrink: 0; }
         @keyframes faixa-black-passa { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-        @media (prefers-reduced-motion: reduce) { .faixa-black-trilho { animation: none; } }
       `}</style>
       <div className="faixa-black-trilho">
         {bloco(false)}
