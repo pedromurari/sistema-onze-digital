@@ -2,6 +2,7 @@
 
 import { LeadWhatsappCta } from '@/components/marketing/LeadWhatsappModal'
 import { FaixaLetreiro } from '@/components/marketing/FaixaLetreiro'
+import { CertificadoAnimado } from '@/components/marketing/CertificadoAnimado'
 import { useRef, type ReactNode } from 'react'
 import { motion, useInView, useReducedMotion } from 'framer-motion'
 import { ArrowRight, Check, MessageCircle } from 'lucide-react'
@@ -402,14 +403,7 @@ export function ProgramaContent({
               </ul>
             </Reveal>
             <Reveal>
-              <div className="fds-card" style={{ padding: 'var(--fds-4)' }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={certificado.frente} alt="Certificado, frente" loading="lazy" className="w-full" style={{ borderRadius: 6 }} />
-                {certificado.verso && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={certificado.verso} alt="Certificado, verso com o conteúdo programático" loading="lazy" className="mt-4 w-full" style={{ borderRadius: 6 }} />
-                )}
-              </div>
+              <CertificadoAnimado frente={certificado.frente} verso={certificado.verso} alt={certificado.titulo} />
             </Reveal>
           </div>
         </section>
