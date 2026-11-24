@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import {
   Flame, CalendarDays, Clock, CheckCircle2, Gift, Users, ShieldCheck,
   Eye, HeartPulse, Sparkles, Quote, HelpCircle, ArrowRight, Play, X,
-  Instagram, Facebook, Youtube,
+  Instagram, Facebook, Youtube, Star,
 } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { carregarPixel, trackPixel } from '../webinario/meta-pixel';
@@ -31,10 +31,17 @@ const PILARES: Record<number, { titulo: string; itens: string[]; icone: typeof E
   3: { titulo: 'A REVELAÇÃO', itens: ['Pulsão de morte', 'O efeito do ESTRESSE', 'Atos SUICIDAS'], icone: Sparkles },
 };
 
+// Mesmos depoimentos da página de Psicanálise do site institucional
+// (apps/membros/.../PsicanaliseContent.tsx), servidos do R2 -- nunca YouTube.
+// Vídeos verticais (9:16). Mudou lá, muda aqui.
+const R2_DEPOIMENTOS = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/site/depoimentos';
 const DEPOIMENTOS = [
-  { videoId: 'wDQiV0VoBT4', texto: 'Transformei minha vida através da psicanálise' },
-  { videoId: 'B_lpIOk1RQo', texto: 'Mudança completa de perspectiva sobre a vida' },
-  { videoId: 'D4xbxCXSWoM', texto: 'Descobri ferramentas poderosas para o autoconhecimento' },
+  { id: 'wDQiV0VoBT4', frase: 'Transformei minha vida através da psicanálise.' },
+  { id: 'dep-2026-11-24-1', frase: 'O curso de Psicanálise Integrativa me abriu uma nova carreira.' },
+  { id: 'g5-wCsj1D_0', frase: 'O método integrativo me deu ferramentas práticas que uso no dia a dia.' },
+  { id: 'dep-2026-11-24-2', frase: 'Foi uma jornada fantástica. Vale a pena investir no IDM.' },
+  { id: 'B_lpIOk1RQo', frase: 'A metodologia do iDM é única e transformadora.' },
+  { id: 'aYncgEhrXgs', frase: 'O iDM me deu as bases que eu precisava como psicanalista.' },
 ];
 
 const FAQ: [string, string][] = [
@@ -470,33 +477,45 @@ export default function TurmaCaptura() {
       <section className="px-5 sm:px-8 lg:px-12 py-10 sm:py-16 max-w-6xl mx-auto text-center">
         <h2 className="text-3xl sm:text-4xl font-bold">O que dizem nossos Alunos</h2>
         <p className="text-slate-300 mt-3 text-lg max-w-2xl mx-auto">Histórias reais de transformação e sucesso profissional através da nossa formação em Psicanálise Clínica Integrativa.</p>
-        <div className="mt-10 grid gap-6 lg:grid-cols-3">
-          {DEPOIMENTOS.map((dep) => (
-            <div key={dep.videoId} className={`rounded-2xl border border-white/10 ${CARD_BG} overflow-hidden text-left shadow-lg transition-transform hover:-translate-y-1 hover:shadow-2xl`}>
-              <button type="button" onClick={() => setDepoimentoAberto(dep.videoId)} className="group block relative aspect-video bg-black w-full">
-                <img src={`https://img.youtube.com/vi/${dep.videoId}/maxresdefault.jpg`} alt={dep.texto} className="h-full w-full object-cover opacity-75 transition-opacity group-hover:opacity-90" />
-                <span className="absolute inset-0 flex items-center justify-center gap-1.5 text-amber-400 text-sm font-bold bg-black/40">
-                  <Play className="h-5 w-5 fill-amber-400" /> Ver depoimento
+        <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {DEPOIMENTOS.map(({ id, frase }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setDepoimentoAberto(id)}
+              className="group rounded-[10px] border border-white/10 bg-white/[0.015] p-4 text-left transition-colors hover:border-white/20"
+              aria-label={`Ver depoimento: ${frase}`}
+            >
+              <div className="relative overflow-hidden rounded-md">
+                <img
+                  src={`${R2_DEPOIMENTOS}/${id}.jpg`}
+                  alt=""
+                  loading="lazy"
+                  className="h-72 w-full object-cover object-top transition-opacity group-hover:opacity-80"
+                />
+                <span className="absolute inset-0 flex items-center justify-center bg-black/25">
+                  <Play className="h-8 w-8 text-amber-400" />
                 </span>
-              </button>
-              <div className="p-5">
-                <Quote className="h-5 w-5 text-amber-400/50 mb-1" />
-                <p className="font-semibold text-lg">"{dep.texto}"</p>
-                <p className="text-amber-400 mt-2 tracking-wide">★★★★★</p>
-                <p className="text-slate-400 text-sm mt-1">Aluno iDM</p>
               </div>
-            </div>
+              <div className="mt-4 flex gap-1">
+                {Array.from({ length: 5 }).map((_, k) => (
+                  <Star key={k} className="h-3 w-3 text-amber-400 fill-amber-400" />
+                ))}
+              </div>
+              <p className="mt-3 text-sm text-slate-300">&ldquo;{frase}&rdquo;</p>
+              <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.1em] text-slate-500">Aluno IDM · Ver depoimento</p>
+            </button>
           ))}
         </div>
       </section>
 
-      {/* POP-UP de depoimento em vídeo -- não abre o YouTube em outra aba */}
+      {/* POP-UP de depoimento em vídeo (R2, vertical) */}
       {depoimentoAberto && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4"
           onClick={() => setDepoimentoAberto(null)}
         >
-          <div className="relative w-full max-w-3xl" onClick={(e) => e.stopPropagation()}>
+          <div className="relative w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
             <button
               type="button" aria-label="Fechar"
               className="absolute -top-11 right-0 flex items-center gap-1.5 text-slate-200 hover:text-amber-400 text-sm font-semibold"
@@ -504,13 +523,14 @@ export default function TurmaCaptura() {
             >
               <X className="h-5 w-5" /> Fechar
             </button>
-            <div className="aspect-video w-full overflow-hidden rounded-2xl shadow-2xl">
-              <iframe
+            <div className="w-full overflow-hidden rounded-lg bg-black shadow-2xl" style={{ aspectRatio: '9 / 16' }}>
+              <video
+                src={`${R2_DEPOIMENTOS}/${depoimentoAberto}.mp4`}
+                poster={`${R2_DEPOIMENTOS}/${depoimentoAberto}.jpg`}
+                controls
+                autoPlay
+                playsInline
                 className="h-full w-full"
-                src={`https://www.youtube.com/embed/${depoimentoAberto}?autoplay=1`}
-                title="Depoimento"
-                allow="autoplay; encrypted-media; picture-in-picture"
-                allowFullScreen
               />
             </div>
           </div>
