@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
 
 const WA_URL = 'https://wa.me/5511930439385?text=Olá! Tenho interesse no Instituto Despertamente.'
 
@@ -37,12 +36,6 @@ export function StickyCTA() {
         <WhatsAppIcon />
         WhatsApp
       </a>
-      <Link
-        href="/register"
-        className="flex flex-1 items-center justify-center py-3 rounded-xl bg-[#FFB800] text-sm font-bold text-[#080808] hover:bg-[#FFC933] transition-colors"
-      >
-        Começar grátis
-      </Link>
     </div>
   )
 }
