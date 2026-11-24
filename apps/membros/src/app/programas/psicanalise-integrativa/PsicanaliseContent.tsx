@@ -168,10 +168,10 @@ const PAGAMENTOS = [
   {
     icone: CreditCard,
     titulo: 'Cartão de Crédito',
-    valor: '12x R$ 137,00',
+    valor: '12x R$ 139,00',
     texto: 'Parcelado no Cartão de Crédito',
-    total: 'R$ 1.644,00',
-    itens: ['Sem juros', 'Acesso imediato', 'Parcelas fixas'],
+    total: 'R$ 1.668,00',
+    itens: ['Mesma parcela do boleto', 'Acesso imediato', 'Parcelas fixas'],
     melhor: false,
   },
   {
@@ -204,7 +204,7 @@ const INCLUSO = [
 ]
 
 const NUMEROS = [
-  { icone: Users, numero: '5.000+', rotulo: 'Alunos Formados' },
+  { icone: Users, numero: 'Quase 250', rotulo: 'Psicanalistas formados' },
   { icone: Award, numero: '98%', rotulo: 'Satisfação' },
   { icone: Target, numero: '14', rotulo: 'Meses de Formação' },
   { icone: Heart, numero: '100%', rotulo: 'Transformação' },
@@ -328,7 +328,7 @@ export function PsicanaliseContent() {
             <p className="fds-eyebrow block">{BLACK_ATIVA ? 'Black IDM · Black Friday liberada' : 'Formação reconhecida'}</p>
             <p className="fds-meta mt-4">
               {BLACK_ATIVA
-                ? 'Condição especial de Black Friday · 15x R$ 139 no boleto ou R$ 1.500 no PIX'
+                ? 'Condição especial de Black Friday · 12x R$ 139 no cartão ou no boleto, ou R$ 1.500 no PIX'
                 : 'Matrículas abertas · Turmas iniciando todo mês'}
             </p>
 

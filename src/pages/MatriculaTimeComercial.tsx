@@ -59,6 +59,7 @@ declare global {
 const VENDEDORES: Record<string, string> = {
   helen: 'Helen Magna',
   'helen-cartao': 'Helen Magna',
+  'helen-black': 'Helen Magna',
   direto: 'Equipe Instituto Despertamente',
   promo: 'Equipe Instituto Despertamente',
   '997': 'Equipe Instituto Despertamente',
@@ -94,6 +95,7 @@ const NPA_EVENTO_POR_SLUG: Record<string, string> = {
 // não tem consultora dona pra assumir a conversa.
 const VENDEDOR_WHATSAPP: Record<string, string> = {
   helen: '5511965781940',
+  'helen-black': '5511965781940',
   direto: '5511976736081',
   promo: '5511976736081',
   '997': '5511976736081',
@@ -145,6 +147,13 @@ const VENDEDOR_WHATSAPP: Record<string, string> = {
 // que cartaoMaxParcelas já usava pro cartão, generalizado pro boleto nesse
 // pedido. avista/cartaoBase não são usados de verdade (forma oculta por
 // FORMAS_PERMITIDAS), mantidos só por consistência de tipo.
+// "helen-black" (2026-11-24): Black IDM, oferta de Black Friday do Rodrygo.
+// PIX R$1.500, boleto 15x R$139, cartão 12x R$139 (pedido do Pedro: mesma
+// parcela do boleto). Conferido na API de parcelamento do próprio MP
+// (payment_methods/installments, taxa 12x = 22,11%): base R$1.365,98 -> 12x
+// de R$139,00 exatos (R$1.668 no cartão do aluno). Travado em 12x
+// (cartaoMinParcelas) porque com essa base o cartão 1x sairia mais barato
+// que o PIX.
 const PLANOS: Record<string, { avista: number; parcela: number; cartaoBase: number; cartaoMaxParcelas: number; cartaoMinParcelas?: number; boletoParcelas?: number }> = {
   padrao: { avista: 1500, parcela: 150, cartaoBase: 1474.10, cartaoMaxParcelas: 12 },
   promo: { avista: 997, parcela: 110, cartaoBase: 1080, cartaoMaxParcelas: 12 },
@@ -152,6 +161,7 @@ const PLANOS: Record<string, { avista: number; parcela: number; cartaoBase: numb
   '15x50': { avista: 750, parcela: 50, cartaoBase: 750, cartaoMaxParcelas: 12 },
   '1000x15': { avista: 1000, parcela: 83.89, cartaoBase: 1000, cartaoMaxParcelas: 15, cartaoMinParcelas: 15 },
   '125x18': { avista: 125, parcela: 125, cartaoBase: 125, cartaoMaxParcelas: 1, boletoParcelas: 18 },
+  'helen-black': { avista: 1500, parcela: 139, cartaoBase: 1365.98, cartaoMaxParcelas: 12, cartaoMinParcelas: 12 },
 };
 
 const planoDoSlug = (slug: string): keyof typeof PLANOS => {
@@ -174,6 +184,7 @@ const FORMAS_PERMITIDAS: Record<string, FormaPagamentoPermitida[] | undefined> =
   '15x50': ['boleto'],
   '1000x15': ['cartao_parcelado'],
   '125x18': ['boleto'],
+  'helen-black': ['avista', 'cartao_parcelado', 'boleto'],
 };
 
 // Forma aceita pela RPC matricula_time_comercial_criar. Desde 2026-09-03,

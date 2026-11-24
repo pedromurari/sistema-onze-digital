@@ -174,7 +174,7 @@ function buildContratoHtml(d: Record<string, unknown>): string {
   // matricula_time_comercial_criar, mesmo dicionário de PLANOS usado no
   // formulário) -- só cai no detector antigo por valor mágico pra alunos
   // matriculados ANTES desse campo existir (sem plano_slug gravado).
-  const PLANOS_CONTRATO: Record<string, { avista: number; parcela: number }> = {
+  const PLANOS_CONTRATO: Record<string, { avista: number; parcela: number; cartaoParcela?: number; cartaoTotal?: number }> = {
     padrao: { avista: 1500, parcela: 150 },
     promo: { avista: 997, parcela: 110 },
     // "997" (cartão à vista 1x, sem parcelamento) não tem valor de parcela
@@ -183,12 +183,15 @@ function buildContratoHtml(d: Record<string, unknown>): string {
     // família de preço (R$997 à vista).
     '997': { avista: 997, parcela: 110 },
     '15x50': { avista: 750, parcela: 50 },
+    // Black IDM (24/11/2026): PIX R$1.500, cartão 12x R$139, boleto 15x R$139.
+    'helen-black': { avista: 1500, parcela: 139 },
   };
   const planoPorSlug = PLANOS_CONTRATO[planoSlug];
   const isPromoPlano = valorParcelaCustom === 997 || valorParcelaCustom === 110;
   const menuValorAvista = planoPorSlug ? planoPorSlug.avista : (isPromoPlano ? 997 : 1500);
   const menuValorParcela = planoPorSlug ? planoPorSlug.parcela : (isPromoPlano ? 110 : 150);
-  const menuValorCartaoTotal = menuValorParcela * 12;
+  const menuValorCartaoParcela = planoPorSlug?.cartaoParcela ?? menuValorParcela;
+  const menuValorCartaoTotal = planoPorSlug?.cartaoTotal ?? menuValorParcela * 12;
   const menuValorBoletoTotal = menuValorParcela * 15;
   // "por extenso" só pro valor padrão de verdade (texto fixo, conferido
   // manualmente); qualquer outro plano mostra só o número -- não é exigência
@@ -210,7 +213,7 @@ function buildContratoHtml(d: Record<string, unknown>): string {
 ` : `
 <p class="c"><strong>4.1.</strong> O CONTRATANTE declara ter escolhido, no ato da matrícula, uma das seguintes condições comerciais:</p>
 <p class="c" style="margin-left:16px;">a) pagamento à vista: R$ ${fmtMoeda(menuValorAvista)}${extensoAvista};</p>
-<p class="c" style="margin-left:16px;">b) cartão de crédito: em até 12 (doze) parcelas de R$ ${fmtMoeda(menuValorParcela)}${extensoParcela}, totalizando R$ ${fmtMoeda(menuValorCartaoTotal)}${extensoCartaoTotal}, conforme disponibilidade e aprovação da operadora/meio de pagamento;</p>
+<p class="c" style="margin-left:16px;">b) cartão de crédito: em até 12 (doze) parcelas de R$ ${fmtMoeda(menuValorCartaoParcela)}${extensoParcela}, totalizando R$ ${fmtMoeda(menuValorCartaoTotal)}${extensoCartaoTotal}, conforme disponibilidade e aprovação da operadora/meio de pagamento;</p>
 <p class="c" style="margin-left:16px;">c) plano por boleto: 1 (uma) parcela inicial, seguida de 14 (quatorze) parcelas mensais de R$ ${fmtMoeda(menuValorParcela)}${extensoParcela}, totalizando 15 (quinze) pagamentos de R$ ${fmtMoeda(menuValorBoletoTotal)}${extensoBoletoTotal};</p>
 <p class="c" style="margin-left:16px;">d) cartão de crédito recorrente: 15 (quinze) cobranças mensais de R$ ${fmtMoeda(menuValorParcela)}${extensoParcela}, lançadas automaticamente no cartão do CONTRATANTE a cada mês, totalizando R$ ${fmtMoeda(menuValorBoletoTotal)}${extensoBoletoTotal}, conforme disponibilidade e aprovação da operadora/meio de pagamento.</p>
 <p class="c"><strong>4.2.</strong> Nos planos por boleto e por cartão recorrente, a quantidade de pagamentos constitui a condição comercial contratada e não deve ser confundida com a quantidade de meses da formação, que permanece com duração prevista de 14 meses.</p>

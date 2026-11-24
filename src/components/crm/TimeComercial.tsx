@@ -1690,6 +1690,11 @@ const LINKS_MATRICULA: OperacaoLink[] = [
     descricao: 'Plano padrão: R$ 1.500 à vista (PIX) ou R$ 150/mês. Aceita PIX, cartão (à vista/parcelado/recorrente), boleto 15x e bolsa. Matrícula entra atribuída à Helen.',
   },
   {
+    label: 'Black IDM — Helen Magna', url: 'https://ir.idmpsi.com.br/helen-black',
+    vendedor: 'Helen Magna', grupo: 'vendedor',
+    descricao: 'Oferta de Black Friday (Black IDM): R$ 1.500 no PIX, 12x R$ 139 no cartão ou 15x R$ 139 no boleto, com os bônus da Black. Contrato já sai com essa condição. Matrícula entra atribuída à Helen.',
+  },
+  {
     label: 'Pré-Matrícula — Helen Magna', url: 'https://ir.idmpsi.com.br/pre-matricula/helen',
     vendedor: 'Helen Magna', grupo: 'vendedor',
     descricao: 'Cliente preenche a ficha e assina o contrato agora, mas a 1ª cobrança (entrada) fica programada pra uma data futura que ele escolhe. Só boleto 15x. Bom pra quem fecha mas só pode pagar dias depois.',
