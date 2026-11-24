@@ -74,6 +74,13 @@ export default async function MentoriaNpaPage() {
           { numero: '01', titulo: 'Número da Alma', conteudo: ['O que motiva você por dentro — o número calculado a partir do seu nome completo.'] },
           { numero: '02', titulo: 'Número da Imagem', conteudo: ['Como você é percebido por fora, e onde isso pode conflitar com o Número da Alma.'] },
         ]}
+        certificado={{
+          frente: '/images/certificado-npa-frente.jpg',
+          verso: '/images/certificado-npa-verso.jpg',
+          titulo: 'Certificado NPA 7 Esferas',
+          texto: 'Ao concluir, você recebe o certificado do Curso de Numerologia Pitagórica Aplicada, NPA 7 Esferas, com a tríade programática no verso: a essência, a vocação e o caminho.',
+          itens: ['Carga horária de 47 horas, em 3 meses', 'Formato híbrido: aulas ao vivo online e plataforma de estudos', 'Alma, imagem, expressão, talento, psíquico, destino, jornada pessoal e desafios do mapa'],
+        }}
         faqItems={[
           { q: 'Preciso saber matemática ou ter formação anterior?', a: 'Não. O NPA ensina o cálculo passo a passo — qualquer pessoa consegue acompanhar, mesmo sem nenhuma base em numerologia.' },
           { q: 'É só pra uso pessoal ou posso atender outras pessoas?', a: 'As duas coisas. Muita gente começa aplicando em si e na família, e depois usa a mesma leitura em atendimento — a Mentoria NPS é o passo seguinte pra quem quer profissionalizar isso.' },
