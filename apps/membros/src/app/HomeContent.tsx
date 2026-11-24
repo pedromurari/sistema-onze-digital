@@ -61,13 +61,6 @@ const FORMACOES: Card[] = [
   },
 ]
 
-const NUMEROS = [
-  { valor: '12.000+', rotulo: 'vidas transformadas' },
-  { valor: '9', rotulo: 'anos de método próprio' },
-  { valor: '7', rotulo: 'formações e mentorias' },
-  { valor: 'MEC', rotulo: 'certificado via Anhanguera' },
-]
-
 const PILARES = [
   { titulo: 'Teoria', texto: 'Psicanálise, neurociência e PNL numa base só.' },
   { titulo: 'Prática', texto: 'Porque não basta aprender sobre a mente: é preciso vivenciar.' },
@@ -118,17 +111,6 @@ export function HomeContent() {
             </div>
           </div>
 
-          <div
-            className="mt-16 grid grid-cols-2 gap-8 pt-8 md:grid-cols-4"
-            style={{ borderTop: '1px solid rgba(255,255,255,0.18)' }}
-          >
-            {NUMEROS.map(n => (
-              <div key={n.rotulo}>
-                <p className="fds-h1" style={{ color: 'var(--fds-accent)', lineHeight: 1 }}>{n.valor}</p>
-                <p className="fds-small mt-2" style={{ color: '#d4d5d9' }}>{n.rotulo}</p>
-              </div>
-            ))}
-          </div>
         </div>
       </section>
 
