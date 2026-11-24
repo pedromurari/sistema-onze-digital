@@ -79,7 +79,7 @@ function Etiqueta({ children }: { children: React.ReactNode }) {
 }
 
 export function HomeContent() {
-  const posts = postsPublicados().slice(0, 3)
+  const posts = postsPublicados().slice(0, 2)
 
   return (
     <div className="fds">
@@ -300,20 +300,58 @@ export function HomeContent() {
         </div>
       </section>
 
-      {/* ── BLOG (só aparece quando houver post de verdade) ─────────── */}
+      {/* ── BLOG: faixa inteira, últimos 2 posts (só aparece com post real) ── */}
       {posts.length > 0 && (
-        <section id="blog" className="fds-section">
-          <div className="fds-wrap">
-            <div className="flex flex-wrap items-baseline justify-between gap-5">
-              <h2 className="fds-h2" style={{ fontSize: 32 }}>Conteúdo que expande a consciência.</h2>
-              <Link href="/blog" className="fds-small" style={{ color: 'var(--fds-accent)', fontWeight: 600 }}>Ver o blog →</Link>
+        <section
+          id="blog"
+          className="relative overflow-hidden"
+          style={{
+            borderTop: '1px solid var(--fds-line)',
+            borderBottom: '1px solid var(--fds-line)',
+            background:
+              'radial-gradient(1200px 500px at 85% 0%, rgba(255,184,0,0.10), transparent 60%), var(--fds-deep)',
+          }}
+        >
+          <div className="fds-wrap grid gap-12 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-16" style={{ paddingTop: 'var(--fds-24)', paddingBottom: 'var(--fds-24)' }}>
+            <div className="flex flex-col justify-center">
+              <p className="fds-eyebrow block">Blog do Instituto</p>
+              <h2 className="fds-display mt-5" style={{ fontSize: 'clamp(2.25rem, 5vw, 3.25rem)' }}>
+                Leituras pra entender a mente que decide por você<span className="fds-accent">.</span>
+              </h2>
+              <p className="fds-body mt-6" style={{ fontSize: 18, color: '#d4d5d9' }}>
+                Psicanálise, PNL e neurociência aplicadas ao que acontece fora do consultório.
+              </p>
+              <div className="mt-9">
+                <Link href="/blog" className="fds-btn fds-btn--primary">
+                  Abrir o blog <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
             </div>
-            <div className="mt-8 grid gap-6 md:grid-cols-3">
+
+            <div className="grid gap-6 sm:grid-cols-2">
               {posts.map(p => (
-                <Link key={p.slug} href={`/blog/${p.slug}`} className="fds-card" style={{ padding: 'var(--fds-6)' }}>
-                  <p className="fds-eyebrow block">{p.categoria}</p>
-                  <h3 className="fds-h3 mt-3" style={{ fontSize: 19 }}>{p.titulo}</h3>
-                  <p className="fds-meta mt-3">{formatarData(p.data)} · {p.leitura} min</p>
+                <Link
+                  key={p.slug}
+                  href={`/blog/${p.slug}`}
+                  className="group flex flex-col overflow-hidden"
+                  style={{ border: '1px solid var(--fds-line)', borderRadius: 12, background: 'var(--fds-bg)' }}
+                >
+                  <div className="relative aspect-[4/3] overflow-hidden" style={{ background: 'linear-gradient(135deg, #1a1c24, #0b0c11)' }}>
+                    {p.capa ? (
+                      <Image src={p.capa} alt="" fill sizes="(min-width: 1024px) 30vw, (min-width: 640px) 50vw, 100vw" className="object-cover transition-transform duration-500 group-hover:scale-105" />
+                    ) : (
+                      <span className="fds-display absolute bottom-4 left-5" style={{ fontSize: 64, color: 'var(--fds-accent)', opacity: 0.35, lineHeight: 1 }}>“</span>
+                    )}
+                  </div>
+                  <div className="flex flex-1 flex-col" style={{ padding: 'var(--fds-6)' }}>
+                    <p className="fds-eyebrow block">{p.categoria}</p>
+                    <h3 className="fds-h3 mt-3" style={{ fontSize: 21 }}>{p.titulo}</h3>
+                    <p className="fds-small mt-3 flex-1">{p.resumo}</p>
+                    <p className="fds-meta mt-5 inline-flex items-center gap-1.5">
+                      {formatarData(p.data)} · {p.leitura} min de leitura
+                      <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" style={{ color: 'var(--fds-accent)' }} />
+                    </p>
+                  </div>
                 </Link>
               ))}
             </div>

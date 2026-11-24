@@ -27,6 +27,8 @@ export interface BlogPost {
   /** ISO (yyyy-mm-dd) — usado pra ordenar e pra <time dateTime>. */
   data: string
   autor: string
+  /** Imagem de capa (caminho em /public ou URL do R2). Opcional. */
+  capa?: string
   /** Minutos estimados de leitura. */
   leitura: number
   /** Parágrafos. Item iniciado por '## ' vira subtítulo. */
