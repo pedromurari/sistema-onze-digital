@@ -1,13 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Calendar, MapPin, Phone, Play, User } from 'lucide-react';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { ArrowRight, MapPin, Play } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { carregarPixel, trackPixel } from './meta-pixel';
-import './npa.css';
+import './npa-fds.css';
 
 const FUNCTIONS_URL = 'https://usqiyekfmwwnvkmkdlej.supabase.co/functions/v1';
 const LOGO = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/turma-assets/logo-idm.png';
@@ -76,7 +73,7 @@ function VideoPlayer() {
 
   return (
     <div
-      className="npa-video-wrap group cursor-pointer"
+      className="nfd-video group"
       onClick={() => {
         const v = videoRef.current;
         if (!v) return;
@@ -113,15 +110,15 @@ function VideoPlayer() {
           (clique em qualquer lugar do vídeo), pra ninguém pular o teaser
           pra frente. Barra abaixo é só visual. */}
       {!tocando && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 bg-black/35 transition-colors group-hover:bg-black/25">
-          <span className="flex h-16 w-16 md:h-20 md:w-20 items-center justify-center rounded-full bg-amber-400 shadow-[0_0_20px_rgba(234,179,8,0.4)] transition-transform group-hover:scale-110">
-            <Play className="h-7 w-7 md:h-9 md:w-9 translate-x-0.5 text-[#0d1420] fill-[#0d1420]" />
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-4 bg-black/45 transition-colors group-hover:bg-black/35">
+          <span className="flex h-16 w-16 md:h-[72px] md:w-[72px] items-center justify-center rounded-full transition-transform group-hover:scale-105" style={{ background: 'var(--accent)' }}>
+            <Play className="h-6 w-6 md:h-7 md:w-7 translate-x-0.5" style={{ color: 'var(--accent-ink)', fill: 'var(--accent-ink)' }} />
           </span>
-          <p className="text-white font-bold text-sm md:text-xl drop-shadow-lg text-center">▶ ASSISTA ANTES DE SE INSCREVER</p>
+          <p className="nfd-small" style={{ color: 'var(--ink)' }}>Assista antes de se inscrever</p>
         </div>
       )}
       <div className="absolute left-0 right-0 bottom-0 h-1 bg-black/40 pointer-events-none">
-        <div className="h-full bg-amber-400" style={{ width: `${progressoPct}%` }} />
+        <div className="h-full" style={{ width: `${progressoPct}%`, background: 'var(--accent)' }} />
       </div>
     </div>
   );
@@ -249,276 +246,216 @@ export default function NPACaptura() {
   }
 
   if (carregando) {
-    return <div className="npa-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><p>Carregando...</p></div>;
+    return <div className="nfd" style={{ display: 'grid', placeItems: 'center' }}><p className="nfd-meta">Carregando…</p></div>;
   }
   if (!evento || !dataFmt) {
-    return <div className="npa-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><p>Turma não encontrada ou inscrições encerradas.</p></div>;
+    return <div className="nfd" style={{ display: 'grid', placeItems: 'center' }}><p className="nfd-body">Turma não encontrada ou inscrições encerradas.</p></div>;
   }
 
+  const professor = evento.professor_convidado ?? 'Rodrygo Murari';
+  const irParaFormulario = () => document.getElementById('inscricao')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
   const formulario = (
-    <form onSubmit={handleSubmit} className="npa-form-card">
-      <div className="text-center mb-6">
-        <h3 className="text-2xl md:text-3xl font-bold text-white mb-2">SIM! Quero minha vaga no IDM Pelo Brasil!</h3>
-        <p className="text-slate-300">Garanta sua vaga agora e comece sua jornada de autodescoberta!</p>
-      </div>
-      <div className="space-y-5">
+    <form id="inscricao" onSubmit={handleSubmit} className="nfd-card" style={{ scrollMarginTop: 24 }}>
+      <p className="nfd-eyebrow">Inscrição · {cidade}</p>
+      <h2 className="nfd-h3" style={{ marginTop: 12 }}>Garanta sua vaga</h2>
+      <p className="nfd-small" style={{ marginTop: 8 }}>{dataFmt.diaSemana}, {dataFmt.curta} · vagas limitadas pelo tamanho da sala.</p>
+
+      <div style={{ marginTop: 28, display: 'grid', gap: 20 }}>
         <div>
-          <Label htmlFor="npa-nome" className="text-white font-medium">Nome completo</Label>
-          <div className="relative mt-2">
-            <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-            <Input id="npa-nome" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Digite seu nome completo"
-              className="pl-11 h-12 bg-white/5 border-white/15 text-white placeholder:text-slate-400 focus-visible:ring-amber-400" required />
-          </div>
+          <label htmlFor="npa-nome" className="nfd-label">Nome completo</label>
+          <input id="npa-nome" className="nfd-input" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Como no seu documento" autoComplete="name" required />
         </div>
         <div>
-          <Label htmlFor="npa-whatsapp" className="text-white font-medium">WhatsApp</Label>
-          <div className="relative mt-2">
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-              <Phone className="h-5 w-5 text-slate-400" /><span className="text-sm font-semibold text-slate-400">+55</span>
-            </div>
-            <Input id="npa-whatsapp" type="tel" value={whatsapp} onChange={handleWhatsapp} placeholder="(00) 00000-0000"
-              className="pl-20 h-12 bg-white/5 border-white/15 text-white placeholder:text-slate-400 focus-visible:ring-amber-400" required />
-          </div>
+          <label htmlFor="npa-whatsapp" className="nfd-label">WhatsApp com DDD</label>
+          <input id="npa-whatsapp" className="nfd-input" type="tel" value={whatsapp} onChange={handleWhatsapp} placeholder="(11) 90000-0000" autoComplete="tel" required />
         </div>
         <div>
-          <Label className="text-white font-medium flex items-center gap-2 mb-3">
-            <Calendar className="h-5 w-5" /> Escolha sua turma — {dataFmt.curta}
-          </Label>
-          <div className="space-y-3">
+          <p className="nfd-label">Escolha sua turma</p>
+          <div style={{ display: 'grid', gap: 10 }}>
             {([
-              { key: 'manha' as const, icone: '☀️', horario: '09:00 às 13:00' },
-              { key: 'tarde' as const, icone: '🌇', horario: '14:00 às 18:00' },
+              { key: 'manha' as const, rotulo: 'Manhã', horario: '09h às 13h' },
+              { key: 'tarde' as const, rotulo: 'Tarde', horario: '14h às 18h' },
             ]).map((t) => (
-              <button key={t.key} type="button" onClick={() => setTurno(t.key)}
-                className={`npa-turma-option ${turno === t.key ? 'npa-selected' : ''}`}>
-                <div className="flex items-start gap-3">
-                  <div className={`w-5 h-5 mt-0.5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${turno === t.key ? 'border-amber-400 bg-amber-400' : 'border-slate-400'}`}>
-                    {turno === t.key && <div className="w-2 h-2 rounded-full bg-[#0d1420]" />}
-                  </div>
-                  <div className="text-left flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-lg">{t.icone}</span>
-                      <p className="font-semibold text-white">{dataFmt.curta}</p>
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-400">{dataFmt.diaSemana}</span>
-                    </div>
-                    <p className="text-sm text-slate-300 mt-1">{t.horario}</p>
-                    <p className="text-xs mt-1 flex items-center gap-1 text-slate-400"><MapPin className="h-3 w-3" />{evento.local}</p>
-                  </div>
-                </div>
+              <button key={t.key} type="button" onClick={() => setTurno(t.key)} aria-pressed={turno === t.key} className="nfd-turno">
+                <span style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <span className="nfd-radio" />
+                  <span style={{ flex: 1 }}>
+                    <span style={{ display: 'block', fontWeight: 600 }}>{t.rotulo} · {t.horario}</span>
+                    <span className="nfd-small" style={{ display: 'block', marginTop: 2 }}>{dataFmt.diaSemana}, {dataFmt.curta}</span>
+                  </span>
+                </span>
               </button>
             ))}
           </div>
         </div>
-        <button type="submit" disabled={enviando} className="npa-cta-button">
-          {enviando ? 'Processando...' : `Garanta Sua Vaga por R$${preco}!`}
+        <button type="submit" disabled={enviando} className="nfd-btn nfd-btn--primary">
+          {enviando ? 'Processando…' : <>Garantir minha vaga por R$ {preco} <ArrowRight size={16} /></>}
         </button>
-        <div className="flex flex-col gap-1.5 text-center text-sm text-slate-400">
-          <p>Vagas limitadas!</p>
-          <p>Seus dados estão 100% seguros</p>
-          <p>Pagamento seguro</p>
-        </div>
+        <p className="nfd-small" style={{ textAlign: 'center' }}>Pagamento seguro · seus dados ficam protegidos</p>
       </div>
     </form>
   );
 
   return (
-    <div className="npa-page">
-      <div className="npa-geometric-numbers" aria-hidden="true">
-        {Array.from({ length: 9 }, (_, i) => <div key={i} className="npa-number-float">{i + 1}</div>)}
-      </div>
+    <div className="nfd">
+      {/* ── TOPO ───────────────────────────────────── */}
+      <header className="nfd-deep" style={{ borderBottom: '1px solid var(--line)' }}>
+        <div className="nfd-wrap" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBlock: 18 }}>
+          <img src={LOGO} alt="Instituto DespertaMente" style={{ height: 40, width: 'auto' }} fetchPriority="high" decoding="async" />
+          <button type="button" onClick={irParaFormulario} className="nfd-btn nfd-btn--primary" style={{ width: 'auto', padding: '10px 18px', fontSize: '.875rem' }}>
+            Garantir vaga
+          </button>
+        </div>
+      </header>
 
-      <section className="relative z-10 px-4 py-6 md:py-12">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex justify-center mb-8">
-            <img src={LOGO} alt="Instituto DespertaMente" className="h-20 md:h-28 w-auto object-contain" fetchPriority="high" decoding="async" />
-          </div>
-
-          <div className="text-center mb-8">
-            <h1 className="npa-hero-headline">
-              <span className="npa-headline-line npa-highlight text-xl md:text-3xl">
-                IDM Pelo Brasil Numerologia: Uma experiência presencial em {cidade} para quem quer aprender, vivenciar e aplicar a numerologia com clareza.
-              </span>
+      {/* ── HERO + FORMULÁRIO ─────────────────────── */}
+      <section className="nfd-deep" style={{ paddingBlock: 'clamp(48px, 8vw, 96px)' }}>
+        <div className="nfd-wrap nfd-hero-grid">
+          <div>
+            <p className="nfd-eyebrow">IDM pelo Brasil · Numerologia · {cidade}</p>
+            <h1 className="nfd-display" style={{ marginTop: 18 }}>
+              Numerologia na prática, <span className="nfd-accent">ao vivo</span> em {cidade}.
             </h1>
-            <h2 className="text-base md:text-xl text-slate-300 mt-4 mb-6 font-semibold max-w-2xl mx-auto">
-              Com {evento.professor_convidado ?? 'Rodrygo Murari'}: Saia com seu mapa numerológico pronto, certificado e material de apoio exclusivo para aplicar imediatamente.
-            </h2>
-
-            <VideoPlayer />
-
-            <div className="max-w-xl mx-auto">
-              <div className="rounded-xl border-2 border-amber-400/40 bg-white/5 p-5 mb-6">
-                <p className="text-amber-400 font-bold text-lg mb-1">{dataFmt.curta} em {cidade} - SP!</p>
-                <p className="font-semibold text-white">Vagas limitadas! Garanta sua vaga agora.</p>
-              </div>
-              <div className="flex flex-wrap justify-center gap-4 text-sm text-slate-300 mb-4">
-                <span>Certificado de conclusão</span>
-                <span>Material de apoio exclusivo</span>
-                <span>Vagas limitadas</span>
-              </div>
-              <p className="npa-price-shine text-2xl md:text-3xl font-bold mb-6">Garanta sua vaga por apenas R${preco} reais.</p>
+            <p className="nfd-lead" style={{ marginTop: 22, maxWidth: 560 }}>
+              Uma experiência presencial com {professor} pra aprender, vivenciar e aplicar a numerologia com clareza.
+              Você sai com o seu mapa numerológico pronto, certificado e material de apoio.
+            </p>
+            <div className="nfd-line" style={{ marginTop: 32, paddingTop: 24, display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 16 }}>
+              <div><p className="nfd-meta">Data</p><p style={{ marginTop: 6, fontWeight: 600 }}>{dataFmt.diaMes} · {dataFmt.diaSemana.split('-')[0]}</p></div>
+              <div><p className="nfd-meta">Turmas</p><p style={{ marginTop: 6, fontWeight: 600 }}>Manhã ou tarde</p></div>
+              <div><p className="nfd-meta">Ingresso</p><p style={{ marginTop: 6, fontWeight: 600 }} className="nfd-accent">R$ {preco}</p></div>
             </div>
+            <div style={{ marginTop: 32 }}><VideoPlayer /></div>
+            <p className="nfd-small" style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <MapPin size={14} /> {evento.local} · <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="nfd-accent">ver no mapa</a>
+            </p>
           </div>
-
-          <div>{formulario}</div>
+          <div className="nfd-sticky">{formulario}</div>
         </div>
       </section>
 
-      <section className="relative z-10 px-4">
-        <div className="npa-section-container npa-section-highlight">
-          <h2 className="text-2xl md:text-4xl font-bold text-center text-white mb-3">O QUE VOCÊ VAI DESCOBRIR NESTA EXPERIÊNCIA PRESENCIAL</h2>
-          <p className="text-center text-slate-300 mb-10 text-lg">Os 3 pilares do IDM Pelo Brasil Numerologia — conteúdo prático que você aplica no mesmo dia</p>
-          <div className="grid md:grid-cols-3 gap-6">
-            {PILARES.map((p) => (
-              <div key={p.titulo} className="npa-pillar npa-hover-lift">
-                <div className="text-5xl mb-4 text-center">{p.icone}</div>
-                <h3 className="text-xl font-bold text-white mb-1.5 text-center">{p.titulo}</h3>
-                <p className="text-amber-400 font-semibold mb-4 text-center">{p.subtitulo}</p>
-                <ul className="space-y-2.5 mb-5">
-                  {p.itens.map((item) => (
-                    <li key={item} className="flex items-start gap-2.5 text-slate-300 text-sm">
-                      <span className="text-amber-400 mt-0.5">✓</span><span>{item}</span>
-                    </li>
-                  ))}
+      {/* ── O QUE VOCÊ VAI APRENDER ───────────────── */}
+      <section className="nfd-section">
+        <div className="nfd-wrap">
+          <p className="nfd-eyebrow">O conteúdo</p>
+          <h2 className="nfd-h2" style={{ marginTop: 14, maxWidth: 760 }}>
+            Três frentes, aplicadas <span className="nfd-accent">no mesmo dia</span>.
+          </h2>
+          <div className="nfd-grid-3" style={{ marginTop: 48 }}>
+            {PILARES.map((p, i) => (
+              <div key={p.titulo}>
+                <p className="nfd-meta">{String(i + 1).padStart(2, '0')}</p>
+                <h3 className="nfd-h3" style={{ marginTop: 14 }}>{p.titulo}</h3>
+                <p className="nfd-small" style={{ marginTop: 6 }}>{p.subtitulo}</p>
+                <ul style={{ marginTop: 22, display: 'grid', gap: 12 }}>
+                  {p.itens.map((item) => <li key={item} className="nfd-check nfd-small" style={{ color: 'var(--ink-2)' }}>{item}</li>)}
                 </ul>
-                <p className="text-sm text-slate-400 italic text-center pt-3 border-t border-white/10">{p.rodape}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="relative z-10 px-4">
-        <div className="npa-section-container text-center max-w-4xl">
-          <img src={LOGO} alt="Instituto DespertaMente" className="h-20 w-auto object-contain mx-auto mb-6" loading="lazy" decoding="async" />
-          <h2 className="text-2xl md:text-4xl font-bold text-white mb-6">QUEM ESTÁ POR TRÁS DESTE PROJETO?</h2>
-          <div className="text-lg text-slate-300 space-y-4 leading-relaxed">
-            <p>O Instituto DespertaMente é referência em desenvolvimento humano, integrando Psicanálise, PNL, Hipnose e Numerologia Pitagórica Sistêmica.</p>
-            <p>Nossa missão é clara: tornar o autoconhecimento acessível através de experiências transformadoras, vivências profundas e formações de altíssima qualidade.</p>
-            <p className="npa-price-shine font-semibold text-xl">Não é apenas teoria. É transformação real na vida de centenas de participantes.</p>
+      {/* ── PROFESSOR ─────────────────────────────── */}
+      <section className="nfd-section nfd-band">
+        <div className="nfd-wrap" style={{ display: 'grid', gap: 48, alignItems: 'center', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+          <img src={FOTO_RODRYGO} alt="Rodrygo Murari" loading="lazy" decoding="async"
+            style={{ width: '100%', maxWidth: 420, aspectRatio: '1', objectFit: 'cover', borderRadius: 10, border: '1px solid var(--line)' }} />
+          <div>
+            <p className="nfd-eyebrow">Quem conduz</p>
+            <h2 className="nfd-h2" style={{ marginTop: 14 }}>Rodrygo Murari</h2>
+            <p className="nfd-meta" style={{ marginTop: 10 }}>Fundador do Instituto Despertamente</p>
+            <p className="nfd-body" style={{ marginTop: 24 }}>
+              Mais de <span style={{ color: 'var(--ink)' }}>5.000 horas</span> de atendimentos, treinamentos e mentorias.
+              Especialista em Metafísica Comportamental e PNL Sistêmica, criador do Método NPS de Numerologia Pitagórica Sistêmica.
+            </p>
+            <p className="nfd-body" style={{ marginTop: 14 }}>
+              O propósito dele é uma numerologia descomplicada, que você entende e usa no dia a dia.
+            </p>
           </div>
         </div>
       </section>
 
-      <section className="relative z-10 px-4">
-        <div className="npa-section-container max-w-5xl">
-          <h2 className="text-2xl md:text-4xl font-bold text-center text-white mb-10">CONHEÇA SEU PROFESSOR</h2>
-          <div className="flex flex-col md:flex-row items-center gap-8 md:gap-12">
-            <div className="flex-shrink-0 text-center">
-              <img src={FOTO_RODRYGO} alt="Rodrygo Murari" className="w-56 h-56 md:w-72 md:h-72 rounded-2xl object-cover border-4 border-amber-400/30 shadow-2xl mx-auto" loading="lazy" decoding="async" />
-              <p className="text-xl font-bold text-white mt-4">Rodrygo Murari</p>
-              <p className="text-amber-400 font-semibold">Fundador e Professor Especialista</p>
-            </div>
-            <div className="text-slate-300 space-y-4 leading-relaxed text-center md:text-left">
-              <p>Com mais de <span className="text-amber-400 font-bold">5.000 HORAS</span> de atendimentos somados em setting terapêutico, experiências, treinamentos e mentorias, Rodrygo Murari é especialista em Metafísica Comportamental e PNL Sistêmica.</p>
-              <p>Seu propósito? Levar uma "Numerologia Descomplicada".</p>
-              <p>Sua abordagem revolucionária da Numerologia Sistêmica tem transformado a vida de centenas de pessoas no Brasil e na Europa.</p>
-            </div>
+      {/* ── INVESTIMENTO ─────────────────────────── */}
+      <section className="nfd-section">
+        <div className="nfd-wrap" style={{ display: 'grid', gap: 48, gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', alignItems: 'start' }}>
+          <div>
+            <p className="nfd-eyebrow">Investimento</p>
+            <h2 className="nfd-h2" style={{ marginTop: 14 }}>
+              Por que só <span className="nfd-accent">R$ {preco}</span>?
+            </h2>
+            <p className="nfd-body" style={{ marginTop: 22 }}>
+              A missão do Instituto é tornar o autoconhecimento acessível. O valor do ingresso garante o seu compromisso
+              com o encontro e cobre a organização. É presencial, com a profundidade e a troca que só o contato direto dá.
+            </p>
           </div>
-        </div>
-      </section>
-
-      <section className="relative z-10 px-4">
-        <div className="npa-section-container npa-section-highlight max-w-4xl">
-          <h2 className="text-xl md:text-4xl font-bold text-center text-white mb-6">POR QUE UMA EXPERIÊNCIA PRESENCIAL TÃO ACESSÍVEL?</h2>
-          <div className="text-lg text-slate-300 space-y-4 leading-relaxed mb-8 text-center">
-            <p>Você deve estar se perguntando: "Como uma experiência presencial com certificado pode custar apenas R${preco}?"</p>
-            <p className="npa-price-shine font-semibold text-xl">A resposta é simples: nossa missão é democratizar o autoconhecimento.</p>
-            <p className="font-semibold text-white">Este não é um encontro online genérico. É uma experiência presencial, com a profundidade e a interação que só o contato direto pode oferecer.</p>
-            <p>Queremos que VOCÊ tenha acesso a ferramentas poderosas de transformação, independente da sua situação financeira.</p>
-            <p>O investimento de R${preco} garante seu compromisso e nossa capacidade de organizar o melhor evento possível.</p>
-          </div>
-
-          <div className="bg-white/5 border-2 border-amber-400/40 rounded-2xl p-6 md:p-8 text-center">
-            <div className="flex justify-center gap-8 mb-6 flex-wrap">
-              <div><p className="text-sm text-slate-400 mb-1">Valor real da experiência:</p><p className="text-2xl md:text-3xl font-bold line-through text-slate-400">R$ 497</p></div>
-              <div><p className="text-sm text-slate-400 mb-1">Seu investimento hoje:</p><p className="npa-price-shine text-3xl md:text-4xl font-bold">R${preco}</p></div>
-              <div><p className="text-sm text-slate-400 mb-1">Economia:</p><p className="text-2xl md:text-3xl font-bold text-amber-400">R$ {497 - Number(preco)}</p></div>
-            </div>
-            <p className="npa-price-shine text-xl md:text-2xl font-bold">Sim, você está economizando mais de 90%!</p>
-          </div>
-
-          <div className="mt-8 bg-white/5 border border-amber-400/20 rounded-xl p-6">
-            <h3 className="text-xl font-bold text-center text-amber-400 mb-5">O QUE ESTÁ INCLUSO:</h3>
-            <div className="grid md:grid-cols-2 gap-2.5 text-slate-300 text-sm">
-              {['Encontro presencial completo (4 horas)', 'Certificado de conclusão', 'Material de apoio exclusivo', 'Seu mapa numerológico pronto', 'Suporte durante o evento', 'Acesso ao grupo exclusivo de participantes'].map((item) => (
-                <p key={item} className="flex items-center gap-2"><span className="text-amber-400">✓</span>{item}</p>
+          <div className="nfd-card">
+            <p className="nfd-meta">O que está incluso</p>
+            <ul style={{ marginTop: 20, display: 'grid', gap: 14 }}>
+              {['Encontro presencial de 4 horas', 'Seu mapa numerológico pronto', 'Certificado de conclusão', 'Material de apoio exclusivo', 'Grupo dos participantes no WhatsApp'].map((item) => (
+                <li key={item} className="nfd-check nfd-body">{item}</li>
               ))}
+            </ul>
+            <div className="nfd-line" style={{ marginTop: 28, paddingTop: 24, display: 'flex', alignItems: 'end', justifyContent: 'space-between', gap: 16 }}>
+              <div>
+                <p className="nfd-small" style={{ textDecoration: 'line-through' }}>R$ 497</p>
+                <p style={{ fontFamily: 'var(--serif)', fontWeight: 600, fontSize: 44, lineHeight: 1 }}>R$ {preco}</p>
+              </div>
+              <p className="nfd-meta" style={{ textAlign: 'right' }}>ingresso<br />único</p>
             </div>
-            <p className="npa-price-shine text-center text-lg font-bold mt-5">TUDO ISSO POR R${preco}!</p>
+            <button type="button" onClick={irParaFormulario} className="nfd-btn nfd-btn--primary" style={{ marginTop: 24 }}>
+              Garantir minha vaga <ArrowRight size={16} />
+            </button>
           </div>
         </div>
       </section>
 
-      <section className="relative z-10 px-4 py-10 text-center">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-2xl md:text-4xl font-bold text-white mb-4">VAGAS LIMITADAS!</h2>
-          <p className="text-lg text-slate-300 mb-8">{dataFmt.diaSemana}, {dataFmt.curta} · {cidade} · Manhã ou Tarde</p>
-          <a href="#inicio" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
-            <button className="npa-cta-button max-w-md mx-auto">Garantir Minha Vaga por R${preco}!</button>
-          </a>
+      {/* ── FAQ ──────────────────────────────────── */}
+      <section className="nfd-section nfd-band">
+        <div className="nfd-narrow">
+          <p className="nfd-eyebrow">Dúvidas</p>
+          <h2 className="nfd-h2" style={{ marginTop: 14 }}>Perguntas frequentes</h2>
+          <div className="nfd-faq" style={{ marginTop: 40 }}>
+            {[
+              ['Nunca estudei numerologia. É pra mim?', 'Sim. O encontro foi pensado pra quem está começando do zero. Você sai sabendo calcular e interpretar o seu próprio mapa.'],
+              [`Por que o ingresso custa R$ ${preco}?`, 'Não tem pegadinha. A missão do Instituto é tornar o autoconhecimento acessível: o valor garante o seu compromisso e cobre os custos de organização.'],
+              ['O certificado é reconhecido?', 'Você recebe o certificado de conclusão do Instituto Despertamente, que comprova a participação e o aprendizado em Numerologia Pitagórica Sistêmica.'],
+              ['Quando e onde vai ser?', `${dataFmt.diaSemana}, ${dataFmt.curta}, com duas turmas: manhã (09h às 13h) e tarde (14h às 18h), em ${evento.local}. Os detalhes chegam pelo WhatsApp depois da inscrição.`],
+              ['E se eu não puder ir depois de pagar?', 'Fale com a gente com 48 horas de antecedência. A gente avalia transferir a sua vaga pra próxima turma ou fazer o reembolso.'],
+              ['Preciso levar algum material?', 'Não. O material está incluso. Se quiser, leve um caderno pras suas anotações.'],
+              ['O pagamento é seguro?', 'Sim. O pagamento é feito em ambiente seguro e você recebe a confirmação na hora.'],
+            ].map(([q, a]) => (
+              <details key={q}><summary>{q}</summary><p className="nfd-body">{a}</p></details>
+            ))}
+          </div>
         </div>
       </section>
 
-      <section className="relative z-10 px-4">
-        <div className="npa-section-container max-w-4xl">
-          <h2 className="text-2xl md:text-4xl font-bold text-center text-white mb-2">PERGUNTAS FREQUENTES</h2>
-          <p className="text-center text-slate-300 mb-10">Tire suas dúvidas antes de garantir sua vaga</p>
-          <Accordion type="single" collapsible className="space-y-3">
-            <AccordionItem value="faq-1" className="border-white/10">
-              <AccordionTrigger className="text-left text-white hover:text-amber-400">Nunca estudei numerologia. Esta experiência é para mim?</AccordionTrigger>
-              <AccordionContent className="text-slate-300">SIM! Este encontro foi desenvolvido especialmente para iniciantes. Você não precisa de conhecimento prévio. Vamos começar do zero e você sairá do evento já sabendo calcular e interpretar seu próprio mapa numerológico.</AccordionContent>
-            </AccordionItem>
-            <AccordionItem value="faq-2" className="border-white/10">
-              <AccordionTrigger className="text-left text-white hover:text-amber-400">Por que o ingresso custa R${preco}? Qual é a pegadinha?</AccordionTrigger>
-              <AccordionContent className="text-slate-300">Não há pegadinha! Nossa missão é democratizar o autoconhecimento. O valor garante seu compromisso com a experiência e cobre custos básicos de organização. Queremos que o máximo de pessoas possam ter acesso a essa transformação.</AccordionContent>
-            </AccordionItem>
-            <AccordionItem value="faq-3" className="border-white/10">
-              <AccordionTrigger className="text-left text-white hover:text-amber-400">O certificado é reconhecido?</AccordionTrigger>
-              <AccordionContent className="text-slate-300">Sim! Você receberá um certificado de conclusão emitido pelo Instituto DespertaMente, válido como comprovação de participação e aprendizado em Numerologia Pitagórica Sistêmica.</AccordionContent>
-            </AccordionItem>
-            <AccordionItem value="faq-4" className="border-white/10">
-              <AccordionTrigger className="text-left text-white hover:text-amber-400">Quando e onde será a experiência?</AccordionTrigger>
-              <AccordionContent className="text-slate-300">
-                A experiência será realizada no dia {dataFmt.diaMes} ({dataFmt.diaSemana}), com duas turmas: Manhã (09h às 13h) e Tarde (14h às 18h), presencial em {evento.local}. As informações detalhadas serão enviadas por WhatsApp logo após sua inscrição.{' '}
-                <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="text-amber-400 underline">Ver no Google Maps</a>.
-              </AccordionContent>
-            </AccordionItem>
-            <AccordionItem value="faq-5" className="border-white/10">
-              <AccordionTrigger className="text-left text-white hover:text-amber-400">E se eu não puder comparecer depois de pagar?</AccordionTrigger>
-              <AccordionContent className="text-slate-300">Entre em contato conosco com 48h de antecedência. Avaliaremos a possibilidade de transferir sua vaga para a próxima turma ou realizar o reembolso integral.</AccordionContent>
-            </AccordionItem>
-            <AccordionItem value="faq-6" className="border-white/10">
-              <AccordionTrigger className="text-left text-white hover:text-amber-400">Preciso levar algum material?</AccordionTrigger>
-              <AccordionContent className="text-slate-300">Não! Todo material didático está incluso. Você só precisa levar você mesmo, com mente aberta e vontade de aprender. Recomendamos trazer caderno extra se quiser fazer anotações pessoais.</AccordionContent>
-            </AccordionItem>
-            <AccordionItem value="faq-7" className="border-white/10">
-              <AccordionTrigger className="text-left text-white hover:text-amber-400">Vou conseguir fazer cálculos numerológicos depois do encontro?</AccordionTrigger>
-              <AccordionContent className="text-slate-300">COM CERTEZA! A experiência é 100% prática. Você vai calcular seu próprio mapa durante o evento e sairá de lá apto a calcular para outras pessoas. É aprender fazendo!</AccordionContent>
-            </AccordionItem>
-            <AccordionItem value="faq-8" className="border-white/10">
-              <AccordionTrigger className="text-left text-white hover:text-amber-400">O pagamento é seguro?</AccordionTrigger>
-              <AccordionContent className="text-slate-300">Absolutamente! Seus dados estão protegidos e você recebe a confirmação do pagamento na hora.</AccordionContent>
-            </AccordionItem>
-          </Accordion>
+      {/* ── CTA FINAL ─────────────────────────────── */}
+      <section className="nfd-deep" style={{ paddingBlock: 'clamp(64px, 10vw, 120px)', textAlign: 'center' }}>
+        <div className="nfd-narrow">
+          <p className="nfd-eyebrow">{dataFmt.diaSemana}, {dataFmt.curta} · {cidade}</p>
+          <h2 className="nfd-h2" style={{ marginTop: 14 }}>
+            Quando a sala lota, <span className="nfd-accent">lotou</span>.
+          </h2>
+          <div style={{ maxWidth: 420, margin: '32px auto 0' }}>
+            <button type="button" onClick={irParaFormulario} className="nfd-btn nfd-btn--primary">
+              Garantir minha vaga por R$ {preco} <ArrowRight size={16} />
+            </button>
+          </div>
         </div>
       </section>
 
-      <footer className="relative z-10 px-4 py-12 border-t border-white/10 text-center">
-        <div className="max-w-3xl mx-auto space-y-5">
-          <img src={LOGO} alt="Instituto DespertaMente" className="h-14 w-auto object-contain mx-auto" loading="lazy" decoding="async" />
-          <p className="text-lg font-semibold text-white">Instituto DespertaMente</p>
-          <p className="text-slate-400">Transformando vidas através do autoconhecimento</p>
-          <div className="space-y-1 text-slate-400 text-sm">
-            <p>{evento.local}</p>
+      <footer style={{ borderTop: '1px solid var(--line)', paddingBlock: 40 }}>
+        <div className="nfd-wrap" style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'center', justifyContent: 'space-between' }}>
+          <img src={LOGO} alt="Instituto DespertaMente" style={{ height: 32, width: 'auto' }} loading="lazy" decoding="async" />
+          <div style={{ display: 'flex', gap: 20 }} className="nfd-small">
+            <a href="https://www.instagram.com/institutodespertamente/" target="_blank" rel="noopener noreferrer">Instagram</a>
+            <a href="https://www.youtube.com/@institutodespertamente" target="_blank" rel="noopener noreferrer">YouTube</a>
+            <a href="https://www.idmpsi.com.br" target="_blank" rel="noopener noreferrer">idmpsi.com.br</a>
           </div>
-          <div className="flex justify-center gap-6 pt-2 text-sm">
-            <a href="https://www.instagram.com/institutodespertamente/" target="_blank" rel="noopener noreferrer" className="text-amber-400 hover:text-amber-300">Instagram</a>
-            <a href="https://www.facebook.com/institutodespertamente" target="_blank" rel="noopener noreferrer" className="text-amber-400 hover:text-amber-300">Facebook</a>
-            <a href="https://www.youtube.com/@institutodespertamente" target="_blank" rel="noopener noreferrer" className="text-amber-400 hover:text-amber-300">YouTube</a>
-          </div>
-          <div className="pt-6 border-t border-white/10 text-xs text-slate-500">
-            <p>© {new Date().getFullYear()} Instituto DespertaMente. Todos os direitos reservados.</p>
-          </div>
+          <p className="nfd-small">© {new Date().getFullYear()} Instituto Despertamente</p>
         </div>
       </footer>
     </div>

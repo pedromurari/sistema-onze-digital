@@ -1,0 +1,83 @@
+/*
+ * Páginas de turma do IDM pelo Brasil (/npa/:slug) no design system do site
+ * institucional (apps/membros/src/app/design-system.css): serif editorial,
+ * dourado só como destaque, plano, separação por linha de 1px.
+ * Tokens copiados de lá -- se mudar um, mudar o outro.
+ */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap');
+
+.nfd {
+  --bg: #08090d; --surface: #0c0e14; --deep: #09122c;
+  --ink: #f2f2f3; --ink-2: #a7a8ae; --ink-3: #71737c; --ink-4: #4a4c55;
+  --line: rgba(255, 255, 255, 0.09); --accent: #ffb800; --accent-ink: #09122c;
+  --serif: 'Fraunces', Georgia, serif; --sans: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  background: var(--bg); color: var(--ink); font-family: var(--sans); min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+.nfd-wrap { max-width: 1200px; margin: 0 auto; padding-inline: 24px; }
+.nfd-narrow { max-width: 760px; margin: 0 auto; padding-inline: 24px; }
+.nfd-section { padding-block: 96px; }
+.nfd-band { background: var(--surface); border-block: 1px solid var(--line); }
+.nfd-deep { background: var(--deep); }
+
+.nfd-eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+.nfd-meta { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.nfd-display { font-family: var(--serif); font-weight: 600; font-size: clamp(2.5rem, 6vw, 4.75rem); line-height: 1.02; letter-spacing: -.02em; }
+.nfd-h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(2rem, 4.2vw, 3rem); line-height: 1.08; letter-spacing: -.015em; }
+.nfd-h3 { font-family: var(--serif); font-weight: 600; font-size: 1.5rem; line-height: 1.2; }
+.nfd-lead { font-size: 1.125rem; line-height: 1.65; color: var(--ink-2); }
+.nfd-body { font-size: 1rem; line-height: 1.7; color: var(--ink-2); }
+.nfd-small { font-size: .875rem; line-height: 1.6; color: var(--ink-3); }
+.nfd-accent { color: var(--accent); }
+
+.nfd-card { border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.015); padding: 32px; }
+.nfd-line { border-top: 1px solid var(--line); }
+
+.nfd-btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 100%;
+  font-weight: 600; font-size: 1rem; padding: 18px 24px; border-radius: 4px; border: 1px solid transparent;
+  cursor: pointer; transition: opacity .2s, transform .2s; }
+.nfd-btn--primary { background: var(--accent); color: var(--accent-ink); }
+.nfd-btn--primary:hover { opacity: .92; }
+.nfd-btn--primary:disabled { opacity: .6; cursor: wait; }
+.nfd-btn--ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+.nfd-btn--ghost:hover { border-color: rgba(255,255,255,.2); }
+
+.nfd-input { width: 100%; height: 52px; background: transparent; border: 1px solid var(--line); border-radius: 4px;
+  color: var(--ink); padding: 0 16px; font-size: 1rem; outline: none; transition: border-color .2s; }
+.nfd-input::placeholder { color: var(--ink-4); }
+.nfd-input:focus { border-color: var(--accent); }
+.nfd-label { display: block; font-size: .875rem; font-weight: 500; color: var(--ink); margin-bottom: 8px; }
+
+.nfd-turno { width: 100%; text-align: left; border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px;
+  background: transparent; color: var(--ink); cursor: pointer; transition: border-color .2s, background .2s; }
+.nfd-turno:hover { border-color: rgba(255,255,255,.2); }
+.nfd-turno[aria-pressed='true'] { border-color: var(--accent); background: rgba(255,184,0,.05); }
+.nfd-radio { width: 18px; height: 18px; border-radius: 999px; border: 1px solid var(--ink-3); flex-shrink: 0; display: grid; place-items: center; }
+.nfd-turno[aria-pressed='true'] .nfd-radio { border-color: var(--accent); }
+.nfd-turno[aria-pressed='true'] .nfd-radio::after { content: ''; width: 8px; height: 8px; border-radius: 999px; background: var(--accent); }
+
+.nfd-video { position: relative; aspect-ratio: 16 / 9; width: 100%; overflow: hidden; border-radius: 10px; border: 1px solid var(--line); background: #000; cursor: pointer; }
+
+.nfd-check { display: flex; gap: 12px; align-items: flex-start; }
+.nfd-check::before { content: '✦'; color: var(--accent); font-size: .75rem; margin-top: .35em; flex-shrink: 0; }
+
+.nfd-grid-3 { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.nfd-grid-3 > * { background: var(--bg); padding: 32px; }
+@media (min-width: 900px) { .nfd-grid-3 { grid-template-columns: repeat(3, 1fr); } }
+
+.nfd-hero-grid { display: grid; gap: 48px; align-items: start; }
+@media (min-width: 1000px) { .nfd-hero-grid { grid-template-columns: 1.15fr 1fr; gap: 64px; } .nfd-sticky { position: sticky; top: 24px; } }
+
+.nfd-faq details { border-top: 1px solid var(--line); padding: 22px 0; }
+.nfd-faq details:last-child { border-bottom: 1px solid var(--line); }
+.nfd-faq summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; gap: 16px; font-weight: 500; color: var(--ink); }
+.nfd-faq summary::-webkit-details-marker { display: none; }
+.nfd-faq summary::after { content: '+'; color: var(--accent); font-size: 1.25rem; line-height: 1; }
+.nfd-faq details[open] summary::after { content: '–'; }
+.nfd-faq details p { margin-top: 12px; }
+
+@media (max-width: 640px) {
+  .nfd-section { padding-block: 56px; }
+  .nfd-card, .nfd-grid-3 > * { padding: 24px; }
+}
