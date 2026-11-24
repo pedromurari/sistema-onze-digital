@@ -243,10 +243,19 @@ export default function MatriculaNPS() {
             )}
 
             {pixStatus === 'approved' && (
-              <p style={{ fontSize: '0.9375rem', color: 'var(--text)', fontWeight: 600, textAlign: 'center' }}>
-                Pagamento confirmado! Em breve você recebe por WhatsApp/e-mail a confirmação e o acesso
-                à área de membros da Mentoria NPS.
-              </p>
+              <div style={{ textAlign: 'center', color: 'var(--text)' }}>
+                <p style={{ fontSize: '1.125rem', fontWeight: 700 }}>
+                  Obrigado! Sua vaga na Mentoria NPS está garantida. 💛
+                </p>
+                <ul style={{ fontSize: '0.9375rem', lineHeight: 1.7, marginTop: 12, listStyle: 'none', padding: 0 }}>
+                  <li>📩 O acesso à área de membros foi enviado para o seu e-mail.</li>
+                  <li>👥 Também mandamos no e-mail o link do grupo da mentoria.</li>
+                  <li>💬 E você recebe agora pelo WhatsApp do Instituto a confirmação da compra com o link do grupo.</li>
+                </ul>
+                <p style={{ fontSize: '0.8125rem', marginTop: 12, opacity: 0.75 }}>
+                  Não achou o e-mail? Confira a caixa de spam ou promoções.
+                </p>
+              </div>
             )}
           </div>
         )}

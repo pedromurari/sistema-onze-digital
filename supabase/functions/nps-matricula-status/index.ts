@@ -118,6 +118,72 @@ async function enviarConfirmacaoNps(
   }
 }
 
+/**
+ * Boas-vindas da 1ª mensalidade (pedido do Pedro, 24/11/2026): além da
+ * confirmação de pagamento (que sai pelo Financeiro IDM) e do e-mail de acesso
+ * à área de membros (membros-liberar-acesso-aluno), a aluna recebe:
+ *  - WhatsApp pelo número do Instituto ("Instituto Despertamente") confirmando
+ *    a entrada na mentoria e com o link do grupo;
+ *  - e-mail com o link do grupo.
+ * O link vem de turma_disparo_config.link_grupo da turma NPS (o mesmo campo
+ * que o disparo de boas-vindas das outras turmas usa). Sem link cadastrado,
+ * a mensagem sai sem a linha do grupo, em vez de não sair.
+ */
+const NPS_TURMA_ID = '25abbf54-ef59-4d7c-8db8-bf43ecd82318';
+
+async function enviarBoasVindasNps(
+  supabase: ReturnType<typeof createClient>,
+  supabaseUrl: string, serviceKey: string,
+  aluno: { nome: string | null; email: string | null; whatsapp: string | null; cobranca_telefone: string | null },
+) {
+  const fnHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey };
+  const { data: cfg } = await supabase
+    .from('turma_disparo_config').select('link_grupo').eq('turma_id', NPS_TURMA_ID).maybeSingle();
+  const linkGrupo = (cfg?.link_grupo as string | null) || null;
+  const primeiroNome = (aluno.nome || '').trim().split(/\s+/)[0] || 'aluna(o)';
+
+  const numero = aluno.whatsapp || aluno.cobranca_telefone;
+  if (numero) {
+    const linhas = [
+      `Seja muito bem-vinda(o) à *Mentoria NPS*, ${primeiroNome}! 💛`,
+      '',
+      'Sua compra foi confirmada e sua vaga está garantida.',
+      '',
+      '📩 O acesso à área de membros já foi enviado para o seu e-mail.',
+      linkGrupo ? `\n👥 Entre agora no grupo da mentoria, é por lá que avisamos os encontros ao vivo:\n${linkGrupo}` : '',
+      '',
+      'Qualquer dúvida, é só responder esta mensagem.',
+      'Instituto Despertamente',
+    ].filter((l, i, a) => !(l === '' && a[i - 1] === ''));
+    try {
+      await fetch(`${supabaseUrl}/functions/v1/wpp-enviar`, {
+        method: 'POST', headers: fnHeaders,
+        body: JSON.stringify({ numero, mensagem: linhas.join('\n'), instance_name: 'Instituto Despertamente' }),
+      });
+    } catch (e) {
+      console.error('nps-matricula-status: falha no whatsapp de boas-vindas', e);
+    }
+  }
+
+  if (aluno.email) {
+    const blocoGrupo = linkGrupo
+      ? `<p>Entre agora no grupo da mentoria no WhatsApp. É por lá que avisamos os encontros ao vivo:</p><p><a href="${linkGrupo}" style="display:inline-block;background:#FFB800;color:#080808;padding:12px 22px;border-radius:8px;font-weight:700;text-decoration:none">Entrar no grupo da Mentoria NPS</a></p>`
+      : '';
+    try {
+      await fetch(`${supabaseUrl}/functions/v1/email-enviar`, {
+        method: 'POST', headers: fnHeaders,
+        body: JSON.stringify({
+          to: aluno.email, to_name: aluno.nome || '',
+          subject: 'Bem-vinda(o) à Mentoria NPS — Instituto Despertamente',
+          html: `<h2>Sua vaga na Mentoria NPS está garantida 💛</h2><p>Oi, ${primeiroNome}!</p><p>Sua compra foi confirmada. O acesso à área de membros chega em um e-mail separado, com login e senha.</p>${blocoGrupo}<p>Qualquer dúvida, é só responder este e-mail.</p><p>Instituto Despertamente</p>`,
+        }),
+      });
+    } catch (e) {
+      console.error('nps-matricula-status: falha no e-mail de boas-vindas', e);
+    }
+  }
+}
+
 async function gerarProximaParcela(
   supabase: ReturnType<typeof createClient>,
   aluno: { id: string; dia_vencimento: number | null; valor_mensalidade: number | null; nome: string | null },
@@ -186,6 +252,8 @@ export async function posPagamentoNps(
 
   if (pagamento.numero_parcela === 1) {
     await liberarAcessoMembros(supabaseUrl, serviceKey, aluno.id as string);
+    await enviarBoasVindasNps(supabase, supabaseUrl, serviceKey, aluno as any).catch(e =>
+      console.error('posPagamentoNps: falha nas boas-vindas', e));
   }
 
   await gerarProximaParcela(supabase, aluno as any, Number(pagamento.numero_parcela)).catch(e =>

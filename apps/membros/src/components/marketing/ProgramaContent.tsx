@@ -81,8 +81,8 @@ export type ProximaTurma = {
 }
 
 function PriceBlock({
-  product, waUrl, proximaTurma,
-}: { product: ProductData | null; waUrl: string; proximaTurma?: ProximaTurma }) {
+  product, waUrl, proximaTurma, checkoutUrlFixo,
+}: { product: ProductData | null; waUrl: string; proximaTurma?: ProximaTurma; checkoutUrlFixo?: string }) {
   // Turma fechada manda sobre o preço: sem turma aberta não existe checkout,
   // mesmo que o produto tenha preço cadastrado.
   if (proximaTurma) {
@@ -130,7 +130,7 @@ function PriceBlock({
     )
   }
 
-  const checkoutUrl = product.checkout_url ?? '/loja'
+  const checkoutUrl = checkoutUrlFixo ?? product.checkout_url ?? '/loja'
   const isSubscription = product.payment_type === 'subscription'
 
   if (isSubscription) {
@@ -207,9 +207,11 @@ function PriceBlock({
 }
 
 export function ProgramaContent({
-  product, waMessage, eyebrow, titulo, tagline, statsLine, manifesto, incluso, modulos, faqItems, proximaTurma,
+  product, waMessage, eyebrow, titulo, tagline, statsLine, manifesto, incluso, modulos, faqItems, proximaTurma, checkoutUrlFixo,
 }: {
   product: ProductData | null
+  /** Sobrescreve o checkout_url do banco (ex.: NPS vai direto pra ficha de assinatura do CRM). */
+  checkoutUrlFixo?: string
   proximaTurma?: ProximaTurma
   waMessage: string
   eyebrow: string
@@ -266,7 +268,7 @@ export function ProgramaContent({
             </div>
 
             <div id="investimento">
-              <PriceBlock product={product} waUrl={waUrl} proximaTurma={proximaTurma} />
+              <PriceBlock product={product} waUrl={waUrl} proximaTurma={proximaTurma} checkoutUrlFixo={checkoutUrlFixo} />
             </div>
           </div>
         </div>
@@ -416,7 +418,7 @@ export function ProgramaContent({
               </p>
             </Reveal>
             <Reveal>
-              <PriceBlock product={product} waUrl={waUrl} proximaTurma={proximaTurma} />
+              <PriceBlock product={product} waUrl={waUrl} proximaTurma={proximaTurma} checkoutUrlFixo={checkoutUrlFixo} />
             </Reveal>
           </div>
         </div>

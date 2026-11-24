@@ -25,7 +25,7 @@ export type EventoPublico = {
   professor_convidado: string | null
 }
 
-const WHATSAPP = '5511930439385'
+const WHATSAPP = '5511965781940'  // Helen (vendedora): todo lead do site vai pra ela
 const wa = (mensagem: string) => `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(mensagem)}`
 
 /** "NPA #24 São Paulo" / "IDM PSI #20 - Curitiba" -> "São Paulo" / "Curitiba". */

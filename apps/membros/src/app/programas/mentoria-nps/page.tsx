@@ -55,6 +55,9 @@ export default async function MentoriaNpsPage() {
 
       <ProgramaContent
         product={product}
+        // Assinatura não passa pela vendedora: vai direto pra ficha do NPS
+        // (PIX SyncPay -> acesso à área de membros + boas-vindas com o grupo).
+        checkoutUrlFixo="https://sistema.idmpsi.com.br/matricula/nps"
         waMessage="Olá! Tenho interesse na Mentoria NPS (Numerologia Pitagórica)."
         eyebrow="Instituto Despertamente · Mentoria contínua"
         titulo={['Mentoria', 'NPS.']}

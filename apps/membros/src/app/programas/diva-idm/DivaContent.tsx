@@ -33,7 +33,7 @@ import {
 // terapeuta escolhido; não tem por que mandar a pessoa pra outro site.
 const AGENDAR_URL = '#terapeutas'
 const WA_URL =
-  'https://wa.me/5511930439385?text=Olá! Quero saber mais sobre o Divã IDM (terapia).'
+  'https://wa.me/5511965781940?text=Olá! Quero saber mais sobre o Divã IDM (terapia).'
 
 const planos = [
   { nome: '1 sessão', sessoes: 'avulsa', valor: 80, porSessao: 80 },

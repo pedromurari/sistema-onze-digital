@@ -24,7 +24,7 @@ export type TerapeutaPublico = {
   bio: string | null
 }
 
-const WHATSAPP_DIVA = '5511930439385'
+const WHATSAPP_DIVA = '5511965781940'  // Helen (vendedora): todo lead do site vai pra ela
 
 function linkWhatsapp(mensagem: string) {
   return `https://wa.me/${WHATSAPP_DIVA}?text=${encodeURIComponent(mensagem)}`
