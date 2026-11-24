@@ -16,6 +16,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
 import { LeadWhatsappCta } from '@/components/marketing/LeadWhatsappModal'
+import { GaleriaCarrossel } from '@/components/marketing/GaleriaCarrossel'
 
 export type EventoPublico = {
   nome: string
@@ -296,21 +297,14 @@ export function IdmBrasilContent({
         </div>
       </section>
 
-      {/* ── GALERIA ──────────────────────────────────────────────────── */}
+      {/* ── GALERIA (carrossel com as fotos das turmas) ─────────────── */}
       <section className="fds-band fds-section">
-        <div className="fds-wrap">
+        <div className="fds-wrap flex flex-wrap items-end justify-between gap-4">
           <h2 className="fds-h2">Quem já esteve numa sala dessas.</h2>
-          <div className="mt-10 grid grid-cols-2 gap-4 md:grid-cols-4">
-            <div className="relative col-span-2 aspect-[4/3]">
-              <Image src="/images/turmas/turma-certificados.jpg" alt="Turma reunida ao fim da aula, com os certificados" fill sizes="(min-width: 768px) 50vw, 100vw" className="rounded-[10px] object-cover" />
-            </div>
-            <div className="relative aspect-[3/4]">
-              <Image src="/images/turmas/turma-escada.jpg" alt="Turma posando na escada da unidade, com certificados" fill sizes="25vw" className="rounded-[10px] object-cover" />
-            </div>
-            <div className="relative aspect-[3/4]">
-              <Image src="/images/turmas/rodrygo-alunas.jpg" alt="Rodrygo Murari ao lado de alunas com os certificados" fill sizes="25vw" className="rounded-[10px] object-cover" />
-            </div>
-          </div>
+          <p className="fds-small">Passe o mouse pra pausar. Clique pra ver grande.</p>
+        </div>
+        <div className="mt-10">
+          <GaleriaCarrossel />
         </div>
       </section>
 
