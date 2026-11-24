@@ -247,9 +247,11 @@ function PriceBlock({
 
 export function ProgramaContent({
   product, waMessage, eyebrow, titulo, tagline, statsLine, manifesto, incluso, modulos, faqItems, proximaTurma, checkoutUrlFixo,
-  oferta, faixas,
+  oferta, faixas, certificado,
 }: {
   oferta?: OfertaAssinatura
+  /** Imagens do certificado (frente e, opcional, verso) com um texto curto ao lado. */
+  certificado?: { frente: string; verso?: string; titulo: string; texto: string; itens: string[] }
   /** Letreiros amarelos: [topo, antes do fim]. Topo nasce embaixo do menu. */
   faixas?: [string[], string[]]
   product: ProductData | null
@@ -381,6 +383,37 @@ export function ProgramaContent({
           </Reveal>
         </div>
       </section>
+
+      {/* ── CERTIFICADO ──────────────────────────── */}
+      {certificado && (
+        <section className="fds-section">
+          <div className="fds-wrap grid items-center gap-12 lg:grid-cols-2">
+            <Reveal>
+              <p className="fds-eyebrow">Certificação</p>
+              <h2 className="fds-h2 mt-4">{certificado.titulo}</h2>
+              <p className="fds-body mt-6">{certificado.texto}</p>
+              <ul className="mt-8 space-y-3">
+                {certificado.itens.map(item => (
+                  <li key={item} className="fds-small flex items-start gap-3">
+                    <Check className="mt-0.5 h-4 w-4 shrink-0" style={{ color: 'var(--fds-accent)' }} />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </Reveal>
+            <Reveal>
+              <div className="fds-card" style={{ padding: 'var(--fds-4)' }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={certificado.frente} alt="Certificado, frente" loading="lazy" className="w-full" style={{ borderRadius: 6 }} />
+                {certificado.verso && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={certificado.verso} alt="Certificado, verso com o conteúdo programático" loading="lazy" className="mt-4 w-full" style={{ borderRadius: 6 }} />
+                )}
+              </div>
+            </Reveal>
+          </div>
+        </section>
+      )}
 
       {/* ── NÚMEROS REAIS ────────────────────────── */}
       <section className="fds-band" style={{ paddingBlock: 'var(--fds-16)' }}>

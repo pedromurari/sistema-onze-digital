@@ -66,16 +66,21 @@ export default async function PractitionerPnlPage() {
         incluso={[
           'Formação completa em Programação Neurolinguística',
           'Técnicas práticas de ressignificação e mudança de estado',
-          'Certificação Instituto Despertamente ao final do programa',
+          'Certificado de Practitioner em PNL (44 horas), assinado por Rodrygo Murari',
           'Acesso às aulas gravadas, no seu ritmo',
         ]}
         modulos={[
-          { numero: '01', titulo: 'Fundamentos da PNL', conteudo: ['O mapa não é o território: como a mente representa a experiência.', 'Os sistemas representacionais (visual, auditivo, cinestésico).'] },
-          { numero: '02', titulo: 'Rapport e Calibração', conteudo: ['Como estabelecer sintonia real numa conversa ou atendimento.', 'Leitura de sinais não-verbais pra calibrar a comunicação.'] },
-          { numero: '03', titulo: 'Ancoragem e Mudança de Estado', conteudo: ['Como associar um estado emocional a um estímulo específico.', 'Uso prático da ancoragem em contextos pessoais e profissionais.'] },
-          { numero: '04', titulo: 'Submodalidades e Reformulação', conteudo: ['Como mudar o peso emocional de uma lembrança ou crença.', 'Técnicas de reformulação (reframe) aplicadas a crenças limitantes.'] },
-          { numero: '05', titulo: 'Posições Perceptivas', conteudo: ['Como mudar de perspectiva pra resolver conflitos e bloqueios.', 'Aplicação em relações pessoais e negociação.'] },
+          { numero: '01', titulo: 'Ressignificando o mundo', conteudo: ['Metaforando: a força da alcateia.', 'Fundamentos e pressupostos da PNL.', 'Posições perceptivas: ponto de vista e significados.', 'Sistemas representacionais VAC e as pistas oculares.'] },
+          { numero: '02', titulo: 'Reprogramando a mente', conteudo: ['O poder das âncoras.', 'Ponte para o futuro: o ensaio mental.', 'Rapport: conexão, confiança e harmonia.', 'Conceito de partes: uma vida mais equilibrada.'] },
+          { numero: '03', titulo: 'Transformando resultados', conteudo: ['Submodalidades: as qualidades sensoriais de uma experiência.', 'Congruência: viver a sua verdade interior.', 'Intervenções: exercícios e práticas ao vivo em mentoria de grupo.', 'Pistas ocultas: os processos internos dos pensamentos.'] },
         ]}
+        certificado={{
+          frente: '/images/certificado-pnl-frente.jpg',
+          verso: '/images/certificado-pnl-verso.jpg',
+          titulo: 'Certificado Practitioner em PNL',
+          texto: 'Ao concluir, você recebe o certificado do Curso Essencial Practitioner em PNL, assinado por Rodrygo Murari, Master Practitioner em PNL, com o conteúdo programático no verso.',
+          itens: ['Carga horária de 44 horas, em 3 meses', 'Encontros ao vivo pelo Google Meet', 'Aulas gravadas, materiais, tarefas e questionários na plataforma'],
+        }}
         faqItems={[
           { q: 'Esse certificado me permite atuar como profissional de PNL?', a: 'Sim — o certificado de Practitioner é o primeiro nível reconhecido internacionalmente na carreira de PNL, usado tanto para uso pessoal quanto para quem quer atender ou aplicar em coaching, vendas e liderança.' },
           { q: 'Preciso de formação anterior em psicologia ou terapia?', a: 'Não. A formação foi desenhada pra quem está começando do zero em PNL — profissional de saúde, coach, líder ou qualquer pessoa interessada em entender e mudar seus próprios padrões.' },
