@@ -82,7 +82,7 @@ export default async function MentoriaNpsPage() {
           Bem-vindo,<br className="hidden sm:block" /> {firstName}.
         </h1>
         <p className="text-sm sm:text-[15px] text-white/55 max-w-lg leading-relaxed">
-          Sua mensalidade está em dia. Você tem acesso aos encontros, às gravações, aos materiais e a até 8 mapas por mês no Mapa 7 Esferas.
+          Sua mensalidade está em dia. Você tem acesso aos encontros, às gravações, aos materiais e ao Mapa 7 Esferas, sem limite de mapas.
         </p>
         <div
           className="inline-flex items-center gap-2 rounded-full px-3.5 py-1.5"
