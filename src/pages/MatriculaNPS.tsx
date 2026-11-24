@@ -16,6 +16,10 @@ import logoIdm from '@/assets/logo-idm.png';
 import './matricula/matricula-reference.css';
 import { ensurePoppinsFontLoaded } from './matricula/theme';
 
+// ?valor=cheio -> link com a mensalidade normal (R$ 100), sem o desconto da
+// Black IDM. Pedido do Pedro (24/11/2026) pra mandar a quem não entra na promoção.
+const PRECO_CHEIO = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('valor') === 'cheio';
+
 const SUPABASE_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
 const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -112,7 +116,7 @@ export default function MatriculaNPS() {
       const r = await fetch(`${SUPABASE_FUNCTIONS_URL}/nps-matricula-criar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nome, whatsapp: whatsappDigits, email, cpf }),
+        body: JSON.stringify({ nome, whatsapp: whatsappDigits, email, cpf, precoCheio: PRECO_CHEIO }),
       });
       const d = await r.json();
       if (!d.ok) { setErro(d.erro || 'Não foi possível gerar o PIX.'); setEnviando(false); return; }
@@ -146,7 +150,7 @@ export default function MatriculaNPS() {
 
       <main style={{ maxWidth: 560, margin: '0 auto', padding: '32px 16px 64px' }}>
         {/* Black IDM: o valor real vem do nps-matricula-criar (BLACK_NPS_ATE). */}
-        {!pix && new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date()) <= '2026-11-30' && (
+        {!pix && !PRECO_CHEIO && new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date()) <= '2026-11-30' && (
           <div style={{ background: '#FFB800', color: '#080808', borderRadius: 10, padding: '14px 18px', marginBottom: 20, fontWeight: 700, textAlign: 'center' }}>
             BLACK IDM · Até 30/11, sua 1ª mensalidade sai por R$ 50 (o IDM paga a metade).
             <span style={{ display: 'block', fontWeight: 500, fontSize: '0.875rem', marginTop: 4 }}>

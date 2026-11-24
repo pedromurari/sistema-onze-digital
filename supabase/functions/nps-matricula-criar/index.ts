@@ -220,7 +220,7 @@ serve(async (req) => {
     const numeroParcela = (parcelasAnteriores ?? 0) + 1;
 
     const hoje = hojeSP();
-    const ehBlack = numeroParcela === 1 && hoje <= BLACK_NPS_ATE;
+    const ehBlack = numeroParcela === 1 && hoje <= BLACK_NPS_ATE && body?.precoCheio !== true;
     const valorCobrado = ehBlack ? Math.round(valorMensalidade * BLACK_NPS_FATOR * 100) / 100 : valorMensalidade;
     const { data: pagamentoRow, error: pagErr } = await supabase
       .from('pagamentos')
