@@ -121,10 +121,14 @@ async function getAllActiveInstances(db: any): Promise<EvoInstance[]> {
   return data ?? [];
 }
 
-// Cobrança financeira só sai pela disp3. Nunca usar fallback de outra instância.
+// Cobrança financeira só sai pela instância reservada do financeiro. Nunca usar
+// fallback de outra instância. Aceita os dois nomes (legado "disp3" e o nome
+// novo "Financeiro IDM") pra o rename na Evolution não depender de coordenar
+// deploy -- o nome real na tabela pode ser qualquer um dos dois.
+const NOMES_INSTANCIA_FINANCEIRO = new Set(['disp3', 'Financeiro IDM']);
 async function resolveInstances(db: any, _cfg: { evolution_config_ids?: string[] | null }): Promise<EvoInstance[]> {
   const all = await getAllActiveInstances(db);
-  return all.filter((i: EvoInstance) => i.instance_name === "disp3");
+  return all.filter((i: EvoInstance) => NOMES_INSTANCIA_FINANCEIRO.has(i.instance_name));
 }
 
 // A Evolution API pode responder 200 mesmo com a sessão do WhatsApp fechada e só falhar
@@ -204,22 +208,22 @@ async function sendViaEvolution(
   }
   let lastError = "";
   for (const cfg of evoInstances) {
-    if (cfg.instance_name !== 'disp3') continue;
+    if (!NOMES_INSTANCIA_FINANCEIRO.has(cfg.instance_name)) continue;
     try {
       const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
       const financeiroKey = Deno.env.get('FINANCEIRO_INSTANCE_KEY') ?? 'financeiro-only-idm-2026';
       const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/wpp-enviar`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}`, apikey: serviceKey, "x-financeiro-key": financeiroKey },
-        body: JSON.stringify({ numero: formatPhone(phone), mensagem: message, instance_name: 'disp3', typing_delay_ms: 1000 }),
+        body: JSON.stringify({ numero: formatPhone(phone), mensagem: message, instance_name: cfg.instance_name, typing_delay_ms: 1000 }),
         signal: AbortSignal.timeout(30_000),
       });
       const json = await res.json().catch(() => ({}));
-      if (res.ok && json?.ok === true && json?.instance === 'disp3') {
-        await registrarMensagemEnviada(db, phone, message, 'disp3', null);
+      if (res.ok && json?.ok === true && NOMES_INSTANCIA_FINANCEIRO.has(json?.instance)) {
+        await registrarMensagemEnviada(db, phone, message, cfg.instance_name, null);
         return { ok: true };
       }
-      lastError = `[disp3] ${res.status}: ${String(json?.error ?? 'Falha no envio').slice(0, 200)}`;
+      lastError = `[${cfg.instance_name}] ${res.status}: ${String(json?.error ?? 'Falha no envio').slice(0, 200)}`;
     } catch (e: any) {
       lastError = `[${cfg.instance_name}] ${e?.message ?? "Erro de conexão"}`;
       if (isAmbiguousError(e)) {
@@ -228,7 +232,7 @@ async function sendViaEvolution(
       }
     }
   }
-  return { ok: false, error: lastError || "Financeiro IDM (disp3) indisponível" };
+  return { ok: false, error: lastError || "Financeiro IDM indisponível" };
 }
 
 serve(async (req) => {
@@ -513,7 +517,7 @@ interface GrupoElegivel {
   aluno_nome: string;
   telefone: string;
   mensagem: string;
-  validacao: { pagamento_id: string; asaas_payment_id: string; asaas_customer_id: string; link_pagamento: string; valor: number }[];
+  validacao: { pagamento_id: string; gateway: string; mp_payment_id: string | null; link_pagamento: string; valor: number }[];
   cobertura: { pagamento_id: string; template_id: string; template_nome: string; template_tipo: string }[];
 }
 
@@ -570,7 +574,10 @@ function proximoGrupoElegivel(fila: any[], templates: any[], cfg: any, jaEnviado
     const valor = Number(critica.item.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
     const vars: Record<string, string | number | null> = {
       saudacao: (() => { const hora = saoPauloParts(new Date()).hour; return `Excelente ${hora < 12 ? "dia" : hora < 18 ? "tarde" : "noite"}`; })(),
-      nome: critica.item.aluno_nome, valor, parcela: critica.item.parcela, vencimento,
+      // Primeiro nome, nao o nome completo: a sombra de 25/11/2026 mostrou
+      // "Excelente tarde, Karina Lopes de Melo!" -- soa cartorio, nao conversa.
+      nome: String(critica.item.aluno_nome ?? '').trim().split(/\s+/)[0] || critica.item.aluno_nome,
+      valor, parcela: critica.item.parcela, vencimento,
       dias_atraso: critica.item.dias_offset > 0 ? critica.item.dias_offset : null,
       link_pagamento: critica.item.link_pagamento || null,
       qtd_parcelas: qtdParcelas,
@@ -588,8 +595,8 @@ function proximoGrupoElegivel(fila: any[], templates: any[], cfg: any, jaEnviado
           ? `\n\nOutras parcelas em aberto:\n${listaParcelas}` : ''),
       validacao: consideradas.map(i => ({
         pagamento_id: i.pagamento_id,
-        asaas_payment_id: i.asaas_payment_id,
-        asaas_customer_id: i.asaas_customer_id,
+        gateway: i.gateway ?? 'checkout',
+        mp_payment_id: i.mp_payment_id ?? null,
         link_pagamento: i.link_pagamento,
         valor: Number(i.valor),
       })),
@@ -711,28 +718,56 @@ async function processarAgendadosManuais(db: any): Promise<void> {
   }
 }
 
-// Falha fechada: sem confirmação da parcela no próprio Asaas, não há disparo.
-// O link e o customer precisam corresponder exatamente à ficha/parcela.
-async function validarGrupoNoAsaas(grupo: GrupoElegivel): Promise<boolean> {
-  const key = Deno.env.get("ASAAS_API_KEY");
-  if (!key) return false;
+/**
+ * Falha fechada: sem confirmar que a parcela REALMENTE está em aberto, não
+ * há disparo. O medo que esta função existe pra evitar é um só -- cobrar
+ * quem já pagou.
+ *
+ * Até 25/11/2026 a confirmação era feita na API do Asaas, parcela por
+ * parcela. Com a conta bloqueada (API em 401) isso virou "nada passa", e os
+ * links do Asaas foram arrancados das fichas. A checagem agora é:
+ *
+ *  1. Relê a parcela no banco (fonte da verdade): continua pendente, valor
+ *     bate, e não ganhou acordo depois que a fila foi montada.
+ *  2. Se houver cobrança viva no Mercado Pago, confirma lá que não foi paga
+ *     -- é a rede contra webhook perdido.
+ *
+ * A SyncPay de propósito NÃO é consultada aqui: a API dela aceita no máximo
+ * 5 consultas por transação e depois responde 429, e quem precisa dessas
+ * consultas é o syncpay-cobranca-webhook, que já confirma o pagamento na API
+ * antes de dar baixa. Gastar o limite na régua cegaria a confirmação real.
+ */
+async function validarGrupo(db: any, grupo: GrupoElegivel): Promise<boolean> {
+  const hoje = saoPauloParts(new Date()).dateStr;
+
   for (const parcela of grupo.validacao) {
-    if (!parcela.asaas_payment_id || !parcela.asaas_customer_id) return false;
-    try {
-      const res = await fetch(`https://api.asaas.com/v3/payments/${encodeURIComponent(parcela.asaas_payment_id)}`, {
-        headers: { access_token: key }, signal: AbortSignal.timeout(10_000),
-      });
-      if (!res.ok) return false;
-      const remoto = await res.json();
-      if (!['PENDING', 'OVERDUE'].includes(remoto.status) || remoto.paymentDate || remoto.deleted) return false;
-      if (remoto.billingType !== 'BOLETO' || remoto.customer !== parcela.asaas_customer_id) return false;
-      if (remoto.externalReference && remoto.externalReference !== parcela.pagamento_id) return false;
-      if (Math.abs(Number(remoto.value) - parcela.valor) > 0.01) return false;
-      if (![remoto.invoiceUrl, remoto.bankSlipUrl].some((url: string | undefined) =>
-        url && url.replace(/\/$/, '') === parcela.link_pagamento.replace(/\/$/, ''))) return false;
-    } catch (error) {
-      console.warn('enviar-cobranca: falha na validação Asaas:', (error as Error).message);
-      return false;
+    const { data: atual, error } = await db
+      .from('pagamentos')
+      .select('id, status, valor, data_prevista_pagamento, mp_payment_id')
+      .eq('id', parcela.pagamento_id)
+      .maybeSingle();
+
+    if (error || !atual) return false;
+    if (!['pendente', 'atrasado'].includes(String(atual.status))) return false;
+    if (Math.abs(Number(atual.valor) - parcela.valor) > 0.01) return false;
+    // Acordo fechado entre a montagem da fila e agora: não cobra.
+    if (atual.data_prevista_pagamento && String(atual.data_prevista_pagamento) >= hoje) return false;
+
+    const mpId = atual.mp_payment_id ?? parcela.mp_payment_id;
+    if (mpId) {
+      const token = Deno.env.get('MP_ACCESS_TOKEN');
+      if (!token) return false; // falha fechada: não dá pra confirmar
+      try {
+        const res = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(String(mpId))}`, {
+          headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000),
+        });
+        if (!res.ok) return false;
+        const remoto = await res.json();
+        if (['approved', 'in_process', 'refunded', 'charged_back'].includes(String(remoto.status))) return false;
+      } catch (e) {
+        console.warn('enviar-cobranca: falha ao confirmar no Mercado Pago:', (e as Error).message);
+        return false;
+      }
     }
   }
   return true;
@@ -799,7 +834,13 @@ async function processarTick(db: any, cors: any) {
   const { data: templates } = await db.from("cobranca_templates").select("*").eq("ativo", true).order("ordem");
   if (!templates?.length) return json({ ok: true, skipped: "sem_templates" });
 
-  const { data: fila, error: filaErro } = await db.rpc("get_alunos_para_cobranca_automatica", { p_data: sp.dateStr });
+  // `cobranca_config.produto_slug` liga a régua por pedaço em vez de tudo de
+  // uma vez (pedido do Pedro, 25/11/2026: "primeiro o NPS, depois turma por
+  // turma da psicanálise"). Nulo = todos os produtos, como era antes.
+  const { data: fila, error: filaErro } = await db.rpc("get_alunos_para_cobranca_automatica", {
+    p_data: sp.dateStr,
+    p_produto: cfg?.produto_slug ?? null,
+  });
   if (filaErro) return json({ ok: false, error: filaErro.message });
   if (!fila?.length) return json({ ok: true, enviados: 0 });
 
@@ -813,7 +854,7 @@ async function processarTick(db: any, cors: any) {
       candidatos = candidatos.filter((i: any) => i.aluno_id !== candidato.aluno_id);
       continue;
     }
-    if (!(await validarGrupoNoAsaas(candidato))) {
+    if (!(await validarGrupo(db, candidato))) {
       candidatos = candidatos.filter((i: any) => !candidato.validacao.some(p => p.pagamento_id === i.pagamento_id));
       continue;
     }
@@ -821,6 +862,30 @@ async function processarTick(db: any, cors: any) {
     break;
   }
   if (!proximo) return json({ ok: true, enviados: 0 });
+
+  // ── Modo sombra ────────────────────────────────────────────────────────────
+  // Registra a mensagem EXATA que teria saído e para aqui: não chama a
+  // Evolution, não gera PIX, não consome a cota diária e não marca a fase
+  // como enviada (o índice único ignora `simulado = true`), então o envio
+  // real acontece normalmente depois. Serve pra revisar a copy com dados
+  // reais antes do primeiro disparo automático.
+  if (cfg.modo_simulado) {
+    const linhas = proximo.cobertura.map(c => ({
+      aluno_id: proximo!.aluno_id,
+      pagamento_id: c.pagamento_id,
+      telefone: proximo!.telefone,
+      mensagem: proximo!.mensagem,
+      template_id: c.template_id,
+      template_tipo: c.template_tipo,
+      status: 'enviado',
+      manual: false,
+      simulado: true,
+      enviado_em: now.toISOString(),
+    }));
+    const { error } = await db.from('cobranca_logs').insert(linhas);
+    if (error) console.error('enviar-cobranca: falha ao gravar log simulado', error);
+    return json({ ok: true, enviados: 0, simulado: true, aluno: proximo.aluno_nome });
+  }
 
   const allInstances = await resolveInstances(db, cfg);
   const connectedIds = await getConnectedInstanceIds(allInstances);
@@ -926,7 +991,7 @@ async function statusTick(db: any, cors: any) {
   const { data: templates } = await db.from("cobranca_templates").select("*").eq("ativo", true).order("ordem");
   if (!templates?.length) return json({ estado: "sem_templates" });
 
-  const { data: fila } = await db.rpc("get_alunos_para_cobranca_automatica", { p_data: sp.dateStr });
+  const { data: fila } = await db.rpc("get_alunos_para_cobranca_automatica", { p_data: sp.dateStr, p_produto: cfg?.produto_slug ?? null });
   const alunosNaFila = fila?.length ? new Set(fila.map((f: any) => f.aluno_id)).size : 0;
   const jaEnviado = fila?.length ? await calcularElegibilidade(db, fila, templates, cfg, sp.dateStr) : new Map<string, boolean>();
   const proximo = fila?.length ? proximoGrupoElegivel(fila, templates, cfg, jaEnviado, sp.dateStr) : null;
