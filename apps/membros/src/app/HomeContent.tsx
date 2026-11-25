@@ -36,7 +36,7 @@ const FORMACOES: Card[] = [
     href: '/programas/constelacao-familiar',
     titulo: 'Despertar Sistêmico — Constelação Familiar',
     descricao: '8 módulos, 12 aulas, encontros semanais ao vivo.',
-    situacao: 'Turma 01 começa em 15 de dezembro',
+    situacao: 'Próxima turma começa em 15 de dezembro',
     etiquetas: ['3 meses', 'Online ao vivo'],
   },
   {

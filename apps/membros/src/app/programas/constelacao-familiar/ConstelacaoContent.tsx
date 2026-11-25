@@ -41,7 +41,7 @@ const WA_URL =
 const VIDEO_URL: string | null = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/site/constelacao/video-rodrygo-v2.mp4'
 const VIDEO_POSTER: string | null = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/site/constelacao/video-rodrygo-v2.jpg'
 
-// Data de início da Turma 01. Remarcada pelo Pedro em 25/11/2026: Aula 1 em
+// Data de início da próxima turma (3ª turma, 1ª com a Alessandra). Remarcada pelo Pedro em 25/11/2026: Aula 1 em
 // 15/12 e Aula 2 em 22/12; as seguintes voltam em janeiro, datas a definir.
 // Com null, a página fala em "próxima turma" em vez de inventar data.
 const DATA_INICIO: string | null = '15 de dezembro'
@@ -53,7 +53,7 @@ const PROFESSORA: { nome: string; titulo: string; foto: string; bio: string[] } 
   titulo: 'Professora e mentora do Despertar Sistêmico',
   foto: '/images/professores/alessandra-brasca.jpg',
   bio: [
-    'Alessandra conduz a Turma 01 do Despertar Sistêmico do primeiro ao último encontro: as aulas ao vivo, as demonstrações e as vivências em grupo.',
+    'Alessandra conduz a próxima turma do Despertar Sistêmico do primeiro ao último encontro: as aulas ao vivo, as demonstrações e as vivências em grupo.',
     'O trabalho dela une teoria e prática. Cada conceito da abordagem sistêmica é visto em situações reais, para que você saia da formação sabendo conduzir uma constelação com segurança e ética.',
   ],
 }
@@ -282,7 +282,7 @@ export function ConstelacaoContent({ product }: { product: ProductData | null })
                 ))}
               </ul>
               <p className="fds-meta mt-8">
-                {DATA_INICIO ? `Turma 01 começa em ${DATA_INICIO}` : 'Próxima turma · vagas limitadas'}
+                {DATA_INICIO ? `Próxima turma começa em ${DATA_INICIO}` : 'Próxima turma · vagas limitadas'}
               </p>
             </div>
 
@@ -500,7 +500,7 @@ export function ConstelacaoContent({ product }: { product: ProductData | null })
               </p>
               <p className="fds-meta mt-8 flex items-center gap-2">
                 <ArrowRight className="h-3.5 w-3.5" style={{ color: 'var(--fds-accent)' }} />
-                {DATA_INICIO ? `Turma 01 · início em ${DATA_INICIO}` : 'Turma 01 · vagas limitadas'}
+                {DATA_INICIO ? `Próxima turma · início em ${DATA_INICIO}` : 'Próxima turma · vagas limitadas'}
               </p>
             </Reveal>
             <Reveal>

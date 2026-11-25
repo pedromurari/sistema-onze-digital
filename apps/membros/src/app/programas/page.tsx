@@ -88,7 +88,7 @@ const PROGRAMAS: Programa[] = [
     titulo: 'Despertar Sistêmico — Constelação Familiar',
     tipo: 'Formação',
     descricao: '3 meses, 8 módulos, 12 aulas, encontros semanais ao vivo.',
-    situacao: 'Turma 01 começa em 15 de dezembro',
+    situacao: 'Próxima turma começa em 15 de dezembro',
   },
 ]
 
