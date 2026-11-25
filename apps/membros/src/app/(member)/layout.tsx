@@ -35,6 +35,15 @@ export default async function MemberLayout({ children }: { children: React.React
     .eq('is_active', true)
     .eq('products.slug', 'mentoria-nps')
 
+  // Despertar Sistêmico (Constelação): matrícula ativa libera o calendário de encontros.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: sistemicoEnrollments } = await (supabase.from('enrollments') as any)
+    .select('id, products!inner(slug)')
+    .eq('user_id', user.id)
+    .eq('is_active', true)
+    .eq('products.slug', 'despertar-sistemico')
+
+  const hasSistemicoAccess = isAdmin || (sistemicoEnrollments ?? []).length > 0
   const hasNpaAccess = isAdmin || (npaEnrollments ?? []).length > 0
   const hasNpsAccess =
     isAdmin ||
@@ -44,11 +53,11 @@ export default async function MemberLayout({ children }: { children: React.React
 
   return (
     <div className="min-h-screen bg-[#0D1638]">
-      <TopNavbar profile={profile as Profile} hasNpaAccess={hasNpaAccess} hasNpsAccess={hasNpsAccess} formacaoEnrolled={formacaoEnrolled} />
+      <TopNavbar profile={profile as Profile} hasNpaAccess={hasNpaAccess} hasNpsAccess={hasNpsAccess} hasSistemicoAccess={hasSistemicoAccess} formacaoEnrolled={formacaoEnrolled} />
       <main className="pb-20 md:pb-8">
         {children}
       </main>
-      <MobileTabBar hasNpaAccess={hasNpaAccess} hasNpsAccess={hasNpsAccess} />
+      <MobileTabBar hasNpaAccess={hasNpaAccess} hasNpsAccess={hasNpsAccess} hasSistemicoAccess={hasSistemicoAccess} />
     </div>
   )
 }

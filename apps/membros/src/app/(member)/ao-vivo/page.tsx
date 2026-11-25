@@ -124,7 +124,9 @@ function LiveCard({ live, featured = false }: { live: Live; featured?: boolean }
 }
 
 export default async function AoVivoPage() {
-  const lives = await getLives()
+  // Encontros de produto (Mentoria NPS, Despertar Sistêmico...) têm calendário próprio
+  // e só aparecem pra quem é matriculado — aqui ficam só as lives gerais.
+  const lives = (await getLives()).filter(l => !l.product_id)
 
   const nextLive = lives.find(l => l.status === 'live') ?? lives.find(l => l.status === 'scheduled')
   const otherLives = lives.filter(l => l !== nextLive)

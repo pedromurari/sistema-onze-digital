@@ -8,12 +8,13 @@ const baseTabs = [
   { href: '/lancamento', label: 'Semana', icon: CalendarDays },
 ]
 
-export function MobileTabBar({ hasNpaAccess = false, hasNpsAccess = false }: { hasNpaAccess?: boolean; hasNpsAccess?: boolean }) {
+export function MobileTabBar({ hasNpaAccess = false, hasNpsAccess = false, hasSistemicoAccess = false }: { hasNpaAccess?: boolean; hasNpsAccess?: boolean; hasSistemicoAccess?: boolean }) {
   const pathname = usePathname()
   const tabs = [
     ...baseTabs,
     ...(hasNpaAccess ? [{ href: '/mentoria-npa', label: 'Mentoria NPA', icon: Sparkles, badge: 'NOVO' }] : []),
     ...(hasNpsAccess ? [{ href: '/mentoria-nps', label: 'Mentoria NPS', icon: Sparkles, badge: undefined as string | undefined }] : []),
+    ...(hasSistemicoAccess ? [{ href: '/despertar-sistemico', label: 'Sistêmico', icon: Sparkles, badge: undefined as string | undefined }] : []),
   ]
 
   function isActive(href: string) {

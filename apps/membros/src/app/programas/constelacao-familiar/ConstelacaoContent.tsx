@@ -41,15 +41,22 @@ const WA_URL =
 const VIDEO_URL: string | null = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/site/constelacao/video-rodrygo-v2.mp4'
 const VIDEO_POSTER: string | null = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/site/constelacao/video-rodrygo-v2.jpg'
 
-// Data de início da Turma 01, definida pelo Pedro em 22/11/2026: uma semana e
-// meia depois do início dos disparos de venda (23/11). Com null, a página fala
-// em "próxima turma" em vez de inventar data.
-const DATA_INICIO: string | null = '03 de dezembro'
+// Data de início da Turma 01. Remarcada pelo Pedro em 25/11/2026: Aula 1 em
+// 15/12 e Aula 2 em 22/12; as seguintes voltam em janeiro, datas a definir.
+// Com null, a página fala em "próxima turma" em vez de inventar data.
+const DATA_INICIO: string | null = '15 de dezembro'
 
-// Professora da formação. Pedro vai mandar foto + descritivo (23/11/2026).
-// Enquanto for null, a seção "Quem conduz" não aparece. Foto vai em
-// /public/images/professores/.
-const PROFESSORA: { nome: string; titulo: string; foto: string; bio: string[] } | null = null
+// Professora da formação. Foto enviada pelo Pedro em 25/11/2026; o texto é
+// provisório (genérico, sem inventar currículo) até chegar o descritivo real.
+const PROFESSORA: { nome: string; titulo: string; foto: string; bio: string[] } | null = {
+  nome: 'Alessandra Braschi',
+  titulo: 'Professora e mentora do Despertar Sistêmico',
+  foto: '/images/professores/alessandra-braschi.jpg',
+  bio: [
+    'Alessandra conduz a Turma 01 do Despertar Sistêmico do primeiro ao último encontro: as aulas ao vivo, as demonstrações e as vivências em grupo.',
+    'O trabalho dela une teoria e prática. Cada conceito da abordagem sistêmica é visto em situações reais, para que você saia da formação sabendo conduzir uma constelação com segurança e ética.',
+  ],
+}
 
 const pilares = [
   {
@@ -405,8 +412,8 @@ export function ConstelacaoContent({ product }: { product: ProductData | null })
           <div className="fds-wrap">
             <Reveal>
               <div className="grid items-center gap-14 md:grid-cols-[360px_1fr]">
-                <div className="relative aspect-square overflow-hidden" style={{ borderRadius: 10 }}>
-                  <Image src={PROFESSORA.foto} alt={PROFESSORA.nome} fill sizes="360px" className="object-cover" />
+                <div className="relative aspect-[4/5] overflow-hidden" style={{ borderRadius: 10 }}>
+                  <Image src={PROFESSORA.foto} alt={PROFESSORA.nome} fill sizes="360px" className="object-cover object-[50%_25%]" />
                 </div>
                 <div>
                   <p className="fds-eyebrow block">Quem conduz</p>
