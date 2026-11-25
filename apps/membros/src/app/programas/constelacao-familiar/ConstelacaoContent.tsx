@@ -38,8 +38,8 @@ const WA_URL =
 // VSL do Despertar Sistêmico: gravação do Rodrygo + a professora da formação
 // (combinado 21/11/2026), ainda não existe. Enquanto a URL for null a página
 // esconde o bloco inteiro em vez de mostrar player vazio.
-const VIDEO_URL: string | null = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/site/constelacao/video-rodrygo.mp4'
-const VIDEO_POSTER: string | null = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/site/constelacao/video-rodrygo.jpg'
+const VIDEO_URL: string | null = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/site/constelacao/video-rodrygo-v2.mp4'
+const VIDEO_POSTER: string | null = 'https://pub-da74b2ec5ddf4847a6f20dec2e542925.r2.dev/site/constelacao/video-rodrygo-v2.jpg'
 
 // Data de início da Turma 01, definida pelo Pedro em 22/11/2026: uma semana e
 // meia depois do início dos disparos de venda (23/11). Com null, a página fala
