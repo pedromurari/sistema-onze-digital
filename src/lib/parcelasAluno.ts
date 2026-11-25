@@ -190,6 +190,33 @@ export const sincronizarParcelasAluno = async ({
     return;
   }
 
+  // Assinatura (NPS, Sociedade, Divã) não tem lote de parcelas: existe UMA
+  // mensalidade em aberto por vez e a próxima só nasce quando essa é paga
+  // (quem gera é o webhook/gerarProximaParcela, não esta função).
+  //
+  // Sem esta saída, abrir a ficha recriava o plano inteiro: `baseTotal` cai
+  // em paymentMethodTotal('boleto') = 15, e a aluna ganhava mensalidades até
+  // 2027. Aconteceu de verdade em 25/11/2026 com a Janety Rodrigues Crespo,
+  // logo depois de `total_mensalidades` ser zerado (justamente por ser
+  // assinatura) -- o nulo fez o default de 15 valer.
+  //
+  // Aqui a função só arruma turma/produto do que já existe e sai.
+  if (ehAssinatura(produto)) {
+    if (existentes.length > 0) {
+      const { error: errTurma } = await supabase
+        .from('pagamentos')
+        .update({ turma_id: turmaId, produto })
+        .in('id', existentes.map(p => p.id));
+      if (errTurma) throw errTurma;
+    }
+    const { error: errAluno } = await supabase
+      .from('alunos')
+      .update({ mensalidades_pagas: existentes.filter(p => p.status === 'pago').length })
+      .eq('id', alunoId);
+    if (errAluno) throw errAluno;
+    return;
+  }
+
   const pagas = existentes.filter(p => p.status === 'pago');
   // Preserva não só o que já foi pago, mas qualquer parcela que já tenha uma
   // cobrança gerada num gateway (mp_payment_id/asaas_payment_id) mesmo ainda
