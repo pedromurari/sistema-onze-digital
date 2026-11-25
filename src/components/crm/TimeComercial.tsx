@@ -2602,8 +2602,29 @@ function MinhasVendasSection({ viewAsName, mesFiltro }: VendorScopeProps & { mes
   useEffect(() => {
     (supabase as any).rpc('time_comercial_minhas_vendas').then(({ data, error }: any) => {
       if (error) console.error('[MinhasVendas] erro', error);
-      setVendas((data ?? []) as VendaNominal[]);
+      const lista = (data ?? []) as VendaNominal[];
+      setVendas(lista);
       setLoading(false);
+
+      // Achado real 16/11/2026: o cron que confere assinatura na Autentique
+      // roda a cada 30 min (o webhook deles está fora do ar desde 09/2026) --
+      // isso deixava a tela mostrando "não assinado" por até 30 min depois da
+      // assinatura de verdade. Em vez de esperar o cron, checa na hora em que
+      // a vendedora abre a tela: só os que aqui aparecem como pendentes, sem
+      // mandar nenhuma mensagem pro aluno (isso continua só com o cron).
+      const pendentesIds = lista.filter((v) => v.contrato_enviado && !v.contrato_assinado).map((v) => v.aluno_id);
+      if (pendentesIds.length > 0) {
+        supabase.functions.invoke('autentique-contrato-verificar', { body: { aluno_ids: pendentesIds } })
+          .then(({ data: verif }: any) => {
+            const atualizados: { aluno_id: string; contrato_assinado_em: string }[] = verif?.atualizados ?? [];
+            if (atualizados.length === 0) return;
+            setVendas((atual) => atual.map((v) => {
+              const achou = atualizados.find((a) => a.aluno_id === v.aluno_id);
+              return achou ? { ...v, contrato_assinado: true } : v;
+            }));
+          })
+          .catch((e) => console.error('[MinhasVendas] falha ao verificar assinatura ao vivo', e));
+      }
     });
   }, []);
 
@@ -2986,6 +3007,26 @@ function ultimosMeses(qtd: number): string[] {
   return meses;
 }
 
+/**
+ * Meses do seletor: os últimos `qtd` MAIS os meses futuros que já têm venda
+ * marcada -- hoje, pré-matrícula com o pagamento programado pra frente.
+ *
+ * `ultimosMeses` só olha pra trás, então uma pré-matrícula fechada hoje com
+ * entrada programada pro mês que vem simplesmente sumia da tela: ela conta
+ * pelo mês do pagamento previsto (ver mesChave em MinhasVendasSection), e
+ * esse mês não existia na lista pra ser selecionado. Achado pelo Pedro em
+ * 25/11/2026, com a Fernanda Aparecida Caetano -- entrada programada pra
+ * 03/12, invisível pra vendedora porque não havia "Dez/2026" no filtro.
+ */
+function mesesDoSeletor(qtd: number, mesesFuturosComVenda: string[]): string[] {
+  const passado = ultimosMeses(qtd);
+  const futuros = Array.from(new Set(mesesFuturosComVenda))
+    .filter((m) => !passado.includes(m))
+    .sort()
+    .reverse();
+  return [...futuros, ...passado];
+}
+
 function DadosTab({ viewAsName }: VendorScopeProps) {
   const [alunosPorVendedor, setAlunosPorVendedor] = useState<AlunoVendedorStat[]>([]);
   // Faturamento por vendedor tem filtro de mês próprio (RPC aceita p_mes) --
@@ -2993,6 +3034,9 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
   // de Visão Geral/ticket médio/ranking, pensados pra mostrar o total do time.
   const mesAtualFaturamento = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }).slice(0, 7);
   const [mesFaturamento, setMesFaturamento] = useState(mesAtualFaturamento);
+  // Meses futuros que já têm venda programada (pré-matrícula com entrada pra
+  // frente) -- precisam existir no seletor, senão a venda fica invisível.
+  const [mesesFuturosComVenda, setMesesFuturosComVenda] = useState<string[]>([]);
   const [alunosPorVendedorMes, setAlunosPorVendedorMes] = useState<AlunoVendedorStat[]>([]);
   const [loadingFaturamentoMes, setLoadingFaturamentoMes] = useState(true);
   const [resumoVend, setResumoVend] = useState<ResumoVendedor[]>([]);
@@ -3073,6 +3117,21 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
       setLoading(false);
     };
     fetchData();
+  }, []);
+
+  // Meses futuros que precisam existir no seletor. A mesma RPC que alimenta
+  // "Minhas Vendas", filtrada pelo que ainda vai acontecer: pré-matrícula
+  // conta pelo mês do pagamento PROGRAMADO, então sem isso ela some da tela
+  // (ver mesesDoSeletor).
+  useEffect(() => {
+    (supabase as any).rpc('time_comercial_minhas_vendas').then(({ data }: any) => {
+      const mesAtual = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }).slice(0, 7);
+      const futuros = ((data ?? []) as VendaNominal[])
+        .filter((v) => v.status !== 'cancelado' && v.status !== 'inativo')
+        .map((v) => (v.data_venda_concretizada ?? (v.status === 'pre_matricula' ? v.data_venda : v.data_registro) ?? v.data_registro ?? '').slice(0, 7))
+        .filter((m) => m && m > mesAtual);
+      setMesesFuturosComVenda(futuros);
+    });
   }, []);
 
   useEffect(() => {
@@ -3276,7 +3335,7 @@ function DadosTab({ viewAsName }: VendorScopeProps) {
         <SelectValue>{rotuloMes(mesFaturamento)}</SelectValue>
       </SelectTrigger>
       <SelectContent>
-        {ultimosMeses(12).map((m) => <SelectItem key={m} value={m}>{rotuloMes(m)}</SelectItem>)}
+        {mesesDoSeletor(12, mesesFuturosComVenda).map((m) => <SelectItem key={m} value={m}>{rotuloMes(m)}</SelectItem>)}
         <SelectItem value={TODOS_PERIODOS}>Todos os períodos</SelectItem>
       </SelectContent>
     </Select>
