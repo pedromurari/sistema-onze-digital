@@ -35,10 +35,29 @@ const ok = () => new Response('ok', { headers: cors });
 type Db = any;
 
 /**
+ * Taxa que o Mercado Pago reteve. Prefere a diferença entre bruto e líquido
+ * (`net_received_amount`), que é o que de fato caiu na conta; só cai na soma
+ * de `fee_details` quando o líquido não vem. Devolve null quando não dá pra
+ * saber -- null é "não sei", zero seria "não teve taxa".
+ * Mesma regra de taxaEfetivaMercadoPago em _shared/mp-pagamento-unico.ts.
+ */
+function taxaMercadoPago(mp?: Record<string, unknown>): number | null {
+  if (!mp) return null;
+  const bruto = Number(mp.transaction_amount);
+  const liquido = Number((mp.transaction_details as Record<string, unknown> | undefined)?.net_received_amount);
+  if (Number.isFinite(bruto) && Number.isFinite(liquido) && bruto >= liquido) {
+    return Math.round((bruto - liquido) * 100) / 100;
+  }
+  const fees = Array.isArray(mp.fee_details) ? mp.fee_details : [];
+  const total = fees.reduce((s: number, f: Record<string, unknown>) => s + (Number(f?.amount) || 0), 0);
+  return total > 0 ? Math.round(total * 100) / 100 : null;
+}
+
+/**
  * Cria a ficha do aluno + o lançamento no Financeiro e libera a Área de
  * Membros. Só roda com pagamento aprovado.
  */
-async function matricular(db: Db, inscricao: Record<string, unknown>, oferta: Record<string, unknown>) {
+async function matricular(db: Db, inscricao: Record<string, unknown>, oferta: Record<string, unknown>, mp?: Record<string, unknown>) {
   const whatsapp = String(inscricao.whatsapp ?? '');
   const email = String(inscricao.email ?? '');
   const produto = String(oferta.produto_crm ?? '');
@@ -126,6 +145,10 @@ async function matricular(db: Db, inscricao: Record<string, unknown>, oferta: Re
       numero_parcela: 1,
       forma_pagamento: inscricao.metodo === 'pix' ? 'pix' : 'cartao',
       conta_recebimento: 'mercado_pago',
+      // Quanto o Mercado Pago reteve. Sem isto a venda entrava pelo valor
+      // BRUTO e o liquido real nunca aparecia no DRE -- a venda da Ana Elisa
+      // Souto (25/11/2026, R$497,00) ficou sem os R$4,92 de taxa.
+      taxa_valor: taxaMercadoPago(mp),
       mp_payment_id: String(inscricao.mp_payment_id ?? ''),
       categoria_contabil: 'receita_curso',
       observacoes: `Venda pela página de vendas (${oferta.nome}).`,
@@ -351,7 +374,7 @@ serve(async (req) => {
       .maybeSingle();
     if (!travou) return ok();
 
-    const resultado = await matricular(db, inscricao, oferta);
+    const resultado = await matricular(db, inscricao, oferta, mp);
     console.log(`formacao-pagamento-webhook: inscrição ${inscricao.id} aprovada, aluno ${resultado.alunoId ?? '—'}`);
     return ok();
   } catch (error) {
