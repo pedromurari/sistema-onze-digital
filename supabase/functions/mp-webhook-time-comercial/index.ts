@@ -49,7 +49,7 @@
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { registrarPagamentoUnicoMercadoPago } from '../_shared/mp-pagamento-unico.ts';
+import { registrarPagamentoUnicoMercadoPago, taxaEfetivaMercadoPago } from '../_shared/mp-pagamento-unico.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -176,6 +176,10 @@ async function enviarConfirmacoes(
   valor: number,
   parcela?: number | null,
   totalParcelas?: number | null,
+  // Pra registrar o envio na ficha. Opcionais porque nem todo caminho que
+  // chama esta função tem a parcela em mãos.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  registro?: { supabase: any; alunoId: string; pagamentoId: string | null },
 ): Promise<void> {
   const fnHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey };
   // x-financeiro-key: desde o hardening de 03/11 (incidente de campanha saindo pelo
@@ -203,6 +207,25 @@ async function enviarConfirmacoes(
         // financeiro (2026-09-03), em vez de cair no rodízio por prioridade.
         body: JSON.stringify({ numero, mensagem, instance_name: 'disp3' }),
       });
+
+      // Registrar na ficha, não só mandar. Sem isto a confirmação sai mas
+      // fica invisível: em 25/11/2026 eu mesmo olhei `cobranca_logs` vazio
+      // pro Fabiano, concluí que nada tinha saído e mandei uma segunda
+      // confirmação na mão -- o aluno recebeu duas. Quem olha a ficha tem
+      // que ver o que o sistema já falou com o aluno.
+      if (registro?.alunoId) {
+        const { error: logErro } = await registro.supabase.from('cobranca_logs').insert({
+          aluno_id: registro.alunoId,
+          pagamento_id: registro.pagamentoId,
+          telefone: numero,
+          enviado_em: new Date().toISOString(),
+          status: 'enviado',
+          manual: false,
+          template_tipo: 'quitacao',
+          mensagem,
+        });
+        if (logErro) console.error('mp-webhook-time-comercial: falha ao registrar confirmação em cobranca_logs', logErro);
+      }
     } catch (e) {
       console.error('mp-webhook-time-comercial: falha ao enviar whatsapp de confirmação', e);
     }
@@ -307,6 +330,13 @@ serve(async (req) => {
                 // real 2026-09-30.
                 data_pagamento: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }),
                 mp_payment_id: String(id),
+                // De onde o dinheiro veio e quanto a maquininha comeu. Faltava:
+                // a parcela entrava como paga com conta_recebimento e taxa_valor
+                // nulos, então o DRE não sabia distinguir o que caiu no Mercado
+                // Pago do que caiu na SyncPay, na Voomp ou no C6 -- e a taxa
+                // sumia do resultado. Achado em 25/11/2026 (Fabiano de Souza).
+                conta_recebimento: 'mercado_pago',
+                taxa_valor: taxaEfetivaMercadoPago(data),
               })
               .eq('id', pagamentoExiste.id)
               .neq('status', 'pago')
@@ -330,7 +360,8 @@ serve(async (req) => {
                 .eq('id', pagamentoExiste.aluno_id)
                 .maybeSingle();
               if (aluno) {
-                await enviarConfirmacoes(supabaseUrl, serviceKey, aluno as any, Number(pagamentoExiste.valor), pagamentoExiste.numero_parcela, Number((aluno as any).total_mensalidades) || null).catch((e) =>
+                await enviarConfirmacoes(supabaseUrl, serviceKey, aluno as any, Number(pagamentoExiste.valor), pagamentoExiste.numero_parcela, Number((aluno as any).total_mensalidades) || null,
+                  { supabase, alunoId: pagamentoExiste.aluno_id, pagamentoId: pagamentoExiste.id }).catch((e) =>
                   console.error('mp-webhook-time-comercial: falha ao enviar confirmações (pagamento)', e));
               }
             }
@@ -410,6 +441,11 @@ serve(async (req) => {
                   // UTC, não a data de Brasília -- mesmo achado de 2026-09-30.
                   data_pagamento: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }),
                   mp_payment_id: String(id),
+                  // Mesma correção do ramo de cima (25/11/2026): origem e taxa
+                  // têm que ficar na parcela, senão o DRE não sabe por onde o
+                  // dinheiro entrou nem quanto o gateway reteve.
+                  conta_recebimento: 'mercado_pago',
+                  taxa_valor: taxaEfetivaMercadoPago(data),
                 })
                 .eq('id', proximaParcela.id)
                 .eq('status', 'pendente')
@@ -426,7 +462,8 @@ serve(async (req) => {
 
                 // Diferente do resto do fallback: confirma TODO mês, não só na
                 // 1ª vez -- cada cobrança da assinatura é um pagamento de verdade.
-                await enviarConfirmacoes(supabaseUrl, serviceKey, alunoAntes as any, Number(proximaParcela.valor), proximaParcela.numero_parcela, Number((alunoAntes as any).total_mensalidades) || null).catch((e) =>
+                await enviarConfirmacoes(supabaseUrl, serviceKey, alunoAntes as any, Number(proximaParcela.valor), proximaParcela.numero_parcela, Number((alunoAntes as any).total_mensalidades) || null,
+                  { supabase, alunoId: externalReference, pagamentoId: proximaParcela.id }).catch((e) =>
                   console.error('mp-webhook-time-comercial: falha ao enviar confirmações (recorrente)', e));
               }
             } else {
@@ -436,12 +473,14 @@ serve(async (req) => {
         } else if (registroUnico?.aplicavel) {
           if (registroUnico.criado && registroUnico.aluno) {
             const valorPago = Number(registroUnico.pagamento?.valor ?? data.transaction_amount ?? 0);
-            await enviarConfirmacoes(supabaseUrl, serviceKey, registroUnico.aluno as any, valorPago, registroUnico.pagamento?.numero_parcela ?? null, null).catch((e) =>
+            await enviarConfirmacoes(supabaseUrl, serviceKey, registroUnico.aluno as any, valorPago, registroUnico.pagamento?.numero_parcela ?? null, null,
+              { supabase, alunoId: String(registroUnico.aluno.id ?? externalReference), pagamentoId: registroUnico.pagamento?.id ?? null }).catch((e) =>
               console.error('mp-webhook-time-comercial: falha ao enviar confirmações (venda única)', e));
           }
         } else if (transicionouAprovado && alunoAntes) {
           const valorPago = Number(data.transaction_amount ?? 0);
-          await enviarConfirmacoes(supabaseUrl, serviceKey, alunoAntes as any, valorPago, 1, Number((alunoAntes as any).total_mensalidades) || null).catch((e) =>
+          await enviarConfirmacoes(supabaseUrl, serviceKey, alunoAntes as any, valorPago, 1, Number((alunoAntes as any).total_mensalidades) || null,
+            { supabase, alunoId: externalReference, pagamentoId: null }).catch((e) =>
             console.error('mp-webhook-time-comercial: falha ao enviar confirmações (aluno)', e));
         }
 

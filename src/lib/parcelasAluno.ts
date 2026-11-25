@@ -12,6 +12,22 @@ import { supabase } from '@/integrations/supabase/client';
 
 export type PaymentMethod = 'boleto' | 'cartao' | 'cartao_recorrente' | 'avista';
 
+/**
+ * Produtos que são ASSINATURA: não têm um número fixo de parcelas. Existe
+ * sempre UMA mensalidade em aberto por vez, e a próxima só nasce quando a
+ * atual é paga (ver nps-matricula-status / gerarProximaParcela).
+ *
+ * Importa porque `total_mensalidades` — no aluno e na turma — mente para
+ * esses produtos: a turma NPS diz 10, mas ninguém "termina" em 10. A tela
+ * mostrava "1/10" como se houvesse um fim, e antes disso "1/1 Quitado"
+ * (achado em 25/11/2026, fichas da Julvana e da Djilde). Para assinatura o
+ * que faz sentido é quantas mensalidades a pessoa já pagou, sem denominador.
+ */
+export const PRODUTOS_ASSINATURA = new Set(['numerologia', 'sociedade-idm', 'diva-idm']);
+
+export const ehAssinatura = (produto?: string | null) =>
+  PRODUTOS_ASSINATURA.has(String(produto ?? '').trim());
+
 export const todayDateInput = () => {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;

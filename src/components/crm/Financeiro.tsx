@@ -39,6 +39,7 @@ import {
   todayDateInput,
   normalizePaymentMethod,
   paymentMethodTotal,
+  ehAssinatura,
   extractDueDay,
   buildInstallments,
   sincronizarParcelasAluno,
@@ -2613,8 +2614,15 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                             const method = normalizePaymentMethod(aluno.forma_pagamento);
                             const dueDay = getAlunoDueDay(aluno, parcelasAluno);
                             const expectedTotal = paymentMethodTotal(method);
+                            // Assinatura (NPS, Sociedade, Divã) não tem total: a próxima
+                            // mensalidade só nasce quando a atual é paga. `total_mensalidades`
+                            // do aluno e da turma mentem aqui (a turma NPS diz 10), então
+                            // nem olhamos pra eles -- ver ehAssinatura em parcelasAluno.ts.
+                            const assinatura = ehAssinatura(aluno.produto);
                             const total = method === 'boleto'
-                              ? (aluno.total_mensalidades || turma?.total_mensalidades || parcelasAluno.length || expectedTotal)
+                              ? (assinatura
+                                  ? parcelasAluno.length
+                                  : (aluno.total_mensalidades || turma?.total_mensalidades || parcelasAluno.length || expectedTotal))
                               : expectedTotal;
                             const pagas = method === 'boleto' ? (aluno.mensalidades_pagas ?? parcelasAluno.filter(p => p.status === 'pago').length) : expectedTotal;
                             const abertas = method === 'boleto'
@@ -2722,10 +2730,19 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                                             </div>
                                           );
                                         })()
-                                      : <div className="flex items-center gap-2">
-                                          <span>{pagas}/{total}</span>
-                                          <Progress value={total ? (pagas / total) * 100 : 0} className="w-16 h-1.5" />
-                                        </div>
+                                      : assinatura
+                                        // Sem "x/y" nem barra: não existe meta a atingir numa
+                                        // assinatura, e a barra cheia dava a impressão de curso
+                                        // concluído. Mostra o que de fato importa: quantas
+                                        // mensalidades já entraram.
+                                        ? <div className="flex flex-col gap-0.5">
+                                            <span>{pagas} {pagas === 1 ? 'mensalidade' : 'mensalidades'}</span>
+                                            <span className="text-[10px] text-muted-foreground font-medium">assinatura mensal</span>
+                                          </div>
+                                        : <div className="flex items-center gap-2">
+                                            <span>{pagas}/{total}</span>
+                                            <Progress value={total ? (pagas / total) * 100 : 0} className="w-16 h-1.5" />
+                                          </div>
                                   }
                                 </td>
                                 <td className="py-2.5 px-3 text-xs text-muted-foreground">

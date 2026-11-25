@@ -140,6 +140,22 @@ async function matricular(db: Db, inscricao: Record<string, unknown>, oferta: Re
     return { alunoId, erro: 'sem MEMBROS_LIBERAR_KEY' };
   }
 
+  // Confirmação de pagamento ANTES do acesso: a pessoa acabou de pagar e a
+  // primeira coisa que ela quer ler é que o dinheiro chegou. Faltava neste
+  // fluxo inteiro -- quem comprava pela página de vendas recebia só o
+  // "seu acesso chegou" e nunca a confirmação do pagamento (achado em
+  // 25/11/2026 com a Ana Elisa Souto). Quem paga pela SyncPay já recebia,
+  // pelo syncpay-cobranca-webhook; aqui não existia.
+  await confirmarPagamento(db, {
+    nome: String(inscricao.nome ?? ''),
+    whatsapp,
+    valor: Number(inscricao.valor ?? 0),
+    produtoNome: String(oferta.nome ?? ''),
+    metodo: String(inscricao.metodo ?? ''),
+    alunoId,
+    mpPaymentId: String(inscricao.mp_payment_id ?? ''),
+  }).catch((e) => console.error('formacao-pagamento-webhook: falha na confirmação de pagamento', e));
+
   try {
     const resp = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/membros-liberar-acesso-aluno`, {
       method: 'POST',
@@ -158,6 +174,68 @@ async function matricular(db: Db, inscricao: Record<string, unknown>, oferta: Re
   }
 
   return { alunoId, erro: null };
+}
+
+/**
+ * Avisa no WhatsApp que o pagamento entrou, e registra em `cobranca_logs`
+ * pra aparecer na ficha do aluno. Mesmo texto e mesmo número (Financeiro
+ * IDM) do syncpay-cobranca-webhook -- o aluno não tem que perceber por qual
+ * gateway pagou.
+ *
+ * Compra única no cartão não cita parcela nem valor (regra do Pedro): o
+ * extrato dele já mostra o parcelamento, repetir confunde.
+ */
+async function confirmarPagamento(db: Db, p: {
+  nome: string; whatsapp: string; valor: number; produtoNome: string;
+  metodo: string; alunoId: string | null; mpPaymentId: string;
+}) {
+  if (!p.whatsapp) return;
+
+  const primeiroNome = p.nome.trim().split(/\s+/)[0] ?? '';
+  const vocativo = primeiroNome ? `, ${primeiroNome}` : '';
+  const valorFmt = p.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+
+  const mensagem = p.metodo === 'cartao'
+    ? `✅ Pagamento confirmado${vocativo}!\n\n` +
+      `Seu pagamento do *${p.produtoNome}* no cartão foi aprovado. Está tudo certo por aqui 💙\n\n` +
+      `Qualquer dúvida, é só chamar. Financeiro IDM.`
+    : `✅ Pagamento confirmado${vocativo}!\n\n` +
+      `Recebemos seu pagamento do *${p.produtoNome}*, no valor de *R$ ${valorFmt}*. Está tudo certo por aqui 💙\n\n` +
+      `Qualquer dúvida, é só chamar. Financeiro IDM.`;
+
+  const financeiroKey = Deno.env.get('FINANCEIRO_INSTANCE_KEY') ?? 'financeiro-only-idm-2026';
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+  const resp = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/wpp-enviar`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${serviceKey}`,
+      apikey: serviceKey,
+      'x-financeiro-key': financeiroKey,
+    },
+    body: JSON.stringify({ numero: p.whatsapp, mensagem, instance_name: 'Financeiro IDM' }),
+  });
+  const corpo = await resp.json().catch(() => ({}));
+  if (!resp.ok || corpo?.ok === false) {
+    console.error('formacao-pagamento-webhook: wpp-enviar recusou a confirmação', corpo);
+    return;
+  }
+
+  if (!p.alunoId) return;
+  const { data: pagamento } = await db
+    .from('pagamentos').select('id').eq('mp_payment_id', p.mpPaymentId).maybeSingle();
+
+  await db.from('cobranca_logs').insert({
+    aluno_id: p.alunoId,
+    pagamento_id: pagamento?.id ?? null,
+    telefone: p.whatsapp,
+    enviado_em: new Date().toISOString(),
+    status: 'enviado',
+    manual: false,
+    template_tipo: 'quitacao',
+    mensagem,
+  });
 }
 
 serve(async (req) => {
@@ -197,7 +275,7 @@ serve(async (req) => {
 
     const { data: inscricao } = await db
       .from('formacao_inscricoes')
-      .select('id, lead_id, status, nome, email, whatsapp, cpf, valor, metodo, parcelas, mp_payment_id, oferta_id')
+      .select('id, lead_id, status, nome, email, whatsapp, cpf, valor, metodo, parcelas, mp_payment_id, oferta_id, pos_processado_em')
       .eq('mp_payment_id', String(paymentId))
       .maybeSingle();
 
@@ -215,6 +293,16 @@ serve(async (req) => {
       charged_back: 'cancelado',
     };
     const status = statusMap[mp.status] ?? 'pendente';
+
+    // Reenvio do MP de uma inscrição cujo pós-pagamento já rodou: não
+    // refazer nada. Antes a condição era
+    // `if (status === inscricao.status && status !== 'aprovado') return ok()`,
+    // que deixava passar justamente o caso 'aprovado' repetido -- e como o
+    // MP manda a mesma notificação várias vezes, a pessoa recebia o e-mail e
+    // o WhatsApp de acesso duas (ou mais) vezes. Criar aluno e lançar o
+    // pagamento já eram idempotentes; notificar não era.
+    // Achado em 25/11/2026 com a Ana Elisa Souto (Despertar Sistêmico).
+    if (status === 'aprovado' && inscricao.pos_processado_em) return ok();
 
     if (status === inscricao.status && status !== 'aprovado') return ok();
 
@@ -249,6 +337,19 @@ serve(async (req) => {
       console.error('formacao-pagamento-webhook: oferta sem produto_crm — matrícula não criada');
       return ok();
     }
+
+    // Marca ANTES de notificar, e só segue quem conseguiu marcar: duas
+    // notificações do MP chegando juntas disputam esta linha, e o `is null`
+    // garante que exatamente uma passa. Marcar depois não resolveria -- a
+    // segunda já teria mandado as mensagens.
+    const { data: travou } = await db
+      .from('formacao_inscricoes')
+      .update({ pos_processado_em: new Date().toISOString() })
+      .eq('id', inscricao.id)
+      .is('pos_processado_em', null)
+      .select('id')
+      .maybeSingle();
+    if (!travou) return ok();
 
     const resultado = await matricular(db, inscricao, oferta);
     console.log(`formacao-pagamento-webhook: inscrição ${inscricao.id} aprovada, aluno ${resultado.alunoId ?? '—'}`);

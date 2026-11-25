@@ -32,6 +32,24 @@ const corsHeaders = {
 const SYNC_API = 'https://api.syncpayments.com.br/api/partner/v1';
 const NPS_TURMA_ID = '25abbf54-ef59-4d7c-8db8-bf43ecd82318';
 const NPS_PRODUTO = 'numerologia';
+
+// Forma de pagamento do NPS: 'boleto', e nao 'pix'.
+//
+// Parece errado, mas 'forma_pagamento' aqui nao descreve o meio pelo qual a
+// pessoa paga -- descreve o PLANO. `normalizePaymentMethod` (src/lib/
+// parcelasAluno.ts) traduz 'pix' e 'avista' para o plano "venda unica, 1x",
+// e a tela do Financeiro passa a mostrar a aluna como "A vista pago / 1/1 /
+// Quitado" mesmo com mensalidades em aberto -- foi o que aconteceu com a
+// Julvana e a Djilde, as duas unicas que entraram por este link (achado em
+// 25/11/2026). 'boleto' e o valor que significa "mensalidade recorrente", e
+// e o que os outros 13 alunos de NPS ja usam. O meio real (PIX da SyncPay)
+// fica registrado em `pagamentos.conta_recebimento`, que e onde importa.
+const FORMA_PAGAMENTO_NPS = 'boleto';
+
+// O default da coluna e 15 (numero de parcelas da Psicanalise). Sem gravar
+// explicitamente, a ficha do NPS nascia dizendo "de 15" -- a convencao do
+// produto e 10.
+const TOTAL_MENSALIDADES_NPS = 10;
 const SITE = 'https://sistema.idmpsi.com.br';
 
 // Black IDM (pedido do Pedro, 24/11/2026): na 1ª mensalidade de quem entra
@@ -160,7 +178,8 @@ serve(async (req) => {
       await supabase.from('alunos').update({
         nome, email, whatsapp, status: 'ativo',
         dia_vencimento: diaVencimento, valor_mensalidade: valorMensalidade,
-        produto: NPS_PRODUTO, forma_pagamento: 'pix',
+        produto: NPS_PRODUTO, forma_pagamento: FORMA_PAGAMENTO_NPS,
+        total_mensalidades: TOTAL_MENSALIDADES_NPS,
       }).eq('id', alunoId);
 
       // Já existe parcela pendente em aberto? Reaproveita em vez de duplicar.
@@ -199,7 +218,8 @@ serve(async (req) => {
         .insert({
           nome, email, whatsapp, cpf: cpfDigits,
           produto: NPS_PRODUTO, turma_id: NPS_TURMA_ID, status: 'ativo',
-          forma_pagamento: 'pix', valor_mensalidade: valorMensalidade,
+          forma_pagamento: FORMA_PAGAMENTO_NPS, valor_mensalidade: valorMensalidade,
+          total_mensalidades: TOTAL_MENSALIDADES_NPS,
           dia_vencimento: diaVencimento, data_matricula: hojeSP(),
           // 'direto' é o valor mais próximo em alunos_origem_lead_check pra
           // "veio do link público, sem vendedor/lançamento no meio".
