@@ -49,9 +49,9 @@ const DATA_INICIO: string | null = '15 de dezembro'
 // Professora da formação. Foto enviada pelo Pedro em 25/11/2026; o texto é
 // provisório (genérico, sem inventar currículo) até chegar o descritivo real.
 const PROFESSORA: { nome: string; titulo: string; foto: string; bio: string[] } | null = {
-  nome: 'Alessandra Braschi',
+  nome: 'Alessandra Brasca',
   titulo: 'Professora e mentora do Despertar Sistêmico',
-  foto: '/images/professores/alessandra-braschi.jpg',
+  foto: '/images/professores/alessandra-brasca.jpg',
   bio: [
     'Alessandra conduz a Turma 01 do Despertar Sistêmico do primeiro ao último encontro: as aulas ao vivo, as demonstrações e as vivências em grupo.',
     'O trabalho dela une teoria e prática. Cada conceito da abordagem sistêmica é visto em situações reais, para que você saia da formação sabendo conduzir uma constelação com segurança e ética.',
