@@ -840,6 +840,7 @@ async function processarTick(db: any, cors: any) {
   const { data: fila, error: filaErro } = await db.rpc("get_alunos_para_cobranca_automatica", {
     p_data: sp.dateStr,
     p_produto: cfg?.produto_slug ?? null,
+    p_turma_ids: cfg?.turma_ids ?? null,
   });
   if (filaErro) return json({ ok: false, error: filaErro.message });
   if (!fila?.length) return json({ ok: true, enviados: 0 });
@@ -991,7 +992,7 @@ async function statusTick(db: any, cors: any) {
   const { data: templates } = await db.from("cobranca_templates").select("*").eq("ativo", true).order("ordem");
   if (!templates?.length) return json({ estado: "sem_templates" });
 
-  const { data: fila } = await db.rpc("get_alunos_para_cobranca_automatica", { p_data: sp.dateStr, p_produto: cfg?.produto_slug ?? null });
+  const { data: fila } = await db.rpc("get_alunos_para_cobranca_automatica", { p_data: sp.dateStr, p_produto: cfg?.produto_slug ?? null, p_turma_ids: cfg?.turma_ids ?? null });
   const alunosNaFila = fila?.length ? new Set(fila.map((f: any) => f.aluno_id)).size : 0;
   const jaEnviado = fila?.length ? await calcularElegibilidade(db, fila, templates, cfg, sp.dateStr) : new Map<string, boolean>();
   const proximo = fila?.length ? proximoGrupoElegivel(fila, templates, cfg, jaEnviado, sp.dateStr) : null;
