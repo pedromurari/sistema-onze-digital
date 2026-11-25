@@ -3280,9 +3280,12 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
               <Select value={newAlunoForm.origem} onValueChange={v => setNewAlunoForm({ ...newAlunoForm, origem: v, lancamento_id: v !== 'lancamento' ? '' : newAlunoForm.lancamento_id })}>
                 <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="direto">Direto</SelectItem>
-                  <SelectItem value="lancamento">Lançamento</SelectItem>
-                  <SelectItem value="npa">NPA</SelectItem>
+                  <SelectItem value="direto">Direto — WhatsApp/indicação</SelectItem>
+                  <SelectItem value="lancamento">Lançamento — turma do curso gratuito</SelectItem>
+                  <SelectItem value="time_comercial">Time Comercial — vendedora</SelectItem>
+                  <SelectItem value="npa">NPA — IDM pelo Brasil</SelectItem>
+                  <SelectItem value="aula_secreta">Aula Secreta</SelectItem>
+                  <SelectItem value="pnl_manual">PNL — cadastro manual</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -3625,12 +3628,19 @@ export function Financeiro({ initialAlunoId }: { initialAlunoId?: string } = {})
                     <div className="col-span-2"><label className="text-xs text-muted-foreground">Endereco completo</label><Input value={editAlunoForm.endereco || ''} onChange={e => setEditAlunoForm({ ...editAlunoForm, endereco: e.target.value })} className="mt-1 h-8 text-sm" /></div>
                     <div>
                       <label className="text-xs text-muted-foreground">Origem</label>
-                      <Select value={editAlunoForm.origem_lead || 'direto'} onValueChange={v => setEditAlunoForm({ ...editAlunoForm, origem_lead: v, lancamento_id: v !== 'lancamento' ? '' : editAlunoForm.lancamento_id })}>
+                      {/* Sem `|| 'direto'`: origem fora da lista (time_comercial,
+                          aula_secreta, pnl_manual) caía como "Direto" na tela e
+                          podia ser salva errada, apagando de onde o aluno veio.
+                          Achado em 25/11/2026 -- 37 alunos são time_comercial. */}
+                      <Select value={editAlunoForm.origem_lead || ''} onValueChange={v => setEditAlunoForm({ ...editAlunoForm, origem_lead: v, lancamento_id: v !== 'lancamento' ? '' : editAlunoForm.lancamento_id })}>
                         <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="direto">Direto</SelectItem>
-                          <SelectItem value="lancamento">Lançamento</SelectItem>
-                          <SelectItem value="npa">NPA</SelectItem>
+                          <SelectItem value="direto">Direto — WhatsApp/indicação</SelectItem>
+                          <SelectItem value="lancamento">Lançamento — turma do curso gratuito</SelectItem>
+                          <SelectItem value="time_comercial">Time Comercial — vendedora</SelectItem>
+                          <SelectItem value="npa">NPA — IDM pelo Brasil</SelectItem>
+                          <SelectItem value="aula_secreta">Aula Secreta</SelectItem>
+                          <SelectItem value="pnl_manual">PNL — cadastro manual</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
