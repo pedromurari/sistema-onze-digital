@@ -227,7 +227,18 @@ export const sincronizarParcelasAluno = async ({
   const preservar = existentes.filter(p => p.status === 'pago' || p.mp_payment_id || p.asaas_payment_id);
   const numerosPreservados = new Set(preservar.map(p => p.numero_parcela || 0).filter(Boolean));
   const maiorParcelaPaga = Math.max(0, ...Array.from(new Set(pagas.map(p => p.numero_parcela || 0).filter(Boolean))));
-  const baseTotal = (customTotal && customTotal > 0) ? customTotal : paymentMethodTotal(method);
+  // Venda única (cartão parcelado ou à vista) é UMA linha no financeiro,
+  // sempre. `customTotal` vem de `alunos.total_mensalidades`, que nesses casos
+  // guarda o número de parcelas DO CARTÃO (ex.: 12x) -- não o nosso plano.
+  // Respeitar esse 12 fazia a função gerar 11 linhas de R$150 do nada, e pior:
+  // marcadas como pagas, porque `mensalidades_pagas` também estava em 12. Foi
+  // o que aconteceu com a Nathalia Ayumi Kato em 25/11/2026 -- ela pagou
+  // R$1.474,10 uma vez e a ficha passou a dizer R$3.124,10 recebidos, só
+  // porque o Pedro abriu a ficha e salvou uma edição de outro campo.
+  const vendaUnica = method === 'cartao' || method === 'avista';
+  const baseTotal = (!vendaUnica && customTotal && customTotal > 0)
+    ? customTotal
+    : paymentMethodTotal(method);
   const total = Math.max(baseTotal, maiorParcelaPaga, pagas.length, preservar.length);
   const abertas = existentes.filter(p => !preservar.includes(p));
 
