@@ -73,7 +73,7 @@ serve(async (req) => {
 
     const { data: p } = await sb
       .from('pagamentos')
-      .select('id, numero_parcela, valor, status, data_vencimento, produto, syncpay_identifier, link_pagamento_syncpay, link_pagamento_voomp, mp_payment_id, link_pagamento_mp, aluno_id')
+      .select('id, numero_parcela, valor, status, data_vencimento, produto, syncpay_identifier, link_pagamento_syncpay, link_pagamento_voomp, mp_payment_id, link_pagamento_mp, aluno_id, link_boleto_efi, efi_expira_em, link_pagamento_efi')
       .eq('checkout_token', token)
       .maybeSingle();
 
@@ -87,6 +87,13 @@ serve(async (req) => {
 
     const primeiroNome = String(aluno?.nome ?? '').trim().split(/\s+/)[0] ?? '';
 
+    // Boleto da Efi: só aparece quando a integração estiver em PRODUÇÃO.
+    // Em homologação o boleto é de mentira e nenhum banco paga -- oferecer
+    // isso pro aluno seria pior do que não ter boleto nenhum.
+    const efiAmbiente = Deno.env.get('EFI_AMBIENTE') ?? 'homolog';
+    const boletoEfiLigado = efiAmbiente === 'producao';
+    const cpfOk = digitos(aluno?.cpf).length === 11;
+
     const base = {
       ok: true,
       nome: primeiroNome,
@@ -97,10 +104,38 @@ serve(async (req) => {
       vencimento: p.data_vencimento,
       produto: p.produto,
       pago: p.status === 'pago',
+      // Boleto já emitido antes, se ainda valer.
+      boleto_efi: (p.link_boleto_efi && (!p.efi_expira_em || new Date(p.efi_expira_em) > new Date()))
+        ? p.link_boleto_efi : null,
+      // A página só mostra "prefere boleto?" quando dá pra emitir de verdade.
+      boleto_disponivel: boletoEfiLigado && cpfOk,
     };
 
     if (acao === 'status' || p.status === 'pago') {
       return json({ ...base, pix_code: null });
+    }
+
+    // Aluno pediu o boleto na tela. Gera sob demanda, nunca antes: boleto
+    // tem vencimento curto e emitir pra todo mundo "por garantia" criaria
+    // uma fila de boletos vencidos que ninguém pediu.
+    if (acao === 'boleto') {
+      if (!boletoEfiLigado) return json({ ...base, erro_boleto: 'boleto indisponível' }, 503);
+      if (base.boleto_efi) return json({ ...base, boleto_url: base.boleto_efi });
+
+      const r = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/efi-cobranca-gerar`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-financeiro-key': Deno.env.get('FINANCEIRO_INSTANCE_KEY') ?? 'financeiro-only-idm-2026',
+        },
+        body: JSON.stringify({ pagamento_id: p.id, tipo: 'boleto', ambiente: 'producao' }),
+        signal: AbortSignal.timeout(30_000),
+      }).catch(() => null);
+
+      const d = await r?.json().catch(() => null);
+      const url = d?.boleto ?? d?.pix ?? null;
+      if (!url) return json({ ...base, erro_boleto: 'não consegui emitir o boleto agora' }, 502);
+      return json({ ...base, boleto_url: url, boleto_efi: url });
     }
 
     // Turma da Keila cobra pela Voomp -- não gerar PIX, mostrar o boleto.
@@ -125,6 +160,35 @@ serve(async (req) => {
     // `external_reference = pagamentos.id`, então a baixa continua automática.
     if (p.mp_payment_id && p.link_pagamento_mp) {
       return json({ ...base, gateway: 'mercadopago', pix_code: p.link_pagamento_mp });
+    }
+
+    // Pix da Efi já gerado antes e ainda válido: reusa.
+    if (p.link_pagamento_efi && (!p.efi_expira_em || new Date(p.efi_expira_em) > new Date())) {
+      return json({ ...base, gateway: 'efi', pix_code: p.link_pagamento_efi });
+    }
+
+    // Primeira visita, Efi em produção: o Pix novo nasce na Efi, não na
+    // SyncPay -- a SyncPay cobra R$ 5 por saque e a Efi cai direto na
+    // conta. Quem JÁ tem Pix de outro gateway não chega aqui: os reusos
+    // acima vêm antes, de propósito, pra não existirem dois Pix vivos na
+    // mesma parcela.
+    if (boletoEfiLigado) {
+      const rEfi = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/efi-cobranca-gerar`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-financeiro-key': Deno.env.get('FINANCEIRO_INSTANCE_KEY') ?? 'financeiro-only-idm-2026',
+        },
+        body: JSON.stringify({ pagamento_id: p.id, tipo: 'pix', ambiente: 'producao' }),
+        signal: AbortSignal.timeout(30_000),
+      }).catch(() => null);
+
+      const dEfi = await rEfi?.json().catch(() => null);
+      if (dEfi?.pix) return json({ ...base, gateway: 'efi', pix_code: dEfi.pix });
+      // Se a Efi falhar, cai na SyncPay abaixo em vez de deixar o aluno
+      // sem forma de pagar. Falha aberta aqui é o certo: o risco é gerar
+      // um Pix a mais, não cobrar quem não deve.
+      console.error('checkout-parcela: Efi falhou, caindo pra SyncPay', dEfi);
     }
 
     // Primeira visita: gera o PIX na hora.

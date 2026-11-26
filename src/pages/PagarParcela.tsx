@@ -37,8 +37,13 @@ interface Dados {
   gateway?: string | null;
   pix_code?: string | null;
   boleto_url?: string | null;
+  /** Boleto da Efí já emitido e ainda válido. */
+  boleto_efi?: string | null;
+  /** Só vem true quando a Efí está em produção e o aluno tem CPF. */
+  boleto_disponivel?: boolean;
   erro?: string;
   erro_pix?: string;
+  erro_boleto?: string;
 }
 
 /**
@@ -95,6 +100,13 @@ export default function PagarParcela() {
   const { token } = useParams<{ token: string }>();
   const [dados, setDados] = useState<Dados | null>(null);
   const [carregando, setCarregando] = useState(true);
+  // No computador o QR já vem aberto (é como se paga ali); no celular vem
+  // recolhido, pra ação de copiar caber na primeira tela. 640px é o corte
+  // de "tem teclado e outra tela por perto pra escanear".
+  const [verQr, setVerQr] = useState(() =>
+    typeof window !== 'undefined' && window.innerWidth >= 640);
+  const [boletoCarregando, setBoletoCarregando] = useState(false);
+  const [erroBoleto, setErroBoleto] = useState('');
   const [qr, setQr] = useState<string>('');
   const [copiado, setCopiado] = useState(false);
   const poll = useRef<number | null>(null);
@@ -137,6 +149,33 @@ export default function PagarParcela() {
     poll.current = window.setInterval(() => { void buscar(true); }, 5000);
     return () => { if (poll.current) window.clearInterval(poll.current); };
   }, [dados, buscar]);
+
+  // O boleto é pedido pelo aluno, não emitido por antecipação: ele vence em
+  // 3 dias úteis, e emitir pra todo mundo "por garantia" encheria o sistema
+  // de boleto vencido que ninguém pediu.
+  const boletoUrl = dados?.boleto_url ?? dados?.boleto_efi ?? null;
+  async function pedirBoleto() {
+    if (boletoCarregando || boletoUrl) return;
+    setBoletoCarregando(true);
+    setErroBoleto('');
+    try {
+      const res = await fetch(FN, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, acao: 'boleto' }),
+      });
+      const j: Dados = await res.json();
+      if (j?.boleto_url || j?.boleto_efi) {
+        setDados((a) => (a ? { ...a, boleto_url: j.boleto_url, boleto_efi: j.boleto_efi } : j));
+      } else {
+        setErroBoleto(j?.erro_boleto || 'Não consegui emitir o boleto agora. Chama a gente no WhatsApp.');
+      }
+    } catch {
+      setErroBoleto('Não consegui emitir o boleto agora. Chama a gente no WhatsApp.');
+    } finally {
+      setBoletoCarregando(false);
+    }
+  }
 
   async function copiar() {
     if (!dados?.pix_code) return;
@@ -246,27 +285,72 @@ export default function PagarParcela() {
             {dados.pix_code && (
               <div className="pg-card">
                 <h2 className="pg-h2">Pague com PIX</h2>
-                <p className="pg-muted">Abra o app do seu banco, escolha PIX e aponte para o código.</p>
+                {/* A instrução acompanha o que a pessoa vai realmente fazer:
+                    no celular ela copia e cola; no computador ela escaneia. */}
+                <p className="pg-muted">
+                  {verQr
+                    ? 'Abra o app do seu banco, escolha PIX e aponte para o código.'
+                    : 'Toque no botão abaixo e cole o código no app do seu banco, na opção "PIX Copia e Cola".'}
+                </p>
 
-                {qr && (
-                  <div className="pg-qr">
-                    <img src={qr} alt="QR Code do PIX" />
-                  </div>
-                )}
-
+                {/* O botão vem ANTES do QR de propósito. No celular — que é
+                    onde quase todo aluno abre este link — o QR é inútil
+                    (ninguém aponta a câmera do próprio aparelho pra tela
+                    dele) e empurrava a única ação possível pra fora da
+                    primeira tela. Achado em 26/11/2026 testando em 375px. */}
                 <button className={`pg-btn ${copiado ? 'pg-btn-ok' : ''}`} onClick={copiar}>
                   {copiado ? '✓  Código copiado!' : 'Copiar código PIX'}
                 </button>
-
-                <p className="pg-mini">
-                  Ou copie o código abaixo e cole no seu banco:
-                </p>
-                <code className="pg-code">{dados.pix_code}</code>
 
                 <div className="pg-aguardando">
                   <span className="pg-pulse" />
                   Aguardando o pagamento — esta página confirma sozinha
                 </div>
+
+                <button
+                  type="button"
+                  className="pg-link"
+                  onClick={() => setVerQr((v) => !v)}
+                  aria-expanded={verQr}
+                >
+                  {verQr ? 'Esconder o QR Code' : 'Prefere escanear? Ver o QR Code'}
+                </button>
+
+                {verQr && (
+                  <>
+                    {qr && (
+                      <div className="pg-qr">
+                        <img src={qr} alt="QR Code do PIX" />
+                      </div>
+                    )}
+                    <p className="pg-mini">Ou copie o código abaixo e cole no seu banco:</p>
+                    <code className="pg-code">{dados.pix_code}</code>
+                  </>
+                )}
+
+                {/* Boleto fica embaixo e discreto de propósito: o PIX cai na
+                    hora e o boleto leva até 3 dias pra compensar. Quem
+                    precisa de boleto sabe que precisa e procura; quem não
+                    precisa não deve ser oferecido a esperar 3 dias. */}
+                {(dados.boleto_disponivel || dados.boleto_efi) && (
+                  <div className="pg-alt">
+                    {boletoUrl ? (
+                      <a className="pg-link" href={boletoUrl} target="_blank" rel="noreferrer">
+                        Abrir meu boleto ↗
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        className="pg-link"
+                        onClick={pedirBoleto}
+                        disabled={boletoCarregando}
+                      >
+                        {boletoCarregando ? 'Emitindo o boleto…' : 'Prefere boleto? Gerar boleto'}
+                      </button>
+                    )}
+                    {erroBoleto && <p className="pg-mini pg-erro-mini">{erroBoleto}</p>}
+                  </div>
+                )}
               </div>
             )}
 
@@ -362,6 +446,19 @@ const CSS = `
 /* precisa vencer o :hover, que tem especificidade maior e fica ativo logo
    depois do clique -- senão a confirmação de "copiado" continua dourada */
 .pg-btn-ok, .pg-btn-ok:hover { background: var(--ok); }
+/* Ação secundária: existe, mas não compete com o botão dourado. */
+.pg-link {
+  display: block; width: 100%; margin-top: 14px; padding: 10px;
+  background: none; border: none; cursor: pointer; font-family: inherit;
+  font-size: 13px; font-weight: 600; color: var(--navy);
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.pg-link:hover { color: var(--gold); }
+.pg-link:disabled { opacity: .55; cursor: default; text-decoration: none; }
+/* Separa a alternativa (boleto) do caminho principal (PIX) sem criar um
+   segundo card, que daria a ela o mesmo peso visual. */
+.pg-alt { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.pg-erro-mini { color: var(--erro, #b4232a); text-align: center; margin-top: 8px; }
 .pg-code {
   display: block; font-family: ui-monospace, 'SF Mono', Menlo, monospace;
   font-size: 11px; line-height: 1.5; color: var(--text-muted);
