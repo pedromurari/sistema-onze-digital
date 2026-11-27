@@ -351,6 +351,21 @@ serve(async (req) => {
       const paymentId = String(body.paymentId ?? '');
       if (!paymentId) return json({ ok: false, erro: 'paymentId ausente' }, 400);
 
+      // Boleto da Efí: o paymentId é `efi:<pagamentos.id>`. A verdade é o
+      // status da parcela no banco -- quem escreve lá é o efi-webhook, que
+      // só confirma depois de consultar a Efí autenticado (GET
+      // /v1/notification/{token}). Consultar a API daqui criaria uma
+      // segunda fonte de verdade pro mesmo fato, com as duas podendo
+      // divergir. Precisa vir ANTES de ehIdAsaas: "efi:..." não é numérico
+      // e cairia no ramo do Asaas.
+      if (paymentId.startsWith('efi:')) {
+        const parcelaId = paymentId.slice(4);
+        const { data: parc } = await supabase
+          .from('pagamentos').select('status').eq('id', parcelaId).maybeSingle();
+        const pago = parc?.status === 'pago';
+        return json({ ok: true, status: pago ? 'approved' : 'pending', statusDetail: parc?.status ?? 'nao_encontrada' });
+      }
+
       if (ehIdAsaas(paymentId)) {
         const { ok, data } = await asaasFetch(`/payments/${paymentId}`, { method: 'GET' });
         if (!ok) {
@@ -460,40 +475,29 @@ serve(async (req) => {
       });
     }
 
-    // ── Boleto (15x R$150, tudo via Asaas -- inclusive a 1ª parcela) ────────────
+    // ── Boleto -- Efí (27/11/2026, antes era Asaas) ─────────────────────────────
+    //
+    // POR QUE MUDOU: a conta do Asaas foi reprovada e a API passou a
+    // responder 401. Este ramo morria no primeiro passo (POST /customers),
+    // ANTES de criar as parcelas -- então a matrícula ficava registrada e o
+    // aluno saía sem boleto, sem link e sem contrato, em silêncio. Entre
+    // 17 e 27/11 foram SEIS matrículas assim, e só se descobriu quando uma
+    // consultora reclamou. Não existe mais nenhum caminho aqui que dependa
+    // do Asaas.
+    //
+    // MUDANÇA DE MODELO: não emite mais os 15 boletos de uma vez. Só a
+    // parcela 1 (ato de matrícula) nasce com boleto; as demais nascem sob
+    // demanda no checkout /pagar/<token>, que já roda na Efí. Boleto tem
+    // vencimento curto, e emitir 15 "por garantia" é exatamente o que
+    // produziu a fila de 852 boletos vivos do Asaas. Mesma regra que o
+    // checkout-parcela já aplica.
+    //
+    // SEM PIX EMBUTIDO: no Asaas o boleto e o Pix eram A MESMA cobrança --
+    // pagar um invalidava o outro. Na Efí seriam duas cobranças
+    // independentes na mesma parcela, ou seja, risco real de pagamento em
+    // dobro. Quem quiser Pix usa a aba "PIX à vista".
     if (forma === 'boleto') {
       if (!cpfDigits) return json({ ok: false, erro: 'CPF ausente -- não é possível gerar o boleto.' }, 400);
-      if (!ASAAS_API_KEY) {
-        console.error('matricula-pagamento-criar: ASAAS_API_KEY não configurado');
-        return json({ ok: false, erro: 'Pagamento indisponível no momento. Avise a equipe.' }, 500);
-      }
-
-      // ── Cliente Asaas: reaproveita se já existe, cria se não ─────────────────
-      let customerId = (aluno as any).asaas_customer_id as string | null;
-      if (!customerId) {
-        const enderecoTexto = String((aluno as any).endereco ?? '').trim();
-        const numeroMatch = enderecoTexto.match(/\d+/);
-
-        const { ok: custOk, data: custData } = await asaasFetch('/customers', {
-          method: 'POST',
-          body: JSON.stringify({
-            name: nomeCompleto || 'Aluno',
-            cpfCnpj: cpfDigits,
-            email: email || undefined,
-            address: enderecoTexto || undefined,
-            addressNumber: numeroMatch ? numeroMatch[0] : undefined,
-            postalCode: String((aluno as any).cep ?? '').replace(/\D/g, '') || undefined,
-          }),
-        });
-
-        if (!custOk || !custData?.id) {
-          console.error('matricula-pagamento-criar: erro ao criar cliente Asaas', custData);
-          return json({ ok: false, erro: custData?.errors?.[0]?.description || 'Não foi possível gerar o boleto. Tente novamente.' }, 400);
-        }
-
-        customerId = String(custData.id);
-        await supabase.from('alunos').update({ asaas_customer_id: customerId }).eq('id', alunoId);
-      }
 
       // ── Datas de vencimento das N parcelas (1ª = hoje/data da matrícula, ──
       // as seguintes ancoradas no dia de vencimento escolhido) -- mesma regra
@@ -501,123 +505,101 @@ serve(async (req) => {
       // com o que o CRM recalcularia se precisasse. N vem de
       // alunos.total_mensalidades (gravado pela RPC matricula_time_comercial_criar
       // via p_num_parcelas) -- default 15 pra planos antigos que não mandam esse
-      // parâmetro. Generalizado em 2026-10-07 pro plano "1+17x125" (18 parcelas),
-      // antes travado em 15 fixo pra qualquer plano boleto.
+      // parâmetro.
       const diaVencimento = Number((aluno as any).dia_vencimento) || 10;
       const dataMatriculaStr = (aluno as any).data_matricula as string | null;
       const matricula = dataMatriculaStr ? new Date(`${dataMatriculaStr}T12:00:00`) : new Date();
       const totalParcelas = Number((aluno as any).total_mensalidades) || 15;
 
-      const parcelas = Array.from({ length: totalParcelas }, (_, index) => {
-        const numeroParcela = index + 1;
-        const dueDate = index === 0
-          ? matricula
-          : dateComDiaTravado(matricula.getFullYear(), matricula.getMonth() + index, diaVencimento);
-        return {
-          numero_parcela: numeroParcela,
-          data_vencimento: formatLocalDate(dueDate),
-          mes_referencia: formatLocalDate(new Date(dueDate.getFullYear(), dueDate.getMonth(), 1)),
-        };
+      // Idempotência: a consultora clicando duas vezes em "Boleto", ou um
+      // retry do front, não pode gerar 2x15 linhas em `pagamentos` -- o
+      // aluno passaria a dever o dobro. Se já existem parcelas, reaproveita.
+      const { data: jaExistem } = await supabase
+        .from('pagamentos')
+        .select('id, numero_parcela, data_vencimento, valor')
+        .eq('aluno_id', alunoId)
+        .order('numero_parcela');
+
+      let parcelasDoAluno = (jaExistem ?? []) as Array<{ id: string; numero_parcela: number; data_vencimento: string; valor: number }>;
+
+      if (parcelasDoAluno.length === 0) {
+        const novas = Array.from({ length: totalParcelas }, (_, index) => {
+          const numeroParcela = index + 1;
+          const dueDate = index === 0
+            ? matricula
+            : dateComDiaTravado(matricula.getFullYear(), matricula.getMonth() + index, diaVencimento);
+          return {
+            aluno_id: alunoId,
+            produto: 'psicanalise',
+            valor: valorPlano,
+            mes_referencia: formatLocalDate(new Date(dueDate.getFullYear(), dueDate.getMonth(), 1)),
+            data_vencimento: formatLocalDate(dueDate),
+            numero_parcela: numeroParcela,
+            status: 'pendente',
+            observacoes: numeroParcela === 1 ? 'Ato de matricula' : null,
+          };
+        });
+
+        const { data: inseridos, error: insErr } = await supabase
+          .from('pagamentos').insert(novas).select('id, numero_parcela, data_vencimento, valor');
+
+        if (insErr || !inseridos) {
+          console.error('matricula-pagamento-criar: erro ao criar parcelas', insErr);
+          return json({ ok: false, erro: 'Não foi possível gerar as parcelas. Tente novamente.' }, 500);
+        }
+        parcelasDoAluno = inseridos as any;
+      }
+
+      const parcela1 = parcelasDoAluno.find(p => p.numero_parcela === 1);
+      if (!parcela1) {
+        console.error('matricula-pagamento-criar: parcela 1 não encontrada', alunoId);
+        return json({ ok: false, erro: 'Matrícula registrada, mas faltou a 1ª parcela. Avise a equipe.' }, 500);
+      }
+
+      // efi-cobranca-gerar é a ÚNICA porta pra emitir cobrança na Efí: ela
+      // concentra o mTLS, o txid determinístico, o custom_id que liga a
+      // baixa de volta nesta parcela e a trava de "não gerar por cima de
+      // cobrança viva". Duplicar isso aqui seria uma segunda implementação
+      // do mesmo risco.
+      const rEfi = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/efi-cobranca-gerar`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-financeiro-key': Deno.env.get('FINANCEIRO_INSTANCE_KEY') ?? 'financeiro-only-idm-2026',
+        },
+        body: JSON.stringify({ pagamento_id: parcela1.id, tipo: 'boleto', ambiente: 'producao' }),
+        signal: AbortSignal.timeout(40_000),
+      }).catch((e) => {
+        console.error('matricula-pagamento-criar: efi-cobranca-gerar inacessível', e);
+        return null;
       });
 
-      const { data: inseridos, error: insErr } = await supabase
-        .from('pagamentos')
-        .insert(parcelas.map(p => ({
-          aluno_id: alunoId,
-          produto: 'psicanalise',
-          valor: valorPlano,
-          mes_referencia: p.mes_referencia,
-          data_vencimento: p.data_vencimento,
-          numero_parcela: p.numero_parcela,
-          status: 'pendente',
-          observacoes: p.numero_parcela === 1 ? 'Ato de matricula' : null,
-        })))
-        .select('id, numero_parcela, data_vencimento, valor');
+      const dEfi = await rEfi?.json().catch(() => null);
+      const boletoUrl = dEfi?.boleto ?? null;
 
-      if (insErr || !inseridos) {
-        console.error('matricula-pagamento-criar: erro ao criar parcelas', insErr);
-        return json({ ok: false, erro: 'Não foi possível gerar as parcelas. Tente novamente.' }, 500);
+      if (!boletoUrl) {
+        console.error('matricula-pagamento-criar: Efí não devolveu boleto', JSON.stringify(dEfi ?? {}).slice(0, 400));
+        // As parcelas FICAM criadas de propósito. A matrícula é real, e o
+        // aluno já tem checkout próprio (/pagar/<token>) -- a equipe emite
+        // o boleto depois sem precisar refazer nada. O jeito antigo (Asaas)
+        // abortava antes de gravar qualquer coisa e não deixava rastro.
+        return json({
+          ok: false,
+          erro: 'Não foi possível gerar o boleto agora. Sua matrícula já está registrada — a equipe vai te enviar o boleto pelo WhatsApp.',
+        }, 502);
       }
 
-      // ── Gera o boleto de cada parcela no Asaas, em paralelo ──────────────────
-      // Achado 2026-11-12 (dono do produto): várias pré-matrículas nascendo
-      // com as 15 parcelas em `pagamentos`, mas NENHUMA com asaas_payment_id
-      // -- ou seja, as 15 chamadas em paralelo falharam juntas (rate limit ou
-      // blip transitório da API do Asaas num POST tão concentrado), o aluno
-      // nunca recebe boleto/link e só se descobre dias depois. Mesmo padrão
-      // de retry já usado abaixo pro Pix (3 tentativas com espera curta) --
-      // aplicado aqui pra cada parcela individualmente, não só na 1ª.
-      const criarBoletoComRetry = async (row: { id: string; numero_parcela: number; data_vencimento: string; valor: number }) => {
-        let ultimo: { ok: boolean; data: any } = { ok: false, data: null };
-        for (let tentativa = 0; tentativa < 3; tentativa++) {
-          if (tentativa > 0) await new Promise(r => setTimeout(r, 1000 * tentativa));
-          ultimo = await asaasFetch('/payments', {
-            method: 'POST',
-            body: JSON.stringify({
-              customer: customerId,
-              billingType: 'BOLETO',
-              value: Number(row.valor),
-              dueDate: row.data_vencimento,
-              // "/" sai da description (achado em teste real 2026-09-04: o
-              // Asaas engole caracteres especiais nesse campo, "1/15" virava
-              // "115") -- "de" no lugar da barra.
-              description: `Matricula PSI (parcela ${row.numero_parcela} de ${totalParcelas}) - ${nomeCompleto || alunoId}`,
-              externalReference: row.id,
-            }),
-          });
-          if (ultimo.ok && ultimo.data?.id) break;
-        }
-        return { row, ok: ultimo.ok, data: ultimo.data };
-      };
-      const resultados = await Promise.all(inseridos.map(criarBoletoComRetry));
-
-      await Promise.all(resultados.map(async (r) => {
-        if (!r.ok || !r.data?.id) {
-          console.error('matricula-pagamento-criar: erro Asaas na parcela', r.row.numero_parcela, r.data);
-          return;
-        }
-        await supabase.from('pagamentos').update({
-          asaas_payment_id: String(r.data.id),
-          // invoiceUrl (fatura hospedada no Asaas) mostra boleto E Pix na
-          // mesma página -- prioridade sobre bankSlipUrl (só o boleto em si)
-          // pro aviso de cobrança sempre ter a opção de Pix visível.
-          link_pagamento_asaas: r.data.invoiceUrl ?? r.data.bankSlipUrl ?? null,
-          // Número da fatura Asaas -- é o que a Spedy devolve em
-          // order.transactionId na nota, usado pelo spedy-webhook pra achar
-          // essa parcela de volta.
-          asaas_invoice_number: r.data.invoiceNumber ? String(r.data.invoiceNumber) : null,
-        }).eq('id', r.row.id);
-      }));
-
-      const primeira = resultados.find(r => r.row.numero_parcela === 1);
-      if (!primeira?.ok || !primeira.data?.id) {
-        return json({ ok: false, erro: primeira?.data?.errors?.[0]?.description || 'Não foi possível gerar o boleto. Tente novamente ou avise a equipe.' }, 400);
-      }
-
-      // Todo boleto no Asaas tem um Pix equivalente em paralelo -- usamos ele
-      // pra manter a mesma UX de QR code/copia-e-cola da tela de pagamento.
-      // O Pix não fica pronto instantaneamente na criação do boleto (achado
-      // em teste real 2026-09-04: 1ª tentativa às vezes vem vazia, funciona
-      // ao tentar de novo alguns segundos depois) -- tenta até 3x com espera
-      // curta antes de desistir, em vez de devolver QR vazio pro aluno.
-      let pixOk = false;
-      let pixData: any = null;
-      for (let tentativa = 0; tentativa < 3 && !pixOk; tentativa++) {
-        if (tentativa > 0) await new Promise(r => setTimeout(r, 1500));
-        const resultado = await asaasFetch(`/payments/${primeira.data.id}/pixQrCode`, { method: 'GET' });
-        pixOk = resultado.ok;
-        pixData = resultado.data;
-      }
-      if (!pixOk) {
-        console.error('matricula-pagamento-criar: erro ao buscar Pix do boleto Asaas (3 tentativas)', pixData);
-      }
-
+      // paymentId com prefixo `efi:` -- o polling de status usa ele pra
+      // saber que a verdade está em `pagamentos`, não na API do MP/Asaas.
       return json({
         ok: true,
-        paymentId: primeira.data.id,
+        paymentId: `efi:${parcela1.id}`,
         status: 'pending',
-        qrCodeBase64: pixOk ? (pixData?.encodedImage ?? null) : null,
-        qrCode: pixOk ? (pixData?.payload ?? null) : null,
+        boletoUrl,
+        barcode: dEfi?.barcode ?? null,
+        vencimento: dEfi?.vencimento ?? null,
+        qrCodeBase64: null,
+        qrCode: null,
       });
     }
 

@@ -342,7 +342,17 @@ function PagamentoStep({
 
   // Pix (usado tanto por 'avista' quanto pela 1ª parcela de 'boleto' — mesma
   // UI de QR code/polling, só muda o valor e o texto ao redor)
-  const [pix, setPix] = useState<{ qrCodeBase64: string; qrCode: string; paymentId: string | number } | null>(null);
+  // `avista` traz QR (Pix do Mercado Pago); `boleto` traz boletoUrl/barcode
+  // (Efí, desde 27/11/2026). Um estado só porque o polling de status e o
+  // fluxo da tela são os mesmos -- muda o que se mostra, não a mecânica.
+  const [pix, setPix] = useState<{
+    qrCodeBase64: string | null;
+    qrCode: string | null;
+    paymentId: string | number;
+    boletoUrl?: string | null;
+    barcode?: string | null;
+    vencimento?: string | null;
+  } | null>(null);
   const [pixStatus, setPixStatus] = useState<'pending' | 'approved' | 'timeout'>('pending');
   const pixPollRef = useRef<{ tentativas: number; timer: ReturnType<typeof setInterval> | null }>({ tentativas: 0, timer: null });
 
@@ -389,8 +399,19 @@ function PagamentoStep({
       .then(r => r.json())
       .then(d => {
         setProcessando(false);
-        if (!d.ok) { setErro(d.erro || 'Não foi possível gerar o Pix.'); pixRequestedRef.current = false; return; }
-        setPix({ qrCodeBase64: d.qrCodeBase64, qrCode: d.qrCode, paymentId: d.paymentId });
+        if (!d.ok) {
+          setErro(d.erro || (metodo === 'boleto' ? 'Não foi possível gerar o boleto.' : 'Não foi possível gerar o Pix.'));
+          pixRequestedRef.current = false;
+          return;
+        }
+        setPix({
+          qrCodeBase64: d.qrCodeBase64 ?? null,
+          qrCode: d.qrCode ?? null,
+          paymentId: d.paymentId,
+          boletoUrl: d.boletoUrl ?? null,
+          barcode: d.barcode ?? null,
+          vencimento: d.vencimento ?? null,
+        });
       })
       .catch(() => { setProcessando(false); setErro('Erro ao gerar o Pix. Tente novamente.'); pixRequestedRef.current = false; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -399,6 +420,11 @@ function PagamentoStep({
   // ── PIX: polling do status (a cada 4s, até 60 tentativas / ~4min) ───────────
   useEffect(() => {
     if (!pix || pixStatus !== 'pending') return;
+    // Boleto não: ele compensa em D+1 a D+3, então 60 tentativas em 4
+    // minutos só terminariam em "timeout" -- um alarme falso pra algo que
+    // está correto. A baixa chega pelo efi-webhook, e o aluno recebe a
+    // confirmação por WhatsApp quando cair.
+    if (pix.boletoUrl) return;
 
     const poll = () => {
       pixPollRef.current.tentativas += 1;
@@ -686,42 +712,67 @@ function PagamentoStep({
         <div className="pix-container">
           {!pix && processando && (
             <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Loader2 className="h-4 w-4 animate-spin" /> Gerando o Pix...
+              <Loader2 className="h-4 w-4 animate-spin" /> Gerando o {metodo === 'boleto' ? 'boleto' : 'Pix'}...
             </p>
           )}
           {pix && (
             <>
               <div className="pix-amount-badge">
-                <span className="pix-amount-label">{metodo === 'avista' ? 'Total à vista' : '1ª parcela (PIX)'}</span>
+                <span className="pix-amount-label">{metodo === 'avista' ? 'Total à vista' : '1ª parcela (boleto)'}</span>
                 <span className="pix-amount-value">R$ {metodo === 'avista' ? fmtBRL(plano.avista) : fmtBRL(plano.parcela)}</span>
               </div>
 
+              {/* Boleto da Efí não tem QR: o que o aluno precisa é do próprio
+                  boleto e da linha digitável. QR só no Pix do 'avista'. */}
               <div className="qr-wrapper">
                 {pixStatus === 'approved' ? (
                   <CheckCircle2 className="h-14 w-14" style={{ color: '#1A5C2A' }} />
-                ) : (
+                ) : pix.boletoUrl ? (
+                  <a
+                    href={pix.boletoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-submit"
+                    style={{ display: 'inline-flex', textDecoration: 'none' }}
+                  >
+                    <span className="btn-text">Abrir boleto</span>
+                  </a>
+                ) : pix.qrCodeBase64 ? (
                   <img src={`data:image/png;base64,${pix.qrCodeBase64}`} alt="QR Code Pix" />
-                )}
+                ) : null}
               </div>
 
               <StatusPagamentoBadge status={pixStatus === 'timeout' ? 'pending' : pixStatus} />
 
-              {pixStatus === 'pending' && (
+              {pixStatus === 'pending' && (pix.qrCode || pix.barcode) && (
                 <>
                   <div className="pix-code-wrap">
-                    <p className="pix-code-label">Código Pix copia e cola</p>
+                    <p className="pix-code-label">
+                      {pix.barcode ? 'Linha digitável do boleto' : 'Código Pix copia e cola'}
+                    </p>
                     <div className="pix-code-box">
                       <div className="pix-code-input">
                         <QrCode className="h-3.5 w-3.5" style={{ display: 'inline', marginRight: 6, verticalAlign: '-2px' }} />
-                        {pix.qrCode}
+                        {pix.barcode ?? pix.qrCode}
                       </div>
-                      <button type="button" className="btn-copy" onClick={() => navigator.clipboard?.writeText(pix.qrCode)}>
+                      <button
+                        type="button"
+                        className="btn-copy"
+                        onClick={() => navigator.clipboard?.writeText(pix.barcode ?? pix.qrCode ?? '')}
+                      >
                         <Copy className="h-3.5 w-3.5" style={{ display: 'inline', marginRight: 4, verticalAlign: '-2px' }} />
                         Copiar
                       </button>
                     </div>
                   </div>
-                  <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>Aguardando confirmação do pagamento...</p>
+                  {/* Boleto não confirma em segundos como o Pix: compensa em
+                      D+1 a D+3. Dizer "aguardando confirmação" aqui prenderia
+                      o aluno numa tela que não vai mudar. */}
+                  <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+                    {pix.barcode
+                      ? `Pague até ${pix.vencimento ? new Date(`${pix.vencimento}T12:00:00`).toLocaleDateString('pt-BR') : 'o vencimento'}. A confirmação leva até 3 dias úteis — você pode fechar esta página.`
+                      : 'Aguardando confirmação do pagamento...'}
+                  </p>
                 </>
               )}
               {pixStatus === 'timeout' && (
@@ -745,8 +796,8 @@ function PagamentoStep({
               )}
               {metodo === 'boleto' && pixStatus !== 'approved' && (
                 <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', lineHeight: 1.6, textAlign: 'center', maxWidth: 380 }}>
-                  Esta é a 1ª parcela (ato de matrícula). As próximas {(plano.boletoParcelas ?? 15) - 1} parcelas serão geradas e
-                  enviadas automaticamente por WhatsApp/e-mail, um boleto por mês.
+                  Esta é a 1ª parcela (ato de matrícula). As próximas {(plano.boletoParcelas ?? 15) - 1} parcelas chegam
+                  automaticamente por WhatsApp/e-mail, uma por mês, com boleto ou PIX à sua escolha.
                 </p>
               )}
             </>
@@ -1057,9 +1108,10 @@ export default function MatriculaTimeComercial({ preMatricula = false }: { preMa
         setDone(true);
       } else if (preMatricula) {
         // Pré-matrícula: nada de tela de PIX/cartão agora. Dispara em segundo
-        // plano (1) a geração das 15 parcelas/boletos no Asaas -- já nascem
-        // com vencimento futuro, ancoradas em alunos.data_matricula (ver
-        // migration matricula_time_comercial_pre_matricula) -- e (2) o envio
+        // plano (1) a geração das parcelas + o boleto da 1ª na Efí (desde
+        // 27/11/2026; era Asaas) -- já nascem com vencimento futuro,
+        // ancoradas em alunos.data_matricula (ver migration
+        // matricula_time_comercial_pre_matricula) -- e (2) o envio
         // do contrato pra assinatura na Autentique. Nenhum dos dois bloqueia
         // a tela de sucesso -- falha aqui não deve travar o cliente. Mas
         // antes isso era 100% silencioso (o aluno via "confirmada!" mesmo

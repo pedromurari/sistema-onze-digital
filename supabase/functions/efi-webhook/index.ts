@@ -83,6 +83,62 @@ async function lerToken(req: Request): Promise<{ token: string | null; bruto: st
   return { token: p.get('notification') ?? p.get('token'), bruto };
 }
 
+/**
+ * Contrato da matricula (Autentique). So faz sentido na parcela 1.
+ *
+ * Idempotente de verdade: le `alunos` antes de cada tentativa e sai se o
+ * documento ja existe -- notificacao repetida da Efi (ela manda duas vezes,
+ * ~350ms de diferenca) nao pode gerar dois contratos pro mesmo aluno.
+ *
+ * Falha aqui NUNCA derruba a baixa: o dinheiro entrou, a parcela e paga, e
+ * contrato pendente e problema reparavel. O inverso nao e.
+ */
+async function garantirContrato(
+  sb: ReturnType<typeof createClient>,
+  alunoId: string,
+): Promise<void> {
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+    const { data: aluno } = await sb
+      .from('alunos')
+      .select('id, cpf, data_nascimento, endereco, cep, cidade_estado, autentique_documento_id, autentique_link_assinatura')
+      .eq('id', alunoId)
+      .maybeSingle();
+
+    if (!aluno) return;
+    if (aluno.autentique_documento_id && aluno.autentique_link_assinatura) return;
+
+    if (!aluno.cpf || !aluno.data_nascimento || !aluno.endereco || !aluno.cidade_estado) {
+      console.error('efi-webhook: dados insuficientes pra gerar contrato', alunoId);
+      return; // repetir nao resolve: falta cadastro, nao e falha transitoria
+    }
+
+    try {
+      const r = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/autentique-criar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}`, apikey: serviceKey },
+        body: JSON.stringify({
+          aluno_id: aluno.id,
+          cpf: aluno.cpf,
+          data_nascimento: aluno.data_nascimento,
+          endereco: aluno.endereco,
+          cep: aluno.cep,
+          cidade_estado: aluno.cidade_estado,
+        }),
+        signal: AbortSignal.timeout(40_000),
+      });
+      const res = await r.json().catch(() => ({}));
+      if (r.ok && res?.link_assinatura) return;
+      console.error('efi-webhook: Autentique sem link', r.status, JSON.stringify(res).slice(0, 300));
+    } catch (e) {
+      console.error('efi-webhook: erro ao chamar autentique-criar', e);
+    }
+    if (tentativa < 3) await new Promise((r) => setTimeout(r, tentativa * 700));
+  }
+  console.error('efi-webhook: contrato continua pendente apos 3 tentativas', alunoId);
+}
+
 /** Confirmacao pro aluno. Mesmo texto e mesmo numero das outras baixas. */
 async function confirmarPagamento(
   sb: ReturnType<typeof createClient>,
@@ -249,6 +305,17 @@ serve(async (req) => {
 
     await confirmarPagamento(sb, parcela as any).catch((e) =>
       console.error('efi-webhook: falha na confirmacao', parcela.id, e));
+
+    // Parcela 1 paga = matricula efetivada, e e dai que nasce o contrato.
+    // Isso existia so no caminho do Asaas (asaas-webhook-time-comercial e
+    // o polling do matricula-pagamento-criar). Quando o boleto de matricula
+    // passou pra Efi em 27/11/2026, a baixa vinha por aqui e o contrato
+    // nunca era gerado -- aluno pagando a matricula e ficando sem documento
+    // pra assinar.
+    if (parcela.numero_parcela === 1) {
+      await garantirContrato(sb, parcela.aluno_id).catch((e) =>
+        console.error('efi-webhook: falha ao garantir contrato', parcela.aluno_id, e));
+    }
 
     await gravar({ pagamento_id: parcela.id, acao: 'baixa', detalhe: `parcela ${parcela.numero_parcela} paga` });
     return ok({ recebido: true, acao: 'baixa', parcela: parcela.numero_parcela });
